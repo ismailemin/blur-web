@@ -4,19 +4,24 @@ Sıra bağlayıcıdır. Bir görev kapanmadan sonraki kod görevine geçilmez.
 
 ## 1. T-003 — Scene/level kapsamını genişletme
 
-**Durum:** planned (T-002 kapandı)
-**Kart:** henüz açılmadı
+**Durum:** in-progress (blok27 çoklu instance tamam)
+**Kart:** `docs/work/tasks/T-003-scene-traversal.md`
 
-Amaç: kalan56instance, sonraki RenderList'ler, level materyalleri, görünürlük
-ve yüksek LOD'lar; ardından geometri + instance + doku ile tutarlı bir pist
-parçası.
+İlk artım: `level_instances_all_inspect` blok27'ye bağlı **14 instance**'ı
+çiziyor (8 sınır uyuşmazlığı, 35 başka blok); 7.308 vertex/6.106 üçgen.
+Kalan iş:
+
+- Blok15/17/26/31/32 için çoklu geometri chunk akışı.
+- Base primitive7–10 ek stream/deformasyon semantiği (8 instance).
+- Level materyalleri, görünürlük, sonraki RenderList'ler, yüksek LOD'lar.
+- GPU instance buffer.
 
 Kabul:
 
 - Sabit offset veya tahmin yok; kaynak sırası korunur.
 - Desteklenmeyen durumlar sayılarıyla raporlanır.
 - Native/WASM/Python eşitliği ve regresyonsuz suite.
-- Tek instance kanıtı genel "tam pist" iddiasına dönüşmez.
+- Tek/14 instance kanıtı genel "tam pist" iddiasına dönüşmez.
 
 ## 2. T-004 — Native particle-cache izi
 

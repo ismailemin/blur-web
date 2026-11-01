@@ -3,7 +3,7 @@
 **Güncelleme:** 1 Kasım 2026
 **Aşama:** Aşama 4 sonu (gerçek asset/önizleme), Aşama 5 (tek oyunculu yarış) başlamadı.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
-**Son commit'ler:** `19abead` T-001 kodu, `b4e8cbe` onboarding/T-001 kayıtları, T-002 commit'i bekliyor.
+**Son commit'ler:** T-001 `19abead`/`b4e8cbe`, T-002 `2bc7253`/`1b8cb76`; T-003 ilk artım commit bekliyor.
 
 ## Şu an neredeyiz?
 
@@ -14,12 +14,14 @@
   LOD0 (`corvetterace_dials`, `corvetterace_interior`).
 - `scene_resource_textures_inspect` yedi resource bloğunu Scene sınırına kadar
   okuyup descriptor/payload aralıklarını döndürüyor.
-- `level_instances_inspect` eklendi. River block27/node253 instance0:
-  **805 vertex / 726 üçgen**, arşivlenmiş sınır farkı **3.86511e-05**.
-  Native/WASM/Python F32 konum ve U32 index hash'leri birebir.
+- `level_instances_inspect` River block27/node253 instance0:
+  **805 vertex / 726 üçgen**, arşiv sınır farkı **3.86511e-05**.
+- `level_instances_all_inspect` aynı blokta **14 instance** çiziyor:
+  **7.308 vertex / 6.106 üçgen**, 14 draw, en büyük sınır farkı
+  **6.02444e-05**. 8 instance sınır uyuşmazlığı, 35 instance başka blok.
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
-  **River · instance prova** preset'i instance0'ı dönüşümüyle açar.
+  **River · instance prova** ve **River · 14 instance** preset'leri var.
 - Native x64 Amax Release derlemesi başarılı. Particle-cache çökmesinin ilk dump
   analizi aynı emitter'ın ikinci kez serbest bırakıldığını gösterdi; tam bellek
   izi ve nedensellik açık.
@@ -27,20 +29,22 @@
 
 ## Sıradaki iş
 
-**T-003 — Scene/level kapsamını genişletme.** Kalan56instance, sonraki
-RenderList'ler, level materyalleri, görünürlük ve yüksek LOD'lar; ardından
-tutarlı bir pist parçası. Kart henüz açılmadı; `docs/handoff/NEXT.md` sırayı
-tutuyor.
+**T-003 kalan iş:** blok15/17/26/31/32 için çoklu geometri chunk akışı; base
+primitive7–10 ek stream/deformasyon semantiği (8 instance); level materyalleri,
+görünürlük, sonraki RenderList'ler ve yüksek LOD'lar. Kart:
+`docs/work/tasks/T-003-scene-traversal.md`.
 
 ## Bilinen engeller / riskler
 
-- Tek instance CPU-expanded; GPU instance buffer, diğer56instance ve level
-  materyalleri yok.
+- CPU vertex expansion; GPU instance buffer yok.
+- 8 instance base7–10 nedeniyle sınır uyuşmazlığı veriyor; ek stream semantiği
+  çözülmeden çizilmemeli.
+- Diğer 35 instance farklı geometri bloklarında; API tek chunk alıyor.
 - Native sürüş referansı particle-cache çökmesi nedeniyle kararlı değil.
 - Fizik, kontroller, ses, save/streaming, tek oyunculu yarış ve multiplayer
   başlamadı.
-- Browser WebGPU mesh ekran görüntüsü T-001/T-002 için alınmadı; WASM/veri yolu
-  ve native/WASM eşitliği doğrulandı, görünür GPU çizimi ayrı adım.
+- Browser WebGPU mesh ekran görüntüsü alınmadı; veri/WASM yolu ve native/WASM
+  eşitliği doğrulandı, görünür GPU çizimi ayrı adım.
 - Oyun verisi ve `_work/` Git dışında; kanıtlar yeniden üretim komutuyla birlikte
   dokümanda tutulmalı.
 

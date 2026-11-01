@@ -176,4 +176,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Browser'a **River · instance prova** preset'i eklendi (block27/node253). Headless browser WASM yolunda `805 vertex / 726 üçgen / 57 instance / hata 3.87e-05` durumu görüldü; WebGPU mesh görüntüsü bu turda alınmadı. Diğer56instance, materyaller, görünürlük ve yüksek LOD'lar açık.
 - Sıradaki: T-003 scene/level kapsamını genişletme; ardından fizik/kontrol/ses ile tek oyunculu dikey dilim.
 
+## 1 Kasım 2026 — T-003 ilk artım: blok27 çoklu instance
+
+- `level_instances_all_inspect` eklendi; tek-instance API korunuyor. Aynı node253 RenderList'inde VB/IB'si blok27'ye bağlı instance'lar sırayla işleniyor; her biri kendi sabit affine `g_mWorld` matrisiyle CPU'da genişletiliyor.
+- Arşivlenmiş instance sınırlarıyla uyuşmayan instance'lar sessizce çizilmiyor; `unsupportedBoundsInstances` olarak sayılıyor. Blok27/node253 sonucu: **14 çizildi, 8 sınır uyuşmazlığı, 35 başka blok**; **7.308 vertex / 6.106 üçgen**, 14 draw; en büyük sınır farkı **6.02444e-05**.
+- 8 desteklenmeyen instance base primitive7–10 kullanıyor; ek stream/deformasyon semantiği uygulanmadığı için sınırlar tutmuyor. Bu durum açıkça raporlanıyor, tahmini dönüşüm üretilmiyor.
+- Native/WASM JSON tamamen eşit; `verify_instances_wasm.mjs` hem tek hem çoklu yolu kontrol ediyor. Suite **27/27**, CTest **14/14**.
+- Browser'a **River · 14 instance** preset'i eklendi; `River · instance prova` tek instance olarak kalıyor. WebGPU mesh ekran görüntüsü hâlâ açık.
+- Sıradaki: diğer geometri blokları (15/17/26/31/32), base7–10 ek stream semantiği, level materyalleri/görünürlük/yüksek LOD'lar; ardından tek oyunculu dikey dilim.
+
 

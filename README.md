@@ -22,6 +22,9 @@ a native Windows reference build and race harness.
   River wide 17,782 vertices / 9,343 triangles, Showroom 11,590 / 7,987.
 - Bounded first-instance transform API: River block27/node253 instance0 gives
   805 vertices / 726 triangles; archived-bounds error 3.86511e-05.
+- Multi-instance API on the same block: 14 instances, 7,308 vertices / 6,106
+  triangles; 8 bounds-mismatched and 35 other-block instances are counted, not
+  guessed.
 - PC texture decoder (BC1/BC2/BC3 and selected uncompressed formats).
 - XT/FLSK schema metadata only.
 - Native x64 Amax Release build passes; stationary Brighton race renders.
