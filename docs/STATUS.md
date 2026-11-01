@@ -196,4 +196,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Görünür WebGPU hatası bildirilmedi. Bu, blok27 çoklu instance yolunun browser'da gerçekten çizildiğini doğrular; T-003'ün kalan işi diğer geometri blokları, base7–10 stream semantiği, materyaller/görünürlük/yüksek LOD'lar.
 - Ekran görüntüsü sohbet yoluyla sağlandı (2 Kasım 2026); `_work/` altında ayrıca arşivlenmedi.
 
+## 2 Kasım 2026 — native tam bellek exit dump'ı
+
+- W basılı tutulan Brighton senaryosu debugger altında tekrarlandı; süreç ~14s'de `0x80000003` ile çıktı. Debugger breakpoint olayı görmedi; `EXIT_PROCESS_DEBUG_EVENT` anında 1.458.887.110 baytlık tam bellek dump'ı alındı: `_work/native-source/Blur1PCDX11/_work/run/scripts/race-native-crash/dumps/full-exit.dmp` (SHA-256 `abd9befe...`).
+- Analiz: `m_ActiveElements=93`, `m_VectorPosition=-1`; `m_Deleted[0]` elemanı aynı zamanda `m_Cache[162]` içinde. Bu, çift serbest bırakmayı doğrudan kanıtlar. Triyaj dump'ında serbest/aktif dizileri yoktu; tam dump bu boşluğu kapattı.
+- Hangi iki `Free`/`AtomicFree` çağrısının çakıştığı, efekt kimliği ve thread çakışması hâlâ açık. Sıradaki en küçük adım dump içinde sahip tanım işaretçisini ve komşu partikül kayıtlarını çözmek. Assert kaldırılmadı; düzeltme iddiası yok.
+- Rapor: `docs/work/analysis/native-particle-crash.md` ("Tam bellek (exit) dump'ı" bölümü).
+
 

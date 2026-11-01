@@ -25,13 +25,15 @@ Kabul:
 
 ## 2. T-004 — Native particle-cache izi
 
-**Durum:** ilk analiz tamamlandı; tam bellek izi açık
+**Durum:** tam bellek dump'ı alındı ve analiz edildi; kaynak çağrı/efekt kimliği açık
 **Rapor:** `docs/work/analysis/native-particle-crash.md`
 
-İlk bulgu: `m_ActiveElements=14`, `m_VectorPosition=-1`; aynı emitter ikinci kez
-serbest bırakılmış. Tam `m_Cache`/`m_Active` dizileri ve tüm thread context'leri
-dump'ta yok. Sıradaki: tam bellek dump'ı, sınırlı Free/AtomicFree izi ve girişsiz
-A/B koşu. Assert kaldırılmayacak.
+Tam dump doğruladı: `m_ActiveElements=93`, `m_VectorPosition=-1`; silinen
+`m_Deleted[0]` aynı zamanda `m_Cache[162]` içinde — çift serbest bırakma
+doğrudan kanıt. Hangi iki `Free`/`AtomicFree` çağrısının çakıştığı, efekt kimliği
+ve thread çakışması hâlâ açık. Sıradaki en küçük adım: dump içinde sahip
+tanım işaretçisini ve komşu partikül kayıtlarını çözerek bayat referans
+hipotezini test etmek. Assert kaldırılmayacak.
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 

@@ -22,9 +22,11 @@
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
   **River · instance prova** ve **River · 14 instance** preset'leri var.
-- Native x64 Amax Release derlemesi başarılı. Particle-cache çökmesinin ilk dump
-  analizi aynı emitter'ın ikinci kez serbest bırakıldığını gösterdi; tam bellek
-  izi ve nedensellik açık.
+- Native x64 Amax Release derlemesi başarılı. Tam bellek exit dump'ı alındı:
+  `m_ActiveElements=93`, `m_VectorPosition=-1`; silinen eleman aynı zamanda
+  `m_Cache[162]` içinde — çift serbest bırakma doğrudan kanıtlandı. Hangi iki
+  `Free`/`AtomicFree` çağrısının çakıştığı, efekt kimliği ve thread çakışması
+  açık.
 - Doğrulama: `verify_asset_probe.py --skip-build` **27/27**, CTest **14/14**.
 
 ## Sıradaki iş

@@ -2,7 +2,11 @@
 
 **Durum:** tamamlandı (salt okunur inceleme; hiçbir kaynak/derleme/oyun dosyası değiştirilmedi)
 **Sahip:** native-analysis sub-agent (salt okunur)
-**Tarih:** 1 Kasım 2026 (inceleme), çökme kaydı 1 Kasım 2026 01:25
+**Tarih:** 1 Kasım 2026 (triyaj dump'ı incelemesi), 2 Kasım 2026 (tam bellek exit dump'ı incelemesi)
+**Kapsam notu:** "Bilinenler/Bulunanlar" bölümleri 1 Kasım triyaj dump'ına dayanır
+ve tarihsel kayıt olarak korunmuştur. 2 Kasım tam bellek dump'ı incelemesi
+raporun sonundaki "Tam bellek (exit) dump'ı" bölümündedir; oradaki sonuçlar
+aşağıdaki "Açık sorular" maddelerinin 1, 2, 5 ve 6'sını günceller.
 
 ## Bilinenler
 
@@ -226,37 +230,43 @@ kopyada `+0x00` ve `+0x50`/`+0x80`'de `.rdata` işaretçileri (RVA
 ## Açık sorular
 
 1. ~~`m_ActiveElements <= 0` mi, yoksa `m_VectorPosition == -1` mi tetikledi?~~
-   **Cevaplandı:** `m_VectorPosition == -1` (K4); `m_ActiveElements` = 14.
+   **Cevaplandı (iki bağımsız dump ile):** `m_VectorPosition == -1` (K4;
+   tam bellek dump'ında T4). `m_ActiveElements` triyajda 14, exit dump'ında
+   93 — ikisinde de > 0.
 2. ~~Silinen liste elemanı hangi emitter'a ait?~~
-   **Kısmen cevaplandı:** `m_SuperEffectEmitters` cache'inde `0x11883a48900`
-   adresli `C_Emitter`. Efekt tanımı/adı ve sahibi (event instance / super
-   effect) dump'tan çıkarılamıyor.
+   **Cevaplandı:** `m_SuperEffectEmitters` cache'inde, triyajda
+   `0x11883a48900`, exit dump'ında `0x2b20c365db0` adresli `C_Emitter`
+   (vtable RVA `0x11214B8`) ve exit dump'ında bu elemanın **serbest listesinde
+   de** durduğu görüldü (T5). Efekt tanımının/adının kimliği hâlâ açık.
 3. Aynı girdi olmadan yapılan koşuda çökme oluyor mu? — **Açık.** Mevcut
    stationary koşu gaz penceresine girmeden bitti ve dump'ı yok.
-4. W girişi gerçekten nedensel mi, yoksa zamanlama mı? — **Açık.** ~1 s
-   yakınlık dışında kanıt yok (H3).
-5. Minidump gerekli bellek/optimize local'ları içeriyor mu? — **Kısmen**
-   (K10): hedefli sayfalar var, serbest/aktif dizileri ve diğer thread
-   context'leri yok.
+4. W girişi gerçekten nedensel mi, yoksa zamanlama mı? — **Açık.** Triyajda
+   ~1 s, exit dump'ında ~13 s gecikme var; sabit bir gecikme yok (H3, H7).
+5. ~~Minidump gerekli bellek/optimize local'ları içeriyor mu?~~
+   **Cevaplandı (T1, T3):** tam bellek dump'ı serbest/aktif dizilerini,
+   cache ve eleman gövdelerini ve breakpoint CONTEXT'ini içeriyor. Eksik
+   kalan: exception stream yok, yalnızca 1 thread kaydı (register'ları sıfır),
+   dolayısıyla thread çakışması okunamıyor.
 6. Çift serbest bırakma hangi iki çağrı yolundan geldi (senkron `Free` +
-   ertelenmiş `AtomicFree` mi, iki `AtomicFree` mi, aliasing mi)? — **Açık**
-   (H1/H2).
+   ertelenmiş `AtomicFree` mi, iki `AtomicFree` mi, aliasing mi)? —
+   **Kısmen:** çift bırakma artık doğrudan kanıt (T5), ancak ikinci çağrıyı
+   yapan kod yolu hâlâ **açık** (H1/H2/H5).
 
 ## Sonraki adımlar
 
-1. **Tam bellek dump'ı** (`MiniDumpWithFullMemory`, aynı EXE/PDB) ile aynı
-   breakpoint'te tekrar et; sonra:
-   - `m_Cache[0..m_CachedElements-1]` içinde `0x11883a48900` var mı? (varsa
-     çift serbest bırakma doğrudan kanıtlanır),
-   - işaretçinin tüm kopyalarını tara (trail blok partikülü, event instance,
-     `m_Active`) ve sahibini belirle,
-   - 74 thread'in context'ini de al (`MiniDumpWithThreadInfo`), breakpoint
-     anında başka bir thread `AtomicFree`/emitter update içinde mi bak.
+1. ~~**Tam bellek dump'ı** ile aynı breakpoint'te tekrar et~~ → **yapıldı**
+   (2 Kasım, `race-native-crash/dumps/full-exit.dmp`):
+   - `m_Cache[0..m_CachedElements-1]` içinde bekleyen eleman **var** →
+     çift serbest bırakma doğrudan kanıtlandı (T5),
+   - elemanın diğer kopyaları tarandı (T9),
+   - thread context'i alınamadı: exit dump'ında tek thread kaydı var ve
+     register'ları sıfır (kısıt, yeni tanılama için geçerli).
 2. **Sınırlı tanılama** (yalnızca izole Speed worktree'sinde, assert
    kaldırılmadan): `AtomicFree` ve `Free` girişlerine (a) eleman işaretçisi,
    (b) çağıran dönüş adresi, (c) üç sayaç, (d) kare numarası yazan halka
    tamponu ekle; breakpoint'te bu tamponu boşalt. Böylece "ikinci kez kim
-   serbest bıraktı" sorusu doğrudan yanıtlanır.
+   serbest bıraktı" sorusu doğrudan yanıtlanır. (Tam bellek dump'ı bunu
+   kapatmadı; ikinci çağrının izini yalnızca bu verir.)
 3. **A/B tanılaması (kod değişikliği olmadan):** debug ayarı
    `Graphics.Dynamic.Particle.MultiThreadedEmittterUpdate` (`Manager.cpp:100`,
    `Debug::Bool`) kapatılıp aynı senaryo tekrarlanmalı. Tekrarlamazsa yarış
@@ -287,6 +297,11 @@ kopyada `+0x00` ve `+0x50`/`+0x80`'de `.rdata` işaretçileri (RVA
 Karşılaştırma koşusu: `_work/native-source/Blur1PCDX11/_work/run/scripts/race-stationary/`
 (`automation.log` `46ff0af3…`, `run-result.json` `930d0a41…`, `race.jpg` `9278ef76…`).
 
+Tam bellek (exit) dump'ı koşusu (2 Kasım, ayrıntı ve tablo son bölümde):
+`_work/native-source/Blur1PCDX11/_work/run/scripts/race-native-crash/` —
+`dumps/full-exit.dmp`, `debug-events.log`, `dump-result.json`, `automation.log`,
+`smoke-crash.txt`, `prepare_race.lua`.
+
 - Çalıştırılan EXE: `_work/native-source/Blur1PCDX11/_work/run/Amax.exe`,
   SHA-256 `e9727929768d1e8e2b41ec6abfa836c4134cd397e571c8b9ba1129c91a5a254`
   (`run-result.json:3`); PDB `983032962babd0366d1de4ec4fa8b304b7206d20951387e9375ce96f32719ee6`.
@@ -301,3 +316,226 @@ Karşılaştırma koşusu: `_work/native-source/Blur1PCDX11/_work/run/scripts/ra
   K4 ile günceller), üretici script `_work/build/engine-reference/audit-native-race.py`.
 - Anlatı/anamnez: `docs/setup/native-source-build.md` "Native race handoff"
   bölümü (satır 252-320).
+
+---
+
+## Tam bellek (exit) dump'ı — 2 Kasım 2026
+
+**Yakalama:** `dumped-exit`, PID 8604, ExitCode `-2147483645` (`0x80000003`).
+Dump `EXIT_PROCESS_DEBUG_EVENT` anında alınmış; `debug-events.log` içinde
+`0x80000003` için bir `EXCEPTION_DEBUG_EVENT` kaydı **yok** (satır 2-255:
+CREATE_PROCESS tid 10460, dört adet `code=1 ... ex=0x000001AC` olayı satır
+94/158/178/179, satır 255 EXIT_PROCESS). Bu yüzden stack/invariant anının
+birebir aynı olmayabileceği uyarısı baştan not edildi; aşağıdaki T1 bunun
+tersini gösteriyor.
+
+Dosyalar (hepsi değiştirilmedi):
+
+| Dosya | Bayt | SHA-256 |
+| --- | ---: | --- |
+| `dumps/full-exit.dmp` | 1.458.887.110 | `abd9befeab2730d0e7d0c51c30cc2e2a2c10cc2003a95248704f55998cae7a93` |
+| `debug-events.log` | 10.468 | `dd83844dcf8bb27e8b2dd920b02749fa9d511de8387eec1bde9158f914d4c4d8` |
+| `dump-result.json` | 603 | `99fb409ec23ade3a8d5c015cb3289b5b99a25b41e8d0e57cd174cd51d600196b` |
+| `automation.log` | 195.445 | `84fc2b1dd0a5526052b43430d93bb4800b8f89fba79f4d34d8f63bf1b5aa248e` |
+| `smoke-crash.txt` | 524 | `9ea9b191f32b33ab6935dad7b6a421857cfbfab825c7babe211852180e07a8a0` |
+| `prepare_race.lua` | 2.058 | `072c94cf4381b4c8b3d64491028e7c9af810be5fe93d0b7572643cc80a585b6d` |
+
+Klasör: `_work/native-source/Blur1PCDX11/_work/run/scripts/race-native-crash/`.
+Çalıştırılan EXE yine `_work/run/Amax.exe`, SHA-256
+`e9727929768d1e8e2b41ec6abfa836c4134cd397e571c8b9ba1129c91a5a254`
+(2 Kasım'da disk üzerinde yeniden hesaplandı).
+
+### Dump'ın yapısı ve sınırları
+
+- `MDMP`; stream'ler 3/4/7/**9**/12/13/14/15/17/21/22. **9 = Memory64List**
+  (2.916 tanımlayıcı) → tam bellek var. **ExceptionStream yok** (exit anı).
+  ThreadList yalnızca **1 thread** (tid 16056) ve o kaydın register'ları sıfır.
+- 91 modül; Amax tabanı bu koşuda `0x7ff66cdd0000` (boyut `0x19b3000`).
+- Bellek: birleştirilmiş **1.669 aralık, 1.458.798.592 bayt** (dosya boyutunun
+  ~%99,99'u).
+- `Flags = 0x221026` (WithDataSegs | WithFullMemory | ScanMemory |
+  WithFullMemoryInfo | WithPrivateWriteCopyMemory | FilterTriage).
+- `automation.log`: satır 2170 `11.88 ... NATIVE_CRASH_RACING`,
+  satır 2176 `12.88 key down 0x11` (W tarama kodu), son satır 2686
+  `25.94 ...`. Yani süreç W'den **~13 s sonra** öldü (triyaj koşusunda ~1 s).
+
+### Kanıtlanan
+
+**T1 — Breakpoint anı bu dump'ta hâlâ okunuyor: CONTEXT ana thread
+yığınında korunmuş.**
+`0xc91ecfe630` adresinde standart x64 GPR yerleşiminde bir blok var:
+`rdi = 0x2b21b832850` (cache), `rsi = 0x2b20c365db0` (pElement),
+`rax = 0x2b224b2b7b0` (m_Deleted.elements), `r14 = 0`, `rbp = 0`,
+`rip = 0x7fffae0d3122` (`DebugBreak+0x2`, triyaj dump'ıyla **aynı**),
+`r15 = Amax+0xD5F5B0` (triyajdaki RVA'nın aynısı), `r8 = 0x83`,
+`r9 = 0x7ffe6000`, `r10 = 1`, `r12 = 4`, `r13 = 0`, `rsp = 0xc91ecff398`.
+Bu değerler triyaj `dump-context.json` ile aynı desende. Aynı yığın
+bölgesindeki dönüş adresleri:
+
+```text
+[Rsp+0x00] 0x7ff66d0cc90d  = Amax+0x2FC90D  Update() içinde DebugBreak sonrası
+[Rsp+0x30] 0x7ff66d0ce3bc  = Amax+0x2FE3BC  C_ParticleManager::UpdateSuperEmitters
+[Rsp+0x40] 0x2b21b832050                     C_ParticleManager*
+[Rsp+0x70] 0x7ff66ce7d038  = Amax+0xAD038   C_GameWorld::Update+0x6E8
+                                            (triyaj crash.txt:7 ile aynı komut)
+```
+
+Not: aynı bloğun `ContextFlags` alanı geçerli bir CONTEXT maskesi değil; blok
+kısmi bir çekirdek/dispatcher kopyası olarak değerlendirildi. GPR kısmı ise
+10'dan fazla bağımsız değerle (cache ve eleman işaretçileri dahil) doğrulandı.
+Bu yığın, ThreadList'te kaydı olmayan çökme thread'ine aittir; tam bellek
+dump'ı onun yığın baytlarını yine de saklamış.
+
+**T2 — Fail eden cache yine `m_SuperEffectEmitters`; sayaçlar:**
+
+| Cache | adres | cached | active | total | deletedN |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `m_Emitters` | `0x2b21b8327d8` | 2016 | 32 | 2048 | 0 |
+| `m_SuperEffectEmitters` | `0x2b21b832850` | 163 | 93 | 256 | **1** |
+| `m_EventInstanceList` | `0x2b21b8328c8` | 755 | 13 | 768 | 0 |
+
+`C_ParticleManager* = 0x2b21b832050`; üç cache `+0x788 / +0x800 / +0x878`
+adreslerinde (Manager.h:290-292 sırası) ve kendi kendini gösteren
+`m_pCachedElements/m_pActiveElements/m_pDeletedElements` işaretçileriyle
+doğrulandı. 163 + 93 = 256 (tam).
+
+**T3 — Triyaj dump'ında olmayan diziler artık okunabiliyor.**
+`m_Cache.elements = 0x2b224b24040`, `m_Active.elements = 0x2b224b2a6a0`,
+`m_Deleted.elements = 0x2b224b2b7b0` (üçü de kapasite 511).
+
+**T4 — Hangi operandın tetiklediği exit anında da okunuyor.**
+`m_ActiveElements = 93` (> 0) → birinci yarı **yanlış**.
+Bekleyen eleman `m_Deleted[0] = 0x2b20c365db0` ve
+`m_VectorPosition (pElement+0xB0) = -1` → ikinci yarı **doğru**.
+T1'deki `rsi` bu eleman, `rdi` bu cache: triyajdaki rol dağılımı birebir
+tekrarlandı. Yani sonuç "exit anında okunamıyor" değil; **okunuyor**.
+
+**T5 — Çift serbest bırakma artık doğrudan kanıt: bekleyen eleman zaten
+serbest listesinde.**
+`m_Deleted[0] = A = 0x2b20c365db0` **ve** `m_Cache[162] = A`
+(`m_CachedElements = 163` → serbest yığınının tepesi) ve
+`A.m_VectorPosition = -1`. Yani silinen kuyruğu, serbest listeye geri
+dönmüş bir elemanı taşıyor; invariant'ın yakaladığı durum tam olarak budur.
+Triyaj dump'ında bu kontrol yapılamıyordu (dizi yoktu).
+
+**T6 — Son dört serbest bırakma, silinen dizisinin dört gözüyle aynı
+elemanlar.**
+`m_Deleted[0..3]` = A, B (`0x2b20c36bfb0`), C (`0x2b20c36b1b0`),
+D (`0x2b20c3683b0`) (sayaç 1 → yalnızca [0] güncel, [1..3] önceki
+partilerden kalma). Bu dört eleman `m_Cache[162], [161], [159], [160]`
+gözlerinde; yani serbest yığınının en üstündeki dört kayıt bunlar. Dördü de
+aynı sahip nesnesiyle eşleşiyor: `0x2b21ebdbe20` (vtable RVA `0x1120798`,
+`+0x18` alanı `C_ParticleManager*` = `0x2b21b832050`).
+
+**T7 — Cache muhasebesi tutarlı.**
+`m_Active[0..92]` içinde 93 kayıt, hepsinde `position == index`
+(0 uyuşmazlık). `m_Cache[0..162]`: 157 giriş `position == index`
+(hiç kullanılmamış rezerv), 5 giriş `-1`, 1 giriş `96` (C).
+`m_Active[93..98]` aktif sayının üstündeki bayat kuyruk yuvaları
+(Free'nin swap-remove'unun beklenen artığı).
+
+**T8 — "position 96" durumu: `Free()`'nin son-aktif-eleman swap'i.**
+C = `0x2b20c36b1b0` aynı anda hem `m_Cache[159]` içinde, hem `m_Active[96]`
+bayat yuvasında ve `m_VectorPosition = 96` (aktif sayı 93 iken). Söküm
+(`Amax.exe`, RVA):
+
+```text
+1402FC927  mov   dword ptr [rsi+0B0h],0FFFFFFFFh  ; pElement->m_VectorPosition = -1
+1402FC93E  mov   qword ptr [rax+rcx*8],rsi        ; m_Cache[cached++] = pElement
+1402FC942  movsxd rcx,dword ptr [rdi+34h]         ; m_ActiveElements
+1402FC946  lea    eax,[rcx-1]
+1402FC949  mov    dword ptr [rdi+34h],eax         ; --m_ActiveElements
+1402FC950  mov    rdx,qword ptr [rax+rcx*8-8]     ; pEnd = m_Active[eski-1]
+1402FC955  mov    dword ptr [rdx+0B0h],r8d        ; pEnd->m_VectorPosition = freePosition
+1402FC960  mov    qword ptr [rax+r8*8],rdx        ; m_Active[freePosition] = pEnd
+```
+
+`freePosition == eski-1` iken `pEnd == pElement` olur: eleman hem serbest
+listeye itilir hem de `position` değeri -1'den geri yazılır. Gözlenen C
+durumu (aynı anda cache'te + aynı indekste bayat aktif yuvada + pozitif
+`position`) bu kodla açıklanan tek durumdur; bu yüzden T8 "kanıtlanan"
+sayıldı. Sonucu: aynı çift-bırakma, eleman aktif listenin **son** elemanı
+iken oluşursa invariant **tetiklenmez** ve kontrol bu varyantı kaçırır
+(bu, C'nin durumundan çıkan bir sonuç; C için ikinci bir bırakma
+kanıtlanmadı).
+
+**T9 — A hâlâ birden çok yerde referans ediliyor.**
+Tam bellekte `A` 9 kez geçiyor: `m_Cache[162]` ve `m_Deleted[0]` dışında
+`0x2b21148dac0`, `0x2b211a65010`, `0x2b211a65020` (16 bayt arayla iki
+komşu kayıt; her ikisinde de ikinci dword 0), `0x2b226684d30` ve
+`0x2b226c53d70` (16 baytlık `{emitter*, 0x2b21ebdbe20}` çiftleri), ayrıca
+`0xc91ecfe628` ve `0xc91ecfe6e8` (çökme yığını; ikincisi T1'deki `rsi`).
+
+### Hipotez
+
+**H5 — İkinci `AtomicFree` eski bir partikül/trail referansından geliyor
+(aday, kanıtlanmadı).** `I_ParticleSuperEffect::DeleteTrailBlock`
+(`SuperEffect.cpp:185-195`) emitter'ı `Free()` ile bırakırken
+`pParticle->pEmitter` alanını **NULL'lamıyor**; `FreeParticle`
+(`SuperEffect.cpp:222-230`) ise aynı alanı `AtomicFree()` ile kuyruğa atıyor
+ve tek koruma `iSalt != pEmitter->GetSalt()` karşılaştırması. Serbest
+bırakılmış bir emitter'ın salt'ı yeniden kullanılana kadar değişmediği için
+bayat işaretçi kontrolü geçip ikinci kez kuyruğa girebilir. T9'daki komşu
+iki 16 baytlık kayıt bu tür bir bayat referansa işaret eder, ancak yapı
+kimliği (partikül mü, başka bir liste mi) **kanıtlanmadı**.
+
+**H6 — Çökme, aynı emitter'ın ikinci kez bırakılmasıdır; ilk bırakma
+meşru bir drenajdı.** T6'ya göre A, B, C, D son dört `Free()` çağrısının
+ürünü ve aynı anda silinen dizisinde duruyorlar; A ayrıca yeni bir parti
+olarak yeniden kuyruğa girmiş (sayaç 1). Yani ilk bırakma bir drenajda
+gerçekleşmiş, ikinci kuyruğa giriş ise daha sonraki bir bayat referanstan
+gelmiş olmalı. Sıra/parti geçmişi dizinin üzerine yazılması nedeniyle
+kesin olarak kurulamıyor.
+
+**H7 — Girdi ilişkisi hâlâ kurulmadı.**
+W 12.88 s'de basıldı, süreç ~25.94-26 s'de öldü (~13 s sürüş). Triyaj
+koşusunda bu süre ~1 s ve aktif emitter sayısı 14 idi; burada 93. Yani
+arıza sabit bir "girişten X saniye sonra" davranışı göstermiyor ve farklı
+emitter yüklerinde de oluşuyor. Girişsiz eşleşmiş bir koşunun dump'ı
+olmadığı için nedensellik iddiası kurulamaz.
+
+### Triyaj dump'ı ile karşılaştırma
+
+| Öğe | Triyaj (`crash.dmp`) | Tam bellek (`full-exit.dmp`) |
+| --- | --- | --- |
+| EXE / PDB | `e9727929…` / `98303296…` | aynı |
+| Kod noktası | `Atomic.h:224` (`Update+0x4D`) | aynı (T1) |
+| Çağrı zinciri | Update → UpdateSuperEmitters → GameWorld::Update | aynı RVA'lar (T1) |
+| Tetikleyen operand | `m_VectorPosition == -1` | aynı (T4) |
+| `m_ActiveElements` | 14 | 93 |
+| `m_CachedElements` | 242 | 163 |
+| `m_DeletedElements` | 1 | 1 |
+| Toplam eleman | 256 | 256 |
+| Silinen eleman | `0x11883a48900` | `0x2b20c365db0` |
+| Eleman serbest listede mi? | **bilinmiyor** (dizi yok) | **evet**, `m_Cache[162]` (T5) |
+| W sonrası geçen süre | ~1 s | ~13 s |
+
+Aynı olan: kod yolu, operand, cache kimliği, muhasebe kuralı
+(cached + active = total). Değişen: aktif emitter sayısı, silinen elemanın
+adresi ve çökmeye kadar geçen süre. Bu, arızanın belirli bir kareye/süreye
+bağlı olmadığını, tekrar eden bir "zaten bırakılmış emitter'ı yeniden
+bırakma" örüntüsü olduğunu gösterir.
+
+### Kapanan ve kapanmayan sorular
+
+Kapanan: hangi operand (iki dump ile), elemanın serbest listede olup
+olmadığı (T5), serbest/aktif dizilerinin okunması (T3), exit anı ile
+breakpoint anının aynı olması (T1), "son aktif eleman" varyantının varlığı
+(T8).
+
+Kapanmayan: ikinci `AtomicFree`'yi yapan **çağıran** (hâlâ yok — dönüş
+adresi kaydı yok), thread çakışması (dump'ta tek thread kaydı ve sıfır
+register), efekt tanımının adı/kimliği (`0x2b21ebdbe20` sahibi
+isimlendirilemedi), girişsiz koşuyla nedensellik (H7).
+
+### Sıradaki en küçük adım
+
+**Kod çalıştırmadan, elimizdeki dump üzerinde:** `0x2b21ebdbe20` sahip
+nesnesinin tanım işaretçisini (definition/effect) çözüp A-D emitter'larının
+hangi efektin trail emitter'ları olduğunu ve T9'daki iki komşu 16 baytlık
+kaydın hangi yapıya (partikül dizisi mi) ait olduğunu belirlemek. Bu,
+"bayat referans" hipotezini (H5) ya güçlendirir ya çürütür ve tek bir
+okuma turuyla yapılabilir. Ardından, hâlâ gerekiyorsa, çağıranı kesin
+saptamak için `AtomicFree`/`Free` girişlerine sınırlı (assert'e dokunmayan)
+izleme eklenir. Hiçbir aşamada assert kaldırılmaz ve bu rapor bir düzeltme
+iddiası taşımaz.
