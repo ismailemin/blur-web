@@ -69,6 +69,7 @@ assert.equal(wasmAll.metadata.emittedInstanceCount,14);
 assert.equal(wasmAll.metadata.omittedOtherBlockInstances,35);
 assert.equal(wasmAll.metadata.unsupportedBoundsInstances,8);
 assert.equal(wasmAll.metadata.instanceCount,57);
+assert.deepEqual(wasmAll.metadata.requiredGeometryBlocks,[15,17,26,27,31,32]);
 assert.equal(wasmAll.metadata.vertexCount,7308);
 assert.equal(wasmAll.metadata.triangleCount,6106);
 assert.ok(wasmAll.metadata.boundsMaxAbsoluteDifference<=0.0001);

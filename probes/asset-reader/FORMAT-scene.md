@@ -250,12 +250,19 @@ a **River · instance prova** preset; it is one instance, not a track.
 
 `level_instances_all_inspect(...)` is an additive variant over the same inputs.
 It emits every instance whose VB/IB bind the selected geometry block and whose
-constant affine transform matches archived bounds. Block27/node253 yields
-**14 emitted**, **8 unsupported bounds**, **35 other-block**, with
-**7,308vertices/6,106triangles** and maximum bound error `6.02444e-05`. Instances
-using base primitives7–10 are skipped explicitly because their additional stream
-semantics are not applied. The browser exposes this as **River · 14 instance**.
-It is not a full track.
+constant affine transform matches archived bounds. It also returns
+`requiredGeometryBlocks` and per-instance VB/IB source identities, so a caller
+can fetch and merge every relevant geometry chunk. A block with zero supported
+instances returns `status:"ok"` with `emittedInstanceCount:0` and explicit
+`unsupportedBoundsInstances`; callers must not treat that as a binding.
+Block27/node253 yields **14 emitted**, **8 unsupported bounds**, **35
+other-block**, with **7,308vertices/6,106triangles** and maximum bound error
+`6.02444e-05`. Instances using base primitives7–10 are skipped explicitly because
+their additional stream semantics are not applied. A multi-block scan
+(`[15,17,26,27,31,32]`) adds block15's4 instances (total18,8,688vertices/
+7,085triangles); blocks17/26/32 need base17/26/32 stream semantics and block31
+needs an additional ChunkInfo prerequisite. The browser exposes
+**River · tüm desteklenen** for the merge. It is not a full track.
 
 
 The native three-input river fixture yields344vertices,208triangles,five direct

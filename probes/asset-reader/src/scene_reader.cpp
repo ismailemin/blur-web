@@ -781,9 +781,11 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
         cursor=item.end;
     }
     if(!found_target)throw std::runtime_error("Target geometry item was not reached");
+    if(target.vbs.empty()||target.ibs.empty())throw std::runtime_error("Target geometry item has no vertex/index buffers");
 
     struct Proof {int32_t index=0,base=0;std::array<float,16> matrix{};std::array<double,3> low{},high{};double error=0;uint32_t first=0,count=0;};
-    std::vector<float> positions;std::vector<uint32_t> indices;std::vector<Proof> proofs;
+    struct SourceInfo {int32_t index=0,vbBlock=0,vbIndex=0,ibBlock=0,ibIndex=0;};
+    std::vector<float> positions;std::vector<uint32_t> indices;std::vector<Proof> proofs;std::vector<SourceInfo> sources;
     uint32_t omitted=0,unsupported=0;double maximum_error=0;
     const size_t target_count=all_instances?list.instances.size():1;
     for(size_t instance_index=0;instance_index<target_count;instance_index++){
@@ -803,6 +805,7 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
         if(selected->vb<0||size_t(selected->vb)>=list.vertex_sources.size()||primitive.ib<0||size_t(primitive.ib)>=list.index_sources.size())throw std::runtime_error("Instance resource source index out of bounds");
         const auto& vertex_source=list.vertex_sources[size_t(selected->vb)];
         const auto& index_source=list.index_sources[size_t(primitive.ib)];
+        sources.push_back({int32_t(instance_index),vertex_source.block,vertex_source.index,index_source.block,index_source.index});
         if(vertex_source.block!=geometry_block||index_source.block!=geometry_block){
             if(all_instances){++omitted;continue;}
             throw std::runtime_error("Instance VB/IB do not bind the selected geometry block");
@@ -885,10 +888,27 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
         maximum_error=std::max(maximum_error,proof.error);
         proofs.push_back(std::move(proof));
     }
-    if(proofs.empty())throw std::runtime_error("No instance binds the selected geometry block");
+    if(proofs.empty()){
+        if(!all_instances)throw std::runtime_error("No supported instance binds the selected geometry block; omittedOtherBlock="+std::to_string(omitted)+" unsupportedBounds="+std::to_string(unsupported));
+        std::vector<int32_t> blocks;
+        for(const auto& source:sources){blocks.push_back(source.vbBlock);blocks.push_back(source.ibBlock);}
+        std::sort(blocks.begin(),blocks.end());blocks.erase(std::unique(blocks.begin(),blocks.end()),blocks.end());
+        std::ostringstream out;out.imbue(std::locale::classic());
+        out<<"{\"status\":\"ok\",\"positions\":[],\"indices\":[],\"draws\":[],\"bounds\":{\"min\":[0,0,0],\"max\":[0,0,0]},\"metadata\":{\"instancesApplied\":true,\"nodeTransformsApplied\":true,\"coordinateSpace\":\"world\",\"instanceIndex\":0,\"instanceCount\":"<<list.instances.size()
+           <<",\"emittedInstanceCount\":0,\"omittedOtherBlockInstances\":"<<omitted<<",\"unsupportedBoundsInstances\":"<<unsupported
+           <<",\"vertexCount\":0,\"triangleCount\":0,\"boundsMaxAbsoluteDifference\":0,\"boundsAvailable\":false,\"geometryBlock\":"<<geometry_block<<",\"nodeBlock\":"<<node_block
+           <<",\"geometryChunkIndex\":"<<geometry_chunk_index<<",\"geometryItemIndex\":"<<geometry_item<<",\"nodeChunkIndex\":"<<node_chunk_index
+           <<",\"requiredGeometryBlocks\":[";for(size_t i=0;i<blocks.size();i++){if(i)out<<',';out<<blocks[i];}
+        out<<"],\"instanceSources\":[";for(size_t i=0;i<sources.size();i++){if(i)out<<',';const auto&s=sources[i];out<<"{\"instanceIndex\":"<<s.index<<",\"vertexBlock\":"<<s.vbBlock<<",\"vertexIndex\":"<<s.vbIndex<<",\"indexBlock\":"<<s.ibBlock<<",\"indexIndex\":"<<s.ibIndex<<'}';}
+        out<<"],\"integrityValidated\":false,\"material\":\"diagnostic-only\",\"scope\":\"no instance bound to this geometry block passed the constant affine bounds check\"}}";
+        return out.str();
+    }
 
     std::array<double,3> world_min{INFINITY,INFINITY,INFINITY},world_max{-INFINITY,-INFINITY,-INFINITY};
     for(const auto& proof:proofs)for(int a=0;a<3;a++){world_min[size_t(a)]=std::min(world_min[size_t(a)],proof.low[size_t(a)]);world_max[size_t(a)]=std::max(world_max[size_t(a)],proof.high[size_t(a)]);}
+    std::vector<int32_t> required_blocks;
+    for(const auto& source:sources){required_blocks.push_back(source.vbBlock);required_blocks.push_back(source.ibBlock);}
+    std::sort(required_blocks.begin(),required_blocks.end());required_blocks.erase(std::unique(required_blocks.begin(),required_blocks.end()),required_blocks.end());
 
     std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<float>::max_digits10);
     out<<"{\"status\":\"ok\",\"positions\":[";for(size_t i=0;i<positions.size();i++){if(i)out<<',';out<<positions[i];}
@@ -906,7 +926,14 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
     out<<"],\"boundsMaxAbsoluteDifference\":"<<maximum_error<<",\"geometryBlock\":"<<geometry_block<<",\"nodeBlock\":"<<node_block
        <<",\"geometryChunkIndex\":"<<geometry_chunk_index<<",\"geometryItemIndex\":"<<geometry_item<<",\"nodeChunkIndex\":"<<node_chunk_index
        <<",\"geometryStreamOffset\":"<<geometry_record->offset<<",\"nodeStreamOffset\":"<<node_record.offset
-       <<",\"instances\":[";
+       <<",\"requiredGeometryBlocks\":[";
+    for(size_t i=0;i<required_blocks.size();i++){if(i)out<<',';out<<required_blocks[i];}
+    out<<"],\"instanceSources\":[";
+    for(size_t i=0;i<sources.size();i++){
+        if(i)out<<',';const auto&s=sources[i];
+        out<<"{\"instanceIndex\":"<<s.index<<",\"vertexBlock\":"<<s.vbBlock<<",\"vertexIndex\":"<<s.vbIndex<<",\"indexBlock\":"<<s.ibBlock<<",\"indexIndex\":"<<s.ibIndex<<'}';
+    }
+    out<<"],\"instances\":[";
     for(size_t i=0;i<proofs.size();i++){
         if(i)out<<',';const auto&p=proofs[i];
         out<<"{\"instanceIndex\":"<<p.index<<",\"basePrimitiveIndex\":"<<p.base<<",\"firstIndex\":"<<p.first<<",\"indexCount\":"<<p.count<<",\"matrix\":[";
