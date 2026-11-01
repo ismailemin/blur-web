@@ -1,8 +1,8 @@
 # T-005 — Tek oyunculu dikey dilim
 
-**Durum:** planned (T-003/T-004'ten bağımsız ilerleyebilir; fizik referansı T-004'e bağlı)
+**Durum:** in-progress (T-005a kaynak denetimi başladı; motor derlemesi yok)
 **Sahip:** ana ajan
-**Başlangıç:** —
+**Başlangıç:** 2 Kasım 2026
 **Bitiş:** —
 
 ## Amaç

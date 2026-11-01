@@ -12,7 +12,7 @@ hangi kanıtla kapattığını kaybetmemek.
 | T-002 — Level instance dönüşümleri | done | P0 | T-001 | `tasks/T-002-level-instances.md` |
 | T-003 — Scene/level kapsamını genişletme | in-progress (18 instance / 2 blok; kalan stream semantiği) | P1 | T-002 | `tasks/T-003-scene-traversal.md` |
 | T-004 — Native particle-cache çökmesi | kök neden + 2 reddedilen fix; sahiplik sözleşmesi açık | P1 | — | `analysis/native-particle-crash.md` |
-| T-005 — Tek oyunculu dikey dilim | planned (alt görevlere bölündü) | P1 | T-003/T-004 | `tasks/T-005-single-player-vertical-slice.md` |
+| T-005 — Tek oyunculu dikey dilim | in-progress (T-005a kaynak denetimi) | P1 | T-003/T-004 | `tasks/T-005-single-player-vertical-slice.md` |
 
 Durumlar: `planned`, `in-progress`, `blocked`, `done`, `superseded`.
 
