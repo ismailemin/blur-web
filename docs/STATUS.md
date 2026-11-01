@@ -239,4 +239,9 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Her iki deneme geri alındı; kanonik `Amax.exe` değişmedi. Patch'ler `_work/build/engine-reference/native-saltfix-attempt.patch`, `native-drainfix-attempt.patch`; loglar `_work/logs/saltfix-runs.log`, `drainfix-runs.log`.
 - Bulgu: hata salt artışının yerine bağlı değil; asıl açık trail elemanının `pEmitter` alanını kimin geçersiz kıldığı. Sıradaki: sahiplik kuralını kaynakla sözleşmeye dönüştürmek; AV için düzeltmesiz build'de tam dump almak.
 
+## 2 Kasım 2026 — üçüncü düzeltme denemesi (reddedildi)
+
+- `DeleteTrailBlock` içinde serbest bırakılan `C_Particle_E` için `pEmitter = NULL` ve `m_Element.Clear()` eklendi; `Amax-trailfix.exe` ile 3 koşu: 1× `0x80000003`, 2× `0xC0000005` (18s). Kabul edilmedi; kaynak geri alındı.
+- Patch `_work/build/engine-reference/native-trailfix-attempt.patch`, log `_work/logs/trailfix-runs.log`. Gözlenen çift-free `FreeParticle`/`Emitter::Update` yolundan geliyor; `DeleteTrailBlock` bu yolu kapsamıyor. Sıradaki: Aday 2 (trail-owned bayrağı) ancak tam dump'lı koşuyla; assert kaldırılmadı.
+
 

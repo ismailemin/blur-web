@@ -26,11 +26,12 @@
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
   **River · instance prova** ve **River · 14 instance** preset'leri var.
-- Native x64 Amax Release derlemesi başarılı. Particle-cache kök nedeni ve iki
+- Native x64 Amax Release derlemesi başarılı. Particle-cache kök nedeni ve üç
   düzeltme denemesi belgelendi: kuyruk girişinde salt artışı 1/3 exit0 + 2/3
-  `0xC0000005`; drenajı senkron `Free`'ye taşımak 3/3 `0xC0000005`. Denemeler
-  geri alındı; kanonik `Amax.exe` değişmedi. Asıl açık, trail elemanının
-  `pEmitter` alanını kimin geçersiz kıldığı (sahiplik sözleşmesi).
+  `0xC0000005`; drenajı senkron `Free`'ye taşımak 3/3 `0xC0000005`;
+  `DeleteTrailBlock` temizliği 1/3 orijinal breakpoint + 2/3 `0xC0000005`.
+  Üçü de geri alındı; kanonik `Amax.exe` değişmedi. Gözlenen çift-free
+  `FreeParticle`/`Emitter::Update` yolundan geliyor; trail sahipliği açık.
 - Doğrulama: `verify_asset_probe.py --skip-build` **27/27**, CTest **14/14**.
 
 ## Sıradaki iş

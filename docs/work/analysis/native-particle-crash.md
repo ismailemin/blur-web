@@ -982,6 +982,30 @@ Sözleşme ihlali burada somutlaşıyor: **bırakma ile bayat referansın
 kullanımı arasında nesli ilerleten hiçbir işlem yok**; iki drenajın sırası
 bu pencerenin her karede açılmasını sağlıyor.
 
+**SC9 — Bu derlemede sözleşme assert'leri derlenmiyor.**
+`cmake/blur_common.cmake:71` Release'ı `BUILD_CONFIG_SPEED`'e eşliyor;
+`core/Core.h:64-77` bunu `CFG_SPEED`'e çeviriyor; `CoreDebug.h:8-11`
+`CFG_SPEED` altında `assert(x)`'i **boş** tanımlıyor, `bizassert.h:146-149`
+da `BIZ_ASSERT`'i kapatıyor. Yani `SuperSpawn.cpp:20,41,87,116,142`,
+`Block.h` `ElementVector::PushBack/PopBack` ve `operator[]` sınır
+kontrolleri **derlenmiyor**. Yalnızca `Atomic.h`'deki `DebugBreak()`
+(assert değil, doğrudan çağrı) ayakta kalıyor — çökmede gördüğümüz tek
+çalışan sözleşme kontrolü budur. `CFG_GOLD` tanımlı olmadığı için o da
+aktif.
+
+**SC10 — Trail bloğunun nesil sayacı yok ve serbest bırakılırken
+temizlenmiyor.**
+`ParticleTrailBlock` (`Block.h:22-34`) yalnızca `m_pEffect`,
+`m_VectorPosition`, `m_EffectIndex`, `m_Element` taşır — **salt alanı
+yoktur**. `I_ParticleSuperEffect::DeleteTrailBlock` (`SuperEffect.cpp:180-207`)
+emitter'ları bırakır, elemanları `NULL`'lamaz ve `m_Element.Clear()`
+çağırmadan `FreeBlock` eder (`:206`). Karşılaştırma: aynı dosyadaki
+`I_ParticleSuperEffect::Free` (`:82-83`) `Clear()` **eder**; ana blok tarafında
+`I_ParticleEffectBase::DeleteBlock` (`EffectInterface.cpp:235-236`) hem
+`Clear()` hem `++pDelete->m_iSalt` yapar. Yani trail bloğu, havuzda
+bayat `C_Particle_E` kayıtlarıyla kalabilir ve bu durumu yakalayacak
+assert (`SuperSpawn.cpp:142`) SC9 gereği derlenmiyor.
+
 ### Hipotez
 
 **H11 — Bayat kalan trail elemanının kimliği (hangi blok/indeks) hâlâ
@@ -1342,3 +1366,319 @@ Kapanmayan: AV'lerin nedeni (E4, H21/H22), sahiplik devrinin doğru tanımı
 Bu bölüm bir düzeltme iddiası taşımaz; assert'in kaldırılması veya
 zayıflatılması önerilmez. Reddedilen deneme geri alınmıştır ve kanonik
 çalıştırılabilir değişmemiştir (E1-E5).
+
+---
+
+## Tam sahiplik taraması — 2 Kasım 2026 (yedinci tur)
+
+Kapsam: izole worktree kaynağının tam taraması (`code/mercury/library/graphics/
+dynamic/**`, `Graphics/Dynamic/include/Dynamic/Atomic.h`, `core/Core.h`,
+`core/utility/CoreDebug.h`, `core/bizassert.h`, `cmake/blur_common.cmake`).
+Oyun çalıştırılmadı; **hiçbir kod değiştirilmedi**; aşağıdaki "düzeltme
+adayları" yalnızca tanımdır. **Şu an kodda bu soruna yönelik bir düzeltme
+yoktur** (izole worktree bu dosyalar için temel çizgide).
+
+Bu bölüm, "Sahiplik sözleşmesi" (SC1-SC10) ve iki reddedilen denemenin
+(D1-D4, E1-E5) üzerine kuruludur; yeni bölüm numaraları **M1-M8**'dir.
+
+### Önce yapılandırma: hangi kontroller gerçekten derleniyor
+
+| Kontrol | Kaynak | Release (bu build) durumu |
+| --- | --- | --- |
+| `assert(...)` | `CoreDebug.h:8-11` + `cmake/blur_common.cmake:71` (`BUILD_CONFIG_SPEED` → `CFG_SPEED`) | **derlenmiyor** |
+| `BIZ_ASSERT(...)` | `bizassert.h:146-149` | **derlenmiyor** |
+| `AtomicActiveCache` invariant'ı | `Atomic.h:311-331` (`DebugBreak()`, `#ifndef CFG_GOLD`) | **aktif** |
+
+Sonuç (M0): partikül kodundaki tüm sözleşme assert'leri (blok/eleman boyu
+eşitliği, "blok boş olmalı", `ElementVector` sınırları) bu profilde **yok**;
+çalışan tek kontrol, çökmeyi üreten `DebugBreak()`'tir. Bu, iki düzeltme
+denemesinde belirtinin neden AV'ye dönüştüğünü açıklayan en güçlü zemindir
+(hipotez: H17/H21 bu bölümde M7 ile güncellenir).
+
+### M1 — `C_Emitter` üretim ve bırakma yollarının tamamı
+
+**Üretim (allocate):**
+
+| # | yer | liste | nasıl |
+| --- | --- | --- | --- |
+| A1 | `Manager.cpp:296` | `m_Emitters` | `Cache(new C_Emitter(this,&m_Emitters,i))` — havuz kurulumu |
+| A2 | `Manager.cpp:308` | `m_SuperEffectEmitters` | `Cache(new C_Emitter(...))` — havuz kurulumu |
+| A3 | `Event.cpp:92` | `m_Emitters` | `GetEmitterList()->AtomicAllocate()` (event spawn) |
+| A4 | `SuperSpawn.cpp:22` | `m_SuperEffectEmitters` | trail spawn, **eleman başına bir emitter** |
+| A5 | `SuperSpawn.cpp:43` | `m_SuperEffectEmitters` | aynı, toplu spawn yolu |
+| A6 | `SuperEffect.cpp:298,317,347,387` (+ aynı kodun XM'siz kopyaları `:451,470,499,536`) | `m_SuperEffectEmitters` | death / collision / collisionOnce — "ateşle-unut", hiçbir elemana bağlanmaz |
+| A7 | `Track.cpp:397` | track listesi | kapsam dışı (ayrı sistem) |
+
+**Bırakma (release):**
+
+| # | yer | yol | liste | tür | salt artar mı |
+| --- | --- | --- | --- | --- | --- |
+| R1 | `Emitter.cpp:167` (`C_Emitter::Free`) | `m_pEmitterList->Free(this)` → `emitterlist.cpp:20-28` | ikisi de | **senkron** | **evet** |
+| R2 | `Emitter.cpp:179` (`C_Emitter::AtomicFree`) | `Atomic.h:352-360` | ikisi de | ertelenmiş | hayır |
+| R3 | `Emitter.cpp:259` (`m_bDelete` dalı) → R2 | — | ikisi de | ertelenmiş | hayır |
+| R4 | `Emitter.cpp:493` (süre bitti, emit yok) → R2 | — | ikisi de | ertelenmiş | hayır |
+| R5 | `SuperEffect.cpp:78` (`I_ParticleSuperEffect::Free`) | `GetSuperEffectEmitterList()->Free(...)` | süper | **senkron** | **evet** |
+| R6 | `SuperEffect.cpp:193` (`DeleteTrailBlock`) | aynı → R1 yolu | süper | **senkron** | **evet** |
+| R7 | `SuperEffect.cpp:229` (`FreeParticle`) | `pEmitterList->AtomicFree(...)` | süper | **ertelenmiş** | hayır |
+| R8 | `Manager.cpp:767` (`CleanEmitterDefinition`) | `m_Emitters.Free(pEmitter)` | normal | senkron | evet |
+| R9 | `Manager.cpp:776` (aynı, süper) | `m_SuperEffectEmitters.Free(...)` | süper | senkron | evet |
+| R10 | `Manager.cpp:789` (`CleanEffect`) | `m_Emitters.Free(...)` | normal | senkron | evet |
+| R11 | `Manager.cpp:814` (`CleanNode`) | `pEmitter->Free()` → R1 | normal | senkron | evet |
+| R12 | `Manager.cpp:1105` (`Reset`) | `pEmitter->Free()` → R1 | normal | senkron | evet |
+| R13 | `Manager.cpp:255-256` (`~C_ParticleManager`) | `m_Emitters.Free()` / `m_SuperEffectEmitters.Free()` | ikisi de | toplu silme | — |
+| R14 | `EventInstance.cpp:304` (`FreeRemove`) | `m_Emitters[i]->Free()` → R1 | normal | senkron | evet |
+| R15 | `EventInstance.cpp:315` (`C_EventInstance::Free`) | `pEmitter->AtomicFree(pEmitter)` → R2 | normal | ertelenmiş | hayır |
+| R16 | `Atomic.h:224` (**drenaj**) | `Free(m_Deleted[i])` — taban sınıf | ikisi de | senkron | **hayır** |
+
+Drenajın çağrı yerleri (iki tane): `Manager.cpp:1339` (`UpdateSuperEmitters`)
+ve `Manager.cpp:1385` (`UpdateSpawn`). Ayrıca `Manager.cpp:1131-1132`
+(`Reset`) ve `Manager.cpp:1319` (`UpdateEmitters`, yalnız `m_Emitters`) ve
+`Manager.cpp:1382` (`UpdateSpawn`, yalnız `m_Emitters`) de `Update()`
+çağırıyor.
+
+**Sonuç (M1):** süper-listeye dokunan **9** bırakma yolundan **4'ü** senkron
+(R1, R5, R6, R9 — salt artar), **5'i** ertelenmiş (R2, R3, R4, R7, R16 —
+artmaz). Normal listede de ertelenmiş yollar (R2, R3, R4, R15) salt'ı
+artırmıyor. Yani nesil sayacı, gerçek bırakmaların çoğunda ilerlemiyor —
+SC5 bunun tek örneği değil.
+
+### M2 — `C_Particle_E::pEmitter` yazan/temizleyen tüm yerler
+
+| # | yer | ne yapar | koruma |
+| --- | --- | --- | --- |
+| W1 | `SuperSpawn.cpp:22`, `:43` | spawn'da **atar**, `iSalt`'ı da yazar (`:24`, `:45`) | `AtomicAllocate()` NULL ise atama yapılmaz (`if((pTrailParticle->pEmitter = ...))`) |
+| W2 | `SuperEffect.cpp:76` (`Free`) | salt uyuşmazsa `NULL` | `if(pParticle->pEmitter)` |
+| W3 | `SuperEffect.cpp:191` (`DeleteTrailBlock`) | aynı | aynı |
+| W4 | `SuperEffect.cpp:227` (`FreeParticle`) | aynı | aynı |
+| W5 | `SuperEffect.cpp:255`, `:278`, `:415`, `:436` (`UpdateTrails` dört varyant) | aynı | aynı |
+| C1 | `SuperEffect.cpp:236` (`*pDest = *pSrc`) | tam eleman kopyası (pEmitter + iSalt birlikte taşınır) | — |
+| C2 | `SuperEffect.cpp:219` (`memcpy` ana blok) | ana partikül kopyası | — |
+| U1 | `SuperSpawn.cpp:189-195` (`CreateTrails`) | **yalnız NULL kontrolü**, salt kontrolü yok; `SetTransform` vb. | `if(pParticle->pEmitter)` |
+
+**Sonuç (M2):** `pEmitter`'ı temizleyen tek mekanizma **salt karşılaştırması**
+(W2-W5). Başka hiçbir yer (blok silme, emitter ölümü, drenaj) `pEmitter`'ı
+temizlemiyor. Yani "emitter öldü" bilgisi trail tarafına **yalnızca** nesil
+sayacıyla ulaşabilir; sayaç ilerlemezse hiç ulaşmaz.
+
+### M3 — `iSalt` yazan/okuyan tüm yerler
+
+| yer | işlem |
+| --- | --- |
+| `Emitter.cpp:89` (`SetDefaults`) | **0'a yazar** (başlangıç) |
+| `emitterlist.cpp:24` (`C_EmitterList::Free`) | **`+= 1`** — tek artırım |
+| `SuperSpawn.cpp:24`, `:45` | elemana **kopyalar** |
+| `Emitter.h:44` (`GetSalt`, inline) | okur |
+| `SuperEffect.cpp:75,190,226,254,277,414,435` | okur (karşılaştırma) |
+
+Artırmayan yollar: `Atomic.h:352-360` (`AtomicFree`), `Atomic.h:311-331`
+(drenaj `Free`), `Emitter.cpp:179` (`C_Emitter::AtomicFree`),
+`SuperEffect.cpp:229` (`FreeParticle`). `SetSalt` diye bir API yok.
+
+**Karşılaştırma — aynı desenin doğru kurulduğu yerler:**
+- `C_EventInstance`: `Manager.cpp:1659-1668`, **her iki** yolda `m_iSalt += 2`.
+- `ParticleBlock`: `EffectInterface.cpp:236` `++pDelete->m_iSalt`, tüketici
+  `m_iBlockSalt` (`Emitter.h:105,113`; karşılaştırma `SuperSpawn.h:53`,
+  `Spawn.h:76`).
+- `ParticleTrailBlock`: **salt alanı yok** (SC10), dolayısıyla blok yeniden
+  kullanımı hiçbir şekilde tespit edilemez.
+
+**Sonuç (M3):** projede "bırakınca nesli artır" deseni var ve event
+instance/blok tarafında tutarlı uygulanmış; **emitter tarafında yalnızca
+senkron yolda** uygulanmış, trail bloğunda ise hiç yok.
+
+### M4 — TrailBlock yaşam döngüsü
+
+1. **Oluşturma:** `SuperSpawn.cpp:139` `pTrailBlockManager->NewBlock()`
+   (havuzdan); ana bloğun `queuePosition`'ı ile indekslenir
+   (`SuperSpawn.cpp:144-147`), `m_EffectIndex = t`.
+2. **Eleman ekleme:** `SuperSpawn.cpp:21-26` / `:42-47` — her partikül için
+   her trail efekti bir `C_Particle_E` iter (`PushBack`), emitter atanır,
+   `iSalt` kopyalanır, `SetDefinition(&trailEffects[t].definition)` çağrılır.
+   Ana blok ile trail dizileri **indeks paraleldir** (assert `:20`, `:41`;
+   `SuperSpawn.cpp:87`).
+3. **Eleman silme:** `SuperEffect.cpp:234-240` — son eleman `i`'ye kopyalanır,
+   `PopBack`. Emitter `:226-230`'da bırakılır.
+4. **Blok bırakma (normal):** `m_DeletedSuperBlocks` → `UpdateSuperEmitters`
+   (`Manager.cpp:1344-1355`) → `pEffect->DeleteTrailBlock(block)`
+   (`SuperEffect.cpp:180-207`) → `FreeBlock` (`:206`). **`m_Element.Clear()`
+   yok, `pEmitter` NULL'lanmıyor.**
+5. **Blok bırakma (efekt yıkımı):** `I_ParticleSuperEffect::Free`
+   (`SuperEffect.cpp:61-103`) → `m_Element.Clear()` (`:82`) **var** →
+   `FreeBlock` (`:83`).
+6. **Yeniden kullanım:** `BeginCreateSuperNew` (`SuperSpawn.cpp:139-154`)
+   `assert(m_Element.Size() == 0)` (`:142`) — **SC9 gereği derlenmiyor**.
+
+**Trail bloğu emitter'dan daha uzun yaşar mı?** Evet, iki anlamda:
+- **Nesne ömrü:** emitter'lar havuz nesnesidir (`Manager.cpp:296,308`), hiç
+  `delete` edilmez; trail bloğu onları yalnızca **gösterir**. Emitter serbest
+  listeye dönüp yeniden dağıtıldığında trail elemanı hâlâ aynı adresi tutar
+  (SC1).
+- **Bayat içerik:** `DeleteTrailBlock` bloğu elemanları **temizlemeden**
+  havuza döndürdüğü için, yeniden kullanılan bir trail bloğu eski
+  `C_Particle_E` kayıtlarını (serbest bırakılmış emitter işaretçileri dâhil)
+  taşıyabilir (SC10). Bu durumda `PushBack` yeni elemanları **eski
+  elemanların arkasına** ekler; `CreateTrails` (`SuperSpawn.cpp:187-196`)
+  ana blok indeksiyle trail indeksini eşlediği için yazma yanlış elemana
+  gidebilir. `ElementVector::PushBack` sınır assert'i de derlenmediğinden
+  (SC9) kapasite aşılırsa yazma **blok dışına** çıkar.
+
+### M5 — İki drenajın kare içi sırası ve aynı emitter'a dokunma
+
+`C_ParticleManager::Update` (`Manager.cpp:1188-1200`):
+`UpdateParticles()` → `UpdateEmitters()` → `UpdateSuperEmitters()` →
+`UpdateSpawn()` → `UpdateFinal()`.
+
+- `UpdateEmitters()` (`:1311-1331`): `m_Emitters.Update()` (`:1319`) —
+  normal liste drenajı.
+- `UpdateSuperEmitters()` (`:1334-1373`): `m_SuperEffectEmitters.Update()`
+  (**drenaj #1**, `:1339`), hemen ardından
+  `UpdateEmitters(m_SuperEffectEmitters, ...)` (`:1340`, worker job'ları),
+  sonra `m_DeletedSuperBlocks` işleme (`:1344-1355`).
+- `UpdateSpawn()` (`:1376-1397`): `m_Emitters.Update()` (`:1382`),
+  `m_SuperEffectEmitters.Update()` (**drenaj #2**, `:1385`), ardından
+  `m_SpawningEmitters`/`m_SpawningCustomEmitters` ve `SpawnEffect`
+  (`:1429`, `:1441`).
+- `UpdateFinal()` (`:1457+`): `Scheduler::Flush(m_JobQueueGroup)` ve
+  aktif efekt listelerinin güncellenmesi.
+
+Blok güncellemeleri (ve `FreeParticle`) `UpdateSuperEffect`
+(`:1512-1558`) içinde **worker job'ı** olarak planlanır
+(`m_SuperEffectsGroup`); drenajlar ana thread'de `Scheduler::Flush` sonrası
+çalışır. Yani:
+
+- Bir kayıt **drenaj #1'den sonra** (super emitter update'i veya spawn
+  sırasında) üretilirse **drenaj #2**'de aynı karede boşaltılır.
+- **Drenaj #2'den sonra** (kare sonu) üretilen kayıt, **sonraki karenin
+  drenaj #1**'inde boşaltılır.
+- Trace'in ölümcül dizisi tam olarak ikinci durumdur: drenaj #2 (229) →
+  sonraki kare `FreeParticle` (231-232) → drenaj #1 (233).
+
+**Aynı emitter'a iki kez dokunma** yalnızca kuyruğa iki kez girmesiyle olur;
+iki üretici de (`FreeParticle`, `C_Emitter::Update`/`AtomicFree`) aynı
+emitter'ı bağımsız olarak kuyruğa atabildiği için bu mümkündür ve trace'te
+görülmüştür (225 ve 232).
+
+### M6 — Hangi sahiplik kuralı kaynakla tutarlı?
+
+| Kural | Kanıt (lehte) | Çelişki |
+| --- | --- | --- |
+| **(A)** Emitter kendi sahibi; trail yalnızca jetonla izler | `Emitter.cpp:477-499` + `:256-262` (kendini bırakma); `SuperEffect.cpp:226-230` (salt uyuşmazsa yalnız `NULL`); `Particle.h:225` yorumu ("used to manage traileffects") | Trail spawn **her eleman için ayrı emitter** ayırır (`SuperSpawn.cpp:22,43`); trail tarafındaki **her** yol (R5, R6, R7) emitter'ı bırakır — bu (A) ile çelişir |
+| **(B)** Trail elemanı/bloğu emitter'ı sahiplenir | R5 (`Free`), R6 (`DeleteTrailBlock`), R7 (`FreeParticle`) hepsi trail tarafından bırakır; spawn 1:1 eşleme kurar; `UpdateTrails`/`CreateTrails` emitter'ı yalnızca trail üzerinden kullanır | `Emitter.cpp:493`/`:495` kendi kendini bırakır → aynı nesne için **ikinci sahip** |
+| **(C)** Paylaşımlı/lease (refcount) | Yalnızca salt "nesil jetonu" fikri bunu andırır | Refcount yok; salt yalnızca *bırakma anında* ilerliyor ve o da çoğu yolda ilerlemiyor (M1/M3) |
+
+**Değerlendirme (M6):** Kaynak **fiilen (A) ve (B)'yi aynı anda** uyguluyor:
+genel emitter güncellemesi kendini bırakır (A), trail yolları ise emitter'ı
+kendi malı sayıp bırakır (B). Aracılık etmesi gereken mekanizma salt'tır ve
+salt, gerçek bırakmaların çoğunda ilerlemediği için (M1) **etkisizdir**.
+(C) kodda yoktur. Bu yüzden çelişki bir "kim haklı" sorunu değil, **eksik
+tahkim** sorunudur.
+
+**Hangi kural seçilmeli:** **(B)**. Gerekçe: (i) trail tarafındaki üç bırakma
+yolunun tamamı zaten (B) gibi davranıyor; (ii) spawn 1:1 sahiplik kuruyor;
+(iii) (A)'yı seçmek, trail elemanlarının emitter'ı hiç bırakmamasını
+gerektirirdi — bu, `DeleteTrailBlock`/`Free`'ın tüm emitter'ları sızdırması
+demek olurdu. (B)'yi seçmek, tek bir yerde (kendini bırakma) istisna
+tanımlamayı gerektirir.
+
+### M7 — Düzeltme adayları (uygulanmadı)
+
+> **Not:** Aşağıdakiler tanımdır; hiçbiri uygulanmadı, hiçbiri "çözüm" olarak
+> iddia edilmiyor. Assert kaldırılmamalı/zayıflatılmamalıdır.
+
+**Aday 1 — Trail bloğu bırakma hijyeni (en küçük, en düşük risk).**
+- Yer: `SuperEffect.cpp:206` (`DeleteTrailBlock` içinde `FreeBlock`'tan önce).
+- Değişiklik: `pTrailDelete->m_Element.Clear();` (aynı dosyadaki `:82` ile
+  aynı desen) ve serbest bırakılan elemanların `pEmitter`'ını `NULL`'lamak.
+- Kapsam: yalnız trail bloğu geri dönüşümü (M4/SC10). Emitter ömrüne
+  dokunmaz.
+- Neden AV üretmesi beklenmez: yeni bir geçersizleştirme icat etmiyor,
+  zaten `I_ParticleSuperEffect::Free`'da yapılan temizliği diğer bırakma
+  yoluna kopyalıyor; canlı referansları öldürmüyor.
+- Sınırı: gözlenen `0x80000003`'ün **doğrudan** nedeni değil (trace'te
+  ölümcül eleman taze spawn edilmişti); ama bayat/blok-taşması kaynaklı
+  AV'leri (M4) ve aliasing'i ortadan kaldırır, yani sonraki adımı
+  **ölçülebilir** kılar.
+
+**Aday 2 — "Trail sahipli" işareti (gözlenen çakışmayı doğrudan keser).**
+- Yer: `Emitter.h` (yeni `bool`, `m_bDelete`'in yanına ~`:279`),
+  `Emitter.cpp:112` (`SetDefinition` içinde sıfırla),
+  `SuperSpawn.cpp:22,43` (atamadan sonra işaretle),
+  `Emitter.cpp:257` ve `:492-495` (işaretliyse kendini bırakma).
+- Değişiklik: trail emitter'ları kendini bırakmaz; tek bırakan trail yolu
+  olur (R5/R6/R7).
+- Kapsam: R3/R4 üreticisi devre dışı kalır; kuyruğa ikinci giriş (trace 232)
+  ortadan kalkar.
+- Risk: emitter'lar partikül ölene kadar yaşar → aktif emitter sayısı artar,
+  havuz baskısı ve `AtomicAllocate()` NULL dönüşü artabilir; ayrıca
+  `DeleteTrailBlock`/`Free` dışında bir yol emitter'ı bırakmadığı için
+  (R8-R12 yalnız `m_Emitters` üzerinde) süper-listede sızıntı riski
+  doğar — bu yüzden Aday 1 (temizlik) ve havuz ölçümü **ön koşul**.
+
+**Aday 3 — Tek bırakma noktası + nesil (deneme 2'nin genelleştirilmesi).**
+- Yer: `Atomic.h:224` yerine `C_EmitterList::Update` (E1-E5'te denendi).
+- Durum: **denendi, 3/3 AV** (E2). Kapsamı iki havuza birden yayılıyor
+  (E3) ve `m_pEventInstance != NULL → DebugBreak` kontrolünü drenaja taşıyor.
+- Yeniden denenmemeli: en azından AV için tam dump alınmadan (E4).
+
+**Önerilen tek yol:** **Aday 1 → ölçüm → (gerekirse) Aday 2.** Gerekçe:
+Aday 1 kanıtlanmış bir kaynak kusurunu (SC10) kapatan, 1 satırlık, yeni
+semantik getirmeyen bir adımdır; Aday 2 ise asıl çakışmayı (A/B) keser ama
+davranışı ve havuz yükünü değiştirir, bu yüzden temiz bir zemin ve ölçüm
+gerektirir. İki denemenin AV üretmesi, sırayı tersine çevirmenin (önce
+sahiplik, sonra temizlik) riskli olduğunu göstermiştir (hipotez; AV'lerin
+nedeni kanıtlanmadı — E4).
+
+### M8 — Kapanan / kapanmayan
+
+Kapanan: emitter üretim/bırakma yollarının tam listesi (M1); `pEmitter`
+temizleme mekanizmasının **tek** olduğu (M2); salt'ın nerede ilerlediği
+(M3); trail bloğunun nesil sayacı olmadığı ve temizlenmeden havuza döndüğü
+(M4, SC10); hangi sözleşme assert'lerinin derlendiği (M0); kare içi drenaj
+sırası ve penceresi (M5).
+
+Kapanmayan: iki reddedilen denemenin AV nedeni (dump yok); Aday 1 ve 2'nin
+gerçekten `0x80000003`'ü kaldırıp kaldırmayacağı; bayat trail elemanının
+kimliği (H11); efekt adı.
+
+### Sıradaki en küçük adım
+
+1. **Aday 1'i yazılı sözleşmeye bağla ve ölç:** `DeleteTrailBlock`'un
+   `m_Element.Clear()` + `pEmitter = NULL` ile kapanması; ardından
+   `pushBack` sınırlarının gerçekten korunduğunu göstermek için (assert'ler
+   derlenmediği için) sınırların **runtime** kontrolü ya da sayaç izleme.
+   Bu, Aday 2'yi test etmenin ön koşulu.
+2. **Aday 2'yi ancak 1'den sonra ve tam dump'lı bir koşuyla denemek**
+   (AV olursa konum bilinmeli).
+3. Efekt adı (ad-hash yolu) hâlâ açık.
+
+Bu bölüm bir düzeltme iddiası taşımaz; assert'in kaldırılması veya
+zayıflatılması önerilmez. Hiçbir kod değiştirilmedi; "şu an kod yok".
+
+## Denenen düzeltme 3 (trail cleanup) - 2 Kasım 2026 (sekizinci tur)
+
+Aday 1 uygulandı: `I_ParticleSuperEffect::DeleteTrailBlock` içinde serbest
+bırakılan her `C_Particle_E` için `pEmitter = NULL` ve döngü sonunda
+`pTrailDelete->m_Element.Clear()` eklendi. `Amax-trailfix.exe` üretildi; kanonik
+`Amax.exe` değişmedi. `scripts/race-native/smoke.txt` ile üç koşu:
+
+| Koşu | ExitCode | Süre |
+| --- | ---: | ---: |
+| 1 | `0x80000003` (-2147483645) | 18s |
+| 2 | `0xC0000005` (-1073741819) | 18s |
+| 3 | `0xC0000005` (-1073741819) | 18s |
+
+Yani trail cleanup tek başına orijinal breakpoint'i kaldırmadı; iki koşuda
+erişim ihlali üretti. Düzeltme geri alındı; patch
+`_work/build/engine-reference/native-trailfix-attempt.patch`, log
+`_work/logs/trailfix-runs.log`, sonuç
+`_work/.../race-native/trailfix-runs.json`.
+
+**Yorum:** `DeleteTrailBlock` yolu gözlenen `FreeParticle` yolunu kapsamıyor;
+temizlik yalnızca blok silinirken çalışıyor. Gözlenen çift-free sırası
+`FreeParticle`/`Emitter::Update` üzerinden ilerliyor. Bu nedenle trail bloğu
+sahiplik kuralı (B) tek başına yeterli değil; `FreeParticle`'ın bıraktığı
+emitter'ı tutan tüm trail elemanlarının aynı anda geçersiz kılınması veya
+emitter'ın kendini bırakma yolunun trail sahipliğine devredilmesi gerekiyor.
+AV'lerin nedeni dump olmadığı için kanıtlanamaz; Aday 2 (trail-owned bayrağı)
+ancak tam dump'lı bir koşuyla denenmeli. Assert kaldırılmadı; düzeltme yok.
+
