@@ -20,9 +20,13 @@
   **7.308 vertex / 6.106 üçgen**, 14 draw, en büyük sınır farkı
   **6.02444e-05**. 8 instance sınır uyuşmazlığı, 35 instance başka blok.
 - Çoklu blok taraması: `requiredGeometryBlocks=[15,17,26,27,31,32]`; blok27+15
-  toplam **18 instance**, **8.688 vertex / 7.085 üçgen**. Blok17/26/32 stream
-  semantiği, blok31 prerequisite nedeniyle 0/atlandı. Browser'da
+  toplam **18 instance**, **8.688 vertex / 7.085 üçgen**. Browser'da
   **River · tüm desteklenen** preset'i var.
+- P2 analizi: arşiv `instanceBounds` kayıtları draw başına değil **CullNode
+  (yerleştirilmiş nesne) başına**; 57 instance 34 transform-sabit grubuna ve 34
+  byte-identical kayda karşılık geliyor. Mevcut tek-draw kontrolü 38 instance'ı
+  yanlış reddediyor. Stage A hedefi 36 instance, Stage B toplam 56; kanıt:
+  `docs/work/analysis/level-instance-streams.md`.
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
   **River · instance prova** ve **River · 14 instance** preset'leri var.
@@ -39,10 +43,9 @@
 
 ## Sıradaki iş
 
-**T-003 kalan iş:** base primitive11–35 ek stream/deformasyon semantiği
-(blok17/26/32'deki 22 instance + blok15'teki 8 instance), blok31 prerequisite,
-level materyalleri, görünürlük, sonraki RenderList'ler ve yüksek LOD'lar. Kart:
-`docs/work/tasks/T-003-scene-traversal.md`.
+**T-003 kalan iş:** Stage A/B bounds grouping (36, sonra 56 instance), blok31
+prerequisite, level materyalleri, görünürlük, sonraki RenderList'ler ve yüksek
+LOD'lar. Kart: `docs/work/tasks/T-003-scene-traversal.md`.
 
 **T-005 tek oyunculu dikey dilim** alt görevlere bölündü:
 `T-005a` motor/WASM/platform fizibilitesi, `T-005b` streaming, `T-005c`
@@ -56,9 +59,8 @@ kapılarında bloke. Ayrıntı: `docs/work/analysis/engine-wasm-probe.md`.
 
 ## Bilinen engeller / riskler
 
-- 18 instance destekli; 22 instance base17/26/32 stream semantiği, 8 instance
-  base7–10, 1 instance blok31 prerequisite nedeniyle çizilmiyor.
-- CPU vertex expansion; GPU instance buffer yok.
+- 18 instance destekli; P2'ye göre bounds grouping düzeltilince Stage A 36,
+  Stage B 56 instance'a çıkmalı. Blok31 prerequisite; CPU vertex expansion var.
 - Native sürüş referansı particle-cache çökmesi nedeniyle kararlı değil.
 - Fizik, kontroller, ses, save/streaming, tek oyunculu yarış ve multiplayer
   başlamadı.

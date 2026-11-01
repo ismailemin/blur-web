@@ -1,6 +1,6 @@
 # T-003 — Scene/level kapsamını genişletme
 
-**Durum:** in-progress (blok27 çoklu instance tamam; diğer bloklar/materyaller açık)
+**Durum:** in-progress (bounds grouping kanıtlandı; Stage A uygulaması sırada)
 **Sahip:** ana ajan
 **Başlangıç:** 1 Kasım 2026
 **Bitiş:** —
@@ -53,10 +53,34 @@ instance base11–35 ek stream/deformasyon semantiği veya blok31 prerequisite
 çözülmeden çizilmiyor. Native/WASM JSON ve mevcut testler regresyonsuz
 (27/27, 14/14).
 
+## Üçüncü artım — bounds grouping kanıtı
+
+P2 kaynak analizi, `instanceBounds` kayıtlarının çizim başına değil **yerleştirilmiş
+nesne (CullNode) başına** olduğunu gösterdi: `renderlistbuild.cpp:579` her draw
+için aynı `CullNode::GetBounds()` değerini yazıyor; bir nesnenin birden çok
+draw'ı aynı kaydı tekrarlıyor.
+
+Node253 ölçümü: 57 instance, **34 transform-sabit grubu ↔ 34 byte-identical
+arşiv kaydı**; grubun draw AABB birleşimi kayıtla `6.024437e-05` içinde
+eşleşiyor. Grup boyutları 19×1, 9×2, 4×3, 2×4 ve gruplar instance sırasında
+bitişik. Yani eksik olan geometri/stream değil, **grup bağlamı**; mevcut
+`scene_reader.cpp:874-887` tek draw'ı tüm nesne kaydıyla karşılaştırıyor.
+
+Beklenen düzeltme (henüz uygulanmadı):
+
+- **Stage A:** tek-chunk grupları (blok27 22/22, blok15 12/12, blok17 2/2) →
+  **36 instance / 22.924 vertex / 17.301 üçgen**.
+- **Stage B:** chunk'lar arası gruplar (blok26+32) → toplam **56 instance /
+  34.632 vertex / 25.521 üçgen**.
+- Blok31 yalnızca prerequisite akışına bağlı.
+
+Ayrıntı: `docs/work/analysis/level-instance-streams.md` (bölüm 8).
+
 ## Kalan iş
 
-1. Base primitive11–35'in ek stream/deformasyon semantiği; blok17/26/32'deki 22
-   instance'ı ve blok15'teki 8 instance'ı doğru sınırlarla çizmek.
+1. Stage A/B: transform-sabit grubun draw AABB birleşimini ortak CullNode
+   kaydıyla doğrula; blok27/15/17 (36 instance), sonra blok26/32 (56 instance).
+   Tek draw'ı tüm nesne kaydıyla karşılaştırma.
 2. Blok31 için ek ChunkInfo prerequisite akışı (tek instance).
 3. Level materyalleri, görünürlük/culling, sonraki RenderList'ler ve yüksek
    LOD'lar.

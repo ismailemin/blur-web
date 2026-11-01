@@ -256,4 +256,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Motorun geri kalanı: `core/Maths.h` 7 hata (5 `Float3` dönüşümü, 2 `__fsel`), `tl_defs.h`/`tl_thread.h` platform `#error`, Windows PCH (`winsock2.h`/`windows.h`), MSVC CRT (`_isnan` 137×), Display/DX11 442 referans. `PLATFORM_PC` kaldırılınca Windows PCH gidiyor ama taşınabilir maths yardımcıları da kapanıyor.
 - İlk port sırası: maths gate → CRT compat → `PLATFORM_WEB`/`tl_*` → file/time → ilk link slice → fizik → input/audio/HUD. Motor çalışıyor iddiası yok. Rapor: `docs/work/analysis/engine-wasm-probe.md`; eski `engine-wasm-feasibility.md` superseded.
 
+## 2 Kasım 2026 — T-003 bounds grouping kanıtı
+
+- P2 kaynak analizi: `instanceBounds` çizim başına değil **CullNode (yerleştirilmiş nesne) başına**. `renderlistbuild.cpp:579` her draw için aynı `CullNode::GetBounds()` değerini yazıyor; çok draw'lı nesne aynı kaydı tekrarlıyor. Kayıt `RenderingData::Bounds` (AABB + distanceMin/Max, 32 bayt).
+- Node253 ölçümü: 57 instance → **34 transform-sabit grubu ↔ 34 byte-identical kayıt**; grup draw AABB birleşimi kayıtla `6.024437e-05` içinde; 34/34 grup instance sırasında bitişik. Mevcut `scene_reader.cpp:874-887` tek draw'ı tüm nesne kaydıyla karşılaştırdığı için 38 instance'ı yanlış reddediyor.
+- Beklenen: Stage A (blok27 22/22, 15 12/12, 17 2/2) = **36 instance / 22.924 vertex / 17.301 üçgen**; Stage B (blok26+32 chunk'lar arası) = **56 / 34.632 / 25.521**. Blok31 prerequisite. Henüz kod değişmedi; rapor `docs/work/analysis/level-instance-streams.md`.
+
 
