@@ -1,6 +1,6 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 1 Kasım 2026
+**Güncelleme:** 2 Kasım 2026
 **Aşama:** Aşama 4 sonu (gerçek asset/önizleme), Aşama 5 (tek oyunculu yarış) başlamadı.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
 **Son commit'ler:** T-001 `19abead`/`b4e8cbe`, T-002 `2bc7253`/`1b8cb76`; T-003 ilk artım commit bekliyor.
@@ -43,8 +43,9 @@ görünürlük, sonraki RenderList'ler ve yüksek LOD'lar. Kart:
 - Native sürüş referansı particle-cache çökmesi nedeniyle kararlı değil.
 - Fizik, kontroller, ses, save/streaming, tek oyunculu yarış ve multiplayer
   başlamadı.
-- Browser WebGPU mesh ekran görüntüsü alınmadı; veri/WASM yolu ve native/WASM
-  eşitliği doğrulandı, görünür GPU çizimi ayrı adım.
+- Browser WebGPU mesh ekran görüntüsü T-002/T-003 instance preset'leri için
+  alınmadı; T-001 Corvette gövdesi kullanıcı ekran görüntüsüyle doğrulandı
+  (30.591 vertex / 36.193 üçgen / 26/80 albedo).
 - Oyun verisi ve `_work/` Git dışında; kanıtlar yeniden üretim komutuyla birlikte
   dokümanda tutulmalı.
 

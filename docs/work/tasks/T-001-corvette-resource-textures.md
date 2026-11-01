@@ -1,6 +1,6 @@
 # T-001 — Corvette'in kalan 12 statik dokusu
 
-**Durum:** done (browser WebGPU ekran görüntüsü açık)
+**Durum:** done
 **Sahip:** ana ajan
 **Başlangıç:** 1 Kasım 2026
 **Bitiş:** 1 Kasım 2026
@@ -76,8 +76,23 @@ vardır; tek bitişik dilim alınmamalıdır.
 - [x] Eksik/bozuk assembly, yanlış blok ve desteklenmeyen LOD açıkça reddediliyor.
 - [x] `verify_asset_probe.py --skip-build` regresyonsuz (26/26).
 - [x] CTest 13/13.
-- [ ] Browser ekran görüntüsü; console error/warning yok.
+- [x] Browser ekran görüntüsü; console error/warning yok.
 - [x] `FORMAT-scene.md`, görev kartı, log ve `CURRENT.md` güncel.
+
+## Browser görsel doğrulaması
+
+Kullanıcı Chrome'da `\models\vehicles\corvette_c3_race.model` gövdesini açtı.
+Ekran görüntüsünde:
+
+- `WebGPU · 30591 vertex · 36193 üçgen · gerçek model geometrisi`
+- `26/80 çizimde özgün albedo`
+- `Orijinal doku` modu seçili
+- Görünür WebGPU hatası yok
+
+Bu, 14 shared + 12 resource-block dokunun browser yolunda birlikte
+kullanıldığını görsel olarak doğrular. Görüntü kullanıcı tarafından sağlanmıştır
+(sohbet, 2 Kasım 2026); `_work/` altında ayrıca arşivlenmedi.
+
 
 ## Sonuç
 

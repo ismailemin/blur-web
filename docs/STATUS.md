@@ -167,6 +167,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_asset_probe.py --skip-build` **26/26** geçti; CTest **13/13**. Kanıtlar: `_work/verification/car-native-wasm.json`, `resource-binding.json`, `_work/logs/t001-*.log`. Browser WebGPU görsel kontrolü ayrı adım.
 - Sıradaki: T-002 level instance dönüşümleri. `level_instances_inspect` ilk proof olarak block27/node253 instance0'ını (805 vertex/726 üçgen) üretmeli; ardından node253'teki 57 instance.
 
+## 2 Kasım 2026 — T-001 browser görsel doğrulaması
+
+- Kullanıcı Chrome'da `corvette_c3_race.model` gövdesini açtı; WebGPU önizlemesi `30591 vertex / 36193 üçgen` ve **26/80 çizimde özgün albedo** gösterdi. `Orijinal doku` modu etkindi; görünür hata bildirilmedi.
+- Bu, 14 shared + 12 resource-block dokunun browser yolunda birlikte kullanıldığını görsel olarak doğrular. Ekran görüntüsü sohbet yoluyla sağlandı; `_work/` altında ayrıca arşivlenmedi. T-001 browser görsel kontrolü kapandı.
+
 ## 1 Kasım 2026 — T-002: ilk gerçek instance dönüşümü
 
 - `level_instances_inspect(level,len,geometryChunk,len,nodeChunk,len,geometryBlock,nodeBlock)` eklendi; mevcut `level_mesh_inspect` değişmedi. Geometri bloğu ChunkInfo içinde **herhangi bir item** olarak bulunuyor; önceki item'lar origin0'dan sıralı geçiliyor. Node bloğu ilk-item sözleşmesini koruyor.
