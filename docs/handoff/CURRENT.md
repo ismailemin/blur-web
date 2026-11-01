@@ -43,9 +43,10 @@ görünürlük, sonraki RenderList'ler ve yüksek LOD'lar. Kart:
 - Native sürüş referansı particle-cache çökmesi nedeniyle kararlı değil.
 - Fizik, kontroller, ses, save/streaming, tek oyunculu yarış ve multiplayer
   başlamadı.
-- Browser WebGPU mesh ekran görüntüsü T-002/T-003 instance preset'leri için
-  alınmadı; T-001 Corvette gövdesi kullanıcı ekran görüntüsüyle doğrulandı
-  (30.591 vertex / 36.193 üçgen / 26/80 albedo).
+- Browser görsel doğrulaması: T-001 Corvette **26/80 albedo** ve T-003
+  **14 instance / 7.308 vertex / 6.106 üçgen** kullanıcı ekran görüntüleriyle
+  doğrulandı. Kalan: diğer geometri blokları, base7–10 stream semantiği, level
+  materyalleri/görünürlük/yüksek LOD'lar.
 - Oyun verisi ve `_work/` Git dışında; kanıtlar yeniden üretim komutuyla birlikte
   dokümanda tutulmalı.
 

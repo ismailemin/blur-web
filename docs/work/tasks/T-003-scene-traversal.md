@@ -55,7 +55,21 @@ karşılaştırması tutmuyor. Bunlar "çizildi" sayılmıyor.
 - [ ] Diğer geometri blokları.
 - [ ] Base7–10 ek stream semantiği.
 - [ ] Level materyalleri/görünürlük/yüksek LOD.
-- [ ] WebGPU mesh ekran görüntüsü.
+- [x] WebGPU mesh ekran görüntüsü.
+
+## Browser görsel doğrulaması
+
+Kullanıcı Chrome'da **River · 14 instance** preset'ini açtı. Görüntüde:
+
+- `359 akış kaydı · 14 instance çizildi · 8 sınır uyuşmazlığı · 35 başka blok · 6106 üçgen`
+- `WebGPU · 7308 vertex · 6106 üçgen · gerçek model geometrisi`
+- `Yüzey` modu; `Doku çözülemedi` (level materyalleri uygulanmadığı için beklenen)
+- Görünür WebGPU hatası yok
+
+Bu, blok27 çoklu instance yolunun browser'da gerçekten çizildiğini doğrular.
+Görüntü kullanıcı tarafından sağlanmıştır (sohbet, 2 Kasım 2026);
+`_work/` altında ayrıca arşivlenmedi.
+
 
 ## Kanıt
 

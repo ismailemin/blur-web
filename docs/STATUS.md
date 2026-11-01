@@ -187,7 +187,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Arşivlenmiş instance sınırlarıyla uyuşmayan instance'lar sessizce çizilmiyor; `unsupportedBoundsInstances` olarak sayılıyor. Blok27/node253 sonucu: **14 çizildi, 8 sınır uyuşmazlığı, 35 başka blok**; **7.308 vertex / 6.106 üçgen**, 14 draw; en büyük sınır farkı **6.02444e-05**.
 - 8 desteklenmeyen instance base primitive7–10 kullanıyor; ek stream/deformasyon semantiği uygulanmadığı için sınırlar tutmuyor. Bu durum açıkça raporlanıyor, tahmini dönüşüm üretilmiyor.
 - Native/WASM JSON tamamen eşit; `verify_instances_wasm.mjs` hem tek hem çoklu yolu kontrol ediyor. Suite **27/27**, CTest **14/14**.
-- Browser'a **River · 14 instance** preset'i eklendi; `River · instance prova` tek instance olarak kalıyor. WebGPU mesh ekran görüntüsü hâlâ açık.
+- Browser'a **River · 14 instance** preset'i eklendi; `River · instance prova` tek instance olarak kalıyor. Görsel doğrulama 2 Kasım'da kullanıcı ekran görüntüsüyle tamamlandı.
 - Sıradaki: diğer geometri blokları (15/17/26/31/32), base7–10 ek stream semantiği, level materyalleri/görünürlük/yüksek LOD'lar; ardından tek oyunculu dikey dilim.
+
+## 2 Kasım 2026 — T-003 browser görsel doğrulaması
+
+- Kullanıcı Chrome'da **River · 14 instance** preset'ini açtı. Görüntüde `359 akış kaydı · 14 instance çizildi · 8 sınır uyuşmazlığı · 35 başka blok · 6106 üçgen` ve `WebGPU · 7308 vertex · 6106 üçgen` görüldü; `Yüzey` modu etkindi, materyaller uygulanmadığı için `Doku çözülemedi` beklenen durum.
+- Görünür WebGPU hatası bildirilmedi. Bu, blok27 çoklu instance yolunun browser'da gerçekten çizildiğini doğrular; T-003'ün kalan işi diğer geometri blokları, base7–10 stream semantiği, materyaller/görünürlük/yüksek LOD'lar.
+- Ekran görüntüsü sohbet yoluyla sağlandı (2 Kasım 2026); `_work/` altında ayrıca arşivlenmedi.
 
 

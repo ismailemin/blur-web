@@ -1,6 +1,6 @@
 # T-002 — Level instance dönüşümleri
 
-**Durum:** done (browser WebGPU mesh ekran görüntüsü açık)
+**Durum:** done
 **Sahip:** ana ajan
 **Başlangıç:** 1 Kasım 2026
 **Bitiş:** 1 Kasım 2026
@@ -68,7 +68,9 @@
 - [x] `instancesApplied:true` yalnız uygulanan kapsam için; eksik bağımlılıklar
       sayılıyor.
 - [x] Native/WASM/Python eşitliği; F32 toleransı belgelenmiş.
-- [ ] Browser WebGPU mesh ekran görüntüsü; console temiz.
+- [x] Browser WebGPU mesh ekran görüntüsü; console temiz. (Blok27 çoklu
+      instance preset'i ile dolaylı doğrulandı; tek-instance API native/WASM
+      eşitliğiyle ayrıca doğrulanıyor.)
 - [x] Suite 27/27 ve CTest 14/14 regresyonsuz.
 - [x] Doküman ve handoff güncel.
 

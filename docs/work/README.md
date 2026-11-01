@@ -9,8 +9,8 @@ hangi kanıtla kapattığını kaybetmemek.
 | Görev | Durum | Öncelik | Bağımlılık | Kart |
 |---|---|---|---|---|
 | T-001 — Corvette kalan 12 statik doku | done | P0 | — | `tasks/T-001-corvette-resource-textures.md` |
-| T-002 — Level instance dönüşümleri | done (WebGPU mesh ekran görüntüsü açık) | P0 | T-001 | `tasks/T-002-level-instances.md` |
-| T-003 — Scene/level kapsamını genişletme | in-progress (blok27 çoklu instance tamam) | P1 | T-002 | `tasks/T-003-scene-traversal.md` |
+| T-002 — Level instance dönüşümleri | done | P0 | T-001 | `tasks/T-002-level-instances.md` |
+| T-003 — Scene/level kapsamını genişletme | in-progress (blok27 çoklu instance + görsel doğrulandı) | P1 | T-002 | `tasks/T-003-scene-traversal.md` |
 | T-004 — Native particle-cache çökmesi | analiz tamam, tam iz açık | P1 | — | `analysis/native-particle-crash.md` |
 
 Durumlar: `planned`, `in-progress`, `blocked`, `done`, `superseded`.
