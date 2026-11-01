@@ -1,0 +1,37 @@
+{
+  "missing_sources": [
+    "Code/Amax/Library/Kanzen/StdAfx.cpp"
+  ],
+  "missing_include_dirs": [
+    "Code/Amax/Game/Amax",
+    "Code/Amax/Game/Amax/include",
+    "Code/Amax/Game/GameAudio/Amax",
+    "Code/Amax/Game/GameAudio/Amax/include",
+    "Code/Amax/Game/GameLogic/Amax",
+    "Code/Amax/Game/GameLogic/Amax/include",
+    "Code/Amax/Game/GameLogic/RaceLogic/Core",
+    "Code/Amax/Library/Racebook/Amax",
+    "Code/Amax/Library/Racebook/Amax/include",
+    "Code/Amax/Library/Ui/Amax",
+    "Code/Amax/Library/Ui/Amax/include",
+    "Code/Genesis/Library/include",
+    "Code/Mercury/Library/GameSys/Advertising/IncludePath",
+    "Libs/Vendor/Bink/1.9r",
+    "code/mercury/library/common/ai/air/include",
+    "libs/vendor/Massive/3.7.1.106/include",
+    "libs/vendor/jpeg/version62/include",
+    "libs/vendor/openal/1.1/include"
+  ],
+  "unknown_rules": {
+    "CxxTest": 7,
+    "StoreVcprojInfo": 4,
+    "LintOptions": 1
+  },
+  "warnings": [
+    "SubDir not found: C:/Users/ismailemin/Documents/Blur Web/upstream/BlurRebuilt/libs/vendor/jpeg/version62",
+    "SubInclude: no jamfile in C:/Users/ismailemin/Documents/Blur Web/upstream/BlurRebuilt/libs/vendor/jpeg/version62"
+  ],
+  "result": "Jam build description extraction succeeded; NOT a C++ build",
+  "target_count": 70,
+  "source_commit": "5270304b81983b9e3edbd569ba25235c17bbabd7"
+}

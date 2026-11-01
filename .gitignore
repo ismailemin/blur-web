@@ -1,0 +1,9 @@
+upstream/
+_work/
+game-data/
+downloads/
+*.iso
+*.exe
+*.dll
+__pycache__/
+probes/asset-reader/web/generated/

@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {deflateRawSync,deflateSync} from 'node:zlib';
+import {decodePacketZlib,decodeAsset,MAX_ASSET_BYTES} from '../web/packet.js';
+const BLOCK=65536;
+function packet(parts){
+  const header=Buffer.alloc(4);header.writeUInt32LE(BLOCK);
+  return Buffer.concat([header,...parts.flatMap(({data,raw=false})=>{const packed=raw?data:deflateRawSync(data);const prefix=Buffer.alloc(4);prefix.writeUInt32LE(raw?0xffffffff:packed.length);return[prefix,packed];})]);
+}
+const first=Buffer.from(Array.from({length:BLOCK},(_,i)=>i%251));
+const last=Buffer.from('Blur WASM packet boundary test');
+let progress=[];
+assert.deepEqual(Buffer.from(await decodePacketZlib(packet([{data:first},{data:last}]),BLOCK+last.length,{onProgress:n=>progress.push(n)})),Buffer.concat([first,last]));
+assert.deepEqual(progress,[BLOCK,BLOCK+last.length]);
+assert.deepEqual(Buffer.from(await decodePacketZlib(packet([{data:first,raw:true},{data:last}]),BLOCK+last.length)),Buffer.concat([first,last]));
+assert.deepEqual(Buffer.from(await decodePacketZlib(packet([{data:first},{data:Buffer.alloc(0)}]),BLOCK)),first);
+assert.deepEqual(Buffer.from(await decodePacketZlib(packet([{data:first,raw:true}]),37)),first.subarray(0,37));
+await assert.rejects(()=>decodePacketZlib(packet([{data:first},{data:last}]),BLOCK+last.length-1));
+await assert.rejects(()=>decodePacketZlib(packet([{data:first}]),BLOCK+1));
+await assert.rejects(()=>decodePacketZlib(packet([{data:first},{data:last}]).subarray(0,-1),BLOCK+last.length));
+await assert.rejects(()=>decodePacketZlib(packet([{data:last},{data:last}]),last.length*2));
+await assert.rejects(()=>decodePacketZlib(packet([{data:first},{data:Buffer.alloc(0)},{data:Buffer.alloc(0)}]),BLOCK));
+await assert.rejects(()=>decodePacketZlib(packet([{data:last}]),MAX_ASSET_BYTES+1));
+const controller=new AbortController();controller.abort();
+await assert.rejects(()=>decodePacketZlib(packet([{data:first}]),BLOCK,{signal:controller.signal}),{name:'AbortError'});
+assert.deepEqual(Buffer.from(await decodeAsset(deflateSync(last),last.length,2)),last);
+assert.deepEqual(Buffer.from(await decodeAsset(last,last.length,1)),last);
+await assert.rejects(()=>decodeAsset(last,last.length+1,1));
+await assert.rejects(()=>decodeAsset(deflateSync(first),16,2));
+const badCrc=deflateSync(last);badCrc[badCrc.length-1]^=1;
+await assert.rejects(()=>decodeAsset(badCrc,last.length,2));
+await assert.rejects(()=>decodeAsset(last,last.length,3));
+console.log('PASS: multi-packet DEFLATE/raw, partial final raw, empty final packet, progress, malformed lengths, output limit, cancellation');
