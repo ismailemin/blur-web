@@ -29,15 +29,17 @@ Kabul:
 **Durum:** tam bellek dump'ı alındı ve analiz edildi; kaynak çağrı/efekt kimliği açık
 **Rapor:** `docs/work/analysis/native-particle-crash.md`
 
-Tam dump doğruladı: `m_ActiveElements=93`, `m_VectorPosition=-1`; silinen
-`m_Deleted[0]` aynı zamanda `m_Cache[162]` içinde — çift serbest bırakma
-doğrudan kanıt. Sahip tipi `DynamicEffect::Particle::Shape2DSimple`; emitter'ın
-`m_pEmitterList` alanı doğrudan `m_SuperEffectEmitters`, `m_pEventInstance` NULL.
-Komşu kayıtlar `C_Particle_E` trail elemanları (`iSalt=0`); bu, salt korumasının
-0==0 olduğu için bayat trail referansını engellemediğini gösteriyor. Efekt adı
-dump'ta yok; hangi iki `Free`/`AtomicFree` çağrısının çakıştığı açık. Sıradaki:
-sınırlı Free/AtomicFree çağıran izlemesi veya effect definition hash→ad
-eşlemesi. Assert kaldırılmayacak.
+Tam dump + çağrı izleme doğruladı: `m_ActiveElements=93`, `m_VectorPosition=-1`;
+silinen eleman aynı zamanda `m_Cache[162]` içinde. Ölümcül sıra:
+`UpdateSpawn` drenajı X'i serbest bırakıyor → `SuperEffect::FreeParticle`
+(AtomicFree) araya ayırma girmeden aynı X'i tekrar kuyruğa atıyor →
+`UpdateSuperEmitters` drenajı ikinci kez `Free` ediyor. Yani aynı cache bir
+karede iki kez boşaltılıyor ve trail elemanı bırakılmış emitter'ı tutuyor.
+`iSalt=0` koruması `GetSalt()==0` olduğu için devreye girmiyor. Açık kalan:
+`C_Emitter::Update`/`m_bDelete` ile `FreeParticle` arasındaki sahiplik
+sözleşmesi; trail referansının neden geçersiz kılınmadığı. Sıradaki en küçük
+adım: kaynakta bu sözleşmeyi belgelemek; gerekirse `FreeParticle` etiketine
+`pParticle`/blok indeksi eklemek. Assert kaldırılmayacak.
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 

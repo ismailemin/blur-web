@@ -26,12 +26,12 @@
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
   **River · instance prova** ve **River · 14 instance** preset'leri var.
-- Native x64 Amax Release derlemesi başarılı. Tam bellek exit dump'ı alındı:
-  `m_ActiveElements=93`, `m_VectorPosition=-1`; silinen eleman aynı zamanda
-  `m_Cache[162]` içinde — çift serbest bırakma doğrudan kanıtlandı. Sahip tipi
-  `Shape2DSimple`; emitter `m_SuperEffectEmitters` listesinde, `m_pEventInstance`
-  NULL; komşu kayıtlar `C_Particle_E` trail elemanları (`iSalt=0`). Efekt adı ve
-  hangi iki `Free`/`AtomicFree` çağrısının çakıştığı açık.
+- Native x64 Amax Release derlemesi başarılı. Tam bellek exit dump'ı ve
+  `Free`/`AtomicFree` çağrı izlemesi: aynı cache bir karede iki kez boşaltılıyor
+  (`UpdateSpawn` drenajı → `FreeParticle` AtomicFree → `UpdateSuperEmitters`
+  drenajı). Trail elemanı serbest listeye dönmüş emitter'ı tekrar kuyruğa
+  atıyor; `iSalt=0` koruması 0==0 olduğu için devreye girmiyor. `C_Emitter::Update`
+  ile `FreeParticle` sahiplik sözleşmesi açık.
 - Doğrulama: `verify_asset_probe.py --skip-build` **27/27**, CTest **14/14**.
 
 ## Sıradaki iş

@@ -218,4 +218,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Komşu 16 baytlık kayıtlar `C_Particle_E` (`{C_Emitter*, U32 iSalt}`) trail elemanları; `iSalt=0`. `GetSalt()`/`SetDefaults()` aynı 0 değerini kullandığından salt koruması bayat trail referansını engellemiyor; bu H5'i güçlendiriyor ama hangi çağrının ikinci kez serbest bıraktığını kanıtlamıyor.
 - Efekt adı dump'ta yok (SuperEffect RTTI yok, tanımlar vtable'sız, log'da ad yok). Sıradaki: sınırlı Free/AtomicFree çağıran izlemesi veya effect definition hash→ad eşlemesi. Rapor: `docs/work/analysis/native-particle-crash.md` ("Sahip/efekt kimliği").
 
+## 2 Kasım 2026 — native Free/AtomicFree çağrı izlemesi
+
+- İzole Speed kaynağına env-gated `AtomicFreeTrace`/`AtomicSiteTrace` eklendi; ayrı `Amax-trace.exe` üretildi. Kanonik `Amax.exe` değişmedi; instrumentation patch'i `_work/build/engine-reference/native-free-trace.patch`, trace `_work/.../race-native-crash/free-trace.log` (SHA-256 `874191c1...`).
+- Trace ölümcül sırayı gösterdi: `UpdateSpawn` drenajı X'i serbest bırakıyor → `SuperEffect::FreeParticle` (AtomicFree) araya ayırma girmeden aynı X'i tekrar kuyruğa atıyor → `UpdateSuperEmitters` drenajı ikinci kez `Free` ediyor. Yani aynı cache bir karede iki kez boşaltılıyor; trail elemanı bırakılmış emitter'ı tutuyor.
+- `iSalt=0` koruması `GetSalt()==0` olduğu için devreye girmiyor. Açık kalan: `C_Emitter::Update`/`m_bDelete` ile `FreeParticle` arasındaki sahiplik sözleşmesi ve trail referansının neden geçersiz kılınmadığı. Assert kaldırılmadı.
+- Not: instrumentation zamanlamayı değiştirdi; çökme W'den ~0.1s sonra geldi, süre karşılaştırması yapılmamalı. Önceki full dump/trace dosyaları üzerine yazıldı; eski hash'ler raporda tarihsel. Sıradaki en küçük adım: kaynakta sahiplik sözleşmesini belgelemek; gerekirse FreeParticle etiketine pParticle/blok indeksi eklemek.
+
 

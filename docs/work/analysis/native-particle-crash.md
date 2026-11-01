@@ -687,9 +687,192 @@ kimlik veriyor.
 1. **Çağıranı kesinleştir:** `AtomicFree`/`Free` girişlerine assert'e
    dokunmayan sınırlı izleme (çağıran dönüş adresi + eleman + kare) ekleyip
    aynı senaryoyu tekrarlamak. Bu, "hangi bayat slot" sorusunu kapatır.
+   **→ Yapıldı (2 Kasım, üçüncü tur):** `native-free-trace.patch` ile
+   env-gated izleme eklendi ve trace alındı; sonuç aşağıdaki
+   "Çağrı izleme (Free/AtomicFree)" bölümünde.
 2. **Ad hash'ini çıkar:** aynı dump'ta `SuperEffects.trailEffects[j].definition`
    zincirini izleyip efekt tanımının 32/64-bit ad hash'ini almak ve bunu
    `game-data` efekt kaynaklarıyla (yalnızca okuyarak) eşleştirmek. Hash→ad
-   eşlemesi manifestten doğrulanmalı; tahmin edilmemeli.
+   eşlemesi manifestten doğrulanmalı; tahmin edilmemeli. — **Hâlâ açık.**
 
 Bu rapor bir düzeltme iddiası taşımaz ve assert'in kaldırılmasını önermez.
+
+---
+
+## Çağrı izleme (Free/AtomicFree) — 2 Kasım 2026 (üçüncü tur)
+
+**Veri.** İzole Speed kaynağına env-gated (`BLUR2PC_FREE_TRACE`) bir tanılama
+eklendi; assert'e ve hiçbir durum değişkenine dokunulmadı
+(`_work/build/engine-reference/native-free-trace.patch`). Trace build'i
+`Amax-trace.exe` ile iki koşu alındı.
+
+| Artefakt | Bayt | SHA-256 |
+| --- | ---: | --- |
+| `free-trace.log` (ana trace, site etiketli) | 19.344 | `874191c14bb4beccd18cc87b62e334d3d185a129e8c4fa60273c96abaac35b50` |
+| `free-trace-1.log` (ilk trace, site etiketsiz) | 11.942 | `7e62f962038d93ae6fcbf5c774fd7013403adc7b7391be091d82f25e5cd7b47e` |
+| `dumps/full-exit.dmp` (aynı koşunun tam belleği) | 1.478.354.258 | `c0966df1d2bdc461323202e8d313c1871a2a6067c61f301da6106e9c04b39cf2` |
+| `Amax-trace.exe` / `.pdb` | 24.348.160 / 140.103.680 | `4c8e7043c46f9e921b2eb2e07558495728e23cf79daa5083a3f9585fcc4185ca` / `198b1d3013ee848d59b895ed7ae0781255d7f1b3e456663324e27e110055a52b` |
+| `native-free-trace.patch` | 8.431 | `466f632e9ae3bb6f650154a387f00b31b0066b582d3ed0a3a95aadb515926d98` |
+
+**Artefakt yenilemesi (kayıt düzeltmesi).** Bu koşu aynı klasörü kullandığı
+için önceki bölümlerdeki bazı dosyaların **üzerine yazıldı**:
+`dumps/full-exit.dmp` artık 1.478.354.258 bayt / `c0966df1…` (önceki
+1.458.887.110 / `abd9befe…`), `automation.log` artık 164.062 bayt /
+`ec505c89…` (önceki 195.445 / `84fc2b1d…`), `dump-result.json` artık 929 bayt /
+`da7a442f…`. Önceki hash'ler o koşunun tarihsel kaydıdır; dosyaların bugünkü
+içeriğini tarif etmez.
+
+**Yöntem.** `AtomicFreeTrace` her `AtomicFree`/`Free` girişinde, **işlemden
+önce** üç sayacı ve `_ReturnAddress()` değerini yazıyor; `AtomicSiteTrace`
+belirli çağrı yerlerine etiket bırakıyor (patch, satır 66-81 ve 90-235).
+Bu şablonlar çağıranlara inline edildiği için `_ReturnAddress()` pratikte
+"çağrıyı yapan dış fonksiyonun dönüş adresi"ni veriyor (ör. `FreeParticle`
+çağrısının dönüşü, `C_Emitter::Update` çağrısının dönüşü). Sembol eşlemesi
+ICF'e bırakılmadı: `Amax-trace.exe` üzerinde `dumpbin /disasm` ile
+doğrulandı.
+
+### Kanıtlanan
+
+**C1 — Aynı cache bir karede iki ayrı yerden boşaltılıyor.**
+Trace'te `Free` satırlarının iki farklı dönüş adresi var ve ikisi de
+`AtomicActiveCache<C_Emitter>::Update()` çağrısının dönüşü:
+
+| dönüş adresi | sökümle doğrulanan yer | kaynak |
+| --- | --- | --- |
+| `0x2FE97C` | `?UpdateSuperEmitters@C_ParticleManager…` (fonksiyon `0x2FE950`), `lea rcx,[rsi+800h]; call Update` | `Manager.cpp:1339` |
+| `0x2FE2D8` | `?UpdateSpawn@C_ParticleManager…` (fonksiyon `0x2FE270`), `lea rcx,[rbx+800h]; call Update` | `Manager.cpp:1385` |
+
+Kare sırası `Update()` içinde: `UpdateEmitters()` → **`UpdateSuperEmitters()`**
+→ **`UpdateSpawn()`** (`Manager.cpp:1195-1197`).
+**Düzeltme:** özet bilgide `0x2FE2D8 → C_ParticleManager::UpdateSuperEffect`
+yazıyordu; söküm bunun **`UpdateSpawn`** olduğunu gösteriyor (ICF kaynaklı
+sembol karışması). Site etiketleri etkilenmiyor.
+
+**C2 — Çağrı yolları ve site etiketleri.**
+
+| dönüş adresi | çağrılan dış fonksiyon | trace etiketi | ertelenmiş mi? |
+| --- | --- | --- | --- |
+| `0x31503D` | `FreeParticle(...)` (çağrı `0x315038`, hemen sonrası) | `SuperEffect::FreeParticle-229` | `AtomicFree` (ertelenmiş) |
+| `0x31D8D7` | `C_Emitter::Update(...)` (ana thread) | `Emitter::Update-259` → `AtomicFree-179` | `AtomicFree` |
+| `0x1CB674` | `C_Emitter::Update(...)` (scheduler worker, `ParticleEmitterUpdateModule`) | `Emitter::Update-259` → `AtomicFree-179` | `AtomicFree` |
+| `0x2FE97C` | `UpdateSuperEmitters` drenajı | — (`Free`) | senkron |
+| `0x2FE2D8` | `UpdateSpawn` drenajı | — (`Free`) | senkron |
+
+Yani **üç üretici** aynı kuyruğa yazıyor (`FreeParticle`, `Emitter::Update-259`
+→ `Emitter::AtomicFree-179`) ve **iki tüketici** (iki drenaj) onu boşaltıyor.
+
+**C3 — Ölümcül sıra (satır 220-233, X = `0x264FD0F77B0`).**
+
+```text
+220  Site SuperEffect::FreeParticle-229   X
+221  AtomicFree X  a=14 c=242 d=0  caller=0x31503D
+222  Free       X  a=14 c=242 d=1  caller=0x2FE97C   -> X serbest listeye döndü (pos=-1)
+223  Site Emitter::Update-259              X
+224  Site Emitter::AtomicFree-179          X
+225  AtomicFree X  a=15 c=241 d=0  caller=0x31D8D7   -> arada 2 ayırma var (X yeniden dağıtıldı)
+226  Site Emitter::Update-259            f61b0
+228  AtomicFree f61b0 a=15 c=241 d=1  caller=0x1CB674
+229  Free       X  a=15 c=241 d=2  caller=0x2FE2D8   -> X tekrar serbest (pos=-1)
+230  Free     f61b0 a=14 c=242 d=2  caller=0x2FE2D8   -> f61b0 da serbest
+231  Site SuperEffect::FreeParticle-229   X
+232  AtomicFree X  a=13 c=243 d=0  caller=0x31503D   -> 230 ile sayaçlar AYNI: araya ayırma yok
+233  Free       X  a=13 c=243 d=1  caller=0x2FE97C   -> pos=-1 => DebugBreak
+```
+
+Satır 232 ile 230'un sayaçları birebir aynı (`a=13 c=243`). `AtomicAllocate`
+`m_ActiveElements`'i artırıp `m_CachedElements`'i azalttığı için (`Atomic.h:286-303`)
+sayaçların değişmemesi **X'in yeniden dağıtılmadığının** kanıtıdır: 231'de
+`FreeParticle` bayat işaretçiyi kuyruğa attı, 233'teki drenaj da -1 gördü.
+Trace 233. satırda bitiyor (DebugBreak bu `Free`'in içinde).
+
+**C4 — Aynı koşunun tam bellek dump'ı bu sırayı birebir doğruluyor.**
+`dumps/full-exit.dmp` (modül tabanı `0x7FF621D90000`, `Amax-trace.exe`)
+içinde `m_SuperEffectEmitters` cache'i `0x265043d08b0`:
+`cached=243`, `active=13`, `deletedElements=1`, `m_Deleted[0]=0x264FD0F77B0`,
+`X.m_VectorPosition=-1`, X `m_Cache[241]`, `f61b0` `m_Cache[242]`.
+Bu, 233. satırın **işlem öncesi** durumunun aynısıdır (a=13 c=243 d=1);
+X'in 241'de, f61b0'ın 242'de olması 229-230 sırasını da doğruluyor.
+
+**C5 — Tuz (salt) koruması neden yetmiyor.**
+`SuperEffect.cpp:226`: `if(pParticle->iSalt != pParticle->pEmitter->GetSalt())`
+→ eşitse `NULL`'lama, değilse `AtomicFree`. Trail spawn'da
+`iSalt = pEmitter->GetSalt()` (`SuperSpawn.cpp:22,45`).
+`C_Emitter::GetSalt()` = `m_iSalt` (`Emitter.h:44`); `m_iSalt` yalnızca
+`SetDefaults()` içinde `0` atanıyor (`Emitter.cpp:89`) ve dinamik kütüphane
+genelinde başka atama yok (`SetSalt` diye bir API de yok).
+Event-instance sahipliği olmayan süper-efekt emitter'larında (A için
+`m_pEventInstance == NULL`, S2) tuz **hep 0** kalıyor → karşılaştırma
+`0 != 0` hiçbir zaman doğru olmuyor → bayat işaretçi `NULL`'lanmıyor,
+`AtomicFree`'ye gidiyor. Trace'te `AtomicFree` satırının görünmesi de
+`else` dalının çalıştığının kanıtıdır.
+
+**C6 — Üç serbest bırakma yolu, tek nesne.**
+X için trace'te üçü de görülüyor:
+(a) `C_Emitter::Update` → `m_bDelete` → `AtomicFree` (`Emitter.cpp:258-262`);
+(b) `FreeParticle` → `AtomicFree` (`SuperEffect.cpp:226-230`);
+(c) drenaj → `Free` (`Atomic.h:311-331`), iki ayrı çağrı yerinden (C1).
+X, 222 ve 229'da (c) ile, 225 ve 232'de (a)/(b) ile aynı kuyruğa
+girdi/çıktı.
+
+### Hipotez
+
+**H5 — "bayat trail referansı": mekanizma artık kanıtlandı, sahiplik
+sözleşmesi hâlâ hipotez.**
+Kanıtlanan: 231'de `FreeParticle`, X **serbest listedeyken** (232'de araya
+ayırma girmemiş) onu yeniden kuyruğa attı; yani trail elemanı, sahibi
+olduğu iddia edilen emitter'ı çoktan bırakılmışken tutuyordu.
+Hipotez olan: X'i (a) yoluyla bırakan tarafın trail elemanını neden
+geçersiz kılmadığı — kaynakta `C_Emitter::Update`/`m_bDelete` ile
+`FreeParticle` arasında bir "sahiplik iptali" bağı görünmüyor; emitter
+kendi kendini bıraktığında trail elemanındaki `pEmitter` alanı yerinde
+kalıyor ve tuz 0 olduğu için ayrım yapılamıyor (C5). Bu bağın yokluğu
+kod okumasıyla **gösterildi**, ancak hangi trail bloğunun hangi karede
+bayat kaldığı izlenmedi.
+
+**H9 (yeni, orta) — iki drenaj noktası hatanın zamanlamasını genişletiyor.**
+Aynı cache `UpdateSuperEmitters` (1339) ve `UpdateSpawn` (1385) içinde iki
+kez boşaltıldığı için, kuyruğa girişin hangi faza denk geldiğine göre
+drenaj aynı karede veya sonraki karede oluyor (C1/C3). Bu, hatanın
+*oluşma sıklığını* etkiler; kök nedeni değiştirmez (kök neden: bayat
+referans + etkisiz tuz koruması).
+
+**H10 (zayıf) — izleme koşusunda çökme çok daha erken.** Bu koşuda W
+12.87 s'de basıldı ve `automation.log` 12.99'da bitti (önceki koşularda
+~1 s ve ~13 s). Enstrümantasyonun ek yükü/`fflush` çağrıları zamanlamayı
+değiştirdiği için bu süre **karşılaştırma için kullanılmamalı**; nedensellik
+iddiası (H7) etkilenmez.
+
+### Kapanan ve kapanmayanlar
+
+Kapanan: "hangi iki çağrı yolu çakışıyor" (C3: `FreeParticle` ↔ drenaj;
+ayrıca `Emitter::Update-259` aynı kuyruğa üçüncü üretici), drenaj
+noktalarının kimliği (C1, `UpdateSpawn` düzeltmesi dahil), tuz korumasının
+neden etkisiz olduğu (C5), X'in yeniden dağıtılmadığının kanıtı (C3 sayaç
+eşitliği + C4 dump eşleşmesi).
+
+Kapanmayan: bayat trail elemanının hangi blok/partikül olduğu ve
+`m_bDelete` yolunun onu neden temizlemediği (H5'in ikinci yarısı), efektin
+adı/kaynak ID'si (önceki bölüm), girişsiz koşuyla nedensellik (H7).
+
+**İzlemenin sınırları (dürüstlük notu):** `active/cached/deleted` atomik
+okunmuyor; dosya `fopen(...,"a")` ile iki ayrı `static FILE*` üzerinden ve
+çok thread'li yazılıyor, dolayısıyla farklı thread'lerin satırları arasında
+sıra kayması olabilir. Bu raporda kullanılan sıra, ana thread'in kendi
+zinciri ve sayaç sürekliliğiyle (C3) doğrulandı; yine de tek başına bu
+trace bir "kesin toplam sıra" iddiası taşımaz.
+
+### Sıradaki en küçük adım
+
+1. **Kod okumasıyla (oyun çalıştırmadan):** `C_Emitter::Update`'in
+   `m_bDelete` dalı ile `FreeParticle` arasındaki sahiplik sözleşmesini
+   çıkar: emitter kendi kendini bırakırken onu gösteren trail elemanlarının
+   geçersiz kılınıp kılınmadığını (ve tuz mekanizmasının süper-efekt
+   emitter'ları için neden hiç devreye girmediğini) kaynakta belgele.
+2. **İzlemeyi bir adım derinleştir (yalnızca gerekirse, yeni koşu):**
+   `FreeParticle` etiketine `pParticle` (trail eleman adresi) ve blok
+   indeksini ekle; bayat kalan tek bir elemanı isimlendir. Bu, H5'in ikinci
+   yarısını kapatır.
+3. Efekt adı için önceki bölümdeki (2) numaralı ad-hash yolu hâlâ açık.
+
+Bu bölüm de bir düzeltme iddiası taşımaz; assert'in kaldırılması veya
+zayıflatılması önerilmez.
