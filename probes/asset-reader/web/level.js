@@ -7,6 +7,7 @@ const DEMOS={
   'river-wide':{level:'usa_la_river',geometryBlock:88,nodeBlock:283,label:'USA LA River · geniş sahne parçası'},
   'river-small':{level:'usa_la_river',geometryBlock:252,nodeBlock:253,label:'USA LA River · küçük doğrulama parçası'},
   'river-instance':{level:'usa_la_river',geometryBlock:27,nodeBlock:253,label:'USA LA River · instance dönüşümü',instances:true},
+  'river-instances':{level:'usa_la_river',geometryBlock:27,nodeBlock:253,label:'USA LA River · blok27 desteklenen instance’lar',instances:true,allInstances:true},
   'showroom':{level:'showroom',geometryBlock:3,nodeBlock:10,label:'Showroom · ilk sahne parçası'},
 };
 function invoke(mod,name,args){
@@ -48,21 +49,28 @@ export async function inspectReferenceLevel(mod,{signal}={}){
     const [geometry,node]=await Promise.all([range('stream',geometryChunk.offset,geometryChunk.storedBytes),range('stream',nodeChunk.offset,nodeChunk.storedBytes)]);
     signal?.throwIfAborted();
     const geometryPtr=allocate(geometry),nodePtr=allocate(node);
-    if(DEMO.instances&&!mod._level_instances_inspect)throw new Error('Instance okuyucusu henüz derlenmedi.');
-    const mesh=DEMO.instances
-      ?invoke(mod,'_level_instances_inspect',[headerPtr,header.length,geometryPtr,geometry.length,nodePtr,node.length,DEMO.geometryBlock,DEMO.nodeBlock])
-      :invoke(mod,'_level_mesh_inspect',[headerPtr,header.length,geometryPtr,geometry.length,nodePtr,node.length,DEMO.geometryBlock,DEMO.nodeBlock]);
+    if(DEMO.allInstances&&!mod._level_instances_all_inspect)throw new Error('Çoklu instance okuyucusu henüz derlenmedi.');
+    if(DEMO.instances&&!DEMO.allInstances&&!mod._level_instances_inspect)throw new Error('Instance okuyucusu henüz derlenmedi.');
+    const mesh=DEMO.allInstances
+      ?invoke(mod,'_level_instances_all_inspect',[headerPtr,header.length,geometryPtr,geometry.length,nodePtr,node.length,DEMO.geometryBlock,DEMO.nodeBlock])
+      :DEMO.instances
+        ?invoke(mod,'_level_instances_inspect',[headerPtr,header.length,geometryPtr,geometry.length,nodePtr,node.length,DEMO.geometryBlock,DEMO.nodeBlock])
+        :invoke(mod,'_level_mesh_inspect',[headerPtr,header.length,geometryPtr,geometry.length,nodePtr,node.length,DEMO.geometryBlock,DEMO.nodeBlock]);
     document.getElementById('model-result').hidden=false;
     document.getElementById('model-name').textContent=DEMO.label;
-    document.getElementById('model-status').textContent=DEMO.instances
-      ?'Özgün levelstream instance0 · sabit affine g_mWorld · dünya uzayı; diğer instance ve materyaller uygulanmadı.'
-      :'Özgün levelrender başlığı ve levelstream aralıkları · doğrudan çizimler; instance ve oyun mantığı uygulanmadı.';
+    document.getElementById('model-status').textContent=DEMO.allInstances
+      ?'Blok27’ye bağlı ve arşiv sınırlarıyla uyuşan instance’lar · sabit affine g_mWorld · materyaller uygulanmadı.'
+      :DEMO.instances
+        ?'Özgün levelstream instance0 · sabit affine g_mWorld · dünya uzayı; diğer instance ve materyaller uygulanmadı.'
+        :'Özgün levelrender başlığı ve levelstream aralıkları · doğrudan çizimler; instance ve oyun mantığı uygulanmadı.';
     document.getElementById('model-chunks').replaceChildren();
     document.getElementById('model-chunks').closest('.table-wrap').hidden=true;
     await showMesh(mesh);
-    status.textContent=DEMO.instances
-      ?`${index.streamChunks.length} akış kaydı · instance0 · ${mesh.indices.length/3} gerçek üçgen · dönüşüm hatası ${mesh.metadata.boundsMaxAbsoluteDifference.toExponential(2)}`
-      :`${index.streamChunks.length} akış kaydı · ${geometry.length.toLocaleString('tr-TR')} bayt geometri + ${node.length.toLocaleString('tr-TR')} bayt düğüm · ${mesh.indices.length/3} gerçek üçgen`;
+    status.textContent=DEMO.allInstances
+      ?`${index.streamChunks.length} akış kaydı · ${mesh.metadata.emittedInstanceCount} instance çizildi · ${mesh.metadata.unsupportedBoundsInstances} sınır uyuşmazlığı · ${mesh.metadata.omittedOtherBlockInstances} başka blok · ${mesh.indices.length/3} üçgen`
+      :DEMO.instances
+        ?`${index.streamChunks.length} akış kaydı · instance0 · ${mesh.indices.length/3} gerçek üçgen · dönüşüm hatası ${mesh.metadata.boundsMaxAbsoluteDifference.toExponential(2)}`
+        :`${index.streamChunks.length} akış kaydı · ${geometry.length.toLocaleString('tr-TR')} bayt geometri + ${node.length.toLocaleString('tr-TR')} bayt düğüm · ${mesh.indices.length/3} gerçek üçgen`;
     return mesh;
   }finally{for(const pointer of allocations)mod._free(pointer);}
 }

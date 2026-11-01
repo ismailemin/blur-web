@@ -29,6 +29,12 @@ char* level_instances_inspect(const unsigned char* level_bytes, size_t level_siz
                               const unsigned char* geometry_bytes, size_t geometry_size,
                               const unsigned char* node_bytes, size_t node_size,
                               int32_t geometry_block, int32_t node_block);
+// Additive variant: emits every instance whose VB/IB bind the selected geometry
+// block. Other-block instances are counted as omitted, not guessed.
+char* level_instances_all_inspect(const unsigned char* level_bytes, size_t level_size,
+                                  const unsigned char* geometry_bytes, size_t geometry_size,
+                                  const unsigned char* node_bytes, size_t node_size,
+                                  int32_t geometry_block, int32_t node_block);
 void scene_free(void* pointer);
 #ifdef __cplusplus
 }

@@ -248,6 +248,15 @@ Native/WASM JSON is identical; F32 position and U32 index hashes match the
 independent Python proof exactly (`5125314b…` and `886e2855…`). The browser adds
 a **River · instance prova** preset; it is one instance, not a track.
 
+`level_instances_all_inspect(...)` is an additive variant over the same inputs.
+It emits every instance whose VB/IB bind the selected geometry block and whose
+constant affine transform matches archived bounds. Block27/node253 yields
+**14 emitted**, **8 unsupported bounds**, **35 other-block**, with
+**7,308vertices/6,106triangles** and maximum bound error `6.02444e-05`. Instances
+using base primitives7–10 are skipped explicitly because their additional stream
+semantics are not applied. The browser exposes this as **River · 14 instance**.
+It is not a full track.
+
 
 The native three-input river fixture yields344vertices,208triangles,five direct
 draws, while explicitly skipping57instances and36instance base primitives.
