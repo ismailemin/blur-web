@@ -22,6 +22,13 @@ char* level_mesh_inspect(const unsigned char* level_bytes, size_t level_size,
                          const unsigned char* geometry_bytes, size_t geometry_size,
                          const unsigned char* node_bytes, size_t node_size,
                          int32_t geometry_block, int32_t node_block);
+// Instantiated first-RenderList first-instance proof. Traverses every preceding
+// item in a stream chunk, applies only explicit constant affine g_mWorld, and
+// emits transformed world-space LOD0 geometry for one instance.
+char* level_instances_inspect(const unsigned char* level_bytes, size_t level_size,
+                              const unsigned char* geometry_bytes, size_t geometry_size,
+                              const unsigned char* node_bytes, size_t node_size,
+                              int32_t geometry_block, int32_t node_block);
 void scene_free(void* pointer);
 #ifdef __cplusplus
 }

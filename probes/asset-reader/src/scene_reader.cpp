@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -15,6 +16,7 @@
 
 namespace {
 constexpr size_t max_input=64*1024*1024;
+constexpr size_t level_input_limit=16u*1024u*1024u;
 constexpr uint32_t max_count=100000;
 std::string escape(const char* text);
 struct Reader {
@@ -28,6 +30,7 @@ struct Reader {
     uint64_t u64(){const uint64_t lo=u32(),hi=u32();return lo|(hi<<32);}
     int32_t s32(){return static_cast<int32_t>(u32());}
     float f32(){auto bits=u32();float f;std::memcpy(&f,&bits,4);if(!std::isfinite(f))fail("Nonfinite position");return f;}
+    float f32_bits(){auto bits=u32();float f;std::memcpy(&f,&bits,4);return f;}
     void expect(uint32_t value){if(u32()!=value)fail("Unsupported serialized value");}
     uint16_t ar(uint16_t max_version=0){if(++objects>max_count)fail("Archive object limit");if(u16()!=0x4152)fail("Missing RA object marker");auto v=u16();if(v>max_version)fail("Unsupported object version");return v;}
     uint32_t count(uint32_t limit=max_count){auto n=u32();if(n>limit)fail("Collection limit");return n;}
@@ -95,6 +98,16 @@ struct ResourceTextureInfo {
     std::vector<TextureLodInfo> lods;
 };
 struct ResourceBlockInfo {int32_t index=-1;uint32_t lod_count=0;std::vector<ResourceTextureInfo> textures;};
+struct InstanceInfo {int32_t primitive_index=0;MaterialRef material;std::vector<Stream> streams;uint32_t flags=0;};
+struct TransformField {std::string name;int32_t type=0;uint32_t count=0;std::vector<float> floats;std::vector<MaterialRef> nested;bool runtime=false;};
+struct TransformRow {std::vector<TransformField> fields;};
+struct RenderListInfo {
+    std::vector<Primitive> primitives,base_primitives;
+    std::vector<InstanceInfo> instances;
+    std::vector<TransformRow> constants;
+    std::vector<Resource> index_sources,vertex_sources,texture_sources;
+    std::array<float,8> instance_bounds{};bool has_instance_bounds=false;
+};
 struct ChunkItem {int32_t block,lod;};
 struct StreamChunk {std::vector<ChunkItem> items;std::vector<int32_t> prerequisites;uint64_t offset,stored,original;};
 float half(uint16_t h){const int sign=(h&0x8000)?-1:1;auto exp=(h>>10)&31,frac=h&1023;if(exp==31)throw std::runtime_error("Nonfinite half value");return sign*(exp?std::ldexp(float(1024+frac),int(exp)-25):std::ldexp(float(frac),-24));}
@@ -123,6 +136,7 @@ struct Decoder {
     int32_t expected_resource_block=0;
     uint32_t resource_blocks=0,loaded_blocks=0,instance_count=0,instance_batch_count=0,base_primitive_count=0;
     std::vector<StreamChunk> stream_chunks;
+    std::vector<RenderListInfo> render_lists;
     uint32_t valid_uv_vertices=0,placeholder_uv_vertices=0,material_steps=0;
     MaterialType material_type(){
         r.ar();r.str();auto n=r.vec(4096);MaterialType t;
@@ -203,6 +217,106 @@ struct Decoder {
     // counts. Visibility is not applied; vector extents are independently bounded.
     void pvs(){auto v=r.ar(1);r.skip(4);if(v){auto n=r.vec();r.skip(size_t(n)*2);}r.skip(4);auto n=r.vec();r.skip(n);}
     std::vector<Resource> resources(){auto n=r.vec(4096);std::vector<Resource> values;for(uint32_t i=0;i<n;i++)values.push_back({r.s32(),r.s32()});return values;}
+    MaterialRef material_ref(){r.ar();return {r.s32(),r.s32()};}
+    InstanceInfo parse_instance(){
+        r.ar();InstanceInfo result;result.primitive_index=r.s32();result.material=material_ref();
+        auto n=r.vec(32);for(uint32_t i=0;i<n;i++)result.streams.push_back(primitive_stream());
+        result.flags=r.u32();return result;
+    }
+    std::vector<TransformRow> transform_material_data(const std::vector<MaterialType>& types){
+        auto count=r.count(10000);r.count(max_input);std::vector<TransformRow> rows;
+        for(uint32_t i=0;i<count;i++){
+            auto index=r.count();if(index>=types.size())r.fail("Material type reference out of bounds");TransformRow row;
+            for(const auto& f:types[index].fields){
+                TransformField field;field.name=f.name;field.type=f.type;field.count=f.count;
+                const size_t size=f.type<2?1:f.type<4?2:4;
+                if(f.type==8||f.type==9){
+                    for(uint32_t j=0;j<f.count;j++){r.ar();const MaterialRef ref{r.s32(),r.s32()};if(f.type==8)field.nested.push_back(ref);else field.runtime=true;}
+                }else if(f.type==6){
+                    for(uint32_t j=0;j<f.count;j++)field.floats.push_back(r.f32_bits());
+                }else r.skip(size*f.count);
+                row.fields.push_back(std::move(field));
+            }
+            rows.push_back(std::move(row));
+        }
+        return rows;
+    }
+    void skip_node_body(const std::string& name,uint16_t version){
+        if(name=="RenderingData::RootNode"){if(version)r.fail("Unsupported root version");r.cull();return;}
+        if(name=="RenderingData::CullNode"){if(version>2)r.fail("Unsupported cull version");r.node();r.bounds();r.bitvector();if(version>0)r.skip(4);if(version>1)r.bitvector();return;}
+        if(name=="RenderingData::Node"){if(version)r.fail("Unsupported node version");r.str();auto n=r.vec();r.skip(size_t(n)*8+16);return;}
+        if(name=="RenderingData::GroupNode"){if(version)r.fail("Unsupported group version");r.cull();r.str();return;}
+        if(name=="RenderingData::LodNode"){if(version)r.fail("Unsupported lod version");r.cull();auto n=r.vec();r.skip(size_t(n)*4);return;}
+        r.fail("Unsupported polymorphic node "+name);
+    }
+    void parse_node_instance(){
+        auto tag=r.u8();if(tag==0)return;if(tag!=3)r.fail("Unsupported polymorphic node pointer");
+        auto name=r.str();auto version=r.ar(4);
+        if(name=="RenderingData::RenderListNode_Common"){if(version)r.fail("Unsupported target RenderListNode version");render_lists.push_back(parse_render_list());return;}
+        skip_node_body(name,version);
+    }
+    RenderListInfo parse_render_list(){
+        RenderListInfo info;
+        auto base_version=r.ar(4);if(base_version<2)r.fail("Unsupported legacy RenderListNode");
+        r.cull();r.ar();auto types=material_types();material_data(types);
+        auto n=r.vec(10000);for(uint32_t i=0;i<n;i++)info.primitives.push_back(primitive());
+        n=r.vec(10000);for(uint32_t i=0;i<n;i++)info.instances.push_back(parse_instance());
+        n=r.vec(10000);for(uint32_t i=0;i<n;i++){r.ar();parse_instance();primitive_stream();}
+        n=r.vec(10000);for(uint32_t i=0;i<n;i++)info.base_primitives.push_back(primitive());
+        info.constants=transform_material_data(types);
+        n=r.vec(10000);for(uint32_t i=0;i<n;i++){r.ar();r.skip(24);}
+        for(int group=0;group<3;group++){
+            n=r.vec();for(uint32_t i=0;i<n;i++){r.ar();if(group==1&&i==0){for(int k=0;k<8;k++)info.instance_bounds[k]=r.f32_bits();info.has_instance_bounds=true;}else r.skip(32);}
+        }
+        for(int k=0;k<3;k++)pvs();
+        n=r.vec();r.skip(size_t(n)*4);
+        n=r.vec();for(uint32_t i=0;i<n;i++){r.ar();r.bitvector();r.bitvector();}
+        if(base_version==3){for(int k=0;k<2;k++){r.ar();auto dynamic_types=material_types();transform_material_data(dynamic_types);}}
+        else if(base_version>3){n=r.vec(256);for(uint32_t i=0;i<n;i++){r.ar();auto dynamic_types=material_types();transform_material_data(dynamic_types);}}
+        info.index_sources=resources();info.vertex_sources=resources();info.texture_sources=resources();
+        chunk_data();
+        return info;
+    }
+    void apply_transform(const std::vector<TransformRow>& constants,const MaterialRef& ref,std::array<float,16>& matrix,bool& seen,std::string& error,std::vector<MaterialRef>& stack){
+        if(!error.empty())return;
+        if(ref.list!=0){error="Runtime material transform unsupported";return;}
+        if(ref.index<0||size_t(ref.index)>=constants.size()){error="Constant index out of bounds";return;}
+        if(stack.size()>=32){error="Recursive material transform";return;}
+        for(const auto& previous:stack)if(previous.index==ref.index&&previous.list==ref.list){error="Recursive material transform";return;}
+        stack.push_back(ref);
+        for(const auto& field:constants[size_t(ref.index)].fields){
+            if(field.type==8){for(const auto& child:field.nested)apply_transform(constants,child,matrix,seen,error,stack);continue;}
+            if(field.name!="g_mWorld")continue;
+            if(field.type!=6||field.count!=16||field.floats.size()!=16){error="Unsupported world matrix field";continue;}
+            for(int k=0;k<16;k++)if(!std::isfinite(field.floats[size_t(k)])){error="Nonfinite world matrix";break;}
+            if(!error.empty())continue;
+            for(int k=0;k<16;k++)matrix[size_t(k)]=field.floats[size_t(k)];
+            seen=true;
+        }
+        stack.pop_back();
+    }
+    bool world_matrix(const RenderListInfo& list,const InstanceInfo& instance,const Primitive& primitive,std::array<float,16>& matrix,std::string& error){
+        bool seen=false;std::vector<MaterialRef> stack;
+        apply_transform(list.constants,instance.material,matrix,seen,error,stack);
+        for(const auto& stream:instance.streams)if(stream.index!=-1)apply_transform(list.constants,{stream.material,stream.material_list},matrix,seen,error,stack);
+        apply_transform(list.constants,primitive.base,matrix,seen,error,stack);
+        for(const auto& stream:primitive.streams)if(stream.index!=-1)apply_transform(list.constants,{stream.material,stream.material_list},matrix,seen,error,stack);
+        if(!error.empty())return false;
+        if(!seen){error="No explicit constant world matrix";return false;}
+        if(matrix[3]!=0||matrix[7]!=0||matrix[11]!=0||matrix[15]!=1){error="Only affine world matrices supported";return false;}
+        return true;
+    }
+    struct StreamItem {size_t start=0,end=0;std::vector<VB> vbs;std::vector<IB> ibs;};
+    StreamItem parse_stream_item(size_t cursor,bool parse_lists,bool keep_geometry){
+        r.p=cursor;r.origin=0;StreamItem out;out.start=cursor;
+        r.ar();r.ar();r.expect(2);r.expect(0);
+        auto n=r.vec(256);for(uint32_t i=0;i<n;i++){if(!r.pointer())r.fail("Null stream vertex buffer");auto vb=vertex_buffer();if(keep_geometry)out.vbs.push_back(std::move(vb));}
+        n=r.vec(256);for(uint32_t i=0;i<n;i++){if(!r.pointer())r.fail("Null stream index buffer");auto ib=index_buffer();if(keep_geometry)out.ibs.push_back(std::move(ib));}
+        n=r.vec(100000);if(parse_lists){for(uint32_t i=0;i<n;i++)parse_node_instance();}else{for(uint32_t i=0;i<n;i++)skip_node();}
+        auto texture_count=r.count(16);for(uint32_t i=0;i<texture_count;i++){ResourceTextureInfo texture;texture_lod_metadata(texture,0);}
+        out.end=r.p;return out;
+    }
+
     // Full node skip for resource-block metadata traversal. This mirrors the
     // source-shaped Python diagnostics; it must consume ChunkData and every
     // following field so the next resource block starts at the right byte.
@@ -232,11 +346,7 @@ struct Decoder {
         auto tag=r.u8();if(tag==0)return;if(tag!=3)r.fail("Unsupported polymorphic node pointer");
         auto name=r.str();auto version=r.ar(4);
         if(name=="RenderingData::RenderListNode_Common"){if(version)r.fail("Unsupported target RenderListNode version");render_list_skip();return;}
-        if(name=="RenderingData::RootNode"){if(version)r.fail("Unsupported root version");r.cull();return;}
-        if(name=="RenderingData::CullNode"){if(version>2)r.fail("Unsupported cull version");r.node();r.bounds();r.bitvector();if(version>0)r.skip(4);if(version>1)r.bitvector();return;}
-        if(name=="RenderingData::Node"){if(version)r.fail("Unsupported node version");r.str();auto n=r.vec();r.skip(size_t(n)*8+16);return;}
-        if(name=="RenderingData::GroupNode"){if(version)r.fail("Unsupported group version");r.cull();r.str();return;}
-        r.fail("Unsupported polymorphic node "+name);
+        skip_node_body(name,version);
     }
     void texture_lod_metadata(ResourceTextureInfo& texture,int32_t lod){
         TextureLodInfo t;t.lod=lod;t.archive_offset=r.p;
@@ -520,7 +630,6 @@ std::string scene_resource_textures(const unsigned char* data,size_t length){
        <<",\"scope\":\"all loaded resource blocks and texture LOD descriptors; geometry/material/instance import not performed\"}}";
     return out.str();
 }
-constexpr size_t level_input_limit=16u*1024u*1024u;
 Chunk level_fileblock(Reader& r,size_t start,size_t parent_end){
     r.p=start;r.need(16);size_t n=0;while(n<8&&r.b[start+n]){if(r.b[start+n]<32||r.b[start+n]>126)r.fail("Invalid level FileBlock ID");++n;}
     if(n==0||n==8)r.fail("Unterminated level FileBlock ID");
@@ -632,10 +741,152 @@ std::string level_mesh(const unsigned char* level,size_t level_size,const unsign
 std::string escape(const char* text){std::string out;for(const unsigned char* p=reinterpret_cast<const unsigned char*>(text);*p;p++){if(*p=='"'||*p=='\\')out+='\\';if(*p>=32)out+=char(*p);else out+=' ';}return out;}
 char* copy(const std::string& s){auto* p=static_cast<char*>(std::malloc(s.size()+1));if(p)std::memcpy(p,s.c_str(),s.size()+1);return p;}
 }
+std::string level_instances(const unsigned char* level,size_t level_size,const unsigned char* geometry_bytes,size_t geometry_size,
+                            const unsigned char* node_bytes,size_t node_size,int32_t geometry_block,int32_t node_block){
+    if(!level||!geometry_bytes||!node_bytes||level_size<20||geometry_size<40||node_size<40||
+        level_size>level_input_limit||geometry_size>level_input_limit||node_size>level_input_limit)
+        throw std::runtime_error("Level/geometry/node inputs outside bounded 16-MiB limits");
+    if(geometry_block==node_block)throw std::runtime_error("Geometry and node chunks must identify distinct resource blocks");
+    Decoder header{{level,level_size}};level_scene_header(header);
+    const StreamChunk* geometry_record=nullptr;size_t geometry_item=0,geometry_chunk_index=0;
+    for(size_t c=0;c<header.stream_chunks.size();c++)for(size_t i=0;i<header.stream_chunks[c].items.size();i++){
+        const auto& item=header.stream_chunks[c].items[i];
+        if(item.block==geometry_block&&item.lod==0){
+            if(geometry_record)throw std::runtime_error("Ambiguous geometry block/LOD0 stream item");
+            geometry_record=&header.stream_chunks[c];geometry_item=i;geometry_chunk_index=c;
+        }
+    }
+    if(!geometry_record)throw std::runtime_error("Geometry block LOD0 absent from Scene ChunkInfo");
+    if(geometry_record->stored!=geometry_size)throw std::runtime_error("Supplied geometry chunk length differs from ChunkInfo stored size");
+    if(!geometry_record->prerequisites.empty())throw std::runtime_error("Selected geometry chunk needs additional prerequisites");
+    const auto& node_record=selected_chunk(header,node_block,node_size);
+    size_t node_chunk_index=0;for(size_t c=0;c<header.stream_chunks.size();c++)if(&header.stream_chunks[c]==&node_record)node_chunk_index=c;
+
+    Decoder nodes{{node_bytes,node_size}};auto& nr=nodes.r;
+    nr.literal("ARCH",4);nr.expect(1);nr.expect(0);nr.literal("ARCH",4);nr.expect(0);
+    if(nr.count()!=node_record.items.size())nr.fail("Node stream item count differs from Scene ChunkInfo");
+    nodes.parse_stream_item(24,true,false);
+    if(nodes.render_lists.empty())throw std::runtime_error("No supported RenderList in selected node chunk");
+    const auto& list=nodes.render_lists[0];
+    if(list.instances.empty())throw std::runtime_error("First RenderList contains no instances");
+    if(list.base_primitives.empty())throw std::runtime_error("First RenderList contains no base primitives");
+    const auto& instance=list.instances[0];
+    if(instance.primitive_index<0||size_t(instance.primitive_index)>=list.base_primitives.size())throw std::runtime_error("Instance base primitive index out of bounds");
+    const auto& primitive=list.base_primitives[size_t(instance.primitive_index)];
+
+    Decoder geo{{geometry_bytes,geometry_size}};auto& gr=geo.r;
+    gr.literal("ARCH",4);gr.expect(1);gr.expect(0);gr.literal("ARCH",4);gr.expect(0);
+    if(gr.count()!=geometry_record->items.size())gr.fail("Geometry stream item count differs from Scene ChunkInfo");
+    Decoder::StreamItem target;size_t cursor=24;bool found_target=false;
+    for(size_t i=0;i<geometry_record->items.size();i++){
+        auto item=geo.parse_stream_item(cursor,false,i==geometry_item);
+        if(i==geometry_item){target=std::move(item);found_target=true;break;}
+        cursor=item.end;
+    }
+    if(!found_target)throw std::runtime_error("Target geometry item was not reached");
+
+    if(primitive.declaration<0||size_t(primitive.declaration)>=header.declaration_elements.size())throw std::runtime_error("Primitive declaration out of bounds");
+    const DeclarationElement* position=nullptr;
+    for(const auto& element:header.declaration_elements[size_t(primitive.declaration)])if(element.value.usage==0&&element.value.index==0){if(position)throw std::runtime_error("Multiple POSITION0 declarations");position=&element;}
+    if(!position||position->stream<0||position->stream>15||position->value.method!=0)throw std::runtime_error("Unsupported POSITION0 declaration");
+    std::array<const Stream*,16> streams{};
+    for(const auto& stream:instance.streams)if(stream.index!=-1){if(stream.index<0||stream.index>15)throw std::runtime_error("Instance stream index out of bounds");streams[size_t(stream.index)]=&stream;}
+    for(const auto& stream:primitive.streams)if(stream.index!=-1){if(stream.index<0||stream.index>15)throw std::runtime_error("Primitive stream index out of bounds");streams[size_t(stream.index)]=&stream;}
+    const Stream* selected=streams[size_t(position->stream)];
+    if(!selected)throw std::runtime_error("POSITION0 instance stream binding missing");
+    if(selected->frequency!=0||selected->offset<0)throw std::runtime_error("Unsupported instance stream frequency/offset");
+    if(selected->vb<0||size_t(selected->vb)>=list.vertex_sources.size()||primitive.ib<0||size_t(primitive.ib)>=list.index_sources.size())throw std::runtime_error("Instance resource source index out of bounds");
+    const auto& vertex_source=list.vertex_sources[size_t(selected->vb)];
+    const auto& index_source=list.index_sources[size_t(primitive.ib)];
+    if(vertex_source.block!=geometry_block||index_source.block!=geometry_block)throw std::runtime_error("Instance VB/IB do not bind the selected geometry block");
+    if(vertex_source.index<0||index_source.index<0||size_t(vertex_source.index)>=target.vbs.size()||size_t(index_source.index)>=target.ibs.size())throw std::runtime_error("Instance geometry resource index out of bounds");
+    const auto& vb=target.vbs[size_t(vertex_source.index)];
+    const auto& ib=target.ibs[size_t(index_source.index)];
+    if(vb.stride==0||selected->offset%vb.stride)throw std::runtime_error("Unaligned instance vertex stream offset");
+    const uint32_t vertex_shift=uint32_t(selected->offset)/vb.stride;
+    const Element* stored=nullptr;
+    for(const auto& element:vb.elements)if(element.usage==0&&element.index==0){if(stored)throw std::runtime_error("Duplicate position semantic");stored=&element;}
+    if(!stored||stored->type!=position->value.type||stored->method!=position->value.method||stored->offset!=position->value.offset)throw std::runtime_error("Instance POSITION0 declaration does not match bound vertex format");
+    if(stored->type!=6&&stored->type!=9)throw std::runtime_error("Unsupported instance position vertex format");
+    if(uint32_t(stored->offset)+(stored->type==9?8u:12u)>vb.stride)throw std::runtime_error("Instance position exceeds vertex stride");
+    if(primitive.lods.empty())throw std::runtime_error("Instance base primitive has no LOD0");
+    const auto& lod=primitive.lods[0];
+    if(lod.offset>ib.count||lod.count>ib.count-lod.offset||lod.min>vb.count||lod.vertices>vb.count-lod.min||vertex_shift>vb.count)throw std::runtime_error("Instance primitive range exceeds buffer");
+    if(primitive.topology!=0&&primitive.topology!=1)throw std::runtime_error("Unsupported instance primitive topology");
+    if(primitive.topology==0&&lod.count%3)throw std::runtime_error("Invalid instance triangle-list index count");
+
+    std::vector<uint32_t> source_indices;
+    for(uint32_t j=0;j<lod.count;j++){
+        size_t at=ib.data+size_t(lod.offset+j)*ib.width;
+        uint32_t index=ib.width==2?(uint32_t(gr.b[at])|uint32_t(gr.b[at+1])<<8):(uint32_t(gr.b[at])|uint32_t(gr.b[at+1])<<8|uint32_t(gr.b[at+2])<<16|uint32_t(gr.b[at+3])<<24);
+        if(index<lod.min||index>=lod.min+lod.vertices||index+vertex_shift>=vb.count)throw std::runtime_error("Instance index outside primitive vertex range");
+        source_indices.push_back(index);
+    }
+    std::vector<uint32_t> triangles;
+    const uint32_t step=primitive.topology==0?3u:1u;
+    for(size_t j=2;j<source_indices.size();j+=step){
+        uint32_t a=source_indices[j-2],b=source_indices[j-1],c=source_indices[j];
+        if(primitive.topology==1&&j%2)std::swap(a,b);
+        if(a==b||b==c||a==c)continue;
+        triangles.insert(triangles.end(),{a,b,c});
+    }
+    if(triangles.empty())throw std::runtime_error("Instance produced no nondegenerate triangles");
+
+    std::array<float,16> matrix{};std::string matrix_error;
+    if(!nodes.world_matrix(list,instance,primitive,matrix,matrix_error))throw std::runtime_error(matrix_error);
+    std::vector<uint32_t> used=source_indices;
+    std::sort(used.begin(),used.end());used.erase(std::unique(used.begin(),used.end()),used.end());
+    std::map<uint32_t,uint32_t> compact;std::vector<float> positions;std::vector<double> world_double;
+    for(size_t i=0;i<used.size();i++){
+        const uint32_t vertex=used[i]+vertex_shift;
+        if(vertex>=vb.count)throw std::runtime_error("Instance vertex outside bound buffer");
+        const size_t at=vb.data+size_t(vertex)*vb.stride+stored->offset;
+        double x,y,z;
+        if(stored->type==6){
+            float fx,fy,fz;std::memcpy(&fx,&gr.b[at],4);std::memcpy(&fy,&gr.b[at+4],4);std::memcpy(&fz,&gr.b[at+8],4);x=fx;y=fy;z=fz;
+        }else{
+            const auto bits=[&](size_t offset){return uint16_t(gr.b[at+offset])|uint16_t(gr.b[at+offset+1])<<8;};
+            x=half(bits(0));y=half(bits(2));z=half(bits(4));
+        }
+        if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z))throw std::runtime_error("Nonfinite instance position");
+        for(int a=0;a<3;a++){
+            const double value=x*matrix[size_t(a)]+y*matrix[size_t(4+a)]+z*matrix[size_t(8+a)]+matrix[size_t(12+a)];
+            if(!std::isfinite(value))throw std::runtime_error("Nonfinite transformed instance position");
+            world_double.push_back(value);positions.push_back(float(value));
+        }
+        compact[used[i]]=uint32_t(i);
+    }
+    std::vector<uint32_t> indices;indices.reserve(triangles.size());for(const auto v:triangles)indices.push_back(compact.at(v));
+    std::array<double,3> world_min{INFINITY,INFINITY,INFINITY},world_max{-INFINITY,-INFINITY,-INFINITY};
+    for(size_t i=0;i<world_double.size();i++){world_min[i%3]=std::min(world_min[i%3],world_double[i]);world_max[i%3]=std::max(world_max[i%3],world_double[i]);}
+    if(!list.has_instance_bounds)throw std::runtime_error("Archived instance bounds unavailable");
+    double bounds_error=0;
+    for(int a=0;a<3;a++){bounds_error=std::max(bounds_error,std::abs(world_min[size_t(a)]-list.instance_bounds[size_t(a)]));bounds_error=std::max(bounds_error,std::abs(world_max[size_t(a)]-list.instance_bounds[size_t(a+3)]));}
+    if(bounds_error>0.0001)throw std::runtime_error("Transformed instance geometry disagrees with archived bounds");
+
+    std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<float>::max_digits10);
+    out<<"{\"status\":\"ok\",\"positions\":[";for(size_t i=0;i<positions.size();i++){if(i)out<<',';out<<positions[i];}
+    out<<"],\"indices\":[";for(size_t i=0;i<indices.size();i++){if(i)out<<',';out<<indices[i];}
+    out<<"],\"draws\":[{\"firstIndex\":0,\"indexCount\":"<<indices.size()<<",\"albedoTexture\":null,\"binding\":\"Level instance diagnostic; materials not applied\",\"uv0Available\":false,\"albedoParameter\":null,\"resourceBlock\":null,\"resourceIndex\":null}],"
+       <<"\"bounds\":{\"min\":["<<world_min[0]<<','<<world_min[1]<<','<<world_min[2]<<"],\"max\":["<<world_max[0]<<','<<world_max[1]<<','<<world_max[2]<<"]},"
+       <<"\"metadata\":{\"instancesApplied\":true,\"nodeTransformsApplied\":true,\"coordinateSpace\":\"world\",\"instanceIndex\":0,\"instanceCount\":"<<list.instances.size()
+       <<",\"basePrimitiveIndex\":"<<instance.primitive_index<<",\"basePrimitiveCount\":"<<list.base_primitives.size()
+       <<",\"vertexCount\":"<<positions.size()/3<<",\"triangleCount\":"<<indices.size()/3<<",\"matrix\":[";
+    for(int i=0;i<16;i++){if(i)out<<',';out<<matrix[size_t(i)];}
+    out<<"],\"matrixSemantics\":\"row vector: out[a]=x*m[a]+y*m[4+a]+z*m[8+a]+m[12+a]\",\"archivedInstanceBounds\":[";
+    for(int i=0;i<8;i++){if(i)out<<',';out<<list.instance_bounds[size_t(i)];}
+    out<<"],\"boundsMaxAbsoluteDifference\":"<<bounds_error<<",\"geometryBlock\":"<<geometry_block<<",\"nodeBlock\":"<<node_block
+       <<",\"geometryChunkIndex\":"<<geometry_chunk_index<<",\"geometryItemIndex\":"<<geometry_item<<",\"nodeChunkIndex\":"<<node_chunk_index
+       <<",\"geometryStreamOffset\":"<<geometry_record->offset<<",\"nodeStreamOffset\":"<<node_record.offset
+       <<",\"integrityValidated\":false,\"material\":\"diagnostic-only\",\"scope\":\"first RenderList instance0, constant affine row-vector world transform, direct LOD0 base primitive; other instances, materials and higher LODs omitted\"}}";
+    return out.str();
+}
+
 extern "C" char* scene_inspect(const unsigned char* bytes,size_t available){try{if(!bytes||available<20||available>max_input)throw std::runtime_error("Input outside supported bounds");Decoder d{{bytes,available}};return copy(d.run());}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Scene allocation failure\"}");}}
 extern "C" char* scene_resource_textures_inspect(const unsigned char* bytes,size_t available){try{return copy(scene_resource_textures(bytes,available));}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Resource texture metadata allocation failure\"}");}}
 extern "C" char* level_index_inspect(const unsigned char* bytes,size_t available){try{return copy(level_index(bytes,available));}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Level index allocation failure\"}");}}
 extern "C" char* level_mesh_inspect(const unsigned char* level,size_t level_size,const unsigned char* geometry,size_t geometry_size,const unsigned char* nodes,size_t nodes_size,int32_t geometry_block,int32_t node_block){try{return copy(level_mesh(level,level_size,geometry,geometry_size,nodes,nodes_size,geometry_block,node_block));}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Level mesh allocation failure\"}");}}
+extern "C" char* level_instances_inspect(const unsigned char* level,size_t level_size,const unsigned char* geometry,size_t geometry_size,const unsigned char* nodes,size_t nodes_size,int32_t geometry_block,int32_t node_block){try{return copy(level_instances(level,level_size,geometry,geometry_size,nodes,nodes_size,geometry_block,node_block));}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Level instance allocation failure\"}");}}
 extern "C" void scene_free(void* pointer){std::free(pointer);}
 
 

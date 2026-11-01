@@ -6,6 +6,7 @@ import {MAX_ASSET_BYTES} from './packet.js';
 const DEMOS={
   'river-wide':{level:'usa_la_river',geometryBlock:88,nodeBlock:283,label:'USA LA River · geniş sahne parçası'},
   'river-small':{level:'usa_la_river',geometryBlock:252,nodeBlock:253,label:'USA LA River · küçük doğrulama parçası'},
+  'river-instance':{level:'usa_la_river',geometryBlock:27,nodeBlock:253,label:'USA LA River · instance dönüşümü',instances:true},
   'showroom':{level:'showroom',geometryBlock:3,nodeBlock:10,label:'Showroom · ilk sahne parçası'},
 };
 function invoke(mod,name,args){
@@ -39,20 +40,29 @@ export async function inspectReferenceLevel(mod,{signal}={}){
     signal?.throwIfAborted();const headerPtr=allocate(header);
     const index=invoke(mod,'_level_index_inspect',[headerPtr,header.length]);
     const chunkFor=block=>index.streamChunks.find(chunk=>chunk.items[0]?.block===block&&chunk.items[0]?.lod===0);
-    const geometryChunk=chunkFor(DEMO.geometryBlock),nodeChunk=chunkFor(DEMO.nodeBlock);
+    const chunkItemFor=block=>index.streamChunks.find(chunk=>chunk.items.some(item=>item.block===block&&item.lod===0));
+    const selectChunk=DEMO.instances?chunkItemFor:chunkFor;
+    const geometryChunk=selectChunk(DEMO.geometryBlock),nodeChunk=selectChunk(DEMO.nodeBlock);
     if(!geometryChunk||!nodeChunk)throw new Error('Bu pist sürümünde seçili geometri/düğüm bloğu bulunamadı.');
     status.textContent='Geometri ve çizim bağlantıları akış dosyasından okunuyor…';
     const [geometry,node]=await Promise.all([range('stream',geometryChunk.offset,geometryChunk.storedBytes),range('stream',nodeChunk.offset,nodeChunk.storedBytes)]);
     signal?.throwIfAborted();
     const geometryPtr=allocate(geometry),nodePtr=allocate(node);
-    const mesh=invoke(mod,'_level_mesh_inspect',[headerPtr,header.length,geometryPtr,geometry.length,nodePtr,node.length,DEMO.geometryBlock,DEMO.nodeBlock]);
+    if(DEMO.instances&&!mod._level_instances_inspect)throw new Error('Instance okuyucusu henüz derlenmedi.');
+    const mesh=DEMO.instances
+      ?invoke(mod,'_level_instances_inspect',[headerPtr,header.length,geometryPtr,geometry.length,nodePtr,node.length,DEMO.geometryBlock,DEMO.nodeBlock])
+      :invoke(mod,'_level_mesh_inspect',[headerPtr,header.length,geometryPtr,geometry.length,nodePtr,node.length,DEMO.geometryBlock,DEMO.nodeBlock]);
     document.getElementById('model-result').hidden=false;
     document.getElementById('model-name').textContent=DEMO.label;
-    document.getElementById('model-status').textContent='Özgün levelrender başlığı ve levelstream aralıkları · doğrudan çizimler; instance ve oyun mantığı uygulanmadı.';
+    document.getElementById('model-status').textContent=DEMO.instances
+      ?'Özgün levelstream instance0 · sabit affine g_mWorld · dünya uzayı; diğer instance ve materyaller uygulanmadı.'
+      :'Özgün levelrender başlığı ve levelstream aralıkları · doğrudan çizimler; instance ve oyun mantığı uygulanmadı.';
     document.getElementById('model-chunks').replaceChildren();
     document.getElementById('model-chunks').closest('.table-wrap').hidden=true;
     await showMesh(mesh);
-    status.textContent=`${index.streamChunks.length} akış kaydı · ${geometry.length.toLocaleString('tr-TR')} bayt geometri + ${node.length.toLocaleString('tr-TR')} bayt düğüm · ${mesh.indices.length/3} gerçek üçgen`;
+    status.textContent=DEMO.instances
+      ?`${index.streamChunks.length} akış kaydı · instance0 · ${mesh.indices.length/3} gerçek üçgen · dönüşüm hatası ${mesh.metadata.boundsMaxAbsoluteDifference.toExponential(2)}`
+      :`${index.streamChunks.length} akış kaydı · ${geometry.length.toLocaleString('tr-TR')} bayt geometri + ${node.length.toLocaleString('tr-TR')} bayt düğüm · ${mesh.indices.length/3} gerçek üçgen`;
     return mesh;
   }finally{for(const pointer of allocations)mod._free(pointer);}
 }

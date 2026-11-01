@@ -214,6 +214,41 @@ offsets and separate parse cursors. Structural interpretation is not hash/
 provenance validation. A different same-length format-valid input is not
 authenticated by the ChunkInfo length check.
 
+### Level instance API
+
+`level_instances_inspect(levelPtr,levelLen,geometryPtr,geometryLen,nodePtr,nodeLen,geometryBlock,nodeBlock)`
+is additive and leaves the direct-mesh API unchanged. The geometry block is
+located in **any** ChunkInfo item, not only the first; every preceding item is
+parsed sequentially with the containing stream chunk's origin0. The node block
+currently uses the first-item record. The first supported RenderList's first
+instance and its base primitive are evaluated.
+
+Only an explicit constant affine `g_mWorld` is accepted. Materials are applied
+in source order: instance material, active instance stream materials, base
+primitive material, then active base stream materials; type8 nested references
+are followed, type9 runtime values, recursion, missing matrices and non-affine
+matrices are rejected. World position uses the source row-vector convention:
+
+```text
+world[a] = x*m[a] + y*m[4+a] + z*m[8+a] + m[12+a]
+```
+
+The selected POSITION stream is declaration-driven, instance/base streams are
+merged by slot with base overriding instance, and vertex/index sources must bind
+the selected geometry block. LOD0 topology0/1 is converted to a compact triangle
+list; degenerate strip connectors are omitted. Metadata states
+`instancesApplied:true`, `nodeTransformsApplied:true`, `coordinateSpace:"world"`,
+the matrix, instance/base indices, counts, world bounds, archived instance bounds
+and their maximum absolute difference (tolerance `1e-4`). Other instances,
+materials, visibility, higher LODs and gameplay are omitted.
+
+The real River block27/node253 instance0 produces **805vertices/726triangles**;
+world bounds agree with the archived instance bounds within `3.86511e-05`.
+Native/WASM JSON is identical; F32 position and U32 index hashes match the
+independent Python proof exactly (`5125314b…` and `886e2855…`). The browser adds
+a **River · instance prova** preset; it is one instance, not a track.
+
+
 The native three-input river fixture yields344vertices,208triangles,five direct
 draws, while explicitly skipping57instances and36instance base primitives.
 Source geometry/triangle hashes match independent Python exactly. Native index

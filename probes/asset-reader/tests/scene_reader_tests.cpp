@@ -146,6 +146,23 @@ void real_level_tests(const char* level_path,const char* geometry_path,const cha
     check(result==inspect_level(level,geometry,nodes),"Level output is nondeterministic");
     std::cout<<"Actual river Scene index, 344 vertices/208 triangles/5 draws, explicit instance scope and malformed stream/binding checks passed\n";
 }
+void real_instance_tests(const char* level_path,const char* geometry_path,const char* node_path){
+    const auto level=read_file(level_path),geometry=read_file(geometry_path),node=read_file(node_path);
+    auto* raw=level_instances_inspect(level.data(),level.size(),geometry.data(),geometry.size(),node.data(),node.size(),27,253);
+    check(raw!=nullptr,"Allocation failed");std::string result(raw);scene_free(raw);
+    check(ok(result),result.c_str());
+    check(has(result,"\"vertexCount\":805,\"triangleCount\":726"),"Instance vertex/triangle counts changed");
+    check(has(result,"\"instanceCount\":57")&&has(result,"\"basePrimitiveIndex\":0"),"Instance/base association changed");
+    check(has(result,"\"instancesApplied\":true")&&has(result,"\"coordinateSpace\":\"world\""),"Instance transform scope missing");
+    check(has(result,"\"geometryBlock\":27,\"nodeBlock\":253"),"Instance geometry/node block IDs changed");
+    check(has(result,"\"boundsMaxAbsoluteDifference\":3.86511"),"Instance archived-bounds agreement changed");
+    check(has(result,"\"matrixSemantics\":\"row vector: out[a]=x*m[a]+y*m[4+a]+z*m[8+a]+m[12+a]\""),"Instance matrix semantics missing");
+    auto* repeat_raw=level_instances_inspect(level.data(),level.size(),geometry.data(),geometry.size(),node.data(),node.size(),27,253);
+    check(repeat_raw!=nullptr,"Allocation failed");std::string repeat(repeat_raw);scene_free(repeat_raw);
+    check(result==repeat,"Instance JSON nondeterministic");
+    std::cout<<"Actual River block27/node253 instance0: 805 vertices/726 triangles, archived bounds 3.86511e-05 passed\n";
+}
+
 void real_car_tests(const char* path){
     const auto input=read_file(path);const auto result=inspect(input.data(),input.size());check(ok(result),result.c_str());
     check(has(result,"\"vertexCount\":30591")&&has(result,"\"triangleCount\":36193")&&has(result,"\"primitiveCount\":80"),"Original Corvette geometry changed");
@@ -178,6 +195,7 @@ int main(int argc,char**argv){try{
     check(!ok(index_level(nullptr,0)),"Null level index accepted");check(!ok(index_level(tiny,std::numeric_limits<size_t>::max())),"Oversize level index accepted");
     char* invalid_level=level_mesh_inspect(tiny,std::numeric_limits<size_t>::max(),tiny,4,tiny,4,252,253);check(invalid_level!=nullptr,"Null level API error");check(!ok(invalid_level),"Oversize level mesh accepted");scene_free(invalid_level);
     if(argc==5&&std::strcmp(argv[1],"--level")==0){real_level_tests(argv[2],argv[3],argv[4]);return 0;}
+    if(argc==5&&std::strcmp(argv[1],"--instances")==0){real_instance_tests(argv[2],argv[3],argv[4]);return 0;}
     if(argc==3&&std::strcmp(argv[1],"--car")==0){real_car_tests(argv[2]);return 0;}
     material_and_uv_tests();
     const auto input=fixture();auto output=inspect(input.data(),input.size());check(ok(output),output.c_str());check(has(output,"\"indices\":[0,1,2]"),"Triangle list changed");check(has(output,"\"fixtureOnly\":false"),"Generic parser mislabelled");check(has(output,"\"partialSceneTraversal\":true"),"Partial scope missing");check(has(output,"\"firstIndex\":0,\"indexCount\":3,\"albedoTexture\":null")&&has(output,"\"uv0Available\":false"),"Missing original UV0 became a source albedo mapping");

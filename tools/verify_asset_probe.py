@@ -36,6 +36,7 @@ def main():
             ('texture-native-wasm','verify_texture_wasm'),('car-native-wasm','verify_car_wasm'),
             ('resource-binding','verify_resource_binding'),
             ('xt-native-wasm','verify_xt_wasm'),('level-native-wasm','verify_level_wasm'),
+            ('level-instances-native-wasm','verify_instances_wasm'),
             ('level-candidates-native-wasm','verify_level_candidates_wasm'),('packet-cases','verify_packets'),
             ('packet-independent','verify_packet_reference'),('viewer-math','verify_viewer_math')]],
         ('level-http-bounds',[sys.executable,'probes/asset-reader/tests/verify_level_http.py']),
