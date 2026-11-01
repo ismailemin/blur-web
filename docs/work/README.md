@@ -1,0 +1,57 @@
+# Çalışma kayıtları
+
+Bu dizin, `docs/STATUS.md`'nin kronolojik anlatısını tamamlayan görev bazlı
+kayıtları tutar. Amaç: her oturumun nerede kaldığını, neyi neden yaptığını ve
+hangi kanıtla kapattığını kaybetmemek.
+
+## Görev panosu
+
+| Görev | Durum | Öncelik | Bağımlılık | Kart |
+|---|---|---|---|---|
+| T-001 — Corvette kalan 12 statik doku | done (browser ekran görüntüsü açık) | P0 | — | `tasks/T-001-corvette-resource-textures.md` |
+| T-002 — Level instance dönüşümleri | planned | P0 | T-001 | `tasks/T-002-level-instances.md` |
+| T-003 — Scene/level kapsamını genişletme | planned | P1 | T-002 | henüz açılmadı |
+| T-004 — Native particle-cache çökmesi | analiz tamam, tam iz açık | P1 | — | `analysis/native-particle-crash.md` |
+
+Durumlar: `planned`, `in-progress`, `blocked`, `done`, `superseded`.
+
+## Kayıt türleri
+
+- `tasks/T-XXX-*.md` — tek görevin amacı, kapsamı, kabul kriterleri, kanıtı.
+- `logs/YYYY-MM-DD-*.md` — oturum günlüğü: ne denendi, ne öğrenildi.
+- `decisions/NNNN-*.md` — geri dönüşü olan mimari/süreç kararları.
+- `analysis/*.md` — salt okunur inceleme raporları (ör. native dump).
+- `verification/*.md` — komut, çıktı özeti, hash ve kanıt yolları.
+
+## Görev yaşam döngüsü
+
+1. Kartı `planned` → `in-progress` yap; sahip ve başlangıç tarihini yaz.
+2. Yalnızca kartta listelenen dosyalara dokun.
+3. Geliştirme sırasında en küçük ilgili testi çalıştır.
+4. Kapanışta tam doğrulama kapısını çalıştır.
+5. Kanıtı `verification/` altına, oturum özetini `logs/` altına yaz.
+6. Kartı `done` yap; `docs/handoff/CURRENT.md` ve gerekirse `STATUS.md` güncelle.
+7. Ana ajan diff'i inceler ve commit atar.
+
+## Görev kartı şablonu
+
+```text
+Durum:
+Sahip:
+Başlangıç / bitiş:
+Amaç:
+Kapsam:
+Kapsam dışı:
+Dokunulacak dosyalar:
+Kabul kriterleri:
+Doğrulama komutları:
+Kanıt:
+Bağımlılıklar:
+Riskler:
+Sonraki adım:
+```
+
+## Dil kuralı
+
+- Handoff, görev kartı, oturum logu ve kararlar: Türkçe.
+- Format sözleşmeleri, mimari ve teknik doğrulama raporları: İngilizce.

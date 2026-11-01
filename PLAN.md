@@ -2,7 +2,7 @@
 
 28 Ekim 2026. Bu belge yaşayan çalışma planıdır; süre ve başarı taahhüdü değildir.
 
-**Güncel ilerleme:** Gerçek PAK/model/doku ve XT metadata okuyucuları native/WASM olarak çalışıyor. Kısmi Scene okuyucusu28 küçük modelin26'sından geometri çıkarıyor. Corvette'in30.591vertex/36.193üçgeni, özgün UV'leri ve14statik dokulu çizimi bağımsız okuyucuyla eşleşti; WebGPU'da doğrulandı. River'ın9.343üçgenli geniş parçası ve showroomun7.987üçgenli parçası tarayıcıda çizildi. Yeniden derleme ardından25kontrol ve13nativeCTest geçti. Tam Amax x64Release kaynak derlemesi ve özel profille sabit araçlı yarış açılışı başarılı; hareket denemesinde particle cache kontrolü durduğu için kaynak sürüş testi açık. Runtime araç boyası, kalan araç dokuları/tekerlek yerleşimi, pist bütünü, fizik ve multiplayer açık. Test adımları: `probes/asset-reader/README.md`; kesin devam noktaları: `docs/STATUS.md`.
+**Güncel ilerleme:** Gerçek PAK/model/doku ve XT metadata okuyucuları native/WASM olarak çalışıyor. Kısmi Scene okuyucusu28 küçük modelin26'sından geometri çıkarıyor. Corvette'in30.591vertex/36.193üçgeni, özgün UV'leri ve26statik dokulu çizimi (14 shared +12 resource-block LOD0) bağımsız okuyucuyla eşleşti; WebGPU'da 14 shared çizim görsel doğrulandı. Yeni `scene_resource_textures_inspect` yedi resource bloğunu Scene sınırına kadar okuyup descriptor/payload aralıklarını döndürüyor. River'ın9.343üçgenli geniş parçası ve showroomun7.987üçgenli parçası tarayıcıda çizildi. Yeniden derleme ardından26kontrol ve13nativeCTest geçti. Tam Amax x64Release kaynak derlemesi ve özel profille sabit araçlı yarış açılışı başarılı; particle-cache çökmesinin ilk dump analizi aynı emitter'ın ikinci kez serbest bırakıldığını gösterdi, tam bellek izi açık. Runtime araç boyası, yüksek resource LOD'ları, instance dönüşümleri, tekerlek yerleşimi, pist bütünü, fizik ve multiplayer açık. Test adımları: `probes/asset-reader/README.md`; kesin devam noktaları: `docs/STATUS.md`.
 
 ## Hedef ve ilk kapsam
 
@@ -46,9 +46,9 @@ Nihai oyuncu deneyimi tarayıcı üzerindedir; oyuncuların Windows Blur veya Re
 
 ## Aktif uygulama sırası
 
-1. Gerçek araçtaki kalan kaynak-blok dokularını özgün mip zincirleriyle çöz; çalışma anında üretilen boya ve ışık verilerini ayrı kaynak davranışıyla taşı.
-2. Pist nesnelerinin instance/base-primitive bağlarını ve özgün dönüşüm matrislerini bağımsız veriyle doğrula; ardından C++/WASM ve WebGPU'ya ekle. İlk render düğümündeki daha geniş doğrudan çizimler bu işin yerini tutmaz.
-3. Native kaynak sürümündeki particle-cache durmasını dump/PDB ile incele; Windows sürüş/fizik karşılaştırması için kararlı referans oluştur.
+1. **T-001 yapıldı:** Kalan iki kaynak-blok dokusu (`dials`, `interior`) özgün LOD0 descriptor+texel dilimiyle bağlandı; 26 statik çizim dokulu. Yüksek LOD streaming, çalışma anında üretilen boya ve ışık verileri açık.
+2. **Sıradaki T-002:** Pist nesnelerinin instance/base-primitive bağlarını ve özgün dönüşüm matrislerini C++/WASM ve WebGPU'ya taşı. İlk proof block27/node253 instance0 (805 vertex/726 üçgen), ardından node253'teki57instance. İlk render düğümündeki daha geniş doğrudan çizimler bu işin yerini tutmaz.
+3. Native particle-cache çökmesi için tam bellek dump'ı ve sınırlı Free/AtomicFree izi al; Windows sürüş/fizik karşılaştırması için kararlı referans oluştur.
 4. Bir araç/bir pist üzerinde platform, özgün fizik, kontroller, streaming ve sesi taşı; tam tek oyunculu yarışı doğrula. Ardından iki tarayıcı için özel oda/ağ aşamasına geç.
 
 ## Teknik seçimler
