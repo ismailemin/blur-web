@@ -50,6 +50,10 @@ scheduler, `T-005d` fizik, `T-005e` kontroller/kamera, `T-005f` ses/UI/save,
 `T-005g` tam yarış kabulü. Kart:
 `docs/work/tasks/T-005-single-player-vertical-slice.md`.
 
+**T-005a tamam:** vendored zlib wasm32'de linkleniyor/çalışıyor (58.598 B
+@ `-O2`); motor `core/Maths.h` (7 hata), `tl_*` platform kimliği ve Windows PCH
+kapılarında bloke. Ayrıntı: `docs/work/analysis/engine-wasm-probe.md`.
+
 ## Bilinen engeller / riskler
 
 - 18 instance destekli; 22 instance base17/26/32 stream semantiği, 8 instance

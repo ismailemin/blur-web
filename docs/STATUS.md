@@ -250,4 +250,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Bu yüzden object-level bayrak uygulanmadı. Doğru yön **slot-level** sahiplik: `FreeParticle`/`UpdateTrail` sırasında aynı emitter'a işaret eden trail slotunu geçersiz kılan yolu bulmak. Rapor: `docs/work/analysis/emitter-ownership-next.md`.
 - Test kuralı: tek/üç exit 0 kabul için yeterli değil; baseline sayaçları, tam dump ve patch/EXE hash'leri gerekli. Assert kaldırılmadı.
 
+## 2 Kasım 2026 — T-005a wasm32 engine probe
+
+- `_work/wasm-engine-probe` altında 48 gerçek TU ve beş bağımsız probe çalıştırıldı. Vendored zlib (11 dosya) wasm32'de linkleniyor ve node'da çalışıyor: 58.598 B @ `-O2`, 50.222 B @ `-Os`; `crc32/adler32/compress/inflate/roundtrip` geçti.
+- Motorun geri kalanı: `core/Maths.h` 7 hata (5 `Float3` dönüşümü, 2 `__fsel`), `tl_defs.h`/`tl_thread.h` platform `#error`, Windows PCH (`winsock2.h`/`windows.h`), MSVC CRT (`_isnan` 137×), Display/DX11 442 referans. `PLATFORM_PC` kaldırılınca Windows PCH gidiyor ama taşınabilir maths yardımcıları da kapanıyor.
+- İlk port sırası: maths gate → CRT compat → `PLATFORM_WEB`/`tl_*` → file/time → ilk link slice → fizik → input/audio/HUD. Motor çalışıyor iddiası yok. Rapor: `docs/work/analysis/engine-wasm-probe.md`; eski `engine-wasm-feasibility.md` superseded.
+
 

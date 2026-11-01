@@ -1,6 +1,6 @@
 # T-005 — Tek oyunculu dikey dilim
 
-**Durum:** in-progress (T-005a kaynak denetimi başladı; motor derlemesi yok)
+**Durum:** in-progress (T-005a tamam; T-005b sırada)
 **Sahip:** ana ajan
 **Başlangıç:** 2 Kasım 2026
 **Bitiş:** —
@@ -19,6 +19,13 @@ geçiştir; tek oturumda bitmez, aşağıdaki dilimlerle yürür.
 - En küçük motor alt kümesini wasm32'ye derlemeyi dene; bellek, boyut ve
   bağımlılık ölç.
 - Çıktı: derlenen/derlenmeyen modül listesi ve ilk port sınırı.
+
+**Sonuç (2 Kasım):** `_work/wasm-engine-probe` içinde 48 gerçek TU denendi.
+Vendored zlib (11 dosya) wasm32'de linkleniyor ve node'da çalışıyor
+(58.598 B @ `-O2`); motorun geri kalanı `core/Maths.h` (7 hata), platform
+kimliği (`tl_*`) ve Windows PCH (`winsock2.h`/`windows.h`) kapılarında bloke.
+Ayrıntı/komutlar: `docs/work/analysis/engine-wasm-probe.md`. Motor çalışıyor
+iddiası yok.
 
 ### T-005b — Dosya/streaming adaptörü
 - Pak/level okumayı motorun sanal dosya sistemine bağla.

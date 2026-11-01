@@ -1,5 +1,9 @@
 # T-005a — Engine/WASM feasibility (initial audit)
 
+> **Superseded:** the measured wasm32 probe is in
+> [`engine-wasm-probe.md`](engine-wasm-probe.md). This file is the initial
+> read-only source audit and is retained for history.
+
 **Date:** 2 November 2026
 **Status:** started (read-only source audit; no engine build attempted yet)
 
