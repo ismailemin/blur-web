@@ -12,7 +12,7 @@ hangi kanıtla kapattığını kaybetmemek.
 | T-002 — Level instance dönüşümleri | done | P0 | T-001 | `tasks/T-002-level-instances.md` |
 | T-003 — Scene/level kapsamını genişletme | bounds grouping fix identified (Stage A hedefi 36 instance) | P1 | T-002 | `tasks/T-003-scene-traversal.md` |
 | T-004 — Native particle-cache çökmesi | kök neden + 3 fix + Aday2 analizi reddedildi; slot-level sahiplik açık | P1 | — | `analysis/native-particle-crash.md` |
-| T-005 — Tek oyunculu dikey dilim | in-progress (T-005a probe; T-005c tasarım tamam; T-005b/d sürüyor) | P1 | T-003/T-004 | `tasks/T-005-single-player-vertical-slice.md` |
+| T-005 — Tek oyunculu dikey dilim | in-progress (T-005a probe; T-005b/c tasarım tamam; T-005d sürüyor) | P1 | T-003/T-004 | `tasks/T-005-single-player-vertical-slice.md` |
 
 Durumlar: `planned`, `in-progress`, `blocked`, `done`, `superseded`.
 

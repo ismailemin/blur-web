@@ -1,6 +1,6 @@
 # T-005 — Tek oyunculu dikey dilim
 
-**Durum:** in-progress (T-005a probe tamam; T-005c tasarım tamam; T-005b/d tasarım sürüyor)
+**Durum:** in-progress (T-005a probe; T-005b/c tasarım tamam; T-005d tasarım sürüyor)
 **Sahip:** ana ajan
 **Başlangıç:** 2 Kasım 2026
 **Bitiş:** —
@@ -31,6 +31,17 @@ iddiası yok.
 - Pak/level okumayı motorun sanal dosya sistemine bağla.
 - Büyük veriyi tek bellek bloğuna kopyalamadan aralık okuma.
 - Save ve ayarlar için ayrı kalıcı depolama.
+
+**Tasarım sonucu (2 Kasım):** `Sys::I_FileSystem`/`I_File`, logicalfs/PAK ve
+`ChunkInfo` mantığı C++'ta kalıyor; altına dar bir `platform/file` C ABI
+(`pf_open/size/read_at/write_at/close` + async `pf_enqueue_read`) ve JS
+`opfs:`/`blob:`/`http:` range-source registry ekleniyor. Senkron okuma yalnız
+OPFS `FileSystemSyncAccessHandle` veya hazır blok için; eksik aralık açık hata,
+sıfır-doldurma yok. İlk dilim motor header'ı olmadan `RangeFile` +
+`pak_index_range`/`level_index_range`; 7 PAK ve 19 level index native/wasm
+parity + bir gerçek chunk hash'i. Ölçüm: kurulum 7,48 GB/5.113 dosya; River
+stream 244.682.752 B, 359 chunk (max 2.045.952 B, 222/359 prerequisite).
+Ayrıntı: `docs/work/analysis/t005-streaming-design.md`.
 
 ### T-005c — Scheduler ve zaman adımı
 - Windows thread/job queue yerine Web Worker/Atomics veya tek iş parçacığı

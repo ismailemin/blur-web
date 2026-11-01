@@ -62,6 +62,12 @@ kapılarında bloke. Ayrıntı: `docs/work/analysis/engine-wasm-probe.md`.
 `MT::` wait'ler assert; policy flattening ve audio `Flush(group,false)` sapması
 gerekli. Ayrıntı: `docs/work/analysis/t005-scheduler-design.md`.
 
+**T-005b tasarımı:** `Sys::I_FileSystem`/`I_File` + logicalfs/PAK C++'ta kalıyor;
+altına `platform/file` C ABI ve OPFS/blob/http range-source registry. İlk dilim
+`RangeFile` + PAK/level index parity; eksik aralık açık hata. Kurulum 7,48 GB/
+5.113 dosya; River stream 244.682.752 B/359 chunk. Ayrıntı:
+`docs/work/analysis/t005-streaming-design.md`.
+
 ## Bilinen engeller / riskler
 
 - 18 instance destekli; P2'ye göre bounds grouping düzeltilince Stage A 36,

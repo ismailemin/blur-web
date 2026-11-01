@@ -268,4 +268,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `MT::Thread::Join`, `Mutex::Wait`, `Event::Wait` tek context'te beklemek yerine assert etmeli; aksi halde ana thread kilitlenir. `SchedulerConfig.cpp:49` column-0 streamer policy'si tek context'te düşüyor; policy flattening gerekli. İki audio `Flush(group,false)` çağrısı belgelenmiş sapma (her zaman drain) gerektiriyor.
 - İlk kod dilimi: `PLATFORM_WEB` + `platform/{thread,atomic,sync,time}` + `jobqueue_web.cpp` + `probes/scheduler-probe/`; 1/60 fixed step, 4-tick cap, interpolasyon; 144/30 Hz/hitch/tab gap hash-eşitliği. Henüz kod yok. Rapor: `docs/work/analysis/t005-scheduler-design.md`.
 
+## 2 Kasım 2026 — T-005b streaming tasarımı
+
+- Öneri: `Sys::I_FileSystem`/`I_File`, logicalfs/PAK ve `ChunkInfo` mantığı C++'ta kalıyor; altına dar `platform/file` C ABI (`pf_open/size/read_at/write_at/close` + async `pf_enqueue_read`) ve JS `opfs:`/`blob:`/`http:` range-source registry. Senkron okuma yalnız OPFS `FileSystemSyncAccessHandle` veya hazır blok; eksik aralık açık hata, sıfır-doldurma yok.
+- Ölçüm: kurulum 7,48 GB/5.113 dosya; `cache/` 1,16 GB, `levels/` 4,83 GB; River stream 244.682.752 B, 359 chunk (min 2.048, max 2.045.952 B, 222/359 prerequisite). 19 levelde max chunk 2.623.488 B; levelrender index cursor 7.021.820 B'ye ulaşıyor.
+- İlk dilim: motor header'ı olmadan `RangeFile` + `pak_index_range`/`level_index_range`; 7 PAK ve 19 level index native/wasm parity + bir gerçek chunk hash'i. Riskler: HEAPU8 growth, blocking Read'i event-loop ile çözme, OPFS/COOP-CC, cache invalidation. Rapor: `docs/work/analysis/t005-streaming-design.md`.
+
 
