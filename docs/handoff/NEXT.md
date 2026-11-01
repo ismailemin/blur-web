@@ -35,6 +35,8 @@ Tam dump + çağrı izleme + kaynak analizi kök nedeni gösterdi:
 - `FreeParticle` X'i ertelenmiş yolla bıraktıktan sonra drenaj `Free` ediyor; salt artmadığı için aynı X'e işaret eden trail elemanı sonraki karede `iSalt == GetSalt()` (0==0) görüp X'i yeniden kuyruğa atıyor; ikinci `Free` invariant'ı tetikliyor.
 Açık: düzeltme uygulanmadı; iki deneme reddedildi. (1) `C_Emitter::AtomicFree` kuyruk girişinde salt artışı: 1/3 exit0, 2/3 `0xC0000005`. (2) drenajı `C_EmitterList::Free` üzerinden yapmak: 3/3 `0xC0000005`. Her iki deneme de geri alındı; patch'ler `native-saltfix-attempt.patch` ve `native-drainfix-attempt.patch`. Üçüncü deneme (`DeleteTrailBlock` temizliği, `native-trailfix-attempt.patch`) 1/3 orijinal breakpoint, 2/3 `0xC0000005` verdi; o da geri alındı. Bulgu: gözlenen çift-free `FreeParticle`/`Emitter::Update` yolundan geliyor; `DeleteTrailBlock` bu yolu kapsamıyor. Asıl açık trail elemanının `pEmitter` alanını kimin geçersiz kıldığı. Sıradaki: (a) sahiplik kuralını kaynakla yazılı sözleşmeye dönüştürmek, (b) Aday 2 trail-owned bayrağını tam dump'lı koşuyla denemek. Assert kaldırılmayacak.
 
+**P3 Aday 2 sonucu:** object-level “trail-owned” bayrağı çökme için kanıtlanabilir şekilde no-op (2a) veya sızıntı (2b): trail tanımları `bRepeating=true` olduğu için self-free yolları trail-owned emitter'da hiç ateşlenmiyor; asıl üretici `FreeParticle → AtomicFree` etkilenmiyor. Bu yüzden object flag bırakıldı; sıradaki doğru yön **slot-level** sahiplik/temizlik: `FreeParticle`/`UpdateTrail` sırasında aynı emitter'a işaret eden trail slotunu geçersiz kılan yolu bulmak. Ayrıntı: `docs/work/analysis/emitter-ownership-next.md`.
+
 ## 3. T-005 — Tek oyunculu dikey dilim
 
 **Durum:** in-progress; T-005a kaynak denetimi başladı

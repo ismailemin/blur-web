@@ -32,6 +32,9 @@
   `DeleteTrailBlock` temizliği 1/3 orijinal breakpoint + 2/3 `0xC0000005`.
   Üçü de geri alındı; kanonik `Amax.exe` değişmedi. Gözlenen çift-free
   `FreeParticle`/`Emitter::Update` yolundan geliyor; trail sahipliği açık.
+  Aday 2 (object-level trail-owned bayrağı) kaynak analizinde reddedildi:
+  trail tanımları `bRepeating=true` olduğu için self-free yolları hiç
+  ateşlenmiyor; 2a no-op, 2b sızıntı. Sıradaki yön slot-level temizlik.
 - Doğrulama: `verify_asset_probe.py --skip-build` **27/27**, CTest **14/14**.
 
 ## Sıradaki iş

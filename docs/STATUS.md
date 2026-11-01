@@ -244,4 +244,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `DeleteTrailBlock` içinde serbest bırakılan `C_Particle_E` için `pEmitter = NULL` ve `m_Element.Clear()` eklendi; `Amax-trailfix.exe` ile 3 koşu: 1× `0x80000003`, 2× `0xC0000005` (18s). Kabul edilmedi; kaynak geri alındı.
 - Patch `_work/build/engine-reference/native-trailfix-attempt.patch`, log `_work/logs/trailfix-runs.log`. Gözlenen çift-free `FreeParticle`/`Emitter::Update` yolundan geliyor; `DeleteTrailBlock` bu yolu kapsamıyor. Sıradaki: Aday 2 (trail-owned bayrağı) ancak tam dump'lı koşuyla; assert kaldırılmadı.
 
+## 2 Kasım 2026 — Aday 2 (object-level trail sahipliği) analizi
+
+- P3 kaynak analizi: object-level `m_bTrailOwned` bayrağı çökme için kanıtlanabilir şekilde **no-op** (2a) veya **sızıntı** (2b). Trail tanımları `SuperEffect.cpp:30-38` içinde `bRepeating=true` ve çok uzun süreli; self-free yolları (`Emitter.cpp:478-499`) trail-owned emitter'da hiç ateşlenmiyor. Asıl üretici `FreeParticle → AtomicFree` (`SuperEffect.cpp:229`) etkilenmiyor.
+- Bu yüzden object-level bayrak uygulanmadı. Doğru yön **slot-level** sahiplik: `FreeParticle`/`UpdateTrail` sırasında aynı emitter'a işaret eden trail slotunu geçersiz kılan yolu bulmak. Rapor: `docs/work/analysis/emitter-ownership-next.md`.
+- Test kuralı: tek/üç exit 0 kabul için yeterli değil; baseline sayaçları, tam dump ve patch/EXE hash'leri gerekli. Assert kaldırılmadı.
+
 
