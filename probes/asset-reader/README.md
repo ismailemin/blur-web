@@ -11,7 +11,7 @@ Executable browser port components: portable asset readers and a WebGPU model pr
 - Native tests, native/WASM comparisons on all seven installed cache PAK files, and independent Python reference comparison for six V2 PAKs.
 - Bounded multi-packet raw-DEFLATE/raw-block decoding up to16MiB; three real larger models (2,4,30packets) match independent Python bytes.
 - Source-shaped sequential ARCH Scene traversal, without fixed offsets or fixture SHA selection, previews first resource block/first render list/LOD0 base geometry. Native/WASM results match on28models;26supported,2explicitly unsupported. Original UV0 and embedded texture ranges are recovered. See `FORMAT-scene.md`.
-- Real Corvette body:30,591vertices,36,193triangles,80draws. F16_4 POSITION0 and source-selected streams/byte offsets match independent Python geometry. Four original shared albedo images bind14draws using original UVs; missing UVs cannot bind textures. Vehicle paint,12external image draws, damage and wheel placement are pending; lighting remains diagnostic.
+- Real Corvette body:30,591vertices,36,193triangles,80draws. F16_4 POSITION0 and source-selected streams/byte offsets match independent Python geometry. Four original shared albedo images bind14draws, and two original resource-block images (`corvetterace_dials`, `corvetterace_interior`) bind the remaining12 static draws through complete LOD0 descriptor+texel slices. `scene_resource_textures_inspect` returns all resource-block texture LOD offsets without importing geometry.44draws are `_NO_ALBEDO`;10are runtime light blends. Vehicle paint, higher resource LODs, damage and wheel placement are pending; lighting remains diagnostic.
 - Original levelrender Scene/ChunkInfo indexes plus separate geometry/node levelstream ranges are decoded without fake model wrappers. River's broader subset has17,782vertices/9,343triangles/95draws; showroom has11,590vertices/7,987triangles/95draws. Three larger River pairs and showroom match independent Python geometry and native/WASM JSON. The first344vertex/208triangle fixture remains a regression check. Instances, other blocks, materials and visibility are explicitly omitted. The HTTP server exposes bounded ranges from three whitelisted levels.
 - PC FLSK v1/v2 XT schema/type/field/record metadata. Three real actor packs match independent Python. No runtime objects or reflection fixups are created; see `FORMAT-xt.md`.
 - Real PC `.texture` and embedded TextureDesc+texels decode toRGBA: BC1,BC2,BC3 and selected uncompressed formats,2D<=512×512. Original XT files contain game/UI data, not textures. See `FORMAT-texture.md`.
@@ -37,7 +37,7 @@ Use the actual bundled Python path if `python` is a Windows Store alias:
 
 Open **http://127.0.0.1:8765/**. Choose a `.pak` file, or load an installed reference package. To inspect the verified model, open `root.pak`, filter `trafficcylinder`, then select **Blokları oku** on the `usa_la_river` entry.
 
-For the actual car body, filter `corvette_c3_race.model` in root.pak and select the body row outside `wheels/`. For XT metadata, choose gamedata.pak and filter `vehicletestscene\actorpack.xt`. Choose River (wide/small) or Showroom and click **Sahne parçasını aç** to load original levelrender metadata and two selected stream ranges using offsets from the WASM index.
+For the actual car body, filter `corvette_c3_race.model` in root.pak and select the body row outside `wheels/`. The browser now binds the four shared albedo images and the two resource-block LOD0 images. For resource metadata only, run `scene_inspect.exe <decoded-model> --resources`. For XT metadata, choose gamedata.pak and filter `vehicletestscene\actorpack.xt`. Choose River (wide/small) or Showroom and click **Sahne parçasını aç** to load original levelrender metadata and two selected stream ranges using offsets from the WASM index.
 
 The loopback server serves only the web folder and bounded ranges from an explicit whitelist of installed PAK files. It does not execute game binaries or modify the source/game data. Browser-generated `.mjs/.wasm` and all game/fixture data are ignored by Git.
 
@@ -51,6 +51,7 @@ The loopback server serves only the web folder and bounded ranges from an explic
 - `_work/verification/texture-native-wasm.json`
 - `_work/verification/packet-reference.json`
 - `_work/verification/car-native-wasm.json`
+- `_work/verification/resource-binding.json`
 - `_work/verification/xt-native-wasm.json`
 - `_work/verification/level-native-wasm.json`
 - `_work/verification/level-candidates-native-wasm.json`

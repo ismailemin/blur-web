@@ -74,11 +74,14 @@ Bytes fixture(uint32_t vertex_byte_offset=0,uint16_t last_index=2,bool nonfinite
     vector(s);vector(s);vector(s);
     for(int k=0;k<2;k++){const auto count=k==1?(opts.uv_subset?2:(auxiliary_streams||!opts.streams.empty()?2:1)):1;vector(s,uint32_t(count));integer(s,uint32_t(source_block));integer(s,0);if(count==2){integer(s,opts.uv_subset?uint32_t(source_block):0xffffffff);integer(s,opts.uv_subset?1:0xffffffff);}}
     vector(s,opts.shared_textures);for(uint32_t i=0;i<opts.shared_textures;i++){integer(s,0xffffffff);integer(s,i);}vector(s);
+    integer(s,0); // ResourceBlock LOD0 texture count (raw U32); no synthetic textures.
     Bytes header;integer(header,0);Bytes inner;append(inner,chunk("Header",header));append(inner,chunk("Scene",s));Bytes outer=chunk("Render",chunk("Render",inner,2,true));Bytes model=chunk("Model",outer,1,true);Bytes all{' ',' ','C','P'};append(all,model);return all;
 }
 std::string inspect(const unsigned char* data,size_t n){auto*j=scene_inspect(data,n);check(j!=nullptr,"Allocation failed");std::string s(j);scene_free(j);return s;}
+std::string inspect_resources(const unsigned char* data,size_t n){auto*j=scene_resource_textures_inspect(data,n);check(j!=nullptr,"Allocation failed");std::string s(j);scene_free(j);return s;}
 bool ok(const std::string&s){return s.find("\"status\":\"ok\"")!=std::string::npos;}
 bool has(const std::string&s,const char* p){return s.find(p)!=std::string::npos;}
+bool has(const std::string&s,const std::string&p){return s.find(p)!=std::string::npos;}
 std::vector<std::string> draw_objects(const std::string& s){
     std::vector<std::string> result;auto p=s.find("\"draws\":[");check(p!=std::string::npos,"Missing draws");p+=9;
     while(p<s.size()&&s[p]!=']'){if(s[p]==',')++p;const auto end=s.find('}',p);check(end!=std::string::npos,"Unterminated draw");result.push_back(s.substr(p,end-p+1));p=end+1;}return result;
@@ -156,7 +159,16 @@ void real_car_tests(const char* path){
     for(size_t i=0;i<draws.size();i++){const auto fragment=std::string("\"albedoTexture\":")+(expected[i]<0?"null":std::to_string(expected[i]));check(draws[i].find(fragment)!=std::string::npos,"Corvette draw differs from independent source-material report");
         if(expected[i]>=0){++bound;textures[expected[i]]=true;check(has(draws[i],"\"uv0Available\":true,\"albedoParameter\":\"g_MeshTexture\""),"Corvette albedo lacks original vehicle UV binding");}}
     check(bound==14&&textures[2]&&textures[3]&&textures[5]&&textures[6],"Corvette shared texture draw set changed");
-    check(has(draws[0],"runtime paint lookup")&&has(draws[6],"Non-shared texture resource unsupported"),"Corvette unsupported paint/external texture state lost");
+    check(has(draws[0],"runtime paint lookup")&&has(draws[6],"Original resource-block texture input"),"Corvette unsupported paint/external texture identity lost");
+    size_t resource=0;
+    for(int i:{6,15,16,17,18,19,20,21,61,65,66,79}){const int block=(i==21||i==79)?2:6;
+        check(has(draws[size_t(i)],"\"resourceBlock\":"+std::to_string(block))&&has(draws[size_t(i)],"\"resourceIndex\":0")&&has(draws[size_t(i)],"\"albedoTexture\":null"),"Corvette resource texture identity differs from source-material report");++resource;}
+    check(resource==12,"Corvette resource texture draw count changed");
+    const auto resources=inspect_resources(input.data(),input.size());check(ok(resources),resources.c_str());
+    check(has(resources,"\"name\":\"corvetterace_dials\"")&&has(resources,"\"payloadOffset\":2051185,\"payloadBytes\":368"),"Dials LOD0 descriptor/payload span changed");
+    check(has(resources,"\"name\":\"corvetterace_interior\"")&&has(resources,"\"payloadOffset\":2950577,\"payloadBytes\":184"),"Interior LOD0 descriptor/payload span changed");
+    check(has(resources,"\"parsedUntilOffset\":3125977"),"Resource block traversal did not end at the Scene boundary");
+    check(resources==inspect_resources(input.data(),input.size()),"Resource texture JSON nondeterministic");
     check(result==inspect(input.data(),input.size()),"Corvette JSON nondeterministic");
     std::cout<<"Actual Corvette 30591 vertices/36193 triangles/80 draws, 17955 valid UVs and 14 original shared-albedo draws passed\n";
 }
@@ -169,6 +181,7 @@ int main(int argc,char**argv){try{
     if(argc==3&&std::strcmp(argv[1],"--car")==0){real_car_tests(argv[2]);return 0;}
     material_and_uv_tests();
     const auto input=fixture();auto output=inspect(input.data(),input.size());check(ok(output),output.c_str());check(has(output,"\"indices\":[0,1,2]"),"Triangle list changed");check(has(output,"\"fixtureOnly\":false"),"Generic parser mislabelled");check(has(output,"\"partialSceneTraversal\":true"),"Partial scope missing");check(has(output,"\"firstIndex\":0,\"indexCount\":3,\"albedoTexture\":null")&&has(output,"\"uv0Available\":false"),"Missing original UV0 became a source albedo mapping");
+    const auto resource_output=inspect_resources(input.data(),input.size());check(ok(resource_output),resource_output.c_str());check(has(resource_output,"\"resourceBlockCount\":1")&&has(resource_output,"\"loadedResourceBlocks\":1"),"Synthetic resource block metadata traversal failed");
     for(size_t size=0;size<input.size();size++)check(!ok(inspect(input.data(),size)),"Truncated fixture accepted");
     auto shifted=fixture(36);check(has(inspect(shifted.data(),shifted.size()),"\"indices\":[3,4,5]"),"Byte stream offset interpreted as vertices");
     auto unaligned=fixture(1);check(!ok(inspect(unaligned.data(),unaligned.size())),"Unaligned stream offset accepted");

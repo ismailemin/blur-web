@@ -8,6 +8,10 @@ extern "C" {
 // base primitives, UV0, draw spans and supported shared-texture albedo bindings.
 // Explicit partial traversal metadata: instances/world transforms not applied.
 char* scene_inspect(const unsigned char* bytes, size_t available);
+// Bounded metadata traversal across all loaded model resource blocks. Returns
+// original texture LOD descriptors and exact descriptor/payload byte spans.
+// No geometry, material, instance or runtime object is imported.
+char* scene_resource_textures_inspect(const unsigned char* bytes, size_t available);
 // Source ChunkInfo stream-range index from an original PC .levelrender file.
 char* level_index_inspect(const unsigned char* level_bytes, size_t level_size);
 // Bounded level Scene + two original companion-stream ranges. Block IDs must

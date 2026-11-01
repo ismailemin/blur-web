@@ -51,10 +51,30 @@ The diagnostic also rejected26 invalid assembly cases: incomplete mip payloads, 
 
 ## Bounded browser integration
 
-The smallest faithful implementation can expose the two complete LOD0 images before implementing streaming quality upgrades. A separate bounded C ABI such as `scene_resource_textures_inspect(modelPtr, modelBytes)` should walk the original model resource blocks and return metadata only: `(block,index)`, original name/hash/sampler, source LOD number, descriptor offset/length and payload offset/length. The first RenderList's material resolver should retain its resource-block texture identity rather than replacing it with a guessed shared index. Runtime offsets must come from parsed source structures; the fixture offsets above are verification expectations only.
+**Implemented for LOD0.** `scene_resource_textures_inspect(modelPtr,modelBytes)`
+walks the original seven resource blocks to the exact Scene boundary and returns
+metadata only: `(block,index)`, original name/hash/sampler, source LOD number,
+descriptor offset/length and payload offset/length. The first RenderList's
+material resolver now retains its resource-block texture identity
+(`resourceBlock`/`resourceIndex`) instead of replacing it with a guessed shared
+index.
 
-The current Scene reader stops after the first RenderList's source lists. Continuing requires its remaining ChunkData traversal, subsequent node types, all resource LOD records and later resource blocks; `MaterialReader.node`, `render_list`, `resource_blocks`, `texture_lod` in the independent diagnostic already show the source order. Unknown nodes, compression, paired source references and unsupported shapes must fail explicitly in the metadata path, without breaking the existing geometry preview.
+The browser concatenates the original28 descriptor bytes and the exact complete
+LOD0 texel slice into a small temporary buffer and calls the existing
+`texture_raw_inspect`. This preserves the original descriptor, avoids exposing
+archive envelope bytes, and changes neither format nor mip count. All12
+resource-block draws now bind their original `(block,index)` and independently
+verified UV0. Together with the existing14 shared-image draws, all26 static
+ordinary-albedo inputs are resolved; runtime paint and light blends remain
+unimplemented.
 
-No new pixel-decoder ABI is required for the first LOD0 integration. The browser can concatenate the original28 descriptor bytes and exact complete texel slice into a small temporary buffer, then call existing `texture_raw_inspect`. This preserves the original descriptor, avoids exposing archive envelope bytes, and changes neither format nor mip count. A two-span descriptor/data ABI is optional if temporary copying later matters. Map the decoded texture to the original `(block,index)` for the12 supported draws and keep their independently verified UV0. Together with the existing14 shared-image draws, this would resolve all26 static ordinary-albedo inputs; runtime paint and light blends would remain unimplemented.
+Higher quality remains future work. Metadata already returns every populated
+LOD's descriptor and new payload spans, preserving absent-LOD fallback. A later
+top-mip-only payload must never be sent alone to the existing complete-chain
+decoder; build complete chains by matching source tail dimensions/levels, or
+upload each original compressed mip into its matching WebGPU subresource.
 
-For higher quality, metadata must return every populated LOD's descriptor and new payload spans, preserving absent-LOD fallback. Build complete chains by matching source tail dimensions/levels, or upload each original compressed mip into its matching WebGPU subresource. A later top-mip-only payload must never be sent alone to the existing complete-chain decoder. Compare native/WASM image output and exact original slice hashes against this diagnostic before claiming that quality path is supported.
+The C++/WASM JSON and the two LOD0 RGBA outputs match the independent diagnostic;
+`verify_resource_binding.mjs` checks the12 draw bindings and the resulting26/80
+textured draws. No new pixel-decoder ABI was required.
+

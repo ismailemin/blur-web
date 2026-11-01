@@ -58,7 +58,7 @@ assert.equal(wasm.metadata.uv0PlaceholderVertices,placeholderVertices);
 assert.equal(wasm.metadata.runtimeMaterialsApplied,false);
 assert.equal(wasm.metadata.runtimePaintColourRecovered,false);
 assert.equal(wasm.metadata.runtimePaintTextureRecovered,false);
-const sharedBindings=[];let unsupportedBlockImages=0;
+const sharedBindings=[];let unsupportedBlockImages=0;const resourceBindings=[];
 for(const [index,draw] of wasm.draws.entries()){
   const source=materialReference.draws[index];
   assert.equal(source.draw,index);
@@ -77,13 +77,53 @@ for(const [index,draw] of wasm.draws.entries()){
     assert.equal(draw.albedoParameter,null,`Draw ${index}: unsupported material acquired a parameter binding`);
     if(source.status==='static_albedo_image_resolved'){
       unsupportedBlockImages++;
-      assert.match(draw.binding,/Non-shared texture resource unsupported/,`Draw ${index}: resource texture scope missing`);
+      assert.equal(draw.resourceBlock,texture.block,`Draw ${index}: resource texture block differs`);
+      assert.equal(draw.resourceIndex,texture.index,`Draw ${index}: resource texture index differs`);
+      assert.match(draw.binding,/Original resource-block texture input/,`Draw ${index}: resource texture identity scope missing`);
+      resourceBindings.push({draw:index,block:texture.block,index:texture.index,name:texture.name});
     }else if(source.status==='runtime_light_blend')assert.match(draw.binding,/Off\/On blend/,`Draw ${index}: light runtime scope missing`);
     else assert.match(draw.binding,/_NO_ALBEDO/,`Draw ${index}: shader's no-albedo definition lost`);
   }
 }
 assert.equal(sharedBindings.length,14);assert.equal(new Set(sharedBindings.map(draw=>draw.sharedTexture)).size,4);
 assert.equal(unsupportedBlockImages,12);
-const evidence={nativeWasmEqual:true,independentPythonGeometryEqual:true,independentPythonUvEqual:true,independentPythonMaterialBindingsEqual:true,vertexCount:30591,triangleCount:36193,draws:80,uv0ValidVertices:validVertices,uv0PlaceholderVertices:placeholderVertices,uvBuffers:uvBufferEvidence,staticSharedAlbedoDraws:sharedBindings.length,sharedBindings,unsupportedResourceTextureDraws:unsupportedBlockImages,runtimePaintColourRecovered:false,runtimePaintTextureRecovered:false,positionSha256:hash(positions),indexSha256:hash(indices),bounds:wasm.bounds,scope:'first RenderList LOD0, undeformed object-local geometry, original UV0 and 14 static shared albedo inputs; diagnostic lighting, runtime paint/light materials and external resource textures are not reproduced'};
+assert.equal(resourceBindings.length,12);
+assert.deepEqual([...new Set(resourceBindings.map(item=>`${item.block}:${item.index}`))].sort(),['2:0','6:0']);
+const nativeResources=JSON.parse(execFileSync(path.join(root,'_work/build/asset-reader-native/Release/scene_inspect.exe'),[fixture,'--resources'],{encoding:'utf8',maxBuffer:32*1024*1024}));
+const resourcePointer=mod._malloc(bytes.length);let resourceOutput=0,wasmResources;
+try{mod.HEAPU8.set(bytes,resourcePointer);resourceOutput=mod._scene_resource_textures_inspect(resourcePointer,bytes.length);assert.ok(resourceOutput);wasmResources=JSON.parse(mod.UTF8ToString(resourceOutput));}
+finally{if(resourceOutput)mod._scene_free(resourceOutput);mod._free(resourcePointer);}
+assert.equal(wasmResources.status,'ok');
+equal(wasmResources,nativeResources,'Complete native/WASM resource metadata JSON differs');
+assert.equal(wasmResources.metadata.parsedUntilOffset,wasmResources.sceneEnd);
+const resourceReport=JSON.parse(await readFile(path.join(root,'_work/car-resource-textures/report.json'),'utf8'));
+assert.equal(resourceReport.modelSha256,hash(bytes));
+const decodedResourceTextures=[];
+for(const expected of resourceReport.textures){
+  const block=wasmResources.resourceBlocks[expected.block];
+  assert.ok(block,`Resource block ${expected.block} missing`);
+  const texture=block.textures[expected.texture];
+  assert.ok(texture,`Resource texture ${expected.block}/${expected.texture} missing`);
+  assert.equal(texture.name,expected.name);
+  const lod0=texture.lods[0],expectedLod0=expected.lods[0];
+  assert.equal(lod0.present,true);assert.equal(lod0.supported,true);
+  assert.equal(lod0.descriptorOffset,expectedLod0.headerOffset);
+  assert.equal(lod0.descriptorBytes,expectedLod0.headerBytes);
+  assert.equal(lod0.payloadOffset,expectedLod0.newPayloadOffset);
+  assert.equal(lod0.payloadBytes,expectedLod0.newPayloadBytes);
+  assert.equal(lod0.completeMipBytes,expectedLod0.completeMipBytes);
+  assert.equal(lod0.topMipLevels,expectedLod0.topMipLevelsInPayload);
+  for(const key of ['width','height','depth','levels','format','usage','type'])assert.equal(lod0.descriptor[key],expectedLod0.descriptor[key],`${expected.name} LOD0 descriptor ${key} differs`);
+  const descriptor=bytes.subarray(lod0.descriptorOffset,lod0.descriptorOffset+28);
+  assert.equal(hash(descriptor),expectedLod0.descriptorSha256,`${expected.name} descriptor bytes differ`);
+  const raw=Buffer.alloc(28+lod0.payloadBytes);
+  bytes.copy(raw,0,lod0.descriptorOffset,lod0.descriptorOffset+28);
+  bytes.copy(raw,28,lod0.payloadOffset,lod0.payloadOffset+lod0.payloadBytes);
+  const rawPointer=mod._malloc(raw.length);let rawOutput=0;
+  try{mod.HEAPU8.set(raw,rawPointer);rawOutput=mod._texture_raw_inspect(rawPointer,raw.length);assert.ok(rawOutput);const decoded=JSON.parse(mod.UTF8ToString(rawOutput));assert.equal(decoded.status,'ok');assert.equal(decoded.width,lod0.descriptor.width);assert.equal(decoded.height,lod0.descriptor.height);const rgba=Buffer.from(decoded.rgba);const expectedRgba=expectedLod0.nativeComparison?.nativeRgbaSha256??expectedLod0.independentPillowRgbaSha256;assert.equal(hash(rgba),expectedRgba,`${expected.name} decoded LOD0 RGBA differs`);decodedResourceTextures.push({block:expected.block,index:expected.texture,name:expected.name,width:decoded.width,height:decoded.height,rgbaSha256:hash(rgba)});}
+  finally{if(rawOutput)mod._texture_free(rawOutput);mod._free(rawPointer);}
+}
+assert.equal(decodedResourceTextures.length,2);
+const evidence={nativeWasmEqual:true,independentPythonGeometryEqual:true,independentPythonUvEqual:true,independentPythonMaterialBindingsEqual:true,vertexCount:30591,triangleCount:36193,draws:80,uv0ValidVertices:validVertices,uv0PlaceholderVertices:placeholderVertices,uvBuffers:uvBufferEvidence,staticSharedAlbedoDraws:sharedBindings.length,sharedBindings,unsupportedResourceTextureDraws:unsupportedBlockImages,resourceTextureDraws:resourceBindings.length,resourceBindings,resourceNativeWasmEqual:true,resourceLod0Decoded:decodedResourceTextures,runtimePaintColourRecovered:false,runtimePaintTextureRecovered:false,positionSha256:hash(positions),indexSha256:hash(indices),bounds:wasm.bounds,scope:'first RenderList LOD0, undeformed object-local geometry, original UV0 and 14 static shared plus 12 resource-block albedo inputs; diagnostic lighting, runtime paint/light materials and higher resource LODs are not reproduced'};
 await writeFile(path.join(root,'_work/verification/car-native-wasm.json'),JSON.stringify(evidence,null,2));
 console.log(JSON.stringify(evidence,null,2));

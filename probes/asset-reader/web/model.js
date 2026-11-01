@@ -2,6 +2,7 @@
 // This parses the ordinary format; no hash/signature validation is claimed.
 import { decodePacketZlib } from './packet.js';
 import { MeshViewer } from './mesh-viewer.js';
+import { bindResourceTextures } from './resource-textures.js';
 let viewer;
 
 export async function showMesh(mesh,textures=[]){
@@ -52,6 +53,11 @@ async function previewMesh(mod, pointer, length) {
           if(decoded.status==='ok')textures[index]=decoded;
         }finally{if(textureOutput)mod._texture_free(textureOutput);}
       }
+      // Resource-block images are stored outside the shared-texture table. Bind
+      // only complete original LOD0 chains; later top-mip-only LODs are not
+      // passed to the complete-chain decoder.
+      const binding=bindResourceTextures(mod,pointer,length,mesh,textures);
+      if(binding.error)status.textContent+=` · kaynak doku: ${binding.error}`;
     }
     await showMesh(mesh,textures);
   } catch (error) { status.textContent = `Geometri önizlemesi: ${error.message}`; }

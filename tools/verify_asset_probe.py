@@ -34,6 +34,7 @@ def main():
             ('pak-native-wasm','verify_wasm'),('model-native-wasm','verify_model_wasm'),
             ('mesh-native-wasm','verify_mesh_wasm'),('scene-native-wasm','verify_scene_wasm'),
             ('texture-native-wasm','verify_texture_wasm'),('car-native-wasm','verify_car_wasm'),
+            ('resource-binding','verify_resource_binding'),
             ('xt-native-wasm','verify_xt_wasm'),('level-native-wasm','verify_level_wasm'),
             ('level-candidates-native-wasm','verify_level_candidates_wasm'),('packet-cases','verify_packets'),
             ('packet-independent','verify_packet_reference'),('viewer-math','verify_viewer_math')]],

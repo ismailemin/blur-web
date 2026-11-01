@@ -30,12 +30,14 @@ block 0, LOD0; it is **not a complete scene import**.
    descriptions, constant material data, render passes, bounds, PVS extents,
    empty portal map, node dynamic MaterialLists and VB/IB/texture source vectors
    are read sequentially. Node dynamic lists are **values**, whereas target
-   Scene dynamic lists are pointer values. The parser stops after TextureSource.
+   Scene dynamic lists are pointer values. The geometry/value parser stops after TextureSource; the separate resource-texture metadata path consumes ChunkData, later nodes, all resource LOD records and later blocks.
 
 Instance/batch descriptions are skipped by their source fields and are not
 rendered. PVS vectors are bounded but visibility is not applied. Following
 ChunkData, resource texture LODs, remaining nodes, later resource blocks and
-world/model instance transforms are not parsed. Metadata always has
+world/model instance transforms are not imported into the geometry output; the
+separate resource-texture metadata path traverses them for texture spans only.
+Metadata always has
 `partialSceneTraversal:true`, exact
 `parsedUntilOffset`, node index, `coordinateSpace:"object-local"`,
 `nodeTransformsApplied:false` and `material:"diagnostic-only"`. Only referenced
@@ -66,27 +68,35 @@ directly. VertexBufferSource and IndexBufferSource must resolve to resource
 block0 with in-range buffer indices. Unknown/external mappings fail; missing or
 unsupported tail syntax also fails because those mappings cannot be verified.
 
-`uv0` is flat original TEXCOORD0, method0, F16_2/type8, F16_4/type9 (first two components), or F32_2/type5. It is empty
-unless every emitted vertex buffer has a supported UV0. Half subnormals and
-signed zero use IEEE754 values; half Inf/NaN are rejected. UVs are **not flipped**.
-No material-to-UV binding is assumed.
+`uv0` is flat original TEXCOORD0, method0, F16_2/type8, F16_4/type9 (first two components), or F32_2/type5. It is emitted for every concatenated vertex buffer. A buffer without a supported UV0 gets zero placeholder pairs; metadata reports `uv0ValidVertices` and `uv0PlaceholderVertices`, and each draw reports `uv0Available` from its declaration/bound buffer. Placeholder pairs never authorize a texture binding. Half subnormals and signed zero use IEEE754 values; half Inf/NaN are rejected. UVs are **not flipped**. No material-to-UV binding is assumed.
 
-`draws` contains `{firstIndex,indexCount,albedoTexture,binding}` for each converted
-base primitive; spans partition the emitted triangle-list indices in primitive
-order. `albedoTexture` is a sharedTextures index or `null` with an explicit
-binding reason. Resolution follows the **primitive stream's** MaterialIndex,
-constant material list0 row, that row's MaterialType `g_tAlbedo` scalar
-TEXTURE_INDEX/type7, node TextureSource and ResourceIndex(block=-1,index).
-Dynamic lists, missing/array parameters, invalid rows/indices and non-shared
-texture resources yield no binding. The primitive's baseMaterial is not used as
-an albedo shortcut. Shaders, lighting, alpha/cull policies and sampler fidelity
-remain separate renderer work.
+`draws` contains `{firstIndex,indexCount,albedoTexture,binding,uv0Available,albedoParameter,resourceBlock,resourceIndex}` for each converted base primitive; spans partition the emitted triangle-list indices in primitive order. `albedoTexture` is a sharedTextures index or `null` with an explicit binding reason. Resolution follows the **primitive stream's** MaterialIndex, constant material list0 row, that row's MaterialType `g_tAlbedo` (ordinary props) or vehicle `g_MeshTexture` scalar TEXTURE_INDEX/type7, node TextureSource and ResourceIndex. `resourceBlock`/`resourceIndex` preserve a non-shared resource-block texture identity instead of replacing it with a guessed shared index. Dynamic lists, missing/array parameters, invalid rows/indices and unsupported paint/light variants yield no binding. The primitive's baseMaterial is not used as an albedo shortcut. Shaders, lighting, alpha/cull policies and sampler fidelity remain separate renderer work.
 
-`sharedTextures` records serialized names/hashes and bounded `dataOffset` /
-`dataBytes` for embedded PC texture blobs in this same decoded file. The geometry
-reader skips those opaque blobs by their declared size. It does not decode them
-or authenticate hashes, and does not equate the first texture with an albedo
-material. Sampler v0/1 envelopes are read by their source field width.
+Vehicle `_NO_ALBEDO` variants (including paint) and runtime light Off/On blends are classified explicitly and never receive a guessed albedo. The 30,591-vertex Corvette has 14 shared-image draws and 12 resource-block-image draws; the latter keep their original `(block,index)` identity for the metadata path below.
+
+`sharedTextures` records serialized names/hashes and bounded `dataOffset` / `dataBytes` for embedded PC texture blobs in this same decoded file. The geometry reader skips those opaque blobs by their declared size. It does not decode them or authenticate hashes, and does not equate the first texture with an albedo material. Sampler v0/1 envelopes are read by their source field width.
+
+## Resource texture metadata
+
+`scene_resource_textures_inspect(decodedModel, size)` / `scene_free(result)` is a
+separate bounded traversal across **all loaded resource blocks**. It returns every
+resource-block texture's original name/hash/sampler and every LOD record with:
+
+- `present`, source LOD number, archive offset and object version;
+- original 28-byte PC `TextureDesc` fields at `descriptorOffset`/`descriptorBytes`;
+- exact texel `payloadOffset`/`payloadBytes`, archive alignment and, for DXT1/3/5,
+  the complete-chain byte count and how many top mip levels the payload contains;
+- `pairedBlock`/`pairedIndex` for paired source references, and `supported`/`reason`.
+
+Later populated LODs usually contain only a new largest mip; callers must not pass
+such a payload to a decoder that expects a complete chain. LOD0 for the two
+Corvette resource images is complete. The traversal does not import geometry,
+materials, instances or runtime objects, and ends exactly at the Scene boundary.
+
+```text
+scene_resource_textures_inspect → resourceBlocks[].textures[].lods[]
+```
+
 
 Empty PvsCellData can contain arbitrary nCells/cellSize scalar bits in real
 assets. Source `renderlist.cpp::PvsCellData::Build` initializes these only when
@@ -127,6 +137,17 @@ The original 100-vertex fixture's F32 position/U32 triangle hashes match the
 independent Python mesh diagnostic. This cross-check does not establish that
 every supported field/asset variant has been independently decoded; synthetic
 bounds tests and explicit subset restrictions remain necessary.
+
+Resource metadata is verified against the independently parsed
+`_work/car-resource-textures/report.json`: `dials` LOD0 descriptor at2051139,
+payload at2051185/368 bytes; `interior` LOD0 descriptor at2950530, payload at
+2950577/184 bytes. Native and WASM JSON are identical, the descriptor bytes
+hash to the report values, and both 16×16 LOD0 images decode to the recorded
+RGBA (BC3 alpha follows the documented ≤1 rounding policy). The traversal ends
+at Scene byte3125977. `verify_resource_binding.mjs` additionally binds the two
+LOD0 images to the12 resource-block draws, yielding26/80 textured draws overall
+(14 shared +12 resource), without touching runtime paint or light. Higher
+resource LODs remain metadata-only.
 
 ## Source authority
 

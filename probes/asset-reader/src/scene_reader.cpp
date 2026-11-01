@@ -78,11 +78,41 @@ struct MaterialRow {std::vector<MaterialAction> actions;};
 struct AlbedoState{bool seen=false,known=false;int32_t value=-1;std::string reason;};
 struct MaterialState{AlbedoState prop,vehicle;};
 struct Resource {int32_t block,index;};
-struct Draw {uint32_t first,count;int32_t albedo=-1;std::string binding;bool uv_available=false;std::string albedo_parameter;};
+struct Draw {uint32_t first,count;int32_t albedo=-1;std::string binding;bool uv_available=false;std::string albedo_parameter;int32_t resource_block=-1,resource_index=-1;};
 struct Texture {std::string name;uint32_t hash;size_t offset,bytes;};
+struct TextureLodInfo {
+    int32_t lod=-1;bool present=false;uint16_t version=0;size_t archive_offset=0;
+    size_t descriptor_offset=0;uint32_t descriptor_bytes=0;
+    uint32_t width=0,height=0,depth=0,levels=0,format=0,usage=0,type=0;
+    size_t payload_offset=0;uint32_t payload_bytes=0;
+    int32_t paired_block=-1,paired_index=-1;
+    uint64_t complete_mip_bytes=0;uint32_t top_mip_levels=0;
+    bool supported=false;std::string reason;
+};
+struct ResourceTextureInfo {
+    int32_t index=-1;std::string name;uint32_t hash=0;
+    uint16_t sampler_version=0;std::vector<uint32_t> sampler;
+    std::vector<TextureLodInfo> lods;
+};
+struct ResourceBlockInfo {int32_t index=-1;uint32_t lod_count=0;std::vector<ResourceTextureInfo> textures;};
 struct ChunkItem {int32_t block,lod;};
 struct StreamChunk {std::vector<ChunkItem> items;std::vector<int32_t> prerequisites;uint64_t offset,stored,original;};
 float half(uint16_t h){const int sign=(h&0x8000)?-1:1;auto exp=(h>>10)&31,frac=h&1023;if(exp==31)throw std::runtime_error("Nonfinite half value");return sign*(exp?std::ldexp(float(1024+frac),int(exp)-25):std::ldexp(float(frac),-24));}
+// DXT1/DXT3/DXT5 as stored in the PC TextureDesc. Other formats return 0 and
+// are left to the standalone texture decoder's own format checks.
+uint64_t mip_level_bytes(uint32_t format,uint32_t width,uint32_t height,uint32_t level){
+    const uint64_t block=format==0x31545844u?8u:(format==0x33545844u||format==0x35545844u)?16u:0u;
+    if(!block)return 0;
+    const uint64_t w=std::max(1u,width>>level),h=std::max(1u,height>>level);
+    return ((w+3)/4)*((h+3)/4)*block;
+}
+uint64_t complete_mip_bytes(uint32_t format,uint32_t width,uint32_t height,uint32_t levels){
+    const uint64_t block=format==0x31545844u?8u:(format==0x33545844u||format==0x35545844u)?16u:0u;
+    if(!block||!levels)return 0;
+    uint64_t total=0;
+    for(uint32_t level=0;level<levels;level++)total+=mip_level_bytes(format,width,height,level);
+    return total;
+}
 struct Decoder {
     Reader r;std::vector<VB> vbs;std::vector<IB> ibs;std::vector<Primitive> primitives;
     uint32_t declarations=0,block=0,node_index=0;std::string scene_name,node_name;
@@ -173,6 +203,98 @@ struct Decoder {
     // counts. Visibility is not applied; vector extents are independently bounded.
     void pvs(){auto v=r.ar(1);r.skip(4);if(v){auto n=r.vec();r.skip(size_t(n)*2);}r.skip(4);auto n=r.vec();r.skip(n);}
     std::vector<Resource> resources(){auto n=r.vec(4096);std::vector<Resource> values;for(uint32_t i=0;i<n;i++)values.push_back({r.s32(),r.s32()});return values;}
+    // Full node skip for resource-block metadata traversal. This mirrors the
+    // source-shaped Python diagnostics; it must consume ChunkData and every
+    // following field so the next resource block starts at the right byte.
+    void chunk_data(){
+        auto n=r.vec();
+        for(uint32_t i=0;i<n;i++){r.ar();r.skip(4);for(int k=0;k<3;k++){auto m=r.vec();for(uint32_t j=0;j<m;j++){r.ar();r.skip(12);}}}
+    }
+    void render_list_skip(){
+        auto base_version=r.ar(4);if(base_version<2)r.fail("Unsupported legacy RenderListNode");
+        r.cull();r.ar();auto types=material_types();material_data(types);
+        auto n=r.vec(10000);for(uint32_t i=0;i<n;i++)primitive();
+        n=r.vec(10000);for(uint32_t i=0;i<n;i++)instance();
+        n=r.vec(10000);for(uint32_t i=0;i<n;i++){r.ar();instance();primitive_stream();}
+        n=r.vec(10000);for(uint32_t i=0;i<n;i++)primitive();
+        material_data(types);
+        n=r.vec(10000);for(uint32_t i=0;i<n;i++){r.ar();r.skip(24);}
+        for(int k=0;k<3;k++){n=r.vec();for(uint32_t i=0;i<n;i++)r.bounds();}
+        for(int k=0;k<3;k++)pvs();
+        n=r.vec();r.skip(size_t(n)*4);
+        n=r.vec();for(uint32_t i=0;i<n;i++){r.ar();r.bitvector();r.bitvector();}
+        if(base_version==3){for(int k=0;k<2;k++){r.ar();auto dynamic_types=material_types();material_data(dynamic_types);}}
+        else if(base_version>3){n=r.vec(256);for(uint32_t i=0;i<n;i++){r.ar();auto dynamic_types=material_types();material_data(dynamic_types);}}
+        resources();resources();resources();
+        chunk_data();
+    }
+    void skip_node(){
+        auto tag=r.u8();if(tag==0)return;if(tag!=3)r.fail("Unsupported polymorphic node pointer");
+        auto name=r.str();auto version=r.ar(4);
+        if(name=="RenderingData::RenderListNode_Common"){if(version)r.fail("Unsupported target RenderListNode version");render_list_skip();return;}
+        if(name=="RenderingData::RootNode"){if(version)r.fail("Unsupported root version");r.cull();return;}
+        if(name=="RenderingData::CullNode"){if(version>2)r.fail("Unsupported cull version");r.node();r.bounds();r.bitvector();if(version>0)r.skip(4);if(version>1)r.bitvector();return;}
+        if(name=="RenderingData::Node"){if(version)r.fail("Unsupported node version");r.str();auto n=r.vec();r.skip(size_t(n)*8+16);return;}
+        if(name=="RenderingData::GroupNode"){if(version)r.fail("Unsupported group version");r.cull();r.str();return;}
+        r.fail("Unsupported polymorphic node "+name);
+    }
+    void texture_lod_metadata(ResourceTextureInfo& texture,int32_t lod){
+        TextureLodInfo t;t.lod=lod;t.archive_offset=r.p;
+        t.version=r.ar(2);r.ar();r.expect(2);
+        if(lod==0){texture.name=r.str();texture.sampler_version=r.ar(1);auto n=texture.sampler_version?10u:9u;for(uint32_t i=0;i<n;i++)texture.sampler.push_back(r.u32());texture.hash=r.u32();}
+        const auto present=r.u32();t.present=present!=0;
+        if(!t.present){texture.lods.push_back(std::move(t));return;}
+        t.descriptor_bytes=r.count(256);t.descriptor_offset=r.p;
+        if(t.descriptor_bytes==28){
+            t.width=r.u32();t.height=r.u32();t.depth=r.u32();t.levels=r.u32();t.format=r.u32();t.usage=r.u32();t.type=r.u32();
+            t.complete_mip_bytes=complete_mip_bytes(t.format,t.width,t.height,t.levels);
+            t.supported=t.type==3&&t.depth==1&&t.width>=1&&t.width<=512&&t.height>=1&&t.height<=512&&t.levels>=1&&t.levels<=10;
+            if(!t.supported)t.reason="Unsupported resource texture descriptor shape";
+        }else{r.skip(t.descriptor_bytes);t.reason="Unsupported resource texture descriptor size";}
+        if(present>1){
+            t.paired_block=r.s32();t.paired_index=r.s32();t.supported=false;t.reason="Paired resource texture source unsupported";
+        }else if(t.version){
+            r.ar();const auto size=r.u32(),alignment=r.u32(),compression=r.u32();const auto swap=r.u8();
+            if(!alignment||alignment>4096||(alignment&(alignment-1))||compression||swap)r.fail("Unsupported resource texture LOD buffer");
+            if(r.p<r.origin)r.fail("Invalid resource texture alignment origin");
+            r.skip((r.origin-r.p)%alignment);
+            t.payload_offset=r.p;t.payload_bytes=size;r.skip(size);
+        }else{
+            t.payload_bytes=r.count(max_input);t.payload_offset=r.p;r.skip(t.payload_bytes);
+        }
+        if(t.complete_mip_bytes){
+            if(t.payload_bytes>t.complete_mip_bytes)r.fail("Resource texture payload exceeds descriptor mip chain");
+            uint64_t covered=0;
+            for(uint32_t level=0;level<t.levels;level++){
+                const auto bytes=mip_level_bytes(t.format,t.width,t.height,level);
+                if(covered+bytes>t.payload_bytes)r.fail("Resource texture payload ends within a mip");
+                covered+=bytes;t.top_mip_levels=level+1;
+                if(covered==t.payload_bytes)break;
+            }
+            if(covered!=t.payload_bytes)r.fail("Resource texture payload exceeds descriptor mip chain");
+        }
+        texture.lods.push_back(std::move(t));
+    }
+    void resource_blocks_metadata(std::vector<ResourceBlockInfo>& blocks){
+        for(uint32_t block_index=0;block_index<loaded_blocks;block_index++){
+            ResourceBlockInfo block;block.index=int32_t(block_index);
+            r.ar();r.ar();r.expect(2);block.lod_count=r.count(64);if(!block.lod_count)r.fail("No resource LOD");
+            for(uint32_t lod=0;lod<block.lod_count;lod++){
+                r.ar();r.ar();r.expect(2);r.expect(lod);
+                if(lod==0){
+                    auto n=r.vec(256);for(uint32_t i=0;i<n;i++){if(!r.pointer())r.fail("Null vertex buffer");vertex_buffer();}
+                    n=r.vec(256);for(uint32_t i=0;i<n;i++){if(!r.pointer())r.fail("Null index buffer");index_buffer();}
+                    n=r.vec(100000);for(uint32_t i=0;i<n;i++)skip_node();
+                }
+                auto texture_count=r.count(16);
+                if(lod>0&&texture_count!=block.textures.size())r.fail("Resource texture count changes between LODs");
+                if(lod==0){block.textures.resize(texture_count);for(uint32_t i=0;i<texture_count;i++)block.textures[i].index=int32_t(i);}
+                for(uint32_t i=0;i<texture_count;i++)texture_lod_metadata(block.textures[i],int32_t(lod));
+            }
+            blocks.push_back(std::move(block));
+        }
+        if(r.p!=r.end)r.fail("Resource blocks do not end at the Scene boundary");
+    }
     void render_tail(uint16_t version,const std::vector<MaterialType>& types){
         auto n=r.vec(10000);instance_count=n;for(uint32_t i=0;i<n;i++)instance();
         n=r.vec(10000);instance_batch_count=n;for(uint32_t i=0;i<n;i++){r.ar();instance();primitive_stream();}
@@ -293,7 +415,12 @@ struct Decoder {
         if(!value.known){draw.binding=value.reason;return;}
         if(value.value<0||size_t(value.value)>=texture_sources.size()){draw.binding="Node texture index out of bounds";return;}
         const auto& source=texture_sources[size_t(value.value)];
-        if(source.block!=-1){draw.binding="Non-shared texture resource unsupported";return;}
+        if(source.block!=-1){
+            if(source.block<0||uint32_t(source.block)>=resource_blocks||source.index<0){draw.binding="Resource texture block/index out of bounds";return;}
+            draw.resource_block=source.block;draw.resource_index=source.index;
+            draw.binding=draw.uv_available?"Original resource-block texture input; payload metadata required":"Original UV0 unavailable for this draw; placeholder UVs are not a material mapping";
+            return;
+        }
         if(source.index<0||size_t(source.index)>=textures.size()){draw.binding="Shared texture index out of bounds";return;}
         if(!draw.uv_available){draw.binding="Original UV0 unavailable for this draw; placeholder UVs are not a material mapping";return;}
         draw.albedo=source.index;draw.albedo_parameter=parameter;
@@ -341,10 +468,58 @@ struct Decoder {
         std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<float>::max_digits10)<<"{\"status\":\"ok\",\"positions\":[";
         for(size_t i=0;i<positions.size();i++){if(i)out<<',';out<<positions[i];}out<<"],\"indices\":[";for(size_t i=0;i<triangles.size();i++){if(i)out<<',';out<<triangles[i];}
         out<<"],\"uv0\":[";for(size_t i=0;i<uvs.size();i++){if(i)out<<',';out<<uvs[i];}out<<"],\"sharedTextures\":[";for(size_t i=0;i<textures.size();i++){if(i)out<<',';const auto&t=textures[i];out<<"{\"name\":\""<<escape(t.name.c_str())<<"\",\"hash\":"<<t.hash<<",\"dataOffset\":"<<t.offset<<",\"dataBytes\":"<<t.bytes<<'}';}
-        out<<"],\"draws\":[";for(size_t i=0;i<draws.size();i++){if(i)out<<',';const auto&d=draws[i];out<<"{\"firstIndex\":"<<d.first<<",\"indexCount\":"<<d.count<<",\"albedoTexture\":";if(d.albedo<0)out<<"null";else out<<d.albedo;out<<",\"binding\":\""<<escape(d.binding.c_str())<<"\",\"uv0Available\":"<<(d.uv_available?"true":"false")<<",\"albedoParameter\":";if(d.albedo_parameter.empty())out<<"null";else out<<'\"'<<d.albedo_parameter<<'\"';out<<'}';}
+        out<<"],\"draws\":[";for(size_t i=0;i<draws.size();i++){if(i)out<<',';const auto&d=draws[i];out<<"{\"firstIndex\":"<<d.first<<",\"indexCount\":"<<d.count<<",\"albedoTexture\":";if(d.albedo<0)out<<"null";else out<<d.albedo;out<<",\"binding\":\""<<escape(d.binding.c_str())<<"\",\"uv0Available\":"<<(d.uv_available?"true":"false")<<",\"albedoParameter\":";if(d.albedo_parameter.empty())out<<"null";else out<<'\"'<<d.albedo_parameter<<'\"';out<<",\"resourceBlock\":";if(d.resource_block<0)out<<"null";else out<<d.resource_block;out<<",\"resourceIndex\":";if(d.resource_index<0)out<<"null";else out<<d.resource_index;out<<'}';}
         out<<"],\"bounds\":{\"min\":["<<lo[0]<<','<<lo[1]<<','<<lo[2]<<"],\"max\":["<<hi[0]<<','<<hi[1]<<','<<hi[2]<<"]},\"metadata\":{\"fixtureOnly\":false,\"partialSceneTraversal\":true,\"resourceBlock\":0,\"nodeIndex\":"<<node_index<<",\"vertexCount\":"<<positions.size()/3<<",\"triangleCount\":"<<triangles.size()/3<<",\"primitiveCount\":"<<primitives.size()<<",\"uv0ValidVertices\":"<<valid_uv_vertices<<",\"uv0PlaceholderVertices\":"<<placeholder_uv_vertices<<",\"uv0PlaceholderPolicy\":\"zero pairs; unavailable draws cannot bind albedo\",\"runtimeMaterialsApplied\":false,\"runtimePaintColourRecovered\":false,\"runtimePaintTextureRecovered\":false,\"parsedUntilOffset\":"<<r.p<<",\"coordinateSpace\":\"object-local\",\"nodeTransformsApplied\":false,\"material\":\"diagnostic-only\",\"scope\":\"first resource block first render list base primitives LOD0\"}}";return out.str();
     }
 };
+std::string scene_resource_textures(const unsigned char* data,size_t length){
+    if(!data||length<20||length>max_input)throw std::runtime_error("Input outside supported bounds");
+    Decoder d{{data,length}};
+    auto& r=d.r;
+    r.literal("  CP",4);auto model=chunk(r,4,r.end);if(model.id!="Model")r.fail("Expected Model container");
+    auto render=child(r,model,"Render");if(render.type!=0x41)r.fail("Expected Render wrapper");
+    auto inner=chunk(r,render.payload,render.end);if(inner.id!="Render"||inner.end!=render.end)r.fail("Invalid inner Render");
+    auto header=child(r,inner,"Header");r.p=header.payload;if(header.end-header.payload!=4||r.u32()!=0)r.fail("Unsupported render header");
+    auto scene=child(r,inner,"Scene");r.end=scene.end;r.p=scene.payload;r.origin=scene.payload;
+    r.literal("ARCH",4);r.expect(1);r.expect(0);r.literal("ARCH",4);r.expect(0);r.expect(1);
+    d.scene_header();
+    const size_t resource_payload=r.p,scene_end=r.end;
+    std::vector<ResourceBlockInfo> blocks;
+    d.resource_blocks_metadata(blocks);
+    std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<float>::max_digits10);
+    out<<"{\"status\":\"ok\",\"sceneBytes\":"<<length<<",\"resourcePayloadOffset\":"<<resource_payload<<",\"sceneEnd\":"<<scene_end
+       <<",\"resourceBlockCount\":"<<d.resource_blocks<<",\"loadedResourceBlocks\":"<<d.loaded_blocks<<",\"resourceBlocks\":[";
+    for(size_t b=0;b<blocks.size();b++){
+        if(b)out<<',';const auto&block=blocks[b];
+        out<<"{\"index\":"<<block.index<<",\"lodCount\":"<<block.lod_count<<",\"textures\":[";
+        for(size_t t=0;t<block.textures.size();t++){
+            if(t)out<<',';const auto&texture=block.textures[t];
+            out<<"{\"index\":"<<texture.index<<",\"name\":\""<<escape(texture.name.c_str())<<"\",\"hash\":"<<texture.hash<<",\"sampler\":{\"version\":"<<texture.sampler_version<<",\"values\":[";
+            for(size_t v=0;v<texture.sampler.size();v++){if(v)out<<',';out<<texture.sampler[v];}out<<"]},\"lods\":[";
+            for(size_t l=0;l<texture.lods.size();l++){
+                if(l)out<<',';const auto&lod=texture.lods[l];
+                out<<"{\"lod\":"<<lod.lod<<",\"present\":"<<(lod.present?"true":"false")<<",\"version\":"<<lod.version<<",\"archiveOffset\":"<<lod.archive_offset;
+                out<<",\"descriptorOffset\":";if(lod.descriptor_bytes)out<<lod.descriptor_offset;else out<<"null";
+                out<<",\"descriptorBytes\":";if(lod.descriptor_bytes)out<<lod.descriptor_bytes;else out<<"null";
+                out<<",\"descriptor\":";if(lod.descriptor_bytes==28)out<<"{\"width\":"<<lod.width<<",\"height\":"<<lod.height<<",\"depth\":"<<lod.depth<<",\"levels\":"<<lod.levels<<",\"format\":"<<lod.format<<",\"usage\":"<<lod.usage<<",\"type\":"<<lod.type<<'}';else out<<"null";
+                out<<",\"payloadOffset\":";if(lod.present)out<<lod.payload_offset;else out<<"null";
+                out<<",\"payloadBytes\":";if(lod.present)out<<lod.payload_bytes;else out<<"null";
+                out<<",\"completeMipBytes\":";if(lod.complete_mip_bytes)out<<lod.complete_mip_bytes;else out<<"null";
+                out<<",\"topMipLevels\":"<<lod.top_mip_levels;
+                out<<",\"pairedBlock\":";if(lod.paired_block<0)out<<"null";else out<<lod.paired_block;
+                out<<",\"pairedIndex\":";if(lod.paired_index<0)out<<"null";else out<<lod.paired_index;
+                out<<",\"supported\":"<<(lod.supported?"true":"false")<<",\"reason\":";
+                if(lod.reason.empty())out<<"null";else out<<'\"'<<escape(lod.reason.c_str())<<'\"';
+                out<<'}';
+            }
+            out<<"]}";
+        }
+        out<<"]}";
+    }
+    out<<"],\"metadata\":{\"partialSceneTraversal\":true,\"resourceMetadataOnly\":true,\"geometryImported\":false,\"materialsApplied\":false,\"integrityValidated\":false,\"parsedUntilOffset\":"<<r.p
+       <<",\"scope\":\"all loaded resource blocks and texture LOD descriptors; geometry/material/instance import not performed\"}}";
+    return out.str();
+}
 constexpr size_t level_input_limit=16u*1024u*1024u;
 Chunk level_fileblock(Reader& r,size_t start,size_t parent_end){
     r.p=start;r.need(16);size_t n=0;while(n<8&&r.b[start+n]){if(r.b[start+n]<32||r.b[start+n]>126)r.fail("Invalid level FileBlock ID");++n;}
@@ -458,6 +633,7 @@ std::string escape(const char* text){std::string out;for(const unsigned char* p=
 char* copy(const std::string& s){auto* p=static_cast<char*>(std::malloc(s.size()+1));if(p)std::memcpy(p,s.c_str(),s.size()+1);return p;}
 }
 extern "C" char* scene_inspect(const unsigned char* bytes,size_t available){try{if(!bytes||available<20||available>max_input)throw std::runtime_error("Input outside supported bounds");Decoder d{{bytes,available}};return copy(d.run());}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Scene allocation failure\"}");}}
+extern "C" char* scene_resource_textures_inspect(const unsigned char* bytes,size_t available){try{return copy(scene_resource_textures(bytes,available));}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Resource texture metadata allocation failure\"}");}}
 extern "C" char* level_index_inspect(const unsigned char* bytes,size_t available){try{return copy(level_index(bytes,available));}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Level index allocation failure\"}");}}
 extern "C" char* level_mesh_inspect(const unsigned char* level,size_t level_size,const unsigned char* geometry,size_t geometry_size,const unsigned char* nodes,size_t nodes_size,int32_t geometry_block,int32_t node_block){try{return copy(level_mesh(level,level_size,geometry,geometry_size,nodes,nodes_size,geometry_block,node_block));}catch(const std::exception& e){return copy("{\"status\":\"error\",\"error\":\""+escape(e.what())+"\"}");}catch(...){return copy("{\"status\":\"error\",\"error\":\"Level mesh allocation failure\"}");}}
 extern "C" void scene_free(void* pointer){std::free(pointer);}
