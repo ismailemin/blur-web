@@ -9,7 +9,7 @@ hangi kanıtla kapattığını kaybetmemek.
 | Görev | Durum | Öncelik | Bağımlılık | Kart |
 |---|---|---|---|---|
 | T-001 — Corvette kalan 12 statik doku | done (browser ekran görüntüsü açık) | P0 | — | `tasks/T-001-corvette-resource-textures.md` |
-| T-002 — Level instance dönüşümleri | planned | P0 | T-001 | `tasks/T-002-level-instances.md` |
+| T-002 — Level instance dönüşümleri | done (WebGPU mesh ekran görüntüsü açık) | P0 | T-001 | `tasks/T-002-level-instances.md` |
 | T-003 — Scene/level kapsamını genişletme | planned | P1 | T-002 | henüz açılmadı |
 | T-004 — Native particle-cache çökmesi | analiz tamam, tam iz açık | P1 | — | `analysis/native-particle-crash.md` |
 

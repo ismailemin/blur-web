@@ -3,8 +3,14 @@
 `tools/inspect_level_instances.py` independently reads original source-shaped
 RenderList records, constant material fields, instance/base associations and
 stream resource mappings. It leaves game data and upstream source unchanged.
-This is a Python diagnostic; C++/WASM instance rendering is not implemented by
-this work.
+This document started as Python-only evidence; the bounded C++/WASM
+`level_instances_inspect` first-instance path is now implemented.
+
+**Implemented result:** River block27/node253 instance0 produces805vertices/
+726triangles, archived-bounds error`3.86511e-05`; native/WASM JSON and the F32
+position / U32 index hashes match this diagnostic exactly. The browser exposes a
+single-instance preset. The other56instances, materials, visibility and higher
+LODs remain open.
 
 ## What the current browser presets contain
 
@@ -92,6 +98,22 @@ The world hash uses Python binary64 products/sums rounded once toF32. Native/GPU
 FMA and intermediate rounding can differ; this is not a bit-exact native shader
 claim. A later C++ comparison should check bounded numeric error,counts,indices
 and archived bounds, then document its arithmetic choice.
+
+## Implementation status (first proof)
+
+Completed:
+
+1. `level_instances_inspect` searches every item in the geometry ChunkInfo
+   record and parses all preceding items with origin0.
+2. Node chunk first-item RenderList, instances, base primitives and material
+   constants are parsed; instance/base streams are merged by slot.
+3. Explicit constant affine `g_mWorld` is applied in source material order;
+   dynamic, recursive, missing and non-affine transforms are rejected.
+4. Real instance0 matches independent local vertices/indices, material trace
+   and archived bounds. Native/WASM JSON is identical.
+
+Still open: the other57instances, visibility, materials, higher LODs, GPU
+instance buffers and gameplay. The API emits one CPU-expanded instance only.
 
 ## Implementation handoff
 

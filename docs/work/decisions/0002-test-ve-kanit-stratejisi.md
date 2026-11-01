@@ -16,7 +16,7 @@ Her değişiklik şu kapılardan geçer:
 1. **Native derleme:** MSVC `/W4`, uyarısız.
 2. **CTest:** `_work/build/asset-reader-native` altındaki 13 test.
 3. **Suite:** `python tools/verify_asset_probe.py --skip-build` — baseline'da 25,
-   T-001 sonrası 26 kontrol.
+   T-001 sonrası 26, T-002 sonrası 27 kontrol.
 4. **Native/WASM eşitliği:** ilgili `verify_*.mjs` dosyası.
 5. **Bağımsız Python referansı:** fixture ve gerçek veri karşılaştırması.
 6. **Determinizm:** aynı komut iki kez aynı hash/JSON üretir.

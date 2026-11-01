@@ -167,3 +167,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_asset_probe.py --skip-build` **26/26** geçti; CTest **13/13**. Kanıtlar: `_work/verification/car-native-wasm.json`, `resource-binding.json`, `_work/logs/t001-*.log`. Browser WebGPU görsel kontrolü ayrı adım.
 - Sıradaki: T-002 level instance dönüşümleri. `level_instances_inspect` ilk proof olarak block27/node253 instance0'ını (805 vertex/726 üçgen) üretmeli; ardından node253'teki 57 instance.
 
+## 1 Kasım 2026 — T-002: ilk gerçek instance dönüşümü
+
+- `level_instances_inspect(level,len,geometryChunk,len,nodeChunk,len,geometryBlock,nodeBlock)` eklendi; mevcut `level_mesh_inspect` değişmedi. Geometri bloğu ChunkInfo içinde **herhangi bir item** olarak bulunuyor; önceki item'lar origin0'dan sıralı geçiliyor. Node bloğu ilk-item sözleşmesini koruyor.
+- İlk RenderList'in instance0'ı ve base primitive'i çözülüyor. Instance materyali, aktif instance stream materyalleri, base materyal ve aktif base stream materyalleri kaynak sırasıyla uygulanıyor; yalnız sabit affine `g_mWorld` kabul ediliyor. Dinamik/recursive/eksik/non-affine matrisler reddediliyor. Dünya konumu row-vector formülüyle hesaplanıyor.
+- Gerçek River block27/node253 instance0: **805 vertex / 726 üçgen**; arşivlenmiş instance sınırlarıyla maksimum fark **3.86511e-05**. Native/WASM JSON tamamen eşit; F32 konum hash'i `5125314b04f46b997d4575478b11377ea72304aa9f2ee62d82f5bd7b1c1aa116`, U32 index hash'i `886e28559f186137e3ef5225768f61c4eccebf76ed4292ef5298c6ce887009fa`; bağımsız Python ile birebir.
+- `verify_instances_wasm.mjs` eklendi; suite **27/27**, CTest **14/14**. Kanıt: `_work/verification/level-instances-native-wasm.json`, `_work/logs/t002-*.log`.
+- Browser'a **River · instance prova** preset'i eklendi (block27/node253). Headless browser WASM yolunda `805 vertex / 726 üçgen / 57 instance / hata 3.87e-05` durumu görüldü; WebGPU mesh görüntüsü bu turda alınmadı. Diğer56instance, materyaller, görünürlük ve yüksek LOD'lar açık.
+- Sıradaki: T-003 scene/level kapsamını genişletme; ardından fizik/kontrol/ses ile tek oyunculu dikey dilim.
+
+

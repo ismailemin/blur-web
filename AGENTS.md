@@ -51,7 +51,7 @@ python tools/verify_asset_probe.py --skip-build
 # Full native + WASM rebuild and suite
 python tools/verify_asset_probe.py
 
-# Native CTest (13 cases, conditional on local fixtures)
+# Native CTest (14 cases, conditional on local fixtures)
 ctest --test-dir _work/build/asset-reader-native -C Release --output-on-failure
 ```
 
@@ -66,7 +66,7 @@ Additional gates per change:
 - Native MSVC `/W4` build must be warning-free.
 - Native/WASM JSON and independent Python references must agree.
 - Deterministic output: repeat runs produce identical hashes.
-- No regression in the 26-step `--skip-build` suite.
+- No regression in the 27-step `--skip-build` suite.
 - Browser changes: screenshot plus no console errors or warnings.
 
 ## Documentation and records

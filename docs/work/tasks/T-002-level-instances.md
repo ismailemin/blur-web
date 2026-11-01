@@ -1,9 +1,9 @@
 # T-002 — Level instance dönüşümleri
 
-**Durum:** blocked (T-001'e bağımlı)
+**Durum:** done (browser WebGPU mesh ekran görüntüsü açık)
 **Sahip:** ana ajan
-**Başlangıç:** —
-**Bitiş:** —
+**Başlangıç:** 1 Kasım 2026
+**Bitiş:** 1 Kasım 2026
 
 ## Amaç
 
@@ -61,16 +61,29 @@
 
 ## Kabul kriterleri
 
-- [ ] İlk instance 805 vertex / 726 üçgen üretiyor.
-- [ ] Dünya sınırları arşivlenmiş instance sınırlarıyla ≤ `1e-4` içinde.
-- [ ] Yanlış blok, yanlış index/matrix/stream ve kesik girdi reddediliyor.
-- [ ] Dinamik/constant olmayan matris ve recursive materyal reddediliyor.
-- [ ] `instancesApplied:true` yalnız uygulanan kapsam için; eksik bağımlılıklar
+- [x] İlk instance 805 vertex / 726 üçgen üretiyor.
+- [x] Dünya sınırları arşivlenmiş instance sınırlarıyla ≤ `1e-4` içinde.
+- [x] Yanlış blok, yanlış index/matrix/stream ve kesik girdi reddediliyor.
+- [x] Dinamik/constant olmayan matris ve recursive materyal reddediliyor.
+- [x] `instancesApplied:true` yalnız uygulanan kapsam için; eksik bağımlılıklar
       sayılıyor.
-- [ ] Native/WASM/Python eşitliği; F32 toleransı belgelenmiş.
-- [ ] Browser ekran görüntüsü; console temiz.
-- [ ] Suite 25/25 ve CTest 13/13 regresyonsuz.
-- [ ] Doküman ve handoff güncel.
+- [x] Native/WASM/Python eşitliği; F32 toleransı belgelenmiş.
+- [ ] Browser WebGPU mesh ekran görüntüsü; console temiz.
+- [x] Suite 27/27 ve CTest 14/14 regresyonsuz.
+- [x] Doküman ve handoff güncel.
+
+## Sonuç
+
+- Yeni C ABI: `level_instances_inspect(level,len,geo,len,node,len,geoBlock,nodeBlock)`.
+- Geometri bloğu ChunkInfo içinde herhangi bir item olarak bulunuyor; önceki
+  item'lar origin0'dan sıralı geçiliyor.
+- River 27/253 instance0: 805 vertex / 726 üçgen; hata `3.86511e-05`.
+- Konum hash `5125314b...`, index hash `886e2855...`; Python ile birebir.
+- Native/WASM JSON eşit; `verify_instances_wasm.mjs` suite'e eklendi (27 kontrol).
+- Browser'a `River · instance prova` preset'i eklendi; headless WASM yolunda
+  805/726/57 instance görüldü.
+- Açık: diğer56instance, materyaller, görünürlük, yüksek LOD'lar, GPU instance
+  buffer ve görünür WebGPU mesh ekran görüntüsü.
 
 ## Riskler
 

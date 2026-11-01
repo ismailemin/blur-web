@@ -20,12 +20,14 @@ a native Windows reference build and race harness.
   use original images (14 shared + 12 resource-block LOD0).
 - Level index + direct geometry from original `.levelrender` and `.levelstream`:
   River wide 17,782 vertices / 9,343 triangles, Showroom 11,590 / 7,987.
+- Bounded first-instance transform API: River block27/node253 instance0 gives
+  805 vertices / 726 triangles; archived-bounds error 3.86511e-05.
 - PC texture decoder (BC1/BC2/BC3 and selected uncompressed formats).
 - XT/FLSK schema metadata only.
 - Native x64 Amax Release build passes; stationary Brighton race renders.
-- Not implemented: level instances in the browser, higher resource-texture LODs,
-  full scene traversal, physics, controls, audio, save/streaming, single-player
-  race, multiplayer.
+- Not implemented: the other 56 level instances, higher resource-texture LODs,
+  full scene traversal and materials, physics, controls, audio, save/streaming,
+  single-player race, multiplayer.
 
 The authoritative handoff is [`docs/handoff/CURRENT.md`](docs/handoff/CURRENT.md).
 The chronological engineering log is [`docs/STATUS.md`](docs/STATUS.md).
