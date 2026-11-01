@@ -1,6 +1,6 @@
 # T-005 — Tek oyunculu dikey dilim
 
-**Durum:** in-progress (T-005a tamam; T-005b sırada)
+**Durum:** in-progress (T-005a probe tamam; T-005c tasarım tamam; T-005b/d tasarım sürüyor)
 **Sahip:** ana ajan
 **Başlangıç:** 2 Kasım 2026
 **Bitiş:** —
@@ -36,6 +36,16 @@ iddiası yok.
 - Windows thread/job queue yerine Web Worker/Atomics veya tek iş parçacığı
   politikası; sabit simülasyon adımı, render'dan bağımsız.
 - Frame-rate bağımsız davranış kuralı korunur.
+
+**Tasarım sonucu (2 Kasım):** İlk dilim için **tek iş parçacıklı kooperatif
+wasm** önerildi; mevcut `Scheduler::` API'si korunuyor, `jobqueue_web.cpp`
+backend'i ekleniyor. `Flush` kendi kuyruğunu boşaltıyor; `MT::Thread::Join`/
+`Mutex::Wait`/`Event::Wait` beklemek yerine assert ediyor. `SchedulerConfig.cpp`
+column-0 streamer policy'si tek context'te düşüyor; policy'lerin flatten
+edilmesi gerekiyor. İki audio `Flush(group,false)` çağrısı için belgelenmiş
+sapma (her zaman drain) gerekiyor. İlk kod dilimi `probes/scheduler-probe/` ve
+1/60 sabit adım + 4 tick cap + interpolasyon; 144/30 Hz, hitch ve tab gap
+testleri hash-eşit olmalı. Ayrıntı: `docs/work/analysis/t005-scheduler-design.md`.
 
 ### T-005d — Fizik ve çarpışma
 - Gravity/physics alt kümesini WASM'e taşı; native referansla ölç.

@@ -40,9 +40,10 @@ Açık: düzeltme uygulanmadı; iki deneme reddedildi. (1) `C_Emitter::AtomicFre
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 
-**Durum:** in-progress; T-005a probe tamam, T-005b sırada
+**Durum:** in-progress; T-005a probe tamam, T-005c tasarım tamam, T-005b/d tasarım sürüyor
 **Kart:** `docs/work/tasks/T-005-single-player-vertical-slice.md`
 **T-005a kanıtı:** `docs/work/analysis/engine-wasm-probe.md`
+**T-005c tasarımı:** `docs/work/analysis/t005-scheduler-design.md`
 
 T-005a motor/WASM/platform fizibilitesi → T-005b streaming → T-005c scheduler →
 T-005d fizik → T-005e kontroller/kamera → T-005f ses/UI/save → T-005g tam yarış

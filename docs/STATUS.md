@@ -262,4 +262,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Node253 ölçümü: 57 instance → **34 transform-sabit grubu ↔ 34 byte-identical kayıt**; grup draw AABB birleşimi kayıtla `6.024437e-05` içinde; 34/34 grup instance sırasında bitişik. Mevcut `scene_reader.cpp:874-887` tek draw'ı tüm nesne kaydıyla karşılaştırdığı için 38 instance'ı yanlış reddediyor.
 - Beklenen: Stage A (blok27 22/22, 15 12/12, 17 2/2) = **36 instance / 22.924 vertex / 17.301 üçgen**; Stage B (blok26+32 chunk'lar arası) = **56 / 34.632 / 25.521**. Blok31 prerequisite. Henüz kod değişmedi; rapor `docs/work/analysis/level-instance-streams.md`.
 
+## 2 Kasım 2026 — T-005c scheduler tasarımı
+
+- İlk dilim için **tek iş parçacıklı kooperatif wasm** önerildi: mevcut `Scheduler::` API'si korunuyor, `jobqueue_web.cpp` backend'i ekleniyor; `Flush` kendi kuyruğunu boşaltıyor. Web Worker/SharedArrayBuffer ilk dilim için reddedildi (determinism/COOP-CC).
+- `MT::Thread::Join`, `Mutex::Wait`, `Event::Wait` tek context'te beklemek yerine assert etmeli; aksi halde ana thread kilitlenir. `SchedulerConfig.cpp:49` column-0 streamer policy'si tek context'te düşüyor; policy flattening gerekli. İki audio `Flush(group,false)` çağrısı belgelenmiş sapma (her zaman drain) gerektiriyor.
+- İlk kod dilimi: `PLATFORM_WEB` + `platform/{thread,atomic,sync,time}` + `jobqueue_web.cpp` + `probes/scheduler-probe/`; 1/60 fixed step, 4-tick cap, interpolasyon; 144/30 Hz/hitch/tab gap hash-eşitliği. Henüz kod yok. Rapor: `docs/work/analysis/t005-scheduler-design.md`.
+
 

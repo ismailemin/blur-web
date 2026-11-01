@@ -57,6 +57,11 @@ scheduler, `T-005d` fizik, `T-005e` kontroller/kamera, `T-005f` ses/UI/save,
 @ `-O2`); motor `core/Maths.h` (7 hata), `tl_*` platform kimliği ve Windows PCH
 kapılarında bloke. Ayrıntı: `docs/work/analysis/engine-wasm-probe.md`.
 
+**T-005c tasarımı:** tek iş parçacıklı kooperatif wasm scheduler; mevcut
+`Scheduler::` API'si + `jobqueue_web.cpp`; `Flush` self-drain, blocking
+`MT::` wait'ler assert; policy flattening ve audio `Flush(group,false)` sapması
+gerekli. Ayrıntı: `docs/work/analysis/t005-scheduler-design.md`.
+
 ## Bilinen engeller / riskler
 
 - 18 instance destekli; P2'ye göre bounds grouping düzeltilince Stage A 36,
