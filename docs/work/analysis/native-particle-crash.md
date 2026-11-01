@@ -868,6 +868,9 @@ trace bir "kesin toplam sıra" iddiası taşımaz.
    çıkar: emitter kendi kendini bırakırken onu gösteren trail elemanlarının
    geçersiz kılınıp kılınmadığını (ve tuz mekanizmasının süper-efekt
    emitter'ları için neden hiç devreye girmediğini) kaynakta belgele.
+   **→ Yapıldı (2 Kasım, dördüncü tur):** sonuç aşağıdaki
+   "Sahiplik sözleşmesi" bölümünde; eksik halka bulundu (ertelenmiş
+   bırakma yolunda nesil/salt artırımı yok).
 2. **İzlemeyi bir adım derinleştir (yalnızca gerekirse, yeni koşu):**
    `FreeParticle` etiketine `pParticle` (trail eleman adresi) ve blok
    indeksini ekle; bayat kalan tek bir elemanı isimlendir. Bu, H5'in ikinci
@@ -876,3 +879,152 @@ trace bir "kesin toplam sıra" iddiası taşımaz.
 
 Bu bölüm de bir düzeltme iddiası taşımaz; assert'in kaldırılması veya
 zayıflatılması önerilmez.
+
+---
+
+## Sahiplik sözleşmesi (C_Emitter ↔ trail elemanı) — 2 Kasım 2026 (dördüncü tur)
+
+Kapsam: yalnızca kaynak okuması (`upstream/BlurRebuilt`), oyun çalıştırılmadı,
+hiçbir dosya değiştirilmedi. Amaç: `C_Emitter::Update`/`m_bDelete` ile
+`I_ParticleSuperEffect::FreeParticle` arasındaki sahiplik sözleşmesini ve
+eksik kod yolunu belirlemek.
+
+### Kanıtlanan
+
+**SC1 — Bağ tek yönlü: trail elemanı emitter'ı gösterir, emitter trail
+elemanını göstermez.**
+`C_Particle_E` yalnızca `{C_Emitter* pEmitter; U32 iSalt;}` taşır
+(`Particle.h:225-231`, yorum: "used to manage traileffects etc").
+`C_Emitter`'ın sahiplik alanları: `m_pEmitterList` (havuz), `m_pEventInstance`
+(süper-efekt emitter'larında **NULL** — S2), `m_pBlockEA`/`m_iBlockSalt`
+(sadece **ana** partikül bloğu; `SetBlock` ile atanır, `Emitter.h:102-115`;
+PC'de yalnızca SPU fetch'te okunur, `Emitter.cpp:659-660`). Hiçbir alan trail
+bloğunu/e elemanını göstermiyor. Dolayısıyla emitter kendi ölümünü trail
+tarafına **bildiremez**.
+
+**SC2 — İki bağımsız yaşam süresi kuralı (çakışmanın kaynağı).**
+- *Emitter tarafı:* `C_Emitter::Update`, tanım süresi dolduğunda ve
+  `m_pDefinition->bRepeating` değilse kendini bırakır: emit edecek bir şey
+  yoksa doğrudan `AtomicFree(pEmitterEA)` (`Emitter.cpp:492-493`), varsa
+  `m_bDelete = true` (`:495`) → bir sonraki karede `if(m_bDelete) AtomicFree`
+  (`:256-262`). Bu kural partikülün yaşam süresinden **bağımsızdır**.
+- *Trail tarafı:* eleman yalnızca (a) partikül ölünce `FreeParticle`
+  (`SuperEffect.cpp:214-243`), (b) trail blok silinince `DeleteTrailBlock`
+  (`:180-207`), (c) efekt yıkılırken `I_ParticleSuperEffect::Free`
+  (`:61-103`) ele alınır.
+İki kural arasında senkron yok → aynı emitter iki kez bırakılabilir.
+
+**SC3 — Sahiplik (blok, indeks) düzeni.**
+Spawn: her trail partikülü için **yeni** emitter ayrılır
+(`SuperSpawn.cpp:21-27` ve `:42-47`: `AtomicAllocate()` →
+`iSalt = GetSalt()` → `SetDefinition(&trailEffects[j].definition)`).
+İndeks eşlemesi: `trailPtrs[j] = (*pTrailBlocksEA)[j][blockIndex]`
+(`Shape2DSimpleSuper.cpp:49`); spawn assert'i
+`trailPtrs[j]->m_Element.Size() == pBlock->m_Element.Size() - 1`
+(`SuperSpawn.cpp:20,41`). Yani *trail elemanı i ↔ ana partikül i ↔ blok
+indeksi*. `FreeParticle` yalnızca **aynı indeksteki** elemanı ele alır: son
+elemanı i'ye kopyalar, kuyruğu `PopBack` eder (`SuperEffect.cpp:216-242`);
+başka blokta/indekste aynı işaretçiyi **aramaz**.
+
+**SC4 — Trail elemanı yalnızca dört yerde ve yalnızca salt kontrolüyle
+geçersiz kılınıyor.**
+`UpdateTrails` (her karede canlı partiküller için; `SuperEffect.cpp:251-259`,
+`:274-286`, `:411+`, `:432+`), `FreeParticle` (`:226-230`),
+`DeleteTrailBlock` (`:190-194`), `I_ParticleSuperEffect::Free` (`:75-79`).
+Dördü de `if(iSalt != pEmitter->GetSalt()) pEmitter = NULL;` kalıbını
+kullanıyor. **Proaktif geçersiz kılma yok**: emitter bırakıldığı anda eleman
+temizlenmiyor; karar bir sonraki "dokunma" anında salt ile veriliyor.
+
+**SC5 — Nesil (salt) sayacı sözleşmesi ve asimetrisi.**
+- `C_EmitterList::Free` (`emitterlist.cpp:20-28`):
+  `pEmitter->m_iSalt += 1;` **sonra** taban `Free`. Bu, emitter salt'ını
+  artıran **tek** yerdir; `SetSalt` diye bir API yok.
+- `AtomicActiveCache::AtomicFree` (`Atomic.h:352-360`) ve drenajdaki taban
+  `Free` (`Atomic.h:311-331`) salt'a **dokunmuyor**.
+- `C_Emitter::AtomicFree` (`Emitter.cpp:179`) ve `FreeParticle`
+  (`SuperEffect.cpp:229`) doğrudan `AtomicFree` çağırıyor → salt artmıyor.
+- Drenaj `Free(m_Deleted[i])` (`Atomic.h:224`) taban sınıfın `Free`'i;
+  `C_EmitterList::Free` sanal değil (statik bağlama) → drenaj da salt
+  artırmıyor.
+- *Aynı desen başka yerlerde doğru kurulmuş:* event instance her iki yolda
+  `m_iSalt += 2` (`Manager.cpp:1659-1668`); `ParticleBlock` serbest
+  bırakılırken `++pDelete->m_iSalt` (`EffectInterface.cpp:236`) ve emitter
+  `m_iBlockSalt` ile karşılaştırıyor (`SuperSpawn.h:53`).
+Yani "bırakınca nesli ilerlet" kuralı projede var; **emitter'ın ertelenmiş
+bırakma yolunda uygulanmamış**.
+
+**SC6 — `iSalt` neden 0: tek yazıcı atlanıyor.**
+`m_iSalt` `SetDefaults()` içinde 0'a ayarlanıyor (`Emitter.cpp:89`);
+`AtomicAllocate`/`Allocate` salt'ı değiştirmiyor (`Atomic.h:268-303`), yani
+geri dönen emitter eski neslini korur. Trail spawn'da `iSalt = GetSalt()`
+kopyalanıyor (`SuperSpawn.cpp:24,45`) → yeni eleman da 0 alıyor.
+Süper-efekt emitter'ları bu koşuda yalnızca `AtomicFree`/drenaj yoluyla
+bırakıldığı için salt hiç artmadı; **eski ve yeni sahipler ayırt edilemez**
+hale geldi.
+
+**SC7 — Trace ile çelişki kanıtı: drenaj nesli ilerletmiyor.**
+Drenaj X'i 222. satırda bıraktı; 231. satırda `FreeParticle`
+`iSalt(0) != GetSalt()` karşılaştırmasını **eşit** buldu ve `else` dalına
+gidip `AtomicFree` yaptı (232). Drenaj salt'ı artırsaydı karşılaştırma eşit
+olmaz, `pEmitter = NULL` olur ve 232/233 hiç yaşanmazdı. Dolayısıyla
+drenajın bırakması nesli ilerletmiyor (SC5'in trace kanıtı).
+
+**SC8 — Kare içi sıra ve pencerenin kaçınılmazlığı.**
+`C_ParticleManager::Update` (`Manager.cpp:1188-1197`):
+`UpdateEmitters()` → `UpdateSuperEmitters()` (drenaj #1 `:1339`, ardından
+`:1340`'ta süper emitter'ların güncellenmesi) → `UpdateSpawn()`
+(`m_Emitters.Update()` `:1382`, drenaj #2 `:1385`, sonra spawn `:1387+`).
+Süper blok güncellemesi (`Shape2DSimpleSuperUpdate`) `FreeParticle`'ı
+çağırır (trace'te dönüş `0x31503D`). Kare N'in sonunda drenaj #2 ile
+bırakılan X, kare N+1'in blok güncellemesinde — drenaj #1'den **önce** —
+bayat haliyle kullanılıyor: trace 229 → 231 → 233 tam olarak budur.
+Sözleşme ihlali burada somutlaşıyor: **bırakma ile bayat referansın
+kullanımı arasında nesli ilerleten hiçbir işlem yok**; iki drenajın sırası
+bu pencerenin her karede açılmasını sağlıyor.
+
+### Hipotez
+
+**H11 — Bayat kalan trail elemanının kimliği (hangi blok/indeks) hâlâ
+bilinmiyor.** Trace `pParticle` adresini loglamıyor; `FreeParticle`
+yalnızca `element=` (emitter) yazıyor. (Kapanması için izlemeye alan
+adresi eklenmeli — yeni koşu gerektirir.)
+
+**H12 — Nesil artırımının nereye ait olduğu bir tasarım kararı.**
+Kanıtlanan: ertelenmiş yolda artırım yok. Kanıtlanmayan: niyetin "kuyruğa
+girişte mi" yoksa "drenajda mı" artırmak olduğu. Blok ve event-instance
+örnekleri (SC5) "bırakma anında artır" desenini destekliyor; bu bir
+*çıkarımdır*, kodda yazılı bir sözleşme metni yok.
+
+**H13 — Aynı emitter'ın iki trail elemanına atanması (aliasing) bu açıkla
+birleşince birden fazla bayat referans üretebilir.** Önceki turda iki komşu
+16 baytlık kayıtta aynı işaretçi görülmüştü; bunun "canlı + kopyala/pop
+artığı" mı yoksa gerçek aliasing mi olduğu hâlâ ayırt edilemedi. SC5'teki
+asimetri, aliasing olsa da olmasa da çift bırakmayı açıklamaya yeter;
+aliasing **ek** bir yol olur.
+
+### Kapanan ve kapanmayanlar
+
+Kapanan: "hangi kod yolu eksik" → ertelenmiş bırakma yolunda **nesil (salt)
+artırımı yok** (SC5, SC6, SC7); trail elemanının geçersiz kılınma yollarının tam
+listesi (SC4); sahiplik düzeni ve indeks eşlemesi (SC1, SC3); iki drenajın
+kare içi sırası ve pencerenin nedeni (SC8).
+
+Kapanmayan: bayat elemanın kimliği (H11), nesil artırımının tasarım niyeti
+(H12), aliasing'in varlığı (H13), efektin adı (önceki bölüm), girişsiz
+koşuyla nedensellik (H7).
+
+### Sıradaki en küçük adım
+
+1. **Kod okuması (oyun çalıştırmadan):** `C_Emitter::AtomicFree` çağrılarının
+   tam listesini "sahiplik devri" / "kendini bırakma" olarak sınıflandırıp,
+   `C_EmitterList::Free`'deki `m_iSalt += 1`'in neden yalnızca senkron yolda
+   bulunduğunu (blok salt'ının aksine) kaynakta belgelemek. Bu, H12'yi
+   netleştirir ve olası bir düzeltme noktasını *tarif* eder (uygulamaz).
+2. **İzleme (yalnızca gerekirse, yeni koşu):** `FreeParticle` etiketine
+   `pParticle` adresi + trail efekt indeksi + eleman indeksi eklemek →
+   H11 kapanır, bayat eleman isimlendirilir.
+3. Efekt adı için ad-hash yolu (önceki bölüm) hâlâ açık.
+
+Bu bölüm bir düzeltme iddiası taşımaz; assert'in kaldırılması veya
+zayıflatılması önerilmez. SC5'teki asimetri bir *gözlem*dir; nasıl
+kapatılacağı bu incelemenin kapsamı dışındadır.

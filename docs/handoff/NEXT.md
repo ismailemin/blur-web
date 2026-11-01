@@ -29,17 +29,11 @@ Kabul:
 **Durum:** tam bellek dump'ı alındı ve analiz edildi; kaynak çağrı/efekt kimliği açık
 **Rapor:** `docs/work/analysis/native-particle-crash.md`
 
-Tam dump + çağrı izleme doğruladı: `m_ActiveElements=93`, `m_VectorPosition=-1`;
-silinen eleman aynı zamanda `m_Cache[162]` içinde. Ölümcül sıra:
-`UpdateSpawn` drenajı X'i serbest bırakıyor → `SuperEffect::FreeParticle`
-(AtomicFree) araya ayırma girmeden aynı X'i tekrar kuyruğa atıyor →
-`UpdateSuperEmitters` drenajı ikinci kez `Free` ediyor. Yani aynı cache bir
-karede iki kez boşaltılıyor ve trail elemanı bırakılmış emitter'ı tutuyor.
-`iSalt=0` koruması `GetSalt()==0` olduğu için devreye girmiyor. Açık kalan:
-`C_Emitter::Update`/`m_bDelete` ile `FreeParticle` arasındaki sahiplik
-sözleşmesi; trail referansının neden geçersiz kılınmadığı. Sıradaki en küçük
-adım: kaynakta bu sözleşmeyi belgelemek; gerekirse `FreeParticle` etiketine
-`pParticle`/blok indeksi eklemek. Assert kaldırılmayacak.
+Tam dump + çağrı izleme + kaynak analizi kök nedeni gösterdi:
+- Emitter ile trail elemanı arasındaki bağ tek yönlü; sahiplik `iSalt` nesil sayacıyla yürüyor.
+- `m_iSalt` yalnızca senkron `C_EmitterList::Free` içinde artırılıyor; ertelenmiş `C_Emitter::AtomicFree` / `AtomicActiveCache::AtomicFree` / drenaj `Free` salt'a dokunmuyor.
+- `FreeParticle` X'i ertelenmiş yolla bıraktıktan sonra drenaj `Free` ediyor; salt artmadığı için aynı X'e işaret eden trail elemanı sonraki karede `iSalt == GetSalt()` (0==0) görüp X'i yeniden kuyruğa atıyor; ikinci `Free` invariant'ı tetikliyor.
+Açık: düzeltme uygulanmadı; hangi iki drenaj sırasının (`UpdateSuperEmitters`/`UpdateSpawn`) sözleşmeyi ihlal ettiği ve salt artışının doğru yeri kaynakta belgelenmeli. Assert kaldırılmayacak. Sıradaki en küçük adım: `C_Emitter::AtomicFree` çağrılarını sahiplik devri/kendini bırakma olarak sınıflandırmak; gerekirse trace'e `pParticle`/trail indeksi eklemek.
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 

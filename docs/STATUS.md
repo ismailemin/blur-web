@@ -225,4 +225,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `iSalt=0` koruması `GetSalt()==0` olduğu için devreye girmiyor. Açık kalan: `C_Emitter::Update`/`m_bDelete` ile `FreeParticle` arasındaki sahiplik sözleşmesi ve trail referansının neden geçersiz kılınmadığı. Assert kaldırılmadı.
 - Not: instrumentation zamanlamayı değiştirdi; çökme W'den ~0.1s sonra geldi, süre karşılaştırması yapılmamalı. Önceki full dump/trace dosyaları üzerine yazıldı; eski hash'ler raporda tarihsel. Sıradaki en küçük adım: kaynakta sahiplik sözleşmesini belgelemek; gerekirse FreeParticle etiketine pParticle/blok indeksi eklemek.
 
+## 2 Kasım 2026 — native sahiplik sözleşmesi / kök neden
+
+- Kaynak analizi: emitter ile trail elemanı arasındaki bağ tek yönlü; sahiplik `C_Particle_E::iSalt` nesil sayacıyla yürüyor. `m_iSalt` yalnızca senkron `C_EmitterList::Free` içinde artırılıyor (`emitterlist.cpp:24`); ertelenmiş `C_Emitter::AtomicFree` → `AtomicActiveCache::AtomicFree` ve drenaj `Free(m_Deleted[i])` salt'a dokunmuyor.
+- Bu yüzden `FreeParticle` X'i ertelenmiş yolla bıraktıktan sonra drenaj `Free` ediyor; salt artmadığı için aynı X'e işaret eden trail elemanı sonraki karede `iSalt == GetSalt()` (0==0) görüp X'i yeniden kuyruğa atıyor; ikinci `Free` invariant'ı tetikliyor. Event instance/particle block yollarında nesil artışı doğru kurulmuş; emitter'ın ertelenmiş yolunda eksik.
+- Düzeltme uygulanmadı; assert kaldırılmadı. Trace instrumentation patch'i `_work/build/engine-reference/native-free-trace.patch`; trace `free-trace.log` SHA-256 `874191c1...`; trace build `Amax-trace.exe`. Kanonik `Amax.exe` değişmedi; izole kaynak instrumentation'dan temizlendi.
+- Rapor: `docs/work/analysis/native-particle-crash.md` ("Sahiplik sözleşmesi"). Sıradaki: `C_Emitter::AtomicFree` çağrılarını sahiplik devri/kendini bırakma olarak sınıflandırmak; trace'e `pParticle`/trail indeksi eklemek.
+
 
