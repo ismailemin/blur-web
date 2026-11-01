@@ -28,9 +28,10 @@
   **River · instance prova** ve **River · 14 instance** preset'leri var.
 - Native x64 Amax Release derlemesi başarılı. Tam bellek exit dump'ı alındı:
   `m_ActiveElements=93`, `m_VectorPosition=-1`; silinen eleman aynı zamanda
-  `m_Cache[162]` içinde — çift serbest bırakma doğrudan kanıtlandı. Hangi iki
-  `Free`/`AtomicFree` çağrısının çakıştığı, efekt kimliği ve thread çakışması
-  açık.
+  `m_Cache[162]` içinde — çift serbest bırakma doğrudan kanıtlandı. Sahip tipi
+  `Shape2DSimple`; emitter `m_SuperEffectEmitters` listesinde, `m_pEventInstance`
+  NULL; komşu kayıtlar `C_Particle_E` trail elemanları (`iSalt=0`). Efekt adı ve
+  hangi iki `Free`/`AtomicFree` çağrısının çakıştığı açık.
 - Doğrulama: `verify_asset_probe.py --skip-build` **27/27**, CTest **14/14**.
 
 ## Sıradaki iş

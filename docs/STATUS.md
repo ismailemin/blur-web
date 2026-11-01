@@ -212,4 +212,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Suite **27/27**, CTest **14/14**. Kanıt: `_work/level-instances/cpp-block*.json`, `_work/logs/t003-multiblock-*.log`.
 - Sıradaki: base primitive11–35 stream/deformasyon semantiği, blok31 prerequisite, materyaller/görünürlük/yüksek LOD'lar.
 
+## 2 Kasım 2026 — native dump sahip/efekt kimliği
+
+- Tam dump'ta `0x2b21ebdbe20` nesnesi RTTI ile `DynamicEffect::Particle::Shape2DSimple` olarak çözüldü; bu efekt sahibi değil, partikül doğuran şekil. A–D emitter'larının A'sında `m_pEmitterList = 0x2b21b832850` = `m_SuperEffectEmitters`; `m_pEventInstance = NULL`.
+- Komşu 16 baytlık kayıtlar `C_Particle_E` (`{C_Emitter*, U32 iSalt}`) trail elemanları; `iSalt=0`. `GetSalt()`/`SetDefaults()` aynı 0 değerini kullandığından salt koruması bayat trail referansını engellemiyor; bu H5'i güçlendiriyor ama hangi çağrının ikinci kez serbest bıraktığını kanıtlamıyor.
+- Efekt adı dump'ta yok (SuperEffect RTTI yok, tanımlar vtable'sız, log'da ad yok). Sıradaki: sınırlı Free/AtomicFree çağıran izlemesi veya effect definition hash→ad eşlemesi. Rapor: `docs/work/analysis/native-particle-crash.md` ("Sahip/efekt kimliği").
+
 

@@ -31,10 +31,13 @@ Kabul:
 
 Tam dump doğruladı: `m_ActiveElements=93`, `m_VectorPosition=-1`; silinen
 `m_Deleted[0]` aynı zamanda `m_Cache[162]` içinde — çift serbest bırakma
-doğrudan kanıt. Hangi iki `Free`/`AtomicFree` çağrısının çakıştığı, efekt kimliği
-ve thread çakışması hâlâ açık. Sıradaki en küçük adım: dump içinde sahip
-tanım işaretçisini ve komşu partikül kayıtlarını çözerek bayat referans
-hipotezini test etmek. Assert kaldırılmayacak.
+doğrudan kanıt. Sahip tipi `DynamicEffect::Particle::Shape2DSimple`; emitter'ın
+`m_pEmitterList` alanı doğrudan `m_SuperEffectEmitters`, `m_pEventInstance` NULL.
+Komşu kayıtlar `C_Particle_E` trail elemanları (`iSalt=0`); bu, salt korumasının
+0==0 olduğu için bayat trail referansını engellemediğini gösteriyor. Efekt adı
+dump'ta yok; hangi iki `Free`/`AtomicFree` çağrısının çakıştığı açık. Sıradaki:
+sınırlı Free/AtomicFree çağıran izlemesi veya effect definition hash→ad
+eşlemesi. Assert kaldırılmayacak.
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 

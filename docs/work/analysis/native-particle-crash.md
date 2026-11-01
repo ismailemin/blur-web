@@ -424,8 +424,10 @@ elemanlar.**
 D (`0x2b20c3683b0`) (sayaç 1 → yalnızca [0] güncel, [1..3] önceki
 partilerden kalma). Bu dört eleman `m_Cache[162], [161], [159], [160]`
 gözlerinde; yani serbest yığınının en üstündeki dört kayıt bunlar. Dördü de
-aynı sahip nesnesiyle eşleşiyor: `0x2b21ebdbe20` (vtable RVA `0x1120798`,
-`+0x18` alanı `C_ParticleManager*` = `0x2b21b832050`).
+aynı ikinci değerle eşleşiyor: `0x2b21ebdbe20`. **Düzeltme (2 Kasım, ikinci
+tur):** RTTI ile bu nesnenin `DynamicEffect::Particle::Shape2DSimple`
+olduğu belirlendi; yani bu bir efekt/sahip değil, **doğuran şekildir**
+(ayrıntı: "Sahip/efekt kimliği" bölümü, S1).
 
 **T7 — Cache muhasebesi tutarlı.**
 `m_Active[0..92]` içinde 93 kayıt, hepsinde `position == index`
@@ -539,3 +541,155 @@ okuma turuyla yapılabilir. Ardından, hâlâ gerekiyorsa, çağıranı kesin
 saptamak için `AtomicFree`/`Free` girişlerine sınırlı (assert'e dokunmayan)
 izleme eklenir. Hiçbir aşamada assert kaldırılmaz ve bu rapor bir düzeltme
 iddiası taşımaz.
+
+> **Durum (2 Kasım, ikinci tur):** bu adım yapıldı. Sonuç: sahip nesne bir
+> efekt değil `Shape2DSimple` doğuran şekli; komşu 16 baytlık kayıtlar
+> `C_Particle_E` (trail elemanı) dizisine ait; H5 güçlendirildi ama
+> kanıtlanmadı. Ayrıntı ve yeni sıradaki adım: aşağıdaki
+> "Sahip/efekt kimliği" bölümü.
+
+---
+
+## Sahip/efekt kimliği — 2 Kasım 2026 (ikinci tur)
+
+Amaç: önceki bölümün "Sıradaki en küçük adım" maddesi. Yöntem tamamen salt
+okunur: `full-exit.dmp` içindeki vtable→RTTI zinciri
+(`[vtable-8] → RTTICompleteObjectLocator → TypeDescriptor`) çözülerek 2.883
+vtable ve bunların canlı örnekleri çıkarıldı; ardından nesne alanları
+izlendi. Oyun çalıştırılmadı, hiçbir dosya değiştirilmedi (geçici script'ler
+`_work/analysis/full-exit-dump/` altında).
+
+### Kanıtlanan
+
+**S1 — "Sahip" sandığımız nesne aslında doğuran şekil: `Shape2DSimple`.**
+`0x2b21ebdbe20` → vtable RVA `0x1120798`, COL `0x7ff66e0d7df0`, tip adı
+`.?AVShape2DSimple@Particle@DynamicEffect@@`. Yani T6'daki "aynı sahip
+nesnesi" ifadesi yanlıştı: bu bir efekt/sahip değil, partikül doğuran
+şekildir (Block.h'de `m_pInfo` = "pointer to a structure containing extra
+info, type is situation dependant"). Göründüğü yerler:
+- A'nın `ParticleBlock`'unun `m_pInfo` alanı (`0x2b20c76ff60 + 0x10`);
+- `0x2b226684ce0` ve `0x2b226c53d30` dizilerindeki `{C_Emitter*, X}` çiftleri
+  → bunlar "emitter + sahip efekt" değil, **emitter + doğuran şekil**
+  çiftleridir (muhtemelen spawn bekleyen emitter listesi).
+Şeklin kendi alanları: `+0x10` = `C_Renderer` (paylaşılan; 299 referans),
+`+0x18` = `C_ParticleManager`, `+0x60` self-pointer. Şekil üzerinden efekt
+adına giden bir alan yok.
+
+**S2 — A–D gerçekten `C_Emitter` ve `m_pEmitterList` = çöken cache.**
+Dördü de vtable RVA `0x11214B8` → `.?AVC_Emitter@Particle@DynamicEffect@@`.
+A (`0x2b20c365db0`) üzerinden doğrudan okunan alanlar:
+
+| ofset | alan | değer |
+| --- | --- | --- |
+| `+0x188` | `m_pManager` | `0x2b21b832050` (`C_ParticleManager`) |
+| `+0x190` | `m_pEventInstance` | **NULL** |
+| `+0x198` | `m_pEmitterList` | **`0x2b21b832850`** = assertion'a giren `m_SuperEffectEmitters` |
+
+Bu, emitter nesnesinin kendisinden okunan kanıttır (register/yığın
+çıkarımına dayanmaz): emitter, event-instance sahipliğinde değil; süper
+efekt emitter listesine bağlı.
+
+**S3 — A'nın bloğu ve şekli.**
+`A+0x10` ve `A+0x18` = `0x2b20c76ff60`, RTTI `ParticleBlock` (vtable RVA
+`0x10F4C18`); bloğun `m_pInfo` = S1'deki `Shape2DSimple`.
+
+**S4 — Komşu 16 baytlık kayıtlar `C_Particle_E` (trail elemanı).**
+`Particle.h:226-231`:
+
+```cpp
+// particle class just contains a pointer to an emitter and salt, used to manage traileffects etc
+class C_Particle_E
+{
+public:
+    C_Emitter*  pEmitter;
+    U32         iSalt;
+};
+```
+
+Bu tip kaynakta yalnızca trail eleman vektörleriyle kullanılıyor
+(`SuperEffect.cpp:72,187,223,234,251,274,411,432`;
+`SuperSpawn.cpp:21,42,189`). Dump'ta kayıtlar tam 16 bayt aralıkla:
+`0x2b211a65010` ve `0x2b211a65020` → ilk qword `A` (RTTI `C_Emitter`),
+ikinci dword `0` (= salt). Dizi, `0x2b20c76e720`'deki tanımlayıcıyla
+eşleşiyor: `elements = 0x2b211a65000`, `shape = Shape2DSimpleSuper`,
+yanında `8 / 0x20 / 2` gibi alanlar. Aynı desen B için de var:
+`0x2b211a65100` dizisinde iki slot B'yi gösteriyor.
+
+**S5 — Tuz (salt) koruması bu yolu engelleyemez.**
+`C_Emitter::GetSalt() const { return m_iSalt; }` (`Emitter.h:44`);
+`SetDefaults()` içinde `m_iSalt = 0` (`Emitter.cpp:89`) ve başka bir atama
+yok. Trail spawn'da `pTrailParticle->iSalt = pEmitter->GetSalt()`
+(`SuperSpawn.cpp:22,45`) → elemanda da 0. Dolayısıyla
+`if(pParticle->iSalt != pEmitter->GetSalt())` **false** olur ve `else`
+dalındaki `AtomicFree(...)` çalışır (`SuperEffect.cpp:226`). Yani serbest
+bırakılmış bir emitter'ın bayat işaretçisi tekrar kuyruğa girebilir; mevcut
+koruma bunu ayırt edemez.
+
+**S6 — Havuz büyüklüğü ile canlı nesne sayısı birebir uyuşuyor.**
+Dump'ta **2.304** canlı `C_Emitter` nesnesi var; `m_Emitters` (2048) +
+`m_SuperEffectEmitters` (256) = **2.304**. Yani tüm emitter nesneleri
+önceden ayrılmış; `-1` işareti "nesne yok" değil, "serbest listeye döndü"
+anlamına geliyor.
+
+**S7 — Bu trail efektleri 2B "super" şekille üretilmiş.**
+İncelenen blok bölgesindeki trail tanımlayıcılarının tamamı
+`Shape2DSimpleSuper` gösteriyor (`0x2b21eb9ddb0`, `0x2b21b12a5e0`).
+Dump'ta 10 adet `Shape2DSimpleSuper` ve 35 adet `Shape2DSimple` var.
+Ayrıca A'nın `+0x160` alanı da bir `Shape2DSimpleSuper` içine düşüyor.
+
+### Hipotez
+
+**H5 (güçlendirildi, hâlâ kanıtlanmadı) — bayat trail referansı.**
+Zincir şu: A zaten serbest listesinde (T5) → bellekte A'yı gösteren trail
+elemanları duruyor (S4) → tuz koruması `0 == 0` olduğu için engellemiyor
+(S5) → o slot işlendiğinde `AtomicFree(A)` yeniden çağrılıp kuyruğa giriyor
+→ sonraki drenajda `position == -1` → assert. Gözlenen tek elemanlı kuyruk
+ve `-1` durumuyla birebir uyuşuyor. Eksik halka: hangi çağrının o bayat
+slotu işlediği (çağıran izi dump'ta yok).
+
+**H5-varyantı (ne kanıtlandı ne çürütüldü) — iki komşu slotta aynı
+işaretçi.** A, aynı trail dizisinde iki komşu 16 baytlık slotta görünüyor.
+Ancak `FreeParticle` (`SuperEffect.cpp:216-242`) son elemanı boşluğa
+kopyalayıp `PopBack` ettiği için bu, "canlı eleman + kuyruk artığı" da
+olabilir, gerçek aliasing de. Tanımlayıcıdaki hangi alanın **canlı sayaç**
+olduğu belirlenemedi (aday `+0x20` değerleri dizideki dolu slot sayısıyla
+uyuşmuyor), bu yüzden bu ayrım kanıtlanamadı.
+
+**H8 (yeni, zayıf) — efekt kimliği yalnızca tür düzeyinde.** Dump'taki
+verilerle efektin adına değil, türüne ulaşılabiliyor: 2B "super" şekille
+üretilen, event-instance sahipliği olmayan süper-efekt trail emitter'ları.
+
+### Bulunamayan: efektin adı / kaynak kimliği
+
+Efektin insan-okur adı veya kaynak ID'si bu dump'tan **çıkarılamadı**.
+Nedenleri, kanıtla:
+
+1. Dump'ta hiçbir `...SuperEffect...` RTTI sınıfı yok. Envanterde yalnızca
+   25 `I_DynamicEffect` örneği var; MSVC ICF (özdeş COMDAT katlama) aynı
+   vtable'ları birleştirdiği için bu 25 kayıt gerçek türetilmiş türü ayırt
+   etmiyor.
+2. Efekt tanımları vtable'sız. 25 efekt nesnesinden ve A'nın bloğundan 2
+   seviye işaretçi taraması **tek bir yazdırılabilir ad** döndürmedi; yani
+   tanım nesneleri C-string adı taşımıyor (Blur'da efektler hash ile
+   anılıyor).
+3. `automation.log` partikül efekt adı loglamıyor; çapraz kontrol edilecek
+   bir ad yok.
+4. Şekil üzerinden (`Shape2DSimple` → `C_Renderer`) ve blok üzerinden
+   (`ParticleBlock`) efekt tanımına giden doğrudan bir alan bulunamadı.
+
+Bu nedenle addan söz etmek **uydurma** olur; rapor yalnızca tür düzeyinde
+kimlik veriyor.
+
+### Sıradaki en küçük adım
+
+İki seçenek, ikisi de kod çalıştırmadan:
+
+1. **Çağıranı kesinleştir:** `AtomicFree`/`Free` girişlerine assert'e
+   dokunmayan sınırlı izleme (çağıran dönüş adresi + eleman + kare) ekleyip
+   aynı senaryoyu tekrarlamak. Bu, "hangi bayat slot" sorusunu kapatır.
+2. **Ad hash'ini çıkar:** aynı dump'ta `SuperEffects.trailEffects[j].definition`
+   zincirini izleyip efekt tanımının 32/64-bit ad hash'ini almak ve bunu
+   `game-data` efekt kaynaklarıyla (yalnızca okuyarak) eşleştirmek. Hash→ad
+   eşlemesi manifestten doğrulanmalı; tahmin edilmemeli.
+
+Bu rapor bir düzeltme iddiası taşımaz ve assert'in kaldırılmasını önermez.
