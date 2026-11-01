@@ -40,6 +40,12 @@
 level materyalleri, görünürlük, sonraki RenderList'ler ve yüksek LOD'lar. Kart:
 `docs/work/tasks/T-003-scene-traversal.md`.
 
+**T-005 tek oyunculu dikey dilim** alt görevlere bölündü:
+`T-005a` motor/WASM/platform fizibilitesi, `T-005b` streaming, `T-005c`
+scheduler, `T-005d` fizik, `T-005e` kontroller/kamera, `T-005f` ses/UI/save,
+`T-005g` tam yarış kabulü. Kart:
+`docs/work/tasks/T-005-single-player-vertical-slice.md`.
+
 ## Bilinen engeller / riskler
 
 - 18 instance destekli; 22 instance base17/26/32 stream semantiği, 8 instance

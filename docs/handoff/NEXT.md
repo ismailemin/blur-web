@@ -37,7 +37,10 @@ Açık: düzeltme uygulanmadı; iki deneme reddedildi. (1) `C_Emitter::AtomicFre
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 
-**Durum:** planned
+**Durum:** planned; alt görevlere bölündü
+**Kart:** `docs/work/tasks/T-005-single-player-vertical-slice.md`
 
-Platform/streaming, scheduler, fizik, kontroller, ses ve save; bir araç/bir pist
-üzerinde tam yarış. Multiplayer bundan sonra.
+T-005a motor/WASM/platform fizibilitesi → T-005b streaming → T-005c scheduler →
+T-005d fizik → T-005e kontroller/kamera → T-005f ses/UI/save → T-005g tam yarış
+kabul testi. Multiplayer bundan sonra. İlk adım: en küçük motor alt kümesini
+wasm32'ye derleyip gerçek bağımlılık/engel listesini çıkarmak.
