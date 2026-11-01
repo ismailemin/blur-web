@@ -33,7 +33,7 @@ Tam dump + çağrı izleme + kaynak analizi kök nedeni gösterdi:
 - Emitter ile trail elemanı arasındaki bağ tek yönlü; sahiplik `iSalt` nesil sayacıyla yürüyor.
 - `m_iSalt` yalnızca senkron `C_EmitterList::Free` içinde artırılıyor; ertelenmiş `C_Emitter::AtomicFree` / `AtomicActiveCache::AtomicFree` / drenaj `Free` salt'a dokunmuyor.
 - `FreeParticle` X'i ertelenmiş yolla bıraktıktan sonra drenaj `Free` ediyor; salt artmadığı için aynı X'e işaret eden trail elemanı sonraki karede `iSalt == GetSalt()` (0==0) görüp X'i yeniden kuyruğa atıyor; ikinci `Free` invariant'ı tetikliyor.
-Açık: düzeltme uygulanmadı; hangi iki drenaj sırasının (`UpdateSuperEmitters`/`UpdateSpawn`) sözleşmeyi ihlal ettiği ve salt artışının doğru yeri kaynakta belgelenmeli. Assert kaldırılmayacak. Sıradaki en küçük adım: `C_Emitter::AtomicFree` çağrılarını sahiplik devri/kendini bırakma olarak sınıflandırmak; gerekirse trace'e `pParticle`/trail indeksi eklemek.
+Açık: düzeltme uygulanmadı; iki deneme reddedildi. (1) `C_Emitter::AtomicFree` kuyruk girişinde salt artışı: 1/3 exit0, 2/3 `0xC0000005`. (2) drenajı `C_EmitterList::Free` üzerinden yapmak: 3/3 `0xC0000005`. Her iki deneme de geri alındı; patch'ler `native-saltfix-attempt.patch` ve `native-drainfix-attempt.patch`. Bulgu: hata salt artışının yerine bağlı değil; asıl açık, trail elemanının `pEmitter` alanını kimin geçersiz kıldığı (sahiplik sözleşmesi). Sıradaki: (a) sahiplik kuralını kaynakla yazılı sözleşmeye dönüştürmek, (b) AV için düzeltmesiz build'de tam dump almak. Assert kaldırılmayacak.
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 

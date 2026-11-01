@@ -26,12 +26,11 @@
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
   **River · instance prova** ve **River · 14 instance** preset'leri var.
-- Native x64 Amax Release derlemesi başarılı. Tam dump, `Free`/`AtomicFree`
-  izlemesi ve kaynak analizi kök nedeni gösterdi: trail elemanı `iSalt` nesil
-  sayacıyla korunuyor, ancak `m_iSalt` yalnızca senkron `C_EmitterList::Free`
-  içinde artıyor; ertelenmiş `AtomicFree`/drenaj `Free` salt'a dokunmadığı için
-  bırakılmış emitter'a işaret eden trail elemanı sonraki karede onu yeniden
-  kuyruğa atıyor ve ikinci `Free` invariant'ı tetikliyor. Düzeltme uygulanmadı.
+- Native x64 Amax Release derlemesi başarılı. Particle-cache kök nedeni ve iki
+  düzeltme denemesi belgelendi: kuyruk girişinde salt artışı 1/3 exit0 + 2/3
+  `0xC0000005`; drenajı senkron `Free`'ye taşımak 3/3 `0xC0000005`. Denemeler
+  geri alındı; kanonik `Amax.exe` değişmedi. Asıl açık, trail elemanının
+  `pEmitter` alanını kimin geçersiz kıldığı (sahiplik sözleşmesi).
 - Doğrulama: `verify_asset_probe.py --skip-build` **27/27**, CTest **14/14**.
 
 ## Sıradaki iş

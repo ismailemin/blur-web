@@ -1028,3 +1028,317 @@ koşuyla nedensellik (H7).
 Bu bölüm bir düzeltme iddiası taşımaz; assert'in kaldırılması veya
 zayıflatılması önerilmez. SC5'teki asimetri bir *gözlem*dir; nasıl
 kapatılacağı bu incelemenin kapsamı dışındadır.
+
+> **Güncelleme (2 Kasım, beşinci tur):** SC5'teki asimetriye dayanan sınırlı
+> bir düzeltme denemesi yapıldı ve **reddedildi**. Ayrıntı: aşağıdaki
+> "Denenen düzeltme (reddedildi)" bölümü.
+
+---
+
+## Denenen düzeltme (reddedildi) — 2 Kasım 2026 (beşinci tur)
+
+Bu bölüm, SC5/SC6/SC7'de bulunan "ertelenmiş yolda nesil artışı yok"
+asimetrisine dayanan **sınırlı bir denemeyi** ve neden kabul edilmediğini
+kaydeder. Deneme geri alınmıştır; kanonik `Amax.exe` ve izole kaynak
+değişmemiştir. Bu bölüm bir düzeltme önerisi değildir.
+
+### Ne denendi
+
+`C_Emitter::AtomicFree` içine, liste çağrısından önce tek satır:
+
+```cpp
+m_iSalt += 1;   // ertelenmiş yolda da nesil ilerlesin (SC5 hipotezi)
+```
+
+- Patch: `_work/build/engine-reference/native-saltfix-attempt.patch`
+  (753 bayt, SHA-256 `882cdaf755d08fbd8c56a09d54983b9448233287766c32cc3a0891d3232d9f50`).
+- Ayrı çıktı: `_work/run/Amax-saltfix.exe` (24.345.088 bayt,
+  SHA-256 `5f0b01fc46b78dc98100d0413d301ed52e67a54a44ecbaaeec09897e5ec4ecbd`).
+- Kanonik çalıştırılabilir **değişmedi**: `_work/run/Amax.exe`,
+  SHA-256 `e9727929768d1e8e2b41ec6abfa836c4134cd397e571c8b9ba1129c91a5a254`.
+- Derleme: `_work/logs/amax-saltfix-build.log`, exitCode 0, 64,8 s.
+- İzole worktree'de kaynak değişikliği geri alındı (doğrulama: `git status`
+  çıktısında `Emitter.cpp`/`Atomic.h` değişikliği yok; yalnızca bilinen T9000
+  build düzeltmeleri ve dokümanlar duruyor).
+
+### Koşular
+
+`scripts/race-native/smoke.txt` (666 bayt,
+`9c764308d8c51d7f4717a953d99fa61aab57ae3174a023adbdde2b357cc0b5ff`) ile üç
+koşu; kayıtlar `scripts/race-native/saltfix-runs.json` (919 bayt,
+`3c901d92e2950c7decec3e91a17434add7e1ba8dc4f8e5d947a00639a34b45c5`) ve
+`_work/logs/saltfix-runs.log` (1.834 bayt,
+`d7e28cc4da4463b60854a7bc054822061e16b66d8d5203824303ce3891331ad0`,
+UTF-16LE).
+
+| koşu | ExitCode | süre | yorum |
+| --- | --- | ---: | --- |
+| run1 | `0` | 24 s | hatasız çıktı |
+| run2 | `-1073741819` (`0xC0000005`) | 18 s | access violation |
+| run3 | `-1073741819` (`0xC0000005`) | 19 s | access violation |
+
+### Kanıtlanan
+
+**D1 — Deneme hedeflediği belirtiyi bir kez susturdu, ama iki koşuda daha
+ağır bir hataya yol açtı.** Üç koşunun hiçbirinde `0x80000003` görülmedi;
+ancak run2 ve run3 `0xC0000005` ile öldü. Yani "hata kayboldu" denemez:
+koşuların 2/3'ü sağlıklı tamamlanmadı.
+
+**D2 — AV'lerin yeri/nedeni bu artefaktlarla bilinmiyor.** `dumps/`
+klasöründe yalnızca önceki trace koşusunun iki dump'ı var (01:06 ve 01:12);
+saltfix koşuları için dump alınmamış. Dolayısıyla AV hakkında konum, çağrı
+yığını veya bellek durumu iddiası kurulamaz.
+
+**D3 — Düzeltme yalnızca iki ertelenmiş üreticiden birini kapsıyordu.**
+`C_Emitter::AtomicFree` (`Emitter.cpp:170-180`) yamalandı; ancak
+`FreeParticle` listeye **doğrudan** `pEmitterList->AtomicFree(...)` ile
+gidiyor (`SuperEffect.cpp:229`) ve bu yol `C_Emitter::AtomicFree`'yi
+atlıyor. Yani "trail → trail" (aynı emitter iki elemanda) ve "trail → drenaj"
+kombinasyonları yamadan hiç etkilenmedi. Trace'teki ölümcül sıra
+(drenaj 229 → `FreeParticle` 232) ancak *dolaylı* olarak — 225'teki
+self-delete'in nesli artırması sayesinde — maskelenebilirdi; ilk bırakma
+`FreeParticle` üzerinden gelen bir sırada yama hiç devreye girmez.
+
+**D4 — Son koşunun zaman çizgisi (zaman damgasından çıkarım).**
+`scripts/race-native/automation.log` (01:31:19; `saltfix-runs.json` 01:31:22
+olduğu için son koşuya ait olduğu değerlendirildi): satır 2176'da
+`12.66 key down 0x11`, `16.66 key up 0x11`, son satır `16.98`. Süreç 19 s'de
+`0xC0000005` ile döndü → AV, gaz bırakıldıktan ~0,3 s sonra, basıldıktan
+~4,3 s sonra. (Hangi koşuya ait olduğu **çıkarım**dır; üç ayrı log yok.)
+
+### Neden reddedildi
+
+1. **Yeni ve daha ağır regresyon:** 3 koşunun 2'sinde access violation.
+2. **Tek "exit 0" kanıt değil:** önceki koşularda da çökme gecikmeli ve
+   değişkendi (triyaj ~1 s, tam dump ~13 s, trace ~0,1 s); tek bir hatasız
+   koşu, hatanın giderildiğini göstermez.
+3. **Belirti değişti, durum değişmedi:** invariant yerinde; cache muhasebesi
+   ve bayat referanslar hâlâ orada. Deneme, hatayı *görünmez* kılıp başka bir
+   yerde patlattı.
+4. **Proje kuralı:** doğrulanmamış davranış değişikliği kabul edilmez
+   (AGENTS.md: "No claim without evidence", "Never silently fall back").
+
+### Neden salt artışı tek başına yetmez (hipotez)
+
+**H14 — Kapsam eksik (D3).** Nesil yalnızca `C_Emitter::AtomicFree`'de
+artırıldı; trail tarafının kendi bırakma yolu (`FreeParticle` → liste
+`AtomicFree`) yamayı görmedi. Tek bir üreticiyi kapatmak, kuyruğa girişin
+*diğer* kaynaklarını durdurmaz.
+
+**H15 — Zamanlama yanlış: nesil kuyruğa girişte değil, bırakma anında
+ilerlemeli.** `AtomicFree` çağrıldığında emitter hâlâ **aktif listede** ve
+meşru sahipleri (trail elemanları) hâlâ ona bağlı. Nesli o anda artırmak,
+henüz ölmemiş bir nesneyi "eski nesil" gösterip canlı referansların
+`pEmitter = NULL` ile körlemesine silinmesine yol açar. Referans
+`C_EmitterList::Free`'de olduğu gibi **gerçek bırakma anında** (drenajda)
+ilerlemelidir — ki orada da drenaj taban sınıfta (`Atomic.h:224`) çalıştığı
+için eleman tipini bilmiyor; bu bir tasarım sorusudur, bu incelemede
+çözülmedi.
+
+**H16 — Nesil sayacı bellek sahipliğini değiştirmez.** Salt artışı yalnızca
+"bu işaretçi hâlâ benim neslim mi?" sorusunu yanıtlar; trail elemanının
+işaretçisini **temizlemez**, yalnızca bir sonraki `UpdateTrails`/
+`FreeParticle` dokunuşunda NULL'lar. Dolayısıyla cache'teki çift kayıt /
+aliasing durumu olduğu gibi kalır; ilk dokunuş gelmeden yeniden dağıtım
+olursa eski eleman yeni nesli taşımadığı için bu kez **canlı** emitter'a olan
+referans kaybolur (ters yönlü hata).
+
+**H17 — AV'nin olası nedeni (kanıtsız, D2).** Breakpoint bir *bariyer*
+işlevi görüyordu: süreç, bozuk cache durumuna ilerlemeden duruyordu. Trail
+yolu susturulunca yürütme bozuk durumun içine devam etmiş ve birkaç saniye
+sonra geçersiz bir işaretçi/elemanda AV oluşmuş olabilir. Dump olmadığı için
+doğrulanamaz; alternatif olarak H15'in "canlı referansı NULL'lama" etkisi de
+AV üretebilir.
+
+**H18 — Atomik olmayan artırım.** `m_iSalt += 1` düz bir yazma; oysa aynı
+yol worker thread'lerden de çağrılıyor (`0x1CB674` scheduler) ve diğer tüm
+sayaçlar `MT::AtomicIncrement/Decrement` kullanıyor. 32-bit hizalı artırma
+pratikte atomiktir, ama bellek sıralaması garantisi yoktur; veri yarışı
+olasılığı dışlanamaz.
+
+### Kapanan ve kapanmayanlar
+
+Kapanan: "SC5 asimetrisini tek satırla kapatmak yeterli mi?" → **hayır**
+(D1-D4). Denemenin kapsamı ve sonuçları belgelendi.
+
+Kapanmayan: AV'lerin nedeni (D2, H17), doğru bırakma/nesil noktasının ne
+olduğu (H15), bayat trail elemanının kimliği (H11), aliasing (H13), efekt adı.
+
+### Sıradaki en küçük adım
+
+1. **Sahiplik noktasını bul (kod okuması, oyun çalıştırmadan):** tüm
+   emitter bırakmalarının geçtiği **tek** noktayı ve trail referansının
+   gerçekten temizlendiği yeri çıkarmak — yani `FreeParticle`'ın elemanı
+   kopyala/pop ile temizlediği yer ile emitter'ın kendini bıraktığı yer
+   arasındaki farkı kapatacak sahiplik tanımı. Nesil artışının bu noktaya mı
+   (drenaj) yoksa sahiplik devrine mi ait olduğu bu okumanın çıktısı olmalı;
+   deneme yapılmadan önce yazılı bir sözleşme haline getirilmeli.
+2. **AV için kanıt topla (yalnızca gerekiyorsa, yeni koşu):** `0xC0000005`
+   koşularından **tam bellek dump'ı** almak; AV'nin yeri ve çağrı yığını
+   ancak bununla bilinir. Dump olmadan AV hakkında hiçbir iddia kurulmamalı.
+3. `FreeParticle` etiketine `pParticle` + trail efekt/eleman indeksi eklemek
+   (H11) ve efekt ad-hash yolu (önceki bölüm) hâlâ açık.
+
+Bu bölüm bir düzeltme iddiası taşımaz; assert'in kaldırılması veya
+zayıflatılması önerilmez. Reddedilen deneme geri alınmıştır ve kanonik
+çalıştırılabilir değişmemiştir (D1-D4).
+
+> **Güncelleme (2 Kasım, altıncı tur):** ikinci bir deneme — nesil artışını
+> drenaj noktasına taşımak — da **reddedildi** (3/3 access violation).
+> Ayrıntı: aşağıdaki "Denenen düzeltme 2 (drenaj)" bölümü.
+
+---
+
+## Denenen düzeltme 2 (drenaj) — 2 Kasım 2026 (altıncı tur)
+
+Birinci denemenin (D1-D4) ardından, SC5/SC8'deki "nesil artışı yanlış
+zamanda" hipotezine (H15) dayanan ikinci bir sınırlı deneme yapıldı ve
+**reddedildi**. Deneme geri alınmıştır; kanonik `Amax.exe` değişmemiştir.
+Bu bölüm bir düzeltme önerisi değildir.
+
+### Ne denendi
+
+Nesil artışını kuyruğa girişten alıp **gerçek bırakma anına** (drenaj)
+taşımak:
+
+1. `C_EmitterList::Update()` eklendi — taban `Update()`'i gölgeler; bekleyen
+   her kaydı `C_EmitterList::Free` (salt artıran senkron yol) üzerinden
+   bırakır, sonra kuyruğu temizler.
+2. `AtomicActiveCache`'e `protected` erişimciler eklendi:
+   `DeletedCount()`, `DeletedAt(S32)`, `ClearDeleted()`.
+3. Çağrı yerleri değişmedi: mevcut `m_Emitters.Update()` /
+   `m_SuperEffectEmitters.Update()` çağrıları statik gölgeleme ile yeni
+   türev metoda bağlanıyor.
+
+```cpp
+void C_EmitterList::Update()
+{
+    for(S32 i = 0; i < DeletedCount(); ++i)
+        C_EmitterList::Free(DeletedAt(i));   // salt artıran senkron yol
+    ClearDeleted();
+}
+```
+
+- Patch: `_work/build/engine-reference/native-drainfix-attempt.patch`
+  (2.197 bayt, SHA-256
+  `4babdf9d6ae56f8884c57175a1acb2e1c2f08593a248a1a4c329cfd3b0294f4b`).
+- Ayrı çıktı: `_work/run/Amax-drainfix.exe` (24.345.088 bayt,
+  SHA-256 `72b91a56a326a492848f07bf1146e09ab030feeda79e3482a7359868036b8b07`).
+- Kanonik çalıştırılabilir **değişmedi**: `_work/run/Amax.exe`,
+  SHA-256 `e9727929768d1e8e2b41ec6abfa836c4134cd397e571c8b9ba1129c91a5a254`.
+- Derleme: ilk tur `_work/logs/amax-drainfix-build.log` **exitCode 1**
+  (27,4 s); ikinci tur `_work/logs/amax-drainfix-build2.log` **exitCode 0**
+  (64,7 s) → `Amax-drainfix.exe` 01:37:27. Yani deneme iki derleme turu
+  gerektirdi.
+- İzole worktree'de kaynak değişiklikleri geri alındı (doğrulama:
+  `git status` çıktısında `Atomic.h`, `EmitterList.h`, `emitterlist.cpp`
+  değişikliği yok).
+
+### Koşular
+
+`scripts/race-native/smoke.txt` (666 bayt,
+`9c764308d8c51d7f4717a953d99fa61aab57ae3174a023adbdde2b357cc0b5ff`) ile üç
+koşu; kayıtlar `scripts/race-native/drainfix-runs.json` (932 bayt,
+`f6a932efc065451ba2925268310279669d3b1304baed05c1a7eb5981cb44aa9a`) ve
+`_work/logs/drainfix-runs.log` (1.860 bayt,
+`2727be66dcae89f923dba63cdb809586f85fb7cb8d1641459404acaf0261bd72`,
+UTF-16LE).
+
+| koşu | ExitCode | süre | yorum |
+| --- | --- | ---: | --- |
+| run1 | `-1073741819` (`0xC0000005`) | 16 s | access violation |
+| run2 | `-1073741819` (`0xC0000005`) | 18 s | access violation |
+| run3 | `-1073741819` (`0xC0000005`) | 19 s | access violation |
+
+### Kanıtlanan
+
+**E1 — Üç koşunun üçünde de access violation; hiçbirinde `0x80000003`
+yok, hiçbirinde exit 0 yok.** Orijinal belirti tamamen kayboldu, yerine
+daha ağır bir hata geldi. Deneme "başarılı" sayılamaz.
+
+**E2 — İki farklı nesil zamanlaması aynı AV sınıfını üretti.**
+1. deneme (kuyruğa girişte `m_iSalt += 1`): 2/3 AV + 1 exit 0.
+2. deneme (drenajda `C_EmitterList::Free`): 3/3 AV.
+Yani AV, salt artışının *nerede* yapıldığına bağlı değil. "Nesil sayacı
+eksikti" hipotezi (SC5 → H14/H15) tek başına yetersizdir: sayacı eklemek
+belirtiyi değiştiriyor ama hatayı öldürmüyor.
+
+**E3 — Denemenin kapsamı iki havuza birden yayıldı.**
+`C_EmitterList::Update()`'in eklenmesi `m_Emitters.Update()` çağrılarını da
+(2048 elemanlı, event-sahipli emitter havuzu) türev metoda yönlendiriyor;
+ayrıca `C_EmitterList::Free`'nin kendi kontrolü
+(`if(pEmitter->m_pEventInstance != NULL) DebugBreak();`, `emitterlist.cpp:22-24`)
+artık drenaj sırasında da çalışıyor. Yani daha önce hiç çalıştırılmamış bir
+davranış kombinasyonu devreye girdi.
+
+**E4 — AV'ler için dump yok.** `dumps/` klasöründe yalnızca trace koşusunun
+iki dump'ı var (01:06 ve 01:12). Dolayısıyla AV'nin yeri, çağrı yığını veya
+bellek durumu hakkında iddia kurulamaz.
+
+**E5 — Son koşunun zaman çizgisi (zaman damgasından çıkarım).**
+`scripts/race-native/automation.log` (01:38:30): satır 2176
+`12.76 key down 0x11`, satır 2197 `16.76 key up 0x11`, son satır `18.00`;
+süreç 19 s'de `0xC0000005`. AV, gaz bırakıldıktan ~1,2 s, basıldıktan
+~5,2 s sonra. (Hangi koşuya ait olduğu **çıkarım**dır.)
+
+### Neden reddedildi
+
+1. **3/3 regresyon:** hiçbir koşu sağlıklı tamamlanmadı; ilk denemeden
+   (2/3 AV) daha kötü.
+2. **Kök neden tanımıyla uyuşmuyor:** kanıtlanan sorun sahiplik
+   (trail elemanı ↔ emitter, SC1/SC2) ve bayat referans; drenajın hangi
+   fonksiyondan geçtiği bunu değiştirmiyor (H16).
+3. **Kapsam geniş ve yan etkisi ölçülmemiş:** iki havuz + `C_EmitterList::Free`
+   içindeki ek invariant drenaja taşındı (E3).
+4. **Kanıtsız regresyon:** dump yok (E4); kural gereği (AGENTS.md)
+   doğrulanmamış davranış değişikliği kabul edilmez.
+
+### Neden drenaj/salt yolu tek başına yetmez (hipotez)
+
+**H19 — Asıl eksik, "emitter ölürken onu tutan trail elemanının geçersiz
+kılınması".** Ne kuyruk zamanı ne drenaj zamanı, trail elemanının
+`pEmitter` alanını *temizlemez*; her ikisi de yalnızca bir sonraki
+dokunuşta yapılan salt karşılaştırmasına dayanır (SC4). Sahiplik devri
+tanımlanmadan nesil sayacı yalnızca belirtiyi erteler.
+
+**H20 — İki drenajın kare sırası değişmedi (SC8).** Her iki deneme de
+drenajın *içeriğini* değiştirdi, *zamanlamasını* değil: drenaj #2
+(`UpdateSpawn`) ile sonraki karenin blok güncellemesi arasındaki pencere
+hâlâ açık.
+
+**H21 — AV'nin 3/3 olması, invariant'ın artık hiç devreye girmediğini
+düşündürüyor.** Salt ilerlediği için trail referansları `NULL`'lanıyor
+olabilir; o zaman hata assert'ten önce, başka bir nesne üzerinde oluşuyordur.
+Dump olmadan ayırt edilemez (E4).
+
+**H22 — `C_EmitterList::Update` gölgelemesi, `m_Emitters` havuzundaki
+event-sahipli emitter'ların drenajını da değiştirdi.** Bu kombinasyon daha
+önce hiç çalıştırılmamıştı; AV'nin kaynağı bu genişleme de olabilir. Kanıtsız.
+
+### Kapanan ve kapanmayanlar
+
+Kapanan: "nesil artışını drenaja taşımak yeterli mi?" → **hayır** (E1, E2).
+İki bağımsız denemenin sonucu belgelendi.
+
+Kapanmayan: AV'lerin nedeni (E4, H21/H22), sahiplik devrinin doğru tanımı
+(H19), drenaj sırasının etkisi (H20), bayat elemanın kimliği (H11), aliasing
+(H13), efekt adı.
+
+### Sıradaki en küçük adım
+
+1. **Sahiplik tanımını yaz (kod okuması, oyun çalıştırmadan).** İki aday
+   kuralı kaynakla karşılaştır:
+   (a) *emitter ölünce onu tutan trail elemanı geçersiz kılınır*, ya da
+   (b) *emitter yalnızca onu tutan trail elemanı tarafından bırakılır*.
+   Hangi yolun mevcut çağrı yerleriyle (FreeParticle, DeleteTrailBlock,
+   I_ParticleSuperEffect::Free, Emitter::Update) çelişmediği ve blok/indeks
+   sahipliğiyle (SC3) uyumlu olduğu yazılmalı. Deneme yapılmadan önce yazılı
+   bir sözleşme olmalı.
+2. **AV için kanıt topla (yalnızca gerekiyorsa, yeni koşu).** Düzeltmesiz
+   build'de `0xC0000005` alınan bir koşudan **tam bellek dump'ı**; AV'nin yeri
+   ancak bununla bilinir. Dump olmadan konum iddiası kurulmamalı.
+3. Ancak 1 ve 2'den sonra drenaj sırası (H20) gibi bir *deneme* düşünülebilir.
+
+Bu bölüm bir düzeltme iddiası taşımaz; assert'in kaldırılması veya
+zayıflatılması önerilmez. Reddedilen deneme geri alınmıştır ve kanonik
+çalıştırılabilir değişmemiştir (E1-E5).

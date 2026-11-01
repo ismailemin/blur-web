@@ -232,4 +232,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Düzeltme uygulanmadı; assert kaldırılmadı. Trace instrumentation patch'i `_work/build/engine-reference/native-free-trace.patch`; trace `free-trace.log` SHA-256 `874191c1...`; trace build `Amax-trace.exe`. Kanonik `Amax.exe` değişmedi; izole kaynak instrumentation'dan temizlendi.
 - Rapor: `docs/work/analysis/native-particle-crash.md` ("Sahiplik sözleşmesi"). Sıradaki: `C_Emitter::AtomicFree` çağrılarını sahiplik devri/kendini bırakma olarak sınıflandırmak; trace'e `pParticle`/trail indeksi eklemek.
 
+## 2 Kasım 2026 — native düzeltme denemeleri (reddedildi)
+
+- Deneme 1: `C_Emitter::AtomicFree` içine `m_iSalt += 1`. `Amax-saltfix.exe` ile 3 koşu: 1× exit0, 2× `0xC0000005` (18/19s). Kabul edilmedi.
+- Deneme 2: `C_EmitterList::Update()` drenajı `C_EmitterList::Free` (salt artıran) üzerinden. `Amax-drainfix.exe` ile 3 koşu: 3× `0xC0000005` (16/18/19s). Kabul edilmedi.
+- Her iki deneme geri alındı; kanonik `Amax.exe` değişmedi. Patch'ler `_work/build/engine-reference/native-saltfix-attempt.patch`, `native-drainfix-attempt.patch`; loglar `_work/logs/saltfix-runs.log`, `drainfix-runs.log`.
+- Bulgu: hata salt artışının yerine bağlı değil; asıl açık trail elemanının `pEmitter` alanını kimin geçersiz kıldığı. Sıradaki: sahiplik kuralını kaynakla sözleşmeye dönüştürmek; AV için düzeltmesiz build'de tam dump almak.
+
 
