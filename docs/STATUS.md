@@ -203,4 +203,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Hangi iki `Free`/`AtomicFree` çağrısının çakıştığı, efekt kimliği ve thread çakışması hâlâ açık. Sıradaki en küçük adım dump içinde sahip tanım işaretçisini ve komşu partikül kayıtlarını çözmek. Assert kaldırılmadı; düzeltme iddiası yok.
 - Rapor: `docs/work/analysis/native-particle-crash.md` ("Tam bellek (exit) dump'ı" bölümü).
 
+## 2 Kasım 2026 — T-003 çoklu blok taraması
+
+- `level_instances_all_inspect` çıktısına `requiredGeometryBlocks` ve instance VB/IB kaynakları eklendi: `[15,17,26,27,31,32]`.
+- Blok15 chunk'ı çıkarılıp test edildi: **4 desteklenen instance** (22,31,32,56), 8 sınır uyuşmazlığı; 1.380 vertex/979 üçgen. Blok27 ile toplam **18 instance**, 8.688 vertex/7.085 üçgen.
+- Blok17/26/32'de 0 desteklenen instance (sırasıyla 2/10/10 sınır uyuşmazlığı); base17/26/32 stream semantiği uygulanmadığı için çizilmiyor. Blok31 ek ChunkInfo prerequisite istiyor ve atlanıyor.
+- Browser'a **River · tüm desteklenen** preset'i eklendi; blokları sırayla okuyup sonuçları birleştiriyor, sıfır/hatalı blokları sayıyor.
+- Suite **27/27**, CTest **14/14**. Kanıt: `_work/level-instances/cpp-block*.json`, `_work/logs/t003-multiblock-*.log`.
+- Sıradaki: base primitive11–35 stream/deformasyon semantiği, blok31 prerequisite, materyaller/görünürlük/yüksek LOD'lar.
+
 

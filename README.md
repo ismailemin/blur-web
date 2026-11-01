@@ -25,6 +25,9 @@ a native Windows reference build and race harness.
 - Multi-instance API on the same block: 14 instances, 7,308 vertices / 6,106
   triangles; 8 bounds-mismatched and 35 other-block instances are counted, not
   guessed.
+- Multi-block scan (blocks15/17/26/27/31/32): block27+15 yield 18 instances,
+  8,688 vertices / 7,085 triangles; remaining blocks need stream semantics or
+  prerequisites.
 - PC texture decoder (BC1/BC2/BC3 and selected uncompressed formats).
 - XT/FLSK schema metadata only.
 - Native x64 Amax Release build passes; stationary Brighton race renders.

@@ -19,6 +19,10 @@
 - `level_instances_all_inspect` aynı blokta **14 instance** çiziyor:
   **7.308 vertex / 6.106 üçgen**, 14 draw, en büyük sınır farkı
   **6.02444e-05**. 8 instance sınır uyuşmazlığı, 35 instance başka blok.
+- Çoklu blok taraması: `requiredGeometryBlocks=[15,17,26,27,31,32]`; blok27+15
+  toplam **18 instance**, **8.688 vertex / 7.085 üçgen**. Blok17/26/32 stream
+  semantiği, blok31 prerequisite nedeniyle 0/atlandı. Browser'da
+  **River · tüm desteklenen** preset'i var.
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
   **River · instance prova** ve **River · 14 instance** preset'leri var.
@@ -31,17 +35,16 @@
 
 ## Sıradaki iş
 
-**T-003 kalan iş:** blok15/17/26/31/32 için çoklu geometri chunk akışı; base
-primitive7–10 ek stream/deformasyon semantiği (8 instance); level materyalleri,
-görünürlük, sonraki RenderList'ler ve yüksek LOD'lar. Kart:
+**T-003 kalan iş:** base primitive11–35 ek stream/deformasyon semantiği
+(blok17/26/32'deki 22 instance + blok15'teki 8 instance), blok31 prerequisite,
+level materyalleri, görünürlük, sonraki RenderList'ler ve yüksek LOD'lar. Kart:
 `docs/work/tasks/T-003-scene-traversal.md`.
 
 ## Bilinen engeller / riskler
 
+- 18 instance destekli; 22 instance base17/26/32 stream semantiği, 8 instance
+  base7–10, 1 instance blok31 prerequisite nedeniyle çizilmiyor.
 - CPU vertex expansion; GPU instance buffer yok.
-- 8 instance base7–10 nedeniyle sınır uyuşmazlığı veriyor; ek stream semantiği
-  çözülmeden çizilmemeli.
-- Diğer 35 instance farklı geometri bloklarında; API tek chunk alıyor.
 - Native sürüş referansı particle-cache çökmesi nedeniyle kararlı değil.
 - Fizik, kontroller, ses, save/streaming, tek oyunculu yarış ve multiplayer
   başlamadı.

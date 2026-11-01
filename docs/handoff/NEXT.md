@@ -4,15 +4,16 @@ Sıra bağlayıcıdır. Bir görev kapanmadan sonraki kod görevine geçilmez.
 
 ## 1. T-003 — Scene/level kapsamını genişletme
 
-**Durum:** in-progress (blok27 çoklu instance tamam)
+**Durum:** in-progress (blok27+15 toplam 18 instance; tarama tamam)
 **Kart:** `docs/work/tasks/T-003-scene-traversal.md`
 
-İlk artım: `level_instances_all_inspect` blok27'ye bağlı **14 instance**'ı
-çiziyor (8 sınır uyuşmazlığı, 35 başka blok); 7.308 vertex/6.106 üçgen.
-Kalan iş:
+İlk artım: blok27'de **14 instance**, 7.308 vertex/6.106 üçgen.
+İkinci artım: `requiredGeometryBlocks=[15,17,26,27,31,32]`; blok15 ek **4
+instance** veriyor. Toplam **18 instance**, 8.688 vertex/7.085 üçgen. Blok17/26/
+32 base stream semantiği, blok31 prerequisite nedeniyle 0/atlandı. Kalan iş:
 
-- Blok15/17/26/31/32 için çoklu geometri chunk akışı.
-- Base primitive7–10 ek stream/deformasyon semantiği (8 instance).
+- Base primitive11–35 ek stream/deformasyon semantiği (22+8 instance).
+- Blok31 ek ChunkInfo prerequisite (1 instance).
 - Level materyalleri, görünürlük, sonraki RenderList'ler, yüksek LOD'lar.
 - GPU instance buffer.
 
@@ -21,7 +22,7 @@ Kabul:
 - Sabit offset veya tahmin yok; kaynak sırası korunur.
 - Desteklenmeyen durumlar sayılarıyla raporlanır.
 - Native/WASM/Python eşitliği ve regresyonsuz suite.
-- Tek/14 instance kanıtı genel "tam pist" iddiasına dönüşmez.
+- 18 instance kanıtı genel "tam pist" iddiasına dönüşmez.
 
 ## 2. T-004 — Native particle-cache izi
 
