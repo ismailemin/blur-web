@@ -1,405 +1,421 @@
 # T-005 — Engine web shim layer and wasm32 compile spike (P14)
 
 **Date:** 2 November 2026
-**Status:** bounded spike. No `upstream/`, project source, build file, tool, task
-card or other analysis document was modified; the game and the native build were
-not run. Everything below was produced under `_work/engine-web-spike/` and
-`_work/logs/engine-web-spike/`.
+**Status:** bounded spike, two steps. Step 1 measured the `core/Maths.h` gate; step
+2 landed the web platform identity and closed the scheduler compile gate.
+No `upstream/`, project source, build file, tool, task card or other analysis
+document was modified; the game and the native build were not run. Everything
+was produced under `_work/engine-web-spike/` and `_work/logs/engine-web-spike/`.
 **Inputs:** `docs/work/analysis/engine-wasm-probe.md` (T-005a measurements),
 `docs/work/analysis/t005-scheduler-design.md` (T-005c adapter design).
-**Toolchain:** the pinned emsdk already in `_work/toolchains/emsdk` —
-Emscripten 6.0.13, clang 24.0.0git, target `wasm32-unknown-emscripten`, driven
-through `em++.py` with the bundled Python.
+**Toolchain:** the pinned emsdk in `_work/toolchains/emsdk` — Emscripten 6.0.13,
+clang 24.0.0git, `wasm32-unknown-emscripten`, driven through `em++.py` with the
+bundled Python.
 
-**No engine claim.** This document does not say the engine runs. It says which
-real translation units the wasm32 front end accepts, which one shim layer was
-needed, what a linked module measures, and what still blocks the rest.
+**No engine claim.** Nothing below says the engine or the game runs. It records
+which real translation units the wasm32 front end accepts, which edits and shims
+are needed, what a linked module measures, and what still blocks the rest.
 
 ---
 
 ## 1. Scope and method
 
-The spike answers one question: **how much of the 7-error `core/Maths.h` gate is
-a shim problem and how much is a source problem?** It then pushes the same shim
-against the scheduler and platform TUs named in the T-005c design, and finally
-links and runs the largest subset that survives.
+Two questions, in order:
+
+1. **Step 1 — how much of the 7-error `core/Maths.h` gate is a shim problem and
+   how much is a source problem?**
+2. **Step 2 — is the `tl_*` platform identity a shim problem, or five source
+   edits plus a type layer?** And once it exists, does the job queue compile?
 
 Method:
 
-1. A `platform/web`-style prelude (`shims/web_platform.h`,
-   `shims/crt_compat.h`) is force-included with `-include`. It may contain only
-   standard typedefs, name aliases and definitions copied verbatim from the
-   engine with a citation. Nothing numeric is invented.
+1. A `platform/web`-style prelude (`shims/web_platform.h`, `shims/crt_compat.h`)
+   is force-included with `-include`. It may contain only standard typedefs, name
+   aliases and definitions copied verbatim from the engine with a citation.
 2. Every error class is classified as *shim*, *compiler mode* or *source edit*.
-   A source edit that the prelude could hide is deliberately **not** hidden, so
-   the required upstream diff stays visible.
+   A source edit that the prelude could hide is **not** hidden, so the required
+   upstream diff stays visible.
 3. To prove a source edit is sufficient without touching `upstream/`, the
-   `core/include` tree is copied into an overlay
-   (`_work/engine-web-spike/patched/`, `make_patched_copy.py`) and exactly the
-   listed tokens are substituted. The overlay is a measurement artifact.
-4. Two node smokes link real objects and check values that were computed by
-   hand, not just "it printed something".
-
-24 distinct real engine TUs were compiled, plus the synthetic probes under
-`_work/engine-web-spike/probes/` (five header-free language repros and two
-drivers).
+   affected headers and two `.cpp` files are copied into
+   `_work/engine-web-spike/patched/` by `make_patched_copy.py`, which applies
+   exactly the listed tokens and writes the manifest `patched/CHANGES.txt`. The
+   overlay is a measurement artifact, never a source of truth.
+4. Linked modules are checked against values computed by hand, not just "it
+   printed something".
+5. A link that cannot be completed is recorded with its exact missing-symbol
+   set; a shim that would change runtime behaviour is refused, not added.
 
 ## 2. Exact commands
 
-One command reproduces everything:
-
 ```powershell
 $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+# everything: overlay + 9 TU sets + two node smokes + scheduler link attempt
 & $py _work/engine-web-spike/run_spike.py
-```
 
-It runs, in order: `make_patched_copy.py`, then `build_probe.py` for the seven
-measurement sets, then compile → link → two node runs per smoke. Per-TU logs go
-to `_work/engine-web-spike/logs/`, per-run JSON and the summary to
-`_work/logs/engine-web-spike/`.
+# the overlay alone (writes patched/CHANGES.txt and its sha256)
+& $py _work/engine-web-spike/make_patched_copy.py --web-branch alias
 
-A single TU can be reproduced directly, e.g. the control that still has the
-value of the T-005a baseline:
-
-```powershell
+# one set, e.g. the control that still reproduces T-005a's 7-error baseline
 & $py _work/engine-web-spike/build_probe.py ctl_noshim_maths maths `
     -DPLATFORM_WEB -fdelayed-template-parsing -D__restrict= -fdeclspec
-# 7 errors per TU - identical to engine-wasm-probe.md section 3.2
 ```
 
-The final configuration used everywhere below is:
+Final configuration used everywhere below:
 
 ```text
 -DBUILD_CONFIG_SPEED -DPLATFORM_WEB -std=c++14
 -fdelayed-template-parsing -D__restrict= -fdeclspec
 -Wno-nonportable-include-path -Wno-ignored-attributes
 -include _work/engine-web-spike/shims/web_platform.h
--I _work/engine-web-spike/patched/core/include        (final_* sets only)
+-I _work/engine-web-spike/patched/core/include        (overlay)
+-I _work/engine-web-spike/patched/system/include      (overlay)
 -I <library include dirs from matrix.py>
 ```
 
 `-D_vsnprintf=vsnprintf`, which T-005a needed for the `PLATFORM_PC` probe, is
-**not** needed here: `newclib.h:120` gates that branch on
-`defined(PLATFORM_PC) && (_MSC_VER < 1400)`, and `PLATFORM_PC` is absent.
+not needed: `newclib.h:120` gates that branch on `defined(PLATFORM_PC)`, and
+`PLATFORM_PC` is absent.
 
-## 3. Results — 24 real TUs
+## 3. Results — 39 real engine TUs
 
-`0` means the front end accepted the TU. A failing count is clang diagnostics,
-not a defect count (clang stops inside a cascading header).
+`0` means the front end accepted the TU. Failing counts are clang diagnostics,
+not defect counts (clang stops inside a cascading header).
 
-| TU | errors | class of the remaining errors |
+### 3.1 The original 24 TUs: 15 → 19 compile, 87 → 22 errors
+
+| TU | step 1 | step 2 | remaining errors |
+| --- | --- | --- | --- |
+| `core/maths/hvec/{Vector,Matrix,Quaternion,SIMD,Constants}` (5) | 0 | 0 | — |
+| `core/source/{utility/endian,containers/String}` (2) | 0 | 0 | — |
+| `core/source/allocators/{CoreMemoryNonTracked,stackallocator}` (2) | 0 | 0 | — |
+| `core/source/maths/hvec/new/Mat44` | 77 → 0 | 0 | — |
+| `misc_shared/{Types/Float16,Geometry/Bounds,archive/handler}` (3) | 0 | 0 | — |
+| `misc_shared/Compression/Inflate` | 11 | **0** | — |
+| `misc_shared/archive/serialiser` | 10 | **0** | — |
+| `system/source/scheduler/jobqueue` | 11 | **0** | — |
+| `system/source/scheduler/jobqueue_kernel` | 11 | **0** | — |
+| `core/source/threads/{Thread}`, `system/source/time/Time` (2) | 0 | 0 | — |
+| `core/source/utility/BizAssert` | 1 | 1 | `_vsnprintf_s` (MSVC secure CRT) |
+| `system/source/threads/Mutex` | 7 | 7 | PS3 branch in `Lock`; **0 in the patched copy** |
+| `core/source/threads/ThreadLocalStorage` | 1 | 1 | `pthread_key_t` |
+| `jobqueue_xenon` | 21 | 10 | Win32 + `JQ_CORE_0` — **not ported** |
+| `jobqueue_kernel_xenon` | 14 | 3 | `HANDLE` + `Scheduler::Task` shadowing — **not ported** |
+
+The two Xenon kernel TUs are measured but deliberately not ported: they are
+replaced by `jobqueue_web.h` + the spike backend, per T-005c §3.4. Excluding
+them, the original set is 19 of 22 TUs at 9 errors.
+
+### 3.2 The 15 TUs added in step 2: 11 compile
+
+| TU | errors | note |
 | --- | --- | --- |
-| `core/maths/hvec/{Vector,Matrix,Quaternion,SIMD,Constants}.cpp` (5) | **0** | — |
-| `core/source/utility/endian.cpp` | **0** | — |
-| `core/source/containers/String.cpp` | **0** | — |
-| `core/source/allocators/{CoreMemoryNonTracked,stackallocator}.cpp` (2) | **0** | — |
-| `core/source/maths/hvec/new/Mat44.cpp` | **0** | was 77 before shim + guard |
-| `core/source/threads/Thread.cpp` | **0** | POSIX branch (`Thread.cpp:31-37`) |
-| `system/source/time/Time.cpp` | **0** | generic branch, `gettimeofday` |
-| `misc_shared/{Types/Float16,Geometry/Bounds}.cpp` (2) | **0** | — |
-| `misc_shared/archive/handler.cpp` | **0** | was 1 (`typename`) |
-| `core/source/utility/BizAssert.cpp` | 1 | `_vsnprintf_s` (MSVC secure CRT) |
-| `system/source/threads/Mutex.cpp` | 7 | PS3 branch taken (`!COMPILER_VC`) |
-| `core/source/threads/ThreadLocalStorage.cpp` | 1 | `pthread_key_t` |
-| `system/source/scheduler/jobqueue.cpp` | 11 | 9 `tl_*`, 2 `#error` |
-| `system/source/scheduler/jobqueue_kernel.cpp` | 11 | identical to the above |
-| `system/source/scheduler/jobqueue_xenon.cpp` | 21 | 9 `tl_*`, 2 `#error`, 9 Win32, 1 `JQ_CORE_0` |
-| `system/source/scheduler/jobqueue_kernel_xenon.cpp` | 14 | 9 `tl_*`, 2 `#error`, 2 `HANDLE`, 1 `Task` shadowing |
-| `misc_shared/Compression/Inflate.cpp` | 11 | 9 `tl_*`, 2 `#error`, 1 `Scheduler::jqModule` |
-| `misc_shared/archive/serialiser.cpp` | 10 | 10 identity-gated, nothing else |
+| `system/source/scheduler/{jobqueue_task_queue_lf,jobqueue_mem}` (2) | **0** | the lock-free queue and `Spu::Fetch` |
+| `core/source/threads/{RwLock}`, `allocators/CoreMemoryAligned` (2) | **0** | |
+| `core/source/threads/Event` | 6 | **0 in the patched copy** (2 edits) |
+| `system/source/debug/log/{LogManager,Logger,DebugLevel}` (3) | **0** | logging core |
+| `core/source/threads/CpuInfo`, `system/source/misc/StringUtil` (2) | **0** | PLATFORM_LINUX branches |
+| `system/source/serialise/FilePath`, `debug/log/Format` (2) | **0** | |
+| `system/source/io/IoFile` | 1 | `ArteryThreadHandle` undefined in the pthreads branch |
+| `core/source/threads/Semaphore` | 1 | `-Wc++11-narrowing`, a real C++11 ill-formedness |
+| `system/source/network/Address` | 14 | `struct in_addr` incomplete — network stack |
 
-**15 / 24 TUs compile; the 9 failures carry 87 errors.** Grouped by cause (an
-explicit classification of every one of the 87 diagnostics):
+**Aggregate: 39 distinct engine TUs, 30 compile, 9 fail, 44 errors.** Two of the
+nine failures are the Xenon kernel TUs (13 of the 44), so the portable subset is
+**30 / 37 at 31 errors**.
 
-| Cause | Errors | Share |
-| --- | --- | --- |
-| `tl_*` platform identity (`tlThreadHandle`, `tlThreadFunction`, `tl_threadlocal`, `TL_THREAD_*`, `jqModule`, the two `#error`) | 63 | 72 % |
-| Win32 types/APIs (`HANDLE`, `SYSTEM_INFO`, `WaitForSingleObject`, `ResumeThread`, `CloseHandle`, `WAIT_OBJECT_0`, `FALSE`) | 11 | 13 % |
-| PS3/pthread branch (`sys_lwmutex_*`, `CELL_OK`, `SYS_SYNC_RECURSIVE`, `pthread_key_t`) | 8 | 9 % |
-| Engine symbols outside the identity (`JQ_CORE_0`, `Task` shadowing, 2 cascading `expected ';'`) | 4 | 5 % |
-| MSVC secure CRT (`_vsnprintf_s`) | 1 | 1 % |
+## 4. Step 1 — the `core/Maths.h` gate (resolved)
 
-`Mutex.cpp` is not identity-gated: it is a genuinely wrong compiler branch
-(`#if !defined(COMPILER_VC)` means "PS3", `core/source/threads/Mutex.cpp:52-100`),
-so it fails on *any* non-MSVC target.
+### 4.1 Measurement ladder (`Vector.cpp`, identical for all 5 maths TUs)
 
-## 4. The `core/Maths.h` gate, resolved
-
-### 4.1 The measurement ladder (`Vector.cpp`, identical for all 5 maths TUs)
-
-| Configuration | shim (`-include`) | overlay | errors |
+| Configuration | shim | overlay | errors |
 | --- | --- | --- | --- |
 | no compat flags | yes | no | 41 |
-| `-D__restrict=` | yes | **yes** | 14 |
-| `-fdelayed-template-parsing` | yes | **yes** | 21 |
-| `-fms-extensions` | yes | **yes** | 36 |
+| `-D__restrict=` | yes | yes | 14 |
+| `-fdelayed-template-parsing` | yes | yes | 21 |
+| `-fms-extensions` | yes | yes | 36 |
 | `-fdelayed-template-parsing -D__restrict= -fdeclspec` | **no** | no | 7 |
 | that, + shim | yes | no | 5 |
 | that, + shim, `-std=c++17 -Wno-register` | yes | no | 2 |
-| that, + shim | yes | **yes** | **0** |
+| that, + shim | yes | yes | **0** |
 
 Rows 2-4 include the overlay so that cause B (which every one of them hides)
-does not mask the effect of the flag being measured; their residuals are
-therefore "whatever that single flag does *not* fix".
+does not mask the effect of the flag being measured. The `7` row reproduces
+`engine-wasm-probe.md` §3.2 exactly on the same TU.
 
-The `7` row reproduces `engine-wasm-probe.md` §3.2 exactly on the same TU (the
-earlier probe reported 11 because probe-own usage added 4), so the
-configurations are comparable.
+`-std=c++17` fixes only 3 of the 5 remaining errors and introduces a `register`
+error class (`Geometry.inl:1455-1456`), so it was rejected; C++14 is used.
 
-`-std=c++17` fixes only 3 of the 5 remaining errors and introduces a new error
-class — `register` is a hard error in C++17, observed at `Geometry.inl:1455-1456`
-and textually present in `core/utility/hash.h:86,138`. It is not the right lever,
-and it is not needed.
+### 4.2 Root causes
 
-### 4.2 Root causes of the 7-error gate (2 causes, 7 sites)
-
-**Cause A — `__fsel` has no platform branch (`MathsUtil.h:1499-1500`).**
-Those two lines have *no* guard at all, while the only software definition the
-engine ships is compiled for `PLATFORM_PC || PLATFORM_SPU`
-(`MathsUtil.h:412-414`). Shimmed with a macro whose body is that same
-expression, so the behaviour is the engine's own:
-
-```c
-#define __fsel(cmp, a, b) (((cmp) >= 0.0f) ? (a) : (b))
-```
+**Cause A — `__fsel` has no platform branch (`MathsUtil.h:1499-1500`).** Those
+two lines have no guard at all while the only software definition the engine
+ships is compiled for `PLATFORM_PC || PLATFORM_SPU` (`MathsUtil.h:412-414`).
+Shimmed with a macro whose body is that same expression.
 
 **Cause B — a cv-qualified conversion-operator return type (5 sites).**
-`Vector.inl:6917/7484/8090` (`return (MathsStorage::Float3)m_V;`) and
-`Geometry.inl:1217/1218` (`rtn.vmin = m_Min;`) all route through
-`operator const MathsStorage::Float3() const`. clang refuses to use a conversion
-function whose result type is cv-qualified **when the result has to be copy-
-initialised**, and MSVC accepts it. Reproduced without any engine header:
+`Vector.inl:6917/7484/8090` and `Geometry.inl:1217/1218` route through
+`operator const MathsStorage::Float3() const`. clang will not use a conversion
+function whose result type is cv-qualified when the result must be
+copy-initialised; MSVC accepts it. Proven without any engine header:
 
 ```text
-probes/repro_lang.cpp          operator const F()  -> c++14: 3 errors, c++17: 0
-probes/repro_lang_nocv.cpp     operator       F()  -> c++14: 0 errors
-probes/repro_lang_assign.cpp   `out = s;` with `operator const F()`
-                               -> c++14: 2 errors, c++17: 1 error
-probes/repro_lang_assign_nocv.cpp                 -> both: 0 errors
+probes/repro_lang.cpp              operator const F()  c++14: 3 errors, c++17: 0
+probes/repro_lang_nocv.cpp         operator       F()  c++14: 0
+probes/repro_lang_assign.cpp       `out = s;`          c++14: 2, c++17: 1
+probes/repro_lang_assign_nocv.cpp                     both: 0
 ```
 
-So: dropping `const` from the return type fixes the *return* form and the
-*assignment* form at every language level; `-std=c++17` fixes only the return
-form. The proof in the engine is the `final_maths` run: 5/5 TUs, 0 errors, with
-7 declarations and 7 definitions changed (the 4 `Float3` pairs are the error
-sites; the 3 `Fixed3_S16` pairs were identical declarations and were changed so
-the header stays consistent), and nothing else.
-
-Semantic impact: **none**. The cv-qualification of a returned prvalue is not
-observable, and C++17 already ignores it. This is a grammar fix, not a behaviour
-change.
+Dropping `const` fixes the return form *and* the assignment form at every
+language level; `-std=c++17` fixes only the return form. 7 declarations + 7
+definitions changed. Semantic impact: **none** (cv-qualification of a returned
+prvalue is not observable, and C++17 already discards it).
 
 **Cause C — the `#ifndef PLATFORM_LINUX` guard (48 of `Mat44.cpp`'s 77 errors).**
 A non-Windows build falls through `Core.h:181-191` to `PLATFORM_LINUX`, and
-`MathsUtil.h:410` gates `Clamp`, `ClampSigned`, `SetClamp`, `Wrap`, `AddWrap`,
-`SubWrap` behind `#ifndef PLATFORM_LINUX`. This cannot be shimmed without
-duplicating engine definitions (the bodies call `Clamped`, which does not exist
-yet at prelude time), and duplicating them would be a silent fork. It is a
-one-line guard change:
+`MathsUtil.h:410` gates `Clamp`/`ClampSigned`/`Wrap`/... behind
+`#ifndef PLATFORM_LINUX`. It cannot be shimmed without duplicating engine
+definitions, so it is a one-line guard change. With it plus `_isnan`,
+`Mat44.cpp` goes **77 → 0**.
 
-```c
-#if !defined( PLATFORM_LINUX ) || defined( PLATFORM_WEB )   // MathsUtil.h:410
-```
+## 5. Step 2 — the platform identity (landed)
 
-With that guard + the `_isnan` mapping, `Mat44.cpp` goes **77 → 0**.
+### 5.1 Five edits and two new headers
 
-## 5. Shim inventory and semantic impact
+| Site | Change | Why |
+| --- | --- | --- |
+| `system/scheduler/core/mercury_to_tl.h:8-10` | `+ #elif defined(PLATFORM_WEB) → #define TL_PLAT_WEB 1` | the mapping only knew SPU/PS3/PC |
+| `system/scheduler/core/tl_defs.h:9` | sentinel sum `+ defined(PLATFORM_WEB)` | `#error TL_PLAT_XXX platform specification is missing` |
+| `system/scheduler/core/tl_thread.h` | body wrapped `#if TL_PLAT_WEB → tl_thread_web.h → #else → (upstream unchanged)` | every `tl_*` type and function was missing |
+| `system/scheduler/jobqueue.h:61-67` | `+ #elif TL_PLAT_WEB → #include "jobqueue_web.h"` | the `#else` reaches the stale `jobqueue_generic.h` |
+| `core/maths/MathsUtil.h:410` | `#if !defined(PLATFORM_LINUX) \|\| defined(PLATFORM_WEB)` | cause C above (still needed in this configuration) |
 
-| Shim entry | File | Origin | Semantic impact |
+The first version of this document listed `core/Core.h:181` in that table
+instead of `jobqueue.h:61-67`. That edit was built and measured; §5.2 shows why
+it was dropped.
+
+New, types-only headers (in `_work/engine-web-spike/shims/`, copied into the
+overlay):
+
+- **`tl_thread_web.h`** — `tlThreadHandle`/`tlThreadId` as `U64`,
+  `tlThreadPriority` as a *total order only* (no OS mapping is invented),
+  `tlThreadFlags`, `tlThreadFunction`, `TL_THREAD_FUNCTION`/`TL_THREAD_RETURN`,
+  `tl_threadlocal` → `thread_local`. Behaviour, per T-005c §3.2:
+  - `tlCreateThread` returns `0` (the invalid handle) and increments a refusal
+    counter; it never runs the entry inline (every entry point is a forever-loop).
+  - `tlWaitForThread` and `tlExitThread` abort through `tlWebUnsupported()`
+    (stderr + `abort()`), never an infinite wait, never a silent `return 0`.
+  - `tlSleep` is a logged no-op with a counter (design §3.6.2: never
+    `Atomics.wait`, which throws on the browser main thread).
+- **`jobqueue_web.h`** — the sibling of `jobqueue_xenon.h` with no `windows.h`
+  and `_jqWorker::Thread` as `tlThreadHandle` instead of `HANDLE`.
+  `jqProcessor` values are copied verbatim from `jobqueue_xenon.h:18-26`.
+
+`shims/web_runtime.cpp` defines the two fail-loud hooks (`tlWebUnsupported`,
+the counters). That is the whole web platform layer: **no engine behaviour is
+implemented, and nothing pretends to be parallel.**
+
+### 5.2 `PLATFORM_LINUX` must stay — measured, and it reverses the T-005a proposal
+
+T-005a §5.1 (and the first version of this document) proposed replacing
+`PLATFORM_LINUX` with a `PLATFORM_WEB` branch in `core/Core.h:181`. That was
+built and measured (`make_patched_copy.py --web-branch full`) and it is **worse**:
+
+| TU | `alias` (PLATFORM_WEB + PLATFORM_LINUX) | `full` (PLATFORM_LINUX removed) |
+| --- | --- | --- |
+| `system/source/io/IoFile.cpp` | 1 error | **41 errors** |
+| `system/source/serialise/FilePath.cpp` | 0 | **2** |
+| `jobqueue.cpp` / `jobqueue_kernel.cpp` | 0 / 0 | 0 / 0 |
+| all maths TUs | 0 | 0 |
+
+`PLATFORM_LINUX` is the engine's *POSIX* label, not an OS choice: `StringUtil`,
+`CpuInfo`, `FilePath.inl`, `ArterySync.h` and the `artery/*` sources all take
+their portable branch from it. Removing it turns a working POSIX path into "no
+branch". The honest identity for wasm32 is therefore "POSIX fallback + explicit
+web backend", and renaming `PLATFORM_LINUX` → `PLATFORM_POSIX` is a separate
+refactor, not a prerequisite.
+
+### 5.3 What the identity fixed
+
+`#error TL_PLAT_XXX` and `#error This module is only implemented for PC, Xenon
+and Playstation3` are gone, and so is the entire `tl_*` symbol family
+(`tlThreadHandle` ×24, `tlThreadFunction` ×12, `TL_THREAD_*` ×12,
+`tl_threadlocal` ×2, `Scheduler::jqModule` ×1 — 63 of the 87 step-1 errors).
+`jobqueue.cpp`, `jobqueue_kernel.cpp`, `Inflate.cpp` and `serialiser.cpp` —
+T-005c's A1 gate — now compile with zero errors. They need the same
+compatibility mode as every other TU (`-fdelayed-template-parsing
+-D__restrict= -fdeclspec`) but no *per-TU* workaround: no fake `tl_*` define, no
+`windows.h` stand-in, no scheduler type stub. The only new input is the two type
+headers above plus `shims/web_platform.h`.
+
+## 6. Source edits the shim layer cannot replace
+
+`patched/CHANGES.txt` is the authoritative manifest (39 token substitutions in
+12 headers plus 4 in 2 patched `.cpp` files). Grouped by kind:
+
+| Kind | Files | Occurrences | Nature |
 | --- | --- | --- | --- |
-| `PLATFORM_WEB` | `web_platform.h` | new build identity | none by itself; `Core.h` still defines `PLATFORM_LINUX` too (see §8.1) |
-| `__fsel(cmp,a,b)` | `web_platform.h` | body copied from `MathsUtil.h:413` | **none** — identical expression, macro instead of `inline` only because the engine's `F32`/`INLINE` do not exist yet |
-| `_TRUNCATE` | `crt_compat.h` | copied from `Core.h:724` (`PLATFORM_PC`) and `:500` (`PLATFORM_PS3`) | none — same value `((size_t)-1)` |
-| `_isnan(x)` → `isnan(x)` | `crt_compat.h` | MSVC CRT name | none — same predicate; 29 sites in `Mat44.cpp`, 137 in `physics/gravity` (T-005a) |
-| `_finite` | **deliberately absent** | `Core.h:355` already defines it for `COMPILER_GNU` | defining it here caused a `-Wmacro-redefined`; removed |
-| `_vsnprintf` | **deliberately absent** | not reached without `PLATFORM_PC` — every TU in §3 compiled without the `-D_vsnprintf=vsnprintf` that T-005a needed | — |
-| `_vsnprintf_s` | **deliberately absent** | MSVC secure CRT returns `-1` and empties the buffer on truncation; `vsnprintf` returns the would-be length | **would change semantics**; left unfixed (1 site, `BizAssert.cpp:66`) |
+| cv-qualified conversion operator | `Vector.h`, `Vector.inl` | 14 | grammar |
+| `typename` on a dependent using-declaration | `sortedbinarytree.h`, `btl/containers/map.h` | 5 | grammar |
+| unqualified name from a dependent base | `sortedbinarytree.h`, `.inl` | 9 | grammar |
+| `friend class X::Y` where `Y` is a typedef | `sortedbinarytree.h` | 1 | grammar |
+| platform identity (step 2) | 4 scheduler files | 4 | platform |
+| `Clamp` guard (step 2) | `MathsUtil.h` | 1 | platform |
+| PPC trap → `__builtin_trap()` | `Core.h` (`snPause`) | 1 | codegen-level translation |
+| dead POSIX branches made real | `Event.cpp`, `Mutex.cpp` | 4 | platform |
+| `Mutex` forward declaration | `Event.h` | 1 | grammar |
 
-Two *compiler modes* are part of the shim layer in the sense that they cannot be
-avoided by source edits alone, but they are not engine code:
+Two of these deserve their own note:
 
-| Mode | Effect | Semantic impact |
-| --- | --- | --- |
-| `-fdelayed-template-parsing` | MSVC-style two-phase lookup. With `-D__restrict=` it is the difference between 14 errors and 0. It clears 12 `no viable conversion from returned value of type 'const Vector3_Bool' to function return type 'const S32'` — a second instance of cause B, which 12 more `const` removals would also clear | none on generated code; it defers name lookup, it does not reinterpret expressions |
-| `-D__restrict=` | removes the `restrict` qualifier everywhere. Alone it leaves 14 errors; together with `-fdelayed-template-parsing` it leaves 0. Without it (keeping `-fdelayed-template-parsing`) the 4 `'restrict' qualifier is not allowed on a constructor` sites plus 17 follow-on ambiguity errors remain (`Vector2_Bool`, `HF32`, `HVec4::operator*=`) | none observable — `restrict` is an aliasing hint, so this can only cost performance. It is a **workaround, not a fix**: the port should eventually delete `__restrict` from those declarations |
-| `-fdeclspec` | enables `__declspec(novtable)` (`Core.h:254`) | none; needed by 1 TU (`jobqueue_kernel_xenon.cpp`) |
+- **`Core.h:795` `snPause()` emits `tw 31,1,1`.** `DebugBreak()` expands to it
+  and wasm has no encoding for that instruction: `invalid instruction` at
+  `jobqueue.cpp:461`. It only appears when compiling to an **object** — every
+  `-fsyntax-only` probe in T-005a and in §3 above is blind to it. The web
+  translation is `__builtin_trap()`, i.e. wasm `unreachable`: identical contract
+  (halt here, unconditionally), no debugger break. Not a stub.
+- **The engine's non-Windows branches were never compiled.** `Event.cpp`'s
+  `#elif !defined(COMPILER_VC)` body calls `Mutex::Handle()` without including
+  `Mutex.h`, and `Mutex.cpp`'s `Lock` class has no POSIX branch at all (it keys
+  the PS3 body on the *compiler*). `ArterySync.h` defines `ArteryThreadHandle`
+  for Win32 and PS3 only, yet selects `ARTERY_SYNC_PTHREADS` for
+  `PLATFORM_LINUX`. These are dead code paths, not port damage, and each is a
+  small explicit fix (`patched/src/{Event,Mutex}.cpp` in the overlay).
 
-## 6. Source edits the shim cannot replace (21 tokens, 6 headers)
+## 7. What links and runs
 
-Reproduced by `make_patched_copy.py`; `patched/CHANGES.txt` is the manifest.
-The overlay is byte-identical to upstream everywhere else.
+### 7.1 Two modules from step 1 (unchanged by step 2)
 
-| File | occurrences | change |
-| --- | --- | --- |
-| `core/maths/hvec/Vector.h` | 4 | `operator const MathsStorage::Float3` → `operator MathsStorage::Float3` |
-| `core/maths/hvec/Vector.inl` | 4 | same, in the definitions |
-| `core/maths/hvec/Vector.h` | 3 | `operator const MathsStorage::Fixed3_S16` → drop `const` |
-| `core/maths/hvec/Vector.inl` | 3 | same, in the definitions |
-| `core/maths/MathsUtil.h:410` | 1 | guard: `\|\| defined( PLATFORM_WEB )` |
-| `core/containers/sortedbinarytree.h` | 4 | `using Base::InsertionReturnType;` → `using typename ...` |
-| `btl/containers/map.h:41` | 1 | same |
-| `btl/containers/sortedbinarytree.inl:388` | 1 | `BalanceInsertedItem(pp);` → `Base::BalanceInsertedItem(pp);` |
+| Module | Objects | wasm `-O2` | SHA-256 (16) | Output |
+| --- | --- | --- | --- | --- |
+| `spike_maths.js/.wasm` | `Vector, Constants, SIMD, Matrix, Quaternion` + driver | **11,413 B** | `4DFB1FD8A56D22E9` | `maths_checksum=732`, `inverse_diag_x100=50 25 20 100` |
+| `spike_time.js/.wasm` | `Time.cpp`, `endian.cpp` + driver | **10,397 B** | `34288F7DBF51E7ED` | `perf_counter_positive=1`, `perf_counter_freq=1000000` |
 
-The `typename`/`Base::` group is ordinary ISO C++ that MSVC's permissive mode
-accepted. None of the 21 tokens changes a value, an offset or a numeric
-expression.
+Both were executed twice under node 24.19.0 with identical output. The values
+match hand calculation (`a+b=(5,7,9)`, `a×b=(-3,6,-3)`, `diag(2,4,5,1)⁻¹ =
+diag(0.5,0.25,0.2,1)`), and the inverse comes from `Matrix44InverseCramersRuleFP`,
+which is out-of-line in `Matrix.cpp`, so engine object code really executed.
+Size caveat: `Vector.cpp` is a 6.6 KB commented-out TU (347 B object); most of
+the executed maths is inline header code, so 11,413 B is *not* an engine size.
 
-## 7. What linked and ran
+### 7.2 The scheduler: 16 objects compile, the link is blocked by logging only
 
-Two modules were linked from **real engine objects** and executed twice each
-under node 24.19.0. `deterministic=True` means both runs printed identical
-output.
+All 16 objects below compile at `-O2` (62,013 B of wasm object code total):
 
-| Module | Objects | wasm `-O2` | SHA-256 (16) | Output | Check |
-| --- | --- | --- | --- | --- | --- |
-| `spike_maths.js/.wasm` | `Vector, Constants, SIMD, Matrix, Quaternion` + driver | **11,413 B** | `4DFB1FD8A56D22E9` | `maths_checksum=732`, `inverse_diag_x100=50 25 20 100` | both values computed by hand from the same operands |
-| `spike_time.js/.wasm` | `Time.cpp`, `endian.cpp` + driver | **10,397 B** | `34288F7DBF51E7ED` | `perf_counter_positive=1`, `perf_counter_freq=1000000` | frequency matches `system/time/Time.h:48` |
-
-Exact link command (objects from `_work/engine-web-spike/out/obj/`):
-
-```powershell
-& $py _work/toolchains/emsdk/upstream/emscripten/em++.py `
-  spike_maths_Vector.o spike_maths_Constants.o spike_maths_SIMD.o `
-  spike_maths_Matrix.o spike_maths_Quaternion.o spike_maths_smoke_maths.o `
-  -sENVIRONMENT=node -o _work/engine-web-spike/out/spike_maths.js
-& _work/toolchains/emsdk/node/24.19.0_64bit/node.exe _work/engine-web-spike/out/spike_maths.js
-# maths_checksum=732
-# inverse_diag_x100=50 25 20 100
+```text
+jobqueue.o                   10,803 B   jobqueue_kernel.o             2,293 B
+jobqueue_task_queue_lf.o      1,980 B   jobqueue_mem.o                  686 B
+Thread.o                      2,519 B   RwLock.o                      1,061 B
+CoreMemoryAligned.o             608 B   Time.o                        5,594 B
+LogManager.o                 11,350 B   Logger.o                      7,356 B
+Format.o                      7,545 B   DebugLevel.o                  1,405 B
+Event.o (patched copy)        1,499 B   Mutex.o (patched copy)        2,008 B
+sched_web.o (spike backend)   3,086 B   smoke_sched.o (driver)        2,220 B
 ```
 
-`732 = 5 + 70 + 900 + (-3) + 60 + (-300)` for `a=(1,2,3)`, `b=(4,5,6)`:
-`a+b = (5,7,9)`, `a×b = (-3,6,-3)`. `Matrix44InverseCramersRuleFP` inverts
-`diag(2,4,5,1)` to `diag(0.5,0.25,0.2,1)`. That function is **out-of-line in
-`Matrix.cpp`** (`Matrix.o` = 9,647 B, symbol
-`_ZN5Maths28Matrix44InverseCramersRuleFPEPKfPf`), so its correct output proves
-engine object code was linked and executed, not inlined away.
+The link reports **exactly 11 undefined symbols in 6 classes, all in the logging
+subsystem**:
 
-Caveat that must stay attached to the size number: `Vector.cpp` is 6,671 bytes
-of almost entirely commented-out code, so `Vector.o` is 347 B. Most of the
-executed maths is **inline engine header code** expanded into the driver TU.
-`Matrix.cpp` (673 live lines) is the only TU in the link with substantial
-object code. 11,413 B is therefore "maths core + libc printf + runtime", not a
-measurement of the engine.
+```text
+Debug::ConsoleSubscriber::{ctor,dtor}       Debug::LogFileSubscriber::{ctor,dtor}
+Debug::SocketSubscriber::{ctor,dtor}        Debug::SocketServerSubscriber::{ctor,dtor}
+Debug::EMailSubscriber::{ctor,dtor}         Network::GetHostName()
+```
 
-Link closure observations:
+No scheduler-side symbol is missing. `LogManager` constructs all five
+subscribers unconditionally, so the logger reaches the socket stack and SMTP
+before any job can run; `Address.cpp` itself does not compile (14 errors,
+`struct in_addr` incomplete). `run_spike.py` compares this set against the
+recorded expectation, so a change on the scheduler side fails the run.
 
-- The maths core has **no external link closure at all**: no allocator, no
-  `Debug::` logger, no assert handler. zlib's wrapper needed `Debug::`
-  (T-005a §3.4); the maths TUs need nothing.
-- `Time.cpp` also linked with no closure, but its `GetPerformanceCounter()` is
-  `GetCurrentTime()` (`Time.cpp:86-93`) — a **wall clock**, not a monotonic
-  counter. That is a real semantic caveat for T-005c §3.1 `platform/time`, not
-  a compile problem.
+`shims/sched_web.cpp` is the backend the design asks for (without it `_Init`,
+`_Start`, `Flush`, `_AddTask`, `jqExecuteBatch` … were undefined). It implements
+`_Init` (`jqMaxWorkers=0`), `_Start` (no contexts), `_jqStop`, `_AddTask`,
+`jqAlertWorker`, `jqWorkerSleep`→`false`, a plain batch-pool counter, and `Flush`
+as an inline drain that **ignores `bRunJobs`** (the documented deviation) and
+aborts on a `JQ_GROUP_LABEL`/`JQ_GROUP_SPURWLOCK` dependency.
+`probes/smoke_sched.cpp` drives `CreatePolicy → Init → Start → AddTask → Flush →
+Poll → Shutdown` but **cannot be run yet** — it links only once the logging
+blocker is gone.
+
+No new `.wasm` exists, so no new size is claimed for the scheduler.
 
 ## 8. Remaining blockers, ordered by cost
 
-Cheapest first. "Cost" = files and decisions, not lines.
-
-### 8.1 Identity is not a shim problem — it is 5 edits plus a type layer (63 / 87 errors)
-
-`PLATFORM_WEB` currently means `PLATFORM_LINUX` *and* `PLATFORM_WEB`, because
-`Core.h:162-191` has no web branch. That double identity is what makes the
-maths helpers and the PCH behave differently at the same time, and it is the one
-thing this spike could not fix from outside. The minimum source work:
-
-| Site | Change |
-| --- | --- |
-| `core/Core.h:181` | add `#elif defined(PLATFORM_WEB)` before the `#else` that defines `PLATFORM_LINUX` (`WORD_SIZE 32`, no `PLATFORM_LINUX`) |
-| `core/maths/MathsUtil.h:410` | `#if !defined( PLATFORM_LINUX ) \|\| defined( PLATFORM_WEB )` |
-| `system/scheduler/core/mercury_to_tl.h:8-10` | add `#elif defined(PLATFORM_WEB)` → `#define TL_PLAT_WEB 1` |
-| `system/scheduler/core/tl_defs.h:9` | add `+ defined(PLATFORM_WEB)` to the sentinel sum |
-| `system/scheduler/core/tl_thread.h:15` | add `+ TL_PLAT_WEB`; add a `TL_PLAT_WEB` branch for `tlThreadHandle`, `tlThreadId`, `tlThreadPriority`, `tlThreadFlags` |
-
-Then `tl_thread.h` needs the ~20 `tl_*` functions. T-005c §3.2 already specifies
-their single-context contract (`tlCreateThread` returns an invalid handle and
-records the request, `tlWaitForThread` is a named fatal assert). That part is
-**engine implementation work, not shim work**, and it is why this document stops
-here.
-
-**Correction to T-005a §3.3:** the Windows PCH (`windows.h`/`winsock2.h`) is
-**not** an independent blocker. `SystemPch.h:17-24` gates both headers on
-`PLATFORM_PC`; with `PLATFORM_WEB` they disappear, which is why `Time.cpp`
-(a `SystemPch.h` TU) compiles and links. The PCH was only fatal while the build
-claimed to be PC.
-
-### 8.2 The Xenon kernel TUs should not be ported at all (25 errors)
-
-`jobqueue_xenon.cpp` + `jobqueue_kernel_xenon.cpp` carry 11 Win32
-types/APIs, `JQ_CORE_0` (`jobqueue_xenon.cpp:81`), a `Scheduler::Task` vs
-`struct Task` shadowing (`jobqueue_kernel_xenon.cpp:27`) and `__declspec`.
-Porting them would mean emulating a Windows thread pool on a single-context
-target. This is direct evidence for the T-005c §3.4 decision to add
-`jobqueue_web.cpp` instead. Cost: replacing two files with one, already designed.
-
-### 8.3 `Mutex.cpp` and `ThreadLocalStorage.cpp` (8 errors)
-
-`core/source/threads/Mutex.cpp:52-100` selects PS3 syscalls whenever the
-compiler is not MSVC. The guard should test the platform, not the compiler, and
-then a web mutex type is still required (T-005c §3.3: no-op with a debug
-counter, assert on any blocking wait). `ThreadLocalStorage.cpp` needs
-`pthread_key_t` (or the same web branch). Cost: two files, one semantic
-decision already taken by the design.
-
-### 8.4 `_vsnprintf_s` (1 error)
-
-`BizAssert.cpp:66`. The MSVC secure variant has a different truncation contract
-than `vsnprintf`, so a name alias would be a silent semantic change. Needs either
-a documented wrapper implementing the MSVC contract, or a `PLATFORM_WEB` branch
-at that call site. Cost: 1 site. **Not** a blocker for anything else.
-
-### 8.5 DX11 / FX11 — untouched, and the largest unknown
-
-Not measured by this spike at all. T-005a's inventory stands: 442 D3D11/FX11
-matches in `graphics/display`, 43 in `display2`, 33 in `render`. This is a
-renderer backend project, not a compile problem, and it is the only remaining
-blocker on this list whose cost is not yet bounded.
-
-### 8.6 Scheduler module types
-
-`Scheduler::jqModule` (1 error, `Inflate.cpp`) and the `jqModule`-shaped
-`jobqueue_*` selection are downstream of 8.1, not separate: `jobqueue.h:61-67`
-selects a platform header by `TL_PLAT_*`, and with no identity it selects none.
+1. **`platform/log` — the last thing between the scheduler and a running job.**
+   `LogManager` registers five subscribers (console, file, socket, socket-server,
+   SMTP) by default; wasm needs a documented default set (console only) selected
+   by platform, plus a decision on whether `LogFileSubscriber` is wanted at all.
+   This is an engine decision, not a shim: faking `Debug::GetLogger` would change
+   which logging exists. Cost: 1 platform branch in `LogManager.cpp` (+1 file per
+   subscriber that is kept). **Blocks: every TU that calls `Debug::GetLogger` or
+   a `LOG*` macro** — job queue, physics, streaming, audio — i.e. any real engine
+   module, but not `Time.cpp` or the maths core.
+2. **The dead POSIX branches (6 sites).** `Event.cpp` (2 edits) and `Mutex.cpp`
+   `Lock` (2 edits) are already fixed in the overlay; `ArterySync.h`
+   `ArteryThreadHandle` for `ARTERY_SYNC_PTHREADS` (`IoFile.cpp`),
+   `Semaphore.cpp:128` `-Wc++11-narrowing`, and
+   `ThreadLocalStorage.h:111` `pthread_key_t` are not. Each is a small explicit
+   fix; none is a design decision.
+3. **The network stack** (`system/source/network/Address.cpp`, 14 errors:
+   `struct in_addr` incomplete; `Network::GetHostName` in the logger's static
+   init). Either fix the include or make the host name platform-provided.
+   Cost: unknown, first real look at the network layer.
+4. **`_vsnprintf_s`** (`BizAssert.cpp:66`, 1 error). MSVC's secure variant has a
+   different truncation contract than `vsnprintf`, so a name alias would be a
+   silent semantic change. Cost: 1 wrapper or 1 call-site branch.
+5. **`jobqueue_web.cpp` proper** — the spike backend exists but policy
+   **flattening is not implemented** (T-005c §3.5). With one context and the game
+   table, `piStreamer = {0,0,7,7,7,7,7,7}` is never popped and `Flush` on that
+   group cannot terminate. The fix belongs in `CreatePolicy`
+   (`jobqueue.cpp:485`), which is shared code. The smoke uses a column-uniform
+   policy and therefore does **not** exercise the defect.
+6. **DX11 / FX11** — untouched by both steps. T-005a's inventory still stands
+   (442 D3D11/FX11 matches in `display`, 43 in `display2`, 33 in `render`). This
+   is the only blocker whose cost is not bounded.
 
 ## 9. The single next smallest step
 
-**Add the `PLATFORM_WEB`/`TL_PLAT_WEB` identity, in a task branch, without
-implementing any thread behaviour.** Concretely: the five edits in §8.1, plus a
-`tl_thread_web.h` that contains only the *type* layer (`tlThreadHandle` as `U64`,
-`tlThreadId`, `tlThreadPriority`, `tlThreadFlags`) and the design's
-"refuse loudly" spawn contract — no scheduler edits, no `jobqueue_web.cpp` yet.
+**Give `platform/log` a web default so the scheduler module links.** Concretely:
+a `PLATFORM_WEB` branch in `system/source/debug/log/LogManager.cpp` that
+registers only the console subscriber, and `Network::GetHostName()` answered from
+the platform layer instead of the socket stack. No subscriber is deleted; the
+socket/SMTP ones are simply not constructed on a target that has no sockets.
 
-Acceptance, using the harness that already exists:
+Acceptance, with the harness that already exists:
 
 ```powershell
-& $py _work/engine-web-spike/build_probe.py after_identity sched `
-    -DPLATFORM_WEB -fdelayed-template-parsing -D__restrict= -fdeclspec
-# expect jobqueue.cpp 11 -> 0 and jobqueue_kernel.cpp 11 -> 0
+& $py _work/engine-web-spike/run_spike.py
+# expect: scheduler link  compiled=16 link=ok  missing=0
+# and   : ran=1 / job_result=42 / queued=0 executing=0 poll=1 / workers=0 max_workers=0
 ```
 
-Why this one: it retires 63 of the 87 remaining diagnostics (72 %) and it is the
-only step that unblocks T-005c's A1 gate (`jobqueue.cpp`, `Inflate.cpp`,
-`serialiser.cpp`) and every `MT::` consumer behind it. The two cheaper items
-(§8.4, §8.3) unblock one TU each and nothing else.
+Why this one: it is the only remaining symbol group, it turns the 16 compiled
+objects into the first executable scheduler in the project, and it is the same
+`platform/log` item that T-005a §3.4 already found in zlib's link closure — so
+it pays twice. The alternative order (finish the dead-branch TUs and the network
+stack first) would unblock at most four TUs and still leave the module
+unlinkable.
 
 ## 10. What this does not prove
 
-- No browser, GPU, WebGPU, audio or input behaviour was exercised. No screenshot
-  exists because nothing was rendered.
-- No engine module beyond the maths core, `Time` and `endian` was linked, and
-  `Vector.cpp` is an empty TU, so the 11,413 B figure is **not** an engine size.
-- No runtime behaviour of `MT::Thread`, `MT::Mutex` or the scheduler was
-  measured. `Thread.cpp` compiles against the POSIX branch
-  (`Thread.cpp:31-37`); whether emscripten's thread stubs without `-pthread`
-  would make `MT::Thread::Start/Join` silently no-op was **not** tested, and it
-  is a real risk for the T-005c "must assert, never silently pass" rule.
-- Error counts are front-end diagnostics, not defect counts; clang stops inside
-  a cascading header.
-- The overlay proves the 21 tokens are *sufficient*; it does not prove they are
-  *accepted* by the MSVC native build (`/W4`, `/permissive`). That has to be
-  checked in the phase that owns the source.
-- `-std=c++17` was measured and rejected (§4.1); C++14 is used throughout.
-  Whether the remaining roughly 1.2 MLOC of engine and game source behaves under
-  C++14 once the identity exists is unknown.
+- No browser, GPU, WebGPU, audio or input behaviour was exercised; nothing was
+  rendered, so there is no screenshot.
+- **The scheduler was never executed.** Its module does not link yet. Every
+  claim about `Flush`/`jqWorkerLoop` behaviour in `shims/sched_web.cpp` is
+  design-derived and unverified at runtime.
+- No engine module beyond maths, `Time`, `endian` was linked, and `Vector.cpp` is
+  empty, so 11,413 B is not an engine size.
+- `MT::Thread`/`MT::Mutex`/`MT::Event` runtime behaviour was not measured.
+  `Thread.cpp` compiles against its POSIX branch; whether emscripten's thread
+  stubs without `-pthread` make `MT::Thread::Start/Join` silently no-op was not
+  tested — a live risk for the "must assert, never silently pass" rule.
+- `-fsyntax-only` hides codegen-level problems (that is how `snPause` survived
+  every syntax-only run in §3). Only the 16 scheduler objects and the two smoke
+  modules were compiled to objects; the rest were syntax-checked only.
+- The overlay proves the edits are *sufficient* for clang; it does not prove the
+  MSVC native build accepts them (`/W4`, `/permissive`). That must be checked in
+  the phase that owns the source.
+- Error counts are front-end diagnostics, not defect counts.
 - SSE/`_SSE2_` paths were not exercised; the scalar path is what compiled.
 
 ## 11. Evidence index
@@ -408,15 +424,21 @@ All hashes are SHA-256 prefixes of files produced by this session.
 
 | Path | Size | SHA-256 (16) | Content |
 | --- | --- | --- | --- |
-| `_work/engine-web-spike/run_spike.py` | 6,870 | `7AD9876F3020D385` | one-command reproduction |
-| `_work/engine-web-spike/build_probe.py` | 8,426 | `6601F264CA22CC28` | TU driver (sets, logs, JSON) |
-| `_work/engine-web-spike/shims/web_platform.h` | 2,096 | `A7198FD1C5E31250` | platform identity + `__fsel` |
+| `_work/engine-web-spike/run_spike.py` | 11,482 | `02943D3C580A52BC` | one-command reproduction |
+| `_work/engine-web-spike/build_probe.py` | 10,199 | `3C0C52B9D2FDB13C` | TU driver (sets, logs, JSON) |
+| `_work/engine-web-spike/make_patched_copy.py` | 16,589 | `1FAF9D883E0C5674` | overlay generator + manifest |
+| `_work/engine-web-spike/patched/CHANGES.txt` | 8,336 | `E6D910CA052FCCD4` | the authoritative edit list (39 tokens) |
+| `_work/engine-web-spike/shims/web_platform.h` | 2,096 | `A7198FD1C5E31250` | identity + `__fsel` |
 | `_work/engine-web-spike/shims/crt_compat.h` | 1,366 | `5534EA7E53074EB7` | `_TRUNCATE`, `_isnan` |
-| `_work/engine-web-spike/patched/CHANGES.txt` | 1,972 | `F9A67FE4B9189848` | overlay manifest (21 tokens) |
+| `_work/engine-web-spike/shims/tl_thread_web.h` | 4,318 | `5CA770AD7E63775D` | `TL_PLAT_WEB` type layer + fail-loud stubs |
+| `_work/engine-web-spike/shims/jobqueue_web.h` | 2,309 | `C9EEE1F93E1FBA51` | scheduler type layer |
+| `_work/engine-web-spike/shims/sched_web.cpp` | 5,686 | `7A8048E15B6822B0` | single-context scheduler backend (spike) |
+| `_work/engine-web-spike/shims/web_runtime.cpp` | 824 | `F4C64D01EF125D51` | `tlWebUnsupported` = stderr + `abort()` |
+| `_work/engine-web-spike/probes/smoke_sched.cpp` | 2,057 | `575819279E672CD4` | driver for the cooperative path (links later) |
 | `_work/engine-web-spike/out/spike_maths.wasm` | 11,413 | `4DFB1FD8A56D22E9` | maths + `Matrix.cpp` smoke |
 | `_work/engine-web-spike/out/spike_time.wasm` | 10,397 | `34288F7DBF51E7ED` | `Time.cpp` + `endian.cpp` smoke |
-| `_work/logs/engine-web-spike/summary.json` | 8,607 | `EAB715AB1C4F7EBF` | all seven sets, sizes, two runs each |
-| `_work/engine-web-spike/logs/final_*.log` | 24 TU + 4 driver | — | one compiler log per TU, plus the driver stdout |
-| `_work/logs/engine-web-spike/{final_*,ctl_*,shim_only_*}.json` | 7 | — | per-set JSON with the exact `cmd` |
-| `_work/engine-web-spike/probes/{repro_lang,repro_lang_nocv,repro_lang_assign,repro_lang_assign_nocv,repro_cast}.cpp` | — | — | header-free proof of cause B |
-| `_work/engine-web-spike/probes/{smoke_maths,smoke_time}.cpp` | — | — | the two drivers |
+| `_work/logs/engine-web-spike/summary.json` | 13,138 | `FD58BA30D7E2B97E` | all 9 sets, both smokes, link expectation |
+| `_work/logs/engine-web-spike/final_*.json` | 9 | — | per-set results with the exact `cmd` |
+| `_work/engine-web-spike/logs/final_*.log` | 45 TU logs | — | one compiler log per TU |
+| `_work/engine-web-spike/logs/spike_sched.link.log` | 4,700 | `9104EBEB8DEA1D9B` | the 11 missing logging symbols |
+| `_work/engine-web-spike/logs/schedlink__*.obj.log` | 16 | — | scheduler object compiles |
