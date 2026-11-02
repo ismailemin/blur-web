@@ -3,7 +3,7 @@
 **Güncelleme:** 2 Kasım 2026
 **Aşama:** Aşama 4 sonu (gerçek asset/önizleme), Aşama 5 (tek oyunculu yarış) başlamadı.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
-**Son commit'ler:** T-001 `19abead`/`b4e8cbe`, T-002 `2bc7253`/`1b8cb76`, T-005b `7588c6d`, T-005c `68a7b07`; T-003 Stage A bu commit'te.
+**Son commit'ler:** T-003 Stage A `a217f33`, T-004 `6b5d31a`, T-005c `68a7b07`, T-005b `7588c6d`.
 
 ## Şu an neredeyiz?
 

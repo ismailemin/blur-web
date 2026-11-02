@@ -36,16 +36,25 @@ Adres: **http://127.0.0.1:8765/**
 2. **Sahne parçasını aç**.
 3. Beklenen: ~17.782 vertex / 9.343 üçgen, 95 doğrudan çizim; instance uygulanmaz.
 
-## Test 3 — River 14 instance
+## Test 3 — River 22 instance
 
-1. **Sahne örneği** → **River · 14 instance**.
+1. **Sahne örneği** → **River · 22 instance**.
 2. **Sahne parçasını aç**.
 3. Beklenen:
-   - `14 instance çizildi · 8 sınır uyuşmazlığı · 35 başka blok`
-   - `7308 vertex / 6106 üçgen`
+   - `22 instance çizildi · 0 sınır uyuşmazlığı · 35 başka blok`
+   - `13162 vertex / 10308 üçgen`
    - `Yüzey` modu; materyaller uygulanmadığı için doku yok.
 
-## Test 4 — Showroom
+## Test 4 — River tüm desteklenen
+
+1. **Sahne örneği** → **River · tüm desteklenen**.
+2. **Sahne parçasını aç**.
+3. Beklenen:
+   - `36 instance çizildi · 20 sınır uyuşmazlığı · 1 blok atlandı`
+   - `17301 üçgen`
+   - Blok26/32 Stage B bekliyor; bu bir hata değil.
+
+## Test 5 — Showroom
 
 1. **Sahne örneği** → **Showroom**.
 2. **Sahne parçasını aç**.
@@ -56,7 +65,8 @@ Adres: **http://127.0.0.1:8765/**
 - Oynanabilir oyun yok; kamera dışında kontrol/fizik yok.
 - Corvette’in 54 çizimi hâlâ tanılama yüzeyi; runtime boya/ışık yok.
 - Level materyalleri/görünürlük yok.
-- `River · tüm desteklenen` deneyseldir; fiziksel görsel doğrulaması henüz yapılmadı.
+- Blok26/32 chunk'lar arası (Stage B) ve blok31 prerequisite henüz yok; toplam 57
+  instance'ın 36'sı çiziliyor.
 - WebGPU yoksa model canvas açılmaz; `chrome://gpu` kontrol edilmeli.
 
 ## Sorun giderme
