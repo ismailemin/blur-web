@@ -274,4 +274,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Ölçüm: kurulum 7,48 GB/5.113 dosya; `cache/` 1,16 GB, `levels/` 4,83 GB; River stream 244.682.752 B, 359 chunk (min 2.048, max 2.045.952 B, 222/359 prerequisite). 19 levelde max chunk 2.623.488 B; levelrender index cursor 7.021.820 B'ye ulaşıyor.
 - İlk dilim: motor header'ı olmadan `RangeFile` + `pak_index_range`/`level_index_range`; 7 PAK ve 19 level index native/wasm parity + bir gerçek chunk hash'i. Riskler: HEAPU8 growth, blocking Read'i event-loop ile çözme, OPFS/COOP-CC, cache invalidation. Rapor: `docs/work/analysis/t005-streaming-design.md`.
 
+## 2 Kasım 2026 — T-005d fizik fizibilitesi
+
+- En küçük sadık alt küme: Gravity 127 cpp/58.759 satır + RacingPhysics 11.436 satır (~70 kLOC). Araç yolu `C_Scene::Simulate → Car::Integrate → ArticulatedBody::Integrate` (1/60'te 4× Euler <2 m/s, üstünde 1× RK4) → teker başına Gravity statik üçgen-mesh ray + yay/lastik.
+- T-005a gate'lerinden sonra her RacingPhysics simülasyon TU'su **18 hata** (5 `HVec3→Float3`, 2 `__fsel`, 11 `tl_*`/`Mutex`); Gravity'nin kalanı scheduler module tipleri. Bu yüzden **T-005c sert önkoşul**.
+- İlk dilim D1: `Level.levelphysics` (5,6 MB) statik collision-query oracle; sabit probe tablosu, `queryHash` native/wasm birebir; car/XT/solver yok. Native sayısal referans yok; önce aynı probe'un native build'i. Ayrıntı: `docs/work/analysis/t005-physics-feasibility.md`.
+- Düzeltme notu: `engine-wasm-probe.md` §3.3'teki 19/62 hata sayıları kendi `final_posix.json`'una göre eski; gerçek 92–95 racing, 203–215 gravity. `g_maxPhysicsUpdates` Speed/Release'te 4.
+
 

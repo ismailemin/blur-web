@@ -1,6 +1,6 @@
 # T-005 — Tek oyunculu dikey dilim
 
-**Durum:** in-progress (T-005a probe; T-005b/c tasarım tamam; T-005d tasarım sürüyor)
+**Durum:** in-progress (T-005a/b/c/d tasarım tamam; uygulama sırada)
 **Sahip:** ana ajan
 **Başlangıç:** 2 Kasım 2026
 **Bitiş:** —
@@ -62,6 +62,18 @@ testleri hash-eşit olmalı. Ayrıntı: `docs/work/analysis/t005-scheduler-desig
 - Gravity/physics alt kümesini WASM'e taşı; native referansla ölç.
 - T-004'teki particle-cache çökmesi sürüş referansını bloke ediyorsa önce
   güvenli bir no-input/stationary referans kullan.
+
+**Tasarım sonucu (2 Kasım):** En küçük sadık alt küme Gravity 127 cpp/58.759
+satır + RacingPhysics 11.436 satır (~70 kLOC). Araç yolu:
+`C_Scene::Simulate` → `Car::Integrate` → `ArticulatedBody::Integrate` (1/60'te
+4× Euler <2 m/s, üstünde 1× RK4) → teker başına Gravity statik üçgen-mesh ray
++ yay/lastik. T-005a gate'lerinden sonra her RacingPhysics simülasyon TU'su
+**18 hata** (5 `HVec3→Float3`, 2 `__fsel`, 11 `tl_*`/`Mutex`); Gravity'nin
+kalanı scheduler module tipleri. Bu yüzden **T-005c sert önkoşul**. İlk dilim D1:
+`Level.levelphysics`'ten statik collision-query oracle; sabit probe tablosu,
+`queryHash` native/wasm birebir. Car/XT/solver yok. Native sayısal referans
+henüz yok; önce aynı probe'un native build'i. Ayrıntı:
+`docs/work/analysis/t005-physics-feasibility.md`.
 
 ### T-005e — Kontroller ve kamera
 - Klavye/gamepad; özgün araç girdi semantiği.

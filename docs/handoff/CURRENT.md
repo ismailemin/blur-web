@@ -68,6 +68,12 @@ altına `platform/file` C ABI ve OPFS/blob/http range-source registry. İlk dili
 5.113 dosya; River stream 244.682.752 B/359 chunk. Ayrıntı:
 `docs/work/analysis/t005-streaming-design.md`.
 
+**T-005d fizibilitesi:** Gravity + RacingPhysics ~70 kLOC; T-005a gate'lerinden
+sonra her RacingPhysics simülasyon TU'su 18 hata, Gravity scheduler module
+tiplerinde bloke. T-005c sert önkoşul. İlk dilim statik collision-query oracle
+(`Level.levelphysics`, `queryHash` native/wasm). Ayrıntı:
+`docs/work/analysis/t005-physics-feasibility.md`.
+
 ## Bilinen engeller / riskler
 
 - 18 instance destekli; P2'ye göre bounds grouping düzeltilince Stage A 36,
