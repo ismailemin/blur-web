@@ -319,4 +319,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sonuç beklenenle birebir: blok27 **22**, blok15 **12**, blok17 **2** → **36 instance / 22.924 vertex / 17.301 üçgen**. Blok26/32 Stage B, blok31 prerequisite bekliyor.
 - Suite **29/29**, CTest **14/14**, native/WASM JSON eşit. Headless Edge/WebGPU: 22 ve 36 instance presetleri, console temiz; `favicon.ico` 404'ü `data:` ikonuyla kapatıldı. Kanıt: `docs/work/verification/T-003-stageA.md`.
 
+## 2 Kasım 2026 — T-004 slot stride çözümü
+
+- P13 üç koşuda bayat yuvayı `(0,0,0)`, `(0,0,0)`, `(0,0,2)`; `iSalt/GetSalt = 0/0`; `epos=-1`; yuva canlı aralıkta olarak isimlendirdi. Yeni ölçüm: trail slot adımı **8 bayt**, `C_Particle_E` x64'te **16 bayt**.
+- Kök neden: retail PC 32-bit olduğu için `Manager.cpp:151` sabit `8` doğruydu; x64 rebuild'de `iSalt` komşu `pEmitter`'a yazıyor ve copy-last 8 baytlık adımın üzerine kopyalıyor.
+- Düzeltme: `SetElementSize(sizeof(C_Particle_E))`. Paired 3+3: baseline **3/3 çökme** (2×`0x80000003`, 1×`0xC0000005`, 16/23/17 s), düzeltme **3/3 exit 0** (24/23/23 s). Ek koşu `Racing` (10,2 s) → `AFTER_THROTTLE` (20,2 s) → `quit` (22,2 s).
+- Kanonik `Amax.exe` ve assert değişmedi; patch `_work/build/engine-reference/native-slotstride-fix.patch`. wasm32'de sizeof 8 olduğu için düzeltme no-op. TEK-YUVA slot sözleşmesi web portu için açık. Kanıt: `docs/work/verification/T-004-slot-stride.md`.
+
 

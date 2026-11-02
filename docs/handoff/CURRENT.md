@@ -29,19 +29,16 @@
   `docs/work/analysis/level-instance-streams.md`.
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
-  **River · instance prova** ve **River · 14 instance** preset'leri var.
-- Native x64 Amax Release derlemesi başarılı. Particle-cache kök nedeni ve üç
-  düzeltme denemesi belgelendi: kuyruk girişinde salt artışı 1/3 exit0 + 2/3
-  `0xC0000005`; drenajı senkron `Free`'ye taşımak 3/3 `0xC0000005`;
-  `DeleteTrailBlock` temizliği 1/3 orijinal breakpoint + 2/3 `0xC0000005`.
-  Üçü de geri alındı; kanonik `Amax.exe` değişmedi. Gözlenen çift-free
-  `FreeParticle`/`Emitter::Update` yolundan geliyor; trail sahipliği açık.
-  Aday 2 (object-level trail-owned bayrağı) kaynak analizinde reddedildi:
-  trail tanımları `bRepeating=true` olduğu için self-free yolları hiç
-  ateşlenmiyor; 2a no-op, 2b sızıntı. P12 slot-level tasarımı: TEK-YUVA
-  değişmezi, 16 noktalı clear-then-release; `DeleteTrailBlock` canlı emitter
-  için ölü yol (S3), `UpdateMemory` blok desync (S6). Sıradaki: trace ile
-  bayat `(t,b,i)` kimliği. Ayrıntı: `docs/work/analysis/emitter-slot-ownership.md`.
+  **River · instance prova**, **River · 22 instance** ve
+  **River · tüm desteklenen** preset'leri var.
+- **T-004 çözüldü (x64 build):** P13 bayat yuvayı `(0,0,*)`, salt `0==0`,
+  `epos=-1` olarak isimlendirdi ve trail slot adımının **8 bayt** olduğunu
+  ölçtü. `C_Particle_E` x64'te 16 bayt; retail PC 32-bit olduğu için sabit 8
+  orada doğruydu. `Manager.cpp:151 → SetElementSize(sizeof(C_Particle_E))`
+  ile paired 3+3: baseline 3/3 çökme, düzeltme 3/3 exit 0 (23–24 s); ek koşu
+  `Racing → AFTER_THROTTLE → quit`. Kanonik `Amax.exe` ve assert değişmedi.
+  Kanıt: `docs/work/verification/T-004-slot-stride.md`. TEK-YUVA slot sözleşmesi
+  web/wasm portu için açık kalıyor (wasm32'de sizeof zaten 8).
 - Doğrulama: `verify_asset_probe.py --skip-build` **28/28**, CTest **14/14**.
 
 ## Sıradaki iş

@@ -1,5 +1,12 @@
 # Native particle-cache çökmesi — analiz raporu
 
+> **Güncelleme (2 Kasım 2026, P13 + stride fix):** Bayat yuva kimliği bulundu ve
+> kök neden x64 build'deki 8-bayt trail slot adımı olarak ölçüldü; düzeltme
+> `Manager.cpp:151 → SetElementSize(sizeof(C_Particle_E))` ile 3/3 vs 3/3 paired
+> koşuda doğrulandı. Ayrıntı: `emitter-slot-trace.md`,
+> `../verification/T-004-slot-stride.md`, `../tasks/T-004-native-particle-crash.md`.
+> Aşağıdaki metin tarihsel analiz kaydı olarak korunmuştur.
+
 **Durum:** tamamlandı (salt okunur inceleme; hiçbir kaynak/derleme/oyun dosyası değiştirilmedi)
 **Sahip:** native-analysis sub-agent (salt okunur)
 **Tarih:** 1 Kasım 2026 (triyaj dump'ı incelemesi), 2 Kasım 2026 (tam bellek exit dump'ı incelemesi)

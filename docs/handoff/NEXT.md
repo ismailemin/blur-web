@@ -17,28 +17,34 @@ karşılaştırdığı için 38 instance'ı yanlışlıkla reddediyor.
 
 Sıradaki:
 
-- **Stage A:** tek-chunk grupları → blok27 22/22, blok15 12/12, blok17 2/2 =
-  36 instance / 22.924 vertex / 17.301 üçgen.
-- **Stage B:** blok26+32 chunk'lar arası gruplar → toplam 56 instance /
+- **Stage A tamam (2 Kasım):** blok27 22, blok15 12, blok17 2 = **36 instance /
+  22.924 vertex / 17.301 üçgen**; native/WASM eşit, suite 29/29, headless
+  WebGPU görseli console temiz. Kanıt: `docs/work/verification/T-003-stageA.md`.
+- **Stage B:** blok26+32 chunk'lar arası gruplar → hedef toplam 56 instance /
   34.632 vertex / 25.521 üçgen.
 - Blok31 prerequisite; materyaller/görünürlük/yüksek LOD'lar ayrı.
 - Kabul: native/WASM/Python grup-eşitliği, bozuk grup/byte-identity reddi,
   regresyonsuz suite. "Tam pist" iddiası yok.
 
-## 2. T-004 — Native particle-cache izi
+## 2. T-004 — Native particle-cache çökmesi
 
-**Durum:** tam bellek dump'ı alındı ve analiz edildi; kaynak çağrı/efekt kimliği açık
-**Rapor:** `docs/work/analysis/native-particle-crash.md`
+**Durum:** çözüldü (x64 build); web/wasm slot sözleşmesi açık
+**Kart:** `docs/work/tasks/T-004-native-particle-crash.md`
+**Kanıt:** `docs/work/verification/T-004-slot-stride.md`,
+`docs/work/analysis/emitter-slot-trace.md`
 
-Tam dump + çağrı izleme + kaynak analizi kök nedeni gösterdi:
-- Emitter ile trail elemanı arasındaki bağ tek yönlü; sahiplik `iSalt` nesil sayacıyla yürüyor.
-- `m_iSalt` yalnızca senkron `C_EmitterList::Free` içinde artırılıyor; ertelenmiş `C_Emitter::AtomicFree` / `AtomicActiveCache::AtomicFree` / drenaj `Free` salt'a dokunmuyor.
-- `FreeParticle` X'i ertelenmiş yolla bıraktıktan sonra drenaj `Free` ediyor; salt artmadığı için aynı X'e işaret eden trail elemanı sonraki karede `iSalt == GetSalt()` (0==0) görüp X'i yeniden kuyruğa atıyor; ikinci `Free` invariant'ı tetikliyor.
-Açık: düzeltme uygulanmadı; iki deneme reddedildi. (1) `C_Emitter::AtomicFree` kuyruk girişinde salt artışı: 1/3 exit0, 2/3 `0xC0000005`. (2) drenajı `C_EmitterList::Free` üzerinden yapmak: 3/3 `0xC0000005`. Her iki deneme de geri alındı; patch'ler `native-saltfix-attempt.patch` ve `native-drainfix-attempt.patch`. Üçüncü deneme (`DeleteTrailBlock` temizliği, `native-trailfix-attempt.patch`) 1/3 orijinal breakpoint, 2/3 `0xC0000005` verdi; o da geri alındı. Bulgu: gözlenen çift-free `FreeParticle`/`Emitter::Update` yolundan geliyor; `DeleteTrailBlock` bu yolu kapsamıyor. Asıl açık trail elemanının `pEmitter` alanını kimin geçersiz kıldığı. Sıradaki: (a) sahiplik kuralını kaynakla yazılı sözleşmeye dönüştürmek, (b) Aday 2 trail-owned bayrağını tam dump'lı koşuyla denemek. Assert kaldırılmayacak.
+Kök neden: `Manager.cpp:151` trail slotunu sabit **8 bayt** kuruyordu; retail PC
+32-bit olduğu için `sizeof(C_Particle_E)==8` idi. Bu x64 build'de sınıf 16 bayt:
+`iSalt` komşu `pEmitter`'a yazıyor, copy-last 8 baytlık adımın üzerine kopyalıyor.
+P13 üç koşuda bayat yuvayı `(0,0,*)`, salt `0==0`, `epos=-1` olarak isimlendirdi.
 
-**P3 Aday 2 sonucu:** object-level “trail-owned” bayrağı çökme için kanıtlanabilir şekilde no-op (2a) veya sızıntı (2b): trail tanımları `bRepeating=true` olduğu için self-free yolları trail-owned emitter'da hiç ateşlenmiyor; asıl üretici `FreeParticle → AtomicFree` etkilenmiyor. Bu yüzden object flag bırakıldı; sıradaki doğru yön **slot-level** sahiplik/temizlik: `FreeParticle`/`UpdateTrail` sırasında aynı emitter'a işaret eden trail slotunu geçersiz kılan yolu bulmak. Ayrıntı: `docs/work/analysis/emitter-ownership-next.md`.
+Düzeltme: `SetElementSize(sizeof(C_Particle_E))`. Paired 3+3: baseline 3/3
+çökme (2 breakpoint + 1 AV), düzeltme 3/3 exit 0; ek koşu
+`Racing → AFTER_THROTTLE → quit`. Kanonik `Amax.exe` ve `Atomic.h` assert'i
+değişmedi. wasm32'de sizeof zaten 8 olduğu için düzeltme orada no-op.
 
-**P12 slot-level sonucu:** TEK-YUVA değişmezi: canlı her `C_Particle_E` yuvası için `pEmitter` tek bir yuvaya geri işaret etmeli ve bırakma **önce yuvayı temizlemeli**. Yeni bulgular: `DeleteTrailBlock` canlı emitter için ölü yol (S3); `UpdateMemory` end blok NULL iken `blocks[b]` eski bloğu bırakıyor (S6). Minimal tasarım 16 nokta: `C_Particle_E::Clear`, `C_Emitter::m_pTrailSlot` (sınıf sonu), spawn'da kayıt, copy-last sonrası retarget, üç trail yolunda ve iki self-free noktasında clear-then-release. `Atomic.h`/`Manager.cpp` değişmiyor; assert kalıyor. Sıradaki en küçük adım: trace'e `pParticle`, blok `m_VectorPosition`, `i`, `iSalt` ekleyip bayat `(t,b,i)`'yi isimlendirmek; sonra 1–14 uygulaması ve 3+3 paired test. Ayrıntı: `docs/work/analysis/emitter-slot-ownership.md`.
+Kalan: TEK-YUVA sahiplik sözleşmesi (`emitter-slot-ownership.md`) web portu için
+uygulanmadı; 3/3 temiz koşu resmî ispat değil.
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 
