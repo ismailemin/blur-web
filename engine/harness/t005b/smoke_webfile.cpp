@@ -34,6 +34,7 @@
 
 #include <system/debug/log/GlobalInterface.h>
 #include <system/debug/log/DebugLog.h>
+#include <system/debug/Variables.h>
 
 #include <PakFs/Pak.h>
 #include <PakFs/PakFs.h>
@@ -43,6 +44,9 @@
 #include <PakFs/Impl/PakFile.h>
 #include <PakFs/Impl/PakIoMediator.h>
 #include <PakFs/Impl/PakUtil.h>
+
+#include <OverlayFs/OverlayFs.h>
+#include <OverlayFs/OverlayLayer.h>
 
 #include "pak_index_range.h"
 
@@ -187,6 +191,34 @@ void print_stats( const char* label, const rangefile::RangeStats& stats )
 // PakEntryFile.o's extern.
 Debug::Logger& g_SystemIoLog = Debug::GetLogger( "mercury.system.io" );
 
+// g_masterDiscEmulation is defined by util/logicalfs/source/gamefs/GameHelpers.cpp:31
+// (inside namespace LogicalFs) and read by C_OverlayFs::GetBestLayer.
+// GameHelpers.cpp also contains CreateGameFs(), which needs
+// Sys::C_FileSystem::Instance() and therefore cannot be linked into a web build,
+// so the harness supplies the variable with the same namespace, name and default
+// (false) that GameHelpers.cpp uses. Deliberate difference: the engine registers
+// a Debug::Notify callback (MasterDiscEmulationCb) that re-maps the overlay when
+// the variable changes at runtime; a headless harness has no debug-variable UI,
+// and the default false is what the game ships with, so the layer type used here
+// is the same E_Type_Newer GameHelpers::GetDefaultOverlayType returns for false.
+namespace LogicalFs
+{
+Debug::Bool g_masterDiscEmulation( "Util.LogicalFs.OverlayFs.MasterDiscEmulation",
+	false, Debug::Persist() );
+}
+
+// LogicalFs::g_log is defined by util/logicalfs/source/LogicalFs.cpp as
+// `Debug::GetLogger("mercury.logicalfs")` at static-initialisation time.
+// Measured under wasm-ld: that initialiser runs before the log manager is usable
+// and Debug::GetLogger traps (`unreachable`), and the object order that avoids it
+// is not stable across link permutations. Rather than depend on link order, this
+// build compiles OverlayFs.cpp with GLOBAL_DEBUG_MESSAGE_LEVEL=0 (see
+// EXTRA_FLAGS in engine/verify_file_overlay.py), which turns its LOGINFO /
+// LOGWARN / LOGERROR calls into no-ops, so nothing references g_log and
+// LogicalFs.cpp is not linked. Diagnostics only: no data path changes, and with
+// a single read-only layer none of those calls can fire anyway. PC/PS3 keep the
+// engine definition and the logger.
+
 namespace
 {
 
@@ -222,7 +254,7 @@ struct EntryReadResult
 	bool ok;
 };
 
-bool read_entry( LogicalFs::C_PakFs& pakFs, const char* path, U32 bufferHint,
+bool read_entry( Sys::I_FileSystem& fs, const char* path, U32 bufferHint,
 	EntryReadResult* out )
 {
 	out->length = 0;
@@ -230,10 +262,9 @@ bool read_entry( LogicalFs::C_PakFs& pakFs, const char* path, U32 bufferHint,
 	out->reads = 0;
 	out->ok = false;
 
-	// The engine's own logical entry stream, opened through the engine's own
-	// file system wrapper: C_PakFs::Open -> C_PakEntryFile::Open ->
-	// C_PakCompressPacketZLib (codec 4) -> C_PakIoMediator -> Sys::I_File.
-	Sys::I_File* file = pakFs.Open( Sys::C_FilePath( path ), Sys::E_FileAccess_Read,
+	// One call shape for both layers exercised here: C_PakFs directly, and the
+	// C_OverlayFs that dispatches to it.
+	Sys::I_File* file = fs.Open( Sys::C_FilePath( path ), Sys::E_FileAccess_Read,
 		Sys::C_OpenParams( bufferHint ) );
 	if ( file == 0 )
 		return false;
@@ -307,6 +338,48 @@ void dump_fat( Pak::C_PakFile* pak )
 			physicalText, offsetText, parentText,
 			entry->IsDirectory() ? 1 : 0, path );
 	}
+}
+
+// FNV-1a 64 over the logical sizes of a C_DirectoryInfo's children, in the order
+// the FAT returned them. The reference index can compute the same sequence, so
+// this compares content without the path-separator normalisation C_FilePath does.
+uint64_t directory_child_hash( const Sys::C_DirectoryInfo& directory )
+{
+	uint64_t hash = 0xcbf29ce484222325ull;
+	const Sys::FileInfoArr& children = directory.FileInfoArray();
+	for ( S32 c = 0; c < children.Size(); ++c )
+	{
+		U32 bytes = (U32)children[ c ].m_FileSize;
+		for ( int b = 0; b < 4; ++b )
+		{
+			hash ^= (U8)( ( bytes >> ( 8 * b ) ) & 0xFF );
+			hash *= 0x100000001b3ull;
+		}
+	}
+	return hash;
+}
+
+// Order-independent variant: XOR of the per-child hash. C_PakFs::DirectoryInfo
+// walks the FAT, but C_OverlayFs::DirectoryInfo deduplicates through a
+// Btl::OpenHashSet and therefore yields the same children in hash order, which
+// is an engine property, not a difference in content. The verifier compares this
+// digest (multiset) for the overlay and the ordered one for the bare PAK.
+uint64_t directory_child_set_hash( const Sys::C_DirectoryInfo& directory )
+{
+	uint64_t combined = 0;
+	const Sys::FileInfoArr& children = directory.FileInfoArray();
+	for ( S32 c = 0; c < children.Size(); ++c )
+	{
+		U32 bytes = (U32)children[ c ].m_FileSize;
+		uint64_t hash = 0xcbf29ce484222325ull;
+		for ( int b = 0; b < 4; ++b )
+		{
+			hash ^= (U8)( ( bytes >> ( 8 * b ) ) & 0xFF );
+			hash *= 0x100000001b3ull;
+		}
+		combined ^= hash;
+	}
+	return combined;
 }
 
 } // namespace
@@ -612,25 +685,76 @@ int main( int argc, char** argv )
 			Sys::C_DirectoryInfo directory;
 			const bool haveDirectory =
 				pakFs.DirectoryInfo( Sys::C_FilePath( kDirectoryFixture ), &directory );
-			uint64_t childHash = 0xcbf29ce484222325ull;
-			if ( haveDirectory )
-			{
-				Sys::FileInfoArr& children = directory.FileInfoArray();
-				for ( S32 c = 0; c < children.Size(); ++c )
-				{
-					U32 bytes = (U32)children[ c ].m_FileSize;
-					for ( int b = 0; b < 4; ++b )
-					{
-						childHash ^= (U8)( ( bytes >> ( 8 * b ) ) & 0xFF );
-						childHash *= 0x100000001b3ull;
-					}
-				}
-			}
 			printf( "webfile pak directory %s ok=%d count=%u children=0x%016llx\n",
 				kDirectoryFixture, haveDirectory ? 1 : 0,
 				haveDirectory ? (unsigned)directory.NumFiles() : 0u,
-				(unsigned long long)childHash );
+				(unsigned long long)directory_child_hash( directory ) );
 			check( "pak_directory", haveDirectory && directory.NumFiles() > 0 );
+
+			// --- the same content through C_OverlayFs ---------------------
+			// The engine's overlay file system, mounted exactly as
+			// GameHelpers::MountPakLayer does for "cache/root.pak"
+			// (GameSystems.cpp:103): dst "/", src "/", the default layer type
+			// (E_Type_Newer when g_masterDiscEmulation is false) and a
+			// read-only layer. Everything below goes through the overlay; the
+			// layer itself is the C_PakFs proven above.
+			{
+				LogicalFs::C_OverlayFs overlay;
+				overlay.SetWorkingDirectory( "/" );
+				LogicalFs::C_OverlayLayer::C_Params layerParams;
+				layerParams.flags.layerType = LogicalFs::C_OverlayLayer::E_Type_Newer;
+				layerParams.flags.writable = 0;
+				overlay.AddLayer( Sys::C_FilePath( "/" ), &pakFs, Sys::C_FilePath( "/" ),
+					layerParams, LogicalFs::E_MediaLayer_0, kMountPrefix );
+
+				const U32 layers = overlay.GetNumLayers( LogicalFs::E_MediaLayer_0 );
+				printf( "webfile overlay mount layers=%u\n", (unsigned)layers );
+				check( "overlay_mount", layers == 1 );
+
+				for ( int i = 0; i < kEntryFixtureCount; ++i )
+				{
+					const char* path = kEntryFixtures[ i ].path;
+					const Sys::C_FilePath entryPath( path );
+
+					EntryReadResult streamed;
+					EntryReadResult buffered;
+					const bool streamedOk = read_entry( overlay, path, 0, &streamed );
+					const bool bufferedOk = read_entry( overlay, path, 32 * 1024, &buffered );
+					printf( "webfile overlay read %s streamed=%d bytes=%llu hash=0x%016llx reads=%u\n",
+						path, streamedOk ? 1 : 0, (unsigned long long)streamed.length,
+						(unsigned long long)streamed.hash, streamed.reads );
+					printf( "webfile overlay read %s buffered=%d bytes=%llu hash=0x%016llx reads=%u\n",
+						path, bufferedOk ? 1 : 0, (unsigned long long)buffered.length,
+						(unsigned long long)buffered.hash, buffered.reads );
+					check( "overlay_read_streamed", streamedOk );
+					check( "overlay_read_buffered", bufferedOk );
+					check( "overlay_paths_agree",
+						streamedOk && bufferedOk && streamed.hash == buffered.hash &&
+						streamed.length == buffered.length );
+
+					check( "overlay_exists", overlay.FileExists( entryPath ) );
+
+					Sys::C_FileInfo entryInfo;
+					entryInfo.Clear();
+					const bool haveInfo = overlay.FileInfo( entryPath, &entryInfo );
+					printf( "webfile overlay fileinfo %s ok=%d size=%llu type=%d\n", path,
+						haveInfo ? 1 : 0, (unsigned long long)entryInfo.m_FileSize,
+						(int)entryInfo.m_FileType );
+					check( "overlay_fileinfo",
+						haveInfo && uint64_t( entryInfo.m_FileSize ) == streamed.length &&
+						entryInfo.m_FileType == Sys::E_FileType_File );
+				}
+
+				Sys::C_DirectoryInfo overlayDir;
+				const bool haveOverlayDir =
+					overlay.DirectoryInfo( Sys::C_FilePath( kDirectoryFixture ), &overlayDir );
+				printf( "webfile overlay directory %s ok=%d count=%u children=0x%016llx\n",
+					kDirectoryFixture, haveOverlayDir ? 1 : 0,
+					haveOverlayDir ? (unsigned)overlayDir.NumFiles() : 0u,
+					(unsigned long long)directory_child_set_hash( overlayDir ) );
+				check( "overlay_directory",
+					haveOverlayDir && overlayDir.NumFiles() > 0 );
+			}
 		}
 
 		pakFs.ClosePak();

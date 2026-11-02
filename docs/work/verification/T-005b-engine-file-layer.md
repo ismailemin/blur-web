@@ -22,10 +22,10 @@ python engine/apply_file_overlay.py --tree _work/engine-file-spike/tree
 python engine/verify_file_overlay.py --fresh
 ```
 
-Result: **PASS** (114.0 s).
+Result: **PASS** (116.6 s).
 
-- 59 objects, wasm **506,866 B**, two builds byte-identical.
-- Harness: **43/43 checks**, 7 explicit refusals, no leaked handles.
+- 61 objects, wasm **530,493 B**, two builds byte-identical.
+- Harness: **50/50 checks**, 7 explicit refusals, no leaked handles.
 - Real `cache/root.pak` (559,652,864 B) read through `Sys::I_File`:
   - header + **3,601** entries field-identical to `probes/range-file`;
   - **3,609** source requests, **314,522** B, largest 65,536,
@@ -42,6 +42,13 @@ Result: **PASS** (114.0 s).
   and unbuffered and equal to an independent Python packet decoder.
   `DirectoryInfo("\models\objects\shared\construction")` returns 35 children,
   child-size FNV `d2d61563f2fc557e`, matching the reference index.
+- `C_OverlayFs` path (the engine's own mount model):
+  `AddLayer("/", &pakFs, "/", ...)` then `Open`/`FileExists`/`FileInfo`/
+  `DirectoryInfo` on the overlay. The same two entries hash identically
+  (buffered and unbuffered) and the directory returns 35 children. The overlay
+  directory digest is compared as a multiset because `C_OverlayFs` deduplicates
+  through a hash set (engine property); `C_PakFs` still compares FAT order
+  exactly.
 - PC parity: `C_FileSystem.cpp`, `C_File.cpp` and `Pak.cpp` preprocess
   identically with and without the patch; new TUs compile `/W4` and emit no PC
   symbol.
@@ -60,11 +67,17 @@ verifier stops with `Blocked` and a build hint (no silent skip).
 - `C_DirectoryInfo` now has two bodies (PC in `C_FileSystem.cpp`, web in the new
   TU). They are identical today and exactly one is compiled per configuration,
   but a PC-side change must be mirrored by hand.
-- No `C_OverlayFs` yet; the mount table and overlay layer are the next consumer.
-- PAK signature verification is a no-op on web (`PakSha1.cpp` returns success
-  outside PC/PS3); no authenticity claim.
-- Two entries and one directory, not a corpus; level/streamer/save paths untested.
+- `C_OverlayFs` works with one read-only PAK layer; the writable layer,
+  `C_MemoryFs`, `GameHelpers::CreateGameFs` and `LOGFS_INIT("./user/logown")`
+  are untested.
+- Global debug-logger initialisation order is unsafe on wasm; the overlay TU is
+  built with `-DGLOBAL_DEBUG_MESSAGE_LEVEL=0` (diagnostics only). A real build
+  must construct `LogManager` before any `GetLogger` global.
 - No browser evidence: OPFS, worker, COOP/COEP and real `fetch` ranges untested.
+- PAK signature verification is a no-op on web (`PakSha1.cpp` returns success
+  outside PC/PS3); `pSecurity = NULL`, no authenticity claim.
+- Two entries and one directory, not a corpus; level/streamer/save paths are
+  untested.
 - `pf_open` takes a source id, not a virtual path; the path→source table is
   C++-side by design.
 - No renderer, physics, audio or game claim.

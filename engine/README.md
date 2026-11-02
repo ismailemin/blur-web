@@ -184,7 +184,7 @@ above and §7 of the analysis doc):
 ```
 
 `verify_file_overlay.py` (≈115 s) rebuilds twice and runs the node harness:
-**PASS**, 59 objects, 506,866 B wasm, deterministic, **43/43 checks**, 7 explicit
+**PASS**, 61 objects, 530,493 B wasm, deterministic, **50/50 checks**, 7 explicit
 refusals. Through the engine layer it reads the real `cache/root.pak`
 (559,652,864 B):
 
@@ -196,34 +196,46 @@ refusals. Through the engine layer it reads the real `cache/root.pak`
 - EOF-crossing, past-EOF, zero-length, oversized, write, enqueue, unmounted,
   write-handle, async-only and directory cases all refused explicitly.
 
-### The first real engine consumer: `C_PakFs`
+### The engine consumers: `C_PakFs`, then `C_OverlayFs` over it
 
-The same harness then mounts the file system as the default and uses the engine's
-PAK file system — the same wrapper the game mounts through `GameHelpers`:
+The same harness then uses the engine's PAK file system and, above it, the
+engine's overlay file system — the same two layers the game mounts through
+`GameHelpers::MountPakLayer`:
 
 ```cpp
 LogicalFs::C_PakFs pakFs;
 pakFs.OpenPak( Sys::GetDefaultFileSystem(), Sys::C_FilePath( "/cache/root.pak" ),
                NULL, Sys::C_OpenParams( 32 * 1024 ) );      // -> Pak::ReadPak
-Sys::I_File* f = pakFs.Open( Sys::C_FilePath( path ),
-                             Sys::E_FileAccess_Read,
-                             Sys::C_OpenParams( 0 /* streamer */ ) );  // -> C_PakEntryFile
+
+LogicalFs::C_OverlayFs overlay;                             // the game's m_pFileSystem
+overlay.SetWorkingDirectory( "/" );
+LogicalFs::C_OverlayLayer::C_Params params;                 // GameHelpers defaults
+params.flags.layerType = LogicalFs::C_OverlayLayer::E_Type_Newer;
+params.flags.writable = 0;
+overlay.AddLayer( Sys::C_FilePath( "/" ), &pakFs, Sys::C_FilePath( "/" ),
+                  params, LogicalFs::E_MediaLayer_0, "cache/root.pak" );
+
+Sys::I_File* f = overlay.Open( Sys::C_FilePath( path ), Sys::E_FileAccess_Read,
+                               Sys::C_OpenParams( 0 /* streamer */ ) );
 ```
 
-`C_PakFs::OpenPak` → `Pak::ReadPak` (`ReadPreHeader`/`ReadHeader`/
-`ReadStringTable`/`ReadFat`) → `C_PakIoMediator` → `Sys::I_File` → `C_WebFile` →
-`pf_read_at` → JS range source; `C_PakFs::Open` returns a `C_PakEntryFile` whose
-`Underflow` drives `Pak::C_PakCompressPacketZLib` (codec 4) on the T-005c
-scheduler. `C_PakFs::FileExists`, `C_PakFs::FileInfo` and
-`C_PakFs::DirectoryInfo` are exercised too, so the FAT-based lookups and the
-`C_DirectoryInfo` members are covered:
+`C_PakFs::Open` → `C_PakEntryFile` → `Pak::C_PakCompressPacketZLib` (codec 4) on
+the T-005c scheduler; `C_OverlayFs::Open` resolves the path through its layer
+stack and hands it to `C_PakFs`. Both wrappers, plus `FileExists`, `FileInfo` and
+`DirectoryInfo`, are exercised:
 
-| through `C_PakFs` | result |
+| through the engine | result |
 | --- | --- |
 | header / 3,601 FAT records | equal to the reference field by field |
-| `Open` + `FileInfo` + `FileExists` for both entries | size 209 and 131,200, `E_FileType_File` |
-| `Open` read, unbuffered and buffered | FNV-1a 64 `7a5224df7820ffae` / `583354161ab2a52c`, equal to an independent decoder |
-| `DirectoryInfo("\models\objects\shared\construction")` | 35 children; child-size FNV `d2d61563f2fc557e` equal to the reference |
+| `C_PakFs::Open` and `C_OverlayFs::Open`, unbuffered and buffered | FNV-1a 64 `7a5224df7820ffae` (209 B) and `583354161ab2a52c` (131,200 B), both equal to an independent decoder |
+| `FileExists` / `FileInfo` for both entries, both layers | true; size 209 and 131,200, `E_FileType_File` |
+| `DirectoryInfo("\models\objects\shared\construction")` | `C_PakFs`: 35 children in FAT order (FNV `d2d61563f2fc557e`); `C_OverlayFs`: the same 35 as a multiset (it deduplicates through a hash set, so the order differs by design) |
+
+Build note: `OverlayFs.cpp` is compiled with `-DGLOBAL_DEBUG_MESSAGE_LEVEL=0`
+(one TU, diagnostics only). Its `LOG*` calls otherwise need `LogicalFs::g_log`,
+whose engine definition calls `Debug::GetLogger` at static-initialisation time and
+traps (`unreachable`) under wasm-ld — an initialisation-order hazard, not a data
+path. See §8 of the analysis doc.
 
 PC parity: `C_FileSystem.cpp`, `C_File.cpp` and `Pak.cpp` preprocess identically
 with the patch and without it (added files removed, modified files restored from
@@ -231,8 +243,9 @@ upstream); the new TU compiles at `/W4` with no PC symbol emitted.
 
 Limits: no browser OPFS/worker/COOP-COEP test yet; `pf_open` takes a source id,
 not a path (the path→source table is C++-side by design); PAK signature
-verification is still a no-op on web, so `pSecurity` is NULL; no level, streamer
-or serialiser sits on top yet. Evidence:
+verification is still a no-op on web, so `pSecurity` is NULL; the writable
+`LOGFS_INIT("./user/logfs")` layer and `GameHelpers`' mount table are not
+exercised; no level, streamer or serialiser sits on top yet. Evidence:
 `docs/work/analysis/engine-file-layer.md`.
 
 ## Layout

@@ -77,8 +77,8 @@ Kalan: fat/swept-sphere (teker yarıçapı XT), constraint'ler, engine entegrasy
 
 P16: `engine/patches/t005b-file-overlay.patch` (4 yeni dosya + 3 web fix) scheduler
 overlay'i üstünde `Sys::I_File` + `pf_*` C ABI; `verify_file_overlay.py --fresh`
-PASS (506.866 B, 43/43, tam `C_PakFs`, 3.601 FAT + 2 dosya + 1 dizin, PC parity).
-Kalan: `C_OverlayFs`/mount, OPFS/worker.
+PASS (530.493 B, 50/50, tam `C_PakFs` + `C_OverlayFs`, PC parity). Kalan:
+yazılabilir katman/`GameHelpers`, OPFS/worker.
 
 ## 4. T-006 — Tarayıcı multiplayer
 

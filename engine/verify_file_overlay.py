@@ -157,6 +157,8 @@ TUS = [
     (f"{LOGICALFS}/source/pakfs/impl/PakCompressZLib.cpp", "logicalfs"),
     (f"{LOGICALFS}/source/pakfs/impl/PakCompressRaw.cpp", "logicalfs"),
     (f"{LOGICALFS}/source/pakfs/impl/PakBuildHelpers.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/overlayfs/OverlayFs.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/overlayfs/OverlayLayer.cpp", "logicalfs"),
     (f"{COMMON}/system/source/serialise/C_MemoryStream.cpp", "system"),
     ("engine/harness/t005c/platform_net_web.cpp", "system"),
     ("engine/harness/t005c/web_runtime.cpp", "core"),
@@ -164,6 +166,17 @@ TUS = [
 ]
 
 PROBE_TUS = ["range_file.cpp", "pak_index_range.cpp"]
+
+# Per-TU build flags. OverlayFs.cpp's diagnostics need LogicalFs::g_log, whose
+# engine definition calls Debug::GetLogger during static initialisation; under
+# wasm-ld that call traps (the initialisation order that avoids it is not stable
+# across link permutations, measured). Compiling that one TU with
+# GLOBAL_DEBUG_MESSAGE_LEVEL=0 turns LOGINFO/LOGWARN/LOGERROR into no-ops, so it
+# references no logger and LogicalFs.cpp is not linked. Diagnostics only - no
+# data path - and with one read-only layer none of those calls can fire.
+EXTRA_FLAGS = {
+    f"{LOGICALFS}/source/overlayfs/OverlayFs.cpp": ["-DGLOBAL_DEBUG_MESSAGE_LEVEL=0"],
+}
 
 EXPECTED_CHECKS = [
     "abi_version", "mount", "mount_async_only", "open", "length_nonzero",
@@ -184,6 +197,10 @@ EXPECTED_CHECKS = [
     "pak_entry_read_streamed", "pak_entry_read_buffered",
     "pak_entry_paths_agree", "pak_entry_length_matches_fat",
     "pak_directory",
+    # The same content through the engine's overlay file system.
+    "overlay_mount", "overlay_read_streamed", "overlay_read_buffered",
+    "overlay_paths_agree", "overlay_exists", "overlay_fileinfo",
+    "overlay_directory",
 ]
 
 # Each refusal the provider must emit, with its message marker.
@@ -355,7 +372,8 @@ def build(tag: str) -> Path:
     for rel, lib in TUS:
         src = (ROOT / rel) if rel.startswith(("_work/", "engine/")) else (TREE / rel)
         obj = objdir / f"{src.stem}.o"
-        p = run([sys.executable, EM, *FLAGS, *includes(lib), "-c", src, "-o", obj],
+        p = run([sys.executable, EM, *FLAGS, *EXTRA_FLAGS.get(rel, []),
+                 *includes(lib), "-c", src, "-o", obj],
                 log=LOGS / f"{tag}__{src.stem}.log")
         if p.returncode:
             raise Failed(f"compile failed: {rel}\n"
@@ -498,6 +516,29 @@ def run_harness(js: Path, tag: str) -> dict:
     directory = {"path": m.group(1), "ok": int(m.group(2)),
                  "count": int(m.group(3)), "children": m.group(4)}
 
+    # --- the same content through C_OverlayFs -----------------------------
+    overlay: dict = {}
+    m = re.search(r"webfile overlay mount layers=(\d+)", out)
+    if not m:
+        raise Failed("the harness printed no overlay mount line")
+    overlay["layers"] = int(m.group(1))
+
+    overlay_reads: dict[str, dict[str, dict]] = {}
+    for m in re.finditer(r"webfile overlay read (\S+) (streamed|buffered)=(\d+) "
+                         r"bytes=(\d+) hash=0x([0-9a-f]{16}) reads=(\d+)", out):
+        overlay_reads.setdefault(m.group(1), {})[m.group(2)] = {
+            "ok": int(m.group(3)), "bytes": int(m.group(4)),
+            "hash": m.group(5), "reads": int(m.group(6)),
+        }
+    overlay["reads"] = overlay_reads
+
+    m = re.search(r"webfile overlay directory (\S+) ok=(\d+) count=(\d+) "
+                  r"children=0x([0-9a-f]{16})", out)
+    if not m:
+        raise Failed("the harness printed no overlay DirectoryInfo line")
+    overlay["directory"] = {"path": m.group(1), "ok": int(m.group(2)),
+                            "count": int(m.group(3)), "children": m.group(4)}
+
     stderr = runs[0].stderr or ""
     refusals = {}
     for marker in REFUSAL_MARKERS:
@@ -524,7 +565,7 @@ def run_harness(js: Path, tag: str) -> dict:
         "counters": counters, "provider_summary": summary_fields,
         "provider_refusals": refusals, "stdout_bytes": len(out),
         "pak_header": pak_header, "pak_fat": fat, "pak_entry_reads": entry_reads,
-        "pak_directory": directory,
+        "pak_directory": directory, "overlay": overlay,
     }
 
 
@@ -652,6 +693,52 @@ def compare_reference(result: dict) -> dict:
         raise Failed(f"DirectoryInfo child sizes hash {directory['children']} != "
                      f"{h:016x}")
 
+    # --- the same content through C_OverlayFs -----------------------------
+    overlay = result["overlay"]
+    if overlay["layers"] != 1:
+        raise Failed(f"the overlay has {overlay['layers']} layers, expected 1")
+    if set(overlay["reads"]) != set(result["pak_entry_reads"]):
+        raise Failed("the overlay read a different entry set than C_PakFs: "
+                     f"{sorted(overlay['reads'])} vs {sorted(result['pak_entry_reads'])}")
+    overlay_report = {}
+    for path, readers in sorted(overlay["reads"].items()):
+        expected_entry = next((e for e in reference["entries"] if e["path"] == path), None)
+        if expected_entry is None:
+            raise Failed(f"the overlay read an entry the reference does not list: {path}")
+        plain = pak_entry_plaintext(PAK, expected_entry)
+        want_hash = fnv1a64_bytes(plain)
+        for mode, read in sorted(readers.items()):
+            if not read["ok"]:
+                raise Failed(f"{path} via overlay ({mode}) read failed")
+            if read["bytes"] != len(plain):
+                raise Failed(f"{path} via overlay ({mode}) delivered {read['bytes']} "
+                             f"bytes, independent decode {len(plain)}")
+            if read["hash"] != want_hash:
+                raise Failed(f"{path} via overlay ({mode}) hash {read['hash']} != "
+                             f"{want_hash}")
+        overlay_report[path] = {
+            "bytes": len(plain),
+            "fnv1a64": want_hash,
+            "modes": sorted(readers),
+        }
+    overlay_dir = overlay["directory"]
+    if not overlay_dir["ok"]:
+        raise Failed(f"the overlay refused DirectoryInfo('{overlay_dir['path']}')")
+    if overlay_dir["count"] != len(children):
+        raise Failed(f"overlay DirectoryInfo reported {overlay_dir['count']} children, "
+                     f"reference has {len(children)}")
+    # The overlay deduplicates through a hash set, so compare the multiset.
+    set_hash = 0
+    for child in children:
+        h_child = 0xCBF29CE484222325
+        for b in range(4):
+            h_child ^= (child["logicalBytes"] >> (8 * b)) & 0xFF
+            h_child = (h_child * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+        set_hash ^= h_child
+    if overlay_dir["children"] != f"{set_hash:016x}":
+        raise Failed(f"overlay DirectoryInfo child sizes multiset "
+                     f"{overlay_dir['children']} != {set_hash:016x}")
+
     return {
         "entries": len(engine["entries"]),
         "header": engine["header"],
@@ -666,6 +753,15 @@ def compare_reference(result: dict) -> dict:
                 "path": directory["path"],
                 "children": len(children),
                 "child_sizes_fnv1a64": directory["children"],
+            },
+        },
+        "overlay": {
+            "layers": overlay["layers"],
+            "entries": overlay_report,
+            "directory": {
+                "path": overlay_dir["path"],
+                "children": len(children),
+                "child_sizes_fnv1a64": overlay_dir["children"],
             },
         },
     }
@@ -965,6 +1061,10 @@ def main() -> int:
     print(f"engine pak      {engine_pak['fat_records_compared']} FAT records, "
           f"{len(engine_pak['entries'])} entries decompressed "
           f"({', '.join('%d B' % e['bytes'] for e in engine_pak['entries'].values())})")
+    overlay = report["reference"]["overlay"]
+    print(f"overlay         {overlay['layers']} layer, "
+          f"{len(overlay['entries'])} entries, "
+          f"{overlay['directory']['children']} directory children")
     print(f"fnv1a64         {python_hash} (both paths)")
     if report["pc_parity"].get("skipped"):
         print("pc parity       SKIPPED (recorded)")
