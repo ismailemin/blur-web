@@ -48,17 +48,26 @@ uygulanmadı; 3/3 temiz koşu resmî ispat değil.
 
 ## 3. T-005 — Tek oyunculu dikey dilim
 
-**Durum:** in-progress; T-005a/b/c/d tasarım tamam, uygulama sırada
+**Durum:** in-progress; T-005a/b/c/d tasarım tamam; T-005c engine scheduler ve
+T-005d collision oracle kod dilimleri tamam
 **Kart:** `docs/work/tasks/T-005-single-player-vertical-slice.md`
 **T-005a kanıtı:** `docs/work/analysis/engine-wasm-probe.md`
 **T-005b tasarımı:** `docs/work/analysis/t005-streaming-design.md`
-**T-005c tasarımı:** `docs/work/analysis/t005-scheduler-design.md`
-**T-005d fizibilitesi:** `docs/work/analysis/t005-physics-feasibility.md`
+**T-005c kanıtı:** `docs/work/analysis/t005-scheduler-design.md`,
+`docs/work/analysis/engine-web-shims.md`
+**T-005d kanıtı:** `docs/work/analysis/t005-physics-feasibility.md`,
+`docs/work/analysis/t005-collision-oracle.md`
 
 T-005a motor/WASM/platform fizibilitesi → T-005b streaming → T-005c scheduler →
 T-005d fizik → T-005e kontroller/kamera → T-005f ses/UI/save → T-005g tam yarış
-kabul testi. Multiplayer bundan sonra. İlk adım: en küçük motor alt kümesini
-wasm32'ye derleyip gerçek bağımlılık/engel listesini çıkarmak.
+kabul testi. Multiplayer bundan sonra.
+
+P14: `PLATFORM_WEB` kimliğiyle 30/39 TU derleniyor; `spike_sched.wasm` 59.140 B
+ve node'da `ran=1 / job_result=42 / workers=0`. Kalan: policy flattening,
+POSIX kalıntıları, DX11/FX11.
+
+P15: `Level.levelphysics` kanıtlandı; native/wasm/Python `queryHash` birebir.
+Kalan: fat/swept-sphere (teker yarıçapı XT), constraint'ler, engine entegrasyonu.
 
 ## 4. T-006 — Tarayıcı multiplayer
 

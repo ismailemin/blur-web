@@ -67,8 +67,15 @@ gerekli. Ayrıntı: `docs/work/analysis/t005-scheduler-design.md`.
 
 **T-005c kod dilimi tamam:** `probes/scheduler-probe/` 21/21; native/wasm/
 Python 0 fark; 144/30 Hz, hitch, tab gap, frame-rate bağımsızlığı geçti. Ana
-suite `--skip-build` 28/28. Engine `Scheduler::` entegrasyonu yok. Kanıt:
-`docs/work/verification/T-005c-scheduler.md`.
+suite `--skip-build` 29/29. Kanıt: `docs/work/verification/T-005c-scheduler.md`.
+
+**T-005c engine dilimi (P14):** `PLATFORM_WEB`/`TL_PLAT_WEB` kimliği kopya
+kaynakta 5 düzenleme + 2 tip başlığı; 39 TU'dan 30'u derleniyor
+(`jobqueue*` 11→0, `Inflate`, `serialiser` 0). `spike_sched.wasm` 59.140 B;
+node'da gerçek iş: `ran=1`, `job_result=42`, `workers=0`, iki koşu bit-birebir.
+`Atomic.h` wasm dalı yoktu; 17 fonksiyon `__atomic_*` ile dolduruldu. Kalan:
+policy flattening, 5 POSIX kalıntısı, `_vsnprintf_s`, DX11/FX11. Ayrıntı:
+`docs/work/analysis/engine-web-shims.md`.
 
 **T-005b tasarımı:** `Sys::I_FileSystem`/`I_File` + logicalfs/PAK C++'ta kalıyor;
 altına `platform/file` C ABI ve OPFS/blob/http range-source registry. İlk dilim
@@ -81,6 +88,12 @@ sonra her RacingPhysics simülasyon TU'su 18 hata, Gravity scheduler module
 tiplerinde bloke. T-005c sert önkoşul. İlk dilim statik collision-query oracle
 (`Level.levelphysics`, `queryHash` native/wasm). Ayrıntı:
 `docs/work/analysis/t005-physics-feasibility.md`.
+
+**T-005d D1 tamam (P15):** `Level.levelphysics` formatı kanıtlandı; 44.244
+üçgen, thin ray + line-cache + statik küre sorguları (24+24+8). Native/wasm/
+Python `queryHash f87365b7…9b5d6e` birebir; 13/13 bozuk girdi reddi; ana suite
+29/29. Fat/swept-sphere yok (teker yarıçapı XT), constraint yalnız boş liste.
+Kanıt: `docs/work/verification/T-005d-collision-oracle.md`.
 
 **T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel

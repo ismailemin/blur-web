@@ -66,6 +66,16 @@ native MSVC `/W4` 0 uyarı, wasm32 53.263 B, native/wasm/Python 0 fark.
 accumulator sıfırlama (`ApplicationPC.cpp:518-522`) tasarım §4.2'ye işlenmeli.
 Kanıt: `docs/work/verification/T-005c-scheduler.md`. Engine entegrasyonu yok.
 
+**Engine scheduler dilimi (2 Kasım, P14):** `PLATFORM_WEB`/`TL_PLAT_WEB` kimliği
+kopya kaynakta 5 düzenleme + 2 tip başlığıyla eklendi. 39 ölçülen TU'dan 30'u
+derleniyor; `jobqueue.cpp` ve `jobqueue_kernel.cpp` 11 → **0** hata, `Inflate` ve
+`serialiser` de 0. `spike_sched.wasm` **59.140 B** ve node'da gerçek bir iş
+çalıştırıyor: `ran=1`, `job_result=42`, `workers=0`, iki koşu bit-birebir.
+`Atomic.h`'nin `PLATFORM_PC` zincirinde wasm dalı yoktu; 17 fonksiyon
+`__atomic_*` ile dolduruldu. Kalan: policy flattening (`piStreamer` column 0),
+5 POSIX kalıntısı, `_vsnprintf_s`, DX11/FX11. Ayrıntı:
+`docs/work/analysis/engine-web-shims.md`. Oyun/motor iddiası yok.
+
 ### T-005d — Fizik ve çarpışma
 - Gravity/physics alt kümesini WASM'e taşı; native referansla ölç.
 - T-004'teki particle-cache çökmesi sürüş referansını bloke ediyorsa önce
@@ -82,6 +92,14 @@ kalanı scheduler module tipleri. Bu yüzden **T-005c sert önkoşul**. İlk dil
 `queryHash` native/wasm birebir. Car/XT/solver yok. Native sayısal referans
 henüz yok; önce aynı probe'un native build'i. Ayrıntı:
 `docs/work/analysis/t005-physics-feasibility.md`.
+
+**D1 kod dilimi (2 Kasım, P15):** `Level.levelphysics` formatı kanıtlandı
+(`Physic` blokları, Gravity import v10, `OptimisedAABBTree`, yaprak sıralı üçgen
+akışı, `S16<14>`, U8 indeks). `probes/collision-oracle/` thin ray + 4 girişli
+line-cache + statik küre sorguları: 24+24+8; 44.244 üçgen. Native/wasm/Python
+`queryHash` birebir `f87365b7…9b5d6e`; 13/13 bozuk girdi reddi; ana suite
+`--skip-build` 29/29. Fat/swept-sphere yok (teker yarıçapı XT'den), constraint
+yalnız boş liste. Kanıt: `docs/work/verification/T-005d-collision-oracle.md`.
 
 ### T-005e — Kontroller ve kamera
 - Klavye/gamepad; özgün araç girdi semantiği.

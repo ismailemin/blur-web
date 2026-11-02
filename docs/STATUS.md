@@ -326,4 +326,18 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Düzeltme: `SetElementSize(sizeof(C_Particle_E))`. Paired 3+3: baseline **3/3 çökme** (2×`0x80000003`, 1×`0xC0000005`, 16/23/17 s), düzeltme **6/6 exit 0** (23–24 s); ek kanıt koşusuyla **7/7**. Koşu `Racing` (10,2 s) → `AFTER_THROTTLE` (20,2 s) → `quit` (22,2 s).
 - Kanonik `Amax.exe` ve assert değişmedi; patch `_work/build/engine-reference/native-slotstride-fix.patch`. wasm32'de sizeof 8 olduğu için düzeltme no-op. TEK-YUVA slot sözleşmesi web portu için açık. Kanıt: `docs/work/verification/T-004-slot-stride.md`.
 
+## 2 Kasım 2026 — T-005c engine scheduler dilimi
+
+- `PLATFORM_WEB`/`TL_PLAT_WEB` kimliği kopya kaynakta 5 düzenleme + 2 tip başlığı (`tl_thread_web.h`, `jobqueue_web.h`) ile eklendi; `upstream/` temiz.
+- 39 ölçülen TU'dan 30'u derleniyor; `jobqueue.cpp`/`jobqueue_kernel.cpp` 11→0, `Inflate` ve `serialiser` 0. `Core.h:181`'de `PLATFORM_LINUX`'u düşürmek `IoFile.cpp`'yi 1→41 hataya çıkardığı için "web + POSIX alias" yapılandırması korundu.
+- `spike_sched.wasm` **59.140 B**, node'da gerçek iş: `ran=1`, `job_result=42`, `queued=0`, `workers=0`; iki koşu bit-birebir.
+- `Atomic.h`'nin platform zincirinde wasm dalı yoktu; 17 fonksiyon `__atomic_*` ile dolduruldu. `DebugBreak()` PPC trap'i wasm'da `__builtin_trap()`.
+- Kalan: policy flattening (`piStreamer` column 0), 5 POSIX kalıntısı, `_vsnprintf_s`, DX11/FX11. Ayrıntı: `docs/work/analysis/engine-web-shims.md`.
+
+## 2 Kasım 2026 — T-005d collision oracle
+
+- `Level.levelphysics` formatı kanıtlandı: `Physic` blokları, Gravity import v10, `OptimisedAABBTree`, yaprak sıralı üçgen akışı, `S16<14>` kuantizasyon, U8 indeks, little-endian. Ayrıştırma `Main` sınırında sıfır artık baytla bitiyor.
+- `probes/collision-oracle/`: 44.244 üçgen; thin ray + 4 girişli line-cache + statik küre (24+24+8). Native/wasm/Python `queryHash f87365b7…9b5d6e`, 7.768 kanonik bayt; 13/13 bozuk girdi reddi.
+- Ana suite'e `collision-oracle` adımı eklendi: `--skip-build` **29/29**. Fat/swept-sphere yok (teker yarıçapı XT), constraint yalnız boş liste; motor entegrasyonu/oyun iddiası yok. Kanıt: `docs/work/verification/T-005d-collision-oracle.md`.
+
 
