@@ -76,9 +76,10 @@ tiplerinde bloke. T-005c sert önkoşul. İlk dilim statik collision-query oracl
 
 **T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
-makine gerekli. T-006b/c (wire format/WebRTC) sürüyor. T-006e/f gerçek yarış
-T-005g ve T-004 kapılarına bağlı. Kanıt:
-`docs/work/analysis/t006-native-lan.md`.
+makine gerekli. T-006b tamam: wire format struct ABI; `wchar_t` (MSVC 2/wasm32 4)
+ve padding/bitfield en büyük risk; golden byte'lardan önce layout probe. T-006c
+sürüyor. T-006e/f gerçek yarış T-005g ve T-004 kapılarına bağlı. Kanıt:
+`docs/work/analysis/t006-native-lan.md`, `t006-wire-format.md`.
 
 ## Bilinen engeller / riskler
 

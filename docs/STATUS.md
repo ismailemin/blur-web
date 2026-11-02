@@ -288,4 +288,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - **İki istemci aynı makinede çalışmaz:** keşif `INADDR_ANY:50001` üzerine `SO_REUSEADDR` olmadan bind ediliyor; `C_NetRace::Initialise` hatayı yutuyor. İki fiziksel makine gerekli. `Global\Blur2PC.GameSlot` mutex'i de aynı makineyi engelliyor.
 - Eksik kanıt: iki istemcili senaryo, LAN discovery/join logu, pcap, `SystemLink` automation, firewall/port kaydı. Payload DTLS'li; pcap yalnız başlık/seq/size verir. B1 kabulü iki makineli LAN lobisi + pcap/CSV; 10s `Racing` B1b ve T-004 çökmesi nedeniyle ayrı. Rapor: `docs/work/analysis/t006-native-lan.md`.
 
+## 2 Kasım 2026 — T-006b wire format tasarımı
+
+- Wire format açık serializer değil, **struct ABI**: `memcpy(sizeof(struct))`; tek dönüşüm 2 baytlık little-endian size. En büyük risk `SysProfile::BaseProfile` içindeki `wchar_t` (MSVC 2, wasm32 4) ve padding/bitfield yerleşimi; Join/StartRace alanları kayabilir.
+- Golden byte'lardan önce native/WASM `sizeof`/`alignof`/`offsetof` + bit pattern layout probe gerekli. P0 paket seti: KeepAlive, ACK, JoinRequest/Reply/Data, InitialData, PlayerStates, VehicleData, StartRace, BasicVehicleData, VehicleFinished; PostRace/Leaving hemen sonra.
+- Fixture formatı, padding-poison/truncation corpus, 1024-byte MTU, 0.5s retry, 1.5s join resend, 4/6s dropout planı hazır. Henüz packet capture/uygulama yok. Rapor: `docs/work/analysis/t006-wire-format.md`; kart: `docs/work/tasks/T-006-multiplayer.md`.
+
 
