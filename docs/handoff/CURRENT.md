@@ -113,6 +113,12 @@ Python `queryHash f87365b7…9b5d6e` birebir; 13/13 bozuk girdi reddi; ana suite
 29/29. Fat/swept-sphere yok (teker yarıçapı XT), constraint yalnız boş liste.
 Kanıt: `docs/work/verification/T-005d-collision-oracle.md`.
 
+**T-005d Gravity wasm (P17):** 8 gerçek Gravity TU'su upstream hâliyle wasm32'de
+derlendi (33 nesne, 134.318 B); engine kaynağı değişmedi (patch 0 B). Aynı
+sorgularda **ray 24/24 bayt-birebir**; sphere 8/24, cache 1/8 yalnız altı
+raporlama alanında farklı. Tam `queryHash` eşitliği yok; verifier izin verilen
+farkı pinliyor. Kanıt: `docs/work/verification/T-005d-gravity-wasm.md`.
+
 **T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
 makine gerekli. T-006b tamam: wire format struct ABI; `wchar_t` (MSVC 2/wasm32 4)

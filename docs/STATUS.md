@@ -363,4 +363,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `probes/collision-oracle/`: 44.244 üçgen; thin ray + 4 girişli line-cache + statik küre (24+24+8). Native/wasm/Python `queryHash f87365b7…9b5d6e`, 7.768 kanonik bayt; 13/13 bozuk girdi reddi.
 - Ana suite'e `collision-oracle` adımı eklendi: `--skip-build` **29/29**. Fat/swept-sphere yok (teker yarıçapı XT), constraint yalnız boş liste; motor entegrasyonu/oyun iddiası yok. Kanıt: `docs/work/verification/T-005d-collision-oracle.md`.
 
+## 2 Kasım 2026 — T-005d Gravity wasm portu
+
+- 8 gerçek Gravity TU'su (`OptimisedAABBTree`, `LineCollisionCache`, `Shapes`, `Primitive*Test`, `AABB`, `SPU_Memory`, `GravityConstants`) upstream hâliyle wasm32'de derlendi: 33 nesne, **134.318 B**, `t005d-gravity-overlay.patch` **0 B** (engine kaynağı değişmedi; 350/350 Gravity dosyası upstream ile aynı).
+- Aynı 24+24+8 sorgu tablosu: **ray 24/24 bayt-birebir**; sphere 8/24, cache 1/8. Fark yalnız altı raporlama alanında: materyal paketleme, patch normal, `engineTriangleIndex`, atanmayan `trace.collisionFlags`, normalize edilmemiş trace normal'i. İlk fark sorgu 24 `point-vertex-0`, bayt 48.
+- Tam `queryHash` eşitliği iddia edilmiyor (`77a53355…f94c` vs `f87365b7…5d6e`); `verify_gravity.py` izin verilen farkı birebir pinliyor (ray 24/0, sphere 8/16, cache 1/7 + alan çoklukları), başka farkta düşüyor. Build/run deterministik, mesh yapısı doğru. Kanıt: `docs/work/verification/T-005d-gravity-wasm.md`.
+
 

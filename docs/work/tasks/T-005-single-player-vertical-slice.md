@@ -122,6 +122,15 @@ line-cache + statik küre sorguları: 24+24+8; 44.244 üçgen. Native/wasm/Pytho
 `--skip-build` 29/29. Fat/swept-sphere yok (teker yarıçapı XT'den), constraint
 yalnız boş liste. Kanıt: `docs/work/verification/T-005d-collision-oracle.md`.
 
+**Gravity wasm portu (2 Kasım, P17):** 8 gerçek Gravity TU'su upstream hâliyle
+wasm32'de derlendi (33 nesne, 134.318 B); `t005d-gravity-overlay.patch` boş,
+engine kaynağı değişmedi. Aynı 24+24+8 sorguda **ray 24/24 bayt-birebir**;
+sphere 8/24 ve cache 1/8 yalnız altı raporlama alanında farklı (materyal
+paketleme, patch normal, `engineTriangleIndex`, atanmayan trace flag'leri,
+normalize edilmemiş normal). Tam `queryHash` eşitliği iddia edilmiyor; verifier
+izin verilen farkı pinliyor ve başka farkta düşüyor. Kanıt:
+`docs/work/verification/T-005d-gravity-wasm.md`.
+
 ### T-005e — Kontroller ve kamera
 - Klavye/gamepad; özgün araç girdi semantiği.
 - Kamera, HUD ve yarış durumu.

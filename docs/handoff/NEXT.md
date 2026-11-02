@@ -75,6 +75,10 @@ PC preprocessed TU yalnız log satırlarında farklı, 29/29 TU MSVC. İlk gerç
 P15: `Level.levelphysics` kanıtlandı; native/wasm/Python `queryHash` birebir.
 Kalan: fat/swept-sphere (teker yarıçapı XT), constraint'ler, engine entegrasyonu.
 
+P17: 8 gerçek Gravity TU'su wasm32'de; 33 nesne, 134.318 B, ray 24/24
+bayt-birebir; sphere/cache farkı altı raporlama alanıyla sınırlı ve pinli.
+Kalan: probe formatVersion 2, level streamer bağlantısı, araç ray/wheel yolu.
+
 P16: `engine/patches/t005b-file-overlay.patch` (4 yeni dosya + 3 web fix) scheduler
 overlay'i üstünde `Sys::I_File` + `pf_*` C ABI; `verify_file_overlay.py --fresh`
 PASS (530.493 B, 50/50, tam `C_PakFs` + `C_OverlayFs`, PC parity). Kalan:

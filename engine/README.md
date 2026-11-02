@@ -248,21 +248,49 @@ verification is still a no-op on web, so `pSecurity` is NULL; the writable
 exercised; no level, streamer or serialiser sits on top yet. Evidence:
 `docs/work/analysis/engine-file-layer.md`.
 
+## T-005d Gravity static collision (no patch)
+
+The real Gravity static-collision TUs compile on wasm32 under the existing two
+overlays; `engine/patches/t005d-gravity-overlay.patch` is intentionally **0 B**
+(no engine source change). `engine/verify_gravity.py` builds the tree twice,
+runs it twice and compares all 7,768 canonical bytes against the committed
+`probes/collision-oracle` records:
+
+- **24/24 ray records byte-identical** (traversal, quantisation, ties, segment
+  shrinking, `cosAngle`, byte-offset triangle index).
+- Spheres 8/24 and cache 1/8 differ only in six pinned reporting fields
+  (material packing, patch normal, `engineTriangleIndex`, unassigned trace flags,
+  stored vs normalised trace normal). The verifier fails on any other delta.
+- Full `queryHash` equality is **not** claimed: engine
+  `77a53355…f94c`, probe `f87365b7…5d6e`.
+- 33 objects, 134,318 B wasm, deterministic; 350/350 Gravity files identical to
+  upstream.
+
+```powershell
+& $py engine/verify_gravity.py --fresh
+```
+
+Evidence: `docs/work/verification/T-005d-gravity-wasm.md`,
+`docs/work/analysis/engine-gravity-layer.md`.
+
 ## Layout
 
 ```
 engine/
   patches/t005c-web-scheduler.patch   scheduler overlay, unified diff vs upstream/BlurRebuilt
   patches/t005b-file-overlay.patch    file layer + PAK consumer, applied after the scheduler
+  patches/t005d-gravity-overlay.patch empty by design (Gravity needs no source edit)
   apply_overlay.py                    copy + patch a caller-supplied tree (stdlib only)
   apply_file_overlay.py               scheduler + file patch in one tree
   verify_overlay.py                   fresh-tree rebuild, A2/A3/A4, fail-loud, engine caller
   verify_file_overlay.py              fresh-tree rebuild, PAK index + entry bytes + PC parity
+  verify_gravity.py                   real Gravity mesh queries vs the committed probe
   native_parity.py                    MSVC TU-equality check + native compile
   make_patch.py                       regenerate the scheduler patch from the spike overlay
   harness/t005c/                      scheduler probe + platform shims (committed source)
   harness/t005b/                      file-layer + PAK-consumer harness (C++, JS glue,
                                       msvc_crt_web.h build prelude)
+  harness/t005d/                      Gravity harness (gravity_harness.cpp, node driver)
   README.md                           this file
 ```
 
