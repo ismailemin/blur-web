@@ -65,6 +65,11 @@ kapılarında bloke. Ayrıntı: `docs/work/analysis/engine-wasm-probe.md`.
 `MT::` wait'ler assert; policy flattening ve audio `Flush(group,false)` sapması
 gerekli. Ayrıntı: `docs/work/analysis/t005-scheduler-design.md`.
 
+**T-005c kod dilimi tamam:** `probes/scheduler-probe/` 21/21; native/wasm/
+Python 0 fark; 144/30 Hz, hitch, tab gap, frame-rate bağımsızlığı geçti. Ana
+suite `--skip-build` 28/28. Engine `Scheduler::` entegrasyonu yok. Kanıt:
+`docs/work/verification/T-005c-scheduler.md`.
+
 **T-005b tasarımı:** `Sys::I_FileSystem`/`I_File` + logicalfs/PAK C++'ta kalıyor;
 altına `platform/file` C ABI ve OPFS/blob/http range-source registry. İlk dilim
 `RangeFile` + PAK/level index parity; eksik aralık açık hata. Kurulum 7,48 GB/

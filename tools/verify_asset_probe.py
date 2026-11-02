@@ -40,6 +40,7 @@ def main():
             ('level-candidates-native-wasm','verify_level_candidates_wasm'),('packet-cases','verify_packets'),
             ('packet-independent','verify_packet_reference'),('viewer-math','verify_viewer_math')]],
         ('level-http-bounds',[sys.executable,'probes/asset-reader/tests/verify_level_http.py']),
+        ('scheduler-probe',[sys.executable,'probes/scheduler-probe/tests/run_scheduler_probe.py']+(['--skip-build'] if args.skip_build else [])),
     ])
     results=[]
     for name,command in steps:

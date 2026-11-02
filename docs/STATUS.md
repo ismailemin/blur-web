@@ -307,4 +307,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Minimal tasarım 16 nokta: `C_Particle_E::Clear`, `C_Emitter::m_pTrailSlot` (sınıf sonu, +8 B), spawn'da kayıt (`SuperSpawn.cpp:25/46`), copy-last sonrası retarget (`SuperEffect.cpp:236`), üç trail yolunda ve iki self-free noktasında clear-then-release. `Atomic.h`/`Manager.cpp` değişmiyor; assert kalıyor. Tahmini maliyet 18.432 B.
 - Sıradaki en küçük adım: trace'e `pParticle`, blok `m_VectorPosition`, `i`, `iSalt` ekleyip bayat `(t,b,i)`'yi isimlendirmek; sonra 1–14 uygulaması ve 3+3 paired test (tam dump). Rapor: `docs/work/analysis/emitter-slot-ownership.md`.
 
+## 2 Kasım 2026 — T-005c sabit adım probe'u
+
+- `probes/scheduler-probe/`: 1/60 sabit adım, accumulator, 4 tick cap, pause/hitch, alpha. Native MSVC `/W4` temiz, CTest 2/2, 2130 assertion; wasm32 Emscripten 6.0.13 53.263 B.
+- Native/wasm/Python üçlü karşılaştırma 0 fark: 144 Hz×600 = 249 tick, 30 Hz×300 = 600 tick, 250 ms hitch 15 istek → 4 çalıştı/11 clamp, 5 s tab gap 1 pause. 600/150/100 frame → tek hash `0x7e04f9a197e01d8a`.
+- Ana suite'e `scheduler-probe` adımı eklendi; `--skip-build` 28/28. Engine `Scheduler::` entegrasyonu yok. Bulgu: cap sonrası accumulator sıfırlama (`ApplicationPC.cpp:518-522`) tasarım §4.2'ye işlenmeli. Kanıt: `docs/work/verification/T-005c-scheduler.md`.
+
 

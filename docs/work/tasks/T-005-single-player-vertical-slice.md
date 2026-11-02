@@ -58,6 +58,14 @@ sapma (her zaman drain) gerekiyor. İlk kod dilimi `probes/scheduler-probe/` ve
 1/60 sabit adım + 4 tick cap + interpolasyon; 144/30 Hz, hitch ve tab gap
 testleri hash-eşit olmalı. Ayrıntı: `docs/work/analysis/t005-scheduler-design.md`.
 
+**Kod dilimi sonucu (2 Kasım):** `probes/scheduler-probe/` 21/21 geçti:
+native MSVC `/W4` 0 uyarı, wasm32 53.263 B, native/wasm/Python 0 fark.
+144 Hz×600 = 249 tick; 30 Hz×300 = 600 tick; 250 ms hitch 15 istek → 4 çalıştı,
+11 clamp; 5 s tab gap 1 pause. 5 s'de 600/150/100 frame → tek hash
+`0x7e04f9a197e01d8a`. Ana suite `--skip-build` 28/28. Bulgu: cap sonrası
+accumulator sıfırlama (`ApplicationPC.cpp:518-522`) tasarım §4.2'ye işlenmeli.
+Kanıt: `docs/work/verification/T-005c-scheduler.md`. Engine entegrasyonu yok.
+
 ### T-005d — Fizik ve çarpışma
 - Gravity/physics alt kümesini WASM'e taşı; native referansla ölç.
 - T-004'teki particle-cache çökmesi sürüş referansını bloke ediyorsa önce
