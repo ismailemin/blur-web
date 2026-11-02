@@ -82,7 +82,9 @@ policy flattening, 5 POSIX kalıntısı, `_vsnprintf_s`, DX11/FX11. Ayrıntı:
 `native_parity.py`. Taze upstream kopyasında: wasm 60.797 B, A3 4/4, 3/3 abort,
 deterministik, **PASS**; PC önişlenmiş TU yalnız log satır numaralarında farklı,
 29/29 TU MSVC'de derleniyor. İlk gerçek engine çağırıcısı `C_Deflate`/`C_Inflate`
-kuyruk üzerinden çalıştı (`deferred=1`, `equal=1`). Kalan: A2 grup bağımlılıkları,
+kuyruk üzerinden çalıştı (`deferred=1`, `equal=1`). A2 grup bağımlılıkları
+kapandı (`A` → `AB` → `ABCD`, yalnız hedef grup flush edilerek); `JQ_GROUP_LABEL`
+ve `JQ_GROUP_SPURWLOCK` yüksek sesle abort (4/4). Kalan: sahadaki 150 çağrı yeri,
 native runtime parity (PC logging zinciri), DX11/FX11. `upstream/` değişmedi.
 
 **T-005b tasarımı:** `Sys::I_FileSystem`/`I_File` + logicalfs/PAK C++'ta kalıyor;

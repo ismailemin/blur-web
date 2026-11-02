@@ -82,7 +82,10 @@ Taze upstream kopyasına uygulanıp yeniden derlendi: wasm 60.797 B, A3 4/4,
 3/3 abort, deterministik, **verdict PASS**. PC `jobqueue.cpp` önişlenmiş çıktısı
 yalnız iki log satır numarası dışında aynı; 29/29 TU MSVC'de derleniyor.
 İlk gerçek engine çağırıcısı `C_Deflate`/`C_Inflate` kuyruk üzerinden çalıştı
-(`deferred=1`, `equal=1`). A2 (grup bağımlılıkları) henüz test edilmedi.
+(`deferred=1`, `equal=1`). A2 grup bağımlılıkları kapandı: yalnız `Flush(A)`
+sırası `A`, B kuyrukta; `Flush(B)` → `AB`; yalnız `Flush(D)` → `ABCD`
+(bağımlılık kendi kendine çözülüyor). `JQ_GROUP_LABEL`/`JQ_GROUP_SPURWLOCK`
+desteklenmiyor ve yüksek sesle abort ediyor (4/4). Patch `B939B39C…FDEF2`.
 
 ### T-005d — Fizik ve çarpışma
 - Gravity/physics alt kümesini WASM'e taşı; native referansla ölç.

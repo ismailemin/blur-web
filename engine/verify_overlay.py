@@ -73,6 +73,10 @@ EXPECTED = [
     "layout queueptr=8/8 paramdata=48 task=72",
     "A4 workers=0 max_workers=0",
     "A4 flush_false ran=1 poll=1",
+    "A2 phase1 seq=A a_ran=1 b_ran=0 a_queue=0 b_queue=1",
+    "A2 phase2 seq=AB b_ran=1 b_queue=0",
+    "A2 phase3 only_flush_D seq=ABCD c_ran=1 d_ran=1",
+    "A2 verdict=ok",
     "A3 piMed ran=1 observed=1 poll=1",
     "A3 piHigh ran=1 observed=2 poll=1",
     "A3 piOneSPU ran=1 observed=3 poll=1",
@@ -82,7 +86,8 @@ EXPECTED = [
     "step=shutdown",
 ]
 ABORTS = [("abort-event", "MT::Event::Wait"), ("abort-thread", "tlWaitForThread"),
-          ("abort-policy", "all 8 columns are 0")]
+          ("abort-policy", "all 8 columns are 0"),
+          ("abort-label", "JQ_GROUP_LABEL")]
 
 
 def includes(tree: Path, lib: str) -> list[str]:

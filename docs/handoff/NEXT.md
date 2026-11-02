@@ -67,10 +67,10 @@ ve node'da `ran=1 / job_result=42 / workers=0`. Kalan: policy flattening,
 POSIX kalıntıları, DX11/FX11.
 
 P14 overlay: `engine/patches/t005c-web-scheduler.patch` + apply/verify/native
-araçları. Taze upstream kopyasında 60.797 B modül, A3 4/4, 3/3 abort, PASS;
+araçları. Taze upstream kopyasında 64.073 B modül, A2/A3/A4 + 4/4 abort, PASS;
 PC preprocessed TU yalnız log satırlarında farklı, 29/29 TU MSVC. İlk gerçek
-çağırıcı `C_Deflate`/`C_Inflate` (`deferred=1`, `equal=1`). Sıradaki: A2 grup
-bağımlılıkları + native runtime parity.
+çağırıcı `C_Deflate`/`C_Inflate` (`deferred=1`, `equal=1`). Sıradaki: sahadaki
+150 çağrı yeri + streaming/layer-manager sistemi.
 
 P15: `Level.levelphysics` kanıtlandı; native/wasm/Python `queryHash` birebir.
 Kalan: fat/swept-sphere (teker yarıçapı XT), constraint'ler, engine entegrasyonu.

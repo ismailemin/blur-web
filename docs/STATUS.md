@@ -341,6 +341,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - PC parity: önişlenmiş `jobqueue.cpp` yalnız iki log satır numarasında farklı (statement farkı yok); 29/29 TU MSVC'de derleniyor. Runtime PC probe, scheduler dışı logging zinciri (`IoStream.cpp`) nedeniyle bloke.
 - İlk gerçek engine çağırıcısı: `C_Deflate`/`C_Inflate` kuyruk üzerinden `deferred=1`, `equal=1`. Kalan: A2 grup bağımlılıkları, native runtime parity, DX11/FX11.
 
+## 2 Kasım 2026 — T-005c A2 grup bağımlılıkları
+
+- A2 kapanışı: B önce kuyruğa girse de yalnız `Flush(A)` sırası `A` (B kuyrukta), `Flush(B)` → `AB`; ikinci çiftte yalnız `Flush(D)` → `ABCD`. Sıra iş gövdelerinde kayıtlı; sayaçtan çıkarılmıyor.
+- `JQ_GROUP_LABEL` ve `JQ_GROUP_SPURWLOCK` temsil edilemiyor: açık mesajla abort (4/4 fail-loud). Abort-label mesajı hangi API'nin neden desteklenmediğini yazıyor.
+- `verify_overlay.py --fresh` **PASS**: scheduler wasm 64.073 B, A2/A3/A4, 4/4 abort, caller yeşil, deterministik. `native_parity.py`: PC TU yalnız iki log satırında farklı, 29/29 TU MSVC; runtime PC probe hâlâ scheduler dışı logging zincirinde bloke.
+- Patch `B939B39C…FDEF2` (20 dosya, +691/−35), manifest `57e7fc62bf67ab26`. Kalan: 150 gerçek çağrı yeri, streaming/layer-manager, DX11/FX11.
+
 ## 2 Kasım 2026 — T-005d collision oracle
 
 - `Level.levelphysics` formatı kanıtlandı: `Physic` blokları, Gravity import v10, `OptimisedAABBTree`, yaprak sıralı üçgen akışı, `S16<14>` kuantizasyon, U8 indeks, little-endian. Ayrıştırma `Main` sınırında sıfır artık baytla bitiyor.

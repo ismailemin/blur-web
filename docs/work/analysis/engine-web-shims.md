@@ -371,9 +371,9 @@ context genuinely succeeds and there is no second thread to deadlock against.
 
 ### 7.1 The scheduler module
 
-**23 objects, 90,549 B of wasm object code → `spike_sched.wasm`, 60,721 B at
+**23 objects, 95,477 B of wasm object code → `spike_sched.wasm`, 63,996 B at
 `-O2` — an engine scheduler module that links and executes every shipped game
-policy.** No symbol is resolved by a stub; the two spike sources are a platform
+policy and the T-005c dependency cases.** No symbol is resolved by a stub; the two spike sources are a platform
 backend and a driver, both marked below.
 
 ```text
@@ -403,6 +403,10 @@ step=pool
 layout queueptr=8/8 paramdata=48 task=72
 A4 workers=0 max_workers=0
 A4 flush_false ran=1 poll=1
+A2 phase1 seq=A a_ran=1 b_ran=0 a_queue=0 b_queue=1
+A2 phase2 seq=AB b_ran=1 b_queue=0
+A2 phase3 only_flush_D seq=ABCD c_ran=1 d_ran=1
+A2 verdict=ok
 A3 piMed ran=1 observed=1 poll=1
 A3 piHigh ran=1 observed=2 poll=1
 A3 piOneSPU ran=1 observed=3 poll=1
@@ -411,6 +415,21 @@ A3 total=4/4
 queue queued=0 executing=0
 step=shutdown
 ```
+
+**A2 — group dependency (the last unverified clause).** Group B depends on group
+A via `AddGroupDependency(B, A)`, and **B's task is enqueued first**, so the test
+fails in both directions: a drain that ignored the group filter would run B
+before A, and a drain that ignored the dependency would strand A behind B.
+
+- `phase1` calls `Flush(A)` only: the sequence recorded *inside the job bodies*
+  is `A`, `b_ran=0`, A's queue empty and B's still holding one task. Order is
+  asserted, not just counts.
+- `phase2` calls `Flush(B)`: the sequence becomes `AB` and B's queue drains.
+- `phase3` builds a second pair C<-D, enqueues D first, and calls `Flush(D)`
+  only. `Flush` recurses into its dependency (`jobqueue_xenon.cpp:146-155`), so
+  the sequence is `ABCD` — C ran before D without anyone flushing C directly.
+- `verdict=ok` re-checks all three from the sequence strings, so a reordering
+  fails the run rather than passing on counts.
 
 **A3 — every shipped game policy runs exactly once.** `piMed {7,7,7,…}`,
 `piHigh {10,…}`, `piOneSPU {7,7,7,0,0,0,0,0}` and `piStreamer {0,0,7,7,7,7,7,7}`
@@ -426,15 +445,32 @@ and the queue layout the backend relies on is asserted in-process:
 of those move, the smoke fails rather than silently using a different layout.
 
 **Fail-loud cases**, each a separate process that must die with a message
-(`run_spike.py` runs all three and checks exit code + message):
+(`run_spike.py` and `verify_overlay.py` run all four and check exit code +
+message):
 
 | mode | call | stderr |
 | --- | --- | --- |
 | `abort-event` | `MT::SpuEvent::Wait(1)` | `MT::Event::Wait` |
 | `abort-thread` | `tlWaitForThread(0)` | `tlWaitForThread` |
 | `abort-policy` | `CreatePolicy({0,0,0,0,0,0,0,0})` | `all 8 columns are 0` |
+| `abort-label` | `AddGroupDependency(g, JQ_GROUP_LABEL, &fence)` + `Flush(g)` | `JQ_GROUP_LABEL` |
 
-All three exit 1 and the expected message is present; nothing hangs.
+All four exit 1 with the expected message; nothing hangs. The label message names
+the exact API and the reason: *"AddGroupDependency(group, JQ_GROUP_LABEL, U32*)
+cannot be satisfied - only the renderer can advance the fence value"*.
+
+The other fence form, `AddGroupDependency(group, MT::SpuRwLock*)`, **cannot even be
+expressed on wasm32**: `MT::SpuRwLock` is declared only for
+`PLATFORM_PS3 | PLATFORM_SPU` (`core/threads/SpuRwLock.h:4`), so the inline
+overload in `jobqueue.h:350` does not exist for this build. It is reported as
+unsupported with the exact reason rather than emulated: the backend still refuses
+a group whose dependency id is `JQ_GROUP_SPURWLOCK` ("only another context can
+release the lock") in case such a group is ever created by code compiled for
+another platform, but no probe can construct one here.
+
+**A2 is only groups.** The two fence forms are refused rather than simulated, so
+this probe never proves that a fence would be *satisfied* — nothing in a single
+context can satisfy one.
 
 Three things the earlier runs exposed, kept because they are engine facts and not
 spike bugs (the driver now follows the game's order):
@@ -464,8 +500,8 @@ most of the maths is inline header code and 11,413 B is not an engine size.
 ### 7.3 The overlay as a patch, and PC parity
 
 The 20-file diff is exported to `engine/patches/t005c-web-scheduler.patch`
-(681 insertions, 35 deletions, SHA-256
-`DBD4AC27D43722D304313AC0709F38C28BF7DE67BE3AEC4495F9B7D816622E8B`) and applied
+(691 insertions, 35 deletions, SHA-256
+`B939B39C7F7598B19677F29286655DE554762CB3CBD1471833D17C873C3FDEF2`) and applied
 by `engine/apply_overlay.py` to a **fresh copy of upstream**
 (`_work/engine-overlay-check/`, 20,198 files). Both the built-in applier and
 `git apply -p1 --check` accept it.
@@ -477,9 +513,10 @@ reproduces the A3/A4 behaviour:
 | | overlay (`run_spike.py`) | fresh tree (`verify_overlay.py`) |
 | --- | --- | --- |
 | objects | 23 | 23 |
-| wasm | 60,721 B | 60,797 B |
+| wasm | 63,996 B | 64,073 B |
+| A2 | `verdict=ok` | `verdict=ok` |
 | A3 | `total=4/4` | `total=4/4` |
-| fail-loud cases | 3/3 | 3/3 |
+| fail-loud cases | 4/4 | 4/4 |
 | deterministic | yes | yes |
 
 The 76-byte difference is `__FILE__` strings (`upstream/BlurRebuilt/...` vs
@@ -536,7 +573,7 @@ What each field proves:
 - `caller shutdown ok` — `DestroyGroup` + `Shutdown` complete with the queue
   empty.
 
-Module: 112,825 B, SHA-256 `F70189D06E65B12B`, stable across two runs. Building
+Module: 116,101 B, SHA-256 `C793045C783CE105`, stable across two runs. Building
 it needs one build-layout detail: `Deflate.cpp`/`InflateTask.cpp` include
 `"../../../../Vendor/Zlib/Current_Mercury/Zlib.h"`, which the engine's build
 layout provides but this checkout does not; `verify_overlay.py` materialises that
@@ -550,12 +587,10 @@ No engine source is changed by that step.
    `engine/patches/t005c-web-scheduler.patch`, run the native build (`/W4`,
    `/permissive`, 14/14 CTest) and commit it. Until then every result here comes
    from an overlay tree.
-2. **Group dependencies are untested (T-005c A2).** The smoke flushes groups that
-   have no dependencies, so `AddGroupDependency`, `jqPopNextBatch`'s dependency
-   walk and `JQ_GROUP_SPURWLOCK`/`JQ_GROUP_LABEL` handling are unexercised; the
-   fence cases abort by design. This is the last *unverified* part of the
-   scheduler contract, and the 150 real call sites (streaming, physics, audio)
-   sit behind it.
+2. **The 150 real call sites are still unexercised.** A2 now covers the
+   dependency *mechanism* (§7.1), but no game system has queued across dependent
+   groups; group/policy interleavings under load, and the two audio
+   `Flush(group, false)` sites, remain unmeasured.
 3. **Native runtime A3/A4 cannot be linked** in this checkout: the PC `LogManager`
    retention list needs `Sys::C_FileSystem` → `AsyncFile` → `ArteryMutex` and
    `Network::TCPSocket`/`SMTPClient`, and `system/source/io/IoStream.cpp` does not
@@ -579,37 +614,38 @@ No engine source is changed by that step.
 
 ## 9. The single next smallest step
 
-**Run T-005c's A2 (group dependency) through the same harness, then land the
-patch.** A2 is the last unverified clause of the scheduler contract and it is
-pure scheduler code — no new subsystem, no new platform work.
+**Land the overlay.** Every clause of the scheduler contract that can be checked
+without a game is now checked (A1 compile, A2 dependencies, A3 policies, A4
+serial layout, caller, fail-loud cases), so the remaining work is no longer
+discovery — it is putting the patch into `upstream/` under the owning phase's
+gates.
 
-Concretely, in `engine/verify_overlay.py`'s probe:
+Concretely, in `task/T-005-...`:
 
-1. Two groups, `gA` and `gB`, with `AddGroupDependency(gB, gA)`; queue a task in
-   each; `Flush(gB)` must run `gA`'s task first and then `gB`'s, exactly once
-   each, with the queue empty afterwards.
-2. A `Flush` on a group whose only producer is a `JQ_GROUP_LABEL` fence must abort
-   with the fence message rather than spin (the code path exists, the test does
-   not).
-3. Re-run the caller so the compression round trip goes through a dependent
-   group.
+1. Apply `engine/patches/t005c-web-scheduler.patch` and keep the PC branches
+   byte-identical (the preprocessor equality in §7.3 is the check).
+2. Run the native build: `/W4` warning-free, `/permissive`, 14/14 CTest, and
+   `engine/native_parity.py` still green on the committed source.
+3. Re-run `engine/verify_overlay.py --fresh` against the committed `upstream/`
+   (no longer an overlay tree) to confirm the web module is unchanged.
+4. Only then point the game's `SchedulerConfig` at the web backend and take the
+   first real system (streaming or the layer-manager thread), which is where the
+   two audio `Flush(group,false)` deviations and the 150 call sites finally meet
+   the single-context rules.
 
-Then land `engine/patches/t005c-web-scheduler.patch` in `task/T-005-...` and
-confirm the native build (`/W4`, `/permissive`, 14/14 CTest) plus
-`engine/native_parity.py` are green on the committed source.
+Acceptance: the four gates above, plus `A2 verdict=ok` and `A3 total=4/4` from
+the committed tree.
 
-Acceptance: `verify_overlay.py` prints an `A2 dependency ...` line that matches
-the expected order, all existing lines stay identical, and the patch is committed
-with the native gate green.
-
-Why this one: everything else on the blocker list is either outside the
-scheduler (network, DX11, native logging) or is bookkeeping. A2 is the only place
-where the cooperative drain could still be *wrong* rather than merely unused.
+Why this one: the scheduler's behaviour is no longer the open question; whether
+the patch survives the real build and lands before other work diverges is. Every
+other item on the blocker list is outside this module (network, DX11, native
+logging chain).
 
 ## 10. What this does not prove
 
-- **No browser, GPU, audio, input, physics or game logic.** Four jobs on four
-  synthetic policies are the whole runtime evidence. No screenshot exists.
+- **No browser, GPU, audio, input, physics or game logic.** Four policy jobs,
+  four dependency jobs and one compression round trip are the whole runtime
+  evidence. No screenshot exists.
 - **Not thread-safe, not parallel.** Nothing exercised two contexts; `MT::Mutex`
   was linked but never contended, and `MT::Thread::Start/Join` were not called at
   all. Whether emscripten's thread stubs without `-pthread` make
@@ -626,7 +662,7 @@ where the cooperative drain could still be *wrong* rather than merely unused.
   were compiled to objects; the rest of §3 was syntax-checked only, and
   `-fsyntax-only` hides codegen-level problems (that is how the `snPause` PPC trap
   survived step 2).
-- No engine size claim: 60,721 B / 112,825 B include the emscripten runtime, libc
+- No engine size claim: 63,996 B / 116,101 B include the emscripten runtime, libc
   and libc++, and are dominated by the logging and zlib code, not by the
   scheduler.
 - The overlay proves the edits are *sufficient* for clang and for the MSVC TU
@@ -641,32 +677,32 @@ All hashes are SHA-256 prefixes. `engine/` files are committed; everything under
 
 | Path | Size | SHA-256 (16) | Content |
 | --- | --- | --- | --- |
-| `engine/patches/t005c-web-scheduler.patch` | 38,595 | `DBD4AC27D43722D3` | **the overlay: 20 files, +681/−35** |
+| `engine/patches/t005c-web-scheduler.patch` | 39,156 | `B939B39C7F7598B1` | **the overlay: 20 files, +691/−35** |
 | `engine/apply_overlay.py` | 9,966 | `3EEE1B15579B5252` | copy + patch a caller-supplied tree |
-| `engine/verify_overlay.py` | 11,960 | `A5BAECC53A9DAE05` | fresh-tree rebuild + A3/A4 + caller |
+| `engine/verify_overlay.py` | 12,182 | `E21F463034A66219` | fresh-tree rebuild + A2/A3/A4 + caller |
 | `engine/native_parity.py` | 9,026 | `0C7D18B7D6C68868` | MSVC TU equality + native compile |
 | `engine/make_patch.py` | 5,804 | `20EE39E65D79DC87` | regenerates the patch |
-| `engine/README.md` | 6,629 | `7FCCF7712E35092D` | purpose, provenance, guarantees |
-| `_work/engine-overlay-check/.overlay/manifest.json` | 2,908 | `EF47EBF8DA5AB2B9` | applied tree: commit, patch hash, manifest hash |
-| `_work/engine-web-spike/out/spike_sched.wasm` | 60,721 | `FACFD8E33DDE175E` | **scheduler module; 23 objects, 4 game policies** |
-| `_work/engine-web-spike/out/treecheck/spike_sched_tree.wasm` | 60,797 | `6E8E16D8704765B9` | same module rebuilt from the applied tree |
-| `_work/engine-web-spike/out/treecheck/spike_caller_tree.wasm` | 112,825 | `F70189D06E65B12B` | **scheduler + compression caller + zlib** |
+| `engine/README.md` | 8,387 | `BA40E4AA30C65141` | purpose, provenance, A2/A3/A4 coverage |
+| `_work/engine-overlay-check/.overlay/manifest.json` | 2,908 | `C140E5BC8D24C428` | applied tree: commit, patch hash, manifest hash |
+| `_work/engine-web-spike/out/spike_sched.wasm` | 63,996 | `9547C5CA972A6F8C` | **scheduler module; 23 objects, A2/A3/A4** |
+| `_work/engine-web-spike/out/treecheck/spike_sched_tree.wasm` | 64,073 | `AB918E9A1FC2C330` | same module rebuilt from the applied tree |
+| `_work/engine-web-spike/out/treecheck/spike_caller_tree.wasm` | 116,101 | `C793045C783CE105` | **scheduler + compression caller + zlib** |
 | `_work/engine-web-spike/out/spike_maths.wasm` | 11,413 | `4DFB1FD8A56D22E9` | maths + `Matrix.cpp` sample |
 | `_work/engine-web-spike/out/spike_time.wasm` | 10,397 | `34288F7DBF51E7ED` | `Time.cpp` + `endian.cpp` sample |
 | `_work/engine-web-spike/native/upstream_jobqueue.i` | 6,874,851 | `684B4C8D4507F0BF` | PC preprocessed TU, upstream |
 | `_work/engine-web-spike/native/overlay_jobqueue.i` | 6,875,525 | `F2E913DB1B0526BA` | PC preprocessed TU, overlay (differs by 2 line numbers) |
-| `_work/engine-web-spike/shims/jobqueue_web.cpp` | 6,633 | `B01F8EF97DE9FF95` | the backend, copied to `system/source/scheduler/jobqueue_web.cpp` |
+| `_work/engine-web-spike/shims/jobqueue_web.cpp` | 7,184 | `D5527182715A1265` | the backend, copied to `system/source/scheduler/jobqueue_web.cpp` |
 | `_work/engine-web-spike/shims/platform_net_web.cpp` | 1,124 | `8C43A5177ECA2AAC` | `Network::GetHostName()` → `"web-local"` |
 | `_work/engine-web-spike/shims/tl_thread_web.h` | 4,318 | `5CA770AD7E63775D` | `TL_PLAT_WEB` type layer + fail-loud stubs |
 | `_work/engine-web-spike/shims/jobqueue_web.h` | 2,309 | `C9EEE1F93E1FBA51` | scheduler type layer + `jqWebFatal` |
 | `_work/engine-web-spike/patched/CHANGES.txt` | 18,919 | `DB524F9616015A49` | the spike-side edit manifest |
-| `_work/logs/engine-web-spike/summary.json` | 16,247 | `E2411B04B8CAB2E3` | 9 sets, 3 modules, A3/A4, abort cases, flatten control |
+| `_work/logs/engine-web-spike/summary.json` | 17,223 | `A04089AC05494CF5` | 9 sets, 3 modules, A2/A3/A4, abort cases, flatten control |
 | `_work/engine-web-spike/logs/spike_sched.run{1,2}.log` | — | — | the two identical runs (exit 0) |
-| `_work/engine-web-spike/logs/spike_sched.abort-*.log` | 3 | — | the fail-loud cases (exit 1 + message) |
+| `_work/engine-web-spike/logs/spike_sched.abort-*.log` | 4 | — | the fail-loud cases (exit 1 + message) |
 | `_work/engine-web-spike/logs/flatten_control.run.log` | — | — | unpatched `jobqueue.cpp` → "cannot make progress" |
 | `_work/engine-web-spike/logs/caller.run{1,2}.log` | — | — | the compression round trip, twice |
 | `_work/engine-web-spike/logs/schedlink__*.obj.log` | 23 | — | one object compile per scheduler TU |
 | `_work/engine-web-spike/probes/probe_queue_cas.cpp` | 1,210 | `2F1316B987622CDE` | real `jqAtomicQueuePtr`: 8/8, CAS + stale CAS |
-| `_work/engine-web-spike/probes/smoke_sched.cpp` | 6,343 | `929F6B2442063A7B` | A3/A4 driver + three abort modes |
+| `_work/engine-web-spike/probes/smoke_sched.cpp` | 10,989 | `F09DF76B33FFE3BA` | A2/A3/A4 driver + four abort modes |
 | `_work/engine-web-spike/probes/smoke_caller.cpp` | 3,713 | `FBD0FE0B1E726E74` | the compression caller |
-| `_work/engine-web-spike/run_spike.py` | 16,683 | `E902D6F31E3BF1ED` | one-command reproduction |
+| `_work/engine-web-spike/run_spike.py` | 16,899 | `B2EA5B494B8564D5` | one-command reproduction |

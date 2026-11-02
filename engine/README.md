@@ -11,8 +11,8 @@ Provenance:
 | | |
 | --- | --- |
 | upstream reference | `upstream/BlurRebuilt` at commit `5270304b81983b9e3edbd569ba25235c17bbabd7` |
-| patch | `engine/patches/t005c-web-scheduler.patch` (20 files, 681 insertions, 35 deletions) |
-| patch SHA-256 | `DBD4AC27D43722D304313AC0709F38C28BF7DE67BE3AEC4495F9B7D816622E8B` |
+| patch | `engine/patches/t005c-web-scheduler.patch` (20 files, 691 insertions, 35 deletions) |
+| patch SHA-256 | `B939B39C7F7598B19677F29286655DE554762CB3CBD1471833D17C873C3FDEF2` |
 | toolchain | Emscripten 6.0.13 (clang 24.0.0git), pinned under `_work/toolchains/emsdk` |
 | evidence | `docs/work/analysis/engine-web-shims.md` (all measurements) |
 | spike harness | `_work/engine-web-spike/` (scratch, not in the repo) |
@@ -110,13 +110,46 @@ file/socket/SMTP subscribers (`Sys::C_FileSystem` → `AsyncFile` → `ArteryMut
 `Network::TCPSocket`/`SMTPClient`), and `system/source/io/IoStream.cpp` does not
 compile in this tree. See `docs/work/analysis/engine-web-shims.md` §7.3.
 
+## What the covered probe proves (T-005c A2, A3, A4)
+
+`verify_overlay.py` builds the scheduler from the applied tree and runs it under
+node:
+
+```text
+A4 workers=0 max_workers=0                     single execution context
+A4 flush_false ran=1 poll=1                    bRunJobs is the documented deviation
+A2 phase1 seq=A a_ran=1 b_ran=0 a_queue=0 b_queue=1
+A2 phase2 seq=AB b_ran=1 b_queue=0
+A2 phase3 only_flush_D seq=ABCD c_ran=1 d_ran=1
+A2 verdict=ok
+A3 total=4/4                                   every game policy, incl. the streamer
+```
+
+- **A2 (group dependency).** Group B depends on A, and **B's task is enqueued
+  first**, so a drain that ignored the group filter would run B early and a drain
+  that ignored the dependency would strand A behind B. The observed *task order*
+  (`seq`), recorded inside the job bodies, is `A` and only `A` after `Flush(A)`
+  (B still queued), then `AB`. The second pair proves `Flush(D)` resolves its own
+  dependency: only D is flushed, yet `C` runs before `D` (`seq=ABCD`).
+- **A3 (policies).** One task per shipped policy, including
+  `piStreamer = {0,0,7,7,7,7,7,7}`; each runs exactly once.
+- **A4 (serial layout).** `GetNumWorkers() == 0`, `jqGetMaxWorkers() == 0`,
+  `Flush(group,false)` still runs the task, and the queue layout
+  (`jqAtomicQueuePtr`, `Task::ParamData`, `sizeof(Task)`) is asserted in-process.
+
+What A2 does **not** prove: it exercises group→group dependencies only. The two
+fence forms (`JQ_GROUP_SPURWLOCK`, `JQ_GROUP_LABEL`) have no producer in a single
+context and are **refused**, not simulated — `Flush` aborts with the API name and
+the reason (one of the four fail-loud cases). No test asserts that a fence would
+eventually be satisfied, because nothing can satisfy it here.
+
 ## Layout
 
 ```
 engine/
   patches/t005c-web-scheduler.patch   the overlay, unified diff vs upstream/BlurRebuilt
   apply_overlay.py                    copy + patch a caller-supplied tree (stdlib only)
-  verify_overlay.py                   fresh-tree rebuild, A3/A4, fail-loud, engine caller
+  verify_overlay.py                   fresh-tree rebuild, A2/A3/A4, fail-loud, engine caller
   native_parity.py                    MSVC TU-equality check + native compile
   make_patch.py                       regenerate the patch from the spike overlay
   README.md                           this file

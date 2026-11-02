@@ -936,7 +936,7 @@
  
 --- /dev/null
 +++ b/code/mercury/library/common/system/source/scheduler/jobqueue_web.cpp
-@@ -0,0 +1,226 @@
+@@ -0,0 +1,236 @@
 +/* jobqueue_web.cpp - Scheduler platform backend for TL_PLAT_WEB.
 + *
 + * The web sibling of jobqueue_xenon.cpp + jobqueue_kernel_xenon.cpp. It
@@ -1076,8 +1076,18 @@
 +		for ( int i = 0; i < pGroup->NDependencies; i++ )
 +		{
 +			int dep = pGroup->Dependencies[i];
-+			if ( dep == JQ_GROUP_SPURWLOCK || dep == JQ_GROUP_LABEL )
-+				jqWebFatal( "Flush on a fence dependency (JQ_GROUP_LABEL/SPURWLOCK)" );
++			/* Two dependency forms have no producer in a single context. Both
++			 * are refused with the exact API and the reason, never spun on and
++			 * never skipped: a skipped fence would run work that the renderer
++			 * has not finished reading. */
++			if ( dep == JQ_GROUP_SPURWLOCK )
++				jqWebFatal( "Flush: AddGroupDependency(group, JQ_GROUP_SPURWLOCK, "
++				            "MT::SpuRwLock*) cannot be satisfied - only another "
++				            "context can release the lock" );
++			if ( dep == JQ_GROUP_LABEL )
++				jqWebFatal( "Flush: AddGroupDependency(group, JQ_GROUP_LABEL, U32*) "
++				            "cannot be satisfied - only the renderer can advance "
++				            "the fence value" );
 +			Flush( dep );
 +		}
 +	}
