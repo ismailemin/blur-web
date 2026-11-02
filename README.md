@@ -87,6 +87,10 @@ Read in this order:
 
 Agent operating rules are in [`AGENTS.md`](AGENTS.md).
 
+For a physical Chrome/Brave check of the current asset viewer, see
+[`docs/handoff/PHYSICAL_BROWSER_TEST.md`](docs/handoff/PHYSICAL_BROWSER_TEST.md).
+That build is an asset viewer, **not** a playable game.
+
 ## Scope and non-goals
 
 - Players must not need to install the Windows game or BlurRebuilt.
