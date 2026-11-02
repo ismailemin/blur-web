@@ -281,4 +281,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - İlk dilim D1: `Level.levelphysics` (5,6 MB) statik collision-query oracle; sabit probe tablosu, `queryHash` native/wasm birebir; car/XT/solver yok. Native sayısal referans yok; önce aynı probe'un native build'i. Ayrıntı: `docs/work/analysis/t005-physics-feasibility.md`.
 - Düzeltme notu: `engine-wasm-probe.md` §3.3'teki 19/62 hata sayıları kendi `final_posix.json`'una göre eski; gerçek 92–95 racing, 203–215 gravity. `g_maxPhysicsUpdates` Speed/Release'te 4.
 
+## 2 Kasım 2026 — T-006a native LAN envanteri
+
+- PC LAN auth'suz: `PlatformConnect(false)` offline `bdNet` dalı; `CreateLanSession`/`JoinLanSession` yalnız machine id + yerel adres; `CheckEntryRequirements(false)` kimlik kontrolü yapmıyor. Taşıma yine `bdNet`/`bdSocketRouter` + DTLS.
+- Sabitler: keşif UDP **50001** (PC), oyun UDP **3074** (doluysa 3074–3173), `Network.BuildVersionToJoin` iki tarafta eşleşmeli; firewall izni gerekli.
+- **İki istemci aynı makinede çalışmaz:** keşif `INADDR_ANY:50001` üzerine `SO_REUSEADDR` olmadan bind ediliyor; `C_NetRace::Initialise` hatayı yutuyor. İki fiziksel makine gerekli. `Global\Blur2PC.GameSlot` mutex'i de aynı makineyi engelliyor.
+- Eksik kanıt: iki istemcili senaryo, LAN discovery/join logu, pcap, `SystemLink` automation, firewall/port kaydı. Payload DTLS'li; pcap yalnız başlık/seq/size verir. B1 kabulü iki makineli LAN lobisi + pcap/CSV; 10s `Racing` B1b ve T-004 çökmesi nedeniyle ayrı. Rapor: `docs/work/analysis/t006-native-lan.md`.
+
 

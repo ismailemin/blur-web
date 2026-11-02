@@ -51,3 +51,19 @@ T-005a motor/WASM/platform fizibilitesi → T-005b streaming → T-005c schedule
 T-005d fizik → T-005e kontroller/kamera → T-005f ses/UI/save → T-005g tam yarış
 kabul testi. Multiplayer bundan sonra. İlk adım: en küçük motor alt kümesini
 wasm32'ye derleyip gerçek bağımlılık/engel listesini çıkarmak.
+
+## 4. T-006 — Tarayıcı multiplayer
+
+**Durum:** analiz; T-006a tamam, T-006b/c sürüyor
+**Kart:** henüz açılmadı
+**Kanıt:** `docs/work/analysis/t006-native-lan.md`
+
+T-006a: PC LAN auth'suz; host/peer `CreateLanSession`/`JoinLanSession`,
+keşif UDP **50001**, oyun UDP **3074-3173**, `Network.BuildVersionToJoin`
+eşleşmeli. **İki istemci aynı makinede çalışmaz**: keşif `INADDR_ANY:50001`
+üzerine `SO_REUSEADDR` olmadan bind ediliyor; iki fiziksel makine gerekli.
+Paket payload'ı DTLS'li; pcap yalnız başlık/seq/size verir. B1 kabulü iki
+makineli LAN lobisi + pcap/CSV; 10s `Racing` B1b, T-004 çökmesi nedeniyle ayrı.
+
+T-006b/c tamamlanınca wire format ve WebRTC transport tasarımı netleşecek.
+T-006e/f gerçek iki tarayıcı yarışı T-005g ve T-004 kapılarına bağlı.

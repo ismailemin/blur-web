@@ -74,6 +74,12 @@ tiplerinde bloke. T-005c sert önkoşul. İlk dilim statik collision-query oracl
 (`Level.levelphysics`, `queryHash` native/wasm). Ayrıntı:
 `docs/work/analysis/t005-physics-feasibility.md`.
 
+**T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
+3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
+makine gerekli. T-006b/c (wire format/WebRTC) sürüyor. T-006e/f gerçek yarış
+T-005g ve T-004 kapılarına bağlı. Kanıt:
+`docs/work/analysis/t006-native-lan.md`.
+
 ## Bilinen engeller / riskler
 
 - 18 instance destekli; P2'ye göre bounds grouping düzeltilince Stage A 36,
