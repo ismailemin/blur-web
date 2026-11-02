@@ -294,4 +294,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Golden byte'lardan önce native/WASM `sizeof`/`alignof`/`offsetof` + bit pattern layout probe gerekli. P0 paket seti: KeepAlive, ACK, JoinRequest/Reply/Data, InitialData, PlayerStates, VehicleData, StartRace, BasicVehicleData, VehicleFinished; PostRace/Leaving hemen sonra.
 - Fixture formatı, padding-poison/truncation corpus, 1024-byte MTU, 0.5s retry, 1.5s join resend, 4/6s dropout planı hazır. Henüz packet capture/uygulama yok. Rapor: `docs/work/analysis/t006-wire-format.md`; kart: `docs/work/tasks/T-006-multiplayer.md`.
 
+## 2 Kasım 2026 — T-006c WebRTC transport tasarımı
+
+- Öneri: engine association başına bir `RTCPeerConnection` (`bdEndpoint` = common address + security ID). İki negotiated DataChannel: **reliable ordered** (join/start/vehicle setup) ve **unreliable** `ordered:false,maxRetransmits:0` (keepalive/ACK/vehicle state). Engine'in mevcut app-level reliable/unreliable katmanları ilk dilimde korunuyor.
+- Sadece `bdSocketRouter`/`bdNet` backend'i değişiyor; `C_NetRouterBase` ve oyun protokolü byte-identical kalıyor. IPv4 yerine opak 25-byte web peer record; WSS signaling/STUN/TURN; sınırlı kuyruk/`bufferedAmount`; blocking wait yok.
+- İlk dilim: standalone browser adapter harness; 10.000×1 KiB reliable exact/ordered, unreliable loss/reorder, queue caps, reconnect/ICE restart. Riskler: T-005a wasm gate, IP tabanlı `bdCommonAddr`, blocking `StartConnect`/`GetAdaptersInfo`, DTLS/NAT seam yokluğu, signaling/TURN altyapısı yok. Rapor: `docs/work/analysis/t006-transport.md`.
+
 

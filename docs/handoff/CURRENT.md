@@ -78,8 +78,11 @@ tiplerinde bloke. T-005c sert önkoşul. İlk dilim statik collision-query oracl
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
 makine gerekli. T-006b tamam: wire format struct ABI; `wchar_t` (MSVC 2/wasm32 4)
 ve padding/bitfield en büyük risk; golden byte'lardan önce layout probe. T-006c
-sürüyor. T-006e/f gerçek yarış T-005g ve T-004 kapılarına bağlı. Kanıt:
-`docs/work/analysis/t006-native-lan.md`, `t006-wire-format.md`.
+tamam: `bdSocketRouter`/`bdNet` altına WebRTC backend, reliable ordered +
+unreliable DataChannel, WSS signaling/STUN/TURN; engine protokolü byte-identical.
+T-006e/f gerçek yarış T-005g ve T-004 kapılarına bağlı. Kanıt:
+`docs/work/analysis/t006-native-lan.md`, `t006-wire-format.md`,
+`t006-transport.md`.
 
 ## Bilinen engeller / riskler
 

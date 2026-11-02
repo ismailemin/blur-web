@@ -13,7 +13,7 @@ hangi kanıtla kapattığını kaybetmemek.
 | T-003 — Scene/level kapsamını genişletme | bounds grouping fix identified (Stage A hedefi 36 instance) | P1 | T-002 | `tasks/T-003-scene-traversal.md` |
 | T-004 — Native particle-cache çökmesi | kök neden + 3 fix + Aday2 analizi reddedildi; slot-level sahiplik açık | P1 | — | `analysis/native-particle-crash.md` |
 | T-005 — Tek oyunculu dikey dilim | in-progress (T-005a/b/c/d tasarım tamam; uygulama sırada) | P1 | T-003/T-004 | `tasks/T-005-single-player-vertical-slice.md` |
-| T-006 — Tarayıcı multiplayer | analiz (T-006a/b tamam; c sürüyor) | P2 | T-005g/T-004 | `tasks/T-006-multiplayer.md` |
+| T-006 — Tarayıcı multiplayer | analiz tamam (a/b/c); uygulama T-005g/T-004'e bağlı | P2 | T-005g/T-004 | `tasks/T-006-multiplayer.md` |
 
 Durumlar: `planned`, `in-progress`, `blocked`, `done`, `superseded`.
 

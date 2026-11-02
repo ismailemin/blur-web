@@ -54,9 +54,9 @@ wasm32'ye derleyip gerçek bağımlılık/engel listesini çıkarmak.
 
 ## 4. T-006 — Tarayıcı multiplayer
 
-**Durum:** analiz; T-006a/b tamam, T-006c sürüyor
+**Durum:** analiz tamam (a/b/c); uygulama T-005g/T-004'e bağlı
 **Kart:** `docs/work/tasks/T-006-multiplayer.md`
-**Kanıt:** `docs/work/analysis/t006-native-lan.md`, `docs/work/analysis/t006-wire-format.md`
+**Kanıt:** `docs/work/analysis/t006-native-lan.md`, `t006-wire-format.md`, `t006-transport.md`
 
 T-006a: PC LAN auth'suz; host/peer `CreateLanSession`/`JoinLanSession`,
 keşif UDP **50001**, oyun UDP **3074-3173**, `Network.BuildVersionToJoin`
@@ -69,5 +69,8 @@ T-006b: wire format aslında struct ABI (`memcpy(sizeof(struct))`); en büyük r
 `wchar_t` (MSVC 2, wasm32 4) ve padding/bitfield. Golden byte'lardan önce
 native/WASM layout probe gerekli. P0 paket seti ve fixture planı hazır.
 
-T-006c tamamlanınca transport kararı netleşecek. T-006e/f gerçek iki tarayıcı
-yarışı T-005g ve T-004 kapılarına bağlı.
+T-006c: `bdSocketRouter`/`bdNet` altına WebRTC backend; engine association
+başına `RTCPeerConnection`, reliable ordered + unreliable `maxRetransmits:0`
+DataChannel; `C_NetRouterBase` ve oyun protokolü byte-identical. İlk dilim
+standalone adapter harness. WSS signaling/STUN/TURN gerekli. Analiz tamam;
+uygulama T-005g/T-004 kapılarına bağlı.

@@ -1,6 +1,6 @@
 # T-006 — Tarayıcı multiplayer
 
-**Durum:** analiz (T-006a/b tamam; T-006c sürüyor; uygulama T-005g/T-004'e bağlı)
+**Durum:** analiz tamam (T-006a/b/c); uygulama T-005g/T-004'e bağlı
 **Sahip:** ana ajan
 **Başlangıç:** 2 Kasım 2026
 **Bitiş:** —
@@ -28,10 +28,19 @@ bitirecek. AMAX online auth ilk kapsam değil.
   PlayerStates, VehicleData, StartRace, BasicVehicleData, VehicleFinished.
 - Kanıt: `docs/work/analysis/t006-wire-format.md`.
 
-### T-006c — WebRTC transport  (sürüyor)
-- `bdSocket`/`bdSocketRouter` yerine DataChannel adapter; peer kimliği, bağlantı
-  durumu, reliable/unreliable, MTU/backpressure, signaling/STUN/TURN.
-- Kanıt: `docs/work/analysis/t006-transport.md` (hazır olunca).
+### T-006c — WebRTC transport  ✅ (tasarım)
+- Öneri: engine association başına bir `RTCPeerConnection`; `bdEndpoint` =
+  common address + security ID. İki negotiated DataChannel: reliable ordered
+  (join/start/vehicle setup) ve unreliable `ordered:false,maxRetransmits:0`
+  (keepalive/ACK/vehicle state).
+- `bdSocketRouter`/`bdNet` backend değişiyor; `C_NetRouterBase` ve oyun protokolü
+  byte-identical kalıyor. IPv4 yerine opak 25-byte web peer record; WSS signaling;
+  STUN/TURN; sınırlı kuyruk/`bufferedAmount`; blocking wait yok.
+- İlk dilim: standalone browser adapter harness; 10.000×1 KiB reliable exact/
+  ordered, unreliable loss/reorder, queue caps, reconnect/ICE restart.
+- Riskler: T-005a wasm gate, IP tabanlı `bdCommonAddr`, blocking `StartConnect`/
+  `GetAdaptersInfo`, DTLS/NAT seam yokluğu, signaling/TURN altyapısı yok.
+- Kanıt: `docs/work/analysis/t006-transport.md`.
 
 ### T-006d — Oda/signaling servisi  (planned)
 - HTTPS/WebSocket oda oluştur/katıl, kısa kod, sürüm uyumu; oyun dosyası yükleme yok.
