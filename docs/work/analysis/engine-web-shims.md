@@ -1,10 +1,13 @@
 # T-005 — Engine web shim layer and wasm32 compile spike (P14)
 
 **Date:** 2 November 2026
-**Status:** bounded spike, four steps. Step 1 measured the `core/Maths.h` gate,
+**Status:** bounded spike, five steps. Step 1 measured the `core/Maths.h` gate,
 step 2 landed the web platform identity, step 3 produced the first executable
 engine module (one scheduler job), step 4 moved the backend into the engine as
-`jobqueue_web.cpp`, added policy flattening, and ran the T-005c A3/A4 cases.
+`jobqueue_web.cpp`, added policy flattening, and ran the T-005c A3/A4 cases;
+step 5 exported the whole thing as a reviewable patch, re-applied it to a fresh
+upstream tree, ran a real engine caller through the queue, and proved the PC
+translation unit unchanged.
 No `upstream/`, project source, build file, tool, task card or other analysis
 document was modified; the game and the native build were not run. Everything
 was produced under `_work/engine-web-spike/` and `_work/logs/engine-web-spike/`.
@@ -41,6 +44,8 @@ Three questions, in order:
 4. **Step 4** — can the backend live in the engine as `jobqueue_web.cpp`, and do
    the shipped game policies (**including the column-0 streamer policy**) run on
    a single context without changing PC behaviour?
+5. **Step 5** — can the whole thing be shipped as a reviewable patch that applies
+   to a fresh upstream tree, and is the PC build provably unchanged?
 
 Method:
 
@@ -54,18 +59,24 @@ Method:
    affected headers and `.cpp` files are copied into
    `_work/engine-web-spike/patched/` by `make_patched_copy.py`, which applies
    exactly the listed tokens and writes the manifest `patched/CHANGES.txt`.
-4. A symbol gets a web implementation only when the operation is genuinely
+4. That overlay is then exported to `engine/patches/t005c-web-scheduler.patch`
+   and re-applied to a *fresh copy of upstream* by `engine/apply_overlay.py`,
+   which refuses to run against a dirty `upstream/`. The rebuilt module must
+   reproduce the same behaviour from that tree.
+5. A symbol gets a web implementation only when the operation is genuinely
    defined for the target (a fence, a CAS, a host name). If it is not, the build
    stops and the gap is documented — nothing is stubbed to "make it link".
-5. Linked modules are checked against values computed by hand, and every run is
+6. Linked modules are checked against values computed by hand, and every run is
    repeated to show determinism.
+7. The PC path is checked by preprocessor equality (the only allowed difference
+   is a `__LINE__` constant) plus a native MSVC compile of the whole closure.
 
 ## 2. Exact commands
 
 ```powershell
 $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
 
-# everything: overlay + 9 TU sets + three node modules (two maths/system, one scheduler)
+# everything: overlay + 9 TU sets + three node modules (maths, system, scheduler)
 & $py _work/engine-web-spike/run_spike.py
 
 # the scheduler module alone is built and run by the same script; the exact
@@ -80,6 +91,15 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 # one set, e.g. the control that still reproduces T-005a's 7-error baseline
 & $py _work/engine-web-spike/build_probe.py ctl_noshim_maths maths `
     -DPLATFORM_WEB -fdelayed-template-parsing -D__restrict= -fdeclspec
+```
+
+The overlay itself (`engine/`, English README with the same provenance):
+
+```powershell
+& $py engine/apply_overlay.py --tree _work/engine-overlay-check     # copy + patch
+& $py engine/verify_overlay.py --fresh                              # fresh tree, rebuild, run
+& $py engine/native_parity.py                                        # PC TU equality + MSVC compile
+& $py engine/make_patch.py                                           # regenerate the patch (--check)
 ```
 
 Final configuration used everywhere:
@@ -441,54 +461,150 @@ spike bugs (the driver now follows the game's order):
 Both values match hand calculation. `Vector.cpp` is a 6.6 KB commented-out TU, so
 most of the maths is inline header code and 11,413 B is not an engine size.
 
+### 7.3 The overlay as a patch, and PC parity
+
+The 20-file diff is exported to `engine/patches/t005c-web-scheduler.patch`
+(681 insertions, 35 deletions, SHA-256
+`DBD4AC27D43722D304313AC0709F38C28BF7DE67BE3AEC4495F9B7D816622E8B`) and applied
+by `engine/apply_overlay.py` to a **fresh copy of upstream**
+(`_work/engine-overlay-check/`, 20,198 files). Both the built-in applier and
+`git apply -p1 --check` accept it.
+
+Applying the patch reproduces the spike overlay exactly (20/20 files identical
+after line-ending normalisation), and the module rebuilt **from that tree**
+reproduces the A3/A4 behaviour:
+
+| | overlay (`run_spike.py`) | fresh tree (`verify_overlay.py`) |
+| --- | --- | --- |
+| objects | 23 | 23 |
+| wasm | 60,721 B | 60,797 B |
+| A3 | `total=4/4` | `total=4/4` |
+| fail-loud cases | 3/3 | 3/3 |
+| deterministic | yes | yes |
+
+The 76-byte difference is `__FILE__` strings (`upstream/BlurRebuilt/...` vs
+`_work/engine-overlay-check/...`) in log locations; behaviour is identical, so
+the wasm hash is not compared across trees.
+
+**PC parity is measured at the translation-unit level**, which is stronger than a
+runtime sample: `jobqueue.cpp` preprocessed with MSVC in the PC configuration
+(`PLATFORM_PC`, `WIN32`, `_WINDOWS`) from upstream and from the overlay tree
+gives two 151,971-line units whose **only** difference is the `__LINE__` constant
+of two log locations (555→589, shifted by the inserted web block). No statement
+differs, which is the direct proof that `CreatePolicy` and the rest of the
+scheduler behave identically on PC. The whole closure — 29 TUs including the
+probe source with its PC layout constants — compiles natively.
+
+This check found a real defect in the first version of the patch: `Event.cpp`'s
+added `pthread_mutex_t` typedefs and `Mutex.h` include were unconditional, which
+broke the PC compile. They are now inside `#if defined(PLATFORM_WEB)`.
+
+**Native runtime A3/A4 is blocked, and not by the scheduler.** The PC
+`LogManager` retention list constructs the file/socket/SMTP subscribers, so
+linking the probe natively needs `Sys::C_FileSystem` → `AsyncFile` →
+`ArteryMutex`, and `Network::TCPSocket` / `SMTPClient`; `system/source/io/
+IoStream.cpp` does not compile in this checkout at all. That is a pre-existing
+gap in the `common` library's PC logging chain, unrelated to the overlay.
+
+### 7.4 The first real engine caller
+
+`probes/smoke_caller.cpp` drives the engine's own compression classes through the
+queue — `Compression::C_Deflate` and `Compression::C_Inflate`
+(`misc_shared/.../Deflate.cpp`, `Inflate.cpp`) and their job bodies
+(`Compression::DeflateTask`, `InflateTask` + the vendored zlib). It is the
+cheapest engine code that really calls `Scheduler::AddTask` and
+`Scheduler::Flush`, it is on T-005c's A1 list, and its result is checkable byte
+for byte.
+
+```text
+caller setup ok
+caller deflate deferred=1 ran=1 packed=37 cmf=0x78
+caller inflate deferred=1 ran=1 equal=1 text=blur-scheduler-caller-roundtrip
+caller shutdown ok
+```
+
+What each field proves:
+
+- `deferred=1` — the output buffer still holds the 0xAA fill after `Start()`, so
+  the job did **not** run inline: `AddTask` queued it and the cooperative
+  `Flush` drain executed it. This is the property the whole design rests on.
+- `ran=1`, `cmf=0x78` — the task ran and wrote a real zlib stream (RFC 1950 CMF
+  byte for `CM=deflate`, 32K window).
+- `equal=1` — deflate→inflate reproduces the input exactly, so `Task::ParamData`
+  was copied correctly (16-byte `C_InflateParameters` inside the 48-byte field)
+  and the module received the right pointers.
+- `caller shutdown ok` — `DestroyGroup` + `Shutdown` complete with the queue
+  empty.
+
+Module: 112,825 B, SHA-256 `F70189D06E65B12B`, stable across two runs. Building
+it needs one build-layout detail: `Deflate.cpp`/`InflateTask.cpp` include
+`"../../../../Vendor/Zlib/Current_Mercury/Zlib.h"`, which the engine's build
+layout provides but this checkout does not; `verify_overlay.py` materialises that
+directory from `code/vendor/zlib/current_mercury` (12 headers) inside the tree.
+No engine source is changed by that step.
+
 ## 8. Remaining blockers, ordered by cost
 
-1. **No real call site has run.** The smoke calls `AddTask`/`Flush` directly; the
-   150 engine call sites (streaming, physics, audio) and their group/policy
-   interleavings are untouched. T-005c's A2 (group dependency + task accounting)
-   and A5-A8 (fixed-step parity, frame-rate independence, browser) remain open.
-   This is the largest remaining risk *inside* the scheduler.
-2. **The dead POSIX branches (5 sites).** `Event.cpp`/`Mutex.cpp` are fixed in the
+1. **The overlay is still a patch, not engine source.** It applies cleanly and is
+   verified, but nothing has landed in `upstream/`: the owning phase has to take
+   `engine/patches/t005c-web-scheduler.patch`, run the native build (`/W4`,
+   `/permissive`, 14/14 CTest) and commit it. Until then every result here comes
+   from an overlay tree.
+2. **Group dependencies are untested (T-005c A2).** The smoke flushes groups that
+   have no dependencies, so `AddGroupDependency`, `jqPopNextBatch`'s dependency
+   walk and `JQ_GROUP_SPURWLOCK`/`JQ_GROUP_LABEL` handling are unexercised; the
+   fence cases abort by design. This is the last *unverified* part of the
+   scheduler contract, and the 150 real call sites (streaming, physics, audio)
+   sit behind it.
+3. **Native runtime A3/A4 cannot be linked** in this checkout: the PC `LogManager`
+   retention list needs `Sys::C_FileSystem` → `AsyncFile` → `ArteryMutex` and
+   `Network::TCPSocket`/`SMTPClient`, and `system/source/io/IoStream.cpp` does not
+   compile here. PC parity is proven at the TU level instead (§7.3). Nothing to do
+   with the scheduler; it is a pre-existing gap in the `common` PC logging chain.
+4. **The dead POSIX branches (5 sites).** `Event.cpp`/`Mutex.cpp` are fixed in the
    overlay; `ArterySync.h` `ArteryThreadHandle` for `ARTERY_SYNC_PTHREADS`
    (`IoFile.cpp`), `Semaphore.cpp:128` `-Wc++11-narrowing`,
    `ThreadLocalStorage.h:111` `pthread_key_t` are not. Each is a small explicit
    fix, none is a design decision.
-3. **The network stack** (`Address.cpp`, 14 errors, `struct in_addr` incomplete).
+5. **The network stack** (`Address.cpp`, 14 errors, `struct in_addr` incomplete).
    Needed only for real networking; the logger no longer depends on it.
-4. **`_vsnprintf_s`** (`BizAssert.cpp:66`, 1 error). MSVC's secure variant has a
+6. **`_vsnprintf_s`** (`BizAssert.cpp:66`, 1 error). MSVC's secure variant has a
    different truncation contract than `vsnprintf`; a name alias would be a silent
    semantic change, so it is 1 wrapper or 1 call-site branch.
-5. **The Xenon kernel TUs** (13 errors) — deliberately not ported, replaced by
+7. **The Xenon kernel TUs** (13 errors) — deliberately not ported, replaced by
    `jobqueue_web.h` + `jobqueue_web.cpp`.
-6. **DX11 / FX11** — untouched. T-005a's inventory stands (442 D3D11/FX11 matches
+8. **DX11 / FX11** — untouched. T-005a's inventory stands (442 D3D11/FX11 matches
    in `display`, 43 in `display2`, 33 in `render`); the only blocker whose cost is
    not bounded.
 
 ## 9. The single next smallest step
 
-**Land the overlay as engine source in a task branch, then run a real call site.**
-Concretely, in `task/T-005-...`:
+**Run T-005c's A2 (group dependency) through the same harness, then land the
+patch.** A2 is the last unverified clause of the scheduler contract and it is
+pure scheduler code — no new subsystem, no new platform work.
 
-1. Apply the overlay diff to `upstream/`: the new
-   `system/source/scheduler/jobqueue_web.cpp`, the `jobqueue.h` selection branch,
-   and the `#if defined(PLATFORM_WEB)` block in `CreatePolicy`. Keep `#else`
-   branches byte-identical; the native build must stay untouched (`/W4`,
-   `/permissive`, 14/14 CTest).
-2. Move the probe into `probes/scheduler-probe/` with a native target, so A3/A4
-   run on both MSVC and wasm32 — the native run is what proves the flattening
-   block did not change PC behaviour.
-3. Then take the first *real* consumer: `probes/scheduler-probe` plus one engine
-   caller. `misc_shared/archive/serialiser.cpp` or
-   `misc_shared/Compression/Inflate.cpp` are the cheapest, because they are the
-   T-005c A1 gate and already compile.
+Concretely, in `engine/verify_overlay.py`'s probe:
 
-Acceptance: `run_spike.py` stays green, the native probe prints the same A3/A4
-lines, and one engine caller's task executes through `Flush`.
+1. Two groups, `gA` and `gB`, with `AddGroupDependency(gB, gA)`; queue a task in
+   each; `Flush(gB)` must run `gA`'s task first and then `gB`'s, exactly once
+   each, with the queue empty afterwards.
+2. A `Flush` on a group whose only producer is a `JQ_GROUP_LABEL` fence must abort
+   with the fence message rather than spin (the code path exists, the test does
+   not).
+3. Re-run the caller so the compression round trip goes through a dependent
+   group.
 
-Why this one: the scheduling contract itself is now demonstrated; what is not yet
-demonstrated is that the *engine's own* code paths reach it unchanged. That is the
-remaining distance to "T-005c implemented", and the native side is the cheapest
-way to prove the PC build did not move.
+Then land `engine/patches/t005c-web-scheduler.patch` in `task/T-005-...` and
+confirm the native build (`/W4`, `/permissive`, 14/14 CTest) plus
+`engine/native_parity.py` are green on the committed source.
+
+Acceptance: `verify_overlay.py` prints an `A2 dependency ...` line that matches
+the expected order, all existing lines stay identical, and the patch is committed
+with the native gate green.
+
+Why this one: everything else on the blocker list is either outside the
+scheduler (network, DX11, native logging) or is bookkeeping. A2 is the only place
+where the cooperative drain could still be *wrong* rather than merely unused.
 
 ## 10. What this does not prove
 
@@ -500,38 +616,57 @@ way to prove the PC build did not move.
   `MT::Thread::Start/Join` silently no-op is still untested — `MT::Event::Wait`
   and `tlWaitForThread` are the two waits that now abort (§6.4), not the thread
   entry path.
-- **The game's own policy values, not its call sites.** The four policies are
-  copied verbatim from `SchedulerConfig.cpp:34-50`, but no engine caller was run,
-  and no group dependency was exercised (T-005c A2).
-- Only the 23 scheduler objects and the three sample modules were compiled to
-  objects; the rest of §3 was syntax-checked only, and `-fsyntax-only` hides
-  codegen-level problems (that is how the `snPause` PPC trap survived step 2).
-- No engine size claim: 60,721 B includes the emscripten runtime, libc and libc++
-  and is dominated by `LogManager`/`Logger`/`Format`.
-- The overlay proves the edits are *sufficient* for clang; it does not prove the
-  MSVC native build accepts them (`/W4`, `/permissive`) — that is the next step.
+- **The game's own policy values, but not its call sites.** The four policies are
+  copied verbatim from `SchedulerConfig.cpp:34-50`, and one real engine caller
+  (the compression classes, §7.4) runs through the queue, but the 150 game call
+  sites and any group *dependency* remain unexercised (T-005c A2).
+- **The native probe never ran.** PC parity is a translation-unit result (§7.3),
+  not a runtime comparison; the native link is blocked by the PC logging chain.
+- Only the 23 scheduler objects, the caller closure and the three sample modules
+  were compiled to objects; the rest of §3 was syntax-checked only, and
+  `-fsyntax-only` hides codegen-level problems (that is how the `snPause` PPC trap
+  survived step 2).
+- No engine size claim: 60,721 B / 112,825 B include the emscripten runtime, libc
+  and libc++, and are dominated by the logging and zlib code, not by the
+  scheduler.
+- The overlay proves the edits are *sufficient* for clang and for the MSVC TU
+  check; it does not prove a full native link or `/W4` cleanliness — that is the
+  owning phase's gate.
 - Error counts are front-end diagnostics, not defect counts.
 
 ## 11. Evidence index
 
-All hashes are SHA-256 prefixes of files produced by this session.
+All hashes are SHA-256 prefixes. `engine/` files are committed; everything under
+`_work/` is regenerated by the scripts.
 
 | Path | Size | SHA-256 (16) | Content |
 | --- | --- | --- | --- |
-| `_work/engine-web-spike/out/spike_sched.wasm` | 60,721 | `FACFD8E33DDE175E` | **the scheduler module; 23 objects, 4 game policies** |
-| `_work/engine-web-spike/out/spike_sched.js` | 64,079 | `DACEBA65F4FF30C8` | node loader for the above |
+| `engine/patches/t005c-web-scheduler.patch` | 38,595 | `DBD4AC27D43722D3` | **the overlay: 20 files, +681/−35** |
+| `engine/apply_overlay.py` | 9,966 | `3EEE1B15579B5252` | copy + patch a caller-supplied tree |
+| `engine/verify_overlay.py` | 11,960 | `A5BAECC53A9DAE05` | fresh-tree rebuild + A3/A4 + caller |
+| `engine/native_parity.py` | 9,026 | `0C7D18B7D6C68868` | MSVC TU equality + native compile |
+| `engine/make_patch.py` | 5,804 | `20EE39E65D79DC87` | regenerates the patch |
+| `engine/README.md` | 6,629 | `7FCCF7712E35092D` | purpose, provenance, guarantees |
+| `_work/engine-overlay-check/.overlay/manifest.json` | 2,908 | `EF47EBF8DA5AB2B9` | applied tree: commit, patch hash, manifest hash |
+| `_work/engine-web-spike/out/spike_sched.wasm` | 60,721 | `FACFD8E33DDE175E` | **scheduler module; 23 objects, 4 game policies** |
+| `_work/engine-web-spike/out/treecheck/spike_sched_tree.wasm` | 60,797 | `6E8E16D8704765B9` | same module rebuilt from the applied tree |
+| `_work/engine-web-spike/out/treecheck/spike_caller_tree.wasm` | 112,825 | `F70189D06E65B12B` | **scheduler + compression caller + zlib** |
 | `_work/engine-web-spike/out/spike_maths.wasm` | 11,413 | `4DFB1FD8A56D22E9` | maths + `Matrix.cpp` sample |
 | `_work/engine-web-spike/out/spike_time.wasm` | 10,397 | `34288F7DBF51E7ED` | `Time.cpp` + `endian.cpp` sample |
+| `_work/engine-web-spike/native/upstream_jobqueue.i` | 6,874,851 | `684B4C8D4507F0BF` | PC preprocessed TU, upstream |
+| `_work/engine-web-spike/native/overlay_jobqueue.i` | 6,875,525 | `F2E913DB1B0526BA` | PC preprocessed TU, overlay (differs by 2 line numbers) |
 | `_work/engine-web-spike/shims/jobqueue_web.cpp` | 6,633 | `B01F8EF97DE9FF95` | the backend, copied to `system/source/scheduler/jobqueue_web.cpp` |
 | `_work/engine-web-spike/shims/platform_net_web.cpp` | 1,124 | `8C43A5177ECA2AAC` | `Network::GetHostName()` → `"web-local"` |
 | `_work/engine-web-spike/shims/tl_thread_web.h` | 4,318 | `5CA770AD7E63775D` | `TL_PLAT_WEB` type layer + fail-loud stubs |
 | `_work/engine-web-spike/shims/jobqueue_web.h` | 2,309 | `C9EEE1F93E1FBA51` | scheduler type layer + `jqWebFatal` |
-| `_work/engine-web-spike/patched/CHANGES.txt` | 18,724 | `12368CF00900B4DC` | the authoritative edit manifest |
+| `_work/engine-web-spike/patched/CHANGES.txt` | 18,919 | `DB524F9616015A49` | the spike-side edit manifest |
 | `_work/logs/engine-web-spike/summary.json` | 16,247 | `E2411B04B8CAB2E3` | 9 sets, 3 modules, A3/A4, abort cases, flatten control |
 | `_work/engine-web-spike/logs/spike_sched.run{1,2}.log` | — | — | the two identical runs (exit 0) |
 | `_work/engine-web-spike/logs/spike_sched.abort-*.log` | 3 | — | the fail-loud cases (exit 1 + message) |
 | `_work/engine-web-spike/logs/flatten_control.run.log` | — | — | unpatched `jobqueue.cpp` → "cannot make progress" |
+| `_work/engine-web-spike/logs/caller.run{1,2}.log` | — | — | the compression round trip, twice |
 | `_work/engine-web-spike/logs/schedlink__*.obj.log` | 23 | — | one object compile per scheduler TU |
 | `_work/engine-web-spike/probes/probe_queue_cas.cpp` | 1,210 | `2F1316B987622CDE` | real `jqAtomicQueuePtr`: 8/8, CAS + stale CAS |
-| `_work/engine-web-spike/probes/smoke_sched.cpp` | 5,738 | `25BD2AAAF11066DA` | A3/A4 driver + three abort modes |
+| `_work/engine-web-spike/probes/smoke_sched.cpp` | 6,343 | `929F6B2442063A7B` | A3/A4 driver + three abort modes |
+| `_work/engine-web-spike/probes/smoke_caller.cpp` | 3,713 | `FBD0FE0B1E726E74` | the compression caller |
 | `_work/engine-web-spike/run_spike.py` | 16,683 | `E902D6F31E3BF1ED` | one-command reproduction |

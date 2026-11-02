@@ -31,9 +31,12 @@ a native Windows reference build and race harness.
 - PC texture decoder (BC1/BC2/BC3 and selected uncompressed formats).
 - XT/FLSK schema metadata only.
 - Native x64 Amax Release build passes; stationary Brighton race renders.
-- Not implemented: the other 56 level instances, higher resource-texture LODs,
-  full scene traversal and materials, physics, controls, audio, save/streaming,
-  single-player race, multiplayer.
+- Engine web port (work in progress): `engine/patches/t005c-web-scheduler.patch`
+  makes the scheduler compile and run one real job on wasm32 under node. It is
+  **not** a renderer or a game.
+- Not implemented: Stage B (blocks26/32) and block31, the remaining 21 level
+  instances, higher resource-texture LODs, full scene traversal and materials,
+  physics, controls, audio, save/streaming, single-player race, multiplayer.
 
 The authoritative handoff is [`docs/handoff/CURRENT.md`](docs/handoff/CURRENT.md).
 The chronological engineering log is [`docs/STATUS.md`](docs/STATUS.md).
@@ -44,6 +47,7 @@ The chronological engineering log is [`docs/STATUS.md`](docs/STATUS.md).
 PLAN.md                 project goals, phases, risks
 docs/                   plans, format notes, research, handoff and work records
 probes/asset-reader/    portable C++17 readers, WASM build, browser preview
+engine/                  reproducible wasm engine overlay (scheduler) + tools
 tools/                  Python diagnostics, fixture preparation, verification
 upstream/               read-only BlurRebuilt checkout (ignored by Git)
 game-data/              local game copy (ignored by Git)

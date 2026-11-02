@@ -1,0 +1,1165 @@
+--- a/code/mercury/library/common/core/include/core/Core.h
++++ b/code/mercury/library/common/core/include/core/Core.h
+@@ -792,7 +792,14 @@
+ 
+ #ifdef COMPILER_GNU
+ #define _copysign copysign
++#if defined( PLATFORM_WEB )
++// [spike] the PowerPC trap instruction has no wasm encoding; __builtin_trap
++// (wasm `unreachable`) keeps the engine's DebugBreak contract: halt here,
++// unconditionally. Only codegen exposes this - -fsyntax-only does not.
++#define snPause() __builtin_trap()
++#else
+ #define snPause() __asm__ volatile ( "tw 31,1,1" )
++#endif
+ #endif
+ 
+ #ifdef PLATFORM_SPU
+--- a/code/mercury/library/common/core/include/core/maths/hvec/Vector.h
++++ b/code/mercury/library/common/core/include/core/maths/hvec/Vector.h
+@@ -510,7 +510,7 @@
+     NOALIAS __forceinline explicit HVec3( MathsStorage::Float3 const * pStorage );
+     
+     /// Cast to Float3
+-    NOALIAS __forceinline operator const MathsStorage::Float3 () const __restrict;
++    NOALIAS __forceinline operator MathsStorage::Float3 () const __restrict;
+     
+     /// Explicit Constructor from U16 x, y, z
+     NOALIAS __forceinline explicit HVec3( U16 const * const __restrict pXYZ );
+@@ -521,7 +521,7 @@
+     
+     /// Cast to Fixed3_S16
+     template < int T_Precision >
+-    NOALIAS __forceinline operator const MathsStorage::Fixed3_S16<T_Precision> () const __restrict;
++    NOALIAS __forceinline operator MathsStorage::Fixed3_S16<T_Precision> () const __restrict;
+     
+     /// Selector Constructor: Copies selector masks
+     NOALIAS __forceinline HVec3( const Vector3_Bool PCREF selector );
+@@ -1396,7 +1396,7 @@
+     NOALIAS __forceinline explicit C_Vertex( MathsStorage::Float3 const * pStorage );
+     
+     /// Cast to Float3
+-    NOALIAS __forceinline operator const MathsStorage::Float3 () const __restrict;
++    NOALIAS __forceinline operator MathsStorage::Float3 () const __restrict;
+     
+     /// Explicit Constructor from Fixed3_S16 ptr
+     template < int T_Precision >
+@@ -1404,7 +1404,7 @@
+     
+     /// Cast to Fixed3_S16
+     template < int T_Precision >
+-    NOALIAS __forceinline operator const MathsStorage::Fixed3_S16<T_Precision> () const __restrict;
++    NOALIAS __forceinline operator MathsStorage::Fixed3_S16<T_Precision> () const __restrict;
+     
+     /// Copy Assignment
+     NOALIAS __forceinline const C_Vertex       operator = ( const C_Vertex& copy );
+@@ -1736,7 +1736,7 @@
+     NOALIAS __forceinline explicit C_Normal( MathsStorage::Float3 const * pStorage );
+     
+     /// Cast to Float3
+-    NOALIAS __forceinline operator const MathsStorage::Float3 () const __restrict;
++    NOALIAS __forceinline operator MathsStorage::Float3 () const __restrict;
+     
+     /// Selector Constructor: Selects fields from the inputs based on the selector mask: result = ( selector ? a : b )
+     //C_Normal( const Vector3_Bool& selector, const C_Normal a, const C_Normal b );
+@@ -1927,7 +1927,7 @@
+     NOALIAS __forceinline explicit C_Vector( MathsStorage::Float3 const * pStorage );
+     
+     /// Cast to Float3
+-    NOALIAS __forceinline operator const MathsStorage::Float3 () const __restrict;
++    NOALIAS __forceinline operator MathsStorage::Float3 () const __restrict;
+     
+     /// Explicit Constructor from Fixed3_S16 ptr
+     template < int T_Precision >
+@@ -1935,7 +1935,7 @@
+     
+     /// Cast to Fixed3_S16
+     template < int T_Precision >
+-    NOALIAS __forceinline operator const MathsStorage::Fixed3_S16<T_Precision> () const __restrict;
++    NOALIAS __forceinline operator MathsStorage::Fixed3_S16<T_Precision> () const __restrict;
+     
+     /// Copy Assignment
+     NOALIAS __forceinline const C_Vector       operator = ( const C_Vector& copy );
+--- a/code/mercury/library/common/core/include/core/maths/hvec/Vector.inl
++++ b/code/mercury/library/common/core/include/core/maths/hvec/Vector.inl
+@@ -1872,7 +1872,7 @@
+ }
+ 
+ /// Cast to Float3
+-NOALIAS __forceinline HVec3::operator const MathsStorage::Float3 () const __restrict
++NOALIAS __forceinline HVec3::operator MathsStorage::Float3 () const __restrict
+ {
+     MathsStorage::Float3 result;
+     #if defined( _SPU_ )
+@@ -1971,7 +1971,7 @@
+ }
+ 
+ /// Cast to Fixed3_S16
+-template < int T_Precision > NOALIAS __forceinline HVec3::operator const MathsStorage::Fixed3_S16<T_Precision> () const __restrict
++template < int T_Precision > NOALIAS __forceinline HVec3::operator MathsStorage::Fixed3_S16<T_Precision> () const __restrict
+ {
+     MathsStorage::Fixed3_S16<T_Precision> result;
+     #if defined( _SPU_ )
+@@ -6912,7 +6912,7 @@
+ }
+ 
+ /// Cast to Float3
+-NOALIAS __forceinline C_Vertex::operator const MathsStorage::Float3 () const __restrict
++NOALIAS __forceinline C_Vertex::operator MathsStorage::Float3 () const __restrict
+ {
+     return (MathsStorage::Float3)m_V;
+ }
+@@ -6926,7 +6926,7 @@
+ 
+ /// Cast to Fixed3_S16
+ template < int T_Precision >
+-NOALIAS __forceinline C_Vertex::operator const MathsStorage::Fixed3_S16<T_Precision> () const __restrict
++NOALIAS __forceinline C_Vertex::operator MathsStorage::Fixed3_S16<T_Precision> () const __restrict
+ {
+     return (MathsStorage::Fixed3_S16<T_Precision>)m_V;
+ }
+@@ -7479,7 +7479,7 @@
+ }
+ 
+ /// Cast to Float3
+-NOALIAS __forceinline C_Vector::operator const MathsStorage::Float3 () const __restrict
++NOALIAS __forceinline C_Vector::operator MathsStorage::Float3 () const __restrict
+ {
+     return (MathsStorage::Float3)m_V;
+ }
+@@ -7493,7 +7493,7 @@
+ 
+ /// Cast to Fixed3_S16
+ template < int T_Precision >
+-NOALIAS __forceinline C_Vector::operator const MathsStorage::Fixed3_S16<T_Precision> () const __restrict
++NOALIAS __forceinline C_Vector::operator MathsStorage::Fixed3_S16<T_Precision> () const __restrict
+ {
+     return (MathsStorage::Fixed3_S16<T_Precision>)m_V;
+ }
+@@ -8085,7 +8085,7 @@
+ }
+ 
+ /// Cast to Float3
+-NOALIAS __forceinline C_Normal::operator const MathsStorage::Float3 () const __restrict
++NOALIAS __forceinline C_Normal::operator MathsStorage::Float3 () const __restrict
+ {
+     return (MathsStorage::Float3)m_V;
+ }
+--- a/code/mercury/library/common/core/include/core/maths/MathsUtil.h
++++ b/code/mercury/library/common/core/include/core/maths/MathsUtil.h
+@@ -407,7 +407,7 @@
+     return Max( lo, Min( hi, value ) );
+ }
+ 
+-#ifndef PLATFORM_LINUX
++#if !defined( PLATFORM_LINUX ) || defined( PLATFORM_WEB )
+ 
+ #if defined(PLATFORM_PC) || defined(PLATFORM_SPU)
+ INLINE F32 __fsel(F32 cmp, F32 a, F32 b) { return (cmp>=0)?a:b; }
+--- a/code/mercury/library/common/core/include/core/containers/sortedbinarytree.h
++++ b/code/mercury/library/common/core/include/core/containers/sortedbinarytree.h
+@@ -403,7 +403,7 @@
+ 	typedef TreeBuilder<Key, SetItem<Key, Allocator>, Allocator, UniqueElements> Base;
+ 	using Base::Initialise;
+ 	using Base::Clear;
+-	using Base::InsertionReturnType;
++	using typename Base::InsertionReturnType;
+ 
+ 	UtSet() {}
+ 	UtSet(const UtSet& other) 
+@@ -456,7 +456,7 @@
+ 		return !(key == other.key && value == other.value);
+ 	}
+ 
+-	FRIEND_CLASS SortedBinaryTree<Key, MapItem, Allocator>::Initialiser;
++	friend SortedBinaryTree<Key, MapItem, Allocator>::Initialiser;
+ 
+ private:
+ 	MapItem& operator = (const MapItem& i) 
+@@ -498,7 +498,7 @@
+ 	typedef TreeBuilder<Key, MapItem<Key, Value, Allocator>, Allocator, UniqueElements> Base;
+ 	using Base::Initialise;
+ 	using Base::Clear;
+-	using Base::InsertionReturnType;
++	using typename Base::InsertionReturnType;
+ 
+ 	UtMap() {}
+ 	UtMap(const UtMap& other) 
+@@ -567,7 +567,7 @@
+ 	typedef TreeBuilder<Key, SetItem<Key, Allocator>, Allocator, MultipleElements> Base;
+ 	using Base::Initialise;
+ 	using Base::Clear;
+-	using Base::InsertionReturnType;
++	using typename Base::InsertionReturnType;
+ 
+ 	MultiSet() {}
+ 	MultiSet(const MultiSet& other) 
+@@ -599,7 +599,7 @@
+ 	typedef TreeBuilder<Key, MapItem<Key, Value, Allocator>, Allocator, MultipleElements> Base;
+ 	using Base::Initialise;
+ 	using Base::Clear;
+-	using Base::InsertionReturnType;
++	using typename Base::InsertionReturnType;
+ 
+ 	MultiMap() {}
+ 	MultiMap(const MultiMap& other) 
+@@ -983,7 +983,7 @@
+ 
+ 			Node* pInserted = *pp;
+ 
+-			BalanceInsertedItem(pp);
++			this->BalanceInsertedItem(pp);
+ 			
+ 			m_counter.AddElement();
+ 
+@@ -1009,16 +1009,16 @@
+ 	Node** pp;
+ 
+ 	// We have an iterator but need the link to the item.
+-	if (GetNode(i) == m_pRoot)
++	if (this->GetNode(i) == m_pRoot)
+ 		pp = &m_pRoot;
+-	else if (GetNode(i) == SentinelPointer())
++	else if (this->GetNode(i) == SentinelPointer())
+ 		return;
+-	else if (GetNode(i)->pParent->pFirst == GetNode(i))
+-		pp = &(GetNode(i)->pParent->pFirst);
++	else if (this->GetNode(i)->pParent->pFirst == this->GetNode(i))
++		pp = &(this->GetNode(i)->pParent->pFirst);
+ 	else
+-		pp = &(GetNode(i)->pParent->pSecond);
+-
+-	EraseNode(pp);
++		pp = &(this->GetNode(i)->pParent->pSecond);
++
++	this->EraseNode(pp);
+ }
+ 
+ template <typename Key, typename Data, typename Allocator, template <typename Tree> class ElementPolicy>
+@@ -1047,7 +1047,7 @@
+ 					pp = &(*pp)->pSecond;
+ 				else
+ 				{
+-					EraseNode(pp);
++					this->EraseNode(pp);
+ 					return 1;
+ 				}
+ 			}
+--- a/code/mercury/library/common/core/include/btl/containers/map.h
++++ b/code/mercury/library/common/core/include/btl/containers/map.h
+@@ -38,7 +38,7 @@
+ 	typedef TreeBuilder<Key, MapItem<Key, Value, Allocator>, Allocator, UniqueElements> Base;
+ 	using Base::Initialise;
+ 	using Base::Clear;
+-	using Base::InsertionReturnType;
++	using typename Base::InsertionReturnType;
+ 
+ 	Map() {}
+ 	Map(const Map& other) 
+--- a/code/mercury/library/common/core/include/btl/containers/sortedbinarytree.inl
++++ b/code/mercury/library/common/core/include/btl/containers/sortedbinarytree.inl
+@@ -385,7 +385,7 @@
+ 
+ 			Node* pInserted = *pp;
+ 
+-			BalanceInsertedItem(pp);
++			Base::BalanceInsertedItem(pp);
+ 			
+ 			m_counter.AddElement();
+ 
+--- a/code/mercury/library/common/core/include/core/threads/Event.h
++++ b/code/mercury/library/common/core/include/core/threads/Event.h
+@@ -19,6 +19,10 @@
+ #ifndef HAVE_PLATFORM_EVENT_TYPES
+ class PlatformEvent;
+ #endif
++
++class Mutex;   /* [spike] only used as `Mutex* m_pMutex` below; the type is
++                 never defined on the PS3/Win32 branches, so a forward
++                 declaration is the whole requirement. */
+ 
+ class Event
+ #ifdef PLATFORM_PS3
+--- a/code/mercury/library/common/core/include/core/threads/Atomic.h
++++ b/code/mercury/library/common/core/include/core/threads/Atomic.h
+@@ -59,6 +59,12 @@
+ */
+ inline void MemoryFence()
+ {
++#if defined( PLATFORM_WEB )
++	// [spike][platform/atomic] The PC path gets its fence from Interlocked.
++	// A wasm build has the same requirement; with one context this lowers to
++	// nothing meaningful and stays correct if a worker pool is added later.
++	__atomic_thread_fence( __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PC
+ 	// On PC, all interlocked methods include an implicit MemoryFence.
+ 	long a=0;
+@@ -90,6 +96,10 @@
+ */
+ inline bool AtomicCompareAndSwap(register volatile U32* var, register U32 newvalue, register U32 compare)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_compare_exchange_n( var, (U32*)&compare, newvalue, 0,
++	                                    __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PC
+ 	return InterlockedCompareExchange((long*)var, newvalue, compare) == (long)compare;
+ #endif
+@@ -137,6 +147,9 @@
+ */
+ inline U32 AtomicAdd(register volatile U32* var, register U32 value)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_add( var, value, __ATOMIC_SEQ_CST );
++#endif
+ 
+ #if PLATFORM_PS3
+ 	return cellAtomicAdd32((uint32_t*)var, value);
+@@ -185,6 +198,9 @@
+ */
+ inline U64 AtomicAdd(register volatile U64* var, register U64 value)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_add( var, value, __ATOMIC_SEQ_CST );
++#endif
+ 
+ #if PLATFORM_PS3
+ 	return cellAtomicAdd64((uint64_t*)var, value);
+@@ -233,6 +249,9 @@
+ */
+ inline int AtomicIncrement(volatile int* var)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_add( var, 1, __ATOMIC_SEQ_CST );  // returns the OLD value
++#endif
+ #if PLATFORM_PC
+ 	return InterlockedIncrement((long*)var) - 1;
+ #endif
+@@ -254,6 +273,9 @@
+ */
+ inline int AtomicDecrement(volatile int* var)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_sub( var, 1, __ATOMIC_SEQ_CST );  // returns the OLD value
++#endif
+ #if PLATFORM_PC
+ 	return InterlockedDecrement((long*)var) + 1;
+ #endif
+@@ -276,6 +298,9 @@
+ */
+ inline U32 AtomicAnd(register volatile U32* var, register U32 value)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_and( var, value, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PC
+ 	return _InterlockedAnd((long*)var, value);
+ #endif
+@@ -319,6 +344,9 @@
+ */
+ inline U32 AtomicOr(register volatile U32* var, register U32 value)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_or( var, value, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PC
+ 	return _InterlockedOr((long*)var, value);
+ #endif
+@@ -360,6 +388,9 @@
+ */
+ inline U32 AtomicGet(volatile U32* var)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_load_n( var, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_SPU
+ 	uint32_t temp[32] __attribute__((aligned(128)));
+ 	return cellAtomicOr32(temp, (uint64_t)var, 0);
+@@ -388,6 +419,9 @@
+ */
+ inline void AtomicSet(volatile U32* var, U32 value)
+ {
++#if defined( PLATFORM_WEB )
++	__atomic_store_n( var, value, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_SPU
+ 	uint32_t temp[32] __attribute__((aligned(128)));
+ 	cellAtomicStore32(temp, (uint64_t)var, value);
+@@ -423,6 +457,11 @@
+ /// Atomically assigns a new value to a 64bit variable, if it previously was equal to a given comparison value.
+ inline bool AtomicCompareAndSwap(volatile U64* var, U64 newvalue, U64 compare)
+ {
++#if defined( PLATFORM_WEB )
++	// The queue CAS (jobqueue_task_queue_lf.h:98-101) is this overload.
++	return __atomic_compare_exchange_n( var, (U64*)&compare, newvalue, 0,
++	                                    __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PC
+ 	return InterlockedCompareExchange64((LONG64*)var, newvalue, compare) == (LONG64)compare;
+ #endif
+@@ -444,6 +483,9 @@
+ /// Atomically increments a 64bit variable.
+ inline S64 AtomicIncrement(volatile S64* var)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_add( var, 1, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PC
+ 	return InterlockedIncrement64((LONG64*)var) - 1;
+ #endif
+@@ -463,6 +505,9 @@
+ /// Atomically decrements a 64bit variable.
+ inline S64 AtomicDecrement(volatile S64* var)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_sub( var, 1, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PC
+ 	return InterlockedDecrement64((LONG64*)var) + 1;
+ #endif
+@@ -483,6 +528,9 @@
+ /// Atomically ANDs a 64bit variable with a value.
+ inline U64 AtomicAnd(volatile U64* var, U64 value)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_and( var, value, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PS3
+ 	return cellAtomicAnd64((uint64_t*)var, value) & value;
+ #endif
+@@ -499,6 +547,9 @@
+ /// Atomically ORs a 64bit variable with a value.
+ inline U64 AtomicOr(volatile U64* var, U64 value)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_fetch_or( var, value, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_PS3
+ 	return cellAtomicOr64((uint64_t*)var, value) | value;
+ #endif
+@@ -529,6 +580,9 @@
+ */
+ inline U64 AtomicGet(volatile U64* var)
+ {
++#if defined( PLATFORM_WEB )
++	return __atomic_load_n( var, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_SPU
+ 	uint64_t temp[16] __attribute__((aligned(128)));
+ 	return cellAtomicOr64(temp, (uint64_t)var, 0);
+@@ -547,6 +601,9 @@
+ */
+ inline void AtomicSet(volatile U64* var, U64 value)
+ {
++#if defined( PLATFORM_WEB )
++	__atomic_store_n( var, value, __ATOMIC_SEQ_CST );
++#endif
+ #if PLATFORM_SPU
+ 	uint64_t temp[16] __attribute__((aligned(128)));
+ 	cellAtomicStore64(temp, (uint64_t)var, value);
+--- a/code/mercury/library/common/system/include/system/scheduler/core/mercury_to_tl.h
++++ b/code/mercury/library/common/system/include/system/scheduler/core/mercury_to_tl.h
+@@ -7,6 +7,8 @@
+ #define TL_PLAT_PS3 1
+ #elif defined( PLATFORM_PC )
+ #define TL_PLAT_PC 1
++#elif defined( PLATFORM_WEB )
++#define TL_PLAT_WEB 1
+ #endif
+ 
+ #endif
+--- a/code/mercury/library/common/system/include/system/scheduler/core/tl_defs.h
++++ b/code/mercury/library/common/system/include/system/scheduler/core/tl_defs.h
+@@ -6,7 +6,7 @@
+ 
+ #include "mercury_to_tl.h"
+ 
+-#if 0 + defined(PLATFORM_PC) + TL_PLAT_PS2 + TL_PLAT_PS2IOP + defined(PLATFORM_PS3) + defined(PLATFORM_SPU) + TL_PLAT_GC + TL_PLAT_REV != 1
++#if 0 + defined(PLATFORM_PC) + TL_PLAT_PS2 + TL_PLAT_PS2IOP + defined(PLATFORM_PS3) + defined(PLATFORM_SPU) + TL_PLAT_GC + TL_PLAT_REV + defined(PLATFORM_WEB) != 1
+  #error TL_PLAT_XXX platform specification is missing. It should be set via the compiler command line.
+ #endif
+ 
+--- a/code/mercury/library/common/system/include/system/scheduler/core/tl_thread.h
++++ b/code/mercury/library/common/system/include/system/scheduler/core/tl_thread.h
+@@ -6,6 +6,12 @@
+ 
+ #include <core/threads/atomic.h>
+ #include <core/threads/misc.h>
++
++/* [spike] TL_PLAT_WEB backend, one execution context. Everything below the
++   #else is the untouched upstream file. */
++#if defined( TL_PLAT_WEB ) && TL_PLAT_WEB
++#include "tl_thread_web.h"
++#else
+ 
+ //#undef DEPRECATED
+ //#define DEPRECATED
+@@ -414,4 +420,5 @@
+ 
+ //@}
+ 
+-#endif
++#endif /* !TL_PLAT_WEB */
++#endif
+--- a/code/mercury/library/common/system/include/system/scheduler/jobqueue.h
++++ b/code/mercury/library/common/system/include/system/scheduler/jobqueue.h
+@@ -62,6 +62,8 @@
+ #include "jobqueue_xenon.h"
+ #elif TL_PLAT_PS3 || TL_PLAT_PS3_SPU
+ #include "jobqueue_ps3.h"
++#elif TL_PLAT_WEB
++#include "jobqueue_web.h"
+ #else
+ #include "system/scheduler/jobqueue_generic.h"
+ #endif
+--- /dev/null
++++ b/code/mercury/library/common/system/include/system/scheduler/core/tl_thread_web.h
+@@ -0,0 +1,124 @@
++/* tl_thread_web.h - TL_PLAT_WEB backend for tl_thread.h.
++ *
++ * SPIKE ARTIFACT, not engine code. Lives in _work/ so that the identity can be
++ * measured without editing upstream/. It is copied into the patched overlay by
++ * make_patched_copy.py.
++ *
++ * Contract (from docs/work/analysis/t005-scheduler-design.md section 3.2-3.3):
++ * one execution context. Nothing here pretends to be parallel and nothing here
++ * returns success for an operation the build cannot perform:
++ *
++ *   tlCreateThread       returns 0 (the invalid handle) and increments a
++ *                        refusal counter. It never runs `entry` inline: every
++ *                        real entry point is a forever-loop.
++ *   tlWaitForThread      aborts through tlWebUnsupported(). Waiting on another
++ *                        context can never complete here.
++ *   tlExitThread         aborts: reaching it means a context that should not
++ *                        exist was entered.
++ *   tlSleep              logged no-op (design 3.6.2): it must never map to
++ *                        Atomics.wait, which throws on the browser main thread.
++ *   tl_threadlocal       thread_local; with one context it is plain storage.
++ *
++ * No numeric priority is invented: the enum below is a total order only. It is
++ * never handed to an OS because no OS thread is ever created.
++ */
++#ifndef TL_THREAD_WEB_H
++#define TL_THREAD_WEB_H
++
++/* Fail-loud hook, defined once in shims/web_runtime.cpp. */
++extern "C" void tlWebUnsupported( const char* what );
++extern "C" unsigned tlWebThreadSpawnRefused;
++extern "C" unsigned tlWebSleepNoopCount;
++
++/* Same width as every other platform's handle (tl_thread.h:46-68). 0 is the
++ * invalid handle, so a caller that ignores the return value cannot mistake it
++ * for a live thread. */
++typedef U64 tlThreadHandle;
++typedef U64 tlThreadId;
++
++/* Same value as tl_thread.h:81 (upstream, inside the platform body). Copied so
++ * the signature and default argument are unchanged. */
++#define TL_THREAD_DEFAULT_STACK_SIZE (32*1024)
++
++/* Cross platform thread priority. A total order only - see the file header. */
++enum tlThreadPriority
++{
++	TL_THREAD_PRIORITY_IDLE          = 0,
++	TL_THREAD_PRIORITY_LOWEST        = 1,
++	TL_THREAD_PRIORITY_BELOW_NORMAL  = 2,
++	TL_THREAD_PRIORITY_NORMAL        = 3,
++	TL_THREAD_PRIORITY_ABOVE_NORMAL  = 4,
++	TL_THREAD_PRIORITY_HIGHEST       = 5,
++	TL_THREAD_PRIORITY_TIME_CRITICAL = 6
++};
++
++/* TL_THREAD_CREATE_SUSPENDED is non-zero so a caller that asks for it is
++ * distinguishable; tlCreateThread refuses every request regardless. */
++enum tlThreadFlags
++{
++	TL_THREAD_JOINABLE         = 0,
++	TL_THREAD_CREATE_SUSPENDED = 1,
++	TL_THREAD_DEFAULT_FLAGS    = TL_THREAD_JOINABLE
++};
++
++typedef void (*tlThreadFunction)( void* );
++
++#define TL_THREAD_FUNCTION(name) void name( void* ThreadParam )
++#define TL_THREAD_RETURN(exitcode) do { (void)(exitcode); return; } while (false)
++
++inline tlThreadHandle tlGetCurrentThread()
++{
++	return (tlThreadHandle)1;   /* the single context's identity */
++}
++
++inline tlThreadId tlGetCurrentThreadId()
++{
++	return (tlThreadId)1;       /* design 3.4: jqGetMainThreadID == 1 */
++}
++
++inline void tlSleep( U32 milliseconds )
++{
++	(void)milliseconds;
++	++tlWebSleepNoopCount;      /* logged no-op, never Atomics.wait */
++}
++
++inline tlThreadHandle tlCreateThread(
++	tlThreadFunction entry, INTPTR param,
++	const char* name,
++	int priority = TL_THREAD_PRIORITY_NORMAL,
++	U32 stacksize = TL_THREAD_DEFAULT_STACK_SIZE,
++	U32 flags = TL_THREAD_DEFAULT_FLAGS )
++{
++	(void)entry; (void)param; (void)name; (void)priority;
++	(void)stacksize; (void)flags;
++	++tlWebThreadSpawnRefused;  /* recorded, never faked */
++	return (tlThreadHandle)0;   /* invalid handle */
++}
++
++inline tlThreadHandle tlCreateThread( tlThreadFunction entry, INTPTR param,
++	int priority, U32 stacksize, U32 flags, const char* name )
++{
++	return tlCreateThread( entry, param, name, priority, stacksize, flags );
++}
++
++inline void tlExitThread( U32 exitcode )
++{
++	(void)exitcode;
++	tlWebUnsupported( "tlExitThread" );
++}
++
++inline U32 tlWaitForThread( tlThreadHandle thr )
++{
++	(void)thr;
++	tlWebUnsupported( "tlWaitForThread" );
++	return 0;                   /* not reached */
++}
++
++inline void tlSetCurrentThreadName( const char* name )
++{
++	(void)name;                 /* stored nowhere yet; no OS thread to name */
++}
++
++#define tl_threadlocal thread_local
++
++#endif /* TL_THREAD_WEB_H */
+--- /dev/null
++++ b/code/mercury/library/common/system/include/system/scheduler/jobqueue_web.h
+@@ -0,0 +1,97 @@
++/* jobqueue_web.h - TL_PLAT_WEB type layer for system/scheduler/jobqueue.h.
++ *
++ * SPIKE ARTIFACT, not engine code. Types only: no lifecycle, no queue, no
++ * policy. It is the sibling of jobqueue_xenon.h / jobqueue_ps3.h and exists so
++ * that the shared jobqueue.cpp / jobqueue_kernel.cpp see the same struct layout
++ * they see on PC.
++ *
++ * Differences from jobqueue_xenon.h are deliberate and minimal:
++ *   - no <windows.h>
++ *   - _jqWorker::Thread is tlThreadHandle instead of HANDLE. On PC
++ *     tlThreadHandle is U64 and HANDLE is a pointer, so both are pointer-width;
++ *     under PLATFORM_WEB no thread object exists at all and tlCreateThread
++ *     returns 0.
++ *   - jqProcessor values are copied verbatim from jobqueue_xenon.h:18-26. They
++ *     are bit positions in jqProcessorsMask, not hardware ids.
++ */
++#ifndef JOBQUEUE_WEB_H
++#define JOBQUEUE_WEB_H
++
++#include "system/scheduler/core/tl_defs.h"
++
++namespace Scheduler
++{
++
++enum jqProcessor
++{
++	JQ_CORE_0 = 1 << 0,
++	JQ_CORE_1 = 1 << 1,
++	JQ_CORE_2 = 1 << 2,
++	JQ_CORE_3 = 1 << 3,
++	JQ_CORE_4 = 1 << 4,
++	JQ_CORE_5 = 1 << 5,
++	JQ_CORE_6 = 1 << 6,
++	JQ_CORE_7 = 1 << 7,
++	JQ_CORE_ALL = JQ_CORE_0 | JQ_CORE_1 | JQ_CORE_2 | JQ_CORE_3 |
++	              JQ_CORE_4 | JQ_CORE_5 | JQ_CORE_6 | JQ_CORE_7
++};
++
++//! Pointer to the function that is responsible for actually processing a batch of data.
++typedef void (*jqFunctor)( struct Task* Batch );
++
++struct jqModule
++{
++	jqModule() {}
++	jqModule( jqFunctor Code, const char* Name ) : Code( Code ), Name( Name ) {}
++	jqFunctor Code;
++	const char* Name;
++};
++
++typedef int TaskHandle;
++
++struct _Task
++{
++};
++
++struct _jqWorker
++{
++	int Processor;
++	tlThreadHandle Thread;   /* jobqueue_xenon.h:51 uses HANDLE */
++	int WorkerID;
++	bool Idle;
++};
++
++#define jqPrintf tlPrintf
++
++#define JQ_ASSERT(x, desc) TL_ASSERT(x, desc)
++
++#define JQ_ALIGNED
++#define JQ_DMA_ALIGNED
++
++#define JQ_NO_PPU ERROR_JobQueue_Function_required_on_Xenon
++#define JQ_NO_SPU
++
++#define JQ_DECLARE_MODULE(name,fn,elfname) \
++	Scheduler::jqModule name(fn,#name);
++
++#define JQ_DECLARE_PPU_MODULE(name,fn) \
++	Scheduler::jqModule name(fn,#name);
++
++#define JQ_DECLARE_SPU_MODULE(name,fn,elfname,logger) \
++	Scheduler::jqModule name(fn,#name);
++
++#define JQ_DECLARE_DUAL_MODULE(name,fn,elfname,logger) \
++	Scheduler::jqModule name(fn,#name);
++
++} // namespace Scheduler
++
++/* Fail-loud hook implemented in system/source/scheduler/jobqueue_web.cpp.
++ * Shared code calls it when an input cannot be represented faithfully with a
++ * single execution context; it prints a diagnostic and aborts, so the caller
++ * never continues with a silently dropped policy. */
++namespace Scheduler
++{
++void jqWebFatal( const char* what );
++}
++
++#endif /* JOBQUEUE_WEB_H */
+--- a/code/mercury/library/common/core/source/threads/Event.cpp
++++ b/code/mercury/library/common/core/source/threads/Event.cpp
+@@ -1,5 +1,11 @@
+ #include "CorePch.h"
+ #include <core/core.h>
++#if defined( PLATFORM_WEB )
++/* [platform/web] fail-loud hook, defined in shims/web_runtime.cpp. A single
++   execution context has no other context to signal an event, so Wait()
++   below must abort instead of blocking or returning a fake success. */
++extern "C" void tlWebUnsupported( const char* what );
++#endif
+ 
+ #if defined( PLATFORM_PC )
+ #include <windows.h>
+@@ -40,6 +46,20 @@
+ typedef pthread_cond_t PlatformEvent;
+ #endif
+ 
++#if defined( PLATFORM_WEB )
++/* [platform/web][spike] Event owns a Mutex and calls
++   Mutex::Handle()/Wait()/Release(). The PC PCH supplied that definition;
++   this portable TU never did, because the !COMPILER_VC branch of the file
++   was never compiled on any platform. HAVE_PLATFORM_MUTEX_TYPES keeps
++   Mutex.h from forward-declaring `class PlatformEvent`, which would shadow
++   the pthread_cond_t typedef above and make the type incomplete.
++   Web-only: on PC the PCH already provides Mutex.h and there is no
++   pthread_mutex_t, so an unconditional include would break the PC build. */
++typedef pthread_mutex_t PlatformMutex;
++typedef pthread_mutex_t PlatformLock;
++#define HAVE_PLATFORM_MUTEX_TYPES
++#include <core/Threads/Mutex.h>
++#endif
+ #include <core/Threads/Event.h>
+ //#include <System/DebugLog.h>
+ 
+@@ -171,6 +191,15 @@
+ 
+ bool Event::Wait( const U32 timeMs ) 
+ { 
++#if defined( PLATFORM_WEB )
++	/* [platform/web] Nothing can signal this event in one context: the only
++	   producers are other threads. Design 3.2: never an infinite wait (a
++	   browser hang with no console output), never a silent return 0. The PC
++	   and PS3 paths are untouched. */
++	(void)timeMs;
++	tlWebUnsupported( "MT::Event::Wait" );
++	return false;   /* not reached: tlWebUnsupported aborts */
++#endif
+ 	m_pMutex->Wait();
+ 
+ 	U32 rv = 0;
+@@ -183,7 +212,7 @@
+ 		timeout.tv_nsec = (t-(timeout.tv_sec*1000000))*1000;
+ 		do
+ 		{
+-			U32 rv = pthread_cond_timedwait( (pthread_cond_t*)m_Handle, (pthread_mutex_t*)m_pMutex->Handle(), (const std::timespec*)&timeout );
++			U32 rv = pthread_cond_timedwait( (pthread_cond_t*)m_Handle, (pthread_mutex_t*)m_pMutex->Handle(), (const timespec*)&timeout );
+ 		} while(ETIMEDOUT == (int)rv);
+ 	}
+ 	else
+--- a/code/mercury/library/common/core/source/threads/Mutex.cpp
++++ b/code/mercury/library/common/core/source/threads/Mutex.cpp
+@@ -49,7 +49,7 @@
+ //
+ // Lock Class Functions
+ //
+-#if !defined( COMPILER_VC )
++#if defined( PLATFORM_PS3 )
+ 
+ Lock::Lock()
+ {
+@@ -97,6 +97,53 @@
+ {
+ 	int result = sys_lwmutex_unlock(m_lock);
+ 	BIZ_ASSERT(result == CELL_OK);
++}
++
++#elif !defined( COMPILER_VC )
++
++/* [spike] POSIX Lock, mirroring the Mutex class in this file (line 218).
++   CRITICAL_SECTION is recursive, so the pthread mutex is created
++   recursive to keep the same contract. */
++Lock::Lock()
++{
++	m_lock = (PlatformLock*)malloc( sizeof( PlatformLock ) );
++	pthread_mutexattr_t attr;
++	pthread_mutexattr_init( &attr );
++	pthread_mutexattr_settype( &attr, PTHREAD_MUTEX_RECURSIVE );
++	int result = pthread_mutex_init( m_lock, &attr );
++	pthread_mutexattr_destroy( &attr );
++	BIZ_ASSERT( result == 0 );
++}
++
++Lock::Lock( const Lock& copy )
++{
++}
++
++Lock::~Lock()
++{
++	pthread_mutex_destroy( m_lock );
++	free( m_lock );
++}
++
++void Lock::operator = ( const Lock& copy )
++{
++}
++
++void Lock::Enter()
++{
++	int result = pthread_mutex_lock( m_lock );
++	BIZ_ASSERT( result == 0 );
++}
++
++bool Lock::TryEnter()
++{
++	return pthread_mutex_trylock( m_lock ) == 0;
++}
++
++void Lock::Exit()
++{
++	int result = pthread_mutex_unlock( m_lock );
++	BIZ_ASSERT( result == 0 );
+ }
+ 
+ #else
+--- a/code/mercury/library/common/system/source/debug/log/LogManager.cpp
++++ b/code/mercury/library/common/system/source/debug/log/LogManager.cpp
+@@ -17,11 +17,21 @@
+ {
+ 	static void BugBashingBodge()
+ 	{
++#if defined( PLATFORM_WEB )
++	// [spike][platform/log] This function only forces linker retention
++	// (LogManager.cpp:5-6); the objects are constructed and destroyed
++	// immediately and register nothing, so restricting the list does not
++	// change which subscribers a logger has or which messages are logged.
++	// wasm32 has no sockets, no SMTP host and no synchronous log file, so
++	// only the subscriber that can exist is kept.
++	ConsoleSubscriber		dummy2;
++#else
+ 	LogFileSubscriber		dummy1;
+ 	ConsoleSubscriber		dummy2;
+ 	SocketSubscriber		dummy3;
+ 	SocketServerSubscriber	dummy4;
+ 	EMailSubscriber			dummy5;
++#endif
+ 	}
+ }
+ //////////////////
+--- a/code/mercury/library/common/system/source/scheduler/jobqueue.cpp
++++ b/code/mercury/library/common/system/source/scheduler/jobqueue.cpp
+@@ -486,8 +486,42 @@
+ {
+ 	BIZ_ASSERT(jqPool.ThisPtr == NULL); // call CreatePolicy *before* Scheduler::Init(), not after
+ 	BIZ_ASSERT(gPolicyList.nPolicies < JQ_PRIORITY_MAX); // can't create more than 16 policies
++#if defined( PLATFORM_WEB )
++	if (gPolicyList.nPolicies >= JQ_PRIORITY_MAX)
++		jqWebFatal("CreatePolicy: more policies than JQ_PRIORITY_MAX");
++#endif
+ 	int iPolicy = gPolicyList.nPolicies++;
++#if defined( PLATFORM_WEB )
++	/* [platform/web] One execution context cannot honour the per-column
++	   priorities, and GenerateWorkerPolicyOrder (below) sets any policy
++	   whose value in the caller's column is 0 to -1, which jqPopNextBatch
++	   treats as "stop". With column 0 as the only context, a game policy
++	   such as piStreamer {0,0,7,7,7,7,7,7} (SchedulerConfig.cpp:49-50)
++	   could never be popped and Flush on its group could not terminate.
++	   Flatten: take the maximum across the 8 columns and replicate it, so
++	   the policy is column-invariant, relative order between policies is
++	   preserved (max is monotone) and Batch.iCPUBits != 0 holds.
++	   The copy also removes the caller-lifetime dependency: the game
++	   passes a stack array. PC behaviour is untouched. */
++	static Policy s_flattenedPolicies[JQ_PRIORITY_MAX][8];
++	Policy maxValue = 0;
++	for (int iColumn = 0; iColumn < 8; iColumn++)
++		if (pPolicy[iColumn] > maxValue)
++			maxValue = pPolicy[iColumn];
++	if (maxValue == 0)
++	{
++		char why[224];
++		snprintf(why, sizeof(why),
++		         "CreatePolicy(%d): all 8 columns are 0, which means \"never run\" "
++		         "and cannot be represented in one execution context", iPolicy);
++		jqWebFatal(why);
++	}
++	for (int iColumn = 0; iColumn < 8; iColumn++)
++		s_flattenedPolicies[iPolicy][iColumn] = maxValue;
++	gPolicyList.Policies[iPolicy] = s_flattenedPolicies[iPolicy];
++#else
+ 	gPolicyList.Policies[iPolicy] = pPolicy;
++#endif
+ 	return iPolicy;
+ }
+ 
+--- /dev/null
++++ b/code/mercury/library/common/system/source/scheduler/jobqueue_web.cpp
+@@ -0,0 +1,226 @@
++/* jobqueue_web.cpp - Scheduler platform backend for TL_PLAT_WEB.
++ *
++ * The web sibling of jobqueue_xenon.cpp + jobqueue_kernel_xenon.cpp. It
++ * implements exactly the single-execution-context contract written down in
++ * docs/work/analysis/t005-scheduler-design.md sections 3.2-3.4:
++ *
++ *   _Init        jqMaxWorkers = 0, no events, no OS handles
++ *   _Start       zero worker contexts; build the main-thread policy order
++ *   _jqStop      assert the worker count is zero, free the (zero-sized) array
++ *   _AddTask     no-op (also empty on Xenon, jobqueue_xenon.cpp:112-114)
++ *   jqAlertWorker            no-op
++ *   jqWorkerSleep            returns false; never reached, because jqWorkerLoop
++ *                            is only entered with iWorkerID == -1
++ *   jqLockBatchPoolInternal  plain counter; one context cannot interleave
++ *   Flush                    drain inline; bRunJobs is ignored (documented
++ *                            deviation - the two audio call sites)
++ *   jqExecuteBatch / jqCanBatchExecute / jqSafeToPopBatch / GetWorkerID
++ *                            the four hooks the Xenon build takes from
++ *                            jobqueue_kernel_xenon.cpp
++ *
++ * Deliberate differences from jobqueue_xenon.cpp, all recorded:
++ *   - no g_WorkerAlert[8], no SetEvent/WaitForSingleObject/CloseHandle
++ *   - Flush does not poll Time::GetPerformanceCounter: the drain loop cannot
++ *     fail to make progress in one context, so a timeout would be false
++ *   - a JQ_GROUP_LABEL / JQ_GROUP_SPURWLOCK dependency aborts: only the renderer
++ *     can advance a fence and there is no renderer in this module
++ *
++ * NOT a parallel implementation and NOT thread-safe. It must never be described
++ * as one.
++ */
++#include "SystemPch.h"
++
++#include "system/scheduler/jobqueue.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++
++namespace Scheduler
++{
++
++extern TaskPool jqPool;
++extern int jqNWorkers;
++extern jqWorker* jqWorkers;
++extern int jqMaxWorkers;
++
++bool jqStopSignal = false;
++jqWorker jqMainThreadWorker;
++int jqPoolLock = 0;
++
++void InitWorker( jqWorker* Worker );
++void ShutdownWorker( jqWorker* Worker );
++void jqWorkerLoop( jqWorker* Worker, int GroupID, int iWorkerID );
++
++/* Fail-loud hook. Declared in jobqueue_web.h so shared code (CreatePolicy) can
++ * refuse an input that a single context cannot represent. */
++void jqWebFatal( const char* what )
++{
++	fprintf( stderr, "[scheduler/web] unsupported: %s\n", what ? what : "(null)" );
++	fflush( stderr );
++	abort();
++}
++
++void _Init()
++{
++	jqPoolLock = 0;
++	jqMaxWorkers = 0;   /* one execution context: no worker threads exist */
++}
++
++void _Shutdown()
++{
++	/* no OS handles were created */
++}
++
++void _Start( U32 processorsMask )
++{
++	(void)processorsMask;
++
++	GenerateWorkerPolicyOrder( &jqMainThreadWorker.PolicyOrder, 0 );
++
++	InitWorker( &jqMainThreadWorker );
++	jqMainThreadWorker.Processor = JQ_CORE_0;
++	tlSetCurrentThreadName( "Game Master" );
++}
++
++void _jqStop()
++{
++	/* Design 3.4: assert all counts are zero; nothing else owns a context. */
++	if ( jqPool.QueuedBatchCount != 0 || jqPool.ExecutingBatchCount != 0 )
++		jqWebFatal( "_jqStop with batches still queued/executing" );
++
++	ShutdownWorker( &jqMainThreadWorker );
++
++	/* The invariant is zero worker *contexts*. Start() still calls
++	 * BizAlignedMalloc(sizeof(jqWorker) * 0), which may legally return a
++	 * non-null pointer, so a non-null jqWorkers is not by itself a fault. */
++	if ( jqNWorkers != 0 )
++		jqWebFatal( "_jqStop with a non-zero worker count; no worker can exist here" );
++
++	if ( jqWorkers )
++		BizAlignedFree( jqWorkers );
++	jqWorkers = NULL;
++}
++
++void _AddTask( const Task* Batch, int iPolicy )
++{
++	(void)Batch; (void)iPolicy;   /* same no-op as jobqueue_xenon.cpp:112-114 */
++}
++
++void jqAlertWorker( int iWorkerID )
++{
++	(void)iWorkerID;              /* no worker to wake */
++}
++
++void jqLockBatchPoolInternal()
++{
++	++jqPoolLock;                 /* single context: no CAS needed */
++}
++
++void jqUnlockBatchPoolInternal()
++{
++	--jqPoolLock;
++}
++
++void Flush( GroupHandle GroupID )
++{
++	Flush( GroupID, true );
++}
++
++void Flush( int GroupID, bool bRunJobs, U32 _timeout )
++{
++	(void)bRunJobs;               /* documented deviation: always drain */
++	(void)_timeout;
++
++	if ( GroupID != JQ_GROUP_NONE )
++	{
++		TaskGroup* pGroup = &jqPool.BatchGroupPool[GroupID];
++		for ( int i = 0; i < pGroup->NDependencies; i++ )
++		{
++			int dep = pGroup->Dependencies[i];
++			if ( dep == JQ_GROUP_SPURWLOCK || dep == JQ_GROUP_LABEL )
++				jqWebFatal( "Flush on a fence dependency (JQ_GROUP_LABEL/SPURWLOCK)" );
++			Flush( dep );
++		}
++	}
++
++	volatile int* BatchCount;
++	volatile int* ExecutingBatchCount;
++	int previousBatchCount = -1;
++	int stalledIterations = 0;
++	if ( GroupID == JQ_GROUP_NONE )
++	{
++		BatchCount          = &jqPool.QueuedBatchCount;
++		ExecutingBatchCount = &jqPool.ExecutingBatchCount;
++	}
++	else
++	{
++		BatchCount          = &jqPool.BatchGroupPool[GroupID].QueuedBatchCount;
++		ExecutingBatchCount = &jqPool.BatchGroupPool[GroupID].ExecutingBatchCount;
++	}
++
++	for ( ;; )
++	{
++		int bc = *BatchCount;
++		MT::MemoryFence();
++		int ec = *ExecutingBatchCount;
++		if ( ( bc + ec ) == 0 )
++			break;
++
++		if ( !bc )
++			/* ec > 0 with nothing queued: in one context the executor is this
++			 * frame, so this can only mean an unbalanced count. Fail loudly. */
++			jqWebFatal( "Flush sees executing batches with an empty queue" );
++
++		/* A queued batch that no policy can pop would spin here forever (a
++		 * browser hang with no console output). Eight consecutive iterations
++		 * without the queue shrinking is not a slow frame, it is unrunnable
++		 * work - most likely a policy still disabled by column 0. */
++		if ( bc == previousBatchCount )
++		{
++			if ( ++stalledIterations > 8 )
++				jqWebFatal( "Flush cannot make progress: a queued batch is not "
++				            "runnable (a policy disabled by its column 0?)" );
++		}
++		else
++		{
++			previousBatchCount = bc;
++			stalledIterations = 0;
++		}
++
++		jqWorkerLoop( &jqMainThreadWorker, GroupID, -1 );
++	}
++}
++
++/* --- the hooks the Xenon build takes from jobqueue_kernel_xenon.cpp -------- */
++
++void jqExecuteBatch( Task* Batch )
++{
++	Batch->Module->Code( Batch );
++}
++
++bool jqSafeToPopBatch( jqWorker* Worker, jqPriority Priority, bool IsLocal )
++{
++	(void)Worker; (void)Priority; (void)IsLocal;
++	return true;
++}
++
++bool jqCanBatchExecute( Task* Batch, jqWorker* Worker )
++{
++	(void)Batch; (void)Worker;
++	return true;
++}
++
++bool jqWorkerSleep( jqWorker* Worker, int iWorkerID )
++{
++	(void)Worker; (void)iWorkerID;
++	/* jqWorkerLoop is only entered with iWorkerID == -1, so this is dead code;
++	 * returning false means "do not continue", never "slept successfully". */
++	return false;
++}
++
++int GetWorkerID()
++{
++	return 0;                     /* only context */
++}
++
++} // namespace Scheduler

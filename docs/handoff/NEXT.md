@@ -66,6 +66,12 @@ P14: `PLATFORM_WEB` kimliğiyle 30/39 TU derleniyor; `spike_sched.wasm` 59.140 B
 ve node'da `ran=1 / job_result=42 / workers=0`. Kalan: policy flattening,
 POSIX kalıntıları, DX11/FX11.
 
+P14 overlay: `engine/patches/t005c-web-scheduler.patch` + apply/verify/native
+araçları. Taze upstream kopyasında 60.797 B modül, A3 4/4, 3/3 abort, PASS;
+PC preprocessed TU yalnız log satırlarında farklı, 29/29 TU MSVC. İlk gerçek
+çağırıcı `C_Deflate`/`C_Inflate` (`deferred=1`, `equal=1`). Sıradaki: A2 grup
+bağımlılıkları + native runtime parity.
+
 P15: `Level.levelphysics` kanıtlandı; native/wasm/Python `queryHash` birebir.
 Kalan: fat/swept-sphere (teker yarıçapı XT), constraint'ler, engine entegrasyonu.
 

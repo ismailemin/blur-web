@@ -76,6 +76,14 @@ derleniyor; `jobqueue.cpp` ve `jobqueue_kernel.cpp` 11 → **0** hata, `Inflate`
 5 POSIX kalıntısı, `_vsnprintf_s`, DX11/FX11. Ayrıntı:
 `docs/work/analysis/engine-web-shims.md`. Oyun/motor iddiası yok.
 
+**Overlay (2 Kasım, P14):** `engine/patches/t005c-web-scheduler.patch` (20 dosya,
++681/−35) + `engine/apply_overlay.py`/`verify_overlay.py`/`native_parity.py`.
+Taze upstream kopyasına uygulanıp yeniden derlendi: wasm 60.797 B, A3 4/4,
+3/3 abort, deterministik, **verdict PASS**. PC `jobqueue.cpp` önişlenmiş çıktısı
+yalnız iki log satır numarası dışında aynı; 29/29 TU MSVC'de derleniyor.
+İlk gerçek engine çağırıcısı `C_Deflate`/`C_Inflate` kuyruk üzerinden çalıştı
+(`deferred=1`, `equal=1`). A2 (grup bağımlılıkları) henüz test edilmedi.
+
 ### T-005d — Fizik ve çarpışma
 - Gravity/physics alt kümesini WASM'e taşı; native referansla ölç.
 - T-004'teki particle-cache çökmesi sürüş referansını bloke ediyorsa önce

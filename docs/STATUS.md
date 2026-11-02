@@ -334,6 +334,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `Atomic.h`'nin platform zincirinde wasm dalı yoktu; 17 fonksiyon `__atomic_*` ile dolduruldu. `DebugBreak()` PPC trap'i wasm'da `__builtin_trap()`.
 - Kalan: policy flattening (`piStreamer` column 0), 5 POSIX kalıntısı, `_vsnprintf_s`, DX11/FX11. Ayrıntı: `docs/work/analysis/engine-web-shims.md`.
 
+## 2 Kasım 2026 — T-005c wasm overlay yeniden üretilebilir
+
+- `engine/patches/t005c-web-scheduler.patch` (20 dosya, +681/−35, SHA-256 `DBD4AC27…2E8B`) + `engine/apply_overlay.py`, `verify_overlay.py`, `native_parity.py`; `upstream/` yazılmıyor ve kirliyse araç reddediyor.
+- Taze upstream kopyasına uygulanıp yeniden derlendi: scheduler wasm **60.797 B**, A3 4/4, 3/3 fail-loud abort, deterministik, **PASS**; manifest eşleşiyor.
+- PC parity: önişlenmiş `jobqueue.cpp` yalnız iki log satır numarasında farklı (statement farkı yok); 29/29 TU MSVC'de derleniyor. Runtime PC probe, scheduler dışı logging zinciri (`IoStream.cpp`) nedeniyle bloke.
+- İlk gerçek engine çağırıcısı: `C_Deflate`/`C_Inflate` kuyruk üzerinden `deferred=1`, `equal=1`. Kalan: A2 grup bağımlılıkları, native runtime parity, DX11/FX11.
+
 ## 2 Kasım 2026 — T-005d collision oracle
 
 - `Level.levelphysics` formatı kanıtlandı: `Physic` blokları, Gravity import v10, `OptimisedAABBTree`, yaprak sıralı üçgen akışı, `S16<14>` kuantizasyon, U8 indeks, little-endian. Ayrıştırma `Main` sınırında sıfır artık baytla bitiyor.

@@ -77,6 +77,14 @@ node'da gerçek iş: `ran=1`, `job_result=42`, `workers=0`, iki koşu bit-birebi
 policy flattening, 5 POSIX kalıntısı, `_vsnprintf_s`, DX11/FX11. Ayrıntı:
 `docs/work/analysis/engine-web-shims.md`.
 
+**Overlay yeniden üretilebilir (P14):** `engine/patches/t005c-web-scheduler.patch`
+(20 dosya, +681/−35) + `engine/apply_overlay.py`, `verify_overlay.py`,
+`native_parity.py`. Taze upstream kopyasında: wasm 60.797 B, A3 4/4, 3/3 abort,
+deterministik, **PASS**; PC önişlenmiş TU yalnız log satır numaralarında farklı,
+29/29 TU MSVC'de derleniyor. İlk gerçek engine çağırıcısı `C_Deflate`/`C_Inflate`
+kuyruk üzerinden çalıştı (`deferred=1`, `equal=1`). Kalan: A2 grup bağımlılıkları,
+native runtime parity (PC logging zinciri), DX11/FX11. `upstream/` değişmedi.
+
 **T-005b tasarımı:** `Sys::I_FileSystem`/`I_File` + logicalfs/PAK C++'ta kalıyor;
 altına `platform/file` C ABI ve OPFS/blob/http range-source registry. İlk dilim
 `RangeFile` + PAK/level index parity; eksik aralık açık hata. Kurulum 7,48 GB/
