@@ -32,7 +32,7 @@ LOGS = ROOT / "_work/logs/engine-web-spike"
 EM = ROOT / "_work/toolchains/emsdk/upstream/emscripten/em++.py"
 NODE = ROOT / "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
 COMMON = "code/mercury/library/common"
-SHIMS = ROOT / "_work/engine-web-spike/shims"
+SHIMS = ROOT / "engine/harness/t005c"
 
 FLAGS = ["-DBUILD_CONFIG_SPEED", "-DPLATFORM_WEB", "-std=c++14", "-O2",
          "-fdelayed-template-parsing", "-D__restrict=", "-fdeclspec",
@@ -60,9 +60,9 @@ SCHED_TUS = [
     (f"{COMMON}/system/source/debug/log/subscribers/ConsoleSubscriber.cpp", "system"),
     (f"{COMMON}/system/source/debug/log/subscribers/SubscriberCommon.cpp", "system"),
     (f"{COMMON}/system/source/debug/log/subscribers/SubscriberManager.cpp", "system"),
-    ("_work/engine-web-spike/shims/platform_net_web.cpp", "system"),
-    ("_work/engine-web-spike/shims/web_runtime.cpp", "core"),
-    ("_work/engine-web-spike/probes/smoke_sched.cpp", "system"),
+    ("engine/harness/t005c/platform_net_web.cpp", "system"),
+    ("engine/harness/t005c/web_runtime.cpp", "core"),
+    ("engine/harness/t005c/smoke_sched.cpp", "system"),
 ]
 
 EXPECTED = [
@@ -122,7 +122,7 @@ CALLER_TUS = [
     (f"{COMMON}/misc_shared/source/misc_shared/Compression/Deflate.cpp", "misc"),
     (f"{COMMON}/misc_shared/source/misc_shared/Compression/Inflate.cpp", "misc"),
     (f"{COMMON}/misc_shared/source/misc_shared/Compression/InflateTask.cpp", "misc"),
-    ("_work/engine-web-spike/probes/smoke_caller.cpp", "misc"),
+    ("engine/harness/t005c/smoke_caller.cpp", "misc"),
 ]
 CALLER_EXPECTED = [
     "caller setup ok",
@@ -183,7 +183,7 @@ def main() -> int:
     objdir.mkdir(parents=True)
     objs = []
     for rel, lib in SCHED_TUS:
-        src = (ROOT / rel) if rel.startswith("_work/") else (tree / rel)
+        src = (ROOT / rel) if rel.startswith(("_work/", "engine/")) else (tree / rel)
         obj = objdir / f"{src.stem}.o"
         p = run([sys.executable, EM, *FLAGS, *includes(tree, lib), "-c", src, "-o", obj],
                 log=LOGS / f"treecheck__{src.stem}.log")
@@ -232,7 +232,7 @@ def run_caller(tree: Path, sched_objs: list[Path], objdir: Path) -> bool:
 
     extra = []
     for rel, lib in CALLER_TUS:
-        src = (ROOT / rel) if rel.startswith("_work/") else (tree / rel)
+        src = (ROOT / rel) if rel.startswith(("_work/", "engine/")) else (tree / rel)
         obj = objdir / f"caller_{src.stem}.o"
         p = run([sys.executable, EM, *FLAGS, *includes(tree, lib), "-c", src, "-o", obj],
                 log=LOGS / f"caller__{src.stem}.log")

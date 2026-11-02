@@ -79,7 +79,7 @@ CLOSURE = [
     "system/source/debug/log/subscribers/SubscriberCommon.cpp",
     "system/source/debug/log/subscribers/SubscriberManager.cpp",
 ]
-PROBE = "_work/engine-web-spike/probes/smoke_sched.cpp"
+PROBE = "engine/harness/t005c/smoke_sched.cpp"
 
 LINK_BLOCKERS = [
     "Sys::C_FileSystem -> Sys::C_File -> AsyncFile -> ArteryMutex",

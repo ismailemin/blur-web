@@ -79,8 +79,7 @@ Five groups, all under `code/mercury/library/common/`:
   `render`, `D3D11*` are not in the patch and cannot link.
 - **No networking.** `system/source/network/*` is untouched; the only network
   symbol the scheduler closure needs, `Network::GetHostName()`, is answered by a
-  spike shim outside the engine (`_work/engine-web-spike/shims/`), not by this
-  patch.
+  harness shim (`engine/harness/t005c/platform_net_web.cpp`), not by this patch.
 - **No Xenon kernel port.** `jobqueue_xenon.cpp` / `jobqueue_kernel_xenon.cpp`
   are neither modified nor compiled for web; `jobqueue_web.cpp` replaces them.
 - **No threading.** The build is single-context: no `-pthread`, no
@@ -143,19 +142,64 @@ context and are **refused**, not simulated — `Flush` aborts with the API name 
 the reason (one of the four fail-loud cases). No test asserts that a fence would
 eventually be satisfied, because nothing can satisfy it here.
 
+## T-005b file layer (`t005b-file-overlay.patch`)
+
+A second, additive patch layers a web file system on top of the scheduler
+overlay. It adds **three files and modifies none** (`+777/−0`), all inside
+`#if defined(PLATFORM_WEB)`:
+
+- `PlatformFileWeb.h` — the narrow `pf_*` C ABI (`open/size/read_at/close` plus
+  an async enqueue).
+- `C_WebFile.h/.cpp` — `Sys::C_WebFile` over `I_File` and
+  `Sys::C_WebFileSystem` over `I_FileSystem`, with a C++-side mount table.
+  Selection is the existing `Sys::SetDefaultFileSystem()` seam; no game code is
+  touched.
+
+```powershell
+& $py engine/apply_file_overlay.py --tree _work/engine-file-spike/tree   # scheduler, then file
+& $py engine/verify_file_overlay.py --fresh
+```
+
+`verify_file_overlay.py` (≈80 s) rebuilds twice and runs the node harness:
+**PASS**, 21 objects, 373,202 B wasm, deterministic, 32/32 checks, 7 explicit
+refusals. Through the engine layer it reads the real `cache/root.pak`
+(559,652,864 B):
+
+- PAK header + all **3,601** entries field-identical to `probes/range-file`;
+- **3,609** source requests / **314,522** B, largest 65,536,
+  `fullFileBytesCopied=0`;
+- whole-file FNV-1a 64 `2f291abb5648e078` on both `Underflow` paths, equal to an
+  independent Python hash;
+- EOF-crossing, past-EOF, zero-length, oversized, write, enqueue, unmounted,
+  write-handle, async-only and directory cases all refused explicitly.
+
+PC parity: the patch modifies zero existing files; `C_FileSystem.cpp`/`C_File.cpp`
+preprocess identically with and without the three additions; the new TU compiles
+at `/W4` with no PC symbol emitted.
+
+Limits: no browser OPFS/worker/COOP-COEP test yet; `pf_open` takes a source id,
+not a path (the path→source table is C++-side by design); no real engine consumer
+has opened a PAK through it yet. Evidence: `docs/work/analysis/engine-file-layer.md`.
+
 ## Layout
 
 ```
 engine/
-  patches/t005c-web-scheduler.patch   the overlay, unified diff vs upstream/BlurRebuilt
+  patches/t005c-web-scheduler.patch   scheduler overlay, unified diff vs upstream/BlurRebuilt
+  patches/t005b-file-overlay.patch    additive file layer, applied after the scheduler
   apply_overlay.py                    copy + patch a caller-supplied tree (stdlib only)
+  apply_file_overlay.py               scheduler + file patch in one tree
   verify_overlay.py                   fresh-tree rebuild, A2/A3/A4, fail-loud, engine caller
+  verify_file_overlay.py              fresh-tree rebuild + real root.pak read + PC parity
   native_parity.py                    MSVC TU-equality check + native compile
-  make_patch.py                       regenerate the patch from the spike overlay
+  make_patch.py                       regenerate the scheduler patch from the spike overlay
+  harness/t005c/                      scheduler probe + platform shims (committed source)
+  harness/t005b/                      file-layer node harness (smoke_webfile.cpp, JS glue)
   README.md                           this file
 ```
 
-Not engine code, not committed game data: the probe sources used by
-`verify_overlay.py` (`smoke_sched.cpp`, `smoke_caller.cpp`) and the two platform
-shims (`platform_net_web.cpp`, `web_runtime.cpp`) live under
-`_work/engine-web-spike/`, where they are regenerated and measured.
+The harness sources are committed here so both verifiers run from a clean
+checkout. Build outputs and trees stay under `_work/`. `verify_file_overlay.py`
+additionally needs `_work/range-file-probe/build/range_probe.exe`; if it is
+missing it stops with `Blocked` and the build hint instead of skipping the index
+comparison.

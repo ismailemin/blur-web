@@ -32,8 +32,9 @@ a native Windows reference build and race harness.
 - XT/FLSK schema metadata only.
 - Native x64 Amax Release build passes; stationary Brighton race renders.
 - Engine web port (work in progress): `engine/patches/t005c-web-scheduler.patch`
-  makes the scheduler compile and run one real job on wasm32 under node. It is
-  **not** a renderer or a game.
+  makes the scheduler compile and run one real job on wasm32 under node, and
+  `engine/patches/t005b-file-overlay.patch` adds a range-backed file layer that
+  reads the real `root.pak`. It is **not** a renderer or a game.
 - Not implemented: Stage B (blocks26/32) and block31, the remaining 21 level
   instances, higher resource-texture LODs, full scene traversal and materials,
   physics, controls, audio, save/streaming, single-player race, multiplayer.

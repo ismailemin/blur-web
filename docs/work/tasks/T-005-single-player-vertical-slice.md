@@ -43,6 +43,15 @@ parity + bir gerçek chunk hash'i. Ölçüm: kurulum 7,48 GB/5.113 dosya; River
 stream 244.682.752 B, 359 chunk (max 2.045.952 B, 222/359 prerequisite).
 Ayrıntı: `docs/work/analysis/t005-streaming-design.md`.
 
+**Engine dosya katmanı (2 Kasım, P16):** `engine/patches/t005b-file-overlay.patch`
+(3 yeni dosya, 0 değişiklik) scheduler overlay'inin üstüne uygulanıyor.
+`Sys::C_WebFile`/`C_WebFileSystem` + `pf_*` C ABI, `PLATFORM_WEB` altında.
+`verify_file_overlay.py --fresh` **PASS**: 373.202 B wasm, 32/32 kontrol,
+gerçek `root.pak` 3.601 giriş alan alan `probes/range-file` ile aynı, tam dosya
+FNV-1a 64 `2f291abb5648e078`, PC TU parity. Kanıt:
+`docs/work/verification/T-005b-engine-file-layer.md`. OPFS/worker ve gerçek
+`C_PakFs::OpenPak` tüketicisi henüz yok.
+
 ### T-005c — Scheduler ve zaman adımı
 - Windows thread/job queue yerine Web Worker/Atomics veya tek iş parçacığı
   politikası; sabit simülasyon adımı, render'dan bağımsız.

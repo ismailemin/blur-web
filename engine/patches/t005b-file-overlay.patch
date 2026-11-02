@@ -1,0 +1,786 @@
+--- /dev/null
++++ b/code/mercury/library/common/system/include/system/serialise/PlatformFileWeb.h
+@@ -0,0 +1,87 @@
++#ifndef __SYSTEM_SERIALISE_PLATFORM_FILE_WEB_H__
++#define __SYSTEM_SERIALISE_PLATFORM_FILE_WEB_H__
++
++// platform/file - the only storage boundary a wasm32 build may cross.
++//
++// This header is pure C: no engine type, no C++ and no platform header is
++// needed to implement it. The implementation is an imported JS function set
++// (`engine-file-spike/harness/web_file_source.js` in the spike; a browser
++// provider set in production). See docs/work/analysis/t005-streaming-design.md
++// section 4.2 for the contract this is derived from, and
++// docs/work/analysis/engine-file-layer.md for the differences.
++//
++// Contract, and it is deliberately narrow:
++//
++//   * A source is an opaque, already-installed byte range: a user-selected
++//     File/Blob, an OPFS file handle, or an HTTP range endpoint. JS owns the
++//     registry; C++ owns which engine path maps to which source
++//     (C_WebFileSystem::Mount). JS never sees an engine virtual path.
++//   * pf_read_at answers with the COMPLETE requested range or with 0. A short
++//     or missing range is a hard failure, never a zero fill: the missing bytes
++//     are unknown, and this project does not invent bytes.
++//   * Every range is validated on both sides (offset/length are safe integers,
++//     length >= 1, offset <= size - length computed without overflow, size
++//     unchanged since install). A rejected range prints its offset, length and
++//     the source size on stderr and returns 0.
++//   * pf_open only succeeds for PF_ACCESS_READ. The write path (saves) is a
++//     separate slice; pf_write_at refuses instead of pretending.
++//   * pf_enqueue_read is declared because the streamer needs a pointer-targeted
++//     asynchronous read (design section 5.3), and refuses because this build has
++//     no completion pump. It is not a synchronous fallback.
++//
++// Handle 0 is invalid. Handles are small integers; they are not pointers and
++// must not escape the engine file layer.
++
++#if defined(PLATFORM_WEB)
++
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define PF_ABI_VERSION 1u
++
++#define PF_ACCESS_READ  0x00000001u
++#define PF_ACCESS_WRITE 0x00000002u
++#define PF_ACCESS_APPEND 0x00000003u
++
++// Returns the JS provider's ABI version; must equal PF_ABI_VERSION. Checked by
++// the backend before any other call so a mismatched provider fails at once.
++uint32_t pf_abi_version(void);
++
++// Installs nothing: the source must already be registered under `sourceId` by
++// the host. Returns a non-zero handle, or 0 (with a stderr reason) on failure.
++uint32_t pf_open(const char* sourceId, uint32_t access);
++
++// Size in bytes of the opened source, or 0 for an invalid handle. The size is
++// captured at open time; the provider must not serve a source that changed.
++uint64_t pf_size(uint32_t handle);
++
++// Copies `bytes` bytes at `offset` of the opened source into the wasm linear
++// address `dst`. Returns `bytes` on success, 0 on any failure. Partial results
++// are impossible by contract: a provider that cannot answer the whole range
++// must fail, not truncate.
++uint32_t pf_read_at(uint32_t handle, uint64_t offset, void* dst, uint32_t bytes);
++
++// Write path: not implemented in this slice. Returns 0 and reports on stderr.
++uint32_t pf_write_at(uint32_t handle, uint64_t offset, const void* src, uint32_t bytes);
++
++void pf_close(uint32_t handle);
++
++// 1 if the source id is registered, 0 otherwise. An unregistered id is a
++// legitimate "does not exist" answer, not an error.
++uint32_t pf_exists(const char* sourceId);
++
++// Asynchronous pointer-targeted read for the streamer. dstAddr is a wasm linear
++// address. No completion pump exists in this build, so this returns -1 and
++// reports on stderr; it must never be used as a synchronous read.
++int32_t pf_enqueue_read(uint32_t handle, uint64_t offset, uint32_t bytes, uint32_t dstAddr);
++
++#ifdef __cplusplus
++} // extern "C"
++#endif
++
++#endif // PLATFORM_WEB
++
++#endif // __SYSTEM_SERIALISE_PLATFORM_FILE_WEB_H__
+--- /dev/null
++++ b/code/mercury/library/common/system/include/system/serialise/C_WebFile.h
+@@ -0,0 +1,197 @@
++#ifndef __SYSTEM_SERIALISE_C_WEBFILE_H__
++#define __SYSTEM_SERIALISE_C_WEBFILE_H__
++
++#if defined(PLATFORM_WEB)
++
++#pragma once
++
++#include <system/serialise/I_File.h>
++#include <system/serialise/I_FileSystem.h>
++
++// A file and a file system over the platform/file C ABI (PlatformFileWeb.h).
++//
++// This is the wasm32 sibling of C_File/C_FileSystem, not a wrapper around them:
++// C_File's non-Windows branch cannot be used (its direct-read gate compares a
++// byte count with sizeof(U8*), its fread branch compares an element count with a
++// byte count, and it seeks with fseek), and C_FileSystem::Open returns an
++// AsyncFile, which needs a second thread. Both are bypassed on web (design
++// section 1.1 and 1.2); the engine-facing contract is unchanged.
++//
++// What is faithful to C_File:
++//   * the I_BinaryStream contract: Underflow fills a buffer, or reads straight
++//     into the caller's target when the request is at least one buffer long;
++//   * GetPosition/SetPosition track the logical position, and a seek inside the
++//     resident buffer does not touch storage;
++//   * Length() is the source size captured at open;
++//   * a read at end of file returns false, exactly as C_File::Underflow does
++//     after DoFileRead reports 0 bytes.
++//
++// What is deliberately different, and why:
++//   * the direct-read gate is `ctx.readSize >= m_bufferBytes`, the allocated
++//     buffer size, never sizeof(pointer) (C_File.cpp:402). On wasm32 the old
++//     gate would send every read of 4 bytes or more down the direct path;
++//   * a failure to deliver a whole range is reported through Sys::FileRwError
++//     and fails the read; it is never zero filled;
++//   * a range handed to the platform is always inside the source
++//     (offset + bytes <= size). The clamp only shortens the last request, so the
++//     ABI's "complete range or 0" contract holds for every call;
++//   * writes are refused. The save slice owns them (design section 6).
++
++namespace Sys
++{
++
++class C_WebFileSystem;
++
++class C_WebFile : public I_File
++{
++public:
++	friend class C_WebFileSystem;
++
++	virtual const C_StreamSize		Length();
++
++	virtual const C_StreamPos		GetPosition() const;
++
++	virtual void					SetPosition( const C_StreamPos newPosition );
++
++	virtual const bool				IsWriting() const;
++
++	virtual Btl::String				Name() const;
++
++	virtual bool					Underflow( UnderflowContext& ctx );
++
++	virtual bool					Overflow();
++
++	virtual const bool				GetEndianSwapFlag() const;
++	virtual void					SetEndianSwapFlag( const bool swizzle );
++
++	virtual U32						GetVersionNumber() const;
++	virtual void					SetVersionNumber( U32 iVersion );
++
++	virtual void					Flush();
++
++	virtual							~C_WebFile();
++
++protected:
++									C_WebFile();
++
++	// sourceId is a platform/file source id, already registered by the host.
++	bool							Open(
++		const char* sourceId,
++		const U32 fileAccessAttributes,
++		bool isCritical,
++		U32 bufferBytes );
++
++	void							Close();
++
++	const bool						IsOpen() const;
++
++private:
++	// Drops the resident buffer; the next read refills it.
++	void							DiscardBuffer();
++
++	// One range request. `bytes` is always > 0 and always inside the source.
++	bool							ReadRange( U64 offset, U8* destination, U32 bytes );
++
++	// Resident read buffer. Allocated in Open, freed in Close.
++	U8*							m_pBuffer;
++	U32							m_bufferBytes;
++	U64							m_bufferStart;
++	U64							m_bufferValid;
++
++	U32							m_handle;
++	U64							m_size;
++
++	// C_File's position model (C_File.cpp:91-102, 245-251): the logical
++	// position is derived from the cursor, because I_BinaryStream::Read advances
++	// m_pCurBuffer directly and no layer tells the file about it. A cached
++	// position counter would go stale after any read served from the buffer.
++	// m_iBufferOffset is the end offset of the resident buffer, or the seek
++	// position when no buffer is resident (the same meaning as C_File's field).
++	U64							m_iBufferOffset;
++
++	Btl::String					m_Name;
++
++	bool						m_bWriting;
++	bool						m_bEndianSwapFlag;
++	bool						m_bIsOpen;
++	bool						m_IsCritical;
++	U32							m_iVersion;
++};
++
++// The default file system for a wasm32 build. Install it with
++// Sys::SetDefaultFileSystem() - the engine's single injection point
++// (FileSystemGlobals.h:28-32); nothing else selects it.
++//
++// Mount() is the path -> source table the design keeps in C++ (section 4.2):
++// the engine's virtual paths arrive lowercased and separated by the local token
++// (FilePath.inl:1-8), and each mount prefix is resolved to one platform source.
++class C_WebFileSystem : public I_FileSystem
++{
++public:
++	static const U32 kMaxMounts = 8;
++	static const U32 kMaxSourceId = 96;
++	static const U32 kDefaultBufferBytes = 16 * 1024;	// C_File.h:13
++	static const U32 kMaxBufferBytes = 1024 * 1024;
++
++	struct Counters
++	{
++		U64 openAttempts;
++		U64 openSucceeded;
++		U64 writeOpenRefused;
++		U64 unmountedOpenRefused;
++		U64 bufferHintRefused;
++		U64 reads;
++		U64 readBytes;
++		U64 readFailures;
++		U64 closes;
++		U64 exists;
++		U64 fileInfo;
++		U64 unsupportedCalls;
++		U64 abiMismatch;
++	};
++
++	static const Counters&			GetCounters();
++	static void						ResetCounters();
++
++	virtual							~C_WebFileSystem();
++
++	// Registers `prefix` -> `sourceId`. Returns false when the table is full,
++	// the source id is too long, or the prefix is empty; the caller must treat
++	// that as a configuration error, never as a silent no-mount.
++	bool							Mount( const C_FilePath& prefix, const char* sourceId );
++
++	virtual I_File*					Open(
++		const C_FilePath& fileName,
++		const E_FileAccess fileAccess = E_FileAccess_Read,
++		const C_OpenParams& params = C_OpenParams() );
++
++	virtual bool					FileExists( const C_FilePath& fileName );
++
++	virtual bool					FileInfo( const C_FilePath& fileName, C_FileInfo* pFileInfo );
++
++	// A byte source has no directory listing. Returns false and counts the call;
++	// the base class contract already documents false as "an error occurred".
++	virtual bool					DirectoryInfo( const C_FilePath& filePath, C_DirectoryInfo* pDirectoryInfo );
++
++	// There is no operating-system path in a wasm32 build; the virtual path is
++	// returned unchanged so a caller cannot fabricate a host path from it.
++	virtual C_FilePath				GetSystemFilePath( const C_FilePath& filePath ) const;
++
++private:
++	struct MountPoint
++	{
++		C_FilePath					Prefix;
++		char						SourceId[ kMaxSourceId ];
++	};
++
++	const char*						FindSource( const C_FilePath& fileName ) const;
++
++	MountPoint						m_Mounts[ kMaxMounts ];
++	U32								m_MountCount;
++};
++
++} // namespace Sys
++
++#endif // PLATFORM_WEB
++
++#endif // __SYSTEM_SERIALISE_C_WEBFILE_H__
+--- /dev/null
++++ b/code/mercury/library/common/system/source/serialise/C_WebFile.cpp
+@@ -0,0 +1,493 @@
++// The wasm32 file layer: Sys::C_WebFile / Sys::C_WebFileSystem over platform/file.
++// See C_WebFile.h for the contract and docs/work/analysis/engine-file-layer.md
++// for the measurements. This translation unit is web-only: PLATFORM_WEB is never
++// defined in the PC build, so the file compiles to nothing there and the PC
++// branches of C_File/C_FileSystem are not touched.
++#include "SystemPch.h"
++
++#include <string.h>
++#include <stdio.h>
++
++#include <system/serialise/C_WebFile.h>
++#include <system/serialise/PlatformFileWeb.h>
++#include <system/serialise/FileSystemGlobals.h>
++#include <core/utility/coredebug.h>
++
++// The declarations in C_WebFile.h are guarded the same way, so on PC this TU is
++// empty even if a PC source list ever picks it up. native parity is measured in
++// engine/verify_file_overlay.py (MSVC /W4 compile + no C_WebFile symbol).
++#if defined(PLATFORM_WEB)
++
++namespace Sys
++{
++
++namespace
++{
++	// Above this, a U64 offset is no longer exactly representable by a JS number,
++	// and the provider would have to round it. Refuse instead.
++	const U64 kMaxExactOffset = 9007199254740991ull;
++
++	C_WebFileSystem::Counters s_Counters;
++}
++
++// ---------------------------------------------------------------- C_WebFile --
++
++C_WebFile::C_WebFile() :
++	m_pBuffer( 0 ),
++	m_bufferBytes( 0 ),
++	m_bufferStart( 0 ),
++	m_bufferValid( 0 ),
++	m_handle( 0 ),
++	m_size( 0 ),
++	m_iBufferOffset( 0 ),
++	m_bWriting( false ),
++	m_bEndianSwapFlag( false ),
++	m_bIsOpen( false ),
++	m_IsCritical( true ),
++	m_iVersion( 0 )
++{
++	// C_File leaves m_bWriting uninitialised; do not repeat that.
++}
++
++C_WebFile::~C_WebFile()
++{
++	if ( m_bIsOpen )
++		C_WebFile::Close();
++}
++
++bool C_WebFile::Open(
++	const char* sourceId,
++	const U32 fileAccessAttributes,
++	bool isCritical,
++	U32 bufferBytes )
++{
++	m_bWriting = ( fileAccessAttributes != E_FileAccess_Read );
++	m_IsCritical = isCritical;
++	m_Name = sourceId;
++
++	// The write path belongs to the save slice (design section 6). A write
++	// handle is refused here rather than opened read-only.
++	if ( m_bWriting )
++		return false;
++
++	if ( bufferBytes == 0 || bufferBytes > C_WebFileSystem::kMaxBufferBytes )
++		return false;
++
++	if ( pf_abi_version() != PF_ABI_VERSION )
++	{
++		++s_Counters.abiMismatch;
++		fprintf( stderr,
++			"[platform/file] ABI mismatch: header=%u provider=%u; refusing %s\n",
++			(unsigned)PF_ABI_VERSION, (unsigned)pf_abi_version(), sourceId );
++		return false;
++	}
++
++	m_handle = pf_open( sourceId, PF_ACCESS_READ );
++	if ( m_handle == 0 )
++		return false;
++
++	m_size = pf_size( m_handle );
++	if ( m_size > kMaxExactOffset )
++	{
++		// A source this large cannot be addressed exactly through a JS number.
++		pf_close( m_handle );
++		m_handle = 0;
++		m_size = 0;
++		return false;
++	}
++
++	m_pBuffer = new U8[ bufferBytes ];
++	m_bufferBytes = bufferBytes;
++	m_bufferStart = 0;
++	m_bufferValid = 0;
++	m_iBufferOffset = 0;
++	m_iVersion = 0;
++	m_bEndianSwapFlag = false;
++	DiscardBuffer();
++	m_bIsOpen = true;
++	return true;
++}
++
++void C_WebFile::Close()
++{
++	if ( !m_bIsOpen )
++		return;
++
++	pf_close( m_handle );
++	m_handle = 0;
++	m_bIsOpen = false;
++	m_bufferValid = 0;
++	delete[] m_pBuffer;
++	m_pBuffer = 0;
++	m_bufferBytes = 0;
++	// I_File.h:19 - Length() returns 0 when the file is not open.
++	m_size = 0;
++	DiscardBuffer();
++	++s_Counters.closes;
++}
++
++const bool C_WebFile::IsOpen() const
++{
++	return m_bIsOpen;
++}
++
++const C_StreamSize C_WebFile::Length()
++{
++	return m_size;
++}
++
++const C_StreamPos C_WebFile::GetPosition() const
++{
++	// Derived, not stored: I_BinaryStream::Read moves m_pCurBuffer behind this
++	// class's back (I_BinaryStream.inl:122-147), so the cursor is the authority
++	// while a buffer is resident. C_File::GetPosition does the same thing with
++	// the same two pointers (C_File.cpp:245-251).
++	if ( m_pCurBuffer != 0 && m_pBuffer != 0 )
++		return m_bufferStart + (U64)( m_pCurBuffer - m_pBuffer );
++
++	return m_iBufferOffset;
++}
++
++void C_WebFile::SetPosition( const C_StreamPos newPosition )
++{
++	if ( IsWriting() )
++	{
++		Overflow();
++		return;
++	}
++
++	// A seek inside the resident buffer does not touch storage, exactly as
++	// C_File::SetPosition does (C_File.cpp:261-273).
++	if ( m_pBuffer != 0 && m_bufferValid != 0 &&
++		newPosition >= m_bufferStart && newPosition < m_bufferStart + m_bufferValid )
++	{
++		m_pCurBuffer = m_pBuffer + ( newPosition - m_bufferStart );
++		m_pBufferEnd = m_pBuffer + m_bufferValid;
++		return;
++	}
++
++	DiscardBuffer();
++	m_iBufferOffset = newPosition;
++}
++
++const bool C_WebFile::IsWriting() const
++{
++	return m_bWriting;
++}
++
++Btl::String C_WebFile::Name() const
++{
++	return m_Name;
++}
++
++void C_WebFile::DiscardBuffer()
++{
++	m_bufferStart = 0;
++	m_bufferValid = 0;
++	m_pCurBuffer = 0;
++	m_pBufferEnd = 0;
++}
++
++bool C_WebFile::ReadRange( U64 offset, U8* destination, U32 bytes )
++{
++	// The platform contract is "the complete range or 0", so a request that is
++	// not entirely inside the source must never reach it.
++	if ( bytes == 0 || destination == 0 ||
++		offset > m_size || U64( bytes ) > m_size - offset )
++	{
++		++s_Counters.readFailures;
++		Sys::FileRwError( Name().Chars(), m_bWriting, m_IsCritical, NULL );
++		return false;
++	}
++
++	const U32 delivered = pf_read_at( m_handle, offset, destination, bytes );
++	if ( delivered != bytes )
++	{
++		++s_Counters.readFailures;
++		Sys::FileRwError( Name().Chars(), m_bWriting, m_IsCritical, NULL );
++		return false;
++	}
++
++	++s_Counters.reads;
++	s_Counters.readBytes += bytes;
++	return true;
++}
++
++bool C_WebFile::Underflow( UnderflowContext& ctx )
++{
++	if ( !m_bIsOpen || m_bWriting )
++		return false;
++
++	// The refill offset is the cursor position, read before the buffer is
++	// discarded.
++	const U64 position = GetPosition();
++
++	// End of file, or a position past it (SetPosition accepts that, as
++	// C_File's does). C_File reports failure through FileRwError as well.
++	if ( position >= m_size )
++	{
++		DiscardBuffer();
++		m_iBufferOffset = position;
++		++s_Counters.readFailures;
++		Sys::FileRwError( Name().Chars(), m_bWriting, m_IsCritical, NULL );
++		return false;
++	}
++
++	const U64 remaining = m_size - position;
++
++	// The direct path is gated on the ALLOCATED buffer size. C_File.cpp:402
++	// compares a byte count with sizeof(buffer), i.e. sizeof(U8*) = 4 on wasm32,
++	// which would send every read of four bytes or more down this path.
++	if ( ctx.readSize >= m_bufferBytes )
++	{
++		if ( ctx.readTarget == 0 )
++		{
++			// Unreachable through I_BinaryStream::Read (a skip uses readSize 0),
++			// so a null target here is a caller contract violation.
++			DiscardBuffer();
++			m_iBufferOffset = position;
++			++s_Counters.readFailures;
++			Sys::FileRwError( Name().Chars(), m_bWriting, m_IsCritical, NULL );
++			return false;
++		}
++
++		U32 bytes = ctx.readSize;
++		if ( U64( bytes ) > remaining )
++			bytes = (U32)remaining;
++
++		DiscardBuffer();
++		if ( !ReadRange( position, ctx.readTarget, bytes ) )
++		{
++			m_iBufferOffset = position;
++			return false;
++		}
++
++		m_iBufferOffset = position + bytes;
++		ctx.bytesRead = bytes;
++		return true;
++	}
++
++	// Buffered path. Unlike the direct path this must leave ctx.bytesRead
++	// untouched: I_BinaryStream::Read advances the caller's pointer by
++	// ctx.bytesRead and then copies whatever the buffer holds, so reporting the
++	// fill here would double-count it. C_File::Underflow behaves the same way.
++	{
++		U32 bytes = m_bufferBytes;
++		if ( U64( bytes ) > remaining )
++			bytes = (U32)remaining;
++
++		if ( !ReadRange( position, m_pBuffer, bytes ) )
++		{
++			DiscardBuffer();
++			m_iBufferOffset = position;
++			return false;
++		}
++
++		m_bufferStart = position;
++		m_bufferValid = bytes;
++		m_iBufferOffset = position + bytes;
++		m_pCurBuffer = m_pBuffer;
++		m_pBufferEnd = m_pBuffer + bytes;
++		return true;
++	}
++}
++
++bool C_WebFile::Overflow()
++{
++	// Never reachable: a write handle cannot be opened. Returning false keeps
++	// I_BinaryStream::Write from pretending the bytes were stored.
++	return false;
++}
++
++const bool C_WebFile::GetEndianSwapFlag() const
++{
++	return m_bEndianSwapFlag;
++}
++
++void C_WebFile::SetEndianSwapFlag( const bool swizzle )
++{
++	m_bEndianSwapFlag = swizzle;
++}
++
++U32 C_WebFile::GetVersionNumber() const
++{
++	return m_iVersion;
++}
++
++void C_WebFile::SetVersionNumber( U32 iVersion )
++{
++	m_iVersion = iVersion;
++}
++
++void C_WebFile::Flush()
++{
++	// Read-only in this slice: there is nothing buffered for storage. The save
++	// slice maps this to FileSystemSyncAccessHandle.flush().
++}
++
++// ---------------------------------------------------------- C_WebFileSystem --
++
++C_WebFileSystem::~C_WebFileSystem()
++{
++}
++
++const C_WebFileSystem::Counters& C_WebFileSystem::GetCounters()
++{
++	return s_Counters;
++}
++
++void C_WebFileSystem::ResetCounters()
++{
++	memset( &s_Counters, 0, sizeof( s_Counters ) );
++}
++
++bool C_WebFileSystem::Mount( const C_FilePath& prefix, const char* sourceId )
++{
++	if ( m_MountCount >= kMaxMounts || sourceId == 0 || prefix.Length() <= 0 )
++		return false;
++
++	const size_t length = strlen( sourceId );
++	if ( length == 0 || length >= kMaxSourceId )
++		return false;
++
++	m_Mounts[ m_MountCount ].Prefix = prefix;
++	memcpy( m_Mounts[ m_MountCount ].SourceId, sourceId, length + 1 );
++	++m_MountCount;
++	return true;
++}
++
++const char* C_WebFileSystem::FindSource( const C_FilePath& fileName ) const
++{
++	// Longest prefix wins, so /cache/root.pak can sit inside /cache/ without
++	// depending on registration order.
++	const char* path = fileName.Chars();
++	const char* best = 0;
++	size_t bestLength = 0;
++
++	for ( U32 i = 0; i < m_MountCount; ++i )
++	{
++		const char* prefix = m_Mounts[ i ].Prefix.Chars();
++		const size_t prefixLength = strlen( prefix );
++		if ( prefixLength == 0 || prefixLength <= bestLength )
++			continue;
++		if ( strncmp( path, prefix, prefixLength ) != 0 )
++			continue;
++
++		// A file mount matches its path exactly or a path below it; a directory
++		// mount (trailing local token) matches its prefix as written.
++		const char next = path[ prefixLength ];
++		const bool boundary =
++			next == '\0' || next == '/' || prefix[ prefixLength - 1 ] == '/';
++		if ( !boundary )
++			continue;
++
++		best = m_Mounts[ i ].SourceId;
++		bestLength = prefixLength;
++	}
++
++	return best;
++}
++
++I_File* C_WebFileSystem::Open(
++	const C_FilePath& fileName,
++	const E_FileAccess fileAccess,
++	const C_OpenParams& params )
++{
++	++s_Counters.openAttempts;
++
++	if ( fileAccess != E_FileAccess_Read )
++	{
++		++s_Counters.writeOpenRefused;
++		Sys::FileOpenError( fileName.Chars(), true, params.m_IsCritical );
++		return 0;
++	}
++
++	const char* sourceId = FindSource( fileName );
++	if ( sourceId == 0 )
++	{
++		++s_Counters.unmountedOpenRefused;
++		Sys::FileOpenError( fileName.Chars(), false, params.m_IsCritical );
++		return 0;
++	}
++
++	U32 bufferBytes = ( params.m_BufferSizeHint == C_OpenParams::kBufferSizeHintDefault )
++		? kDefaultBufferBytes
++		: params.m_BufferSizeHint;
++
++	if ( bufferBytes == 0 || bufferBytes > kMaxBufferBytes )
++	{
++		++s_Counters.bufferHintRefused;
++		Sys::FileOpenError( fileName.Chars(), false, params.m_IsCritical );
++		return 0;
++	}
++
++	C_WebFile* pFile = new C_WebFile();
++	if ( pFile == 0 )
++		return 0;
++
++	if ( !pFile->Open( sourceId, fileAccess, params.m_IsCritical, bufferBytes ) )
++	{
++		// Open() refuses without a partial handle; the file object owns nothing
++		// at this point.
++		delete pFile;
++		Sys::FileOpenError( fileName.Chars(), false, params.m_IsCritical );
++		return 0;
++	}
++
++	++s_Counters.openSucceeded;
++	return pFile;
++}
++
++bool C_WebFileSystem::FileExists( const C_FilePath& fileName )
++{
++	++s_Counters.exists;
++	const char* sourceId = FindSource( fileName );
++	return sourceId != 0 && pf_exists( sourceId ) != 0;
++}
++
++bool C_WebFileSystem::FileInfo( const C_FilePath& fileName, C_FileInfo* pFileInfo )
++{
++	++s_Counters.fileInfo;
++	if ( pFileInfo == 0 )
++		return false;
++
++	const char* sourceId = FindSource( fileName );
++	if ( sourceId == 0 || pf_exists( sourceId ) == 0 )
++		return false;
++
++	const U32 handle = pf_open( sourceId, PF_ACCESS_READ );
++	if ( handle == 0 )
++		return false;
++	const U64 size = pf_size( handle );
++	pf_close( handle );
++
++	pFileInfo->Clear();
++	pFileInfo->m_FileName = fileName;
++	pFileInfo->m_originalFilename = fileName;
++	pFileInfo->m_FileType = E_FileType_File;
++	pFileInfo->m_FileSize = size;
++	pFileInfo->m_FileAccess = E_FileAccess_Read;
++	pFileInfo->m_FileTime = 0;
++	return true;
++}
++
++bool C_WebFileSystem::DirectoryInfo( const C_FilePath&, C_DirectoryInfo* )
++{
++	// A range source has no directory listing. Returning false is the base class
++	// contract for "an error occurred" (I_FileSystem.h:172), and the call is
++	// counted so a caller cannot mistake it for an empty directory.
++	++s_Counters.unsupportedCalls;
++	return false;
++}
++
++C_FilePath C_WebFileSystem::GetSystemFilePath( const C_FilePath& filePath ) const
++{
++	// There is no operating-system path name in a wasm32 build. Returning the
++	// virtual path unchanged keeps the value meaningful; inventing a host path
++	// would be a lie.
++	return filePath;
++}
++
++} // namespace Sys
++
++#endif // PLATFORM_WEB

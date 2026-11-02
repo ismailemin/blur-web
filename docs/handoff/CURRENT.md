@@ -93,6 +93,13 @@ altına `platform/file` C ABI ve OPFS/blob/http range-source registry. İlk dili
 5.113 dosya; River stream 244.682.752 B/359 chunk. Ayrıntı:
 `docs/work/analysis/t005-streaming-design.md`.
 
+**T-005b engine dosya katmanı (P16):** `engine/patches/t005b-file-overlay.patch`
+scheduler overlay'inin üstüne 3 yeni dosya ekliyor (`C_WebFile`/`C_WebFileSystem`
++ `pf_*`). `verify_file_overlay.py --fresh` **PASS**: 373.202 B, 32/32 kontrol,
+`root.pak` 3.601 giriş `probes/range-file` ile aynı, FNV-1a 64
+`2f291abb5648e078`, PC parity. Kalan: OPFS/worker, gerçek `C_PakFs::OpenPak`
+tüketicisi. Kanıt: `docs/work/verification/T-005b-engine-file-layer.md`.
+
 **T-005d fizibilitesi:** Gravity + RacingPhysics ~70 kLOC; T-005a gate'lerinden
 sonra her RacingPhysics simülasyon TU'su 18 hata, Gravity scheduler module
 tiplerinde bloke. T-005c sert önkoşul. İlk dilim statik collision-query oracle

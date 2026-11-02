@@ -12,7 +12,7 @@ hangi kanıtla kapattığını kaybetmemek.
 | T-002 — Level instance dönüşümleri | done | P0 | T-001 | `tasks/T-002-level-instances.md` |
 | T-003 — Scene/level kapsamını genişletme | in-progress (Stage A tamam: 36 instance; Stage B sırada) | P1 | T-002 | `tasks/T-003-scene-traversal.md` |
 | T-004 — Native particle-cache çökmesi | done (x64 stride fix, 3/3 vs 3/3; web slot sözleşmesi açık) | P1 | — | `tasks/T-004-native-particle-crash.md` |
-| T-005 — Tek oyunculu dikey dilim | in-progress (T-005c engine sched + T-005d collision oracle tamam; T-005b/e/f/g sırada) | P1 | T-003/T-004 | `tasks/T-005-single-player-vertical-slice.md` |
+| T-005 — Tek oyunculu dikey dilim | in-progress (T-005b file layer + T-005c sched + T-005d oracle tamam; T-005e/f/g sırada) | P1 | T-003/T-004 | `tasks/T-005-single-player-vertical-slice.md` |
 | T-006 — Tarayıcı multiplayer | analiz tamam (a/b/c); uygulama T-005g/T-004'e bağlı | P2 | T-005g/T-004 | `tasks/T-006-multiplayer.md` |
 
 Durumlar: `planned`, `in-progress`, `blocked`, `done`, `superseded`.

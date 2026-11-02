@@ -75,6 +75,11 @@ PC preprocessed TU yalnız log satırlarında farklı, 29/29 TU MSVC. İlk gerç
 P15: `Level.levelphysics` kanıtlandı; native/wasm/Python `queryHash` birebir.
 Kalan: fat/swept-sphere (teker yarıçapı XT), constraint'ler, engine entegrasyonu.
 
+P16: `engine/patches/t005b-file-overlay.patch` (3 yeni dosya) scheduler overlay'i
+üstünde `Sys::I_File` + `pf_*` C ABI; `verify_file_overlay.py --fresh` PASS
+(373.202 B, 32/32, gerçek `root.pak` 3.601 giriş, PC parity). Kalan: OPFS/worker,
+`C_PakFs::OpenPak` tüketicisi.
+
 ## 4. T-006 — Tarayıcı multiplayer
 
 **Durum:** analiz tamam (a/b/c); uygulama T-005g/T-004'e bağlı
