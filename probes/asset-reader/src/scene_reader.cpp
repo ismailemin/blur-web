@@ -786,8 +786,36 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
     struct Proof {int32_t index=0,base=0;std::array<float,16> matrix{};std::array<double,3> low{},high{};double error=0;uint32_t first=0,count=0;};
     struct SourceInfo {int32_t index=0,vbBlock=0,vbIndex=0,ibBlock=0,ibIndex=0;};
     std::vector<float> positions;std::vector<uint32_t> indices;std::vector<Proof> proofs;std::vector<SourceInfo> sources;
-    uint32_t omitted=0,unsupported=0;double maximum_error=0;
+    uint32_t omitted=0,unsupported=0,bounds_groups=0;double maximum_error=0;
     const size_t target_count=all_instances?list.instances.size():1;
+    bool group_open=false;
+    uint32_t group_first_vertex=0,group_members=0,group_other=0;
+    size_t group_first_index=0,group_first_proof=0;
+    int32_t group_vb=0,group_ib=0;
+    std::array<float,8> group_archived{};
+    std::array<double,3> group_low{INFINITY,INFINITY,INFINITY},group_high{-INFINITY,-INFINITY,-INFINITY};
+    auto finish_group=[&](){
+        if(!group_open)return;
+        if(group_members&&!group_other){
+            double error=0;
+            for(int a=0;a<3;a++){
+                error=std::max(error,std::abs(group_low[size_t(a)]-double(group_archived[size_t(a)])));
+                error=std::max(error,std::abs(group_high[size_t(a)]-double(group_archived[size_t(a+3)])));
+            }
+            if(error>0.0001){
+                positions.resize(size_t(group_first_vertex)*3);
+                indices.resize(group_first_index);
+                proofs.resize(group_first_proof);
+                unsupported+=group_members;
+            }else{
+                for(size_t k=group_first_proof;k<proofs.size();k++)proofs[k].error=error;
+                maximum_error=std::max(maximum_error,error);
+            }
+        }
+        group_open=false;group_members=0;group_other=0;
+        group_low=std::array<double,3>{INFINITY,INFINITY,INFINITY};
+        group_high=std::array<double,3>{-INFINITY,-INFINITY,-INFINITY};
+    };
     for(size_t instance_index=0;instance_index<target_count;instance_index++){
         const auto& instance=list.instances[instance_index];
         if(instance.primitive_index<0||size_t(instance.primitive_index)>=list.base_primitives.size())throw std::runtime_error("Instance base primitive index out of bounds");
@@ -806,8 +834,21 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
         const auto& vertex_source=list.vertex_sources[size_t(selected->vb)];
         const auto& index_source=list.index_sources[size_t(primitive.ib)];
         sources.push_back({int32_t(instance_index),vertex_source.block,vertex_source.index,index_source.block,index_source.index});
+        if(all_instances){
+            if(instance_index>=list.instance_bounds.size())throw std::runtime_error("Archived instance bounds unavailable");
+            const auto& archived=list.instance_bounds[instance_index];
+            const bool same_group=group_open&&group_vb==vertex_source.block&&group_ib==index_source.block&&
+                std::memcmp(group_archived.data(),archived.data(),sizeof(float)*8)==0;
+            if(!same_group){
+                finish_group();
+                group_open=true;++bounds_groups;
+                group_first_vertex=uint32_t(positions.size()/3);
+                group_first_index=indices.size();group_first_proof=proofs.size();
+                group_vb=vertex_source.block;group_ib=index_source.block;group_archived=archived;
+            }
+        }
         if(vertex_source.block!=geometry_block||index_source.block!=geometry_block){
-            if(all_instances){++omitted;continue;}
+            if(all_instances){++omitted;++group_other;continue;}
             throw std::runtime_error("Instance VB/IB do not bind the selected geometry block");
         }
         if(vertex_source.index<0||index_source.index<0||size_t(vertex_source.index)>=target.vbs.size()||size_t(index_source.index)>=target.ibs.size())throw std::runtime_error("Instance geometry resource index out of bounds");
@@ -871,23 +912,23 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
         for(size_t i=0;i<instance_world.size();i++){proof.low[i%3]=std::min(proof.low[i%3],instance_world[i]);proof.high[i%3]=std::max(proof.high[i%3],instance_world[i]);}
         for(const auto v:triangles)indices.push_back(compact.at(v));
         proof.count=uint32_t(indices.size())-proof.first;
-        if(instance_index>=list.instance_bounds.size())throw std::runtime_error("Archived instance bounds unavailable");
         for(int a=0;a<3;a++){
-            proof.error=std::max(proof.error,std::abs(proof.low[size_t(a)]-list.instance_bounds[instance_index][size_t(a)]));
-            proof.error=std::max(proof.error,std::abs(proof.high[size_t(a)]-list.instance_bounds[instance_index][size_t(a+3)]));
+            group_low[size_t(a)]=std::min(group_low[size_t(a)],proof.low[size_t(a)]);
+            group_high[size_t(a)]=std::max(group_high[size_t(a)],proof.high[size_t(a)]);
         }
-        if(proof.error>0.0001){
-            if(all_instances){
-                positions.resize(size_t(base_vertex)*3);
-                indices.resize(proof.first);
-                ++unsupported;
-                continue;
+        ++group_members;
+        if(!all_instances){
+            if(instance_index>=list.instance_bounds.size())throw std::runtime_error("Archived instance bounds unavailable");
+            for(int a=0;a<3;a++){
+                proof.error=std::max(proof.error,std::abs(proof.low[size_t(a)]-double(list.instance_bounds[instance_index][size_t(a)])));
+                proof.error=std::max(proof.error,std::abs(proof.high[size_t(a)]-double(list.instance_bounds[instance_index][size_t(a+3)])));
             }
-            throw std::runtime_error("Transformed instance geometry disagrees with archived bounds at instance "+std::to_string(instance_index)+" error "+std::to_string(proof.error));
+            if(proof.error>0.0001)throw std::runtime_error("Transformed instance geometry disagrees with archived bounds at instance "+std::to_string(instance_index)+" error "+std::to_string(proof.error));
+            maximum_error=std::max(maximum_error,proof.error);
         }
-        maximum_error=std::max(maximum_error,proof.error);
         proofs.push_back(std::move(proof));
     }
+    if(all_instances)finish_group();
     if(proofs.empty()){
         if(!all_instances)throw std::runtime_error("No supported instance binds the selected geometry block; omittedOtherBlock="+std::to_string(omitted)+" unsupportedBounds="+std::to_string(unsupported));
         std::vector<int32_t> blocks;
@@ -896,7 +937,7 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
         std::ostringstream out;out.imbue(std::locale::classic());
         out<<"{\"status\":\"ok\",\"positions\":[],\"indices\":[],\"draws\":[],\"bounds\":{\"min\":[0,0,0],\"max\":[0,0,0]},\"metadata\":{\"instancesApplied\":true,\"nodeTransformsApplied\":true,\"coordinateSpace\":\"world\",\"instanceIndex\":0,\"instanceCount\":"<<list.instances.size()
            <<",\"emittedInstanceCount\":0,\"omittedOtherBlockInstances\":"<<omitted<<",\"unsupportedBoundsInstances\":"<<unsupported
-           <<",\"vertexCount\":0,\"triangleCount\":0,\"boundsMaxAbsoluteDifference\":0,\"boundsAvailable\":false,\"geometryBlock\":"<<geometry_block<<",\"nodeBlock\":"<<node_block
+           <<",\"vertexCount\":0,\"triangleCount\":0,\"boundsMaxAbsoluteDifference\":0,\"boundsAvailable\":false,\"boundsGrouping\":\"contiguous instances sharing an identical archived CullNode bounds record and resource blocks; member draw AABB union compared to the shared record\",\"boundsGroups\":"<<bounds_groups<<",\"geometryBlock\":"<<geometry_block<<",\"nodeBlock\":"<<node_block
            <<",\"geometryChunkIndex\":"<<geometry_chunk_index<<",\"geometryItemIndex\":"<<geometry_item<<",\"nodeChunkIndex\":"<<node_chunk_index
            <<",\"requiredGeometryBlocks\":[";for(size_t i=0;i<blocks.size();i++){if(i)out<<',';out<<blocks[i];}
         out<<"],\"instanceSources\":[";for(size_t i=0;i<sources.size();i++){if(i)out<<',';const auto&s=sources[i];out<<"{\"instanceIndex\":"<<s.index<<",\"vertexBlock\":"<<s.vbBlock<<",\"vertexIndex\":"<<s.vbIndex<<",\"indexBlock\":"<<s.ibBlock<<",\"indexIndex\":"<<s.ibIndex<<'}';}
@@ -918,6 +959,7 @@ std::string level_instances_impl(const unsigned char* level,size_t level_size,co
     out<<"],\"bounds\":{\"min\":["<<world_min[0]<<','<<world_min[1]<<','<<world_min[2]<<"],\"max\":["<<world_max[0]<<','<<world_max[1]<<','<<world_max[2]<<"]},"
        <<"\"metadata\":{\"instancesApplied\":true,\"nodeTransformsApplied\":true,\"coordinateSpace\":\"world\",\"instanceIndex\":0,\"instanceCount\":"<<list.instances.size()
        <<",\"emittedInstanceCount\":"<<proofs.size()<<",\"omittedOtherBlockInstances\":"<<omitted<<",\"unsupportedBoundsInstances\":"<<unsupported
+       <<",\"boundsGrouping\":"<<(all_instances?"\"contiguous instances sharing an identical archived CullNode bounds record and resource blocks; member draw AABB union compared to the shared record\"":"\"none; first instance only\"")<<",\"boundsGroups\":"<<bounds_groups
        <<",\"basePrimitiveIndex\":"<<proofs[0].base<<",\"basePrimitiveCount\":"<<list.base_primitives.size()
        <<",\"vertexCount\":"<<positions.size()/3<<",\"triangleCount\":"<<indices.size()/3<<",\"matrix\":[";
     for(int i=0;i<16;i++){if(i)out<<',';out<<proofs[0].matrix[size_t(i)];}

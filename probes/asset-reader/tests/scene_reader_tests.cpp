@@ -163,8 +163,8 @@ void real_instance_tests(const char* level_path,const char* geometry_path,const 
     auto* all_raw=level_instances_all_inspect(level.data(),level.size(),geometry.data(),geometry.size(),node.data(),node.size(),27,253);
     check(all_raw!=nullptr,"Allocation failed");std::string all(all_raw);scene_free(all_raw);
     check(ok(all),all.c_str());
-    check(has(all,"\"emittedInstanceCount\":14")&&has(all,"\"omittedOtherBlockInstances\":35")&&has(all,"\"unsupportedBoundsInstances\":8"),"All-instance block27 counts changed");
-    check(has(all,"\"vertexCount\":7308,\"triangleCount\":6106"),"All-instance block27 geometry counts changed");
+    check(has(all,"\"emittedInstanceCount\":22")&&has(all,"\"omittedOtherBlockInstances\":35")&&has(all,"\"unsupportedBoundsInstances\":0"),"All-instance block27 counts changed");
+    check(has(all,"\"vertexCount\":13162,\"triangleCount\":10308"),"All-instance block27 geometry counts changed");
     check(has(all,"\"boundsMaxAbsoluteDifference\":6.02443715e-05"),"All-instance bounds agreement changed");
     std::cout<<"Actual River block27/node253 instance0: 805 vertices/726 triangles, archived bounds 3.86511e-05 passed\n";
     std::cout<<"Block27 all supported instances: 14 emitted/8 unsupported/35 other-block, 7308 vertices/6106 triangles passed\n";

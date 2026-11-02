@@ -313,4 +313,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Native/wasm/Python üçlü karşılaştırma 0 fark: 144 Hz×600 = 249 tick, 30 Hz×300 = 600 tick, 250 ms hitch 15 istek → 4 çalıştı/11 clamp, 5 s tab gap 1 pause. 600/150/100 frame → tek hash `0x7e04f9a197e01d8a`.
 - Ana suite'e `scheduler-probe` adımı eklendi; `--skip-build` 28/28. Engine `Scheduler::` entegrasyonu yok. Bulgu: cap sonrası accumulator sıfırlama (`ApplicationPC.cpp:518-522`) tasarım §4.2'ye işlenmeli. Kanıt: `docs/work/verification/T-005c-scheduler.md`.
 
+## 2 Kasım 2026 — T-003 Stage A
+
+- `level_instances_all_inspect` bitişik instance'ları aynı arşiv CullNode bounds kaydı + aynı VB/IB bloğu anahtarıyla grupluyor; draw AABB birleşimi ortak kayıtla `1e-4` içinde karşılaştırılıyor. Reddedilen grup bütün olarak geri alınıyor.
+- Sonuç beklenenle birebir: blok27 **22**, blok15 **12**, blok17 **2** → **36 instance / 22.924 vertex / 17.301 üçgen**. Blok26/32 Stage B, blok31 prerequisite bekliyor.
+- Suite **29/29**, CTest **14/14**, native/WASM JSON eşit. Headless Edge/WebGPU: 22 ve 36 instance presetleri, console temiz; `favicon.ico` 404'ü `data:` ikonuyla kapatıldı. Kanıt: `docs/work/verification/T-003-stageA.md`.
+
 

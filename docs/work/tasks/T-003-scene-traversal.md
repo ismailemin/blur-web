@@ -1,6 +1,6 @@
 # T-003 — Scene/level kapsamını genişletme
 
-**Durum:** in-progress (bounds grouping kanıtlandı; Stage A uygulaması sırada)
+**Durum:** in-progress (Stage A uygulandı; Stage B sırada)
 **Sahip:** ana ajan
 **Başlangıç:** 1 Kasım 2026
 **Bitiş:** —
@@ -76,11 +76,40 @@ Beklenen düzeltme (henüz uygulanmadı):
 
 Ayrıntı: `docs/work/analysis/level-instance-streams.md` (bölüm 8).
 
+## Dördüncü artım — Stage A uygulaması (tamam)
+
+`level_instances_all_inspect` artık bitişik instance'ları **aynı arşiv CullNode
+bounds kaydı + aynı VB/IB blokları** anahtarıyla grupluyor; grup üyelerinin draw
+AABB birleşimini ortak kayıtla `1e-4` toleransında karşılaştırıyor. Grup
+reddedilirse tüm üyeler geri alınıp `unsupportedBoundsInstances`'a sayılıyor.
+Metadata'ya `boundsGrouping` ve `boundsGroups` eklendi; `emittedInstanceCount`
+instance sayısı (grup değil).
+
+Sonuç:
+
+| Blok | Emitted | Unsupported | Vertex | Üçgen | Hata |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 27 | 22 | 0 | 13.162 | 10.308 | 6,02444e-05 |
+| 15 | 12 | 0 | 7.234 | 5.181 | 5,75171e-05 |
+| 17 | 2 | 0 | 2.528 | 1.812 | 5,35334e-05 |
+| 26 | 0 | 10 | — | — | — |
+| 32 | 0 | 10 | — | — | — |
+
+**Stage A toplamı: 36 instance / 22.924 vertex / 17.301 üçgen** (beklenenle
+birebir). Blok26/32 chunk'lar arası grup birleştirmesi (Stage B) gerektiriyor;
+blok31 prerequisite akışına bağlı.
+
+Doğrulama: native/WASM JSON tamamen eşit; suite **29/29**, CTest **14/14**.
+Headless Edge (WebGPU) görsel kontrolü: **22 instance**, 0 sınır uyuşmazlığı,
+13.162 vertex/10.308 üçgen, console temiz. `River · tüm desteklenen`: **36
+instance**, 20 sınır uyuşmazlığı, 1 blok atlandı, 17.301 üçgen, console temiz.
+Kanıt: `_work/logs/t003-stageA-*.png`, `_work/logs/t003-stageA-browser-*.json`,
+`_work/verification/level-instances-native-wasm.json`.
+
 ## Kalan iş
 
-1. Stage A/B: transform-sabit grubun draw AABB birleşimini ortak CullNode
-   kaydıyla doğrula; blok27/15/17 (36 instance), sonra blok26/32 (56 instance).
-   Tek draw'ı tüm nesne kaydıyla karşılaştırma.
+1. ~~Stage A~~ (tamam: blok27/15/17, 36 instance). Stage B: blok26/32 için
+   chunk'lar arası grubu birleştir (56 instance hedefi).
 2. Blok31 için ek ChunkInfo prerequisite akışı (tek instance).
 3. Level materyalleri, görünürlük/culling, sonraki RenderList'ler ve yüksek
    LOD'lar.
@@ -97,8 +126,8 @@ Ayrıntı: `docs/work/analysis/level-instance-streams.md` (bölüm 8).
 - [x] Desteklenmeyen/başka blok instance'ları sayılıyor.
 - [x] Native/WASM/Python sınır karşılaştırması.
 - [x] Suite/CTest regresyonsuz.
-- [ ] Diğer geometri blokları (tarama yapıldı; blok15 ek 4 instance destekliyor,
-      blok17/26/32 stream semantiği, blok31 prerequisite açık).
+- [x] Diğer geometri blokları (Stage A: blok27/15/17 toplam 36 instance;
+      blok26/32 Stage B, blok31 prerequisite açık).
 - [ ] Base7–10 ek stream semantiği.
 - [ ] Level materyalleri/görünürlük/yüksek LOD.
 - [x] WebGPU mesh ekran görüntüsü.

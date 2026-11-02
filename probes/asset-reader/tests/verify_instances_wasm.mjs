@@ -65,16 +65,16 @@ try{
 }finally{if(outputAll)mod._scene_free(outputAll);mod._free(levelPointer2);mod._free(geometryPointer2);mod._free(nodePointer2);}
 assert.equal(nativeAll.status,'ok');assert.equal(wasmAll.status,'ok');
 assert.ok(isDeepStrictEqual(wasmAll,nativeAll),'Complete native/WASM all-instance JSON differs');
-assert.equal(wasmAll.metadata.emittedInstanceCount,14);
+assert.equal(wasmAll.metadata.emittedInstanceCount,22);
 assert.equal(wasmAll.metadata.omittedOtherBlockInstances,35);
-assert.equal(wasmAll.metadata.unsupportedBoundsInstances,8);
+assert.equal(wasmAll.metadata.unsupportedBoundsInstances,0);
 assert.equal(wasmAll.metadata.instanceCount,57);
 assert.deepEqual(wasmAll.metadata.requiredGeometryBlocks,[15,17,26,27,31,32]);
-assert.equal(wasmAll.metadata.vertexCount,7308);
-assert.equal(wasmAll.metadata.triangleCount,6106);
+assert.equal(wasmAll.metadata.vertexCount,13162);
+assert.equal(wasmAll.metadata.triangleCount,10308);
 assert.ok(wasmAll.metadata.boundsMaxAbsoluteDifference<=0.0001);
-assert.equal(wasmAll.draws.length,14);
-assert.deepEqual(wasmAll.metadata.instances.map(item=>item.instanceIndex),[0,1,2,3,4,5,6,7,8,9,10,11,12,17]);
+assert.equal(wasmAll.draws.length,22);
+assert.deepEqual(wasmAll.metadata.instances.map(item=>item.instanceIndex),[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]);
 
 const evidence={nativeWasmEqual:true,independentPythonEqual:true,vertexCount:805,triangleCount:726,instanceIndex:0,instanceCount:57,basePrimitiveIndex:0,worldPositionsSha256:hash(positions),indicesSha256:hash(indices),boundsMaxAbsoluteDifference:wasm.metadata.boundsMaxAbsoluteDifference,matrix:wasm.metadata.matrix,worldBounds:wasm.bounds,archivedInstanceBounds:wasm.metadata.archivedInstanceBounds,allInstances:{nativeWasmEqual:true,emittedInstanceCount:wasmAll.metadata.emittedInstanceCount,omittedOtherBlockInstances:wasmAll.metadata.omittedOtherBlockInstances,unsupportedBoundsInstances:wasmAll.metadata.unsupportedBoundsInstances,vertexCount:wasmAll.metadata.vertexCount,triangleCount:wasmAll.metadata.triangleCount,boundsMaxAbsoluteDifference:wasmAll.metadata.boundsMaxAbsoluteDifference,instanceIndices:wasmAll.metadata.instances.map(item=>item.instanceIndex)},scope:wasm.metadata.scope};
 await writeFile(path.join(root,'_work/verification/level-instances-native-wasm.json'),JSON.stringify(evidence,null,2));

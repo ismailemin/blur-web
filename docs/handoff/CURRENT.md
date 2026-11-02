@@ -3,7 +3,7 @@
 **Güncelleme:** 2 Kasım 2026
 **Aşama:** Aşama 4 sonu (gerçek asset/önizleme), Aşama 5 (tek oyunculu yarış) başlamadı.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
-**Son commit'ler:** T-001 `19abead`/`b4e8cbe`, T-002 `2bc7253`/`1b8cb76`; T-003 ilk artım commit bekliyor.
+**Son commit'ler:** T-001 `19abead`/`b4e8cbe`, T-002 `2bc7253`/`1b8cb76`, T-005b `7588c6d`, T-005c `68a7b07`; T-003 Stage A bu commit'te.
 
 ## Şu an neredeyiz?
 
@@ -42,13 +42,16 @@
   değişmezi, 16 noktalı clear-then-release; `DeleteTrailBlock` canlı emitter
   için ölü yol (S3), `UpdateMemory` blok desync (S6). Sıradaki: trace ile
   bayat `(t,b,i)` kimliği. Ayrıntı: `docs/work/analysis/emitter-slot-ownership.md`.
-- Doğrulama: `verify_asset_probe.py --skip-build` **27/27**, CTest **14/14**.
+- Doğrulama: `verify_asset_probe.py --skip-build` **28/28**, CTest **14/14**.
 
 ## Sıradaki iş
 
-**T-003 kalan iş:** Stage A/B bounds grouping (36, sonra 56 instance), blok31
-prerequisite, level materyalleri, görünürlük, sonraki RenderList'ler ve yüksek
-LOD'lar. Kart: `docs/work/tasks/T-003-scene-traversal.md`.
+**T-003 Stage A tamam:** gruplu AABB birleşimi; blok27 22, blok15 12, blok17 2
+→ **36 instance / 22.924 vertex / 17.301 üçgen**. Suite 29/29, CTest 14/14;
+headless Edge/WebGPU 22 ve 36 instance console temiz. **Kalan:** Stage B
+(blok26/32 → 56 instance), blok31 prerequisite, materyaller, görünürlük, yüksek
+LOD'lar. Kart: `docs/work/tasks/T-003-scene-traversal.md`; kanıt:
+`docs/work/verification/T-003-stageA.md`.
 
 **T-005 tek oyunculu dikey dilim** alt görevlere bölündü:
 `T-005a` motor/WASM/platform fizibilitesi, `T-005b` streaming, `T-005c`

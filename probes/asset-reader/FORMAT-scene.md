@@ -249,19 +249,23 @@ independent Python proof exactly (`5125314b…` and `886e2855…`). The browser 
 a **River · instance prova** preset; it is one instance, not a track.
 
 `level_instances_all_inspect(...)` is an additive variant over the same inputs.
-It emits every instance whose VB/IB bind the selected geometry block and whose
-constant affine transform matches archived bounds. It also returns
-`requiredGeometryBlocks` and per-instance VB/IB source identities, so a caller
-can fetch and merge every relevant geometry chunk. A block with zero supported
-instances returns `status:"ok"` with `emittedInstanceCount:0` and explicit
-`unsupportedBoundsInstances`; callers must not treat that as a binding.
-Block27/node253 yields **14 emitted**, **8 unsupported bounds**, **35
-other-block**, with **7,308vertices/6,106triangles** and maximum bound error
-`6.02444e-05`. Instances using base primitives7–10 are skipped explicitly because
-their additional stream semantics are not applied. A multi-block scan
-(`[15,17,26,27,31,32]`) adds block15's4 instances (total18,8,688vertices/
-7,085triangles); blocks17/26/32 need base17/26/32 stream semantics and block31
-needs an additional ChunkInfo prerequisite. The browser exposes
+It groups **contiguous instances that share an identical archived CullNode bounds
+record and identical VB/IB blocks**, then compares the union of the group's draw
+AABBs to that shared record (tolerance `1e-4`). This matches the source contract:
+`renderlistbuild.cpp:579` writes one CullNode bounds record per object draw, so a
+single draw must not be compared against the whole-object record. Metadata adds
+`boundsGrouping` and `boundsGroups`; `emittedInstanceCount` counts instances, not
+groups. It also returns `requiredGeometryBlocks` and per-instance VB/IB source
+identities, so a caller can fetch and merge every relevant geometry chunk. A
+block with zero supported instances returns `status:"ok"` with
+`emittedInstanceCount:0` and explicit `unsupportedBoundsInstances`; callers must
+not treat that as a binding.
+Block27/node253 yields **22 emitted**, **0 unsupported bounds**, **35
+other-block**, with **13,162vertices/10,308triangles** and maximum bound error
+`6.02444e-05`. A multi-block scan (`[15,17,26,27,31,32]`) adds block15's12 and
+block17's2 instances: **Stage A total 36 instances, 22,924vertices/17,301
+triangles**. Blocks26/32 need cross-chunk group assembly (Stage B); block31 needs
+an additional ChunkInfo prerequisite. The browser exposes
 **River · tüm desteklenen** for the merge. It is not a full track.
 
 
