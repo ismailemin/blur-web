@@ -1,13 +1,15 @@
 # T-005b — the engine file layer on wasm32, over a browser-style range source
 
 **Date:** 2 November 2026
-**Status:** bounded spike, complete. One overlay patch adds three new engine files
-and carries two one-block platform/grammar fixes. A wasm32 module built from a
+**Status:** bounded spike, complete. One overlay patch adds four new engine files
+and carries three small platform/grammar fixes. A wasm32 module built from a
 fresh upstream copy reads the real installed `cache/root.pak` through
-`Sys::I_File` / `Sys::I_FileSystem`, and then through the engine's **own PAK
-reader** (`Pak::ReadPak`, `C_PakIoMediator`, `C_PakEntryFile`, packet-zlib): the
-PAK index matches `probes/range-file` field by field and two entries decompress
-to bytes whose hash an independent decoder reproduces.
+`Sys::I_File` / `Sys::I_FileSystem`, and then through the engine's own PAK file
+system — `LogicalFs::C_PakFs::OpenPak` / `C_PakFs::Open` / `FileExists` /
+`FileInfo` / `DirectoryInfo` — over `Pak::ReadPak`, `C_PakIoMediator`,
+`C_PakEntryFile` and packet-zlib: the PAK index matches `probes/range-file` field
+by field and two entries decompress to bytes whose hash an independent decoder
+reproduces.
 **Prerequisite:** `engine/patches/t005c-web-scheduler.patch` (T-005c), applied
 first. The file layer itself needs nothing from the scheduler, but the logging
 closure it links against (`FileOpenError`/`FileRwError`) only compiles for wasm32
@@ -23,16 +25,17 @@ It is: the engine's **file layer**, and the first real consumer above it. `Sys::
 `Sys::SetDefaultFileSystem`, the buffered `Underflow` contract, and a C ABI
 (`platform/file`) whose only wasm32 implementation is an imported JS range-source
 registry. It compiles, links and reads a 533 MiB PAK on `wasm32-unknown-emscripten`
-under node, byte for byte; the engine's own PAK reader then enumerates the FAT
-and decompresses real entries on top of it.
+under node, byte for byte; the engine's own PAK file system (`C_PakFs`, the same
+wrapper the game mounts) then enumerates the FAT, answers `FileExists`/`FileInfo`/
+`DirectoryInfo`, and decompresses real entries on top of it.
 
 It is not, and nothing below claims:
 
 - no browser: no OPFS, no `FileSystemSyncAccessHandle`, no worker, no
   `SharedArrayBuffer`, no COOP/COEP, no `fetch` range, no screenshot;
-- no logicalfs above the PAK file: no `C_PakFs`, no `C_OverlayFs`, no mount
-  table, no `StreamManager`, no level, no game, no renderer, no audio, no save
-  path;
+- no mount table or overlay above the PAK file: no `C_OverlayFs`, no
+  `GameHelpers::MountPakLayer`, no `StreamManager`, no level, no game, no
+  renderer, no audio, no save path;
 - no texture, model or level decoding. The PAK FAT and two whole PAK entries
   (209 B and 128 KiB) are read; nothing interprets their contents;
 - no performance claim. A sequential pass in 4 KiB reads over the 533 MiB file
@@ -47,16 +50,18 @@ It is not, and nothing below claims:
 | `code/mercury/library/common/system/include/system/serialise/PlatformFileWeb.h` | 87 | the `platform/file` C ABI, plain C, no engine type |
 | `.../system/include/system/serialise/C_WebFile.h` | 197 | `Sys::C_WebFile` (`I_File`), `Sys::C_WebFileSystem` (`I_FileSystem`), mount table, counters |
 | `.../system/source/serialise/C_WebFile.cpp` | 493 | the implementation |
+| `.../system/source/serialise/C_WebDirectoryInfo.cpp` | 78 | `C_DirectoryInfo`'s members for web (see §3.3) |
 | `.../core/include/core/threads/misc.h` | +9 / −0 | `MT::GetThreadId()` gains a `PLATFORM_WEB` branch (§3.2) |
 | `.../system/include/System/Misc/Security.h` | +1 / −1 | `= NULL` → `= 0`: a pure-specifier must be the literal zero |
+| `.../system/source/serialise/C_FileSystem.cpp` | +3 / −0 | `#if !defined(PLATFORM_WEB)` around the `C_DirectoryInfo` members, so exactly one definition exists per configuration |
 
 Tooling (repo, not engine source):
 
 | Path | Purpose |
 |---|---|
-| `engine/patches/t005b-file-overlay.patch` | the overlay: 3 files added, 2 one-block fixes |
+| `engine/patches/t005b-file-overlay.patch` | the overlay: 4 files added, 3 small fixes |
 | `engine/apply_file_overlay.py` | scheduler patch then file patch, refuses dirty upstream / trees inside `upstream/` |
-| `engine/verify_file_overlay.py` | fresh tree, two builds, harness runs, index + entry bytes + PC parity |
+| `engine/verify_file_overlay.py` | fresh tree, two builds, harness runs, index + entry bytes + wrapper + PC parity |
 | `engine/harness/t005b/smoke_webfile.cpp` | the harness: file layer, then the engine PAK reader |
 | `engine/harness/t005b/web_file_source.js`, `pre.js` | the `platform/file` provider and the node range source |
 | `engine/harness/t005b/msvc_crt_web.h` | build prelude: `_vsnprintf_s` for `BizAssert.cpp` |
@@ -188,9 +193,10 @@ Selection is `Sys::SetDefaultFileSystem()` — the engine's single injection poi
 (`FileSystemGlobals.h:28-32`). Nothing else chooses a file system, and no game
 code was changed.
 
-### 3.1 The engine PAK reader over this layer (first real consumer)
+### 3.1 The engine PAK file system (`C_PakFs`) over this layer
 
-The harness then uses the engine's own PAK reader. The exact API path:
+The harness then uses the engine's own PAK file system — the wrapper the game's
+mount table uses (`GameHelpers::MountPakLayer`). The exact API path:
 
 ```cpp
 Scheduler::Policy piStreamer[] = { 0, 0, 7, 7, 7, 7, 7, 7 };   // SchedulerConfig.cpp:49-50
@@ -200,29 +206,29 @@ Scheduler::Start();
 Scheduler::SetGroupPoolSize( 64 );                             // game: E_SchedulerGroup_Count + 128
 Pak::SetPacketCompressionPolicy( (S32)policy );                // GameSystems.cpp:135
 
-Pak::C_PakFile* pak = Pak::ReadPak( *Sys::GetDefaultFileSystem(),
-                                    Sys::C_FilePath( "/cache/root.pak" ),
-                                    Sys::E_FileAccess_Read, NULL,
-                                    Sys::C_OpenParams( 32 * 1024 ) );
+LogicalFs::C_PakFs pakFs;
+pakFs.OpenPak( Sys::GetDefaultFileSystem(), Sys::C_FilePath( "/cache/root.pak" ),
+               NULL, Sys::C_OpenParams( 32 * 1024 ) );
 
-Pak::C_PakFatEntry* fe = pak->GetFatEntry( Sys::C_FilePath( path ) );
-Pak::C_PakEntryFile file;
-file.Open( pak, fe, Sys::C_FilePath( path ), Sys::E_FileAccess_Read,
-           Sys::C_OpenParams( 0 /* unbuffered, the streamer's shape */ ), NULL );
+Sys::I_File* f = pakFs.Open( Sys::C_FilePath( path ), Sys::E_FileAccess_Read,
+                             Sys::C_OpenParams( 0 /* unbuffered, the streamer's shape */ ) );
+pakFs.FileExists( Sys::C_FilePath( path ) );
+pakFs.FileInfo( Sys::C_FilePath( path ), &info );
+pakFs.DirectoryInfo( Sys::C_FilePath( directory ), &dir );
 ```
 
-`Pak::ReadPak` (`Pak.cpp:739-760`) opens the PAK through `Sys::I_FileSystem`, then
-runs `ReadPreHeader` → `ReadHeader` → `ReadStringTable` → `ReadFat`
-(`PakRead.cpp`). For a version 2 PAK the 40-byte on-disk FAT entries are converted
-to the 32-byte in-memory `C_PakFatEntry`, the parent offsets are rescaled from the
-disk stride to the memory stride, and the stored physical size is kept in
-`pStoredSizes`. Every one of those reads goes through `C_PakIoMediator` → our
-`C_WebFile` → `pf_read_at` → the JS source.
+`C_PakFs::OpenPak` → `Pak::ReadPak` (`Pak.cpp:739-760`) opens the PAK through
+`Sys::I_FileSystem`, then runs `ReadPreHeader` → `ReadHeader` →
+`ReadStringTable` → `ReadFat` (`PakRead.cpp`). For a version 2 PAK the 40-byte
+on-disk FAT entries are converted to the 32-byte in-memory `C_PakFatEntry`, the
+parent offsets are rescaled from the disk stride to the memory stride, and the
+stored physical size is kept in `pStoredSizes`. Every one of those reads goes
+through `C_PakIoMediator` → our `C_WebFile` → `pf_read_at` → the JS source.
 
-`Pak::C_PakEntryFile` is the logical entry stream. For codec 4 it builds
-`Pak::C_PakCompressPacketZLib`, which submits raw-deflate packets as
-`Scheduler::AddTask` jobs and drains them with `Scheduler::Flush` — i.e. the PAK
-payload path now runs on the T-005c single-context scheduler.
+`C_PakFs::Open` returns a `Pak::C_PakEntryFile`, the logical entry stream. For
+codec 4 it builds `Pak::C_PakCompressPacketZLib`, which submits raw-deflate
+packets as `Scheduler::AddTask` jobs and drains them with `Scheduler::Flush` — the
+PAK payload path runs on the T-005c single-context scheduler.
 
 Results on `cache/root.pak` (559,652,864 B, version 2, codec 4, 3,601 entries):
 
@@ -230,8 +236,10 @@ Results on `cache/root.pak` (559,652,864 B, version 2, codec 4, 3,601 entries):
 |---|---|
 | engine header (`version/sector/codec/fat/entries/strings`) | 2 / 2048 / 4 / 0 / 3,601 / 170,406 — equal to the reference |
 | all 3,601 FAT records: path, path CRC, logical size, stored size, payload offset, parent index, directory flag | equal field by field to `range_probe pak` |
-| `\animations\cameras\start_3_frontcamera.cycle` (209 B logical, 77 B stored, 1 packet) | 209 B, FNV-1a 64 `7a5224df7820ffae`, unbuffered and buffered agree, equals the independent decoder |
-| `\graphics\textures\postprocess\la_river_02_lut.dds` (131,200 B logical, 73,819 B stored, 3 packets, partial last packet) | 131,200 B, FNV-1a 64 `583354161ab2a52c`, unbuffered and buffered agree, equals the independent decoder |
+| `C_PakFs::FileExists` / `C_PakFs::FileInfo` for both entries | true; size 209 and 131,200, `E_FileType_File` |
+| `C_PakFs::Open` + read, `\animations\cameras\start_3_frontcamera.cycle` (209 B logical, 77 B stored, 1 packet) | 209 B, FNV-1a 64 `7a5224df7820ffae`, unbuffered and buffered agree, equals the independent decoder |
+| `C_PakFs::Open` + read, `\graphics\textures\postprocess\la_river_02_lut.dds` (131,200 B logical, 73,819 B stored, 3 packets, partial last packet) | 131,200 B, FNV-1a 64 `583354161ab2a52c`, unbuffered and buffered agree, equals the independent decoder |
+| `C_PakFs::DirectoryInfo("\models\objects\shared\construction")` | 35 children, child-size FNV-1a 64 `d2d61563f2fc557e`, equal to the reference index (same children, same FAT order) |
 
 The independent decoder is Python (`pak_entry_plaintext` in
 `engine/verify_file_overlay.py`): block-size `65536`, then repeated
@@ -241,23 +249,13 @@ otherwise raw deflate — the layout implemented by
 reads the stored bytes straight from the file with `open()/seek()`, i.e. without
 the engine, so the comparison covers storage *and* decompression.
 
-**What could not be honoured: `C_PakFs` itself.** `LogicalFs::C_PakFs::OpenPak` is a
-short wrapper around `Pak::ReadPak`, and `C_PakFs::Open` is a short wrapper around
-`C_PakEntryFile::Open`; both would have been usable, but `C_PakFs` has a
-virtual `DirectoryInfo` that calls `C_DirectoryInfo::FileInfoArray()`, whose
-implementation lives in `system/source/serialise/C_FileSystem.cpp`. That TU is the
-Win32 file system the design keeps out of the web build (design §1.2), and linking
-it pulls `AsyncFile` and the IO thread. The harness therefore calls the two
-engine functions `C_PakFs` calls, not a reimplementation of the reader: `ReadPak`
-and `C_PakEntryFile::Open` are engine code, byte for byte, and `C_PakEntryFile`
-*is* the `I_File` the rest of the engine would receive.
-
-**What else could not be honoured: PAK signature verification.** On a non-PC,
+**What still could not be honoured: PAK signature verification.** On a non-PC,
 non-PS3 target `Pak::Sha1::C_Context::Create()` returns `true` and `UpdateHash`
 does nothing (`PakSha1.cpp:19-41,129-150`), so `C_HashContext` would report
 success without hashing. The harness therefore passes `pSecurity = NULL` and makes
 no authenticity claim; a web build must not enable `E_Security_Enabled` until a
-real SHA-1 exists.
+real SHA-1 exists. `C_PakFs`'s secure branches (`E_Security_Enabled`) are
+therefore unexercised.
 
 ### 3.2 `MT::GetThreadId()` had no web branch
 
@@ -271,6 +269,28 @@ wasm `unreachable` trap — the first run died inside
 execution context, one constant non-zero id, so `AtomicLock`'s "already owned by
 me" test and its recursive count behave as documented. The PC translation unit is
 unaffected (§7).
+
+### 3.3 `C_DirectoryInfo` needed a web home
+
+`C_PakFs` has a virtual `DirectoryInfo` that fills a `Sys::C_DirectoryInfo`, and
+`C_DirectoryInfo`'s members are defined in
+`system/source/serialise/C_FileSystem.cpp` — the Win32 file system the web build
+does not compile (design §1.1/§1.2: `C_FileSystem::Open` returns an `AsyncFile`
+and needs an IO thread). Without those symbols the `C_PakFs` vtable makes the
+whole wrapper unlinkable, `OpenPak` included.
+
+The smallest faithful fix: the ten members are copied verbatim into a web-only TU,
+`system/source/serialise/C_WebDirectoryInfo.cpp`, and the block in
+`C_FileSystem.cpp` is wrapped in `#if !defined(PLATFORM_WEB)`. Exactly one
+definition therefore exists in every configuration — PC/PS3 keeps the original
+file, web gets the new one — and no build can define them twice. The alternative,
+moving the members into `I_FileSystem.h` as inline code, would have changed every
+translation unit that includes that header.
+
+The duplication is real and is recorded as a maintenance obligation: if the PC
+bodies change, `C_WebDirectoryInfo.cpp` must change with them. `C_PakFs::
+DirectoryInfo` is exercised by the harness (35 children, order and sizes compared
+against the reference index), so a drift would fail the gate rather than rot.
 
 ## 4. Exact commands
 
@@ -312,13 +332,13 @@ throws nothing. It is a harness build flag, not a proposed engine flag.
 `-sSTACK_SIZE=2097152` is required by the packet-zlib inflate task, which
 allocates two 64 KiB buffers with `alloca`; the default 64 KiB stack traps.
 
-The 56 objects: the file layer (3), the logging closure (9 + 2 shims), the
+The 59 objects: the file layer (4), the logging closure (9 + 2 shims), the
 scheduler (5 jobqueue TUs, `Thread`, `RwLock`, `Mutex`, `Event`,
 `CoreMemoryAligned`, `Time`), `BizAssert`, `endian`, `FilePath`,
-`FsPerfLogger`, `Debug`, `Variables`, `C_MemoryStream`, the engine PAK reader (12
-logicalfs TUs), the harness, the two probe parser TUs and eight vendored zlib C
+`FsPerfLogger`, `Debug`, `Variables`, `C_MemoryStream`, the engine PAK file system
+(13 logicalfs TUs), the harness, the two probe parser TUs and eight vendored zlib C
 files. The logging closure and the scheduler are T-005c's; this patch adds no
-engine TU beyond the three new files.
+engine TU beyond the four new files.
 
 ## 5. What was read
 
@@ -335,7 +355,8 @@ sector 2048, codec 4 (`packet-zlib`), 3,601 FAT entries.
 | Two `Underflow` configurations produce the same index | yes (16-byte and 128 KiB buffers) |
 | Engine PAK header (12 `ReadPak` fields) | 2 / 2048 / 4 / 0 / 3,601 / 170,406 — equal to the reference |
 | Engine FAT (3,601 records, v2 40→32-byte conversion) | equal to the reference, field by field (§3.1) |
-| Two entries through `C_PakEntryFile` + packet-zlib | 209 B and 131,200 B, hashes equal to an independent decoder, unbuffered and buffered |
+| Two entries through `C_PakFs::Open` + packet-zlib | 209 B and 131,200 B, hashes equal to an independent decoder, unbuffered and buffered |
+| `C_PakFs::FileExists` / `FileInfo` / `DirectoryInfo` | true / size + type / 35 children, all equal to the reference |
 | Deterministic | two runs identical, two builds byte-identical wasm |
 | Largest range the ABI ever received | 139,690 B — the string-table tail after a 32 KiB resident buffer, inside the metadata region (not a whole file, not a whole table) |
 | Ranges refused | 7, each with offset/length/size on stderr |
@@ -347,19 +368,20 @@ compared against Python's FNV-1a 64 over the same file. It is a checksum, not a
 cryptographic digest, and is labelled as one.
 
 Cost, measured, not optimised: 16,446 `pf_read_at` calls carrying
-1,120,880,888 bytes for the two whole-file passes plus the index, the PAK reader
+1,120,880,888 bytes for the two whole-file passes plus the index, the PAK wrapper
 and the negative tests. The split is visible in the counters: the direct pass is
 8,540 range requests of 65,536 B, the buffered pass is ~4,270 requests of
 131,072 B (one refill per 32 four-kilobyte `Read` calls), the small-buffer index
 parse takes the direct path for every parser read of 16 bytes or more, and the PAK
-reader adds two large metadata reads (the string-table tail, 139,690 B, and the
+wrapper adds two large metadata reads (the string-table tail, 139,690 B, and the
 FAT tail, 112,902 B) plus 6 resolution reads for the two entries. The buffered
 path re-reads nothing but still moves the file twice in total — the R9 seek cost
 from the design, unchanged from PC behaviour.
 
 Cost of the PAK consumer itself: the 209-byte entry is one `I_File::Read` and the
 131,200-byte entry three; the stored bytes behind them are 73,896 B in total, all
-read through the same buffer as the metadata.
+read through the same buffer as the metadata. `FileExists`, `FileInfo` and
+`DirectoryInfo` read no file data at all — they are FAT lookups.
 
 ## 6. Explicit failures (all verified)
 
@@ -382,24 +404,27 @@ read through the same buffer as the metadata.
 
 Four statements, in increasing strength:
 
-1. **The patch's new files are additive, and its two edits are named and
+1. **The patch's new files are additive, and its three edits are named and
    bounded.** Machine-checked by `verify_file_overlay.py` (`structural_check`):
-   the three added paths are exactly the expected set, the two modified paths are
-   exactly `misc.h` (+9/−0) and `Security.h` (+1/−1), and the changed lines must
-   contain the expected tokens. `git apply -p1 --check` accepts the patch against
-   `upstream/BlurRebuilt`.
+   the four added paths are exactly the expected set, the three modified paths are
+   exactly `misc.h` (+9/−0), `Security.h` (+1/−1) and `C_FileSystem.cpp` (+3/−0),
+   and the changed lines must contain the expected tokens. `git apply -p1
+   --check` accepts the patch against `upstream/BlurRebuilt`.
 2. **Preprocessed PC translation units do not change.** The overlay is applied on
    top of T-005c, so comparing upstream against the tree would also show the
    scheduler's own `map.h`/`sortedbinarytree.h` grammar fixes and would say
    nothing about this patch. The A/B is therefore *with* and *without* the patch:
    MSVC preprocesses `C_FileSystem.cpp` and `C_File.cpp` (the file-layer
-   neighbours) and `Pak.cpp` (the one TU that includes both edited headers) in the
-   PC configuration (`/DBUILD_CONFIG_SPEED /DPLATFORM_PC /DWIN32 /D_WINDOWS`),
-   the three added files are deleted, the two modified files are restored from
-   upstream, all three units are preprocessed again, and the overlay is
-   re-applied. Result: 155,789 / 155,943 / 125,082 non-blank lines,
-   **identical**. `misc.h`'s added block is `PLATFORM_WEB`-guarded, and
-   `Security.h`'s `NULL` preprocesses to the same token `0` MSVC sees in `= 0`.
+   neighbours) and `Pak.cpp` (the one TU that includes all three edited headers)
+   in the PC configuration (`/DBUILD_CONFIG_SPEED /DPLATFORM_PC /DWIN32
+   /D_WINDOWS`), the four added files are deleted, the three modified files are
+   restored from upstream, all three units are preprocessed again, and the overlay
+   is re-applied. Result: 155,789 / 155,943 / 125,082 non-blank lines,
+   **identical**. `misc.h`'s added block is `PLATFORM_WEB`-guarded,
+   `Security.h`'s `NULL` preprocesses to the same token `0` MSVC sees in `= 0`,
+   and `C_FileSystem.cpp`'s guard is a preprocessor pair that `cl /P` does not
+   emit (its explanation is a trailing comment on the directive, which is also
+   not emitted).
 3. **The new TU is inert on PC.** `cl /c /W4 /std:c++14` on `C_WebFile.cpp` in the
    PC configuration: no warning attributed to `C_WebFile.cpp` or `C_WebFile.h`
    (engine headers emit their own, as in any PC TU), and `dumpbin /symbols`
@@ -451,17 +476,19 @@ implements. They are counted and reported, not hidden.
 8. **The 64 MiB metadata / 100,000 entry / 4 KiB path limits are the probe
    parser's**, inherited from `probes/range-file`. They are not format limits and
    are not claimed as such.
-9. **`C_PakFs` is not linked** (see §3.1): `DirectoryInfo` needs
-   `C_DirectoryInfo`, whose code lives in `C_FileSystem.cpp`, which the design
-   excludes from the web build. The PAK reader below it is engine code; the
-   `I_FileSystem` wrapper is not exercised.
-10. **Two entries are read, not a corpus.** They were chosen to cover a
-    single-packet and a three-packet (partial last packet) stream and both are
-    verified against an independent decoder, but 3,599 other entries were not
-    opened. Nothing here proves every codec-4 variation in the install.
+9. **`C_DirectoryInfo` exists twice, one definition per configuration.** PC/PS3
+   keeps it in `C_FileSystem.cpp`; web takes it from
+   `C_WebDirectoryInfo.cpp`. The bodies are identical today and the gate compares
+   the web behaviour against the reference index, but a PC-side change must be
+   mirrored by hand (§3.3).
+10. **Two entries and one directory are read, not a corpus.** They were chosen to
+    cover a single-packet and a three-packet (partial last packet) stream, a
+    directory with 35 children, and both `Underflow` paths; 3,599 other entries
+    were not opened. Nothing here proves every codec-4 variation in the install.
 11. **The scheduler runs the inflate jobs serially.** `-sSTACK_SIZE=2097152` is a
     build flag because the inflate task uses `alloca` twice per task; the harness
     build is single-context, so at most one task's stack frame is live.
+12. **`C_PakFs`'s secure path is not exercised** (`pSecurity = NULL`, see §3.1).
 
 ## 9. Blockers and the next smallest step
 
@@ -470,8 +497,9 @@ Blockers, in order of cost:
 1. **Nothing of this is in `upstream/`.** The owning phase has to take
    `engine/patches/t005b-file-overlay.patch` on top of the scheduler patch, add
    the three new files to the engine's source lists, run the native gate, and
-   decide how the two existing-file edits are to be adopted. Until then every
-   number here comes from an overlay tree.
+   decide how the three existing-file edits are to be adopted (each is
+   one block: a `PLATFORM_WEB` branch, a token, and a preprocessor guard). Until
+   then every number here comes from an overlay tree.
 2. **The engine still needs an MSVC-CRT story for the web build.**
    `_vsnprintf_s` is answered by a harness prelude here; a real engine build needs
    either the T-005c-style `crt_compat` mapping in the engine or call-site fixes.
@@ -482,18 +510,18 @@ Blockers, in order of cost:
    detaching views) can be measured for real.
 4. **PAK signature verification is a no-op on web** (§3.1): no `E_Security_Enabled`
    until a real SHA-1 exists.
-5. **`C_PakFs` / logicalfs is the next layer up.** It needs a web-safe home for
-   `C_DirectoryInfo` (or a `PLATFORM_WEB` branch in `C_FileSystem.cpp`) so the
-   `I_FileSystem` wrapper can link. After that the mount table
-   (`GameSystems.cpp:103,116,126`) and `C_OverlayFs` are the next engine code.
+5. **The mount table and overlay are the next layer up.** `C_PakFs` now links and
+   is exercised, so what remains above it is `C_OverlayFs` +
+   `GameHelpers::MountPakLayer` (`GameSystems.cpp:103,116,126`) and the
+   `LOGFS_INIT("./user/logfs")` writable layer (`GameSystems.cpp:76`). Both need
+   `Sys::C_FileSystem`-free operation and a decision about the writable mount.
 
-Next smallest step: **give `C_DirectoryInfo` a web implementation** — either move
-its four small member functions out of `C_FileSystem.cpp` into a shared TU, or add
-a `PLATFORM_WEB` branch in `C_FileSystem.cpp` that compiles without `AsyncFile` (the
-design already requires the latter for `Open`). Then `C_PakFs::OpenPak` and
-`C_PakFs::Open` replace the two hand-called engine functions in the harness, and
-the mount-table + overlay layer becomes the next consumer. Nothing else in this
-document changes: the reader below `C_PakFs` is already proven byte-exact.
+Next smallest step: **mount through the overlay** — create a `C_OverlayFs`, push
+`C_PakFs` as the read layer for `/`, and open `cache/root.pak`'s two fixture
+entries through `I_FileSystem` instead of the PAK wrapper directly. That exercises
+`OverlayFs`'s layer lookup and its `MT::RwLock` on top of the wrapper proven here,
+and it is the last engine layer before level streaming. The reader below
+`C_PakFs` is already proven byte-exact, so nothing in this document changes.
 
 ## 10. Evidence
 
@@ -502,33 +530,35 @@ All hashes are SHA-256 unless stated; `*` = regenerated by
 
 | Path | Size | SHA-256 (16) | Content |
 |---|---:|---|---|
-| `engine/patches/t005b-file-overlay.patch` | 25,317 | `668599f98dd8f4af` | the overlay: 3 files added, 2 one-block fixes |
+| `engine/patches/t005b-file-overlay.patch` | 27,969 | `f9ccd59f46fcb2f4` | the overlay: 4 files added, 3 small fixes |
 | `engine/apply_file_overlay.py` | 7,134 | `76e7a0b233034478` | ordered apply, newline-preserving modify path, guards |
-| `engine/verify_file_overlay.py` | 43,600 | `91550a0287a07fa1` | the full gate |
-| `engine/harness/t005b/smoke_webfile.cpp` | 24,304 | `f58819157a6bf706` | harness: file layer + PAK consumer |
+| `engine/verify_file_overlay.py` | 45,924 | `284303c6036e79f6` | the full gate |
+| `engine/harness/t005b/smoke_webfile.cpp` | 26,025 | `12d5740b1cd89fba` | harness: file layer + `C_PakFs` consumer |
 | `engine/harness/t005b/msvc_crt_web.h` | 1,267 | `06c8139291f1f242` | `_vsnprintf_s` build prelude |
-| `_work/logs/engine-file-spike/verify-summary.json`* | 2,282,996 | `2c819ae055de2236` | every number below, machine-written |
-| `_work/engine-file-spike/out/webfile_harness_a.wasm`* | 495,593 | `7429ca1a4637f5e8` | the module (56 objects) |
-| `_work/engine-file-spike/out/webfile_harness_b.wasm`* | 495,593 | `7429ca1a4637f5e8` | second build, identical |
-| `_work/engine-file-spike/out/webfile_harness_a.js`* | 98,304 | `798b12d890fbd145` | glue + provider + pre.js |
-| `_work/logs/engine-file-spike/a__run1.log`* | 1,109,732 | `5dbbcc017b6ced9a` | full harness transcript (`a__run2.log` is identical) |
+| `_work/logs/engine-file-spike/verify-summary.json`* | 2,283,754 | — | every number below, machine-written (hash changes per run: it records wall time) |
+| `_work/engine-file-spike/out/webfile_harness_a.wasm`* | 506,866 | `b76779c3bd18df2c` | the module (59 objects) |
+| `_work/engine-file-spike/out/webfile_harness_b.wasm`* | 506,866 | `b76779c3bd18df2c` | second build, identical |
+| `_work/engine-file-spike/out/webfile_harness_a.js`* | 98,304 | `2184f3ef4fedb858` | glue + provider + pre.js |
+| `_work/logs/engine-file-spike/a__run1.log`* | 1,110,226 | `21229950cc0e8834` | full harness transcript (`a__run2.log` is identical) |
 | `_work/logs/engine-file-spike/range-probe.log`* | 716,497 | `1cdf3df46790d769` | `range_probe pak` reference |
+| `_work/engine-file-spike/src/C_WebDirectoryInfo.cpp` | 1,996 | `e14c49b97f0d48a5` | patch source |
 | `_work/engine-file-spike/src/C_WebFile.cpp` | 12,605 | `63a07c3af6f6dd6c` | patch source |
 | `_work/engine-file-spike/src/C_WebFile.h` | 6,449 | `12751422f55c8a5d` | patch source |
 | `_work/engine-file-spike/src/PlatformFileWeb.h` | 3,913 | `96d038ed288e30cd` | patch source |
+| `_work/engine-file-spike/src/modified/C_FileSystem.cpp` | 15,491 | — | patch source (upstream + guard) |
 | `_work/engine-file-spike/src/modified/misc.h` | 1,436 | — | patch source (upstream + web block) |
 | `_work/engine-file-spike/src/modified/Security.h` | 270 | — | patch source (upstream, `= 0`) |
-| `_work/engine-file-spike/tree/.overlay/file-overlay.json`* | 1,124 | `588924ebc13d57d9` | both patch hashes, order, file lists, upstream commit |
+| `_work/engine-file-spike/tree/.overlay/file-overlay.json`* | 1,288 | `514b7c56a9b91ebe` | both patch hashes, order, file lists, upstream commit |
 
-Recorded run (exit 0). `--fresh` re-copies `upstream/` and takes about 111 s;
-reusing the tree takes about 98 s.
+Recorded run (exit 0). `--fresh` re-copies `upstream/` and takes about 114 s;
+reusing the tree takes about 100 s.
 
 ```text
-patch           sha256=668599f98dd8f4af
-files           3 added, 2 modified
-objects         56
-wasm            495593 B sha256=7429ca1a4637f5e8 deterministic=True
-harness         40/40 checks pass, refusals=7
+patch           sha256=f9ccd59f46fcb2f4
+files           4 added, 3 modified
+objects         59
+wasm            506866 B sha256=b76779c3bd18df2c deterministic=True
+harness         43/43 checks pass, refusals=7
 index           3601 entries, requests=3609, bytes=314522
 engine pak      3601 FAT records, 2 entries decompressed (209 B, 131200 B)
 fnv1a64         2f291abb5648e078 (both paths)

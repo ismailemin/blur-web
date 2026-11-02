@@ -113,6 +113,7 @@ ZLIB_C = ["adler32", "crc32", "deflate", "inflate", "inffast", "inftrees",
 # (logicalfs) - the first real consumer of the file layer.
 TUS = [
     (f"{COMMON}/system/source/serialise/C_WebFile.cpp", "system"),
+    (f"{COMMON}/system/source/serialise/C_WebDirectoryInfo.cpp", "system"),
     (f"{COMMON}/system/source/serialise/FileSystemGlobals.cpp", "system"),
     (f"{COMMON}/system/source/time/Time.cpp", "system"),
     (f"{COMMON}/system/source/debug/log/LogManager.cpp", "system"),
@@ -141,6 +142,8 @@ TUS = [
     (f"{COMMON}/system/source/scheduler/jobqueue_mem.cpp", "system"),
     (f"{COMMON}/system/source/scheduler/jobqueue_web.cpp", "system"),
     (f"{LOGICALFS}/source/pakfs/PakGlobals.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/PakFs.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/PakFsManager.cpp", "logicalfs"),
     (f"{LOGICALFS}/source/pakfs/Pak.cpp", "logicalfs"),
     (f"{LOGICALFS}/source/pakfs/impl/PakDefinitions.cpp", "logicalfs"),
     (f"{LOGICALFS}/source/pakfs/impl/PakUtil.cpp", "logicalfs"),
@@ -177,8 +180,10 @@ EXPECTED_CHECKS = [
     "directory_info_refused",
     # The engine PAK reader (first real consumer) over the file layer.
     "pak_policy", "pak_open", "pak_entries",
-    "pak_fat_lookup", "pak_entry_read_streamed", "pak_entry_read_buffered",
+    "pak_fat_lookup", "pak_exists", "pak_fileinfo",
+    "pak_entry_read_streamed", "pak_entry_read_buffered",
     "pak_entry_paths_agree", "pak_entry_length_matches_fat",
+    "pak_directory",
 ]
 
 # Each refusal the provider must emit, with its message marker.
@@ -266,12 +271,13 @@ def structural_check() -> dict:
         f"{COMMON}/system/include/system/serialise/PlatformFileWeb.h",
         f"{COMMON}/system/include/system/serialise/C_WebFile.h",
         f"{COMMON}/system/source/serialise/C_WebFile.cpp",
+        f"{COMMON}/system/source/serialise/C_WebDirectoryInfo.cpp",
     }
     if set(added) != expected_added:
         raise Failed(f"unexpected added files: {sorted(set(added) ^ expected_added)}")
 
-    # The two modifications are grammar/platform fixes clang needs and MSVC does
-    # not; both are checked token by token so the patch cannot grow quietly.
+    # The three modifications are grammar/platform fixes clang needs and MSVC
+    # does not; each is checked token by token so the patch cannot grow quietly.
     expectations = {
         f"{COMMON}/system/include/System/Misc/Security.h": {
             "removed": 1, "added": 1,
@@ -281,6 +287,11 @@ def structural_check() -> dict:
             "removed": 0, "added": 9,
             "must_remove": [], "must_add": ["return (ThreadId)1;",
                                             "#if PLATFORM_WEB"],
+        },
+        f"{COMMON}/system/source/serialise/C_FileSystem.cpp": {
+            "removed": 0, "added": 3,
+            "must_remove": [], "must_add": ["#if !defined(PLATFORM_WEB)",
+                                            "#endif // !PLATFORM_WEB"],
         },
     }
     if set(modified) != set(expectations):
@@ -479,6 +490,14 @@ def run_harness(js: Path, tag: str) -> dict:
             "hash": m.group(5), "reads": int(m.group(6)),
         }
 
+    directory = {}
+    m = re.search(r"webfile pak directory (\S+) ok=(\d+) count=(\d+) children=0x([0-9a-f]{16})",
+                  out)
+    if not m:
+        raise Failed("the harness printed no C_PakFs::DirectoryInfo line")
+    directory = {"path": m.group(1), "ok": int(m.group(2)),
+                 "count": int(m.group(3)), "children": m.group(4)}
+
     stderr = runs[0].stderr or ""
     refusals = {}
     for marker in REFUSAL_MARKERS:
@@ -505,6 +524,7 @@ def run_harness(js: Path, tag: str) -> dict:
         "counters": counters, "provider_summary": summary_fields,
         "provider_refusals": refusals, "stdout_bytes": len(out),
         "pak_header": pak_header, "pak_fat": fat, "pak_entry_reads": entry_reads,
+        "pak_directory": directory,
     }
 
 
@@ -609,6 +629,29 @@ def compare_reference(result: dict) -> dict:
     if not entry_report:
         raise Failed("the harness read no PAK entry")
 
+    # C_PakFs::DirectoryInfo over C_DirectoryInfo: same children, same order,
+    # same logical sizes as the reference index.
+    directory = result["pak_directory"]
+    if not directory["ok"]:
+        raise Failed(f"C_PakFs::DirectoryInfo('{directory['path']}') returned false")
+    parent = next((e for e in reference["entries"]
+                   if e["path"] == directory["path"] and e["isDirectory"]), None)
+    if parent is None:
+        raise Failed(f"{directory['path']} is not a directory in the reference")
+    children = [e for e in reference["entries"]
+                if e["parentIndex"] == parent["index"]]
+    if directory["count"] != len(children):
+        raise Failed(f"DirectoryInfo reported {directory['count']} children, "
+                     f"reference has {len(children)}")
+    h = 0xCBF29CE484222325
+    for child in children:
+        for b in range(4):
+            h ^= (child["logicalBytes"] >> (8 * b)) & 0xFF
+            h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    if directory["children"] != f"{h:016x}":
+        raise Failed(f"DirectoryInfo child sizes hash {directory['children']} != "
+                     f"{h:016x}")
+
     return {
         "entries": len(engine["entries"]),
         "header": engine["header"],
@@ -619,6 +662,11 @@ def compare_reference(result: dict) -> dict:
             "header": engine_header,
             "fat_records_compared": len(fat),
             "entries": entry_report,
+            "directory": {
+                "path": directory["path"],
+                "children": len(children),
+                "child_sizes_fnv1a64": directory["children"],
+            },
         },
     }
 

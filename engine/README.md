@@ -22,7 +22,7 @@ Provenance:
 | upstream reference | `upstream/BlurRebuilt` at commit `5270304b81983b9e3edbd569ba25235c17bbabd7` |
 | scheduler patch | `engine/patches/t005c-web-scheduler.patch` (20 files, 691 insertions, 35 deletions) |
 | scheduler SHA-256 | `B939B39C7F7598B19677F29286655DE554762CB3CBD1471833D17C873C3FDEF2` |
-| file-layer patch | `engine/patches/t005b-file-overlay.patch` (3 files added, 2 small fixes) |
+| file-layer patch | `engine/patches/t005b-file-overlay.patch` (4 files added, 3 small fixes) |
 | toolchain | Emscripten 6.0.13 (clang 24.0.0git), pinned under `_work/toolchains/emsdk` |
 | evidence | `docs/work/analysis/engine-web-shims.md` (scheduler), `docs/work/analysis/engine-file-layer.md` (file layer + PAK consumer) |
 
@@ -155,9 +155,9 @@ eventually be satisfied, because nothing can satisfy it here.
 ## T-005b file layer (`t005b-file-overlay.patch`)
 
 A second, additive patch layers a web file system on top of the scheduler
-overlay. It adds **three files** and carries **two small platform/grammar fixes**
-in existing files (no behaviour change on PC — see "PC-path guarantee" above and
-§7 of the analysis doc):
+overlay. It adds **four files** and carries **three small platform/grammar
+fixes** in existing files (no behaviour change on PC — see "PC-path guarantee"
+above and §7 of the analysis doc):
 
 - `PlatformFileWeb.h` — the narrow `pf_*` C ABI (`open/size/read_at/write_at/
   close/exists` plus an async enqueue that refuses).
@@ -165,20 +165,26 @@ in existing files (no behaviour change on PC — see "PC-path guarantee" above a
   `Sys::C_WebFileSystem` over `I_FileSystem`, with a C++-side mount table.
   Selection is the existing `Sys::SetDefaultFileSystem()` seam; no game code is
   touched.
+- `C_WebDirectoryInfo.cpp` — `C_DirectoryInfo`'s members for web, so an
+  `I_FileSystem` whose `DirectoryInfo` fills a `C_DirectoryInfo` (`C_PakFs`) can
+  link without `C_FileSystem.cpp`/`AsyncFile`.
 - `core/threads/misc.h` — `MT::GetThreadId()` gains a `PLATFORM_WEB` branch.
   Without it the function falls off the end (no PC/PS3/SPU branch is taken) and
   clang lowers that to a wasm `unreachable` trap; `Pak::C_AtomicJobList` uses
   `MT::AtomicLock`, which compares thread ids.
 - `System/Misc/Security.h` — `= NULL` → `= 0` (a pure-specifier must be the
   literal zero; MSVC accepts `NULL`, clang does not).
+- `system/source/serialise/C_FileSystem.cpp` — the `C_DirectoryInfo` member block
+  is wrapped in `#if !defined(PLATFORM_WEB)`, so exactly one definition exists per
+  configuration (PC/PS3 here, the new web TU there).
 
 ```powershell
 & $py engine/apply_file_overlay.py --tree _work/engine-file-spike/tree   # scheduler, then file
 & $py engine/verify_file_overlay.py --fresh
 ```
 
-`verify_file_overlay.py` (≈110 s) rebuilds twice and runs the node harness:
-**PASS**, 56 objects, 495,593 B wasm, deterministic, **40/40 checks**, 7 explicit
+`verify_file_overlay.py` (≈115 s) rebuilds twice and runs the node harness:
+**PASS**, 59 objects, 506,866 B wasm, deterministic, **43/43 checks**, 7 explicit
 refusals. Through the engine layer it reads the real `cache/root.pak`
 (559,652,864 B):
 
@@ -190,42 +196,43 @@ refusals. Through the engine layer it reads the real `cache/root.pak`
 - EOF-crossing, past-EOF, zero-length, oversized, write, enqueue, unmounted,
   write-handle, async-only and directory cases all refused explicitly.
 
-### The first real engine consumer: the PAK reader
+### The first real engine consumer: `C_PakFs`
 
-The same harness then hands the file system to the engine's own PAK layer:
+The same harness then mounts the file system as the default and uses the engine's
+PAK file system — the same wrapper the game mounts through `GameHelpers`:
 
 ```cpp
-Pak::C_PakFile* pak = Pak::ReadPak(*Sys::GetDefaultFileSystem(),
-                                   Sys::C_FilePath("/cache/root.pak"),
-                                   Sys::E_FileAccess_Read, NULL,
-                                   Sys::C_OpenParams(32 * 1024));
+LogicalFs::C_PakFs pakFs;
+pakFs.OpenPak( Sys::GetDefaultFileSystem(), Sys::C_FilePath( "/cache/root.pak" ),
+               NULL, Sys::C_OpenParams( 32 * 1024 ) );      // -> Pak::ReadPak
+Sys::I_File* f = pakFs.Open( Sys::C_FilePath( path ),
+                             Sys::E_FileAccess_Read,
+                             Sys::C_OpenParams( 0 /* streamer */ ) );  // -> C_PakEntryFile
 ```
 
-`ReadPak` → `ReadPreHeader` / `ReadHeader` / `ReadStringTable` / `ReadFat` →
-`C_PakIoMediator` → `Sys::I_File` → `C_WebFile` → `pf_read_at` → JS range source.
-Two FAT entries are then opened with `Pak::C_PakEntryFile` (the same call
-`C_PakFs::Open` makes) and read in full through
-`Pak::C_PakCompressPacketZLib` (codec 4), which runs its inflate tasks on the
-T-005c scheduler:
+`C_PakFs::OpenPak` → `Pak::ReadPak` (`ReadPreHeader`/`ReadHeader`/
+`ReadStringTable`/`ReadFat`) → `C_PakIoMediator` → `Sys::I_File` → `C_WebFile` →
+`pf_read_at` → JS range source; `C_PakFs::Open` returns a `C_PakEntryFile` whose
+`Underflow` drives `Pak::C_PakCompressPacketZLib` (codec 4) on the T-005c
+scheduler. `C_PakFs::FileExists`, `C_PakFs::FileInfo` and
+`C_PakFs::DirectoryInfo` are exercised too, so the FAT-based lookups and the
+`C_DirectoryInfo` members are covered:
 
-| entry | logical | stored | packets | engine FNV-1a 64 | independent decode |
-| --- | ---: | ---: | ---: | --- | --- |
-| `\animations\cameras\start_3_frontcamera.cycle` | 209 | 77 | 1 | `7a5224df7820ffae` | same |
-| `\graphics\textures\postprocess\la_river_02_lut.dds` | 131,200 | 73,819 | 3 | `583354161ab2a52c` | same |
-
-Both are read twice — unbuffered (`m_BufferSizeHint == 0`, the streamer's shape)
-and buffered (32 KiB) — and both hash identically. `C_PakFs` itself could not be
-linked: its `DirectoryInfo` implements `C_DirectoryInfo`, which lives in
-`C_FileSystem.cpp`, a TU the design keeps out of the web build. Everything below
-`C_PakFs` is the engine's own code.
+| through `C_PakFs` | result |
+| --- | --- |
+| header / 3,601 FAT records | equal to the reference field by field |
+| `Open` + `FileInfo` + `FileExists` for both entries | size 209 and 131,200, `E_FileType_File` |
+| `Open` read, unbuffered and buffered | FNV-1a 64 `7a5224df7820ffae` / `583354161ab2a52c`, equal to an independent decoder |
+| `DirectoryInfo("\models\objects\shared\construction")` | 35 children; child-size FNV `d2d61563f2fc557e` equal to the reference |
 
 PC parity: `C_FileSystem.cpp`, `C_File.cpp` and `Pak.cpp` preprocess identically
 with the patch and without it (added files removed, modified files restored from
 upstream); the new TU compiles at `/W4` with no PC symbol emitted.
 
 Limits: no browser OPFS/worker/COOP-COEP test yet; `pf_open` takes a source id,
-not a path (the path→source table is C++-side by design); no level, streamer or
-serialiser sits on top yet. Evidence:
+not a path (the path→source table is C++-side by design); PAK signature
+verification is still a no-op on web, so `pSecurity` is NULL; no level, streamer
+or serialiser sits on top yet. Evidence:
 `docs/work/analysis/engine-file-layer.md`.
 
 ## Layout

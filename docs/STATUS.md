@@ -350,9 +350,9 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 
 ## 2 Kasım 2026 — T-005b engine dosya katmanı
 
-- `engine/patches/t005b-file-overlay.patch` (3 yeni dosya + 2 web-only düzeltme) scheduler overlay'inin üstüne `Sys::C_WebFile`/`C_WebFileSystem` + `pf_*` C ABI ekliyor; tümü `PLATFORM_WEB` altında.
-- `verify_file_overlay.py --fresh` **PASS** (111,8 s): 56 nesne, 495.593 B wasm, iki build bit-birebir, 40/40 kontrol, 7 açık ret.
-- İlk gerçek engine tüketicisi: `Pak::ReadPak` + `C_PakEntryFile::Open`; 3.601 FAT kaydı referansla aynı; iki dosya codec-4 ile açıldı (209 B, 131.200 B), hash'ler bağımsız Python decoder ile aynı.
+- `engine/patches/t005b-file-overlay.patch` (4 yeni dosya + 3 web-only düzeltme) scheduler overlay'inin üstüne `Sys::C_WebFile`/`C_WebFileSystem` + `pf_*` C ABI ekliyor; tümü `PLATFORM_WEB` altında.
+- `verify_file_overlay.py --fresh` **PASS** (114,0 s): 59 nesne, 506.866 B wasm, iki build bit-birebir, 43/43 kontrol, 7 açık ret.
+- Tam `C_PakFs` yolu (`OpenPak`/`Open`/`FileExists`/`FileInfo`/`DirectoryInfo`) çalışıyor; 3.601 FAT kaydı referansla aynı; iki dosya (209 B, 131.200 B) ve bir dizin (35 çocuk) doğrulandı; hash'ler bağımsız Python decoder ile aynı.
 - Gerçek `cache/root.pak` (559.652.864 B): 3.601 giriş `probes/range-file` ile alan alan aynı; 3.609 istek/314.522 B; tam dosya FNV-1a 64 `2f291abb5648e078` iki buffer yolunda da aynı.
 - PC parity: mevcut dosya değişmiyor; `C_FileSystem.cpp`/`C_File.cpp` önişlenmiş çıktıları aynı; yeni TU `/W4` temiz.
 - Harness `engine/harness/t005b/`, scheduler probe/shims `engine/harness/t005c/` altında commit edildi; doğrulayıcılar temiz checkout'tan çalışıyor. Kalan: OPFS/worker, `C_PakFs::OpenPak` tüketicisi.

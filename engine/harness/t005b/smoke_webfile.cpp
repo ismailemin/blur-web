@@ -36,6 +36,7 @@
 #include <system/debug/log/DebugLog.h>
 
 #include <PakFs/Pak.h>
+#include <PakFs/PakFs.h>
 #include <PakFs/PakGlobals.h>
 #include <PakFs/Impl/PakEntryFile.h>
 #include <PakFs/Impl/PakFatEntry.h>
@@ -202,6 +203,10 @@ const EntryFixture kEntryFixtures[] = {
 };
 const int kEntryFixtureCount = 2;
 
+// A directory fixture for C_PakFs::DirectoryInfo: the entry whose children the
+// verifier counts in the reference index.
+const char* const kDirectoryFixture = "\\models\\objects\\shared\\construction";
+
 // piStreamer, verbatim from SchedulerConfig.cpp:49-50. The PAK codec runs its
 // inflate work as scheduler tasks, so it needs a policy, and it creates one
 // group per open entry file - after SetGroupPoolSize, as the game does.
@@ -217,33 +222,29 @@ struct EntryReadResult
 	bool ok;
 };
 
-bool read_entry( Pak::C_PakFile* pak, Pak::C_PakFatEntry* fatEntry, const char* path,
-	U32 bufferHint, EntryReadResult* out )
+bool read_entry( LogicalFs::C_PakFs& pakFs, const char* path, U32 bufferHint,
+	EntryReadResult* out )
 {
 	out->length = 0;
 	out->hash = 0xcbf29ce484222325ull;
 	out->reads = 0;
 	out->ok = false;
 
-	// This is exactly what LogicalFs::C_PakFs::Open does for a read handle
-	// (PakFs.cpp:99-137), without the I_FileSystem wrapper: C_PakFs cannot be
-	// linked here because its DirectoryInfo implements C_DirectoryInfo, whose
-	// code lives in C_FileSystem.cpp - a TU the design keeps out of the web
-	// build (t005-streaming-design.md 1.2).
-	Pak::C_PakEntryFile file;
-	if ( !file.Open( pak, fatEntry, Sys::C_FilePath( path ), Sys::E_FileAccess_Read,
-		Sys::C_OpenParams( bufferHint ), NULL ) )
-	{
+	// The engine's own logical entry stream, opened through the engine's own
+	// file system wrapper: C_PakFs::Open -> C_PakEntryFile::Open ->
+	// C_PakCompressPacketZLib (codec 4) -> C_PakIoMediator -> Sys::I_File.
+	Sys::I_File* file = pakFs.Open( Sys::C_FilePath( path ), Sys::E_FileAccess_Read,
+		Sys::C_OpenParams( bufferHint ) );
+	if ( file == 0 )
 		return false;
-	}
 
-	const uint64_t length = file.Length();
+	const uint64_t length = file->Length();
 	std::vector<U8> buffer( 64 * 1024 );
 	uint64_t total = 0;
 	while ( total < length )
 	{
 		const U32 want = (U32)std::min<uint64_t>( (uint64_t)buffer.size(), length - total );
-		if ( !file.Read( &buffer[0], want ) )
+		if ( !file->Read( &buffer[0], want ) )
 			break;
 		for ( U32 i = 0; i < want; ++i )
 		{
@@ -254,6 +255,7 @@ bool read_entry( Pak::C_PakFile* pak, Pak::C_PakFatEntry* fatEntry, const char* 
 		++out->reads;
 	}
 
+	delete file;
 	out->length = length;
 	out->ok = ( total == length );
 	return out->ok;
@@ -505,11 +507,14 @@ int main( int argc, char** argv )
 		check( "fileinfo_type", haveInfo && info.m_FileType == Sys::E_FileType_File );
 		check( "exists_via_filesystem",
 			Sys::GetDefaultFileSystem()->FileExists( pakPath ) );
-		// C_DirectoryInfo is C_FileSystem's type and is not linked here; the call
-		// is refused before the pointer is touched, so null is safe and proves
-		// the refusal.
-		const bool haveDir = Sys::GetDefaultFileSystem()->DirectoryInfo( pakPath, 0 );
-		check( "directory_info_refused", !haveDir );
+		// A real C_DirectoryInfo, so the web members in C_WebDirectoryInfo.cpp are
+		// exercised even on the refusing path: the call returns false and the
+		// container stays empty.
+		Sys::C_DirectoryInfo dir;
+		const bool haveDir = Sys::GetDefaultFileSystem()->DirectoryInfo( pakPath, &dir );
+		printf( "webfile filedir refuses=%d count=%u\n", haveDir ? 0 : 1,
+			(unsigned)dir.NumFiles() );
+		check( "directory_info_refused", !haveDir && dir.NumFiles() == 0 );
 	}
 
 	delete pak;
@@ -527,19 +532,18 @@ int main( int argc, char** argv )
 		Scheduler::SetGroupPoolSize( kPakGroupPool );
 		Pak::SetPacketCompressionPolicy( (S32)policy );
 
-		// Pak::ReadPak is the engine's PAK reader: pre-header, v2 header,
-		// string table, FAT (v2 40-byte entries converted to the in-memory
-		// C_PakFatEntry layout), all through C_PakIoMediator -> Sys::I_File ->
-		// our C_WebFile. C_PakFs::OpenPak is a 20-line wrapper around exactly
-		// this call; using it directly avoids C_PakFs::DirectoryInfo, whose
-		// C_DirectoryInfo implementation lives in C_FileSystem.cpp - a TU the
-		// design keeps out of the web build.
+		// The engine's I_FileSystem over a PAK. C_PakFs::OpenPak wraps
+		// Pak::ReadPak (pre-header, v2 header, string table, FAT), and
+		// C_PakFs::Open returns a C_PakEntryFile - all through
+		// C_PakIoMediator -> Sys::I_File -> our C_WebFile.
+		LogicalFs::C_PakFs pakFs;
 		const Sys::C_FilePath archive( kMountPrefix );
-		Pak::C_PakFile* enginePak = Pak::ReadPak( *Sys::GetDefaultFileSystem(), archive,
-			Sys::E_FileAccess_Read, NULL, Sys::C_OpenParams( 32 * 1024 ) );
-		printf( "webfile pak open=%d\n", enginePak ? 1 : 0 );
-		check( "pak_open", enginePak != 0 );
+		const bool opened = pakFs.OpenPak( Sys::GetDefaultFileSystem(), archive, NULL,
+			Sys::C_OpenParams( 32 * 1024 ) );
+		printf( "webfile pak open=%d\n", opened ? 1 : 0 );
+		check( "pak_open", opened );
 
+		Pak::C_PakFile* enginePak = opened ? pakFs.GetPak() : 0;
 		if ( enginePak )
 		{
 			printf( "webfile pak entries=%u version=%u codec=%u fat=%u sector=%u\n",
@@ -549,10 +553,13 @@ int main( int argc, char** argv )
 			check( "pak_entries", enginePak->nFatEntries > 0 );
 			dump_fat( enginePak );
 
-			// Every fixture must be in the FAT, and must be readable.
+			// Every fixture must be in the FAT, and must be readable through
+			// the wrapper (C_PakFs::Open, C_PakFs::FileExists,
+			// C_PakFs::FileInfo).
 			for ( int i = 0; i < kEntryFixtureCount; ++i )
 			{
 				const char* path = kEntryFixtures[ i ].path;
+				const Sys::C_FilePath entryPath( path );
 				Pak::C_PakFatEntry* fatEntry =
 					enginePak->GetFatEntry( Sys::C_FilePath( path ) );
 				printf( "webfile pak fat %s found=%d logical=%u stored=%u\n", path,
@@ -563,15 +570,26 @@ int main( int argc, char** argv )
 							(Pak::C_PakFatEntry*)enginePak->pFatEntries ] : 0u );
 				check( "pak_fat_lookup", fatEntry != 0 && !fatEntry->IsDirectory() );
 
+				check( "pak_exists", pakFs.FileExists( entryPath ) );
+
+				Sys::C_FileInfo entryInfo;
+				entryInfo.Clear();
+				const bool haveInfo = pakFs.FileInfo( entryPath, &entryInfo );
+				printf( "webfile pak fileinfo %s ok=%d size=%llu type=%d\n", path,
+					haveInfo ? 1 : 0, (unsigned long long)entryInfo.m_FileSize,
+					(int)entryInfo.m_FileType );
+				check( "pak_fileinfo",
+					haveInfo && fatEntry &&
+					uint64_t( entryInfo.m_FileSize ) == fatEntry->dataLogicalLengthBytes &&
+					entryInfo.m_FileType == Sys::E_FileType_File );
+
 				// Unbuffered (m_BufferSizeHint == 0) is the shape the streamer
 				// uses for streamed chunks; buffered exercises the 32 KiB
 				// refill path of C_PakEntryFile.
 				EntryReadResult streamed;
 				EntryReadResult buffered;
-				const bool streamedOk = fatEntry && !fatEntry->IsDirectory() &&
-					read_entry( enginePak, fatEntry, path, 0, &streamed );
-				const bool bufferedOk = fatEntry && !fatEntry->IsDirectory() &&
-					read_entry( enginePak, fatEntry, path, 32 * 1024, &buffered );
+				const bool streamedOk = read_entry( pakFs, path, 0, &streamed );
+				const bool bufferedOk = read_entry( pakFs, path, 32 * 1024, &buffered );
 				printf( "webfile pak read %s streamed=%d bytes=%llu hash=0x%016llx reads=%u\n",
 					path, streamedOk ? 1 : 0, (unsigned long long)streamed.length,
 					(unsigned long long)streamed.hash, streamed.reads );
@@ -586,9 +604,36 @@ int main( int argc, char** argv )
 				check( "pak_entry_length_matches_fat",
 					fatEntry && streamed.length == fatEntry->dataLogicalLengthBytes );
 			}
+
+			// C_PakFs::DirectoryInfo fills a C_DirectoryInfo from the FAT; the
+			// member functions come from C_WebDirectoryInfo.cpp on web. The
+			// verifier compares both the child count and the child size
+			// sequence against the reference index.
+			Sys::C_DirectoryInfo directory;
+			const bool haveDirectory =
+				pakFs.DirectoryInfo( Sys::C_FilePath( kDirectoryFixture ), &directory );
+			uint64_t childHash = 0xcbf29ce484222325ull;
+			if ( haveDirectory )
+			{
+				Sys::FileInfoArr& children = directory.FileInfoArray();
+				for ( S32 c = 0; c < children.Size(); ++c )
+				{
+					U32 bytes = (U32)children[ c ].m_FileSize;
+					for ( int b = 0; b < 4; ++b )
+					{
+						childHash ^= (U8)( ( bytes >> ( 8 * b ) ) & 0xFF );
+						childHash *= 0x100000001b3ull;
+					}
+				}
+			}
+			printf( "webfile pak directory %s ok=%d count=%u children=0x%016llx\n",
+				kDirectoryFixture, haveDirectory ? 1 : 0,
+				haveDirectory ? (unsigned)directory.NumFiles() : 0u,
+				(unsigned long long)childHash );
+			check( "pak_directory", haveDirectory && directory.NumFiles() > 0 );
 		}
 
-		delete enginePak;
+		pakFs.ClosePak();
 		Scheduler::Shutdown();
 		printf( "webfile pak closed\n" );
 	}

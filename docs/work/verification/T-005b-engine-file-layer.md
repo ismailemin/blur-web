@@ -7,11 +7,13 @@ overlay; standalone harness, no game integration.
 ## Patch
 
 `engine/patches/t005b-file-overlay.patch` — SHA-256
-`668599f98dd8f4af053c70433f1412ff521d17cabdc357b28cc0a91690bf6b00`.
-**3 files added, 2 modified**; every added block is inside
-`#if defined(PLATFORM_WEB)`. The two modified files are web-only branches:
-`MT::GetThreadId()` (single context → id 1) and `Security.h`'s pure-specifier
-(`= NULL` → `= 0`, rejected by clang).
+`f9ccd59f46fcb2f4362e381496099ddb3d0bf8d7ec6bd702397c601154967397`.
+**4 files added, 3 modified**; every added block is inside
+`#if defined(PLATFORM_WEB)`. The modified files are web-only branches:
+`MT::GetThreadId()` (single context → id 1), `Security.h`'s pure-specifier
+(`= NULL` → `= 0`, rejected by clang), and one `#if !defined(PLATFORM_WEB)`
+guard around `C_DirectoryInfo`'s PC body in `C_FileSystem.cpp` so the new web TU
+is the only definition in that configuration.
 
 ## Gate
 
@@ -20,26 +22,28 @@ python engine/apply_file_overlay.py --tree _work/engine-file-spike/tree
 python engine/verify_file_overlay.py --fresh
 ```
 
-Result: **PASS** (111.8 s).
+Result: **PASS** (114.0 s).
 
-- 56 objects, wasm **495,593 B**, two builds byte-identical.
-- Harness: **40/40 checks**, 7 explicit refusals, no leaked handles.
+- 59 objects, wasm **506,866 B**, two builds byte-identical.
+- Harness: **43/43 checks**, 7 explicit refusals, no leaked handles.
 - Real `cache/root.pak` (559,652,864 B) read through `Sys::I_File`:
   - header + **3,601** entries field-identical to `probes/range-file`;
   - **3,609** source requests, **314,522** B, largest 65,536,
     `fullFileBytesCopied=0`;
   - whole-file FNV-1a 64 `2f291abb5648e078` on both buffer paths, equal to an
     independent Python hash.
-- Engine PAK consumer path:
-  `Pak::ReadPak(*GetDefaultFileSystem(), "/cache/root.pak", Read, NULL, 32 KiB)`
-  then `C_PakEntryFile::Open` with the T-005c scheduler. All **3,601 FAT
+- Full `C_PakFs` wrapper path:
+  `C_PakFs::OpenPak(GetDefaultFileSystem(), "/cache/root.pak", NULL, 32 KiB)`,
+  `C_PakFs::Open`, `FileExists`, `FileInfo`, `DirectoryInfo`. All **3,601 FAT
   records** equal the reference field by field; two entries decompress through
   codec 4:
   `start_3_frontcamera.cycle` 209 B (`7a5224df7820ffae`) and
-  `la_river_02_lut.dds` 131,200 B (`583354161ab2a52c`), both equal to an
-  independent Python packet decoder and identical under buffered/unbuffered IO.
+  `la_river_02_lut.dds` 131,200 B (`583354161ab2a52c`), each identical buffered
+  and unbuffered and equal to an independent Python packet decoder.
+  `DirectoryInfo("\models\objects\shared\construction")` returns 35 children,
+  child-size FNV `d2d61563f2fc557e`, matching the reference index.
 - PC parity: `C_FileSystem.cpp`, `C_File.cpp` and `Pak.cpp` preprocess
-  identically with and without the patch; new TU compiles `/W4` and emits no PC
+  identically with and without the patch; new TUs compile `/W4` and emit no PC
   symbol.
 - Main suite unaffected: `verify_asset_probe.py --skip-build` 29/29.
 
@@ -53,13 +57,13 @@ verifier stops with `Blocked` and a build hint (no silent skip).
 
 ## Limits
 
-- The full `C_PakFs` wrapper cannot link yet: its virtual `DirectoryInfo` needs
-  `C_DirectoryInfo` from `C_FileSystem.cpp`, which drags `AsyncFile`. The harness
-  calls the two engine functions `C_PakFs` wraps (`ReadPak`,
-  `C_PakEntryFile::Open`); the `I_FileSystem` wrapper itself is not exercised.
+- `C_DirectoryInfo` now has two bodies (PC in `C_FileSystem.cpp`, web in the new
+  TU). They are identical today and exactly one is compiled per configuration,
+  but a PC-side change must be mirrored by hand.
+- No `C_OverlayFs` yet; the mount table and overlay layer are the next consumer.
 - PAK signature verification is a no-op on web (`PakSha1.cpp` returns success
   outside PC/PS3); no authenticity claim.
-- Two entries, not a corpus; level/streamer/save paths untested.
+- Two entries and one directory, not a corpus; level/streamer/save paths untested.
 - No browser evidence: OPFS, worker, COOP/COEP and real `fetch` ranges untested.
 - `pf_open` takes a source id, not a virtual path; the path→source table is
   C++-side by design.

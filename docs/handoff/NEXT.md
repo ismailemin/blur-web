@@ -75,10 +75,10 @@ PC preprocessed TU yalnız log satırlarında farklı, 29/29 TU MSVC. İlk gerç
 P15: `Level.levelphysics` kanıtlandı; native/wasm/Python `queryHash` birebir.
 Kalan: fat/swept-sphere (teker yarıçapı XT), constraint'ler, engine entegrasyonu.
 
-P16: `engine/patches/t005b-file-overlay.patch` (3 yeni dosya + 2 web fix) scheduler
+P16: `engine/patches/t005b-file-overlay.patch` (4 yeni dosya + 3 web fix) scheduler
 overlay'i üstünde `Sys::I_File` + `pf_*` C ABI; `verify_file_overlay.py --fresh`
-PASS (495.593 B, 40/40, `root.pak` 3.601 FAT + 2 dosya codec-4, PC parity).
-Kalan: tam `C_PakFs` sarmalayıcısı (`C_DirectoryInfo`), OPFS/worker.
+PASS (506.866 B, 43/43, tam `C_PakFs`, 3.601 FAT + 2 dosya + 1 dizin, PC parity).
+Kalan: `C_OverlayFs`/mount, OPFS/worker.
 
 ## 4. T-006 — Tarayıcı multiplayer
 
