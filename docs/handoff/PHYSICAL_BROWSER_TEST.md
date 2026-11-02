@@ -60,6 +60,21 @@ Adres: **http://127.0.0.1:8765/**
 2. **Sahne parçasını aç**.
 3. Beklenen: ~11.590 vertex / 7.987 üçgen, 95 doğrudan çizim.
 
+## Headless doğrulama (2 Kasım 2026)
+
+Edge headless + WebGPU ile otomatik kontrol edildi; console tüm presetlerde boş:
+
+| Preset | Sonuç |
+|---|---|
+| River · geniş alan | 359 akış kaydı · 9.343 üçgen |
+| River · küçük alan | 208 üçgen |
+| River · instance prova | instance0 · 726 üçgen · hata 3,87e-5 |
+| River · 22 instance | 22 instance · 0 uyuşmazlık · 13.162 vertex / 10.308 üçgen |
+| River · tüm desteklenen | 36 instance · 20 uyuşmazlık · 17.301 üçgen |
+| Showroom | 7.987 üçgen |
+
+Kanıt: `_work/logs/t003-stageA-browser-*.json` ve aynı adlı `.png` dosyaları.
+
 ## Bilinen sınırlar
 
 - Oynanabilir oyun yok; kamera dışında kontrol/fizik yok.
