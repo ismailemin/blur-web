@@ -1,9 +1,10 @@
 # T-005 — Engine web shim layer and wasm32 compile spike (P14)
 
 **Date:** 2 November 2026
-**Status:** bounded spike, three steps. Step 1 measured the `core/Maths.h` gate,
-step 2 landed the web platform identity, step 3 closed the first *executable*
-engine module: a scheduler job runs under node with `ran=1`.
+**Status:** bounded spike, four steps. Step 1 measured the `core/Maths.h` gate,
+step 2 landed the web platform identity, step 3 produced the first executable
+engine module (one scheduler job), step 4 moved the backend into the engine as
+`jobqueue_web.cpp`, added policy flattening, and ran the T-005c A3/A4 cases.
 No `upstream/`, project source, build file, tool, task card or other analysis
 document was modified; the game and the native build were not run. Everything
 was produced under `_work/engine-web-spike/` and `_work/logs/engine-web-spike/`.
@@ -13,16 +14,17 @@ was produced under `_work/engine-web-spike/` and `_work/logs/engine-web-spike/`.
 clang 24.0.0git, `wasm32-unknown-emscripten`, driven through `em++.py` with the
 bundled Python.
 
-**No engine and no game claim.** One scheduler job on a synthetic policy is not
+**No engine and no game claim.** Four policies on one synthetic job each is not
 the engine running, and no renderer, audio, input or game logic was involved.
-What is claimed: 22 real engine TUs link into one wasm module, and one job goes
-through `AddTask → Flush → jqWorkerLoop → jqExecuteBatch` exactly once with the
-expected result.
+What is claimed: 23 real engine TUs link into one wasm module, and four jobs —
+one per shipped game policy, including the streamer policy — go through
+`AddTask → Flush → jqWorkerLoop → jqExecuteBatch` exactly once each with the
+expected results.
 
 **Policy, explicitly:** the single execution context of T-005c §3. A serial
 cooperative scheduler, not a thread pool. `_Init` sets `jqMaxWorkers = 0`, no
 worker context is created, `Flush` drains on the caller and ignores `bRunJobs`,
-and `MT::Thread`/`Mutex`/`Event` are never asked to block. It is **not** a
+and every blocking wait either cannot be reached or aborts. It is **not** a
 thread-safe implementation and must not be described as one.
 
 ## 1. Scope and method
@@ -36,6 +38,9 @@ Three questions, in order:
 3. **Step 3** — what does it take to *link and run* one job through the
    cooperative path, and which of the remaining symbols have a real web
    behaviour?
+4. **Step 4** — can the backend live in the engine as `jobqueue_web.cpp`, and do
+   the shipped game policies (**including the column-0 streamer policy**) run on
+   a single context without changing PC behaviour?
 
 Method:
 
@@ -64,9 +69,10 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py _work/engine-web-spike/run_spike.py
 
 # the scheduler module alone is built and run by the same script; the exact
-# link line is the 22 objects in SCHED_TUS, then:
-#   em++ <22 .o> -sENVIRONMENT=node -o out/spike_sched.js
+# link line is the 23 objects in SCHED_TUS, then:
+#   em++ <23 .o> -sENVIRONMENT=node -o out/spike_sched.js
 #   node out/spike_sched.js            (twice; output must be identical)
+#   node out/spike_sched.js abort-event | abort-thread | abort-policy
 
 # the overlay alone (writes patched/CHANGES.txt and its sha256)
 & $py _work/engine-web-spike/make_patched_copy.py --web-branch alias
@@ -279,59 +285,139 @@ is a platform implementation, not an approximation:
 | `AtomicIncrement/Decrement` (int, S64) | `__atomic_fetch_add/sub` (returns the *old* value, as the PC path does) |
 | `AtomicGet/Set` (U32, U64) | `__atomic_load_n` / `__atomic_store_n` |
 
-The 8-byte queue CAS is worth its own line because T-005c §6.5 left it open:
-`jqAtomicQueuePtr` is `{ T* Ptr; unsigned Count; }` — `sizeof = 8`,
-`__alignof__ = 4` on wasm32, i.e. **4-aligned**, unlike the 8-aligned x64 layout.
-`probes/probe_queue_cas.cpp` shows the misaligned 8-byte CAS works and returns the
-expected old value, so no atomic-alignment rework is required. Whether emscripten
-lowers it to a real atomic instruction is irrelevant here: this build has one
-context, and the module contains no `-matomics`.
+The 8-byte queue CAS is worth its own line because T-005c §6.5 left it open. The
+real `Scheduler::jqAtomicQueuePtr<U32>` is `{ T* volatile Ptr; unsigned Count; }`
+in a union with `U64 Val64` — **`sizeof = 8`, `__alignof__ = 8` on wasm32**
+(the `U64` member forces 8-alignment), so the 64-bit CAS is naturally aligned and
+no rework is required. `probes/probe_queue_cas.cpp` (which uses the engine's own
+type, not a hand-made copy) prints `sizeof=8 alignof=8`, `cas_ok=1` and shows a
+stale compare fails without touching the pair (`stale_cas_ok=0 ptr_unchanged=1`).
+Whether emscripten lowers it to a real atomic instruction is irrelevant here: the
+module has one context and contains no `-matomics`.
+
+### 6.3 Policy flattening — the column-0 defect, fixed
+
+`GenerateWorkerPolicyOrder` (`jobqueue.cpp:500-533`) sorts policies by the
+caller's column and sets any policy whose value there is `0` to `-1`;
+`jqPopNextBatch` (`jobqueue_kernel.cpp:216-221`) stops at the first `-1`. With
+column 0 as the only execution context, `piStreamer = {0,0,7,7,7,7,7,7}`
+(`SchedulerConfig.cpp:49-50`) can never be popped, so a streamer task is queued
+and never executed, and `Flush` on its group cannot terminate (T-005c §1.5).
+
+`CreatePolicy` now flattens **under `PLATFORM_WEB` only**: it takes the maximum
+across the 8 columns and replicates it, so the policy is column-invariant, the
+relative order between policies is preserved (max is monotone), every policy
+stays enabled, and `Task::iCPUBits != 0` holds. The flattened copy also lives in
+static storage, which removes the caller-lifetime dependency (the game passes a
+stack array — a pre-existing hazard, unchanged for PC).
+
+**If a policy cannot be represented faithfully it aborts, it is never dropped:**
+an all-zero policy means "never run on any context" and is refused with
+`CreatePolicy(N): all 8 columns are 0, …` through the same `jqWebFatal` path.
+Creating more than `JQ_PRIORITY_MAX` policies aborts too instead of
+overrunning the static table.
+
+The PC path is byte-for-byte unchanged (`#else gPolicyList.Policies[iPolicy] =
+pPolicy;`).
+
+**Proof that flattening is load-bearing** — `run_spike.py` links the same closure
+a second time with the *unpatched* `jobqueue.cpp` and runs it. Result: `piMed`,
+`piHigh` and `piOneSPU` execute, then the run aborts with
+
+```text
+[scheduler/web] unsupported: Flush cannot make progress: a queued batch is not
+runnable (a policy disabled by its column 0?)
+```
+
+With the flattening, all four policies execute (§7.1). The progress guard also
+means the defect can never present as a browser hang: `Flush` aborts after eight
+iterations without the queue shrinking.
+
+### 6.4 Blocking waits fail loudly
+
+Two waits are reachable from this closure, and both now abort with a message
+instead of blocking or returning a fake success:
+
+| Wait | Web behaviour | Why |
+| --- | --- | --- |
+| `MT::Event::Wait` | `tlWebUnsupported("MT::Event::Wait")` → stderr + `abort()` | nothing in one context can signal it; emscripten's pthread stubs must not be allowed to report success (T-005c §3.6.1) |
+| `tlWaitForThread` | `tlWebUnsupported("tlWaitForThread")` → stderr + `abort()` | waiting for another context can never complete |
+
+`MT::Mutex::Wait` is left on the POSIX branch: an uncontended lock in a single
+context genuinely succeeds and there is no second thread to deadlock against.
+`MT::Thread::Start/Join` are not exercised at all (§10).
 
 ## 7. What links and runs
 
 ### 7.1 The scheduler module
 
-**22 objects, 86,986 B of wasm object code → `spike_sched.wasm`, 59,140 B at
-`-O2` — the first engine module in this project that both links and executes a
-job.** No symbol is resolved by a stub.
+**23 objects, 90,549 B of wasm object code → `spike_sched.wasm`, 60,721 B at
+`-O2` — an engine scheduler module that links and executes every shipped game
+policy.** No symbol is resolved by a stub; the two spike sources are a platform
+backend and a driver, both marked below.
 
 ```text
-jobqueue.o              jobqueue_kernel.o      jobqueue_task_queue_lf.o
-jobqueue_mem.o          Thread.o               RwLock.o
-CoreMemoryAligned.o     Time.o                 Logger.o
-Format.o                DebugLevel.o           Filter.o
-ThreadContext.o         ConsoleSubscriber.o    SubscriberCommon.o
-SubscriberManager.o     LogManager.o*          Mutex.o*
-Event.o*                platform_net_web.o†    sched_web.o†
-smoke_sched.o†
-  * patched copy of an engine .cpp   † spike source, not engine code
+jobqueue_kernel.o       jobqueue_task_queue_lf.o  jobqueue_mem.o
+Thread.o                RwLock.o                  CoreMemoryAligned.o
+Time.o                  Logger.o                  Format.o
+DebugLevel.o            Filter.o                  ThreadContext.o
+ConsoleSubscriber.o     SubscriberCommon.o        SubscriberManager.o
+jobqueue.o*             jobqueue_web.cpp*         LogManager.o*
+Mutex.o*                Event.o*                  platform_net_web.o†
+web_runtime.o†          smoke_sched.o†
+  * patched copy / new engine file in the overlay   † shim or driver
 ```
 
-Run output (`node`, exit 0, twice, identical):
+`jobqueue_web.cpp` is now an engine-side source (the web sibling of
+`jobqueue_xenon.cpp` + `jobqueue_kernel_xenon.cpp`), not a spike shim: it lives at
+`system/source/scheduler/jobqueue_web.cpp` in the overlay and is selected by
+`TL_PLAT_WEB`. The overlay adds it; upstream is untouched.
+
+Run output (`node`, exit 0, twice, identical — `output_matches=True`):
 
 ```text
-step=policy
+policy count=4
 step=init
 step=start
 step=pool
-step=group
-step=add
-step=flush
-ran=1
-job_result=42
-queued=0 executing=0 poll=1
-workers=0 max_workers=0
+layout queueptr=8/8 paramdata=48 task=72
+A4 workers=0 max_workers=0
+A4 flush_false ran=1 poll=1
+A3 piMed ran=1 observed=1 poll=1
+A3 piHigh ran=1 observed=2 poll=1
+A3 piOneSPU ran=1 observed=3 poll=1
+A3 piStreamer ran=1 observed=4 poll=1
+A3 total=4/4
+queue queued=0 executing=0
 step=shutdown
 ```
 
-That is one job through `CreatePolicy → Init → Start → SetGroupPoolSize →
-CreateGroup → AddTask → Flush(Poll) → DestroyGroup → Shutdown`. The job body
-writes `in + 1`, `in = 41`, so `job_result=42`; `ran=1` proves it executed
-exactly once; `workers=0`, `max_workers=0` and `queued/executing = 0/0` are the
-single-context contract, and `poll=1` is `Poll()` satisfied afterwards.
+**A3 — every shipped game policy runs exactly once.** `piMed {7,7,7,…}`,
+`piHigh {10,…}`, `piOneSPU {7,7,7,0,0,0,0,0}` and `piStreamer {0,0,7,7,7,7,7,7}`
+each get one task in their own group; `ran=1` is the run count, `observed=i+1` is
+the value the job body wrote back (so the right task ran), `poll=1` is `Poll()`
+satisfied afterwards. `piStreamer` is the column-0 regression case: without
+flattening it aborts (§6.3).
 
-Three things the run exposed, all recorded because they are engine facts and not
-spike bugs:
+**A4 — serial layout.** `GetNumWorkers()=0`, `jqGetMaxWorkers()=0`,
+`Flush(group,false)` still runs its task (the documented `bRunJobs` deviation),
+and the queue layout the backend relies on is asserted in-process:
+`jqAtomicQueuePtr<U32>` = 8/8, `Task::ParamData` = 48, `sizeof(Task)` = 72. If any
+of those move, the smoke fails rather than silently using a different layout.
+
+**Fail-loud cases**, each a separate process that must die with a message
+(`run_spike.py` runs all three and checks exit code + message):
+
+| mode | call | stderr |
+| --- | --- | --- |
+| `abort-event` | `MT::SpuEvent::Wait(1)` | `MT::Event::Wait` |
+| `abort-thread` | `tlWaitForThread(0)` | `tlWaitForThread` |
+| `abort-policy` | `CreatePolicy({0,0,0,0,0,0,0,0})` | `all 8 columns are 0` |
+
+All three exit 1 and the expected message is present; nothing hangs.
+
+Three things the earlier runs exposed, kept because they are engine facts and not
+spike bugs (the driver now follows the game's order):
 
 1. **Call order matters.** The game calls `Init()`, `Start()` and *then*
    `SetGroupPoolSize(...)` (`SchedulerConfig.cpp:56-60`). A driver that creates a
@@ -343,7 +429,7 @@ spike bugs:
    is not a fault by itself. `_jqStop` frees it and asserts `jqNWorkers == 0`.
 3. **`CFG_SPEED` disables `BIZ_ASSERT`** (`BizAssert.h:146-147`), so the
    `iCPUBits != 0` guard in `AddTaskToQueue` is inert in this build. The smoke
-   does not rely on it: policy `{5,5,5,5,5,5,5,5}` yields `iCPUBits = 0xFF`.
+   does not rely on it: each flattened policy yields a non-zero mask.
 
 ### 7.2 The two earlier modules (unchanged)
 
@@ -357,79 +443,73 @@ most of the maths is inline header code and 11,413 B is not an engine size.
 
 ## 8. Remaining blockers, ordered by cost
 
-1. **Policy flattening is still not implemented** (T-005c §3.5). With one context
-   the game table's `piStreamer = {0,0,7,7,7,7,7,7}` is disabled by
-   `GenerateWorkerPolicyOrder` (column 0), so a streamer task would never run and
-   `Flush` on that group would not terminate. The fix belongs in `CreatePolicy`
-   (`jobqueue.cpp:485`), which is shared code. **The smoke uses a column-uniform
-   policy and therefore does not exercise this defect** — it is the first thing
-   `jobqueue_web.cpp` must fix, and T-005c's A3 test exists for it.
-2. **The dead POSIX branches (5 sites).** `Event.cpp`/`Mutex.cpp` are already
-   fixed in the overlay; `ArterySync.h` `ArteryThreadHandle` for
-   `ARTERY_SYNC_PTHREADS` (`IoFile.cpp`), `Semaphore.cpp:128`
-   `-Wc++11-narrowing`, `ThreadLocalStorage.h:111` `pthread_key_t` are not.
+1. **No real call site has run.** The smoke calls `AddTask`/`Flush` directly; the
+   150 engine call sites (streaming, physics, audio) and their group/policy
+   interleavings are untouched. T-005c's A2 (group dependency + task accounting)
+   and A5-A8 (fixed-step parity, frame-rate independence, browser) remain open.
+   This is the largest remaining risk *inside* the scheduler.
+2. **The dead POSIX branches (5 sites).** `Event.cpp`/`Mutex.cpp` are fixed in the
+   overlay; `ArterySync.h` `ArteryThreadHandle` for `ARTERY_SYNC_PTHREADS`
+   (`IoFile.cpp`), `Semaphore.cpp:128` `-Wc++11-narrowing`,
+   `ThreadLocalStorage.h:111` `pthread_key_t` are not. Each is a small explicit
+   fix, none is a design decision.
 3. **The network stack** (`Address.cpp`, 14 errors, `struct in_addr` incomplete).
    Needed only for real networking; the logger no longer depends on it.
 4. **`_vsnprintf_s`** (`BizAssert.cpp:66`, 1 error). MSVC's secure variant has a
    different truncation contract than `vsnprintf`; a name alias would be a silent
    semantic change, so it is 1 wrapper or 1 call-site branch.
 5. **The Xenon kernel TUs** (13 errors) — deliberately not ported, replaced by
-   `jobqueue_web.h` + `shims/sched_web.cpp`.
+   `jobqueue_web.h` + `jobqueue_web.cpp`.
 6. **DX11 / FX11** — untouched. T-005a's inventory stands (442 D3D11/FX11 matches
    in `display`, 43 in `display2`, 33 in `render`); the only blocker whose cost is
    not bounded.
 
 ## 9. The single next smallest step
 
-**Turn `shims/sched_web.cpp` into a real `jobqueue_web.cpp` + `jobqueue_web_kernel.cpp`
-inside `upstream/`, with policy flattening, and prove it with the A2/A3/A4 tests
-of T-005c §5.2.**
+**Land the overlay as engine source in a task branch, then run a real call site.**
+Concretely, in `task/T-005-...`:
 
-Concretely:
+1. Apply the overlay diff to `upstream/`: the new
+   `system/source/scheduler/jobqueue_web.cpp`, the `jobqueue.h` selection branch,
+   and the `#if defined(PLATFORM_WEB)` block in `CreatePolicy`. Keep `#else`
+   branches byte-identical; the native build must stay untouched (`/W4`,
+   `/permissive`, 14/14 CTest).
+2. Move the probe into `probes/scheduler-probe/` with a native target, so A3/A4
+   run on both MSVC and wasm32 — the native run is what proves the flattening
+   block did not change PC behaviour.
+3. Then take the first *real* consumer: `probes/scheduler-probe` plus one engine
+   caller. `misc_shared/archive/serialiser.cpp` or
+   `misc_shared/Compression/Inflate.cpp` are the cheapest, because they are the
+   T-005c A1 gate and already compile.
 
-1. Move the two spike files into the engine next to `jobqueue_xenon.cpp`, under
-   `TL_PLAT_WEB`, keeping the same contract (`jqMaxWorkers = 0`, `Flush` drains,
-   `bRunJobs` ignored, fence dependencies abort).
-2. Put the flattening in `CreatePolicy`: for each policy take the maximum of its
-   8 columns and replicate it, so column 0 cannot disable a policy and
-   `iCPUBits != 0` holds.
-3. Extend `probes/smoke_sched.cpp` with the A3 case — one task per game policy,
-   including `{0,0,7,7,7,7,7,7}` — and the A4 assertions (`GetNumWorkers() == 0`,
-   `Flush(group,false)` completes and runs the task).
+Acceptance: `run_spike.py` stays green, the native probe prints the same A3/A4
+lines, and one engine caller's task executes through `Flush`.
 
-Acceptance, with the harness that already exists:
-
-```powershell
-& $py _work/engine-web-spike/run_spike.py
-# expect: scheduler link  link=ok output_matches=True
-# and   : ran=1 / job_result=42 / queued=0 executing=0 poll=1 / workers=0
-#         plus one success line per policy, including the streamer policy
-```
-
-Why this one: it is the difference between *a* scheduler spike and *the* scheduler
-the engine can call, and it retires the single most likely silent failure in the
-slice (a streamer `Flush` that never terminates). Everything else on the blocker
-list is either outside the scheduler (network, DX11) or costs one TU.
+Why this one: the scheduling contract itself is now demonstrated; what is not yet
+demonstrated is that the *engine's own* code paths reach it unchanged. That is the
+remaining distance to "T-005c implemented", and the native side is the cheapest
+way to prove the PC build did not move.
 
 ## 10. What this does not prove
 
-- **No browser, GPU, audio, input, physics or game logic.** One job on a
-  synthetic policy is the whole runtime evidence. No screenshot exists.
-- **Not thread-safe, not parallel.** Nothing exercised two contexts; `MT::Mutex`,
-  `MT::Event` and `MT::Thread` were linked but never contended or joined. Whether
-  emscripten's thread stubs without `-pthread` make `MT::Thread::Start/Join`
-  silently no-op was not tested — a live risk for the "must assert, never
-  silently pass" rule.
-- **The real game policy table was not used.** The smoke's policy is
-  column-uniform on purpose, so the column-0 defect (§8.1) is untested.
-- Only the 22 scheduler objects and the three sample modules were compiled to
+- **No browser, GPU, audio, input, physics or game logic.** Four jobs on four
+  synthetic policies are the whole runtime evidence. No screenshot exists.
+- **Not thread-safe, not parallel.** Nothing exercised two contexts; `MT::Mutex`
+  was linked but never contended, and `MT::Thread::Start/Join` were not called at
+  all. Whether emscripten's thread stubs without `-pthread` make
+  `MT::Thread::Start/Join` silently no-op is still untested — `MT::Event::Wait`
+  and `tlWaitForThread` are the two waits that now abort (§6.4), not the thread
+  entry path.
+- **The game's own policy values, not its call sites.** The four policies are
+  copied verbatim from `SchedulerConfig.cpp:34-50`, but no engine caller was run,
+  and no group dependency was exercised (T-005c A2).
+- Only the 23 scheduler objects and the three sample modules were compiled to
   objects; the rest of §3 was syntax-checked only, and `-fsyntax-only` hides
   codegen-level problems (that is how the `snPause` PPC trap survived step 2).
-- No engine size claim: 59,140 B includes the emscripten runtime, libc and libc++
+- No engine size claim: 60,721 B includes the emscripten runtime, libc and libc++
   and is dominated by `LogManager`/`Logger`/`Format`.
 - The overlay proves the edits are *sufficient* for clang; it does not prove the
-  MSVC native build accepts them (`/W4`, `/permissive`). That must be checked in
-  the phase that owns the source.
+  MSVC native build accepts them (`/W4`, `/permissive`) — that is the next step.
 - Error counts are front-end diagnostics, not defect counts.
 
 ## 11. Evidence index
@@ -438,18 +518,20 @@ All hashes are SHA-256 prefixes of files produced by this session.
 
 | Path | Size | SHA-256 (16) | Content |
 | --- | --- | --- | --- |
-| `_work/engine-web-spike/out/spike_sched.wasm` | 59,140 | `132EF3BA0FB9FD05` | **the scheduler module; 22 engine objects** |
+| `_work/engine-web-spike/out/spike_sched.wasm` | 60,721 | `FACFD8E33DDE175E` | **the scheduler module; 23 objects, 4 game policies** |
 | `_work/engine-web-spike/out/spike_sched.js` | 64,079 | `DACEBA65F4FF30C8` | node loader for the above |
 | `_work/engine-web-spike/out/spike_maths.wasm` | 11,413 | `4DFB1FD8A56D22E9` | maths + `Matrix.cpp` sample |
 | `_work/engine-web-spike/out/spike_time.wasm` | 10,397 | `34288F7DBF51E7ED` | `Time.cpp` + `endian.cpp` sample |
-| `_work/engine-web-spike/shims/sched_web.cpp` | 5,964 | `AF923B3397D3CA26` | single-context scheduler backend (spike) |
+| `_work/engine-web-spike/shims/jobqueue_web.cpp` | 6,633 | `B01F8EF97DE9FF95` | the backend, copied to `system/source/scheduler/jobqueue_web.cpp` |
 | `_work/engine-web-spike/shims/platform_net_web.cpp` | 1,124 | `8C43A5177ECA2AAC` | `Network::GetHostName()` → `"web-local"` |
 | `_work/engine-web-spike/shims/tl_thread_web.h` | 4,318 | `5CA770AD7E63775D` | `TL_PLAT_WEB` type layer + fail-loud stubs |
-| `_work/engine-web-spike/shims/jobqueue_web.h` | 2,309 | `C9EEE1F93E1FBA51` | scheduler type layer |
-| `_work/engine-web-spike/patched/CHANGES.txt` | 15,356 | `761580260097649B` | the authoritative edit manifest |
-| `_work/logs/engine-web-spike/summary.json` | 13,770 | `72F97E019D19D766` | all 9 sets, three modules, expected output |
-| `_work/engine-web-spike/logs/spike_sched.run{1,2}.log` | 172 each | `F3174592FE2146F2` | the two identical runs (exit 0) |
-| `_work/engine-web-spike/logs/schedlink__*.obj.log` | 22 | — | one object compile per scheduler TU |
-| `_work/engine-web-spike/probes/probe_queue_cas.cpp` | 999 | `3FC27ED1CD265A06` | 8-byte CAS on the 4-aligned queue pointer |
-| `_work/engine-web-spike/probes/smoke_sched.cpp` | 3,146 | `0B696F61497D9461` | the driver, with `stop after step N` |
-| `_work/engine-web-spike/run_spike.py` | 12,615 | `21B954D029B941A5` | one-command reproduction |
+| `_work/engine-web-spike/shims/jobqueue_web.h` | 2,309 | `C9EEE1F93E1FBA51` | scheduler type layer + `jqWebFatal` |
+| `_work/engine-web-spike/patched/CHANGES.txt` | 18,724 | `12368CF00900B4DC` | the authoritative edit manifest |
+| `_work/logs/engine-web-spike/summary.json` | 16,247 | `E2411B04B8CAB2E3` | 9 sets, 3 modules, A3/A4, abort cases, flatten control |
+| `_work/engine-web-spike/logs/spike_sched.run{1,2}.log` | — | — | the two identical runs (exit 0) |
+| `_work/engine-web-spike/logs/spike_sched.abort-*.log` | 3 | — | the fail-loud cases (exit 1 + message) |
+| `_work/engine-web-spike/logs/flatten_control.run.log` | — | — | unpatched `jobqueue.cpp` → "cannot make progress" |
+| `_work/engine-web-spike/logs/schedlink__*.obj.log` | 23 | — | one object compile per scheduler TU |
+| `_work/engine-web-spike/probes/probe_queue_cas.cpp` | 1,210 | `2F1316B987622CDE` | real `jqAtomicQueuePtr`: 8/8, CAS + stale CAS |
+| `_work/engine-web-spike/probes/smoke_sched.cpp` | 5,738 | `25BD2AAAF11066DA` | A3/A4 driver + three abort modes |
+| `_work/engine-web-spike/run_spike.py` | 16,683 | `E902D6F31E3BF1ED` | one-command reproduction |
