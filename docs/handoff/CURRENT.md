@@ -3,7 +3,7 @@
 **Güncelleme:** 2 Kasım 2026
 **Aşama:** Aşama 4 sonu (gerçek asset/önizleme), Aşama 5 (tek oyunculu yarış) başlamadı.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
-**Son commit'ler:** T-005c A2 `194d0c4`, engine overlay `a80cfbe`, T-005d `a881257`, T-003 Stage A `a217f33`, T-004 `6b5d31a`.
+**Son commit'ler:** Gravity wasm `3965a7c`, C_OverlayFs `e13f54b`, PAK consumer `c1f58eb`, T-005c A2 `194d0c4`, engine overlay `a80cfbe`, T-005d oracle `a881257`.
 
 ## Şu an neredeyiz?
 
