@@ -46,11 +46,13 @@ Ayrıntı: `docs/work/analysis/t005-streaming-design.md`.
 **Engine dosya katmanı (2 Kasım, P16):** `engine/patches/t005b-file-overlay.patch`
 (3 yeni dosya, 0 değişiklik) scheduler overlay'inin üstüne uygulanıyor.
 `Sys::C_WebFile`/`C_WebFileSystem` + `pf_*` C ABI, `PLATFORM_WEB` altında.
-`verify_file_overlay.py --fresh` **PASS**: 373.202 B wasm, 32/32 kontrol,
-gerçek `root.pak` 3.601 giriş alan alan `probes/range-file` ile aynı, tam dosya
-FNV-1a 64 `2f291abb5648e078`, PC TU parity. Kanıt:
-`docs/work/verification/T-005b-engine-file-layer.md`. OPFS/worker ve gerçek
-`C_PakFs::OpenPak` tüketicisi henüz yok.
+`verify_file_overlay.py --fresh` **PASS**: 495.593 B wasm, 56 nesne, 40/40
+kontrol; gerçek `root.pak` 3.601 FAT kaydı alan alan `probes/range-file` ile
+aynı; `Pak::ReadPak` + `C_PakEntryFile::Open` ile iki dosya (209 B, 131.200 B)
+codec-4 üzerinden açıldı, hash'ler bağımsız Python decoder ile aynı; tam dosya
+FNV-1a 64 `2f291abb5648e078`; PC TU parity. Kanıt:
+`docs/work/verification/T-005b-engine-file-layer.md`. Tam `C_PakFs` sarmalayıcısı
+ve OPFS/worker henüz yok.
 
 ### T-005c — Scheduler ve zaman adımı
 - Windows thread/job queue yerine Web Worker/Atomics veya tek iş parçacığı

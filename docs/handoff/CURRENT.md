@@ -94,11 +94,13 @@ altına `platform/file` C ABI ve OPFS/blob/http range-source registry. İlk dili
 `docs/work/analysis/t005-streaming-design.md`.
 
 **T-005b engine dosya katmanı (P16):** `engine/patches/t005b-file-overlay.patch`
-scheduler overlay'inin üstüne 3 yeni dosya ekliyor (`C_WebFile`/`C_WebFileSystem`
-+ `pf_*`). `verify_file_overlay.py --fresh` **PASS**: 373.202 B, 32/32 kontrol,
-`root.pak` 3.601 giriş `probes/range-file` ile aynı, FNV-1a 64
-`2f291abb5648e078`, PC parity. Kalan: OPFS/worker, gerçek `C_PakFs::OpenPak`
-tüketicisi. Kanıt: `docs/work/verification/T-005b-engine-file-layer.md`.
+scheduler overlay'inin üstüne 3 yeni dosya + 2 web-only düzeltme ekliyor
+(`C_WebFile`/`C_WebFileSystem` + `pf_*`). `verify_file_overlay.py --fresh`
+**PASS**: 495.593 B, 56 nesne, 40/40; `root.pak` 3.601 FAT kaydı referansla aynı;
+`Pak::ReadPak` + `C_PakEntryFile::Open` iki dosyayı (209 B, 131.200 B) açtı,
+hash'ler bağımsız Python ile aynı; FNV-1a 64 `2f291abb5648e078`; PC parity.
+Kalan: tam `C_PakFs` sarmalayıcısı (`C_DirectoryInfo`), OPFS/worker. Kanıt:
+`docs/work/verification/T-005b-engine-file-layer.md`.
 
 **T-005d fizibilitesi:** Gravity + RacingPhysics ~70 kLOC; T-005a gate'lerinden
 sonra her RacingPhysics simülasyon TU'su 18 hata, Gravity scheduler module

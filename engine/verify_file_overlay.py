@@ -8,8 +8,8 @@ Gates, in order:
    1. the tree is a fresh copy of upstream/BlurRebuilt (robocopy, no .git);
    2. engine/apply_file_overlay.py applies the scheduler patch and then the file
       patch, refusing a dirty upstream and any tree inside upstream/;
-   3. the file patch adds files and modifies none, and `git apply --check`
-      accepts it against upstream (the PC-parity statement at diff level);
+   3. the file patch adds exactly three files and carries exactly two named
+      one-block fixes, and `git apply --check` accepts it against upstream;
    4. the wasm32 harness builds from that tree twice; both modules must have the
       same SHA-256 (deterministic build);
    5. the harness runs twice; stdout must be identical, exit code 0, every check
@@ -19,9 +19,13 @@ Gates, in order:
       window, same request sizes, no coalescing);
    7. both whole-file FNV-1a 64 hashes (direct and buffered Underflow paths)
       must equal an independent Python hash of the same 533 MiB file;
-   8. (unless --skip-native) MSVC PC parity: C_FileSystem.cpp and C_File.cpp
-      preprocess identically *with* and *without* the three added files, and the
-      new C_WebFile.cpp compiles at /W4 in the PC configuration with no warning
+   8. the engine's own PAK reader (`Pak::ReadPak`, `C_PakIoMediator`,
+      `C_PakEntryFile`, packet-zlib) must enumerate the same 3,601 FAT records
+      field by field, and two entries must decompress to bytes whose FNV-1a 64
+      matches an independent Python decoder of the stored packets;
+   9. (unless --skip-native) MSVC PC parity: C_FileSystem.cpp, C_File.cpp and
+      Pak.cpp preprocess identically *with* and *without* the patch, and the new
+      C_WebFile.cpp compiles at /W4 in the PC configuration with no warning
       attributed to it and no C_WebFile symbol in the object.
 
 Exit status: 0 pass, 1 fail, 2 blocked (missing fixture/tool, nothing claimed).
@@ -35,9 +39,11 @@ import hashlib
 import json
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import time
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,7 +71,7 @@ VCVARS_CANDIDATES = [
     r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat",
 ]
 
-HARNESS_FILES = ["smoke_webfile.cpp", "web_file_source.js", "pre.js"]
+HARNESS_FILES = ["smoke_webfile.cpp", "web_file_source.js", "pre.js", "msvc_crt_web.h"]
 SHIM_FILES = ["web_platform.h", "crt_compat.h", "web_runtime.cpp", "platform_net_web.cpp"]
 
 FLAGS = [
@@ -76,6 +82,9 @@ FLAGS = [
     # The probe parsers report validation failures by throwing and the harness
     # catches them; the engine file layer itself throws nothing.
     "-fexceptions",
+    # Build-only MSVC CRT mapping (_vsnprintf_s) for BizAssert.cpp; keep the
+    # T-005c platform prelude second so it wins on the platform identity.
+    "-include", str(HARNESS / "msvc_crt_web.h"),
     "-include", str(SHIMS / "web_platform.h"),
 ]
 
@@ -84,12 +93,24 @@ LINK_FLAGS = [
     "-sINITIAL_MEMORY=16777216", "-sMAXIMUM_MEMORY=268435456",
     "-sEXIT_RUNTIME=1", "-sNODERAWFS=0",
     "-sDISABLE_EXCEPTION_CATCHING=0",
+    # The packet-zlib inflate task allocates two 64 KiB buffers with alloca, so
+    # the 64 KiB default stack cannot run it. A build configuration, not engine
+    # behaviour; it sizes the module, not the file layer.
+    "-sSTACK_SIZE=2097152",
     "--pre-js", str(HARNESS / "pre.js"),
     "--js-library", str(HARNESS / "web_file_source.js"),
 ]
 
-# File layer + the logging closure FileOpenError/FileRwError already need (the
-# same closure T-005c proved links for wasm32) + the two platform shims.
+LOGICALFS = "code/mercury/library/util/logicalfs"
+TOOLS_SHARED = "code/mercury/library/util/Tools_shared"
+ZLIB = "code/vendor/zlib/current_mercury"
+ZLIB_C = ["adler32", "crc32", "deflate", "inflate", "inffast", "inftrees",
+          "trees", "zutil"]
+
+# Layer 1: the file layer. Layer 2: the logging closure FileOpenError /
+# FileRwError need (T-005c). Layer 3: the T-005c single-context scheduler, which
+# the PAK packet codec runs its inflate work on. Layer 4: the engine PAK reader
+# (logicalfs) - the first real consumer of the file layer.
 TUS = [
     (f"{COMMON}/system/source/serialise/C_WebFile.cpp", "system"),
     (f"{COMMON}/system/source/serialise/FileSystemGlobals.cpp", "system"),
@@ -107,9 +128,36 @@ TUS = [
     (f"{COMMON}/core/source/threads/RwLock.cpp", "core"),
     (f"{COMMON}/core/source/threads/Mutex.cpp", "core"),
     (f"{COMMON}/core/source/threads/Event.cpp", "core"),
+    (f"{COMMON}/core/source/allocators/CoreMemoryAligned.cpp", "core"),
+    (f"{COMMON}/core/source/utility/endian.cpp", "core"),
+    (f"{COMMON}/core/source/utility/BizAssert.cpp", "core"),
+    (f"{COMMON}/system/source/serialise/FilePath.cpp", "system"),
+    (f"{COMMON}/system/source/serialise/FsPerfLogger.cpp", "system"),
+    (f"{COMMON}/system/source/debug/Debug.cpp", "system"),
+    (f"{COMMON}/system/source/debug/Variables.cpp", "system"),
+    (f"{COMMON}/system/source/scheduler/jobqueue.cpp", "system"),
+    (f"{COMMON}/system/source/scheduler/jobqueue_kernel.cpp", "system"),
+    (f"{COMMON}/system/source/scheduler/jobqueue_task_queue_lf.cpp", "system"),
+    (f"{COMMON}/system/source/scheduler/jobqueue_mem.cpp", "system"),
+    (f"{COMMON}/system/source/scheduler/jobqueue_web.cpp", "system"),
+    (f"{LOGICALFS}/source/pakfs/PakGlobals.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/Pak.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakDefinitions.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakUtil.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakSha1.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakIoMediator.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakFile.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakRead.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakEntryFile.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakAtomicJobList.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakCompressPacketZLib.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakCompressZLib.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakCompressRaw.cpp", "logicalfs"),
+    (f"{LOGICALFS}/source/pakfs/impl/PakBuildHelpers.cpp", "logicalfs"),
+    (f"{COMMON}/system/source/serialise/C_MemoryStream.cpp", "system"),
     ("engine/harness/t005c/platform_net_web.cpp", "system"),
     ("engine/harness/t005c/web_runtime.cpp", "core"),
-    ("engine/harness/t005b/smoke_webfile.cpp", "system"),
+    ("engine/harness/t005b/smoke_webfile.cpp", "harness"),
 ]
 
 PROBE_TUS = ["range_file.cpp", "pak_index_range.cpp"]
@@ -127,6 +175,10 @@ EXPECTED_CHECKS = [
     "unmounted_open_refused", "write_open_refused",
     "fileinfo_size", "fileinfo_type", "exists_via_filesystem",
     "directory_info_refused",
+    # The engine PAK reader (first real consumer) over the file layer.
+    "pak_policy", "pak_open", "pak_entries",
+    "pak_fat_lookup", "pak_entry_read_streamed", "pak_entry_read_buffered",
+    "pak_entry_paths_agree", "pak_entry_length_matches_fat",
 ]
 
 # Each refusal the provider must emit, with its message marker.
@@ -207,14 +259,51 @@ def copy_upstream(tree: Path) -> None:
 
 def structural_check() -> dict:
     files = ao.parse_patch(FILE_PATCH.read_text(encoding="utf-8"))
-    modified = [f["rel"] for f in files if not f["is_new"]]
-    if modified:
-        raise Failed("the file patch modifies existing upstream files: "
-                     + ", ".join(modified))
+    added = [f["rel"] for f in files if f["is_new"]]
+    modified = {f["rel"]: f for f in files if not f["is_new"]}
+
+    expected_added = {
+        f"{COMMON}/system/include/system/serialise/PlatformFileWeb.h",
+        f"{COMMON}/system/include/system/serialise/C_WebFile.h",
+        f"{COMMON}/system/source/serialise/C_WebFile.cpp",
+    }
+    if set(added) != expected_added:
+        raise Failed(f"unexpected added files: {sorted(set(added) ^ expected_added)}")
+
+    # The two modifications are grammar/platform fixes clang needs and MSVC does
+    # not; both are checked token by token so the patch cannot grow quietly.
+    expectations = {
+        f"{COMMON}/system/include/System/Misc/Security.h": {
+            "removed": 1, "added": 1,
+            "must_remove": ["= NULL;"], "must_add": ["= 0;"],
+        },
+        f"{COMMON}/core/include/core/threads/misc.h": {
+            "removed": 0, "added": 9,
+            "must_remove": [], "must_add": ["return (ThreadId)1;",
+                                            "#if PLATFORM_WEB"],
+        },
+    }
+    if set(modified) != set(expectations):
+        raise Failed("the patch modifies unexpected files: "
+                     + ", ".join(sorted(set(modified) ^ set(expectations))))
+    for rel, want in expectations.items():
+        hunk_lines = [(t, c) for h in modified[rel]["hunks"] for t, c in h["lines"]]
+        removed = [c for t, c in hunk_lines if t == "-"]
+        kept = [c for t, c in hunk_lines if t == "+"]
+        if len(removed) != want["removed"] or len(kept) != want["added"]:
+            raise Failed(f"{rel}: expected -{want['removed']}/+{want['added']} lines, "
+                         f"patch has -{len(removed)}/+{len(kept)}")
+        for needle in want["must_remove"]:
+            if not any(needle in line for line in removed):
+                raise Failed(f"{rel}: the removed lines do not contain {needle!r}")
+        for needle in want["must_add"]:
+            if not any(needle in line for line in kept):
+                raise Failed(f"{rel}: the added lines do not contain {needle!r}")
+
     p = run(["git", "apply", "-p1", "--check", str(FILE_PATCH)], cwd=UP)
     if p.returncode != 0:
         raise Failed(f"git apply --check rejected the patch: {(p.stderr or p.stdout).strip()}")
-    return {"files_added": [f["rel"] for f in files], "files_modified": []}
+    return {"files_added": sorted(added), "files_modified": sorted(modified)}
 
 
 def includes(lib: str) -> list[str]:
@@ -222,6 +311,18 @@ def includes(lib: str) -> list[str]:
     if lib == "core":
         dirs = [common / "core/include", common / "core",
                 common / "system/include", common / "btl/include"]
+    elif lib in ("logicalfs", "harness"):
+        logicalfs = TREE / LOGICALFS
+        dirs = [common / "system", common / "system/include",
+                common / "system/source/scheduler", common / "core",
+                common / "core/include", common / "btl/include",
+                common / "misc_shared", common / "misc_shared/include",
+                common / "xt2/include",
+                logicalfs, logicalfs / "include",
+                TREE / TOOLS_SHARED, TREE / TOOLS_SHARED / "include",
+                TREE / ZLIB]
+        if lib == "harness":
+            dirs.append(PROBE_SRC)
     else:
         dirs = [common / "system", common / "system/include",
                 common / "system/source/scheduler", common / "core",
@@ -257,6 +358,20 @@ def build(tag: str) -> Path:
         if p.returncode:
             raise Failed(f"compile failed: probes/range-file/src/{name}\n"
                          + ((p.stdout or "") + (p.stderr or ""))[-3000:])
+        objs.append(obj)
+
+    # Vocab zlib, as C, from the applied tree (upstream bytes, unmodified).
+    emcc = EM.with_name("emcc.py")
+    for name in ZLIB_C:
+        obj = objdir / f"zlib_{name}.o"
+        p = run([sys.executable, emcc, "-DBUILD_CONFIG_SPEED", "-DPLATFORM_WEB", "-O2",
+                 "-Wno-nonportable-include-path", f"-I{TREE / ZLIB}",
+                 f"-I{TREE / COMMON}/core/include",
+                 "-c", TREE / ZLIB / f"{name}.c", "-o", obj],
+                log=LOGS / f"{tag}__zlib_{name}.log")
+        if p.returncode:
+            raise Failed(f"compile failed: {ZLIB}/{name}.c\n"
+                         + ((p.stdout or "") + (p.stderr or ""))[-2000:])
         objs.append(obj)
 
     js = OUT / f"webfile_harness_{tag}.js"
@@ -334,6 +449,36 @@ def run_harness(js: Path, tag: str) -> dict:
     if m:
         counters = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", m.group(1))}
 
+    # --- the engine PAK reader (first real consumer) ----------------------
+    pak_header = {}
+    m = re.search(r"webfile pakheader (.*)", out)
+    if m:
+        pak_header = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", m.group(1))}
+    else:
+        raise Failed("the harness printed no engine PAK header line")
+
+    fat = []
+    for line in out.splitlines():
+        if not line.startswith("webfile pakentry "):
+            continue
+        fields = line[len("webfile pakentry "):].split("|", 7)
+        if len(fields) != 8:
+            raise Failed(f"unparsable FAT line: {line[:120]}")
+        fat.append({
+            "index": int(fields[0]), "pathCrc": int(fields[1]),
+            "logicalBytes": int(fields[2]), "physicalBytes": fields[3],
+            "dataOffset": fields[4], "parentIndex": fields[5],
+            "isDirectory": fields[6] == "1", "path": fields[7],
+        })
+
+    entry_reads: dict[str, dict[str, dict]] = {}
+    for m in re.finditer(r"webfile pak read (\S+) (streamed|buffered)=(\d+) "
+                         r"bytes=(\d+) hash=0x([0-9a-f]{16}) reads=(\d+)", out):
+        entry_reads.setdefault(m.group(1), {})[m.group(2)] = {
+            "ok": int(m.group(3)), "bytes": int(m.group(4)),
+            "hash": m.group(5), "reads": int(m.group(6)),
+        }
+
     stderr = runs[0].stderr or ""
     refusals = {}
     for marker in REFUSAL_MARKERS:
@@ -359,6 +504,7 @@ def run_harness(js: Path, tag: str) -> dict:
         "checks": checks, "index": index, "stats": stats, "hashes": hashes,
         "counters": counters, "provider_summary": summary_fields,
         "provider_refusals": refusals, "stdout_bytes": len(out),
+        "pak_header": pak_header, "pak_fat": fat, "pak_entry_reads": entry_reads,
     }
 
 
@@ -394,13 +540,141 @@ def compare_reference(result: dict) -> dict:
                          f"vs reference {ref_stats[key]}")
         if key != "fullFileBytesCopied" and engine_stats[key] != result["stats"]["small_buffer"][key]:
             raise Failed(f"range statistic {key} differs between buffer sizes")
+
+    # --- the engine's own PAK reader against the same reference -------------
+    # Header fields the engine exposes through Pak::C_PakFile.
+    engine_header = result["pak_header"]
+    for engine_key, ref_key in (("version", "version"), ("sector", "sectorSize"),
+                                ("codec", "codec"), ("fat", "fatEntryType"),
+                                ("entries", "fileCount"),
+                                ("strings", "stringTableBytes")):
+        if engine_header.get(engine_key) != reference["header"][ref_key]:
+            raise Failed(f"engine PAK header {engine_key}={engine_header.get(engine_key)} "
+                         f"!= reference {ref_key}={reference['header'][ref_key]}")
+
+    # Every FAT record, field by field. This is the engine's v2 on-disk ->
+    # in-memory conversion (40-byte stride to the 32-byte C_PakFatEntry, parent
+    # offsets rescaled, stored sizes kept separately) checked against the
+    # independent parser.
+    fat = result["pak_fat"]
+    if len(fat) != len(reference["entries"]):
+        raise Failed(f"engine FAT has {len(fat)} records, reference "
+                     f"{len(reference['entries'])}")
+    for expected, actual in zip(reference["entries"], fat):
+        if actual["index"] != expected["index"] or actual["path"] != expected["path"]:
+            raise Failed(f"FAT record {expected['index']} identifies a different path: "
+                         f"{actual['path']!r} vs {expected['path']!r}")
+        if actual["pathCrc"] != expected["pathCrc"]:
+            raise Failed(f"FAT record {expected['index']} pathCrc {actual['pathCrc']} "
+                         f"!= {expected['pathCrc']}")
+        if actual["logicalBytes"] != expected["logicalBytes"]:
+            raise Failed(f"FAT record {expected['index']} logicalBytes "
+                         f"{actual['logicalBytes']} != {expected['logicalBytes']}")
+        if actual["isDirectory"] != expected["isDirectory"]:
+            raise Failed(f"FAT record {expected['index']} directory flag differs")
+        for field in ("physicalBytes", "dataOffset", "parentIndex"):
+            want = expected[field]
+            got = actual[field]
+            if want is None:
+                if got != "-":
+                    raise Failed(f"FAT record {expected['index']} {field}: expected null, "
+                                 f"engine {got}")
+            elif got == "-" or int(got) != want:
+                raise Failed(f"FAT record {expected['index']} {field}: expected {want}, "
+                             f"engine {got}")
+
+    # Payload bytes: the engine's codec-4 inflate against an independent Python
+    # decoder over the same stored bytes.
+    entry_report = {}
+    for path, readers in sorted(result["pak_entry_reads"].items()):
+        expected_entry = next((e for e in reference["entries"] if e["path"] == path), None)
+        if expected_entry is None:
+            raise Failed(f"the harness read an entry the reference does not list: {path}")
+        plain = pak_entry_plaintext(PAK, expected_entry)
+        want_hash = fnv1a64_bytes(plain)
+        for mode, read in sorted(readers.items()):
+            if not read["ok"]:
+                raise Failed(f"{path} ({mode}) read failed")
+            if read["bytes"] != len(plain):
+                raise Failed(f"{path} ({mode}) delivered {read['bytes']} bytes, "
+                             f"independent decode {len(plain)}")
+            if read["hash"] != want_hash:
+                raise Failed(f"{path} ({mode}) hash {read['hash']} != {want_hash}")
+        entry_report[path] = {
+            "bytes": len(plain),
+            "fnv1a64": want_hash,
+            "modes": sorted(readers),
+            "reads": {mode: readers[mode]["reads"] for mode in sorted(readers)},
+        }
+    if not entry_report:
+        raise Failed("the harness read no PAK entry")
+
     return {
         "entries": len(engine["entries"]),
         "header": engine["header"],
         "rangeRead": engine_stats,
         "reference_rangeRead": ref_stats,
         "reference_exe_sha256": sha256_file(RANGE_PROBE),
+        "engine_pak": {
+            "header": engine_header,
+            "fat_records_compared": len(fat),
+            "entries": entry_report,
+        },
     }
+
+
+def fnv1a64_bytes(data: bytes) -> str:
+    h = 0xCBF29CE484222325
+    for b in data:
+        h ^= b
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return f"{h:016x}"
+
+
+def pak_entry_plaintext(path: Path, entry: dict) -> bytes:
+    """Independent decoder for the codec-4 packet stream (retail v2 layout).
+
+    Layout, as implemented by probes/asset-reader/web/packet.js and by
+    Pak::C_PakCompressPacketZLib::Read: a U32 block size (65536), then repeated
+    [U32 stored][stored bytes], where stored == 0xFFFFFFFF means a raw 64 KiB
+    block and anything else is a raw-deflate stream. The logical length bounds
+    the last packet. Any deviation raises: this is a reference, not a guess.
+    """
+    packet = 65536
+    offset, physical, logical = entry["dataOffset"], entry["physicalBytes"], entry["logicalBytes"]
+    if offset is None or physical is None or not logical:
+        raise Failed(f"{entry['path']}: not a stored payload")
+    out = bytearray()
+    with path.open("rb") as f:
+        f.seek(offset)
+        block = struct.unpack("<I", f.read(4))[0]
+        if block != packet:
+            raise Failed(f"{entry['path']}: packet block size {block} != {packet}")
+        pos = 4
+        while pos < physical:
+            stored = struct.unpack("<I", f.read(4))[0]
+            pos += 4
+            length = packet if stored == 0xFFFFFFFF else stored
+            data = f.read(length)
+            if len(data) != length:
+                raise Failed(f"{entry['path']}: truncated packet at {pos}")
+            pos += length
+            want = min(packet, logical - len(out))
+            if want <= 0:
+                raise Failed(f"{entry['path']}: packet beyond the logical length")
+            if stored == 0xFFFFFFFF:
+                out += data[:want]
+            else:
+                plain = zlib.decompress(data, -15)
+                if len(plain) != want:
+                    raise Failed(f"{entry['path']}: packet decodes to {len(plain)} bytes, "
+                                 f"expected {want}")
+                out += plain
+    if pos != physical:
+        raise Failed(f"{entry['path']}: packets cover {pos} bytes, FAT says {physical}")
+    if len(out) != logical:
+        raise Failed(f"{entry['path']}: decoded {len(out)} bytes, FAT says {logical}")
+    return bytes(out)
 
 
 def find_vcvars() -> Path:
@@ -449,34 +723,47 @@ def preprocess(vcvars: Path, src: Path, out: Path, inc: str, defs: str, name: st
     return out
 
 
-def native_parity(tree: Path, added: list[str]) -> dict:
+def native_parity(tree: Path, added: list[str], modified: list[str]) -> dict:
     """Prove the file patch cannot change a PC translation unit.
 
     The overlay is applied on top of the scheduler overlay, so upstream vs tree
     would also show the scheduler's own grammar fixes (map.h, sortedbinarytree.h)
     and say nothing about this patch. The A/B is therefore *with* and *without*
-    the three new files: preprocess C_FileSystem.cpp and C_File.cpp, delete the
-    three files, preprocess again, then restore them by re-applying the overlay.
-    Identical units mean the PC build cannot see the file layer at all.
+    the patch: preprocess, then delete the added files and restore the modified
+    ones from upstream, preprocess again, then re-apply. Identical units mean the
+    PC build cannot see the file layer at all - including the one-line
+    pure-specifier fix in Security.h, which only Pak.cpp includes.
     """
     vcvars = find_vcvars()
     work = OUT / "native"
     work.mkdir(parents=True, exist_ok=True)
 
-    inc = " ".join(f'/I"{tree / p}"' for p in (
+    inc_common = " ".join(f'/I"{tree / p}"' for p in (
         f"{COMMON}/core/include", f"{COMMON}/core", f"{COMMON}/system",
         f"{COMMON}/system/include", f"{COMMON}/btl/include",
         f"{COMMON}/misc_shared/include", f"{COMMON}/misc_shared",
         f"{COMMON}/xt2/include", f"{COMMON}/system/source/scheduler"))
+    inc_logicalfs = " ".join(f'/I"{tree / p}"' for p in (
+        f"{COMMON}/core/include", f"{COMMON}/core", f"{COMMON}/system",
+        f"{COMMON}/system/include", f"{COMMON}/btl/include",
+        f"{COMMON}/misc_shared/include", f"{COMMON}/misc_shared",
+        f"{COMMON}/xt2/include", f"{COMMON}/system/source/scheduler",
+        LOGICALFS, f"{LOGICALFS}/include",
+        TOOLS_SHARED, f"{TOOLS_SHARED}/include", ZLIB))
     defs = "/DBUILD_CONFIG_SPEED /DPLATFORM_PC /DWIN32 /D_WINDOWS"
 
-    units = ("system/source/serialise/C_FileSystem.cpp",
-             "system/source/serialise/C_File.cpp")
+    units = [
+        (f"{COMMON}/system/source/serialise/C_FileSystem.cpp", inc_common),
+        (f"{COMMON}/system/source/serialise/C_File.cpp", inc_common),
+        # Pak.cpp includes Security.h, so it is the TU that would see the one
+        # modified line of this patch.
+        (f"{LOGICALFS}/source/pakfs/Pak.cpp", inc_logicalfs),
+    ]
 
     with_files = {}
-    for rel in units:
+    for rel, inc in units:
         out = work / f"with_{Path(rel).stem}.i"
-        preprocess(vcvars, tree / COMMON / rel, out, inc, defs, f"pp_with_{Path(rel).stem}")
+        preprocess(vcvars, tree / rel, out, inc, defs, f"pp_with_{Path(rel).stem}")
         with_files[rel] = out
 
     without_files = {}
@@ -485,9 +772,11 @@ def native_parity(tree: Path, added: list[str]) -> dict:
             path = tree / rel
             if path.exists():
                 path.unlink()
-        for rel in units:
+        for rel in modified:
+            (tree / rel).write_bytes((UP / rel).read_bytes())
+        for rel, inc in units:
             out = work / f"without_{Path(rel).stem}.i"
-            preprocess(vcvars, tree / COMMON / rel, out, inc, defs,
+            preprocess(vcvars, tree / rel, out, inc, defs,
                        f"pp_without_{Path(rel).stem}")
             without_files[rel] = out
     finally:
@@ -498,7 +787,7 @@ def native_parity(tree: Path, added: list[str]) -> dict:
                          + (p.stderr or p.stdout).strip())
 
     identical = {}
-    for rel in units:
+    for rel, _ in units:
         a = code_lines(with_files[rel], tree)
         b = code_lines(without_files[rel], tree)
         if a != b:
@@ -510,7 +799,7 @@ def native_parity(tree: Path, added: list[str]) -> dict:
     # nothing at /W4, and contributes no C_WebFile symbol.
     obj = work / "C_WebFile_pc.obj"
     src = tree / COMMON / "system/source/serialise/C_WebFile.cpp"
-    p = bat_step(vcvars, f'cl /nologo /c /W4 /std:c++14 /EHsc {defs} {inc} '
+    p = bat_step(vcvars, f'cl /nologo /c /W4 /std:c++14 /EHsc {defs} {inc_common} '
                          f'/Fo"{obj}" "{src}"', "pc_webfile")
     if p.returncode != 0:
         raise Failed("MSVC /W4 compile of C_WebFile.cpp failed in the PC configuration\n"
@@ -523,7 +812,8 @@ def native_parity(tree: Path, added: list[str]) -> dict:
     if p.returncode == 0 and "@C_WebFile@" in (p.stdout or ""):
         raise Failed("the PC object of C_WebFile.cpp exports C_WebFile symbols")
     return {
-        "approach": "preprocess with and without the three added files",
+        "approach": "preprocess with and without the patch (added files removed, "
+                    "modified file restored from upstream)",
         "preprocessed_identical": identical,
         "pc_w4_compile": "clean",
         "pc_object_has_mangled_symbols": False,
@@ -579,7 +869,7 @@ def main() -> int:
         "sha256": hash_a,
         "rebuild_sha256": hash_b,
         "deterministic": True,
-        "objects": len(TUS) + len(PROBE_TUS),
+        "objects": len(TUS) + len(PROBE_TUS) + len(ZLIB_C),
     }
 
     report["warning_gate"] = warning_gate()
@@ -605,14 +895,16 @@ def main() -> int:
         report["pc_parity"] = {"skipped": True,
                                "reason": "--skip-native was passed; no MSVC check ran"}
     else:
-        report["pc_parity"] = native_parity(tree, report["structure"]["files_added"])
+        report["pc_parity"] = native_parity(
+            tree, report["structure"]["files_added"], report["structure"]["files_modified"])
 
     report["elapsed_seconds"] = round(time.time() - started, 1)
     report["verdict"] = "PASS"
     Path(args.report).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
     print(f"patch           sha256={report['patch_sha256'][:16]}")
-    print(f"files           {len(report['structure']['files_added'])} added, 0 modified")
+    print(f"files           {len(report['structure']['files_added'])} added, "
+          f"{len(report['structure']['files_modified'])} modified")
     print(f"objects         {report['wasm']['objects']}")
     print(f"wasm            {report['wasm']['bytes']} B sha256={report['wasm']['sha256'][:16]} "
           f"deterministic={report['wasm']['deterministic']}")
@@ -621,6 +913,10 @@ def main() -> int:
     print(f"index           {report['reference']['entries']} entries, "
           f"requests={report['reference']['rangeRead']['sourceRequests']}, "
           f"bytes={report['reference']['rangeRead']['bytesRead']}")
+    engine_pak = report["reference"]["engine_pak"]
+    print(f"engine pak      {engine_pak['fat_records_compared']} FAT records, "
+          f"{len(engine_pak['entries'])} entries decompressed "
+          f"({', '.join('%d B' % e['bytes'] for e in engine_pak['entries'].values())})")
     print(f"fnv1a64         {python_hash} (both paths)")
     if report["pc_parity"].get("skipped"):
         print("pc parity       SKIPPED (recorded)")

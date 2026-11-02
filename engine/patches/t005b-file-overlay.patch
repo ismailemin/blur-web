@@ -784,3 +784,32 @@
 +} // namespace Sys
 +
 +#endif // PLATFORM_WEB
+--- a/code/mercury/library/common/system/include/System/Misc/Security.h
++++ b/code/mercury/library/common/system/include/System/Misc/Security.h
+@@ -13,7 +13,7 @@
+ 	{
+ 	}
+ 
+-	virtual bool			Verify(const U8* buffer, size_t bufferLength, const char* name=NULL) const = NULL;
++	virtual bool			Verify(const U8* buffer, size_t bufferLength, const char* name=NULL) const = 0;
+ };
+ 
+ }
+--- a/code/mercury/library/common/core/include/core/threads/misc.h
++++ b/code/mercury/library/common/core/include/core/threads/misc.h
+@@ -32,6 +32,15 @@
+ #if PLATFORM_SPU
+ 	return (ThreadId)cellSpursGetCurrentSpuId()|0x80000000;
+ #endif
++#if PLATFORM_WEB
++	// [T-005b] A wasm32 build has exactly one execution context. Without this
++	// branch no PC/PS3/SPU branch is taken and the function falls off the end,
++	// which clang lowers to a wasm `unreachable` trap - the same defect class
++	// as core/threads/Atomic.h. A constant non-zero id is the faithful model of
++	// one context: MT::AtomicLock compares ids to decide "already owned by me",
++	// and a single context may legitimately re-enter its own lock.
++	return (ThreadId)1;
++#endif
+ }
+ 
+ /// Causes the current thread to yield to the next scheduled thread. If no other thread is scheduled, it does nothing.

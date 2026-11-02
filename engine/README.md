@@ -1,25 +1,35 @@
-# engine/ — T-005c web scheduler overlay
+# engine/ — web scheduler and file-layer overlays
 
-A reproducible, reviewable patch that makes the engine's scheduler compile and
-run on `wasm32-unknown-emscripten` with **one execution context**, plus the tools
-that materialise it and check it. Nothing here is a game or a renderer: it is
-the smallest overlay that lets `Scheduler::AddTask` / `Flush` execute a real
-engine job under node.
+Two reproducible, reviewable patches plus the tools that materialise and check
+them:
+
+- `patches/t005c-web-scheduler.patch` makes the engine's scheduler compile and run
+  on `wasm32-unknown-emscripten` with **one execution context**;
+- `patches/t005b-file-overlay.patch` adds the `platform/file` C ABI and
+  `Sys::C_WebFile`/`C_WebFileSystem` over `I_File`/`I_FileSystem`, and is applied
+  second.
+
+Applied to a fresh `upstream/BlurRebuilt`, the pair builds one wasm32 module that
+reads the real installed `cache/root.pak` **through the engine's own PAK reader**
+(`Pak::ReadPak`, `C_PakIoMediator`, `C_PakEntryFile`, packet-zlib) on top of the
+new file layer. Nothing here is a game, a renderer or a browser: it is the
+smallest overlay that lets the engine's file and PAK layers run under node.
 
 Provenance:
 
 | | |
 | --- | --- |
 | upstream reference | `upstream/BlurRebuilt` at commit `5270304b81983b9e3edbd569ba25235c17bbabd7` |
-| patch | `engine/patches/t005c-web-scheduler.patch` (20 files, 691 insertions, 35 deletions) |
-| patch SHA-256 | `B939B39C7F7598B19677F29286655DE554762CB3CBD1471833D17C873C3FDEF2` |
+| scheduler patch | `engine/patches/t005c-web-scheduler.patch` (20 files, 691 insertions, 35 deletions) |
+| scheduler SHA-256 | `B939B39C7F7598B19677F29286655DE554762CB3CBD1471833D17C873C3FDEF2` |
+| file-layer patch | `engine/patches/t005b-file-overlay.patch` (3 files added, 2 small fixes) |
 | toolchain | Emscripten 6.0.13 (clang 24.0.0git), pinned under `_work/toolchains/emsdk` |
-| evidence | `docs/work/analysis/engine-web-shims.md` (all measurements) |
-| spike harness | `_work/engine-web-spike/` (scratch, not in the repo) |
+| evidence | `docs/work/analysis/engine-web-shims.md` (scheduler), `docs/work/analysis/engine-file-layer.md` (file layer + PAK consumer) |
 
 `upstream/` is never written to: the tools copy the files the patch touches into
-a caller-supplied tree and patch the copies. `apply_overlay.py` refuses to run if
-`upstream/BlurRebuilt` is dirty.
+a caller-supplied tree and patch the copies. `apply_overlay.py` and
+`apply_file_overlay.py` refuse to run if `upstream/BlurRebuilt` is dirty, and
+refuse any tree inside `upstream/`.
 
 ## Commands
 
@@ -145,23 +155,30 @@ eventually be satisfied, because nothing can satisfy it here.
 ## T-005b file layer (`t005b-file-overlay.patch`)
 
 A second, additive patch layers a web file system on top of the scheduler
-overlay. It adds **three files and modifies none** (`+777/−0`), all inside
-`#if defined(PLATFORM_WEB)`:
+overlay. It adds **three files** and carries **two small platform/grammar fixes**
+in existing files (no behaviour change on PC — see "PC-path guarantee" above and
+§7 of the analysis doc):
 
-- `PlatformFileWeb.h` — the narrow `pf_*` C ABI (`open/size/read_at/close` plus
-  an async enqueue).
+- `PlatformFileWeb.h` — the narrow `pf_*` C ABI (`open/size/read_at/write_at/
+  close/exists` plus an async enqueue that refuses).
 - `C_WebFile.h/.cpp` — `Sys::C_WebFile` over `I_File` and
   `Sys::C_WebFileSystem` over `I_FileSystem`, with a C++-side mount table.
   Selection is the existing `Sys::SetDefaultFileSystem()` seam; no game code is
   touched.
+- `core/threads/misc.h` — `MT::GetThreadId()` gains a `PLATFORM_WEB` branch.
+  Without it the function falls off the end (no PC/PS3/SPU branch is taken) and
+  clang lowers that to a wasm `unreachable` trap; `Pak::C_AtomicJobList` uses
+  `MT::AtomicLock`, which compares thread ids.
+- `System/Misc/Security.h` — `= NULL` → `= 0` (a pure-specifier must be the
+  literal zero; MSVC accepts `NULL`, clang does not).
 
 ```powershell
 & $py engine/apply_file_overlay.py --tree _work/engine-file-spike/tree   # scheduler, then file
 & $py engine/verify_file_overlay.py --fresh
 ```
 
-`verify_file_overlay.py` (≈80 s) rebuilds twice and runs the node harness:
-**PASS**, 21 objects, 373,202 B wasm, deterministic, 32/32 checks, 7 explicit
+`verify_file_overlay.py` (≈110 s) rebuilds twice and runs the node harness:
+**PASS**, 56 objects, 495,593 B wasm, deterministic, **40/40 checks**, 7 explicit
 refusals. Through the engine layer it reads the real `cache/root.pak`
 (559,652,864 B):
 
@@ -173,28 +190,59 @@ refusals. Through the engine layer it reads the real `cache/root.pak`
 - EOF-crossing, past-EOF, zero-length, oversized, write, enqueue, unmounted,
   write-handle, async-only and directory cases all refused explicitly.
 
-PC parity: the patch modifies zero existing files; `C_FileSystem.cpp`/`C_File.cpp`
-preprocess identically with and without the three additions; the new TU compiles
-at `/W4` with no PC symbol emitted.
+### The first real engine consumer: the PAK reader
+
+The same harness then hands the file system to the engine's own PAK layer:
+
+```cpp
+Pak::C_PakFile* pak = Pak::ReadPak(*Sys::GetDefaultFileSystem(),
+                                   Sys::C_FilePath("/cache/root.pak"),
+                                   Sys::E_FileAccess_Read, NULL,
+                                   Sys::C_OpenParams(32 * 1024));
+```
+
+`ReadPak` → `ReadPreHeader` / `ReadHeader` / `ReadStringTable` / `ReadFat` →
+`C_PakIoMediator` → `Sys::I_File` → `C_WebFile` → `pf_read_at` → JS range source.
+Two FAT entries are then opened with `Pak::C_PakEntryFile` (the same call
+`C_PakFs::Open` makes) and read in full through
+`Pak::C_PakCompressPacketZLib` (codec 4), which runs its inflate tasks on the
+T-005c scheduler:
+
+| entry | logical | stored | packets | engine FNV-1a 64 | independent decode |
+| --- | ---: | ---: | ---: | --- | --- |
+| `\animations\cameras\start_3_frontcamera.cycle` | 209 | 77 | 1 | `7a5224df7820ffae` | same |
+| `\graphics\textures\postprocess\la_river_02_lut.dds` | 131,200 | 73,819 | 3 | `583354161ab2a52c` | same |
+
+Both are read twice — unbuffered (`m_BufferSizeHint == 0`, the streamer's shape)
+and buffered (32 KiB) — and both hash identically. `C_PakFs` itself could not be
+linked: its `DirectoryInfo` implements `C_DirectoryInfo`, which lives in
+`C_FileSystem.cpp`, a TU the design keeps out of the web build. Everything below
+`C_PakFs` is the engine's own code.
+
+PC parity: `C_FileSystem.cpp`, `C_File.cpp` and `Pak.cpp` preprocess identically
+with the patch and without it (added files removed, modified files restored from
+upstream); the new TU compiles at `/W4` with no PC symbol emitted.
 
 Limits: no browser OPFS/worker/COOP-COEP test yet; `pf_open` takes a source id,
-not a path (the path→source table is C++-side by design); no real engine consumer
-has opened a PAK through it yet. Evidence: `docs/work/analysis/engine-file-layer.md`.
+not a path (the path→source table is C++-side by design); no level, streamer or
+serialiser sits on top yet. Evidence:
+`docs/work/analysis/engine-file-layer.md`.
 
 ## Layout
 
 ```
 engine/
   patches/t005c-web-scheduler.patch   scheduler overlay, unified diff vs upstream/BlurRebuilt
-  patches/t005b-file-overlay.patch    additive file layer, applied after the scheduler
+  patches/t005b-file-overlay.patch    file layer + PAK consumer, applied after the scheduler
   apply_overlay.py                    copy + patch a caller-supplied tree (stdlib only)
   apply_file_overlay.py               scheduler + file patch in one tree
   verify_overlay.py                   fresh-tree rebuild, A2/A3/A4, fail-loud, engine caller
-  verify_file_overlay.py              fresh-tree rebuild + real root.pak read + PC parity
+  verify_file_overlay.py              fresh-tree rebuild, PAK index + entry bytes + PC parity
   native_parity.py                    MSVC TU-equality check + native compile
   make_patch.py                       regenerate the scheduler patch from the spike overlay
   harness/t005c/                      scheduler probe + platform shims (committed source)
-  harness/t005b/                      file-layer node harness (smoke_webfile.cpp, JS glue)
+  harness/t005b/                      file-layer + PAK-consumer harness (C++, JS glue,
+                                      msvc_crt_web.h build prelude)
   README.md                           this file
 ```
 

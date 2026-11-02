@@ -30,6 +30,19 @@
 #include <system/serialise/PlatformFileWeb.h>
 #include <system/serialise/FileSystemGlobals.h>
 
+#include <system/scheduler.h>
+
+#include <system/debug/log/GlobalInterface.h>
+#include <system/debug/log/DebugLog.h>
+
+#include <PakFs/Pak.h>
+#include <PakFs/PakGlobals.h>
+#include <PakFs/Impl/PakEntryFile.h>
+#include <PakFs/Impl/PakFatEntry.h>
+#include <PakFs/Impl/PakFile.h>
+#include <PakFs/Impl/PakIoMediator.h>
+#include <PakFs/Impl/PakUtil.h>
+
 #include "pak_index_range.h"
 
 namespace
@@ -158,6 +171,144 @@ void print_stats( const char* label, const rangefile::RangeStats& stats )
 }
 
 } // namespace
+
+// ---------------------------------------------------------------- consumer --
+// The engine's own PAK reader over the file layer. Nothing here reimplements the
+// format: Pak::ReadPak reads the pre-header, the v2 header, the string table and
+// the FAT through C_PakIoMediator (a client of Sys::I_File), and C_PakEntryFile
+// drives Pak::C_PakCompressPacketZLib (codec 4) for the payload.
+
+// g_SystemIoLog is defined by system/source/serialise/C_FileSystem.cpp:39, and
+// C_FileSystem.cpp is not part of a web build (it is the Win32 file system the
+// design bypasses). PakEntryFile.cpp only uses it as the FSPERF/FSASSERT
+// logger, so the harness supplies the same definition: the same logger name the
+// engine uses, nothing else. External linkage on purpose - it satisfies
+// PakEntryFile.o's extern.
+Debug::Logger& g_SystemIoLog = Debug::GetLogger( "mercury.system.io" );
+
+namespace
+{
+
+// The two fixture entries are looked up by their FAT path, which is what the
+// reference index lists. Both are small enough to hash in full and together
+// cover a single-packet and a three-packet stream (the last packet is partial).
+struct EntryFixture
+{
+	const char* path;
+};
+const EntryFixture kEntryFixtures[] = {
+	{ "\\animations\\cameras\\start_3_frontcamera.cycle" },
+	{ "\\graphics\\textures\\postprocess\\la_river_02_lut.dds" },
+};
+const int kEntryFixtureCount = 2;
+
+// piStreamer, verbatim from SchedulerConfig.cpp:49-50. The PAK codec runs its
+// inflate work as scheduler tasks, so it needs a policy, and it creates one
+// group per open entry file - after SetGroupPoolSize, as the game does.
+const Scheduler::Policy kPakStreamerPolicy[8] = { 0, 0, 7, 7, 7, 7, 7, 7 };
+
+const uint32_t kPakGroupPool = 64;
+
+struct EntryReadResult
+{
+	uint64_t length;
+	uint64_t hash;
+	uint32_t reads;
+	bool ok;
+};
+
+bool read_entry( Pak::C_PakFile* pak, Pak::C_PakFatEntry* fatEntry, const char* path,
+	U32 bufferHint, EntryReadResult* out )
+{
+	out->length = 0;
+	out->hash = 0xcbf29ce484222325ull;
+	out->reads = 0;
+	out->ok = false;
+
+	// This is exactly what LogicalFs::C_PakFs::Open does for a read handle
+	// (PakFs.cpp:99-137), without the I_FileSystem wrapper: C_PakFs cannot be
+	// linked here because its DirectoryInfo implements C_DirectoryInfo, whose
+	// code lives in C_FileSystem.cpp - a TU the design keeps out of the web
+	// build (t005-streaming-design.md 1.2).
+	Pak::C_PakEntryFile file;
+	if ( !file.Open( pak, fatEntry, Sys::C_FilePath( path ), Sys::E_FileAccess_Read,
+		Sys::C_OpenParams( bufferHint ), NULL ) )
+	{
+		return false;
+	}
+
+	const uint64_t length = file.Length();
+	std::vector<U8> buffer( 64 * 1024 );
+	uint64_t total = 0;
+	while ( total < length )
+	{
+		const U32 want = (U32)std::min<uint64_t>( (uint64_t)buffer.size(), length - total );
+		if ( !file.Read( &buffer[0], want ) )
+			break;
+		for ( U32 i = 0; i < want; ++i )
+		{
+			out->hash ^= buffer[i];
+			out->hash *= 0x100000001b3ull;
+		}
+		total += want;
+		++out->reads;
+	}
+
+	out->length = length;
+	out->ok = ( total == length );
+	return out->ok;
+}
+
+// One line per FAT record, in the field order the reference index uses. The
+// verify script compares these against probes/range-file's records.
+void dump_fat( Pak::C_PakFile* pak )
+{
+	const U32 stride = Pak::GetFatEntrySize( (Pak::E_FatEntryType)pak->header.fatEntryType );
+	printf( "webfile pakheader version=%u sector=%u codec=%u fat=%u entries=%u strings=%u stride=%u\n",
+		(unsigned)pak->version, (unsigned)pak->pMediator->GetSectorSize(),
+		(unsigned)pak->header.codec, (unsigned)pak->header.fatEntryType,
+		(unsigned)pak->nFatEntries, (unsigned)pak->stringTable.dataSize, (unsigned)stride );
+
+	for ( U32 i = 0; i < pak->nFatEntries; ++i )
+	{
+		Pak::C_PakFatEntry* entry = pak->GetFatEntryByIdx( i );
+		const char* path = (const char*)( pak->stringTable.pData + entry->filePathStrTableOffset );
+
+		// "-" is what the reference index prints for a null field: a directory
+		// has no payload offset and no stored size, and a root entry has no
+		// parent. Keeping the same spelling makes the comparison exact.
+		char offsetText[32];
+		char physicalText[32];
+		char parentText[32];
+		if ( entry->IsDirectory() )
+		{
+			snprintf( offsetText, sizeof( offsetText ), "-" );
+			snprintf( physicalText, sizeof( physicalText ), "-" );
+		}
+		else
+		{
+			snprintf( offsetText, sizeof( offsetText ), "%llu",
+				(unsigned long long)( entry->dataStartSector *
+					(U64)pak->pMediator->GetSectorSize() ) );
+			snprintf( physicalText, sizeof( physicalText ), "%llu",
+				(unsigned long long)( pak->pStoredSizes ? (U64)pak->pStoredSizes[ i ] : 0 ) );
+		}
+		if ( entry->parentDirectoryOffsetBytes == 0xFFFFFFFFu )
+			snprintf( parentText, sizeof( parentText ), "-" );
+		else
+			snprintf( parentText, sizeof( parentText ), "%u",
+				(unsigned)( entry->parentDirectoryOffsetBytes / stride ) );
+
+		printf( "webfile pakentry %u|%u|%u|%s|%s|%s|%d|%s\n",
+			(unsigned)i, (unsigned)entry->filePathCrc,
+			(unsigned)entry->dataLogicalLengthBytes,
+			physicalText, offsetText, parentText,
+			entry->IsDirectory() ? 1 : 0, path );
+	}
+}
+
+} // namespace
+
 
 int main( int argc, char** argv )
 {
@@ -362,6 +513,85 @@ int main( int argc, char** argv )
 	}
 
 	delete pak;
+
+	// --- 6. the engine PAK reader over the file layer ----------------------
+	{
+		// Initialisation order copied from C_SchedulerConfig::Initialise
+		// (SchedulerConfig.cpp:34-62): policies, Init, Start, group pool, then
+		// groups. The PAK codec creates its group when an entry file is opened.
+		const Scheduler::PolicyHandle policy = Scheduler::CreatePolicy( kPakStreamerPolicy );
+		printf( "webfile pak policy=%d\n", (int)policy );
+		check( "pak_policy", policy >= 0 );
+		Scheduler::Init();
+		Scheduler::Start();
+		Scheduler::SetGroupPoolSize( kPakGroupPool );
+		Pak::SetPacketCompressionPolicy( (S32)policy );
+
+		// Pak::ReadPak is the engine's PAK reader: pre-header, v2 header,
+		// string table, FAT (v2 40-byte entries converted to the in-memory
+		// C_PakFatEntry layout), all through C_PakIoMediator -> Sys::I_File ->
+		// our C_WebFile. C_PakFs::OpenPak is a 20-line wrapper around exactly
+		// this call; using it directly avoids C_PakFs::DirectoryInfo, whose
+		// C_DirectoryInfo implementation lives in C_FileSystem.cpp - a TU the
+		// design keeps out of the web build.
+		const Sys::C_FilePath archive( kMountPrefix );
+		Pak::C_PakFile* enginePak = Pak::ReadPak( *Sys::GetDefaultFileSystem(), archive,
+			Sys::E_FileAccess_Read, NULL, Sys::C_OpenParams( 32 * 1024 ) );
+		printf( "webfile pak open=%d\n", enginePak ? 1 : 0 );
+		check( "pak_open", enginePak != 0 );
+
+		if ( enginePak )
+		{
+			printf( "webfile pak entries=%u version=%u codec=%u fat=%u sector=%u\n",
+				(unsigned)enginePak->nFatEntries, (unsigned)enginePak->version,
+				(unsigned)enginePak->header.codec, (unsigned)enginePak->header.fatEntryType,
+				(unsigned)enginePak->pMediator->GetSectorSize() );
+			check( "pak_entries", enginePak->nFatEntries > 0 );
+			dump_fat( enginePak );
+
+			// Every fixture must be in the FAT, and must be readable.
+			for ( int i = 0; i < kEntryFixtureCount; ++i )
+			{
+				const char* path = kEntryFixtures[ i ].path;
+				Pak::C_PakFatEntry* fatEntry =
+					enginePak->GetFatEntry( Sys::C_FilePath( path ) );
+				printf( "webfile pak fat %s found=%d logical=%u stored=%u\n", path,
+					fatEntry ? 1 : 0,
+					fatEntry ? (unsigned)fatEntry->dataLogicalLengthBytes : 0u,
+					( fatEntry && enginePak->pStoredSizes )
+						? (unsigned)enginePak->pStoredSizes[ fatEntry -
+							(Pak::C_PakFatEntry*)enginePak->pFatEntries ] : 0u );
+				check( "pak_fat_lookup", fatEntry != 0 && !fatEntry->IsDirectory() );
+
+				// Unbuffered (m_BufferSizeHint == 0) is the shape the streamer
+				// uses for streamed chunks; buffered exercises the 32 KiB
+				// refill path of C_PakEntryFile.
+				EntryReadResult streamed;
+				EntryReadResult buffered;
+				const bool streamedOk = fatEntry && !fatEntry->IsDirectory() &&
+					read_entry( enginePak, fatEntry, path, 0, &streamed );
+				const bool bufferedOk = fatEntry && !fatEntry->IsDirectory() &&
+					read_entry( enginePak, fatEntry, path, 32 * 1024, &buffered );
+				printf( "webfile pak read %s streamed=%d bytes=%llu hash=0x%016llx reads=%u\n",
+					path, streamedOk ? 1 : 0, (unsigned long long)streamed.length,
+					(unsigned long long)streamed.hash, streamed.reads );
+				printf( "webfile pak read %s buffered=%d bytes=%llu hash=0x%016llx reads=%u\n",
+					path, bufferedOk ? 1 : 0, (unsigned long long)buffered.length,
+					(unsigned long long)buffered.hash, buffered.reads );
+				check( "pak_entry_read_streamed", streamedOk );
+				check( "pak_entry_read_buffered", bufferedOk );
+				check( "pak_entry_paths_agree",
+					streamedOk && bufferedOk && streamed.hash == buffered.hash &&
+					streamed.length == buffered.length );
+				check( "pak_entry_length_matches_fat",
+					fatEntry && streamed.length == fatEntry->dataLogicalLengthBytes );
+			}
+		}
+
+		delete enginePak;
+		Scheduler::Shutdown();
+		printf( "webfile pak closed\n" );
+	}
 
 	// --- 5. bookkeeping ----------------------------------------------------
 	const Sys::C_WebFileSystem::Counters& counters = Sys::C_WebFileSystem::GetCounters();
