@@ -38,6 +38,8 @@ Açık: düzeltme uygulanmadı; iki deneme reddedildi. (1) `C_Emitter::AtomicFre
 
 **P3 Aday 2 sonucu:** object-level “trail-owned” bayrağı çökme için kanıtlanabilir şekilde no-op (2a) veya sızıntı (2b): trail tanımları `bRepeating=true` olduğu için self-free yolları trail-owned emitter'da hiç ateşlenmiyor; asıl üretici `FreeParticle → AtomicFree` etkilenmiyor. Bu yüzden object flag bırakıldı; sıradaki doğru yön **slot-level** sahiplik/temizlik: `FreeParticle`/`UpdateTrail` sırasında aynı emitter'a işaret eden trail slotunu geçersiz kılan yolu bulmak. Ayrıntı: `docs/work/analysis/emitter-ownership-next.md`.
 
+**P12 slot-level sonucu:** TEK-YUVA değişmezi: canlı her `C_Particle_E` yuvası için `pEmitter` tek bir yuvaya geri işaret etmeli ve bırakma **önce yuvayı temizlemeli**. Yeni bulgular: `DeleteTrailBlock` canlı emitter için ölü yol (S3); `UpdateMemory` end blok NULL iken `blocks[b]` eski bloğu bırakıyor (S6). Minimal tasarım 16 nokta: `C_Particle_E::Clear`, `C_Emitter::m_pTrailSlot` (sınıf sonu), spawn'da kayıt, copy-last sonrası retarget, üç trail yolunda ve iki self-free noktasında clear-then-release. `Atomic.h`/`Manager.cpp` değişmiyor; assert kalıyor. Sıradaki en küçük adım: trace'e `pParticle`, blok `m_VectorPosition`, `i`, `iSalt` ekleyip bayat `(t,b,i)`'yi isimlendirmek; sonra 1–14 uygulaması ve 3+3 paired test. Ayrıntı: `docs/work/analysis/emitter-slot-ownership.md`.
+
 ## 3. T-005 — Tek oyunculu dikey dilim
 
 **Durum:** in-progress; T-005a/b/c/d tasarım tamam, uygulama sırada

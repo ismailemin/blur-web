@@ -38,7 +38,10 @@
   `FreeParticle`/`Emitter::Update` yolundan geliyor; trail sahipliği açık.
   Aday 2 (object-level trail-owned bayrağı) kaynak analizinde reddedildi:
   trail tanımları `bRepeating=true` olduğu için self-free yolları hiç
-  ateşlenmiyor; 2a no-op, 2b sızıntı. Sıradaki yön slot-level temizlik.
+  ateşlenmiyor; 2a no-op, 2b sızıntı. P12 slot-level tasarımı: TEK-YUVA
+  değişmezi, 16 noktalı clear-then-release; `DeleteTrailBlock` canlı emitter
+  için ölü yol (S3), `UpdateMemory` blok desync (S6). Sıradaki: trace ile
+  bayat `(t,b,i)` kimliği. Ayrıntı: `docs/work/analysis/emitter-slot-ownership.md`.
 - Doğrulama: `verify_asset_probe.py --skip-build` **27/27**, CTest **14/14**.
 
 ## Sıradaki iş

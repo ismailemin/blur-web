@@ -300,4 +300,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sadece `bdSocketRouter`/`bdNet` backend'i değişiyor; `C_NetRouterBase` ve oyun protokolü byte-identical kalıyor. IPv4 yerine opak 25-byte web peer record; WSS signaling/STUN/TURN; sınırlı kuyruk/`bufferedAmount`; blocking wait yok.
 - İlk dilim: standalone browser adapter harness; 10.000×1 KiB reliable exact/ordered, unreliable loss/reorder, queue caps, reconnect/ICE restart. Riskler: T-005a wasm gate, IP tabanlı `bdCommonAddr`, blocking `StartConnect`/`GetAdaptersInfo`, DTLS/NAT seam yokluğu, signaling/TURN altyapısı yok. Rapor: `docs/work/analysis/t006-transport.md`.
 
+## 2 Kasım 2026 — T-004 slot-level sahiplik tasarımı
+
+- TEK-YUVA değişmezi: canlı her `C_Particle_E` yuvası için `pEmitter` tek bir yuvaya geri işaret etmeli; bırakma önce yuvayı temizlemeli. Salt karşılaştırması yedek kontrol olur.
+- Yeni bulgular: `DeleteTrailBlock` canlı emitter için **ölü yol** (S3; ana blok boşken çağrılıyor), `UpdateMemory` end blok NULL iken `blocks[b]` eski bloğu bırakıyor (S6). `FreeParticle` canlı aralıkta bayat yuva bırakmıyor; bayatlık `Size()==1` self-copy veya blok desync'ten.
+- Minimal tasarım 16 nokta: `C_Particle_E::Clear`, `C_Emitter::m_pTrailSlot` (sınıf sonu, +8 B), spawn'da kayıt (`SuperSpawn.cpp:25/46`), copy-last sonrası retarget (`SuperEffect.cpp:236`), üç trail yolunda ve iki self-free noktasında clear-then-release. `Atomic.h`/`Manager.cpp` değişmiyor; assert kalıyor. Tahmini maliyet 18.432 B.
+- Sıradaki en küçük adım: trace'e `pParticle`, blok `m_VectorPosition`, `i`, `iSalt` ekleyip bayat `(t,b,i)`'yi isimlendirmek; sonra 1–14 uygulaması ve 3+3 paired test (tam dump). Rapor: `docs/work/analysis/emitter-slot-ownership.md`.
+
 
