@@ -30,7 +30,7 @@ Patch: `_work/build/engine-reference/native-slotstride-fix.patch`.
 | Build | 3 koşu |
 | --- | --- |
 | baseline | 2× `0x80000003`, 1× `0xC0000005` |
-| stride fix | 3× exit 0 (23–24 s) |
+| stride fix | 2×3 koşu: **6/6 exit 0** (23–24 s); ek kanıt koşusuyla **7/7** |
 
 Ek kanıt koşusu `Racing` → `AFTER_THROTTLE` → `quit` akışını tamamladı.
 Ayrıntı: `docs/work/verification/T-004-slot-stride.md`.

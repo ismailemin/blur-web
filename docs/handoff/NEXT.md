@@ -39,7 +39,7 @@ Kök neden: `Manager.cpp:151` trail slotunu sabit **8 bayt** kuruyordu; retail P
 P13 üç koşuda bayat yuvayı `(0,0,*)`, salt `0==0`, `epos=-1` olarak isimlendirdi.
 
 Düzeltme: `SetElementSize(sizeof(C_Particle_E))`. Paired 3+3: baseline 3/3
-çökme (2 breakpoint + 1 AV), düzeltme 3/3 exit 0; ek koşu
+çökme (2 breakpoint + 1 AV), düzeltme 6/6 exit 0 (ek kanıt koşusuyla 7/7); koşu
 `Racing → AFTER_THROTTLE → quit`. Kanonik `Amax.exe` ve `Atomic.h` assert'i
 değişmedi. wasm32'de sizeof zaten 8 olduğu için düzeltme orada no-op.
 

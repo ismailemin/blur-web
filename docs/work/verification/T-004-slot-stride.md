@@ -36,9 +36,11 @@ Same automation script (`scripts/race-native/smoke.txt`), same settings/save,
 | Build | Run 1 | Run 2 | Run 3 |
 | --- | --- | --- | --- |
 | baseline `Amax.exe` | `0x80000003` 16 s | `0xC0000005` 23 s | `0x80000003` 17 s |
-| stride fix | exit 0, 24 s | exit 0, 23 s | exit 0, 23 s |
+| stride fix (triple A) | exit 0, 24 s | exit 0, 23 s | exit 0, 23 s |
+| stride fix (triple B) | exit 0, 23 s | exit 0, 23 s | exit 0, 23 s |
 
-Baseline: **3/3 crash**. Fix: **3/3 clean**.
+Baseline: **3/3 crash**. Fix: **6/6 clean** across two triples; one further
+evidence run brings the total to **7/7 clean**.
 
 One additional evidence run reached `Blur2PC.RaceState() == "Racing"` at 10.21 s,
 `NATIVE_RACE_AFTER_THROTTLE` at 20.22 s, and `quit` at 22.22 s with exit 0 — so
@@ -46,9 +48,11 @@ the clean runs completed the throttle window instead of exiting early.
 
 Evidence:
 
-- `_work/native-source/Blur1PCDX11/_work/run/scripts/race-native/slotstride-runs.json`
+- `_work/native-source/Blur1PCDX11/_work/run/scripts/race-native/slotstride-runs-a.json`
+- `_work/native-source/Blur1PCDX11/_work/run/scripts/race-native/slotstride-runs-b.json`
 - `_work/native-source/Blur1PCDX11/_work/run/scripts/race-native/slotstride-baseline-runs.json`
-- `_work/logs/slotstride-runs.log`, `_work/logs/slotstride-baseline.log`
+- `_work/logs/slotstride-runs.log`, `_work/logs/slotstride-runs2.log`,
+  `_work/logs/slotstride-baseline.log`
 - `_work/logs/slotstride-evidence/{result.json,automation.log,race.png}`
 - `_work/logs/amax-slotstride-build.log`, `_work/build/engine-reference/amax-x64-slotstride-result.json`
 

@@ -35,8 +35,8 @@
   `epos=-1` olarak isimlendirdi ve trail slot adımının **8 bayt** olduğunu
   ölçtü. `C_Particle_E` x64'te 16 bayt; retail PC 32-bit olduğu için sabit 8
   orada doğruydu. `Manager.cpp:151 → SetElementSize(sizeof(C_Particle_E))`
-  ile paired 3+3: baseline 3/3 çökme, düzeltme 3/3 exit 0 (23–24 s); ek koşu
-  `Racing → AFTER_THROTTLE → quit`. Kanonik `Amax.exe` ve assert değişmedi.
+  ile paired 3+3: baseline 3/3 çökme, düzeltme 6/6 exit 0 (23–24 s); ek koşu
+  `Racing → AFTER_THROTTLE → quit` (toplam 7/7). Kanonik `Amax.exe` ve assert değişmedi.
   Kanıt: `docs/work/verification/T-004-slot-stride.md`. TEK-YUVA slot sözleşmesi
   web/wasm portu için açık kalıyor (wasm32'de sizeof zaten 8).
 - Doğrulama: `verify_asset_probe.py --skip-build` **28/28**, CTest **14/14**.
