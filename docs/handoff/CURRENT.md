@@ -16,16 +16,16 @@
   okuyup descriptor/payload aralıklarını döndürüyor.
 - `level_instances_inspect` River block27/node253 instance0:
   **805 vertex / 726 üçgen**, arşiv sınır farkı **3.86511e-05**.
-- `level_instances_all_inspect` aynı blokta **14 instance** çiziyor:
-  **7.308 vertex / 6.106 üçgen**, 14 draw, en büyük sınır farkı
-  **6.02444e-05**. 8 instance sınır uyuşmazlığı, 35 instance başka blok.
-- Çoklu blok taraması: `requiredGeometryBlocks=[15,17,26,27,31,32]`; blok27+15
-  toplam **18 instance**, **8.688 vertex / 7.085 üçgen**. Browser'da
-  **River · tüm desteklenen** preset'i var.
+- `level_instances_all_inspect` aynı blokta **22 instance** çiziyor:
+  **13.162 vertex / 10.308 üçgen**, 0 sınır uyuşmazlığı, 35 instance başka blok
+  (en büyük sınır farkı **6.02444e-05**).
+- Çoklu blok taraması: `requiredGeometryBlocks=[15,17,26,27,31,32]`; Stage A
+  blok27+15+17 toplam **36 instance**, **22.924 vertex / 17.301 üçgen**.
+  Browser'da **River · tüm desteklenen** preset'i var.
 - P2 analizi: arşiv `instanceBounds` kayıtları draw başına değil **CullNode
   (yerleştirilmiş nesne) başına**; 57 instance 34 transform-sabit grubuna ve 34
-  byte-identical kayda karşılık geliyor. Mevcut tek-draw kontrolü 38 instance'ı
-  yanlış reddediyor. Stage A hedefi 36 instance, Stage B toplam 56; kanıt:
+  byte-identical kayda karşılık geliyor. Eski tek-draw kontrolü 21 instance'ı
+  yanlış reddediyordu. Stage A uygulandı; Stage B toplam 56; kanıt:
   `docs/work/analysis/level-instance-streams.md`.
 - River geniş sahne parçası (17.782 vertex / 9.343 üçgen) ve Showroom
   (11.590 / 7.987) doğrudan çizimlerle görüntüleniyor. Browser'da
@@ -133,13 +133,13 @@ T-006e/f gerçek yarış T-005g ve T-004 kapılarına bağlı. Kanıt:
 
 - 18 instance destekli; P2'ye göre bounds grouping düzeltilince Stage A 36,
   Stage B 56 instance'a çıkmalı. Blok31 prerequisite; CPU vertex expansion var.
-- Native sürüş referansı particle-cache çökmesi nedeniyle kararlı değil.
+- Native sürüş referansı T-004 düzeltmesiyle kararlı (7/7 temiz koşu).
 - Fizik, kontroller, ses, save/streaming, tek oyunculu yarış ve multiplayer
   başlamadı.
-- Browser görsel doğrulaması: T-001 Corvette **26/80 albedo** ve T-003
-  **14 instance / 7.308 vertex / 6.106 üçgen** kullanıcı ekran görüntüleriyle
-  doğrulandı. Kalan: diğer geometri blokları, base7–10 stream semantiği, level
-  materyalleri/görünürlük/yüksek LOD'lar.
+- **Fiziksel Chrome testi (4 Kasım): 4/4 geçti** — Corvette 30.591/36.193,
+  River 22 instance 13.162/10.308, tüm desteklenen 36 instance 22.924/17.301,
+  Showroom 11.590/7.987; console temiz. Kalan: Stage B (blok26/32), blok31,
+  base7–10 stream semantiği, level materyalleri/görünürlük/yüksek LOD'lar.
 - Oyun verisi ve `_work/` Git dışında; kanıtlar yeniden üretim komutuyla birlikte
   dokümanda tutulmalı.
 

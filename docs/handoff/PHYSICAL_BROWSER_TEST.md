@@ -96,7 +96,12 @@ Kanıt: `_work/logs/t003-stageA-browser-*.json` ve aynı adlı `.png` dosyaları
 
 ## Kanıt
 
-- `_work/verification/suite.json` — 27/27
+- **4 Kasım 2026 — fiziksel Chrome testi: 4/4 geçti** (kullanıcı ekran görüntüleri):
+  - Corvette: 30.591 vertex / 36.193 üçgen, 26/80 albedo, 3.601 dosya
+  - River · 22 instance: 22 çizildi, 0 uyuşmazlık, 13.162 / 10.308
+  - River · tüm desteklenen: 36 çizildi, 20 uyuşmazlık, 1 blok atlandı, 22.924 / 17.301
+  - Showroom: 11.590 / 7.987
+- `_work/verification/suite.json` — 29/29 (`--skip-build`)
 - `_work/logs/readiness-suite.log`
 - `_work/logs/readiness-ctest.log` — 14/14
 - `docs/work/verification/T-001.md`, `T-003.md`

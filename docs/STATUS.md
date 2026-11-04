@@ -369,4 +369,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Aynı 24+24+8 sorgu tablosu: **ray 24/24 bayt-birebir**; sphere 8/24, cache 1/8. Fark yalnız altı raporlama alanında: materyal paketleme, patch normal, `engineTriangleIndex`, atanmayan `trace.collisionFlags`, normalize edilmemiş trace normal'i. İlk fark sorgu 24 `point-vertex-0`, bayt 48.
 - Tam `queryHash` eşitliği iddia edilmiyor (`77a53355…f94c` vs `f87365b7…5d6e`); `verify_gravity.py` izin verilen farkı birebir pinliyor (ray 24/0, sphere 8/16, cache 1/7 + alan çoklukları), başka farkta düşüyor. Build/run deterministik, mesh yapısı doğru. Kanıt: `docs/work/verification/T-005d-gravity-wasm.md`.
 
+## 4 Kasım 2026 — fiziksel Chrome testi
+
+- Kullanıcı Chrome'da dört testi çalıştırdı ve ekran görüntülerini paylaştı; **4/4 beklenen değerlerle eşleşti**.
+- Corvette: 30.591 vertex / 36.193 üçgen, 26/80 albedo, 3.601 dosya.
+- River · 22 instance: 22 çizildi, 0 uyuşmazlık, 13.162 / 10.308.
+- River · tüm desteklenen: 36 çizildi, 20 uyuşmazlık, 1 blok atlandı, 22.924 / 17.301.
+- Showroom: 11.590 / 7.987. Console/WebGPU hatası yok.
+- Bu bir **asset görüntüleyici** doğrulamasıdır; oynanabilir oyun değildir. Görüntüler sohbet yoluyla sağlandı, `_work/` altında arşivlenmedi.
+
 

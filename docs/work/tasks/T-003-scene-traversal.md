@@ -134,16 +134,19 @@ Kanıt: `_work/logs/t003-stageA-*.png`, `_work/logs/t003-stageA-browser-*.json`,
 
 ## Browser görsel doğrulaması
 
-Kullanıcı Chrome'da **River · 14 instance** preset'ini açtı. Görüntüde:
+**4 Kasım 2026 — fiziksel Chrome testi: 4/4 geçti** (kullanıcı ekran görüntüleri):
 
-- `359 akış kaydı · 14 instance çizildi · 8 sınır uyuşmazlığı · 35 başka blok · 6106 üçgen`
-- `WebGPU · 7308 vertex · 6106 üçgen · gerçek model geometrisi`
-- `Yüzey` modu; `Doku çözülemedi` (level materyalleri uygulanmadığı için beklenen)
-- Görünür WebGPU hatası yok
+- Corvette: 30.591 vertex / 36.193 üçgen, 26/80 albedo, 3.601 dosya.
+- **River · 22 instance**: `22 instance çizildi · 0 sınır uyuşmazlığı · 35 başka
+  blok · 10308 üçgen`; WebGPU 13.162 / 10.308.
+- **River · tüm desteklenen**: `36 instance çizildi · 20 sınır uyuşmazlığı ·
+  1 blok atlandı · 17301 üçgen`; WebGPU 22.924 / 17.301.
+- Showroom: 11.590 / 7.987.
+- Console/WebGPU hatası yok; `Doku çözülemedi` level materyalleri
+  uygulanmadığı için beklenen.
 
-Bu, blok27 çoklu instance yolunun browser'da gerçekten çizildiğini doğrular.
-Görüntü kullanıcı tarafından sağlanmıştır (sohbet, 2 Kasım 2026);
-`_work/` altında ayrıca arşivlenmedi.
+Önceki 14-instance görüntüsü (2 Kasım) tarihsel kayıttır. Yeni görüntüler
+kullanıcı tarafından sağlanmıştır; `_work/` altında ayrıca arşivlenmedi.
 
 
 ## Kanıt
