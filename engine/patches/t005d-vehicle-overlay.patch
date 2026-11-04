@@ -1,0 +1,306 @@
+--- a/code/mercury/library/physics/gravity/source/sdk/Body.cpp
++++ b/code/mercury/library/physics/gravity/source/sdk/Body.cpp
+@@ -1025,7 +1025,12 @@
+ 			m_RigidBody.m_Position = command.m_CommandBundle.GetValue();
+ 			m_RigidBody.m_CenterOfMass = m_RigidBody.m_Position + m_RigidBody.m_CenterOfMassOffset * m_RigidBody.m_OrientationMatrix;
+ 			if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-				m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++			{
++				// [T-005d web] &temporary is an MSVC extension; AddToEnd copies,
++				// so a named local is the same behaviour and well-formed C++.
++				C_Scene::BodyPtr overriddenBody(this);
++				m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++			}
+ 			m_BodyFlags |= E_Type_Overridden_PosRot;
+ 			//m_pOwningScene->m_OverriddenBodyList.AddToEnd(&BodyPtr(this));
+ 			break;
+@@ -1034,7 +1039,12 @@
+ 			m_RigidBody.m_OrientationMatrix = m_RigidBody.m_Orientation;
+ 			m_RigidBody.m_CenterOfMass = m_RigidBody.m_Position + m_RigidBody.m_CenterOfMassOffset * m_RigidBody.m_OrientationMatrix;
+ 			if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-				m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++			{
++				// [T-005d web] &temporary is an MSVC extension; AddToEnd copies,
++				// so a named local is the same behaviour and well-formed C++.
++				C_Scene::BodyPtr overriddenBody(this);
++				m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++			}
+ 			m_BodyFlags |= E_Type_Overridden_PosRot;
+ 			//m_pOwningScene->m_OverriddenBodyList.AddToEnd(&BodyPtr(this));
+ 			break;
+@@ -1044,7 +1054,11 @@
+ 				m_RigidBody.m_LinearVelocity = command.m_CommandBundle.GetValue();
+ 				m_RigidBody.m_LinearMomentum = mom;	
+ 				if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++				{
++					// [T-005d web] named local instead of &temporary (see above).
++					C_Scene::BodyPtr overriddenBody(this);
++					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++				}
+ 				m_BodyFlags |= E_Type_Overridden_Velocities;
+ 				//m_pOwningScene->m_OverriddenBodyList.AddToEnd(&BodyPtr(this));
+ 			}
+@@ -1055,7 +1069,11 @@
+ 				m_RigidBody.m_AngularVelocity = command.m_CommandBundle.GetValue();
+ 				m_RigidBody.m_AngularMomentum = angMom;
+ 				if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++				{
++					// [T-005d web] named local instead of &temporary (see above).
++					C_Scene::BodyPtr overriddenBody(this);
++					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++				}
+ 				m_BodyFlags |= E_Type_Overridden_Velocities;
+ 			}
+ 			break;
+@@ -1067,7 +1085,11 @@
+ 				m_RigidBody.StoreVelocitiesAndPosition(m_RigidBody.m_LinearVelocity, 
+ 				m_RigidBody.m_AngularVelocity, m_RigidBody.m_Orientation, m_RigidBody.m_Position);
+ 				if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++				{
++					// [T-005d web] named local instead of &temporary (see above).
++					C_Scene::BodyPtr overriddenBody(this);
++					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++				}
+ 				m_BodyFlags |= E_Type_Overridden_Velocities;
+ 				break;
+ 			}
+@@ -1092,7 +1114,11 @@
+ 				_Activate();
+ 				m_RigidBody.ApplyImpulseWorldSpace(command.m_CommandBundle.GetValue(), command.m_CommandBundle.GetPosition() * m_RigidBody.m_OrientationMatrix + m_RigidBody.m_Position);
+ 				if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++				{
++					// [T-005d web] named local instead of &temporary (see above).
++					C_Scene::BodyPtr overriddenBody(this);
++					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++				}
+ 				m_BodyFlags |= E_Type_Overridden_Velocities;
+ 			//m_pOwningScene->m_OverriddenBodyList.AddToEnd(&BodyPtr(this));
+ 			}
+@@ -1119,7 +1145,11 @@
+ 				_Activate();
+ 				m_RigidBody.ApplyImpulseLocalSpace(command.m_CommandBundle.GetValue(), command.m_CommandBundle.GetPosition());
+ 				if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++				{
++					// [T-005d web] named local instead of &temporary (see above).
++					C_Scene::BodyPtr overriddenBody(this);
++					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++				}
+ 				m_BodyFlags |= E_Type_Overridden_Velocities;
+ 			}
+ 			//m_pOwningScene->m_OverriddenBodyList.AddToEnd(&BodyPtr(this));
+@@ -1146,7 +1176,11 @@
+ 				_Activate();
+ 				m_RigidBody.AddImpulse(command.m_CommandBundle.GetValue());
+ 				if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++				{
++					// [T-005d web] named local instead of &temporary (see above).
++					C_Scene::BodyPtr overriddenBody(this);
++					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++				}
+ 				m_BodyFlags |= E_Type_Overridden_Velocities;
+ 			}
+ 			break;
+@@ -1160,7 +1194,11 @@
+ 				_Activate();
+ 				m_RigidBody.AddAngularImpulse(command.m_CommandBundle.GetValue());
+ 				if(!TestBodyFlags(E_Type_Overridden_Velocities | E_Type_Overridden_PosRot | E_Type_Removed))
+-					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&C_Scene::BodyPtr(this));
++				{
++					// [T-005d web] named local instead of &temporary (see above).
++					C_Scene::BodyPtr overriddenBody(this);
++					m_pOwningScene->m_OverriddenBodyList.AddToEnd(&overriddenBody);
++				}
+ 				m_BodyFlags |= E_Type_Overridden_Velocities;
+ 			}
+ 			break;
+--- a/code/mercury/library/physics/gravity/source/sdk/SPUScene.cpp
++++ b/code/mercury/library/physics/gravity/source/sdk/SPUScene.cpp
+@@ -26,6 +26,12 @@
+ 
+ #if !defined(PLATFORM_SPU) || defined(SPU_FILL_CACHE)
+ #include "gravity/sdk/Scene_FillCache.inl"
++#if defined(PLATFORM_WEB)
++// [T-005d web] OptimisedAABBTree_FillCache.inl calls
++// C_AxisBoxMinMax::Intersects, which AxisBox.h only declares; the body lives
++// in AxisBox.inl and clang needs it visible in this TU.
++#include "gravity/narrowphase/AxisBox.inl"
++#endif
+ #endif
+ 
+ #if !defined (PLATFORM_SPU) || defined (SPU_PHANTOM_MESH_LIB)
+--- a/code/mercury/library/physics/gravity/source/importer/InstanceMeshResourceManager.cpp
++++ b/code/mercury/library/physics/gravity/source/importer/InstanceMeshResourceManager.cpp
+@@ -17,7 +17,9 @@
+ namespace Gravity
+ {
+ 
+-	C_BaseInstanceMeshNode::C_BaseInstanceMeshNode(Collision::C_TriangleMeshShape* mesh=NULL, const U32 id=0): m_Mesh(mesh), m_Id(id)
++	// [T-005d web] the header already declares this ctor without defaults, so
++	// repeating them here makes it a second default ctor. MSVC tolerates it.
++	C_BaseInstanceMeshNode::C_BaseInstanceMeshNode(Collision::C_TriangleMeshShape* mesh, const U32 id): m_Mesh(mesh), m_Id(id)
+ 	{
+ 	}
+ 
+--- a/code/mercury/library/physics/racingphysics/include/racingphysics/Vehicles/Car/car.h
++++ b/code/mercury/library/physics/racingphysics/include/racingphysics/Vehicles/Car/car.h
+@@ -21,6 +21,11 @@
+ 
+ namespace RacingPhysics
+ {
++
++#if defined(PLATFORM_WEB)
++// [T-005d web] fail-loud hook, defined by the host (the spike harness).
++void WebPhysicsFatal(const char* what);
++#endif
+ 
+ class Car;
+ class CarEngine;
+@@ -577,7 +582,12 @@
+ #if !PLATFORM_SPU
+ 	virtual void BeginFrame(float maxSpeed);
+ 	virtual void EndFrame(const Maths::C_TimeS PCREF time);
++#if defined(PLATFORM_WEB)
++	// [T-005d web] no renderer: the debug draw TU (cardebug.cpp) is not built.
++	virtual void DisplayDebug() const {}
++#else
+ 	virtual void DisplayDebug() const;
++#endif
+ #endif
+ 
+ 	// information from dynamics
+@@ -699,6 +709,13 @@
+ #if !PLATFORM_SPU
+ 	void SetGravityBody(Gravity::C_Body* pBody, const Maths::HVec3 PCREF offsetToBodyCentre, const Maths::HVec3 PCREF bounds, const Maths::HVec3 PCREF offsetToBoundsCentre);
+ 	virtual Gravity::C_Body* GetGravityBody() {return m_pGravityCarBody;}
++
++#if defined(PLATFORM_WEB)
++	// [T-005d web] The XT runtime (XtPackOpen/XtFlaskImport) is not ported; the
++	// host installs the car's CarDynamicsXt explicitly before Initialise().
++	// There is no fallback: XtReload() refuses to run without it.
++	void SetWebCarDynamics(const CarDynamicsXt* pDynamics) {m_pCarDynamics = pDynamics;}
++#endif
+ 	virtual void CopyToGravity() const;
+ 	virtual void CopyFromGravity();
+ #endif
+--- a/code/mercury/library/physics/racingphysics/source/vehicles/Car/car.cpp
++++ b/code/mercury/library/physics/racingphysics/source/vehicles/Car/car.cpp
+@@ -77,6 +77,13 @@
+ 	m_dd.m_UsePhysicsGravity = false;
+ 	m_dd.m_OverrideSteps = -1;
+ 	m_dd.m_OverrideIntegrationMethod = -1;
++
++#if defined(PLATFORM_WEB)
++	// [T-005d web] deterministic "no dynamics yet" state; the XT runtime that
++	// would otherwise fill these is not ported.
++	m_pSettings = NULL;
++	m_pCarDynamics = NULL;
++#endif
+ }
+ 
+ void Car::ClearStepVariables()
+@@ -685,6 +692,18 @@
+ {
+ 	PERF_EVENT("Car::XtReload");
+ 
++#if defined(PLATFORM_WEB)
++	// [T-005d web] The XT runtime is not ported. The host must have installed the
++	// CarDynamicsXt through SetWebCarDynamics(); anything else is a hard failure,
++	// never an uninitialised pointer or an invented default.
++	if (m_pCarDynamics == NULL)
++	{
++		LOGERROR(g_RacingPhysicsLog, "XtReload: no CarDynamicsXt installed on the web build");
++		WebPhysicsFatal("Car::XtReload without CarDynamicsXt");
++	}
++	m_pSettings = NULL;
++	return;
++#else
+ 	bool changed;
+ 
+ 	const XtRecord* p = CarDynamicsXt::LoadDynamicsXt(GetFilename(), changed);
+@@ -705,6 +724,7 @@
+ 
+ 	if (changed)
+ 		m_dynamicsChangedCounter = 30;
++#endif
+ }
+ 
+ #endif
+--- a/code/mercury/library/physics/racingphysics/source/vehicles/Car/carsettings.cpp
++++ b/code/mercury/library/physics/racingphysics/source/vehicles/Car/carsettings.cpp
+@@ -140,7 +140,9 @@
+ 
+ }
+ 
+-#if !PLATFORM_SPU
++// [T-005d web] XT reflection metadata needs the xt2 runtime; the
++// physics code never reads it.
++#if !PLATFORM_SPU && !defined(PLATFORM_WEB)
+ 
+ XT_TYPE(RacingPhysics::CarDynamicsXt::CarPhysicsParametersXt, "RP_CarPhysicsParameters")
+ 	XT_FIELD(physicsCofMassOffsetY, "physicsCofMassOffsetY")
+--- a/code/mercury/library/physics/racingphysics/source/physics/surfaces.cpp
++++ b/code/mercury/library/physics/racingphysics/source/physics/surfaces.cpp
+@@ -174,7 +174,9 @@
+ }}
+ 
+ //////////////////////////////////////////////////////////
+-#if !PLATFORM_SPU
++// [T-005d web] XT reflection metadata needs the xt2 runtime; the
++// physics code never reads it.
++#if !PLATFORM_SPU && !defined(PLATFORM_WEB)
+ 
+ XT_TYPE(RacingPhysics::Surfaces::RP_SurfaceDef, "RP_SurfaceDef")
+ 	XT_FIELD(name, "name")
+--- a/code/mercury/library/physics/racingphysics/source/physics/parameters.cpp
++++ b/code/mercury/library/physics/racingphysics/source/physics/parameters.cpp
+@@ -1,9 +1,13 @@
+ #include "stdafx.h"
+ #include "racingphysics/physics/parameters.h"
+ 
++// [T-005d web] XT reflection metadata needs the xt2 runtime; the
++// physics code never reads it.
++#if !defined(PLATFORM_WEB)
+ XT_LIBRARY(RacingPhysics_DynamicsParameters)
+ 	XT_REGISTER_TYPE(RacingPhysics::LinearParameterXt)
+ 	XT_REGISTER_TYPE(RacingPhysics::LinearFunctionXt)
+ 	XT_REGISTER_TYPE(RacingPhysics::LinearGraphXt::Point)
+ 	XT_REGISTER_TYPE(RacingPhysics::LinearGraphXt)
+ XT_END_LIBRARY
++#endif
+--- a/code/mercury/library/physics/racingphysics/source/vehicles/debugsliprecorder.cpp
++++ b/code/mercury/library/physics/racingphysics/source/vehicles/debugsliprecorder.cpp
+@@ -1,7 +1,9 @@
+ #include "stdafx.h"
+ #include "racingphysics/vehicles/debugsliprecorder.h"
+ 
+-#if !PLATFORM_SPU
++// [T-005d web] Display is not ported; the recorder itself is used by every
++// wheel (CarWheel::EndFrame), only its debug drawing is omitted.
++#if !PLATFORM_SPU && !defined(PLATFORM_WEB)
+ #include "racingphysics/debug/draw.h"
+ #include "display/render/basicrender.h"
+ #endif
+@@ -56,7 +58,7 @@
+ 
+ float g_slipRecorderDepthBias = 0.01f;
+ 
+-#if !PLATFORM_SPU
++#if !PLATFORM_SPU && !defined(PLATFORM_WEB)
+ 
+ void DebugSlipRecorder::Display() const
+ {
+@@ -165,6 +167,8 @@
+ 	Display::Device()->SetDepthEnable(Display::E_Bool_True);
+ }
+ 
++#elif defined(PLATFORM_WEB)
++void DebugSlipRecorder::Display() const {}
+ #endif
+ 
+ void DebugSlipRecorder::Shutdown()

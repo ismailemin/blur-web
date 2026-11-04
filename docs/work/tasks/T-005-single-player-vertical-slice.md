@@ -138,6 +138,14 @@ normalize edilmemiş normal). Tam `queryHash` eşitliği iddia edilmiyor; verifi
 izin verilen farkı pinliyor ve başka farkta düşüyor. Kanıt:
 `docs/work/verification/T-005d-gravity-wasm.md`.
 
+**Araç fiziği wasm (5 Kasım, P19):** 186 nesne, **1.024.869 B** wasm; gerçek XT
+`Corvette_ZR1_Stock` (1600 kg, 2.652 m aks, 0.356 m teker, 6 vites RWD).
+180 dinlenme + 300 gaz tick: temas 480/480, NaN 0, hız 0,77 → **31,09 m/s**
+(tepe 35,13), **96,14 m**; tüm koşu hash `2bbc0a18…e974f5`; iki koşu
+bit-birebir. Native sayısal referans DX SDK yüzünden bloklu; 7 web-only dosyanın
+MSVC önişlenmiş çıktısı aynı. Kanıt:
+`docs/work/verification/T-007-vehicle-physics.md`.
+
 ### T-005e — Kontroller ve kamera
 - Klavye/gamepad; özgün araç girdi semantiği.
 - Kamera, HUD ve yarış durumu.
