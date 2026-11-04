@@ -385,4 +385,10 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Karar kapısı: tam tur oynanabilir, çarpışma/sınırlar görsel olarak net, 60 Hz stabil, kalan sadakat farkları listeli ve oyun hatasını gizlemiyor. Aksi hâlde E2.
 - Ayrıntı: `docs/work/analysis/e1-renderer-strategy.md`.
 
+## 4 Kasım 2026 — T-007 E1 dilimi başladı
+
+- `T-007` kartı açıldı: E1a level streaming, E1b render packet v1, E1c araç fiziği, E1d döngü/girdi/kamera, E1e WebGPU entegrasyonu, E1f ilk sürülebilir tur.
+- Üç spike paralel: P18 `StreamManager`/`C_Scene` ile River yükleme, P19 gerçek RacingPhysics araç adımı, P20 render packet v1 + WebGPU tüketici prototipi.
+- Her spike kendi dosya alanında; `upstream/` yazılmıyor, PC yolu korunuyor. Sonuçlar geldikçe doğrulanıp commit edilecek.
+
 

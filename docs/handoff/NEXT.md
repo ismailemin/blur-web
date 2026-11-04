@@ -111,3 +111,14 @@ başına `RTCPeerConnection`, reliable ordered + unreliable `maxRetransmits:0`
 DataChannel; `C_NetRouterBase` ve oyun protokolü byte-identical. İlk dilim
 standalone adapter harness. WSS signaling/STUN/TURN gerekli. Analiz tamam;
 uygulama T-005g/T-004 kapılarına bağlı.
+
+## 5. T-007 — E1 oynanabilir dikey dilim
+
+**Durum:** in-progress; E1a streaming, E1b render packet ve E1c araç fiziği
+spike'ları paralel çalışıyor
+**Kart:** `docs/work/tasks/T-007-e1-playable-slice.md`
+
+E1 kararı: motor simülasyonu + sahne/çizim listesi wasm'da; JS/WebGPU sürümlü
+render packet tüketir. Sıra: streaming → packet v1 → araç adımı → sabit adım +
+girdi + kamera → WebGPU entegrasyonu → ilk sürülebilir tur. E2 (DX11 portu)
+yalnız karar kapısı düşerse.
