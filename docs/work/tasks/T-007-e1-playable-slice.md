@@ -66,6 +66,29 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Start → tur → finish; çarpışma, checkpoint, respawn.
 - Tam tur + finish ekranı; performans ve bellek ölçümü.
 
+### E1g — Çoklu araç (P23)
+- `RP_CarDynamics` kayıtlarından en az 4 gerçek araç; seçilebilir.
+- Her araç için aynı scripted sürüş; ayrı deterministik state hash'i.
+- Eksik alanlı araç uydurulmaz; açıkça dışlanır.
+- Kanıt: `docs/work/verification/T-007-multi-car.md`.
+
+### E1h — Engine draw list (P22 sonrası)
+- `draws[]` committed packet yerine engine sahne/çizim listesinden.
+- `levelrender` engine serialiser'ıyla parse; materyal eksikleri açık.
+
+### E1i — Teker/kompozit görsel
+- Teker mesh'i veya kompozit gövde; teker dönüşü/temas görseli.
+- Materyal sadakati E2 kapsamı; E1'de diagnostic kalır.
+
+## Pipeline (bağımlılık sırası)
+
+```
+P22 (stream/Scene) ──► E1h engine draw list ──┐
+P23 (multi-car) ──────────────────────────────┼─► E1f tam tur
+P25 (Stage B track geometry) ─────────────────┘
+E1i wheels ───────────────────────────────────┘
+```
+
 ## Kabul kriterleri
 
 - [ ] River'da araç sabit adımla hareket ediyor; NaN/çökme yok.
