@@ -1,6 +1,6 @@
 # T-007 — E1 oynanabilir dikey dilim
 
-**Durum:** in-progress (E1b tamam; E1a/E1c spike'ları çalışıyor)
+**Durum:** in-progress (E1b tamam; E1a streamer çalışıyor/parse bloklu; E1c sürüyor)
 **Sahip:** ana ajan
 **Başlangıç:** 4 Kasım 2026
 **Bitiş:** —
@@ -14,11 +14,15 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 
 ## Alt görevler
 
-### E1a — Level streaming (P18)
-- `StreamManager`/`C_Scene` ile `Level.levelrender` + `.levelstream` +
-  `.levelphysics`, `C_OverlayFs` üzerinden.
-- Chunk tablosu + en az bir chunk hash'i referansla aynı.
-- Kanıt: `docs/work/analysis/engine-level-stream.md`, `engine/verify_stream.py`.
+### E1a — Level streaming (P18)  ◐ (streamer çalışıyor; levelrender parse bloklu)
+- `StreamManager` wasm'da: 359/359 chunk, 244.682.752 B, 359/359 FNV bağımsız
+  Python ile aynı; `levelrender`/`levelphysics` hash'leri de aynı.
+- `Level.levelrender` Scene parse'ı DX11 `Display2` bağımlılığı yüzünden bloklu
+  (`archive.cpp` 456 hata); chunk tablosu şimdilik probe'lardan geliyor.
+- `StreamData` prerequisite/queue mantığı derlenmedi; `OpenStreamFile` buffer
+  hint 0 uyuşmazlığı var.
+- Kanıt: `docs/work/analysis/engine-level-stream.md`, `engine/verify_stream.py`,
+  `docs/work/verification/T-007-streaming.md`.
 
 ### E1b — Render packet v1 (P20)  ✅
 - Sürümlü packet: tick, alpha, kamera, ışıklar, draw'lar (mesh/aralık/matris/

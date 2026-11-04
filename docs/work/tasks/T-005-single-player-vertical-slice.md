@@ -53,6 +53,13 @@ kontrol; tam `C_PakFs` ve `C_OverlayFs` yolları (`OpenPak`/`Open`/`FileExists`/
 `2f291abb5648e078`; PC TU parity. Kalan: yazılabilir katman/`GameHelpers`,
 OPFS/worker. Kanıt: `docs/work/verification/T-005b-engine-file-layer.md`.
 
+**Engine streaming (4 Kasım, P18):** `StreamManager` wasm'da: 359/359 chunk,
+244.682.752 B, 359/359 FNV bağımsız Python ile aynı; `levelrender` 9.873.988 B
+ve `levelphysics` 1.945.409 B hash'leri de aynı; 37 nesne, 246.726 B wasm,
+20/20 kontrol, PC parity. `Level.levelrender` Scene parse'ı DX11 `Display2`
+bağımlılığı yüzünden bloklu (456 hata); chunk tablosu şimdilik probe'lardan.
+Kanıt: `docs/work/verification/T-007-streaming.md`.
+
 ### T-005c — Scheduler ve zaman adımı
 - Windows thread/job queue yerine Web Worker/Atomics veya tek iş parçacığı
   politikası; sabit simülasyon adımı, render'dan bağımsız.

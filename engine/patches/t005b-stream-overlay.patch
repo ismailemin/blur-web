@@ -1,0 +1,395 @@
+--- a/code/mercury/library/common/core/include/core/threads/threadlocalstorage.h
++++ b/code/mercury/library/common/core/include/core/threads/threadlocalstorage.h
+@@ -32,6 +32,15 @@
+ 	{
+ 		pData = data;
+ 	}
++private:
++	void *pData;
++#elif defined (PLATFORM_WEB)
++// One execution context: per-instance storage is per-thread storage. The live
++// object is a member of its owner, so this is not a guess about thread identity.
++public:
++	ThreadLocalStorage() : pData(0) {}
++	void *GetData() const { return pData; }
++	void SetData(void *data) { pData = data; }
+ private:
+ 	void *pData;
+ #elif defined (COMPILER_VC)
+--- a/code/mercury/library/common/core/include/core/maths/utmaths/operator.h
++++ b/code/mercury/library/common/core/include/core/maths/utmaths/operator.h
+@@ -97,7 +97,11 @@
+ {
+ public:
+ 	template <int I>
++#if defined(PLATFORM_WEB)
++	static typename LinearOperator<Vector1,Vector2>::DataType At(Vector1 p1, Vector2 p2) {return p1.template At<I>() + p2.template At<I>();}
++#else
+ 	static typename LinearOperator<Vector1,Vector2>::DataType At(Vector1 p1, Vector2 p2) {return p1.At<I>() + p2.At<I>();}
++#endif
+ };
+ 
+ // Subtraction
+@@ -106,7 +110,11 @@
+ {
+ public:
+ 	template <int I>
++#if defined(PLATFORM_WEB)
++	static typename LinearOperator<Vector1,Vector2>::DataType At(Vector1 p1, Vector2 p2) {return p1.template At<I>() - p2.template At<I>();}
++#else
+ 	static typename LinearOperator<Vector1,Vector2>::DataType At(Vector1 p1, Vector2 p2) {return p1.At<I>() - p2.At<I>();}
++#endif
+ };
+ 
+ // Compare
+@@ -115,7 +123,11 @@
+ {
+ public:
+ 	template <int I>
++#if defined(PLATFORM_WEB)
++	static typename LinearOperator<Vector1,Vector2>::DataType At(Vector1 p1, Vector2 p2) {return p1.template At<I>() == p2.template At<I>();}
++#else
+ 	static typename LinearOperator<Vector1,Vector2>::DataType At(Vector1 p1, Vector2 p2) {return p1.At<I>() == p2.At<I>();}
++#endif
+ };
+ 
+ // Multiply
+@@ -127,7 +139,11 @@
+ 	const static int SIZE = UT_SCR(Vector)::SIZE; // return a vector of the same size
+ 
+ 	template <int I>
++#if defined(PLATFORM_WEB)
++	static DataType At(Vector p1, Scalar p2) {return p1.template At<I>() * p2;}
++#else
+ 	static DataType At(Vector p1, Scalar p2) {return p1.At<I>() * p2;}
++#endif
+ };
+ 
+ // Divide
+@@ -139,7 +155,11 @@
+ 	const static int SIZE = UT_SCR(Vector)::SIZE; // return a vector of the same size
+ 
+ 	template <int I>
++#if defined(PLATFORM_WEB)
++	static DataType At(Vector p1, Scalar p2) {return p1.template At<I>() / p2;}
++#else
+ 	static DataType At(Vector p1, Scalar p2) {return p1.At<I>() / p2;}
++#endif
+ };
+ 
+ // Dot product
+@@ -151,7 +171,11 @@
+ 	const static int SIZE = 1;
+ 
+ 	template <int I>
++#if defined(PLATFORM_WEB)
++	static DataType At(Vector1 p1, Vector2 p2) {return p1.template At<I>() * p2.template At<I>();}
++#else
+ 	static DataType At(Vector1 p1, Vector2 p2) {return p1.At<I>() * p2.At<I>();}
++#endif
+ 
+ private:
+ 	BIZ_STATIC_ASSERT2(UT_SCR(Vector1)::SIZE == UT_SCR(Vector2)::SIZE, MustBeSameSize);
+@@ -166,7 +190,11 @@
+ 	const static int SIZE = UT_SCR(Vector)::SIZE; // return a vector of the same size
+ 
+ 	template <int I>
++#if defined(PLATFORM_WEB)
++	static DataType At(Vector p) {return -p.template At<I>();}
++#else
+ 	static DataType At(Vector p) {return -p.At<I>();}
++#endif
+ };
+ 
+ //////////////////////////////////////////////////////////////////
+--- a/code/mercury/library/common/core/include/btl/containers/sortedbinarytree.inl
++++ b/code/mercury/library/common/core/include/btl/containers/sortedbinarytree.inl
+@@ -415,6 +415,24 @@
+ 	Node** pp;
+ 
+ 	// We have an iterator but need the link to the item.
++#if defined(PLATFORM_WEB)
++	typedef SortedBinaryTree<Key, Data, Allocator> Base;
++	// clang: members of a dependent base need explicit qualification, and
++	// GetNode(Iterator) returns a reference into its own by-value parameter
++	// (-Wreturn-stack-address). The iterator's public m_pNode is the same value
++	// without the dangling reference.
++	Node* pNode = i.m_pNode;
++	if (pNode == m_pRoot)
++		pp = &m_pRoot;
++	else if (pNode == Base::SentinelPointer())
++		return;
++	else if (pNode->pParent->pFirst == pNode)
++		pp = &(pNode->pParent->pFirst);
++	else
++		pp = &(pNode->pParent->pSecond);
++
++	Base::EraseNode(pp);
++#else
+ 	if (GetNode(i) == m_pRoot)
+ 		pp = &m_pRoot;
+ 	else if (GetNode(i) == SentinelPointer())
+@@ -425,6 +443,7 @@
+ 		pp = &(GetNode(i)->pParent->pSecond);
+ 
+ 	EraseNode(pp);
++#endif
+ 	Validate();
+ }
+ 
+--- a/code/mercury/library/common/core/include/btl/containers/skiplist.inl
++++ b/code/mercury/library/common/core/include/btl/containers/skiplist.inl
+@@ -95,10 +95,20 @@
+ typename SkipListBuilder<Key, Data, Allocator, ElementPolicy>::InsertionReturnType SkipListBuilder<Key, Data, Allocator, ElementPolicy>::Insert(const Key& item, S32 level)
+ {
+ 	// Get Level of the node.
++#if defined(PLATFORM_WEB)
++	// clang: static members of a dependent base need explicit qualification.
++	S32 newLevel = Base::Min(level, Base::MAX_LINKS - 1);
++	S32 maxLevel = Base::Min(Base::Max(level, m_maxLevel + 1), Base::MAX_LINKS - 1);
++#else
+ 	S32 newLevel = Min(level, Base::MAX_LINKS - 1);
+ 	S32 maxLevel = Min(Max(level, m_maxLevel + 1), Base::MAX_LINKS - 1);
++#endif
+ 	while(((m_random.GetRandom() % 3) == 1) && newLevel < maxLevel) newLevel++;
++#if defined(PLATFORM_WEB)
++	m_maxLevel = Base::Max(m_maxLevel, newLevel);
++#else
+ 	m_maxLevel = Max(m_maxLevel, newLevel);
++#endif
+ 
+ 	static S32 count[Base::MAX_LINKS] = {0};
+ 	count[newLevel]++;
+--- a/code/mercury/library/graphics/renderingdata/include/renderingdata/datatypes.h
++++ b/code/mercury/library/graphics/renderingdata/include/renderingdata/datatypes.h
+@@ -337,10 +337,21 @@
+ 
+ 			SHHD_3N() {}
+ 
++#if defined(PLATFORM_WEB)
++			// clang rejects initialising several members of the anonymous union
++			// (MSVC accepts it). Same values, assigned in the body.
++			SHHD_3N(float x_, float y_, float z_) : data(0)
++			{
++				x = (S32) (x_ * 1023.0f);
++				y = (S32) (y_ * 1023.0f);
++				z = (S32) (z_ * 511.0f);
++			}
++#else
+ 			SHHD_3N(float x_, float y_, float z_) : data(0),
+ 													x((S32) (x_ * 1023.0f)), 
+ 													y((S32) (y_ * 1023.0f)), 
+ 													z((S32) (z_ * 511.0f)) {}
++#endif
+ 
+ 			float X() const {return ((float) x) / 1023.0f;}
+ 			float Y() const {return ((float) y) / 1023.0f;}
+@@ -373,10 +384,19 @@
+ 
+ 			SDDD_3N() {}
+ 
++#if defined(PLATFORM_WEB)
++			SDDD_3N(float x_, float y_, float z_) : data(0)
++			{
++				x = (S32) (x_ * 511.0f);
++				y = (S32) (y_ * 511.0f);
++				z = (S32) (z_ * 511.0f);
++			}
++#else
+ 			SDDD_3N(float x_, float y_, float z_) : data(0),
+ 													x((S32) (x_ * 511.0f)), 
+ 													y((S32) (y_ * 511.0f)), 
+ 													z((S32) (z_ * 511.0f)) {}
++#endif
+ 
+ 			float X() const {return ((float) x) / 511.0f;}
+ 			float Y() const {return ((float) y) / 511.0f;}
+--- a/code/mercury/library/graphics/renderingdata/source/noninterface/target/streammanager.cpp
++++ b/code/mercury/library/graphics/renderingdata/source/noninterface/target/streammanager.cpp
+@@ -1,4 +1,4 @@
+-#include "stdafx.h"
++﻿#include "stdafx.h"
+ #include "renderingdata/target.h"
+ #include "renderingdata/streaming.h"
+ #include <System/Serialise/I_FileSystem.h>
+@@ -78,13 +78,18 @@
+ 
+ /////////////////////////////////////////////////////////////////////////////////
+ 
+-class LoadingThread : public MT::Thread
++#if defined(PLATFORM_WEB)
++
++// Single execution context: there is no second thread to run ThreadMain, and
++// MT::Event::Wait aborts (T-005c). The same Request list, allocator and
++// completion queue are kept, but AddRequest performs the engine read on the
++// caller. This is the web body of the same contract, not a fallback: a failed
++// read sets loadFailed, exactly as ThreadMain does.
++class LoadingThread
+ {
+ public:
+ 
+-	LoadingThread() : m_startLoading("StartLoading"), m_finishedLoading("FinishedLoading"), m_active(false)
+-	{
+-	}
++	LoadingThread() {}
+ 
+ 	struct Request
+ 	{
+@@ -107,8 +112,8 @@
+ 	{
+ 		m_lock.Enter();
+ 		m_requests.PushBack(request);
+-		m_startLoading.Signal();
+-		m_lock.Exit();
++		m_lock.Exit();
++		Drain();
+ 	}
+ 
+ 	S32 GetNumRequests()
+@@ -138,6 +143,114 @@
+ 
+ 	void WaitUntilFinished()
+ 	{
++		Drain();
++	}
++
++	bool IsActive()
++	{
++		return false;
++	}
++
++private:
++
++	void Drain()
++	{
++		for (;;)
++		{
++			Request request;
++			bool got = false;
++
++			m_lock.Enter();
++			if (!m_requests.Empty())
++			{
++				request = m_requests.Front();
++				m_requests.PopFront();
++				got = true;
++			}
++			m_lock.Exit();
++
++			if (!got)
++				break;
++
++			request.pFile->SetPosition(request.offset);
++
++			if (!request.pFile->Read(&*request.pDest, (U32)request.size))
++				request.loadFailed = true;
++
++			m_lock.Enter();
++			m_completed.PushBack(request);
++			m_lock.Exit();
++		}
++	}
++
++	MT::Lock m_lock;
++
++	Btl::List<Request> m_requests;
++	Btl::List<Request> m_completed;
++};
++
++#else
++
++class LoadingThread : public MT::Thread
++{
++public:
++
++	LoadingThread() : m_startLoading("StartLoading"), m_finishedLoading("FinishedLoading"), m_active(false)
++	{
++	}
++
++	struct Request
++	{
++		Sys::I_File* pFile;
++		U64 offset;
++		U64 size;
++		StreamManager::AutoChunkPointer pDest;
++		S32 index;
++		bool loadFailed;
++	};
++
++	void ClearRequests()
++	{
++		m_lock.Enter();
++		m_requests.Clear();
++		m_lock.Exit();
++	}
++
++	void AddRequest(Request& request)
++	{
++		m_lock.Enter();
++		m_requests.PushBack(request);
++		m_startLoading.Signal();
++		m_lock.Exit();
++	}
++
++	S32 GetNumRequests()
++	{
++		m_lock.Enter();
++		S32 n = m_requests.Size();
++		m_lock.Exit();
++		return n;
++	}
++
++	bool GetCompleted(Request& request)
++	{
++		m_lock.Enter();
++
++		bool ret = false;
++
++		if (!m_completed.Empty())
++		{
++			request = m_completed.Front();
++			m_completed.PopFront();
++			ret = true;
++		}
++
++		m_lock.Exit();
++		return ret;
++	}
++
++	void WaitUntilFinished()
++	{
+ 		m_finishedLoading.Wait(1);
+ 		m_startLoading.Signal();
+ 		m_finishedLoading.Wait();
+@@ -211,6 +324,8 @@
+ 	volatile bool m_active;
+ };
+ 
++#endif // PLATFORM_WEB
++
+ LoadingThread g_loadingThread;
+ 
+ StreamManager StreamManager::s_instance;
+@@ -221,7 +336,9 @@
+ 	m_Destroyed = false;
+ 	m_memoryLimit = INT_MAX;
+ 
++#if !defined(PLATFORM_WEB)
+ 	g_loadingThread.Start(0xffff, 2, "LoadingThread"); // loads at 1/3 speed at normal priority
++#endif
+ 
+ 	m_JobQueuePolicy = -1;
+ 	m_JobQueueGroupDecompression = Scheduler::JQ_GROUP_NONE;
+@@ -443,7 +560,11 @@
+ 
+ void StreamManager::BeginTasks()
+ {
+-#ifndef PLATFORM_PC
++#if defined(PLATFORM_WEB)
++	// Non-PS3 AsynchCopy copies immediately (memcpy) and never fills the copy
++	// lists, so there is no GPU copy job to submit. Scheduling one here would
++	// pull the SPU memcopy module into the web build for no work.
++#elif !defined(PLATFORM_PC)
+ 	if (!m_memCopyWorker.m_cpuCopyList.Empty())
+ 	{
+ 		m_memCopyWorker.m_pItems = &m_memCopyWorker.m_cpuCopyList[0];

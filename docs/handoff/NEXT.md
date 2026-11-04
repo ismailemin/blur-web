@@ -120,6 +120,7 @@ spike'ları paralel çalışıyor
 
 E1 kararı: motor simülasyonu + sahne/çizim listesi wasm'da; JS/WebGPU sürümlü
 render packet tüketir. E1b (packet v1 + WebGPU tüketici) tamam: 102 draw,
-console boş. Sıra: streaming → araç adımı → sabit adım + girdi + kamera →
-WebGPU entegrasyonu → ilk sürülebilir tur. E2 (DX11 portu) yalnız karar kapısı
-düşerse.
+console boş. E1a streamer çalışıyor: 359/359 chunk, 244,7 MB, hash parity;
+`levelrender` Scene parse'ı DX11 bağımlılığında bloklu. Sıra: sahne parse →
+araç adımı → sabit adım + girdi + kamera → WebGPU entegrasyonu → ilk
+sürülebilir tur. E2 (DX11 portu) yalnız karar kapısı düşerse.

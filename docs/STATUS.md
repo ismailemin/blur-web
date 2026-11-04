@@ -399,4 +399,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Materyaller kimlik; doku/boya/gölge/post yok, `materialsApplied:false`. Packet spike fixture (`tick:0`, inline JSON), engine sahnesi değil.
 - Kanıt: `docs/work/verification/T-007-render-packet.md`, `docs/work/analysis/e1-render-packet.md`.
 
+## 4 Kasım 2026 — E1a engine streaming
+
+- `StreamManager` wasm32'de: **359/359 chunk**, **244.682.752 B**, en büyük chunk 2.045.952 B (4 MiB allocator içinde); 37 nesne, **246.726 B** wasm, iki build bit-birebir, 20/20 kontrol.
+- **359/359 chunk FNV** bağımsız Python okumasıyla aynı; chunk tablosu 359 kayıt / 1227 blok / initial 1; `levelrender` FNV `0x0ef5c027f0924307`, `levelphysics` FNV `0xb9594f7ce52caa2e`; geometry chunk 157 FNV `0x74dd025de4430925`.
+- EOF/past-EOF/oversize istekleri yüksek sesle düşüyor; sıfır-doldurma yok; PC `streammanager.cpp` önişlenmiş çıktısı aynı.
+- **Blok:** `Level.levelrender` Scene parse'ı DX11 `Display2` tipleri yüzünden derlenmiyor (`archive.cpp` 456 hata, `streamdata.cpp` 33, `RenderLevel.cpp` 71). Chunk tablosu şimdilik iki probe'dan geliyor; `StreamData` prerequisite/queue mantığı derlenmedi.
+- Kanıt: `docs/work/verification/T-007-streaming.md`, `docs/work/analysis/engine-level-stream.md`.
+
 

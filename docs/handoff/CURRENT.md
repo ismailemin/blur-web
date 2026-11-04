@@ -131,6 +131,13 @@ kapısı düşerse devreye girer. Ayrıntı:
 headless Edge/WebGPU console **boş**; materyaller kimlik, tahmini renk yok.
 Kanıt: `docs/work/verification/T-007-render-packet.md`.
 
+**E1a streamer (4 Kasım):** `StreamManager` wasm'da 359/359 chunk ve
+244.682.752 B aktardı; 359/359 FNV bağımsız Python ile aynı; `levelrender`/
+`levelphysics` hash'leri aynı; 246.726 B, 20/20, PC parity.
+`Level.levelrender` Scene parse'ı DX11 `Display2` yüzünden bloklu (456 hata);
+chunk tablosu şimdilik probe'lardan. Kanıt:
+`docs/work/verification/T-007-streaming.md`.
+
 **T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
 makine gerekli. T-006b tamam: wire format struct ABI; `wchar_t` (MSVC 2/wasm32 4)
