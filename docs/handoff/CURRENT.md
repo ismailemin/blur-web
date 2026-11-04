@@ -138,6 +138,17 @@ Kanıt: `docs/work/verification/T-007-render-packet.md`.
 chunk tablosu şimdilik probe'lardan. Kanıt:
 `docs/work/verification/T-007-streaming.md`.
 
+**E1c araç fiziği (5 Kasım):** 186 nesne, **1.024.869 B** wasm; gerçek XT
+`Corvette_ZR1_Stock` (1600 kg, 2.652 m aks, 0.356 m teker). 480 tick: temas
+480/480, NaN 0; hız 0,77 → **31,09 m/s** (tepe 35,13), **96,14 m**; tüm koşu
+hash `2bbc0a18…e974f5`; iki koşu bit-birebir. Native sayısal referans DX SDK
+yüzünden bloklu; 7 web-only dosyanın MSVC önişlenmiş çıktısı aynı. Kanıt:
+`docs/work/verification/T-007-vehicle-physics.md`.
+
+**E1b v1.1 (5 Kasım):** 120 tick dinamik timeline; fixed-step 10/10 senaryo
+sıfır toleransla; canlı koşu 90 tick/262 frame; geometri bir kez yükleniyor,
+kare başına yalnız uniform + draw; tick 0→90 kayması 190,16 px; console boş.
+
 **T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
 makine gerekli. T-006b tamam: wire format struct ABI; `wchar_t` (MSVC 2/wasm32 4)

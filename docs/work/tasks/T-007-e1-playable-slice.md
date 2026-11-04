@@ -1,6 +1,6 @@
 # T-007 — E1 oynanabilir dikey dilim
 
-**Durum:** in-progress (E1b tamam; E1a streamer çalışıyor/parse bloklu; E1c sürüyor)
+**Durum:** in-progress (E1b/E1c tamam; E1a streamer çalışıyor/parse bloklu; E1d sırada)
 **Sahip:** ana ajan
 **Başlangıç:** 4 Kasım 2026
 **Bitiş:** —
@@ -31,13 +31,23 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Sonuç: 102 draw, 43.753 vertex / 46.501 üçgen; packet
   `sha256:7ede3abd…e0d1`, iki koşu bit-birebir; headless Edge/WebGPU 102 draw,
   console **boş**. Materyaller kimlik; tahmini renk yok.
+- **v1.1 (5 Kasım):** 120 tick'lik dinamik timeline; fixed-step 10/10 senaryo
+  sıfır toleransla; canlı koşu 90 tick/262 frame; geometri **bir kez** yükleniyor
+  (2 upload), kare başına yalnız uniform + draw; tick 0→90 kayması 190,16 px;
+  console boş.
 - Kanıt: `docs/work/verification/T-007-render-packet.md`,
   `docs/work/analysis/e1-render-packet.md`, `probes/render-packet/`.
 
-### E1c — Araç fiziği (P19)
+### E1c — Araç fiziği (P19)  ✅ (wasm; native parity DX SDK yüzünden bloklu)
 - Gerçek RacingPhysics/Gravity TU'ları; `Car`/`ArticulatedBody`/teker ray'i.
-- Sabit adım: dinlenme + gaz/direksiyon; durum hash'i; native/wasm parity.
-- Kanıt: `docs/work/analysis/engine-vehicle-physics.md`, `engine/verify_vehicle.py`.
+- 186 nesne, **1.024.869 B** wasm; gerçek XT `Corvette_ZR1_Stock` (1600 kg,
+  2.652 m aks, 0.356 m teker).
+- 480 tick: teker teması 480/480, NaN 0; hız 0,77 → **31,09 m/s**, tepe
+  35,13 m/s, **96,14 m**; tüm koşu hash `2bbc0a18…e974f5`; iki koşu bit-birebir.
+- Native sayısal referans DX SDK yüzünden bloklu; 7 web-only dosyanın MSVC
+  önişlenmiş çıktısı aynı.
+- Kanıt: `docs/work/verification/T-007-vehicle-physics.md`,
+  `docs/work/analysis/engine-vehicle-physics.md`, `engine/verify_vehicle.py`.
 
 ### E1d — Döngü, girdi, kamera
 - Sabit adım sürücüsü (T-005c probe) → engine tick.

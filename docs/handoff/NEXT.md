@@ -119,8 +119,10 @@ spike'ları paralel çalışıyor
 **Kart:** `docs/work/tasks/T-007-e1-playable-slice.md`
 
 E1 kararı: motor simülasyonu + sahne/çizim listesi wasm'da; JS/WebGPU sürümlü
-render packet tüketir. E1b (packet v1 + WebGPU tüketici) tamam: 102 draw,
-console boş. E1a streamer çalışıyor: 359/359 chunk, 244,7 MB, hash parity;
-`levelrender` Scene parse'ı DX11 bağımlılığında bloklu. Sıra: sahne parse →
-araç adımı → sabit adım + girdi + kamera → WebGPU entegrasyonu → ilk
-sürülebilir tur. E2 (DX11 portu) yalnız karar kapısı düşerse.
+render packet tüketir. E1b (packet v1 + dinamik v1.1 + WebGPU tüketici) tamam:
+120 tick timeline, geometri tek upload, console boş. E1c araç fiziği tamam:
+480 tick, 31,09 m/s, 96,14 m, iki koşu bit-birebir (native referans DX SDK
+bloklu). E1a streamer 359/359 chunk; `levelrender` Scene parse'ı DX11
+bağımlılığında bloklu. Sıradaki: E1d sabit adım + girdi + chase camera; sonra
+packet'i gerçek araç durumuna bağla ve ilk sürülebilir tur. E2 (DX11 portu)
+yalnız karar kapısı düşerse.

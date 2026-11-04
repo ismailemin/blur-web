@@ -407,4 +407,20 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - **Blok:** `Level.levelrender` Scene parse'ı DX11 `Display2` tipleri yüzünden derlenmiyor (`archive.cpp` 456 hata, `streamdata.cpp` 33, `RenderLevel.cpp` 71). Chunk tablosu şimdilik iki probe'dan geliyor; `StreamData` prerequisite/queue mantığı derlenmedi.
 - Kanıt: `docs/work/verification/T-007-streaming.md`, `docs/work/analysis/engine-level-stream.md`.
 
+## 5 Kasım 2026 — E1c araç fiziği wasm
+
+- Gerçek RacingPhysics + Gravity: **186 nesne**, **1.024.869 B** wasm; link `-sERROR_ON_UNDEFINED_SYMBOLS=1` ile kapanıyor.
+- Araç verisi gerçek XT: `RP_CarDynamics` kayıt 37 `Corvette_ZR1_Stock`; 1600 kg, 2.652 m aks, 0.356 m teker, 6 vites RWD. Uydurma değer yok; yüzey eşlemesi/fizik handle'ı açıkça eksik etiketli.
+- 180 dinlenme + 300 gaz tick: temas **480/480**, NaN **0**, hız 0,77 → **31,09 m/s** (tepe 35,13), **96,14 m**; tüm koşu hash `2bbc0a18…e974f5`; iki koşu bit-birebir.
+- Native sayısal referans DX SDK yüzünden bloklu; 7 web-only dosyanın MSVC önişlenmiş çıktısı aynı, 2 grammar fix `/W4` temiz. Patch `6fd6f2d1…86bd`.
+- Kanıt: `docs/work/verification/T-007-vehicle-physics.md`, `docs/work/analysis/engine-vehicle-physics.md`.
+
+## 5 Kasım 2026 — E1b packet v1.1
+
+- Şema 1.0/1.1: `nodes[]` + tick başına `updates[]`; 1.1 timeline'sız reddediliyor, 1.0 timeline'lı reddediliyor.
+- 120 tick packet, 3.099.828 B, `sha256:c31ddb3f…f84c`; 120/120 benzersiz tick hash'i, iki koşu aynı.
+- `fixed-step.js` T-005c probe'unun portu; native probe deltalarıyla **10/10 senaryo sıfır tolerans**.
+- Canlı: **90 tick / 262 frame**, 127 frame sıfır tick; geometri **2 upload** (mesh başına bir kez), kare başına tek 26.112 B uniform + 102 draw. Tick 0→90 kayması **190,16 px**; console **0 mesaj**.
+- Hareket `motion:"synthetic"`; fizik değil. Kanıt: `docs/work/verification/T-007-render-packet.md`.
+
 
