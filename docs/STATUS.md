@@ -378,4 +378,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Showroom: 11.590 / 7.987. Console/WebGPU hatası yok.
 - Bu bir **asset görüntüleyici** doğrulamasıdır; oynanabilir oyun değildir. Görüntüler sohbet yoluyla sağlandı, `_work/` altında arşivlenmedi.
 
+## 4 Kasım 2026 — E1 renderer kararı
+
+- **E1 kabul edildi:** dünya yükleme, sahne/çizim listesi, fizik, yarış durumu ve girdi semantiği wasm'da; JS/WebGPU sürümlü bir render packet tüketir. Mevcut WebGPU görüntüleyici başlangıç rasterizer'ı.
+- E1, engine renderer'ı atlamak değil: DX11 backend + state/shader katmanı değişir, sahne/çizim ön yüzü korunur. Böylece E2 aynı packet arkasında backend/sadakat yükseltmesi olarak kalır.
+- Karar kapısı: tam tur oynanabilir, çarpışma/sınırlar görsel olarak net, 60 Hz stabil, kalan sadakat farkları listeli ve oyun hatasını gizlemiyor. Aksi hâlde E2.
+- Ayrıntı: `docs/work/analysis/e1-renderer-strategy.md`.
+
 

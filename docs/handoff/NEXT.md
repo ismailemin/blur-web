@@ -84,6 +84,11 @@ overlay'i üstünde `Sys::I_File` + `pf_*` C ABI; `verify_file_overlay.py --fres
 PASS (530.493 B, 50/50, tam `C_PakFs` + `C_OverlayFs`, PC parity). Kalan:
 yazılabilir katman/`GameHelpers`, OPFS/worker.
 
+**Renderer:** E1 kabul edildi. Engine simülasyonu + sahne/çizim listesi wasm'da,
+WebGPU backend JS'te sürümlü render packet tüketir. Packet v1 sözleşmesi, sahne
+closure'ı, araç debug çizimi ve chase camera sıradaki adımlar. E2 (DX11 portu)
+karar kapısına bağlı. Ayrıntı: `docs/work/analysis/e1-renderer-strategy.md`.
+
 ## 4. T-006 — Tarayıcı multiplayer
 
 **Durum:** analiz tamam (a/b/c); uygulama T-005g/T-004'e bağlı
