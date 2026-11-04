@@ -1,15 +1,21 @@
 // Render packet v1 — canonical serialisation, stable hash and structural conformance.
 // This file is the single definition of "the packet hash"; the producer, the
 // validator and any future engine exporter must agree with it byte for byte.
+//
+// Version family: `version: 1` is the static single-frame packet. `version: 1.1`
+// adds the additive timeline (`nodes`, `updates`, `tickDurationSeconds`) and must
+// still parse as a v1 packet by ignoring those members. A v1.1 packet without a
+// timeline is rejected: the bump has to mean something.
 
 import { createHash } from 'node:crypto';
+import { MATRIX_CONVENTION, cameraFromOrbit } from './packet-camera.mjs';
+import { isRigid } from '../web/interpolate.js';
 
 export const PACKET_KIND = 'blur.render-packet';
-export const PACKET_VERSION = 1;
+export const PACKET_VERSION = 1.1;
+export const SUPPORTED_VERSIONS = Object.freeze([1, 1.1]);
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
-const MATRIX_CONVENTION =
-  'column-major 16-float array; column-vector; right-handed view; WebGPU clip depth 0..1';
 
 /** Recursively sort object keys so key order can never change the hash. */
 function sortValue(value) {
@@ -27,11 +33,16 @@ export function canonicalJson(value) {
   return JSON.stringify(sortValue(value));
 }
 
+/** sha256 over any value's canonical JSON. `undefined` members are dropped. */
+export function hashOf(value) {
+  return 'sha256:' + createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
+}
+
 /** sha256 over the packet body (everything except the `hash` member). */
 export function packetHash(packet) {
   const body = { ...packet };
   delete body.hash;
-  return 'sha256:' + createHash('sha256').update(canonicalJson(body), 'utf8').digest('hex');
+  return hashOf(body);
 }
 
 /** Pretty formatter that keeps short numeric arrays on one line, for review. */
@@ -79,6 +90,42 @@ function isInt(value) {
   return Number.isSafeInteger(value);
 }
 
+const TIMELINE_MEMBERS = Object.freeze(['nodes', 'updates', 'tickDurationSeconds']);
+
+function checkCamera(where, camera, fail) {
+  const need = (member, condition, message) => { if (!condition) fail(where + '.' + member, message); };
+  need('mode', camera.mode === 'orbit' || camera.mode === 'explicit', 'must be orbit or explicit');
+  need('view', isMat4(camera.view), 'must be 16 finite numbers');
+  need('projection', isMat4(camera.projection), 'must be 16 finite numbers');
+  need('position', isVec3(camera.position), 'must be 3 finite numbers');
+  need('target', isVec3(camera.target), 'must be 3 finite numbers');
+  need('up', isVec3(camera.up), 'must be 3 finite numbers');
+  need('near', Number.isFinite(camera.near) && camera.near > 0, 'must be positive');
+  need('far', Number.isFinite(camera.far) && camera.far > camera.near, 'must exceed near');
+  need('aspect', Number.isFinite(camera.aspect) && camera.aspect > 0, 'must be positive');
+  need('verticalFovRadians', Number.isFinite(camera.verticalFovRadians) && camera.verticalFovRadians > 0 && camera.verticalFovRadians < Math.PI, 'must be within (0, pi)');
+  need('matrixConvention', camera.matrixConvention === MATRIX_CONVENTION, 'must document the matrix convention');
+  if (camera.mode === 'orbit') {
+    const orbit = camera.orbit ?? {};
+    need('orbit.yaw', Number.isFinite(orbit.yaw), 'an orbit camera must expose a finite yaw');
+    need('orbit.pitch', Number.isFinite(orbit.pitch) && Math.abs(orbit.pitch) < Math.PI / 2, 'an orbit camera must expose a pitch within (-pi/2, pi/2)');
+    need('orbit.distance', Number.isFinite(orbit.distance) && orbit.distance > 0, 'an orbit camera must expose a positive distance');
+  }
+}
+
+function checkClose(where, expected, actual, tolerance, fail) {
+  if (!Array.isArray(expected) || !Array.isArray(actual) || expected.length !== actual.length) {
+    fail(where, 'cannot compare arrays of different shapes');
+    return;
+  }
+  for (let index = 0; index < expected.length; index++) {
+    if (!(Math.abs(expected[index] - actual[index]) <= tolerance)) {
+      fail(where, 'component ' + index + ' is ' + actual[index] + ' but the declared parameters give ' + expected[index]);
+      return;
+    }
+  }
+}
+
 /**
  * Structural conformance check for packet v1. It is deliberately stricter than a
  * generic JSON-Schema pass: every draw range must land inside its mesh and every
@@ -97,22 +144,33 @@ export function validatePacket(packet) {
   for (const key of required) if (!(key in packet)) fail('packet', 'missing member ' + key);
 
   if (packet.kind !== PACKET_KIND) fail('kind', 'expected ' + PACKET_KIND);
-  if (packet.version !== PACKET_VERSION) fail('version', 'expected ' + PACKET_VERSION);
+  if (!SUPPORTED_VERSIONS.includes(packet.version)) fail('version', 'expected one of ' + SUPPORTED_VERSIONS.join(', '));
+  const isTimeline = packet.version === 1.1;
   need('tick', isInt(packet.tick) && packet.tick >= 0, 'must be a non-negative integer');
   need('alpha', Number.isFinite(packet.alpha) && packet.alpha >= 0 && packet.alpha <= 1, 'must be within 0..1');
+  if (isTimeline) {
+    for (const key of TIMELINE_MEMBERS) if (!(key in packet)) fail('packet', 'version 1.1 requires member ' + key);
+  } else {
+    for (const key of TIMELINE_MEMBERS) if (key in packet) fail('packet', 'version 1 must not carry the timeline member ' + key);
+  }
 
   const camera = packet.camera ?? {};
-  need('camera.mode', camera.mode === 'orbit' || camera.mode === 'explicit', 'must be orbit or explicit');
-  need('camera.view', isMat4(camera.view), 'must be 16 finite numbers');
-  need('camera.projection', isMat4(camera.projection), 'must be 16 finite numbers');
-  need('camera.position', isVec3(camera.position), 'must be 3 finite numbers');
-  need('camera.target', isVec3(camera.target), 'must be 3 finite numbers');
-  need('camera.up', isVec3(camera.up), 'must be 3 finite numbers');
-  need('camera.near', Number.isFinite(camera.near) && camera.near > 0, 'must be positive');
-  need('camera.far', Number.isFinite(camera.far) && camera.far > camera.near, 'must exceed near');
-  need('camera.aspect', Number.isFinite(camera.aspect) && camera.aspect > 0, 'must be positive');
-  need('camera.verticalFovRadians', Number.isFinite(camera.verticalFovRadians) && camera.verticalFovRadians > 0 && camera.verticalFovRadians < Math.PI, 'must be within (0, pi)');
-  need('camera.matrixConvention', camera.matrixConvention === MATRIX_CONVENTION, 'must document the matrix convention');
+  checkCamera('camera', camera, fail);
+  if (camera.mode === 'orbit' && camera.orbit) {
+    const rebuilt = cameraFromOrbit({
+      target: camera.target,
+      distance: camera.orbit.distance,
+      yaw: camera.orbit.yaw,
+      pitch: camera.orbit.pitch,
+      near: camera.near,
+      far: camera.far,
+      verticalFovRadians: camera.verticalFovRadians,
+      aspect: camera.aspect
+    });
+    checkClose('camera.view', rebuilt.view, camera.view, 1e-5, fail);
+    checkClose('camera.projection', rebuilt.projection, camera.projection, 1e-5, fail);
+    checkClose('camera.position', rebuilt.position, camera.position, 1e-4, fail);
+  }
 
   if (!Array.isArray(packet.lights)) fail('lights', 'must be an array');
   else packet.lights.forEach((light, index) => {
@@ -169,12 +227,16 @@ export function validatePacket(packet) {
     need(where + '.source', typeof material?.source === 'string' && material.source.length > 0, 'must record the source');
   });
 
+  const drawById = new Map();
+  const nodeOwner = new Map();
   if (!Array.isArray(packet.draws) || packet.draws.length === 0) fail('draws', 'must be a non-empty array');
   else packet.draws.forEach((draw, index) => {
     const where = `draws[${index}]`;
     const mesh = meshes.get(draw?.meshId);
     need(where + '.meshId', Boolean(mesh), 'references an unknown mesh');
     need(where + '.id', typeof draw?.id === 'string' && draw.id.length > 0, 'must be a non-empty string');
+    if (drawById.has(draw?.id)) fail(where + '.id', 'duplicate draw id');
+    drawById.set(draw?.id, draw);
     need(where + '.world', isMat4(draw?.world), 'must be 16 finite numbers');
     need(where + '.worldKind', draw?.worldKind === 'baked-into-mesh' || draw?.worldKind === 'packet-transform', 'must be baked-into-mesh or packet-transform');
     need(where + '.layer', draw?.layer === 'opaque' || draw?.layer === 'transparent', 'must be opaque or transparent');
@@ -208,6 +270,100 @@ export function validatePacket(packet) {
     need(where + '.placement', typeof placed?.placement === 'string' && placed.placement.length > 0, 'must name the placement');
     need(where + '.reason', typeof placed?.reason === 'string' && placed.reason.length > 0, 'must state why this placement exists');
   });
+
+  const nodes = new Map();
+  if (isTimeline) {
+    if (!Array.isArray(packet.nodes) || packet.nodes.length === 0) fail('nodes', 'must be a non-empty array');
+    else packet.nodes.forEach((node, index) => {
+      const where = `nodes[${index}]`;
+      need(where + '.id', typeof node?.id === 'string' && node.id.length > 0, 'must be a non-empty string');
+      if (nodes.has(node?.id)) fail(where + '.id', 'duplicate node id');
+      need(where + '.meshId', meshes.has(node?.meshId), 'references an unknown mesh');
+      need(where + '.drawIds', Array.isArray(node?.drawIds) && node.drawIds.length > 0, 'must name the draws it moves');
+      if (Array.isArray(node?.drawIds)) {
+        for (const drawId of node.drawIds) {
+          if (!drawById.has(drawId)) fail(where + '.drawIds', 'references unknown draw ' + drawId);
+          if (nodeOwner.has(drawId)) fail(where + '.drawIds', 'draw ' + drawId + ' is already moved by node ' + nodeOwner.get(drawId));
+          nodeOwner.set(drawId, node?.id);
+        }
+      }
+      need(where + '.reason', typeof node?.reason === 'string' && node.reason.length > 0, 'must state why these draws share a transform');
+      nodes.set(node?.id, node);
+    });
+  }
+
+  if (isTimeline) {
+    need('tickDurationSeconds', Number.isFinite(packet.tickDurationSeconds) && packet.tickDurationSeconds > 0, 'must be positive');
+    if (!Array.isArray(packet.updates) || packet.updates.length < 2) fail('updates', 'must be an array of at least two ticks');
+    else {
+      const seen = new Set();
+      let previousTick = -1;
+      packet.updates.forEach((update, index) => {
+        const where = `updates[${index}]`;
+        need(where + '.tick', isInt(update?.tick) && update.tick >= 0, 'must be a non-negative integer');
+        if (isInt(update?.tick)) {
+          if (update.tick <= previousTick) fail(where + '.tick', 'ticks must strictly increase');
+          previousTick = update.tick;
+        }
+        need(where + '.alpha', Number.isFinite(update?.alpha) && update.alpha >= 0 && update.alpha <= 1, 'must be within 0..1');
+        checkCamera(where + '.camera', update?.camera ?? {}, fail);
+        if (update?.camera?.mode === 'orbit' && update.camera.orbit) {
+          const rebuilt = cameraFromOrbit({
+            target: update.camera.target,
+            distance: update.camera.orbit.distance,
+            yaw: update.camera.orbit.yaw,
+            pitch: update.camera.orbit.pitch,
+            near: update.camera.near,
+            far: update.camera.far,
+            verticalFovRadians: update.camera.verticalFovRadians,
+            aspect: update.camera.aspect
+          });
+          checkClose(where + '.camera.view', rebuilt.view, update.camera.view, 1e-5, fail);
+          checkClose(where + '.camera.projection', rebuilt.projection, update.camera.projection, 1e-5, fail);
+        }
+        if (!Array.isArray(update?.matrices)) fail(where + '.matrices', 'must be an array');
+        else update.matrices.forEach((entry, matrixIndex) => {
+          const at = `${where}.matrices[${matrixIndex}]`;
+          const hasNode = typeof entry?.nodeId === 'string';
+          const hasDraw = typeof entry?.drawId === 'string';
+          need(at, hasNode !== hasDraw, 'must name exactly one of nodeId or drawId');
+          if (hasNode) need(at + '.nodeId', nodes.has(entry.nodeId), 'references an unknown node');
+          if (hasDraw) need(at + '.drawId', drawById.has(entry.drawId), 'references an unknown draw');
+          if (!isMat4(entry?.world)) {
+            fail(at + '.world', 'must be 16 finite numbers');
+            return;
+          }
+          // Interpolation is only defined for rigid transforms, so it is a
+          // contract requirement rather than a consumer convenience.
+          need(at + '.world', isRigid(entry.world), 'must be a rigid transform (rotation + translation, no scale or shear)');
+          const key = hasNode ? 'node:' + entry.nodeId : 'draw:' + entry.drawId;
+          if (seen.has(update.tick + '|' + key)) fail(at, 'duplicate transform for ' + key + ' at tick ' + update.tick);
+          seen.add(update.tick + '|' + key);
+        });
+        need(where + '.hash', SHA256.test(update?.hash ?? ''), 'must be a sha256 string');
+        if (SHA256.test(update?.hash ?? '')) {
+          const recomputed = hashOf({ ...update, hash: undefined });
+          need(where + '.hash', recomputed === update.hash, 'does not match the canonical tick hash (' + recomputed + ')');
+        }
+      });
+
+      const first = packet.updates[0];
+      if (first) {
+        need('updates[0].tick', first.tick === packet.tick, 'must equal the packet reference tick');
+        need('updates[0].alpha', first.alpha === packet.alpha, 'must equal the packet reference alpha');
+        checkClose('updates[0].camera.view', packet.camera.view, first.camera?.view, 1e-9, fail);
+        checkClose('updates[0].camera.projection', packet.camera.projection, first.camera?.projection, 1e-9, fail);
+      }
+      const sequence = packet.diagnostics?.sequence ?? {};
+      need('diagnostics.sequence.tickCount', sequence.tickCount === packet.updates.length, 'must equal updates.length');
+      need('diagnostics.sequence.tickHz', isInt(sequence.tickHz) && sequence.tickHz > 0, 'must be a positive integer');
+      if (isInt(sequence.tickHz)) {
+        need('tickDurationSeconds', Math.abs(packet.tickDurationSeconds - 1 / sequence.tickHz) <= 1e-12, 'must equal 1/tickHz');
+      }
+      need('diagnostics.sequence.motion', typeof sequence.motion === 'string' && sequence.motion.length > 0, 'must name the motion source');
+      need('diagnostics.sequence.motionReason', typeof sequence.motionReason === 'string' && sequence.motionReason.length > 0, 'must state that this is not physics');
+    }
+  }
 
   const diagnostics = packet.diagnostics ?? {};
   for (const key of ['drawCount','meshCount','vertexTotal','triangleTotal','culled','instancesEmitted','instancesOmitted']) {

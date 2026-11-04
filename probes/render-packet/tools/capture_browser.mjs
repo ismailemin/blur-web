@@ -6,7 +6,7 @@
 // Usage: node probes/render-packet/tools/capture_browser.mjs [--edge <msedge.exe>] [--port 8791]
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './serve_packet.mjs';
@@ -133,57 +133,148 @@ await send('Emulation.setDeviceMetricsOverride', { width: VIEWPORT.width, height
 
 const frames = (count) => evaluate(`new Promise(resolve=>{let left=${count};const step=()=>{if(--left<=0)resolve(true);else requestAnimationFrame(step)};requestAnimationFrame(step)})`);
 
-async function load(url, label) {
+/**
+ * Drive one held tick. The page runs its own fixed-step loop until it reaches the
+ * requested tick, then holds it, so the screenshot is a function of the packet and
+ * the tick number, not of wall-clock timing.
+ */
+async function load(url, label, expectedTick) {
   messages.length = 0;
   await send('Page.navigate', { url });
   let state = null;
-  for (let attempt = 0; attempt < 240; attempt++) {
-    state = await evaluate('(()=>{const p=window.renderPacketProbe;return p?{consumer:p.consumer,error:p.error,hash:p.packet?p.packet.hash:null,frames:p.frames}:null})()').catch(() => null);
-    if (state && (state.consumer === 'ready' || state.consumer === 'error')) break;
+  for (let attempt = 0; attempt < 320; attempt++) {
+    state = await evaluate(`(()=>{const p=window.renderPacketProbe;return p?{consumer:p.consumer,error:p.error,holdReached:p.holdReached,frames:p.frames,renderTick:p.renderTick}:null})()`).catch(() => null);
+    if (state && state.consumer === 'error') break;
+    if (state && state.consumer === 'running' && state.holdReached && state.frames >= 12) break;
     await sleep(250);
   }
   if (!state) throw new Error(label + ': consumer never published state');
   if (state.consumer === 'error') throw new Error(label + ': consumer error: ' + state.error);
-  await frames(4);
+  if (!state.holdReached) throw new Error(label + ': the fixed-step driver did not reach tick ' + expectedTick);
+  // A few more frames so the uniform/upload counters are clearly past the first frame.
+  await frames(10);
   const probe = await evaluate(`(()=>{
     const p=window.renderPacketProbe;
     const canvas=document.getElementById('scene');
     return {
       hash:p.packet.hash,
+      version:p.packet.version,
       draws:p.packet.diagnostics.drawCount,
       meshes:p.packet.diagnostics.meshCount,
       vertices:p.packet.diagnostics.vertexTotal,
       triangles:p.packet.diagnostics.triangleTotal,
       materials:p.packet.diagnostics.materialsApplied,
       lighting:p.packet.diagnostics.lighting,
+      sequence:p.sequence,
+      hold:p.hold,
+      holdReached:p.holdReached,
+      renderTick:p.renderTick,
+      alpha:p.alpha,
+      tickHash:p.tickHash,
+      matrixChecksum:p.matrixChecksum,
+      movedScreen:p.movedScreen,
+      ticksExecuted:p.ticksExecuted,
       frames:p.frames,
+      cappedFrames:p.cappedFrames,
+      pauseDrops:p.pauseDrops,
+      zeroTickFrames:p.zeroTickFrames,
+      geometryUploads:p.geometryUploads,
+      geometryUploadBytes:p.geometryUploadBytes,
+      uniformWrites:p.uniformWrites,
+      uniformBytes:p.uniformBytes,
+      drawsIssued:p.drawsIssued,
       camera:p.camera,
-      gpu:p.gpu,
-      canvas:{width:canvas.width,height:canvas.height},
-      cameraState:p.packet.camera
+      gpu:p.adapter,
+      canvas:{width:canvas.width,height:canvas.height}
     };
   })()`);
   const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   const png = path.join(OUT, 'browser-' + label + '.png');
   writeFileSync(png, Buffer.from(shot.data, 'base64'));
-  return { url, probe, screenshot: path.relative(ROOT, png).split(path.sep).join('/'), messages: messages.splice(0) };
+
+  // A second, cropped capture centred on the moving body. The clip rectangle is
+  // derived from the projected position the page reports, so the crop follows the
+  // packet rather than a hand-tuned rectangle.
+  let cropPath = null;
+  const moved = probe.movedScreen;
+  if (moved) {
+    // Roughly three times the object's projected size, so the body fills a third of
+    // the crop at both ticks instead of shrinking to a dot at distance.
+    const width = Math.min(VIEWPORT.width, Math.max(140, Math.round((moved.width || 40) * 3)));
+    const height = Math.min(VIEWPORT.height, Math.max(120, Math.round((moved.height || 30) * 3)));
+    const x = Math.max(0, Math.min(VIEWPORT.width - width, Math.round(moved.x - width / 2)));
+    const y = Math.max(0, Math.min(VIEWPORT.height - height, Math.round(moved.y - height / 2)));
+    const clip = { x, y, width, height, scale: 3 };
+    const crop = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, clip });
+    cropPath = path.join(OUT, 'browser-' + label + '-car.png');
+    writeFileSync(cropPath, Buffer.from(crop.data, 'base64'));
+    cropPath = path.relative(ROOT, cropPath).split(path.sep).join('/');
+  }
+  const screenshot = path.relative(ROOT, png).split(path.sep).join('/');
+  return { url, probe, screenshot, carCrop: cropPath, messages: messages.splice(0) };
 }
 
-const packetCamera = await load(origin + '/', 'packet-camera');
-const levelFocus = await load(origin + '/?focus=river.block27.instances-all', 'level-focus');
-const carFocus = await load(origin + '/?focus=corvette.c3.race.body', 'car-focus');
+const packetPath = path.join(OUT, 'packet.json');
+const packet = JSON.parse(readFileSync(packetPath, 'utf8'));
+const TICK_A = 0;
+const TICK_B = 90;
+if (!packet.updates || TICK_B > packet.updates[packet.updates.length - 1].tick) throw new Error('packet has no timeline to capture');
 
-const allMessages = [...packetCamera.messages, ...levelFocus.messages, ...carFocus.messages];
+const runA = await load(origin + '/?hold=' + TICK_A + '&pinCamera=1', 'tick-' + TICK_A, TICK_A);
+const runB = await load(origin + '/?hold=' + TICK_B + '&pinCamera=1', 'tick-' + TICK_B, TICK_B);
+
+const allMessages = [...runA.messages, ...runB.messages];
 const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+const expectedA = packet.updates[TICK_A];
+const expectedB = packet.updates[TICK_B];
+
+// Assertions. Each one is a claim the README and the analysis document repeat.
+const failures = [];
+const check = (label, condition, detail) => { if (!condition) failures.push(label + (detail ? ': ' + detail : '')); };
+for (const [label, run, tick, expected] of [['tick ' + TICK_A, runA, TICK_A, expectedA], ['tick ' + TICK_B, runB, TICK_B, expectedB]]) {
+  check(label + ' rendered the requested tick', run.probe.renderTick === tick && run.probe.alpha === 0,
+    'renderTick ' + run.probe.renderTick + ' alpha ' + run.probe.alpha);
+  check(label + ' reports the packet tick hash', run.probe.tickHash === expected.hash, run.probe.tickHash + ' vs ' + expected.hash);
+  check(label + ' geometry uploads equal the mesh count', run.probe.geometryUploads === run.probe.meshes,
+    run.probe.geometryUploads + ' uploads for ' + run.probe.meshes + ' meshes');
+  check(label + ' issued every draw every frame', run.probe.drawsIssued === run.probe.frames * run.probe.draws,
+    run.probe.drawsIssued + ' draws over ' + run.probe.frames + ' frames');
+  check(label + ' wrote one uniform buffer per frame', run.probe.uniformWrites === run.probe.frames,
+    run.probe.uniformWrites + ' uniform writes over ' + run.probe.frames + ' frames');
+}
+// The point of a dynamic packet: transforms change, uploads do not.
+check('geometry uploads did not grow between ticks', runA.probe.geometryUploads === runB.probe.geometryUploads,
+  runA.probe.geometryUploads + ' vs ' + runB.probe.geometryUploads);
+check('uploaded bytes are identical', runA.probe.geometryUploadBytes === runB.probe.geometryUploadBytes,
+  runA.probe.geometryUploadBytes + ' vs ' + runB.probe.geometryUploadBytes);
+check('transforms differ between the two ticks', runA.probe.matrixChecksum !== runB.probe.matrixChecksum,
+  runA.probe.matrixChecksum + ' vs ' + runB.probe.matrixChecksum);
+check('tick hashes differ between the two ticks', runA.probe.tickHash !== runB.probe.tickHash);
+check('the second run really ran frames', runB.probe.frames >= 12, String(runB.probe.frames));
+check('the second run advanced the driver', runB.probe.ticksExecuted >= TICK_B, String(runB.probe.ticksExecuted));
+check('both runs located the moving body on screen', Boolean(runA.probe.movedScreen && runB.probe.movedScreen));
+if (runA.probe.movedScreen && runB.probe.movedScreen) {
+  const dx = runB.probe.movedScreen.x - runA.probe.movedScreen.x;
+  const dy = runB.probe.movedScreen.y - runA.probe.movedScreen.y;
+  const pixels = Math.hypot(dx, dy);
+  check('the body moved on screen between the two ticks', pixels > 40,
+    'projected displacement ' + pixels.toFixed(1) + ' px at ' + VIEWPORT.width + 'x' + VIEWPORT.height);
+  runA.probe.movedScreenPixels = 0;
+  runB.probe.movedScreenPixels = Number(pixels.toFixed(2));
+}
+check('console is clean', blocking.length === 0, blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+
 const evidence = {
   browser: { executable: edge, mode: 'headless=new', flags: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=d3d11'], viewport: VIEWPORT },
-  runs: [packetCamera, levelFocus, carFocus],
+  packet: { path: path.relative(ROOT, packetPath).split(path.sep).join('/'), version: packet.version, hash: packet.hash, tickCount: packet.updates.length, tickHz: packet.diagnostics.sequence.tickHz, motion: packet.diagnostics.sequence.motion },
+  runs: [runA, runB],
   console: {
     totalMessages: allMessages.length,
     errorsAndWarnings: blocking.length,
     messages: allMessages
   },
-  verdict: blocking.length === 0 ? 'clean-console' : 'console-not-clean'
+  assertions: { ok: failures.length === 0, failures },
+  verdict: blocking.length === 0 && failures.length === 0 ? 'clean-console-and-gates' : 'failed'
 };
 writeFileSync(path.join(OUT, 'browser-evidence.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
 writeFileSync(path.join(LOG_DIR, 'edge-process.log'), browserLog, 'utf8');
@@ -194,7 +285,27 @@ console.log(JSON.stringify({
   verdict: evidence.verdict,
   consoleMessages: evidence.console.totalMessages,
   errorsAndWarnings: evidence.console.errorsAndWarnings,
-  runs: evidence.runs.map((run) => ({ url: run.url.replace(origin, ''), screenshot: run.screenshot, hash: run.probe.hash, draws: run.probe.draws, vertices: run.probe.vertices, triangles: run.probe.triangles, frames: run.probe.frames, canvas: run.probe.canvas, messages: run.messages.length })),
+  failures,
+  runs: evidence.runs.map((run) => ({
+    url: run.url.replace(origin, ''),
+    screenshot: run.screenshot,
+    carCrop: run.carCrop,
+    movedScreen: run.probe.movedScreen,
+    renderTick: run.probe.renderTick,
+    alpha: run.probe.alpha,
+    tickHash: run.probe.tickHash,
+    matrixChecksum: run.probe.matrixChecksum,
+    frames: run.probe.frames,
+    ticksExecuted: run.probe.ticksExecuted,
+    geometryUploads: run.probe.geometryUploads,
+    geometryUploadBytes: run.probe.geometryUploadBytes,
+    uniformWrites: run.probe.uniformWrites,
+    drawsIssued: run.probe.drawsIssued,
+    cappedFrames: run.probe.cappedFrames,
+    pauseDrops: run.probe.pauseDrops,
+    canvas: run.probe.canvas,
+    messages: run.messages.length
+  })),
   messages: evidence.console.messages
 }, null, 2));
-if (evidence.verdict !== 'clean-console') process.exitCode = 1;
+if (evidence.verdict !== 'clean-console-and-gates') process.exitCode = 1;

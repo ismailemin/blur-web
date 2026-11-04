@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://blur-web.local/schema/render-packet.v1.schema.json",
-  "title": "Blur E1 render packet v1",
-  "description": "Draw-list seam between an engine-side scene producer and a WebGPU backend. Version 1 is JSON so a packet can be reviewed by hand. See docs/work/analysis/e1-render-packet.md.",
+  "title": "Blur E1 render packet v1 (1.0 and 1.1)",
+  "description": "Draw-list seam between an engine-side scene producer and a WebGPU backend. Version 1.0 is a static single-frame JSON packet. Version 1.1 adds an additive per-tick timeline (nodes, updates, tickDurationSeconds); a 1.0 reader that ignores those members still renders the reference frame. See docs/work/analysis/e1-render-packet.md.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,14 +11,68 @@
   ],
   "properties": {
     "kind": { "const": "blur.render-packet" },
-    "version": { "const": 1 },
+    "version": { "enum": [1, 1.1] },
     "hash": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
       "description": "sha256 of the UTF-8 canonical JSON of this object with the hash member removed; keys sorted, compact form."
     },
-    "tick": { "type": "integer", "minimum": 0, "description": "Simulation tick that produced the packet." },
-    "alpha": { "type": "number", "minimum": 0, "maximum": 1, "description": "Scheduler interpolation alpha for this frame; never a second simulation." },
+    "tick": { "type": "integer", "minimum": 0, "description": "Reference tick of this packet. For 1.1 it equals updates[0].tick." },
+    "alpha": { "type": "number", "minimum": 0, "maximum": 1, "description": "Reference interpolation alpha. For 1.1 it equals updates[0].alpha; a live driver supplies its own alpha." },
+    "tickDurationSeconds": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "1.1 only: seconds per simulation tick. Must equal 1 / diagnostics.sequence.tickHz."
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "1.1 only: movable units. A node groups draws that share one world transform, so a tick does not repeat 80 matrices for one rigid body.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "meshId", "drawIds", "reason"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "meshId": { "type": "string", "minLength": 1 },
+          "drawIds": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "updates": {
+      "type": "array",
+      "minItems": 2,
+      "description": "1.1 only: one entry per tick, ordered and strictly increasing. Each entry carries the camera, the interpolation alpha and only the transforms that changed.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tick", "alpha", "camera", "matrices", "hash"],
+        "properties": {
+          "tick": { "type": "integer", "minimum": 0 },
+          "alpha": { "type": "number", "minimum": 0, "maximum": 1 },
+          "camera": { "$ref": "#/$defs/camera" },
+          "matrices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["world"],
+              "properties": {
+                "nodeId": { "type": "string", "minLength": 1 },
+                "drawId": { "type": "string", "minLength": 1 },
+                "world": { "$ref": "#/$defs/mat4", "description": "Must be rigid: rotation + translation, no scale or shear, because the consumer interpolates by quaternion slerp." }
+              },
+              "oneOf": [{ "required": ["nodeId"] }, { "required": ["drawId"] }]
+            }
+          },
+          "hash": {
+            "$ref": "#/$defs/hash",
+            "description": "sha256 of this entry's canonical JSON with the hash member removed."
+          }
+        }
+      }
+    },
     "generator": {
       "type": "object",
       "additionalProperties": false,
@@ -43,29 +97,7 @@
         }
       }
     },
-    "camera": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "mode", "position", "target", "up", "view", "projection",
-        "near", "far", "verticalFovRadians", "aspect", "matrixConvention"
-      ],
-      "properties": {
-        "mode": { "enum": ["orbit", "explicit"] },
-        "position": { "$ref": "#/$defs/vec3" },
-        "target": { "$ref": "#/$defs/vec3" },
-        "up": { "$ref": "#/$defs/vec3" },
-        "view": { "$ref": "#/$defs/mat4" },
-        "projection": { "$ref": "#/$defs/mat4" },
-        "near": { "type": "number", "exclusiveMinimum": 0 },
-        "far": { "type": "number", "exclusiveMinimum": 0 },
-        "verticalFovRadians": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 3.141592653589793 },
-        "aspect": { "type": "number", "exclusiveMinimum": 0 },
-        "matrixConvention": {
-          "const": "column-major 16-float array; column-vector; right-handed view; WebGPU clip depth 0..1"
-        }
-      }
-    },
+    "camera": { "$ref": "#/$defs/camera" },
     "lights": {
       "type": "array",
       "items": {
@@ -220,6 +252,18 @@
         "approximations": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "notRecovered": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "limits": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "sequence": {
+          "type": "object",
+          "description": "1.1 only: what produced the timeline and how it must be read.",
+          "additionalProperties": true,
+          "required": ["tickCount", "tickHz", "motion", "motionReason"],
+          "properties": {
+            "tickCount": { "type": "integer", "minimum": 2 },
+            "tickHz": { "type": "integer", "minimum": 1 },
+            "motion": { "type": "string", "minLength": 1 },
+            "motionReason": { "type": "string", "minLength": 1 }
+          }
+        },
         "scope": { "type": "string" },
         "extras": { "type": "object", "additionalProperties": true }
       }
@@ -227,8 +271,63 @@
   },
   "$defs": {
     "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "position", "target", "up", "view", "projection",
+        "near", "far", "verticalFovRadians", "aspect", "matrixConvention"
+      ],
+      "properties": {
+        "mode": { "enum": ["orbit", "explicit"] },
+        "position": { "$ref": "#/$defs/vec3" },
+        "target": { "$ref": "#/$defs/vec3" },
+        "up": { "$ref": "#/$defs/vec3" },
+        "view": { "$ref": "#/$defs/mat4" },
+        "projection": { "$ref": "#/$defs/mat4" },
+        "near": { "type": "number", "exclusiveMinimum": 0 },
+        "far": { "type": "number", "exclusiveMinimum": 0 },
+        "verticalFovRadians": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 3.141592653589793 },
+        "aspect": { "type": "number", "exclusiveMinimum": 0 },
+        "matrixConvention": {
+          "const": "column-major 16-float array; column-vector; right-handed view; WebGPU clip depth 0..1"
+        },
+        "orbit": {
+          "type": "object",
+          "description": "Declared orbit parameters. When present the consumer may interpolate camera motion per tick and must reproduce view/projection exactly at integer ticks.",
+          "additionalProperties": false,
+          "required": ["yaw", "pitch", "distance"],
+          "properties": {
+            "yaw": { "type": "number" },
+            "pitch": { "type": "number", "exclusiveMinimum": -1.5707963267948966, "exclusiveMaximum": 1.5707963267948966 },
+            "distance": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "orbit" } } },
+          "then": { "required": ["orbit"] }
+        }
+      ]
+    },
     "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
     "vec4": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
     "mat4": { "type": "array", "items": { "type": "number" }, "minItems": 16, "maxItems": 16 }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "version": { "const": 1.1 } } },
+      "then": { "required": ["nodes", "updates", "tickDurationSeconds"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["nodes"] },
+            { "required": ["updates"] },
+            { "required": ["tickDurationSeconds"] }
+          ]
+        }
+      }
+    }
+  ]
 }

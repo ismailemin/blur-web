@@ -1,9 +1,17 @@
-// WebGPU consumer for render packet v1.
+// WebGPU consumer for render packet v1 / v1.1.
 //
-// It only reads the packet contract: camera, lights, meshes, draws. It never
-// reaches into a reader or an engine. Materials are not applied, so every draw is
-// shaded with a neutral albedo under the packet's directional light — a declared
-// diagnostic fallback, not a guessed material colour.
+// It only reads the packet contract: camera, lights, meshes, draws, and (for
+// v1.1) nodes + updates. It never reaches into a reader or an engine.
+//
+// Static geometry is uploaded exactly once. A frame only writes per-draw uniforms
+// (view-projection, world, albedo) and resubmits draw calls, so the upload counter
+// staying flat is a testable property rather than a hope.
+//
+// Materials are not applied, so every draw is shaded with a neutral albedo under
+// the packet's directional light — a declared diagnostic fallback, not a guessed
+// material colour.
+
+import { interpolateRigid, isRigid, matrixChecksum } from './interpolate.js';
 
 const SHADER = /* wgsl */ `
 struct DrawUniforms {
@@ -45,6 +53,7 @@ struct VertexOut {
 
 const NEUTRAL_ALBEDO = 0.8;
 const DRAW_UNIFORM_STRIDE = 256; // minUniformBufferOffsetAlignment default
+const SUPPORTED_VERSIONS = [1, 1.1];
 
 export const MATRIX_CONVENTION =
   'column-major 16-float array; column-vector; right-handed view; WebGPU clip depth 0..1';
@@ -128,6 +137,13 @@ function boundsOfDraws(draws) {
   return { min, max, center, radius };
 }
 
+const shortestAngle = (delta) => {
+  let value = delta;
+  while (value > Math.PI) value -= Math.PI * 2;
+  while (value < -Math.PI) value += Math.PI * 2;
+  return value;
+};
+
 export class PacketConsumer {
   constructor(canvas, onState) {
     this.canvas = canvas;
@@ -139,8 +155,24 @@ export class PacketConsumer {
     this.orbit = null;
     this.usePacketCamera = true;
     this.focusMeshId = null;
-    this.frames = 0;
     this.drag = null;
+    this.updates = null;
+    this.updateMaps = null;
+    this.drawMovers = null;
+    this.lastTick = 0;
+    this.stats = {
+      renders: 0,
+      geometryUploads: 0,
+      geometryUploadBytes: 0,
+      uniformWrites: 0,
+      uniformBytes: 0,
+      drawsIssued: 0,
+      ticksExecuted: 0,
+      alpha: 0,
+      renderTick: 0,
+      matrixChecksum: '0x00000000',
+      tickHash: null
+    };
 
     canvas.addEventListener('pointerdown', (event) => {
       this.drag = [event.clientX, event.clientY];
@@ -153,7 +185,7 @@ export class PacketConsumer {
       this.orbit.pitch = Math.max(-1.45, Math.min(1.45, this.orbit.pitch + (event.clientY - this.drag[1]) * scale));
       this.drag = [event.clientX, event.clientY];
       this.usePacketCamera = false;
-      this.render();
+      this.renderFrame({ cursor: this.stats.cursor ?? 0 });
     });
     canvas.addEventListener('pointerup', () => { this.drag = null; });
     canvas.addEventListener('pointercancel', () => { this.drag = null; });
@@ -162,7 +194,7 @@ export class PacketConsumer {
       if (!this.orbit) return;
       this.orbit.distance = Math.max(this.orbit.radius * 0.2, Math.min(this.orbit.radius * 12, this.orbit.distance * Math.exp(event.deltaY * 0.001)));
       this.usePacketCamera = false;
-      this.render();
+      this.renderFrame({ cursor: this.stats.cursor ?? 0 });
     }, { passive: false });
   }
 
@@ -172,7 +204,9 @@ export class PacketConsumer {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('no WebGPU adapter');
     this.device = await adapter.requestDevice();
-    this.adapterInfo = adapter.info ? { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device, description: adapter.info.description } : {};
+    this.adapterInfo = adapter.info
+      ? { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device, description: adapter.info.description }
+      : {};
     this.device.lost.then((info) => this.onState({ state: 'error', message: 'WebGPU device lost: ' + info.message }));
     this.device.addEventListener('uncapturederror', (event) => this.onState({ state: 'error', message: 'WebGPU uncaptured error: ' + event.error.message }));
 
@@ -214,7 +248,7 @@ export class PacketConsumer {
 
   async load(packet) {
     if (packet.kind !== 'blur.render-packet') throw new Error('packet kind ' + packet.kind + ' is not blur.render-packet');
-    if (packet.version !== 1) throw new Error('packet version ' + packet.version + ' is not supported');
+    if (!SUPPORTED_VERSIONS.includes(packet.version)) throw new Error('packet version ' + packet.version + ' is not supported');
     if (packet.camera.matrixConvention !== MATRIX_CONVENTION) throw new Error('packet camera matrix convention is not the documented v1 convention');
     this.packet = packet;
     await this.init();
@@ -223,18 +257,33 @@ export class PacketConsumer {
       if (mesh.storage !== 'inline-json') throw new Error('mesh ' + mesh.id + ' uses unsupported storage ' + mesh.storage);
       if (mesh.positions.length !== mesh.vertexCount * 3) throw new Error('mesh ' + mesh.id + ' position count mismatch');
       if (mesh.indices.length !== mesh.indexCount) throw new Error('mesh ' + mesh.id + ' index count mismatch');
+      const positions = Float32Array.from(mesh.positions);
+      const indices = Uint32Array.from(mesh.indices);
       const vertexBuffer = this.device.createBuffer({
-        size: Math.ceil(mesh.positions.length * 4 / 4) * 4,
+        size: Math.ceil(positions.byteLength / 4) * 4,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
       });
-      this.device.queue.writeBuffer(vertexBuffer, 0, Float32Array.from(mesh.positions));
+      this.device.queue.writeBuffer(vertexBuffer, 0, positions);
       const indexBuffer = this.device.createBuffer({
-        size: Math.max(4, Math.ceil(mesh.indices.length * 4 / 4) * 4),
+        size: Math.max(4, Math.ceil(indices.byteLength / 4) * 4),
         usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
       });
-      this.device.queue.writeBuffer(indexBuffer, 0, Uint32Array.from(mesh.indices));
+      this.device.queue.writeBuffer(indexBuffer, 0, indices);
       this.buffers.push(vertexBuffer, indexBuffer);
       this.meshes.set(mesh.id, { vertexBuffer, indexBuffer, vertexCount: mesh.vertexCount, indexCount: mesh.indexCount });
+      // Mesh AABB, used only to frame the moving body for screenshot evidence.
+      if (!this.meshBounds) this.meshBounds = new Map();
+      const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
+      for (let index = 0; index < positions.length; index += 3) {
+        for (let axis = 0; axis < 3; axis++) {
+          bounds.min[axis] = Math.min(bounds.min[axis], positions[index + axis]);
+          bounds.max[axis] = Math.max(bounds.max[axis], positions[index + axis]);
+        }
+      }
+      this.meshBounds.set(mesh.id, bounds);
+      // Counted separately from per-frame work: this must never grow at runtime.
+      this.stats.geometryUploads++;
+      this.stats.geometryUploadBytes += positions.byteLength + indices.byteLength;
     }
 
     const drawCount = packet.draws.length;
@@ -265,20 +314,52 @@ export class PacketConsumer {
     this.draws = packet.draws.map((draw) => ({ ...draw, mesh: this.meshes.get(draw.meshId) }));
     for (const draw of this.draws) {
       if (!draw.mesh) throw new Error('draw ' + draw.id + ' references unknown mesh ' + draw.meshId);
-      if (draw.indexOffset + draw.indexCount > draw.mesh.indexCount) throw new Error('draw ' + draw.id + ' index range exceeds mesh');
       if (!Number.isInteger(draw.indexOffset) || !Number.isInteger(draw.indexCount) || draw.indexCount % 3) throw new Error('draw ' + draw.id + ' has an invalid index range');
+      if (draw.indexOffset + draw.indexCount > draw.mesh.indexCount) throw new Error('draw ' + draw.id + ' index range exceeds mesh');
+      if (!isRigid(draw.world)) throw new Error('draw ' + draw.id + ' world matrix is not rigid');
+    }
+
+    this.timeline = null;
+    if (packet.version === 1.1) {
+      const updates = packet.updates;
+      if (!Array.isArray(updates) || updates.length < 2) throw new Error('version 1.1 requires at least two ticks');
+      const nodeByDraw = new Map();
+      for (const node of packet.nodes) for (const drawId of node.drawIds) nodeByDraw.set(drawId, node.id);
+      this.updateMaps = updates.map((update) => {
+        const map = new Map();
+        for (const entry of update.matrices) {
+          const key = entry.nodeId ? 'node:' + entry.nodeId : 'draw:' + entry.drawId;
+          if (!isRigid(entry.world)) throw new Error('tick ' + update.tick + ' matrix for ' + key + ' is not rigid');
+          map.set(key, entry.world);
+        }
+        return map;
+      });
+      // Each draw resolves its transform through at most one key per tick.
+      this.drawMovers = this.draws.map((draw) => {
+        if (this.updateMaps[0].has('draw:' + draw.id)) return 'draw:' + draw.id;
+        const nodeId = nodeByDraw.get(draw.id);
+        if (nodeId && this.updateMaps[0].has('node:' + nodeId)) return 'node:' + nodeId;
+        return null;
+      });
+      this.updates = updates;
+      this.lastTick = updates[updates.length - 1].tick;
+      this.timeline = {
+        tickCount: updates.length,
+        tickHz: packet.diagnostics?.sequence?.tickHz ?? null,
+        motion: packet.diagnostics?.sequence?.motion ?? 'unstated',
+        firstTick: updates[0].tick,
+        lastTick: this.lastTick
+      };
     }
 
     const camera = packet.camera;
     const offset = [camera.position[0] - camera.target[0], camera.position[1] - camera.target[1], camera.position[2] - camera.target[2]];
     const distance = Math.hypot(...offset);
-    const pitch = Math.asin(offset[1] / distance);
-    const yaw = Math.atan2(offset[0], offset[2]);
     this.orbit = {
       target: camera.target.slice(),
       distance,
-      yaw,
-      pitch,
+      yaw: Math.atan2(offset[0], offset[2]),
+      pitch: Math.asin(offset[1] / distance),
       radius: Math.max(1e-3, boundsOfDraws(packet.draws).radius)
     };
     this.cameraShape = {
@@ -289,7 +370,79 @@ export class PacketConsumer {
     };
     this.depth = null;
     this.usePacketCamera = true;
-    return this.render();
+    return this.renderFrame({ cursor: 0 });
+  }
+
+  /** Interpolate the per-tick orbit camera; f = 0 returns tick A's stored matrices. */
+  interpolateCamera(a, b, f) {
+    if (!(f > 0)) return { view: Float32Array.from(a.view), projection: Float32Array.from(a.projection) };
+    const oa = a.orbit;
+    const ob = b.orbit;
+    const yaw = oa.yaw + shortestAngle(ob.yaw - oa.yaw) * f;
+    const pitch = oa.pitch + (ob.pitch - oa.pitch) * f;
+    const distance = oa.distance + (ob.distance - oa.distance) * f;
+    const target = [
+      a.target[0] + (b.target[0] - a.target[0]) * f,
+      a.target[1] + (b.target[1] - a.target[1]) * f,
+      a.target[2] + (b.target[2] - a.target[2]) * f
+    ];
+    const { view } = orbitView(target, distance, yaw, pitch);
+    return {
+      view,
+      projection: perspective(a.verticalFovRadians, a.aspect, a.near, a.far)
+    };
+  }
+
+  /** Resolve the render state for a fractional tick. Pure: no GPU calls. */
+  resolveFrame(cursor) {
+    const clampCursor = Math.max(0, Math.min(this.lastTick, cursor));
+    if (!this.timeline) {
+      return {
+        cursor: clampCursor,
+        alpha: 0,
+        tickFloor: 0,
+        tickCeil: 0,
+        view: Float32Array.from(this.packet.camera.view),
+        projection: Float32Array.from(this.packet.camera.projection),
+        worlds: this.draws.map((draw) => Float32Array.from(draw.world)),
+        tickHash: null
+      };
+    }
+    const floor = Math.min(Math.floor(clampCursor), this.lastTick);
+    const ceil = Math.min(floor + 1, this.lastTick);
+    const f = clampCursor - floor;
+    const a = this.updates[floor];
+    const b = this.updates[ceil];
+    // `pinCamera` is a screenshot/debug option: hold the packet's tick-0 camera so
+    // two frames of different ticks differ only by the moving object.
+    const camera = this.usePacketCamera
+      ? (this.pinCamera ? { view: Float32Array.from(this.updates[0].camera.view), projection: Float32Array.from(this.updates[0].camera.projection) } : this.interpolateCamera(a.camera, b.camera, f))
+      : this.currentOverrideCamera();
+    const from = this.updateMaps[floor];
+    const to = this.updateMaps[ceil];
+    const worlds = this.draws.map((draw, index) => {
+      const key = this.drawMovers[index];
+      if (!key) return Float32Array.from(draw.world);
+      const worldA = from.get(key) ?? draw.world;
+      const worldB = to.get(key) ?? worldA;
+      return interpolateRigid(worldA, worldB, f);
+    });
+    return {
+      cursor: clampCursor,
+      alpha: f,
+      tickFloor: floor,
+      tickCeil: ceil,
+      view: camera.view,
+      projection: camera.projection,
+      worlds,
+      tickHash: a.hash
+    };
+  }
+
+  currentOverrideCamera() {
+    const view = orbitView(this.orbit.target, this.orbit.distance, this.orbit.yaw, this.orbit.pitch).view;
+    const projection = perspective(this.cameraShape.fovY, this.cameraShape.aspect, this.cameraShape.near, this.cameraShape.far);
+    return { view, projection };
   }
 
   /** Debug camera that frames one mesh instead of the whole packet scene. */
@@ -299,8 +452,6 @@ export class PacketConsumer {
     if (!subset.length) throw new Error('no draw uses mesh ' + meshId);
     const bounds = boundsOfDraws(subset);
     const mesh = this.packet.meshes.find((entry) => entry.id === meshId);
-    // Fit in world space: a mesh may be object-local, so bake each distinct
-    // draw world transform into a temporary vertex set for the camera fit only.
     const matrices = new Map();
     for (const draw of subset) matrices.set(draw.world.join(','), draw.world);
     const worldSets = [];
@@ -319,34 +470,12 @@ export class PacketConsumer {
     this.orbit.distance = fitVertexDistance(worldSets, bounds.center, this.orbit.yaw, this.orbit.pitch, this.cameraShape.fovY, this.cameraShape.aspect, 1.18);
     this.usePacketCamera = false;
     this.focusMeshId = meshId;
-    return this.render();
+    return this.renderFrame({ cursor: this.stats.cursor });
   }
 
-  currentCamera() {
-    if (this.usePacketCamera) {
-      return { view: Float32Array.from(this.packet.camera.view), projection: Float32Array.from(this.packet.camera.projection) };
-    }
-    const view = orbitView(this.orbit.target, this.orbit.distance, this.orbit.yaw, this.orbit.pitch).view;
-    const projection = perspective(this.cameraShape.fovY, this.cameraShape.aspect, this.cameraShape.near, this.cameraShape.far);
-    return { view, projection };
-  }
-
-  writeUniforms(view, projection) {
-    const viewProjection = multiply(projection, view);
-    const bytes = new Float32Array(this.draws.length * (DRAW_UNIFORM_STRIDE / 4));
-    for (let index = 0; index < this.draws.length; index++) {
-      const draw = this.draws[index];
-      const base = index * (DRAW_UNIFORM_STRIDE / 4);
-      bytes.set(viewProjection, base);
-      bytes.set(draw.world, base + 16);
-      bytes.set([NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, 1], base + 32);
-    }
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, bytes);
-    return viewProjection;
-  }
-
-  render() {
+  renderFrame({ cursor = 0 } = {}) {
     if (!this.device || !this.packet) return null;
+    const frame = this.resolveFrame(cursor);
     const ratio = Math.min(devicePixelRatio || 1, 2);
     const width = Math.max(1, Math.round(this.canvas.clientWidth * ratio));
     const height = Math.max(1, Math.round(this.canvas.clientHeight * ratio));
@@ -356,8 +485,16 @@ export class PacketConsumer {
       this.depth?.destroy();
       this.depth = this.device.createTexture({ size: [width, height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
     }
-    const { view, projection } = this.currentCamera();
-    const viewProjection = this.writeUniforms(view, projection);
+
+    const viewProjection = multiply(frame.projection, frame.view);
+    const bytes = new Float32Array(this.draws.length * (DRAW_UNIFORM_STRIDE / 4));
+    for (let index = 0; index < this.draws.length; index++) {
+      const base = index * (DRAW_UNIFORM_STRIDE / 4);
+      bytes.set(viewProjection, base);
+      bytes.set(frame.worlds[index], base + 16);
+      bytes.set([NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, 1], base + 32);
+    }
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, bytes);
 
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -384,15 +521,76 @@ export class PacketConsumer {
     }
     pass.end();
     this.device.queue.submit([encoder.finish()]);
-    this.frames++;
-    this.onState({
-      state: 'rendered',
-      frames: this.frames,
-      width,
-      height,
-      viewProjection: Array.from(viewProjection)
-    });
-    return { width, height };
+
+    this.stats.renders++;
+    this.stats.uniformWrites++;
+    this.stats.uniformBytes += bytes.byteLength;
+    this.stats.drawsIssued += this.draws.length;
+    this.stats.cursor = frame.cursor;
+    this.stats.renderTick = frame.tickFloor;
+    this.stats.alpha = frame.alpha;
+    this.stats.matrixChecksum = matrixChecksum(frame.worlds);
+    this.stats.tickHash = frame.tickHash;
+
+    // Where the first moved object projects on screen, in CSS pixels. Used by the
+    // screenshot harness to crop on the moving body; also a cheap "it moved" probe.
+    this.stats.movedScreen = null;
+    const movedIndex = this.drawMovers ? this.drawMovers.findIndex(Boolean) : -1;
+    if (movedIndex >= 0) {
+      const world = frame.worlds[movedIndex];
+      const draw = this.draws[movedIndex];
+      const meshBounds = this.meshBounds?.get(draw.meshId);
+      const cssWidth = this.canvas.clientWidth || 1;
+      const cssHeight = this.canvas.clientHeight || 1;
+      const project = (point) => {
+        const clip = [0, 0, 0, 0];
+        for (let row = 0; row < 4; row++) {
+          clip[row] = point[0] * viewProjection[row] + point[1] * viewProjection[4 + row] + point[2] * viewProjection[8 + row] + point[3] * viewProjection[12 + row];
+        }
+        if (!(clip[3] > 0)) return null;
+        return {
+          x: ((clip[0] / clip[3]) * 0.5 + 0.5) * cssWidth,
+          y: (1 - ((clip[1] / clip[3]) * 0.5 + 0.5)) * cssHeight,
+          depth: clip[2] / clip[3]
+        };
+      };
+      const origin = project([world[12], world[13], world[14], 1]);
+      if (origin && meshBounds) {
+        // Screen box of the moved mesh: project its AABB corners through the
+        // current transform, so the screenshot harness can crop on the object.
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let corner = 0; corner < 8; corner++) {
+          const local = [
+            corner & 1 ? meshBounds.max[0] : meshBounds.min[0],
+            corner & 2 ? meshBounds.max[1] : meshBounds.min[1],
+            corner & 4 ? meshBounds.max[2] : meshBounds.min[2]
+          ];
+          const point = [
+            local[0] * world[0] + local[1] * world[4] + local[2] * world[8] + world[12],
+            local[0] * world[1] + local[1] * world[5] + local[2] * world[9] + world[13],
+            local[0] * world[2] + local[1] * world[6] + local[2] * world[10] + world[14],
+            1
+          ];
+          const projected = project(point);
+          if (!projected) continue;
+          minX = Math.min(minX, projected.x);
+          minY = Math.min(minY, projected.y);
+          maxX = Math.max(maxX, projected.x);
+          maxY = Math.max(maxY, projected.y);
+        }
+        this.stats.movedScreen = {
+          x: Number(origin.x.toFixed(2)),
+          y: Number(origin.y.toFixed(2)),
+          depth: Number(origin.depth.toFixed(5)),
+          width: Number.isFinite(minX) ? Number((maxX - minX).toFixed(2)) : 0,
+          height: Number.isFinite(minY) ? Number((maxY - minY).toFixed(2)) : 0,
+          drawId: draw.id
+        };
+      }
+    }
+
+    this.onState({ state: 'rendered', frames: this.stats.renders, width, height, frame });
+    return { width, height, frame };
   }
 }
 
