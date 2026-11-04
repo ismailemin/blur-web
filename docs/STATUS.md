@@ -391,4 +391,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Üç spike paralel: P18 `StreamManager`/`C_Scene` ile River yükleme, P19 gerçek RacingPhysics araç adımı, P20 render packet v1 + WebGPU tüketici prototipi.
 - Her spike kendi dosya alanında; `upstream/` yazılmıyor, PC yolu korunuyor. Sonuçlar geldikçe doğrulanıp commit edilecek.
 
+## 4 Kasım 2026 — E1b render packet v1
+
+- `probes/render-packet/`: JSON Schema 2020-12 + kanonik hash + doğrulayıcı; üretici gerçek River block27 (22 instance) ve Corvette gövdesinden packet üretiyor.
+- Packet: **102 draw**, 43.753 vertex / 46.501 üçgen, 2.906.496 B, `sha256:7ede3abd…e0d1`; iki koşu bit-birebir.
+- WebGPU tüketici prototipi headless Edge'de 102 draw çizdi; **console boş**; ekran görüntüsü `_work/render-packet/browser-car-focus.png`.
+- Materyaller kimlik; doku/boya/gölge/post yok, `materialsApplied:false`. Packet spike fixture (`tick:0`, inline JSON), engine sahnesi değil.
+- Kanıt: `docs/work/verification/T-007-render-packet.md`, `docs/work/analysis/e1-render-packet.md`.
+
 

@@ -119,6 +119,7 @@ spike'ları paralel çalışıyor
 **Kart:** `docs/work/tasks/T-007-e1-playable-slice.md`
 
 E1 kararı: motor simülasyonu + sahne/çizim listesi wasm'da; JS/WebGPU sürümlü
-render packet tüketir. Sıra: streaming → packet v1 → araç adımı → sabit adım +
-girdi + kamera → WebGPU entegrasyonu → ilk sürülebilir tur. E2 (DX11 portu)
-yalnız karar kapısı düşerse.
+render packet tüketir. E1b (packet v1 + WebGPU tüketici) tamam: 102 draw,
+console boş. Sıra: streaming → araç adımı → sabit adım + girdi + kamera →
+WebGPU entegrasyonu → ilk sürülebilir tur. E2 (DX11 portu) yalnız karar kapısı
+düşerse.

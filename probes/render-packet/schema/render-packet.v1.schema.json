@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://blur-web.local/schema/render-packet.v1.schema.json",
+  "title": "Blur E1 render packet v1",
+  "description": "Draw-list seam between an engine-side scene producer and a WebGPU backend. Version 1 is JSON so a packet can be reviewed by hand. See docs/work/analysis/e1-render-packet.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind", "version", "generator", "tick", "alpha", "camera", "lights",
+    "meshes", "materials", "draws", "placedObjects", "diagnostics", "hash"
+  ],
+  "properties": {
+    "kind": { "const": "blur.render-packet" },
+    "version": { "const": 1 },
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "sha256 of the UTF-8 canonical JSON of this object with the hash member removed; keys sorted, compact form."
+    },
+    "tick": { "type": "integer", "minimum": 0, "description": "Simulation tick that produced the packet." },
+    "alpha": { "type": "number", "minimum": 0, "maximum": 1, "description": "Scheduler interpolation alpha for this frame; never a second simulation." },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "producers"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "producers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "tool", "args", "outputSha256"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "tool": { "type": "string", "minLength": 1 },
+              "args": { "type": "array", "items": { "type": "string" } },
+              "outputSha256": { "$ref": "#/$defs/hash" }
+            }
+          }
+        }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "position", "target", "up", "view", "projection",
+        "near", "far", "verticalFovRadians", "aspect", "matrixConvention"
+      ],
+      "properties": {
+        "mode": { "enum": ["orbit", "explicit"] },
+        "position": { "$ref": "#/$defs/vec3" },
+        "target": { "$ref": "#/$defs/vec3" },
+        "up": { "$ref": "#/$defs/vec3" },
+        "view": { "$ref": "#/$defs/mat4" },
+        "projection": { "$ref": "#/$defs/mat4" },
+        "near": { "type": "number", "exclusiveMinimum": 0 },
+        "far": { "type": "number", "exclusiveMinimum": 0 },
+        "verticalFovRadians": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 3.141592653589793 },
+        "aspect": { "type": "number", "exclusiveMinimum": 0 },
+        "matrixConvention": {
+          "const": "column-major 16-float array; column-vector; right-handed view; WebGPU clip depth 0..1"
+        }
+      }
+    },
+    "lights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "direction", "colour", "intensity", "source"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "const": "directional", "description": "v1 defines only directional lights." },
+          "direction": { "$ref": "#/$defs/vec3", "description": "Unit vector from the surface toward the light." },
+          "colour": { "$ref": "#/$defs/vec4" },
+          "intensity": { "type": "number" },
+          "source": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "meshes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id", "storage", "vertexCount", "indexCount", "positions", "indices",
+          "positionsSha256", "indicesSha256", "coordinateSpace", "source"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "storage": { "const": "inline-json", "description": "v1 ships geometry inline. A later version may reference engine buffers instead." },
+          "vertexCount": { "type": "integer", "minimum": 1 },
+          "indexCount": { "type": "integer", "minimum": 3 },
+          "positions": {
+            "type": "array",
+            "description": "vertexCount * 3 floats, xyz interleaved.",
+            "items": { "type": "number" }
+          },
+          "indices": {
+            "type": "array",
+            "description": "indexCount uint32 indices; every value is < vertexCount.",
+            "items": { "type": "integer", "minimum": 0 }
+          },
+          "positionsSha256": { "$ref": "#/$defs/hash", "description": "sha256 of the little-endian float32 positions." },
+          "indicesSha256": { "$ref": "#/$defs/hash", "description": "sha256 of the little-endian uint32 indices." },
+          "coordinateSpace": { "type": "string", "minLength": 1 },
+          "source": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["tool", "args"],
+            "properties": {
+              "tool": { "type": "string", "minLength": 1 },
+              "args": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "materials": {
+      "type": "array",
+      "description": "Declared material identities. v1 carries identity and provenance only, never guessed colours or texture pixels.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "albedoTextureIndex", "pixelsIncluded", "source"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "albedoTextureIndex": { "type": ["integer", "null"] },
+          "pixelsIncluded": { "const": false },
+          "source": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "draws": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id", "meshId", "vertexOffset", "vertexCount", "indexOffset", "indexCount",
+          "world", "worldKind", "materialId", "materialReason", "layer", "bounds", "source"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "meshId": { "type": "string", "minLength": 1 },
+          "vertexOffset": { "type": "integer", "minimum": 0 },
+          "vertexCount": { "type": "integer", "minimum": 1 },
+          "indexOffset": { "type": "integer", "minimum": 0 },
+          "indexCount": { "type": "integer", "minimum": 3, "multipleOf": 3 },
+          "world": { "$ref": "#/$defs/mat4" },
+          "worldKind": {
+            "enum": ["baked-into-mesh", "packet-transform"],
+            "description": "baked-into-mesh: positions already include this matrix and the consumer must treat world as identity. packet-transform: the consumer must apply world."
+          },
+          "materialId": { "type": ["string", "null"] },
+          "materialReason": { "type": "string", "minLength": 1 },
+          "layer": { "enum": ["opaque", "transparent"] },
+          "bounds": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["min", "max"],
+            "properties": {
+              "min": { "$ref": "#/$defs/vec3" },
+              "max": { "$ref": "#/$defs/vec3" }
+            }
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["tool", "instanceIndex", "basePrimitiveIndex"],
+            "properties": {
+              "tool": { "type": "string", "minLength": 1 },
+              "instanceIndex": { "type": ["integer", "null"] },
+              "basePrimitiveIndex": { "type": ["integer", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "placedObjects": {
+      "type": "array",
+      "description": "Objects positioned by the packet rather than by recovered engine data. Every entry states why.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["meshId", "placement", "world", "reason"],
+        "properties": {
+          "meshId": { "type": "string", "minLength": 1 },
+          "placement": { "type": "string", "minLength": 1 },
+          "world": { "$ref": "#/$defs/mat4" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "drawCount", "meshCount", "vertexTotal", "triangleTotal", "instancesEmitted",
+        "instancesOmitted", "culled", "materialsApplied", "lighting",
+        "approximations", "notRecovered", "limits"
+      ],
+      "properties": {
+        "drawCount": { "type": "integer", "minimum": 0 },
+        "meshCount": { "type": "integer", "minimum": 0 },
+        "vertexTotal": { "type": "integer", "minimum": 0 },
+        "triangleTotal": { "type": "integer", "minimum": 0 },
+        "instancesEmitted": { "type": "integer", "minimum": 0 },
+        "instancesOmitted": { "type": "integer", "minimum": 0 },
+        "culled": { "type": "integer", "minimum": 0 },
+        "materialsApplied": { "type": "boolean" },
+        "lighting": { "type": "string", "minLength": 1 },
+        "approximations": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "notRecovered": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "limits": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "scope": { "type": "string" },
+        "extras": { "type": "object", "additionalProperties": true }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "vec4": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+    "mat4": { "type": "array", "items": { "type": "number" }, "minItems": 16, "maxItems": 16 }
+  }
+}

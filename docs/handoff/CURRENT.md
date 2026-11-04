@@ -126,6 +126,11 @@ katmanını değiştirip sahne/çizim ön yüzünü korur. E2 (DX11 portu) yaln�
 kapısı düşerse devreye girer. Ayrıntı:
 `docs/work/analysis/e1-renderer-strategy.md`.
 
+**E1b tamam (4 Kasım):** packet v1 (`probes/render-packet/`) 102 draw /
+43.753 vertex / 46.501 üçgen; River block27 + Corvette; iki koşu bit-birebir;
+headless Edge/WebGPU console **boş**; materyaller kimlik, tahmini renk yok.
+Kanıt: `docs/work/verification/T-007-render-packet.md`.
+
 **T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
 makine gerekli. T-006b tamam: wire format struct ABI; `wchar_t` (MSVC 2/wasm32 4)

@@ -1,6 +1,6 @@
 # T-007 — E1 oynanabilir dikey dilim
 
-**Durum:** in-progress (E1a/E1b/E1c spike'ları çalışıyor)
+**Durum:** in-progress (E1b tamam; E1a/E1c spike'ları çalışıyor)
 **Sahip:** ana ajan
 **Başlangıç:** 4 Kasım 2026
 **Bitiş:** —
@@ -20,11 +20,15 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Chunk tablosu + en az bir chunk hash'i referansla aynı.
 - Kanıt: `docs/work/analysis/engine-level-stream.md`, `engine/verify_stream.py`.
 
-### E1b — Render packet v1 (P20)
+### E1b — Render packet v1 (P20)  ✅
 - Sürümlü packet: tick, alpha, kamera, ışıklar, draw'lar (mesh/aralık/matris/
   materyal+neden/layer/bounds), diagnostics, hash.
 - Gerçek River ve Corvette geometrisinden üretici; WebGPU tüketici prototipi.
-- Kanıt: `docs/work/analysis/e1-render-packet.md`, `probes/render-packet/`.
+- Sonuç: 102 draw, 43.753 vertex / 46.501 üçgen; packet
+  `sha256:7ede3abd…e0d1`, iki koşu bit-birebir; headless Edge/WebGPU 102 draw,
+  console **boş**. Materyaller kimlik; tahmini renk yok.
+- Kanıt: `docs/work/verification/T-007-render-packet.md`,
+  `docs/work/analysis/e1-render-packet.md`, `probes/render-packet/`.
 
 ### E1c — Araç fiziği (P19)
 - Gerçek RacingPhysics/Gravity TU'ları; `Car`/`ArticulatedBody`/teker ray'i.

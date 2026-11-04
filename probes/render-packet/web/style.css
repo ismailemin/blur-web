@@ -1,0 +1,64 @@
+:root {
+  --ink: #dfe9f2;
+  --muted: #7d95a8;
+  --panel: rgba(8, 14, 20, 0.72);
+  --accent: #6fc3e8;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b1319;
+  color: var(--ink);
+  font: 12px/1.5 "Cascadia Mono", "Consolas", ui-monospace, monospace;
+}
+
+#scene {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: #0b1319;
+  touch-action: none;
+  cursor: grab;
+}
+
+#hud {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  padding: 10px 12px;
+  white-space: pre;
+  background: var(--panel);
+  border: 1px solid rgba(111, 195, 232, 0.22);
+  border-radius: 6px;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+#legend {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid rgba(111, 195, 232, 0.22);
+  border-radius: 6px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+#legend strong { color: var(--accent); }
+
+#error {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  padding: 10px 12px;
+  background: rgba(92, 20, 26, 0.92);
+  border: 1px solid #d2545f;
+  border-radius: 6px;
+  color: #ffe4e6;
+  white-space: pre-wrap;
+}
