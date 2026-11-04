@@ -32,24 +32,24 @@ source change. 350/350 Gravity files are identical to upstream.
 python engine/verify_gravity.py --fresh
 ```
 
-Result: **status DIVERGED (documented), exit 0** — the probe's
-`formatVersion 1` records mix engine values with probe-added reporting, so the
-full `queryHash` is not equal. The verifier now pins the exact allowed
-divergence; any other difference fails.
+Result: **PASS (v2 field-level)**. The engine harness still emits
+`formatVersion 1` records; the probe now emits `formatVersion 2`, which separates
+engine values from probe-added reporting. `verify_gravity.py` maps every
+engine-assigned field to the corresponding v2 engine-value field:
 
-| Kind | Same | Different | Divergent fields |
-| --- | ---: | ---: | --- |
-| rays | **24** | **0** | — |
-| spheres | 8 | 16 | `contact.physicsMaterial` 56, `contact.effectMaterial` 118, `contact.normal.{x,y,z}` 56/62/57 bytes |
-| cache | 1 | 7 | `entry.engineTriangleIndex` 13, `trace.collisionFlags` 20, `trace.engineTriangleIndex` 1, `trace.normal.{x,y,z}` 10/10/8 bytes |
+- **840 assigned field groups match**, including packed materials, patch
+  normals, `engineTriangleStreamValue`, `engineNormalStored`, contact points,
+  penetrations and distances.
+- `trace.collisionFlags` is excluded: the engine's thin
+  `C_LineCollisionCache::Trace` never assigns it (v2 records
+  `collisionFlagsAssignedByEngine:0`).
+- `queryHash` equality is **not** claimed across different record layouts.
+  Engine v1 `77a53355…f94c`; probe v2 `620eceea…063f` (9,816 B).
+- The former v1 divergences (materials, patch normal, triangle ordinal, flags,
+  stored normal) are now explicit v2 field pairs; a v1 document cannot produce a
+  v2 hash.
 
-First divergence: query 24 `point-vertex-0`, byte 48,
-`contact[0].physicsMaterial` (engine `0x00010000`, probe `0x00000001`).
-Record size is identical (7,768 bytes).
-
-- Engine `queryHash 77a533556fe5ed1cee5e3633d685b233990ed6d5a7858265668d39bd6626f94c`.
-- Probe `queryHash f87365b79fc1217da4280d6d5748ca6dc6808b89382b87de43ddcbfe6c9b5d6e`.
-- Build determinism PASS, run determinism PASS, mesh structure PASS (2 meshes,
+Build determinism PASS, run determinism PASS, mesh structure PASS (2 meshes,
   44,970/17,671 vertices, 31,860/12,384 triangles), 24/24 ray *inputs*
   bit-identical.
 - Harness compiles at `-Wall -Wextra -Wpedantic` with 0 warnings.

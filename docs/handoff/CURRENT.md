@@ -119,6 +119,13 @@ sorgularda **ray 24/24 bayt-birebir**; sphere 8/24, cache 1/8 yalnız altı
 raporlama alanında farklı. Tam `queryHash` eşitliği yok; verifier izin verilen
 farkı pinliyor. Kanıt: `docs/work/verification/T-005d-gravity-wasm.md`.
 
+**T-005d probe v2 (5 Kasım):** `formatVersion 2` engine değerleri ile probe
+raporlamasını ayırıyor; native/wasm/Python byte-identical, `queryHash
+620eceea…063f` (9.816 B). Gravity v1 dokümanıyla **840 atanmış alan grubu**
+eşleşiyor; yalnız engine'in atamadığı `trace.collisionFlags` hariç.
+`verify_gravity.py` v2'ye bağlandı: **PASS (v2 field-level)**. Kanıt:
+`docs/work/verification/T-005d-collision-v2.md`.
+
 **Renderer stratejisi (4 Kasım):** **E1** kabul edildi — dünya/sahne/çizim
 listesi/fizik/yarış durumu wasm'da; WebGPU backend JS'te sürümlü bir render
 packet tüketir. E1 "engine renderer'ı atla" değil; DX11 backend + state/shader

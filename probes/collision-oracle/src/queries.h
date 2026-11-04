@@ -65,14 +65,20 @@ namespace oracle
 		std::uint32_t headerIndex = 0xFFFFFFFFu;
 		std::uint32_t triangleOrdinal = 0xFFFFFFFFu;
 		std::uint32_t engineTriangleIndex = 0xFFFFFFFFu;
+		std::uint32_t leafStartOrdinal = 0xFFFFFFFFu;
 		std::uint32_t collisionFlags = 0;
 		std::uint32_t physicsMaterial = 0;
 		std::uint32_t effectMaterial = 0;
+		std::uint32_t effectMaterialRaw = 0;
 		std::uint32_t userData = 0;
 		std::uint32_t normalPacked = 0;
 		Vec3 contact;
-		Vec3 normal;
+		Vec3 normal;       // probe-reported normal (ray: stored; cache: normalised)
+		Vec3 normalStored; // engine value copied from the triangle (non-unit HenDN3)
 		float distance = 0.0f;
+		// Trace (thin branch) never assigns C_RayTracingResult::m_CollisionFlags.
+		bool collisionFlagsAssignedByEngine = true;
+		std::uint32_t engineCollisionFlags = 0; // contract sentinel when unassigned
 		// Ray end before the query (start + direction * (maxDistance + radius)).
 		Vec3 segmentEnd;
 	};
@@ -91,13 +97,16 @@ namespace oracle
 		Vec3 a, b, c;
 		Vec3 normal;
 		std::uint32_t normalPacked = 0;
-		std::uint32_t engineTriangleIndex = 0;
+		// Exact value passed to C_LineCollisionCache::AddTriangle:
+		// leaf stream byte start + the header group's first leaf-local ordinal.
+		std::uint32_t engineTriangleStreamValue = 0;
+		std::uint32_t leafStartOrdinal = 0;
 		std::uint32_t triangleOrdinal = 0;
 		std::uint32_t leafIndex = 0;
 		std::uint32_t collisionFlags = 0;
 		std::uint32_t physicsMaterial = 0;
-		std::uint32_t effectMaterial = 0;
-		std::uint32_t effectMaterialRaw = 0;
+		std::uint32_t effectMaterial = 0;    // stored U16 (engine field width)
+		std::uint32_t effectMaterialRaw = 0; // source header U32
 		std::uint32_t userData = 0;
 	};
 
@@ -130,12 +139,17 @@ namespace oracle
 	struct SphereContact
 	{
 		Vec3 point;
-		Vec3 surfaceNormal;
+		Vec3 surfaceNormal;  // probe-derived per-contact normal (exact 1/sqrt)
+		Vec3 patchNormal;    // engine C_ContactPatch::m_Normal (zero-guarded)
 		float penetration = 0.0f;
 		std::uint32_t triangleOrdinal = 0;
 		std::uint32_t engineHashValue = 0;
-		std::uint32_t physicsMaterial = 0;
-		std::uint32_t effectMaterial = 0;
+		std::uint32_t bodyPhysicsMaterial = 0;
+		std::uint32_t trianglePhysicsMaterial = 0;
+		std::uint32_t enginePhysicsMaterial = 0;
+		std::uint32_t bodyEffectMaterial = 0;
+		std::uint32_t triangleEffectMaterial = 0;
+		std::uint32_t engineEffectMaterial = 0;
 		std::uint32_t patchIndex = 0;
 	};
 

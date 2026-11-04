@@ -2,6 +2,7 @@
 
 **Date:** 2 November 2026
 **Owner:** P15 (sub-agent)
+**v2 update:** 5 November 2026, P24 (format contract only; see §11)
 **Scope:** bounded, read-only format probe. One new probe directory
 (`probes/collision-oracle/`), its evidence under `_work/collision-oracle/`, and
 this document. No engine file, tool, task card, `upstream/`, `game-data/` or
@@ -12,9 +13,10 @@ the browser build.
 `usa_la_river/Level.levelphysics` are decoded from bounded reads, and a fixed
 query table produces **identical** `queryHash` values from a native x64 build, a
 wasm32 build and an independent Python implementation
-(`f87365b7…b96856f96e`). All 13 malformed/truncated inputs are rejected with a
-byte offset. Parts that are deliberately not implemented are listed in §8 with
-the exact stopping point.
+(`620eceeaf22edeed5069ecfc7ce5a709be51963974e081a8f6ead6d986c1063f`, format
+contract v2). All 13 malformed/truncated inputs are rejected with a byte offset.
+Parts that are deliberately not implemented are listed in §8 with the exact
+stopping point.
 
 ---
 
@@ -42,9 +44,16 @@ the exact stopping point.
 5. Two portability findings fall out of the work and matter for T-005e/f:
    - retail `Normalise()` uses `_mm_rsqrt_ps` + one Newton–Raphson step, which is
      not correctly rounded and has no wasm equivalent; the probe uses exact
-     `1/sqrtf` and labels the deviation.
+     `1/sqrtf` for its derived field and labels the deviation.
    - relying on function-argument evaluation order made MSVC and clang consume
      the query-seed RNG differently; all draws are now sequenced explicitly.
+6. **Format contract v2 separates engine values from probe-added reporting.**
+   The six fields where the real Gravity code and the v1 probe disagreed
+   (material packing, patch vs per-contact normal, group-start vs per-triangle
+   ordinal, unassigned trace flags, stored vs normalised trace normal, and the
+   zero-length normal) are stored as explicit field pairs. Native, wasm32 and
+   Python now agree byte for byte on the v2 records
+   (`620eceea…c1063f`, 9 816 bytes). See §11.
 
 ---
 
@@ -303,13 +312,19 @@ python probes/collision-oracle/tests/run_collision_oracle.py
 | native vs Python, `queryHash` and every canonical record | **identical** |
 | Python vs native, mesh hashes (vertices, quantised vertices, normals, nodes, triangles) | **identical** |
 | malformed/truncated inputs | 13/13 rejected; native and wasm32 agree on code and offset |
-| timings | native 0.02 s, wasm32 0.08 s (node), Python reference 0.35 s |
+| formatVersion | 2 in the native, wasm32 and Python documents |
+| timings | native 0.02 s, wasm32 0.09 s (node), Python reference 0.35 s |
 
 ```text
-queryHash f87365b79fc1217da4280d6d5748ca6dc6808b89382b87de43ddcbfe6c9b5d6e
-canonicalRecordBytes 7768
+formatVersion 2
+queryHash 620eceeaf22edeed5069ecfc7ce5a709be51963974e081a8f6ead6d986c1063f
+canonicalRecordBytes 9816
 input 1 945 409 B sha256 1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28
 ```
+
+The retired v1 hash is `f87365b79fc1217da4280d6d5748ca6dc6808b89382b87de43ddcbfe6c9b5d6e`
+(7 768 bytes). It is documented as superseded in §11 and in the probe README;
+the v1 evidence is preserved under `_work/collision-oracle/v1/`.
 
 Outcomes: 15/24 rays hit, 17/24 sphere queries hit with 60 contacts total, cache
 fills produced 3/1/1/1/4/4/0/4 triangles, 5/8 cache traces hit.
@@ -350,10 +365,11 @@ the result is close to, but not necessarily equal to, the correctly rounded
   result, ray results) are **not** reproducible on wasm by simply calling
   `1.0f/sqrtf`.
 - A port that must match retail bit-for-bit has to emulate the instruction
-  (seed table + NR) or accept a documented difference. This probe uses exact
-  `1/sqrtf` and labels it `normalisation:"exact-ieee-1/sqrt"`, so its results
-  are self-consistent across targets but are **not** claimed to equal the retail
-  binary's normal bits.
+  (seed table + NR) or accept a documented difference. v2 records the
+  engine-shaped value with the non-PS3 `ReciprocalSqrt` rule (exact `1/sqrt`,
+  zero for `len2<=0`) as `patchNormal`/`engineNormalStored`, and the probe-derived
+  exact value as `contactNormalDerived`/`normalDerivedNormalised`. Neither is
+  claimed to equal the retail binary's normal bits.
 - Note the triangle/segment and closest-point paths do **not** normalise, so the
   geometry-level results (contacts, distances, indices) are unaffected by this;
   only reported surface normals are.
@@ -371,17 +387,29 @@ Any change in node traversal order changes *which* triangles are available and
 therefore the answer — the same risk the T-005d feasibility analysis flagged for
 D2.
 
-### 6.3 Byte-offset "triangle indices"
+### 6.3 Byte-offset "triangle indices" and the v2 split
 
 `RayTriangle.inl:104` writes
 `m_TriangleIndex = triangleStartIndex + sizeof(Triangle) * triangleIndex`,
 where `triangleStartIndex` is a leaf-relative **byte** offset into the in-memory
 stream and `triangleIndex` is the accepted triangle's ordinal inside the header
-group. `OptimisedAABBTree_FillCache.inl:201` writes
-`a + node.m_TriangleStartIndex`, i.e. a leaf byte offset plus a leaf-local
-triangle ordinal. Neither is a triangle id. The probe reports both raw values and
-adds `leaf` + `triangleOrdinal` so a hit can be identified; it does not invent a
-global id.
+group. That is a genuine engine value and v2 names it
+`engineTriangleStreamValue`.
+
+`OptimisedAABBTree_FillCache.inl:201` passes
+`a + fetchedNode->m_TriangleStartIndex`, where `a` is the header **group's
+first** leaf-local ordinal (not the per-triangle ordinal) and the second term is
+the leaf stream's byte start. The v1 probe stored the per-triangle ordinal
+instead; v2 now reports all three separately:
+
+- `engineTriangleStreamValue` — the exact value the engine passes to
+  `AddTriangle` (leaf byte start + group first ordinal);
+- `leafStartOrdinal` — the header group's first ordinal;
+- `perTriangleOrdinal` — the actual triangle's leaf-local ordinal.
+
+None of these is a global triangle id, and the probe does not invent one. The
+same split is carried through the cache trace (`LineCollisionCache_Trace.inl`),
+which copies the cache entry's `m_TriangleIndex`.
 
 ---
 
@@ -396,7 +424,7 @@ global id.
 | triangle records (15/11 on disk) | total stream bytes equal the declared capacity to the byte, twice |
 | index width/locality | all 44 244 triangles have `index < leaf.numVertices`; the radius-0 vertex point queries return contacts with penetration 0 |
 | quantisation | Python recomputes the quantised array and hashes it; hashes match native and wasm32 |
-| query semantics | 56 canonical records match across three implementations |
+| query semantics | 56 canonical v2 records match across three implementations (native, wasm32, Python) |
 
 Reproduce: `python probes/collision-oracle/tests/run_collision_oracle.py`
 (see `probes/collision-oracle/README.md` for every manual command).
@@ -431,13 +459,20 @@ query that the probe cannot answer is a named, reported state
    step, `('collision-oracle', [sys.executable,
    'probes/collision-oracle/tests/run_collision_oracle.py'])`. The main agent
    owns that file.
-2. **Add the fat-ray branch** only after the wheel radius is available from a
+2. **Wire the engine harness to formatVersion 2** and update
+   `engine/verify_gravity.py` to read the v2 layout and expect
+   `620eceea…c1063f`. That is the main agent's change (P17's files); this probe
+   only defines and proves the contract. Once wired, the only permitted
+   difference is the unassigned `trace.collisionFlags`, which v2 represents as
+   `assigned=0` plus a sentinel.
+3. **Add the fat-ray branch** only after the wheel radius is available from a
    decoded car/XT record, so the swept-sphere path is exercised with a real
    radius. Until then a fat-ray oracle would need an invented radius.
-3. **Decide the `Normalise()` policy** before any D2 comparison: emulate
-   `_mm_rsqrt_ps` + NR, or use exact `1/sqrt` and record the difference. The
-   choice changes reported normals but not contacts or distances.
-4. **Reuse this reader for the `Routes` blocks** if route/trigger geometry is
+4. **Decide the `Normalise()` policy** before any D2 comparison: emulate
+   `_mm_rsqrt_ps` + NR, or use the non-PS3 exact `1/sqrt` with the zero guard.
+   v2 already separates the engine-shaped value from the probe-derived value, so
+   the choice changes only the labelled field.
+5. **Reuse this reader for the `Routes` blocks** if route/trigger geometry is
    needed; the container layout is identical (only the shape list differs).
 
 ---
@@ -448,7 +483,9 @@ query that the probe cannot answer is a named, reported state
 | --- | --- |
 | probe, build, CLI, records | `probes/collision-oracle/` (README §1-§10) |
 | run summary, hashes, malformed table | `_work/collision-oracle/summary.json` |
-| native / repeat / wasm / wasm repeat / Python documents | `_work/collision-oracle/{native,native2,wasm,wasm2,reference}.json` |
+| native / repeat / wasm / wasm repeat / Python documents (v2) | `_work/collision-oracle/{native,native2,wasm,wasm2,reference}.json` |
+| preserved v1 evidence (superseded) | `_work/collision-oracle/v1/` |
+| engine v1 vs probe v2 field comparison | `probes/collision-oracle/tests/compare_engine_v1_to_v2.py` |
 | command logs | `_work/collision-oracle/logs/` |
 | rejected inputs | `_work/collision-oracle/malformed/` |
 | feasibility context | `docs/work/analysis/t005-physics-feasibility.md` |
@@ -483,3 +520,77 @@ Source anchors (all read-only, `upstream/BlurRebuilt@5270304b`), with
 | collision filter | `…/physics/gravity/include/gravity/narrowphase/CollisionFilter.h:43-50`; `CollisionFilter.inl:8-43` |
 | `Normalise` on PC | `…/common/core/include/core/maths/hvec/SIMD_SSE.inl:926-941`; `Scalar.inl:625-672`; `VectorOp.inl:1246-1292` |
 | wheel query parameters | `…/physics/racingphysics/source/vehicles/Car/car.cpp:597-627`; `carwheel.cpp:418-471` |
+
+---
+
+## 11. Format contract v2 (engine value vs probe-added reporting)
+
+The Gravity spike (`docs/work/analysis/engine-gravity-layer.md`) found six
+fields where the real engine's query results and the v1 probe's re-expression
+disagreed. None was a geometric error; all six were **reporting semantics**.
+v1 mixed the two meanings in one field, so no exact engine/probe equality was
+possible. `formatVersion 2` makes the distinction explicit.
+
+| # | v1 problem | v2 engine-value field(s) | v2 probe-derived field(s) |
+| ---: | --- | --- | --- |
+| 1 | sphere materials | `body*Material`, `triangle*Material`, `engine*Material = body \| triangle<<16` | the split body/triangle fields |
+| 2 | sphere normals | `patchNormal` (`C_ContactPatch::m_Normal`, engine `ReciprocalSqrt`, zero at `len2<=0`) | `contactNormalDerived` (exact `1/sqrt`, NaN at zero) |
+| 3 | cache triangle index | `engineTriangleStreamValue`, `leafStartOrdinal` | `perTriangleOrdinal` |
+| 4 | trace `collisionFlags` | `collisionFlagsAssignedByEngine=0`, `engineCollisionFlagsValue=0` | `cachedTriangleCollisionFlags` |
+| 5 | trace normal | `engineNormalStored` (non-unit decoded `HenDN3`) | `normalDerivedNormalised` |
+| 6 | zero-length contact | `patchNormal = (0,0,0)` | `contactNormalDerived = NaN` |
+
+Exact v2 byte layouts are in `probes/collision-oracle/README.md` §4. Sizes:
+ray 80 B, sphere 32 B + 80 B/contact, cache 32 B + 76 B/entry + 88 B/trace.
+This file's canonical stream is 9 816 bytes and hashes to
+`620eceeaf22edeed5069ecfc7ce5a709be51963974e081a8f6ead6d986c1063f`.
+
+### 11.1 Engine comparison without editing the engine verifier
+
+`engine/harness/t005d/` still emits v1 records and
+`engine/verify_gravity.py` is P17-owned; neither was modified here. The probe
+ships `tests/compare_engine_v1_to_v2.py`, which decodes the **existing** engine
+v1 document and compares every engine-assigned field with the v2 engine-value
+field:
+
+```powershell
+python probes/collision-oracle/tests/compare_engine_v1_to_v2.py `
+  --engine _work/engine-gravity-spike/gravity_a.json `
+  --probe  _work/collision-oracle/native.json
+```
+
+Measured result: **840 assigned field groups match**, including
+bit-identical packed materials, patch normals and stored trace normals. The
+only remaining delta is `trace.collisionFlags`: the thin
+`C_LineCollisionCache::Trace` branch never writes `m_CollisionFlags`
+(`LineCollisionCache_Trace.inl:184-225`; `C_RayTracingResult`'s constructor does
+not initialise it), so the engine words vary
+(`0x44a2fcbc`, `0x44863571`, `0x440a8229`, `0x448807cd`, `0x43060611`). v2
+cannot and must not hash that memory; it reports `assigned=0`, writes the zero
+sentinel, and stores the cached triangle's flags as separate reporting.
+
+No v2 `queryHash` equality is claimed: the engine still emits v1 records. Once
+the harness is wired to v2, the hash comparison becomes meaningful; the
+field-level result above shows the decode/traversal/intersection values are
+already exact.
+
+### 11.2 v1 lifecycle
+
+v1 production is retired. The v1 layout remains documented (probe README §4.5)
+and the pre-change evidence is preserved under `_work/collision-oracle/v1/`, so
+v1 documents stay readable for one cycle. A v1 document cannot be converted to a
+v2 hash: it never recorded body materials, patch normals, leaf-start ordinals or
+the stored trace normal. `compare_engine_v1_to_v2.py` is the documented reader
+for that cycle.
+
+### 11.3 Limits
+
+- This is a **probe contract**, not engine code: no vehicle physics, renderer,
+  browser/WebGPU or playable-game claim is made.
+- Retail-binary bit equality is still not claimed; the retail `Normalise`
+  (`_mm_rsqrt_ps` + NR) is not emulated. v2 only separates the non-PS3
+  engine-shaped value from the probe-derived one.
+- The fat/swept-sphere ray, capsule/box proxies, constraints, `Routes` scenes
+  and non-identity instance transforms remain unsupported exactly as §8 states.
+- `trace.collisionFlags` is excluded from the engine equality claim because the
+  engine never assigns it; it is not a contract value.

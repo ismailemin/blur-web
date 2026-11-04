@@ -224,6 +224,7 @@ namespace oracle
 		out.normalPacked = hitNormalPacked;
 		out.contact = hitContact;
 		out.normal = hitNormal;
+		out.normalStored = hitNormal; // ray path copies the decoded HenDN3 as-is
 		out.distance = distance;
 		out.segmentEnd = contact;
 	}
@@ -282,6 +283,7 @@ namespace oracle
 					const std::uint32_t numTris = header.numTriangles;
 					offset += kHeaderBytes;
 					const std::uint32_t groupOffset = offset;
+					const std::uint32_t groupFirstOrdinal = a;
 
 					if (!filter.can_collide(header.collisionFlags))
 					{
@@ -324,7 +326,10 @@ namespace oracle
 						entry.c = v2;
 						entry.normal = normal;
 						entry.normalPacked = tri.normalPacked;
-						entry.engineTriangleIndex = leaf.triangleBufferStart + tri.ordinalInLeaf;
+						// OptimisedAABBTree_FillCache.inl:201 passes `a` (the group's
+						// first ordinal) plus the leaf stream start, not a+b.
+						entry.engineTriangleStreamValue = leaf.triangleBufferStart + groupFirstOrdinal;
+						entry.leafStartOrdinal = groupFirstOrdinal;
 						entry.triangleOrdinal = tri.ordinalInLeaf;
 						entry.leafIndex = leaf.nodeIndex;
 						entry.collisionFlags = header.collisionFlags;
@@ -377,13 +382,22 @@ namespace oracle
 		const CacheTriangle& tri = cache.entries[hitIndex];
 		out.hit = true;
 		out.leafIndex = tri.leafIndex;
-		out.engineTriangleIndex = tri.engineTriangleIndex;
+		out.engineTriangleIndex = tri.engineTriangleStreamValue;
+		out.leafStartOrdinal = tri.leafStartOrdinal;
 		out.triangleOrdinal = tri.triangleOrdinal;
+		// The thin branch assigns contact, distance, index, materials, user data,
+		// shape and node, but never m_CollisionFlags (LineCollisionCache_Trace.inl
+		// :184-225). Record the status, a fixed sentinel, and the triangle's own
+		// flags as probe-added reporting.
+		out.collisionFlagsAssignedByEngine = false;
+		out.engineCollisionFlags = 0;
 		out.collisionFlags = tri.collisionFlags;
 		out.physicsMaterial = tri.physicsMaterial;
 		out.effectMaterial = tri.effectMaterial;
+		out.effectMaterialRaw = tri.effectMaterialRaw;
 		out.userData = tri.userData;
 		out.normalPacked = tri.normalPacked;
+		out.normalStored = tri.normal;
 		out.normal = normalise(tri.normal);
 		out.contact = contact;
 		out.distance = length(ray.start - contact);
@@ -479,7 +493,10 @@ namespace oracle
 					if (dot(d, d) > radiusSq)
 						continue;
 
-					const Vec3 surfaceNormal = normalise(d);
+					// Engine value: C_Normal(d) = Normalise(d), zero for d == 0.
+					const Vec3 engineSurface = normalise_engine(d);
+					// Probe-added reporting: exact IEEE 1/sqrt (NaN at zero).
+					const Vec3 derivedNormal = normalise(d);
 					out.hit = true;
 
 					Patch* patch = nullptr;
@@ -488,12 +505,12 @@ namespace oracle
 					{
 						patch = &patches[numPatches];
 						patch->numPoints = 0;
-						patch->normal = surfaceNormal;
+						patch->normal = engineSurface;
 						incr = 1;
 					}
 					for (std::uint32_t j = 0; j < numPatches; ++j)
 					{
-						if (dot(patches[j].normal, surfaceNormal) >= close_normal())
+						if (dot(patches[j].normal, engineSurface) >= close_normal())
 						{
 							patch = &patches[j];
 							incr = 0;
@@ -509,12 +526,19 @@ namespace oracle
 					{
 						SphereContact contact;
 						contact.point = contactPoint;
-						contact.surfaceNormal = surfaceNormal;
+						contact.surfaceNormal = derivedNormal;
+						contact.patchNormal = patch->normal;
 						contact.penetration = penetration;
 						contact.engineHashValue = groupOffset + i;
 						contact.triangleOrdinal = tri.ordinalInLeaf;
-						contact.physicsMaterial = header.physicsMaterial;
-						contact.effectMaterial = header.effectMaterial;
+						contact.bodyPhysicsMaterial = mesh.physicsMaterialIndex;
+						contact.trianglePhysicsMaterial = header.physicsMaterial;
+						contact.enginePhysicsMaterial =
+							mesh.physicsMaterialIndex | (header.physicsMaterial << 16);
+						contact.bodyEffectMaterial = mesh.effectMaterialIndex;
+						contact.triangleEffectMaterial = header.effectMaterial;
+						contact.engineEffectMaterial =
+							mesh.effectMaterialIndex | (header.effectMaterial << 16);
 						contact.patchIndex = static_cast<std::uint32_t>(patch - patches);
 						++patch->numPoints;
 						out.contacts.push_back(contact);

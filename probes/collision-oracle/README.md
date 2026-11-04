@@ -18,7 +18,8 @@ Scope labels recorded in every output document:
   "rayRadius": "0x00000000",
   "fatTrace": "unsupported",
   "sphereQuery": "CollideSphereTriangleMesh<6,16>",
-  "normalisation": "exact-ieee-1/sqrt",
+  "normalisation": "engine: Normalise/ReciprocalSqrt (zero at len2<=0); probe-derived: exact-ieee-1/sqrt",
+  "recordContract": "formatVersion 2: engine value and probe-derived value are separate fields",
   "instanceTransforms": "none (C_ShapeInstance is reported, not applied)"
 }
 ```
@@ -69,6 +70,7 @@ probes/collision-oracle/
   tests/reference_oracle.py      independent Python implementation
   tests/verify_oracle_wasm.mjs   node driver for the wasm module
   tests/run_collision_oracle.py  builds/runs/compares everything
+  tests/compare_engine_v1_to_v2.py  optional engine-v1 vs probe-v2 field comparison
 ```
 
 All build output and evidence go to `_work/collision-oracle/`; nothing generated
@@ -141,6 +143,18 @@ python probes/collision-oracle/tests/reference_oracle.py `
   --out _work/collision-oracle/reference.json
 ```
 
+### Engine v1 vs probe v2 (optional, manual)
+
+The engine harness under `engine/harness/t005d/` still emits formatVersion 1.
+This tool compares every engine-assigned field with the v2 engine-value field;
+it does not compare hashes (different record layouts).
+
+```powershell
+python probes/collision-oracle/tests/compare_engine_v1_to_v2.py `
+  --engine _work/engine-gravity-spike/gravity_a.json `
+  --probe  _work/collision-oracle/native.json
+```
+
 ### CLI
 
 ```text
@@ -153,51 +167,145 @@ Exit codes: `0` ok, `1` self-test failure, `2` bad argument, `3` read failure,
 
 ---
 
-## 4. Canonical records and `queryHash`
+## 4. Canonical records and `queryHash` (formatVersion 2)
 
 `queryHash` is SHA-256 over the concatenation of one fixed little-endian record
 per query. Integer fields are `u32` LE, float fields are their binary32 bit
-pattern as `u32` LE.
+pattern as `u32` LE. Every record starts with `u8 kind, u8 hit, u16
+formatVersion=2, u32 queryIndex`, so a record is self-describing and a v1 record
+cannot be mistaken for v2.
 
-**Ray record** (`kind=1`), 80 bytes:
+The contract separates **engine values** from **probe-derived reporting**. No
+field mixes them. The six fields the real Gravity code and the v1 probe
+disagreed on are now stored as explicit pairs (or triplets); see §4.4.
 
-| # | Field |
+Coordinates use the level/tree units exactly as stored; the file proves no unit
+scale, so no metre conversion is applied. Normals are dimensionless. Material
+fields are material **indices**, not physical quantities: the engine packs a
+body index in the low 16 bits and a triangle-header index in the high 16 bits
+(`OptimisedAABBTree.inl:112-113`).
+
+### 4.1 Ray record (`kind=1`), 80 bytes
+
+| # | Field | Meaning |
+| --- | --- | --- |
+| 1 | `u8 kind=1`, `u8 hit`, `u16 2` | record header |
+| 2 | `u32 queryIndex` | fixture index |
+| 3 | `u32 mesh` (`0xffffffff` = none) | body index |
+| 4 | `u32 leaf` | node index |
+| 5 | `u32 perTriangleOrdinal` | leaf-local triangle ordinal (probe structural) |
+| 6 | `u32 engineTriangleStreamValue` | engine `m_TriangleIndex` (leaf byte offset + 12·i; **not** an id) |
+| 7 | `u32 headerIndex` | triangle header index |
+| 8 | `u32 collisionFlags` | engine `m_CollisionFlags` (assigned by the ray path) |
+| 9 | `u32 trianglePhysicsMaterial` | header physics material |
+| 10 | `u32 triangleEffectMaterial` | header effect material |
+| 11 | `u32 userData` | header user data |
+| 12 | `u32 normalPacked` | raw `HenDN3` |
+| 13-15 | `f32 contact xyz` | hit point, level units |
+| 16-18 | `f32 normalStored xyz` | engine `m_normal`: decoded `HenDN3`, **non-unit** |
+| 19 | `f32 distance` | along the ray |
+| 20 | `u32 bodiesTested` | body loop count |
+
+### 4.2 Sphere record (`kind=2`)
+
+Header, 32 bytes: `u8 kind=2, u8 hit, u16 2, u32 queryIndex, f32 radius,
+f32 centre xyz, u32 headersFiltered, u32 contactCount`.
+
+Per contact, 80 bytes:
+
+| # | Field | Meaning |
+| --- | --- | --- |
+| 1 | `u32 mesh` | body index |
+| 2 | `u32 perTriangleOrdinal` | leaf-local triangle ordinal (probe structural) |
+| 3 | `u32 engineHashValue` | engine `C_ContactPoint::m_HashValue` = group byte offset + i |
+| 4 | `u32 patchIndex` | engine `C_ContactPatch` slot |
+| 5 | `u32 bodyPhysicsMaterial` | shape descriptor index (engine low half) |
+| 6 | `u32 trianglePhysicsMaterial` | header index (engine high half) |
+| 7 | `u32 enginePhysicsMaterial` | **engine value** = body \| triangle<<16 |
+| 8 | `u32 bodyEffectMaterial` | shape descriptor index |
+| 9 | `u32 triangleEffectMaterial` | header index |
+| 10 | `u32 engineEffectMaterial` | **engine value** = body \| triangle<<16 |
+| 11-13 | `f32 point xyz` | closest point, level units |
+| 14-16 | `f32 patchNormal xyz` | **engine value** `C_ContactPatch::m_Normal` (zero-guarded) |
+| 17-19 | `f32 contactNormalDerived xyz` | probe-derived exact `1/sqrt` per contact (may be NaN at zero) |
+| 20 | `f32 penetration` | `radius - dot(d, triangleNormal)`, level units |
+
+### 4.3 Cache record (`kind=3`)
+
+Header, 32 bytes: `u8 kind=3, u8 hit, u16 2, u32 queryIndex, u32 cachedTriangles,
+u32 bodiesConsidered, u32 bodiesAccepted, u32 headersFiltered,
+u32 trianglesTested, u32 trianglesRejectedByNormal`.
+
+Per cached triangle, 76 bytes:
+
+| # | Field | Meaning |
+| --- | --- | --- |
+| 1 | `u32 engineTriangleStreamValue` | **engine value** passed to `AddTriangle`: leaf byte start + group first ordinal |
+| 2 | `u32 leafStartOrdinal` | header group's first leaf-local ordinal (probe structural) |
+| 3 | `u32 perTriangleOrdinal` | actual triangle's leaf-local ordinal (probe structural) |
+| 4 | `u32 leaf` | node index |
+| 5 | `u32 collisionFlags` | header flags |
+| 6 | `u32 physicsMaterialStored` | engine `U16 m_PhysicsMaterialFlags`, zero-extended |
+| 7 | `u32 effectMaterialStored` | engine `U16 m_EffectMaterialFlags`, zero-extended |
+| 8 | `u32 effectMaterialRaw` | source header `U32` before the U16 truncation |
+| 9 | `u32 userData` | header user data |
+| 10 | `u32 normalPacked` | raw `HenDN3` |
+| 11-19 | `f32 a xyz, b xyz, c xyz` | decoded triangle vertices, level units |
+
+Trace result, 88 bytes:
+
+| # | Field | Meaning |
+| --- | --- | --- |
+| 1 | `u32 engineTriangleStreamValue` | engine `m_TriangleIndex` copied from the cache entry |
+| 2 | `u32 leafStartOrdinal` | cached group's first ordinal |
+| 3 | `u32 perTriangleOrdinal` | cached triangle's leaf-local ordinal |
+| 4 | `u32 leaf` | node index |
+| 5 | `u32 collisionFlagsAssignedByEngine` | **0**: the thin trace never assigns `m_CollisionFlags` |
+| 6 | `u32 engineCollisionFlagsValue` | contract sentinel `0` when unassigned |
+| 7 | `u32 cachedTriangleCollisionFlags` | probe-added: the cached triangle's own flags |
+| 8 | `u32 physicsMaterialStored` | engine `U16` |
+| 9 | `u32 effectMaterialStored` | engine `U16` |
+| 10 | `u32 effectMaterialRaw` | header `U32` before truncation |
+| 11 | `u32 userData` | engine value |
+| 12 | `u32 normalPacked` | raw `HenDN3` |
+| 13-15 | `f32 contact xyz` | hit point, level units |
+| 16-18 | `f32 engineNormalStored xyz` | **engine value** `m_normal`: decoded `HenDN3`, non-unit |
+| 19-21 | `f32 normalDerivedNormalised xyz` | probe-derived exact `1/sqrt` |
+| 22 | `f32 distance` | `|start - contact|` |
+
+A miss writes `0xffffffff` for the index fields (`engineTriangleStreamValue`,
+`leafStartOrdinal`, `perTriangleOrdinal`, `leaf`) and `0` for the flag/material
+fields, contact/normals and distance. A cache trace miss writes
+`collisionFlagsAssignedByEngine=0`.
+
+### 4.4 The six former divergences, now explicit
+
+| Former mismatch | Engine value field | Probe-derived field |
+| --- | --- | --- |
+| material packing `shape \| header<<16` | `enginePhysicsMaterial`, `engineEffectMaterial` | `body*Material`, `triangle*Material` |
+| patch normal vs per-contact normal | `patchNormal` | `contactNormalDerived` |
+| `engineTriangleIndex` vs per-triangle ordinal | `engineTriangleStreamValue`, `leafStartOrdinal` | `perTriangleOrdinal` |
+| unassigned trace `collisionFlags` | `collisionFlagsAssignedByEngine=0`, `engineCollisionFlagsValue=0` | `cachedTriangleCollisionFlags` |
+| stored vs normalised trace normal | `engineNormalStored` | `normalDerivedNormalised` |
+| zero-length contact normal | `patchNormal = (0,0,0)` (engine `ReciprocalSqrt`) | `contactNormalDerived` (NaN from `0·inf`) |
+
+### 4.5 v1 remains readable for one cycle (superseded)
+
+v1 records are **not** produced any more and their `queryHash` is retired. The
+v1 layout is kept here so the committed evidence under `_work/.../v1/` can still
+be decoded for one cycle:
+
+| record | v1 layout |
 | --- | --- |
-| 1 | `u8 kind=1`, `u8 hit`, `u16 0` |
-| 2 | `u32 queryIndex` |
-| 3 | `u32 mesh` (`0xffffffff` = none) |
-| 4 | `u32 leaf` (node index) |
-| 5 | `u32 triangleOrdinal` (within the leaf) |
-| 6 | `u32 engineTriangleIndex` (leaf-relative byte offset, see §6) |
-| 7 | `u32 headerIndex` |
-| 8 | `u32 collisionFlags` |
-| 9 | `u32 physicsMaterial` |
-| 10 | `u32 effectMaterial` |
-| 11 | `u32 userData` |
-| 12 | `u32 normalPacked` (raw `HenDN3`) |
-| 13..15 | contact `x y z` |
-| 16..18 | normal `x y z` |
-| 19 | `f32 distance` |
-| 20 | `u32 bodiesTested` |
+| common | `u8 kind, u8 hit, u16 0, u32 queryIndex` |
+| ray | same field order as v2 §4.1 except field 16-18 was `normal` (stored) and the u16 was `0`; 80 B |
+| sphere | header 32 B; per contact 52 B: `mesh, perTriangleOrdinal, engineHashValue, patchIndex, physicsMaterial(header), effectMaterial(header), point xyz, surfaceNormal(per-contact normalised), penetration` |
+| cache | header 32 B; entry 68 B: `engineIndex(per-triangle+leafStart), perTriangleOrdinal, leaf, collisionFlags, physicsMaterial, effectMaterialStored, userData, normalPacked, a/b/c`; trace 60 B: `engineIndex, perTriangleOrdinal, leaf, collisionFlags, physicsMaterial, effectMaterialStored, userData, normalPacked, contact, normal(normalised), distance` |
 
-**Sphere record** (`kind=2`): `u8 kind, u8 hit, u16 0, u32 queryIndex,
-f32 radius, f32 centre xyz, u32 headersFiltered, u32 contactCount`, then per
-contact `u32 mesh, u32 triangleOrdinal, u32 engineHashValue, u32 patch,
-u32 physicsMaterial, u32 effectMaterial, f32 point xyz, f32 surfaceNormal xyz,
-f32 penetration`.
-
-**Cache record** (`kind=3`): `u8 kind, u8 hit, u16 0, u32 queryIndex,
-u32 cachedTriangles, u32 bodiesConsidered, u32 bodiesAccepted,
-u32 headersFiltered, u32 trianglesTested, u32 trianglesRejectedByNormal`, then
-per cached triangle `u32 engineTriangleIndex, u32 triangleOrdinal, u32 leaf,
-u32 collisionFlags, u32 physicsMaterial, u32 effectMaterial, u32 userData,
-u32 normalPacked, f32 a xyz, f32 b xyz, f32 c xyz`, then the trace result
-`u32 engineTriangleIndex, u32 triangleOrdinal, u32 leaf, u32 collisionFlags,
-u32 physicsMaterial, u32 effectMaterial, u32 userData, u32 normalPacked,
-f32 contact xyz, f32 normal xyz, f32 distance`.
-
-A miss writes `0xffffffff` for the index fields and `0` for the material/flag
-fields; the trace part writes `0xffffffff` for the first three fields only.
+`tests/compare_engine_v1_to_v2.py` decodes v1 records and maps them onto v2
+engine-value fields, so the v1 evidence is machine-readable during the
+transition. A v1 document cannot yield a v2 `queryHash`: body materials, patch
+normals, leaf-start ordinals and the stored trace normal were not recorded.
 
 ---
 
@@ -237,23 +345,24 @@ fixture. That divergence is why the fixture is written this way.
 | --- | --- | --- |
 | Triangles store **leaf-local `u8` indices** (the file writes `u8` because the target field is `u8`, even though `OldAABBTreeTriangle` used `u32`) | a triangle index is only meaningful with its leaf | `OptimisedAABBTree.h:66-88`, `OptimisedAABBTree.cpp:29-53` |
 | `m_NumTriangles` in the file is a **byte capacity** for the in-memory triangle stream, not a triangle count | 485 040 bytes for 31 860 triangles; the actual stream equals the capacity exactly | `OptimisedAABBTree.cpp:187, 306-310` |
-| `C_TriangleHeader` is 15 serialised bytes but `sizeof()` 16; `AABBTreeTriangle` is 11 serialised bytes but `sizeof()` 12 | stream offsets and `engineTriangleIndex` use the 16/12 in-memory sizes | `OptimisedAABBTree.cpp:282-305` |
+| `C_TriangleHeader` is 15 serialised bytes but `sizeof()` 16; `AABBTreeTriangle` is 11 serialised bytes but `sizeof()` 12 | stream offsets and `engineTriangleStreamValue` use the 16/12 in-memory sizes | `OptimisedAABBTree.cpp:282-305` |
 | `C_LineCollisionCache` stores `effectMaterial` in a `U16` | the value is truncated to its low 16 bits | `LineCollisionCache.h:18, 151` |
-| `FillLineCollisionCache` records `triangleOrdinal + node.triangleStartIndex` (a byte offset) | the cache "triangle index" is not a triangle id | `OptimisedAABBTree_FillCache.inl:201` |
+| `FillLineCollisionCache` records the header **group's first** ordinal plus the leaf stream start | the cache "triangle index" is a group-start stream value, not a triangle id; v2 adds `leafStartOrdinal` and `perTriangleOrdinal` | `OptimisedAABBTree_FillCache.inl:201` |
 | `CollideRayTriangleMesh` records `offset + 12*i` (leaf-relative byte offset) and keeps the **last** accepted triangle in the leaf, not the nearest | ray ties are resolved by traversal order | `RayTriangle.inl:96-104` |
 | The tree ray loop passes `ray.m_result.m_contact` as the segment end, and a leaf hit shortens it | later leaves are tested against a shorter segment | `OptimisedAABBTree.inl:176, 217` |
 | `C_LineCollisionCache::Trace` (thin) keeps the **last** hit in cache order and compares the plane test against the *original* `ray.m_end` while the triangle test uses the shrinking contact | a further hit can override a nearer one | `LineCollisionCache_Trace.inl:184-205` |
+| The thin `Trace` branch **never assigns** `m_CollisionFlags` | the engine's value is indeterminate; v2 reports `collisionFlagsAssignedByEngine:0` and a zero sentinel, and the triangle's own flags separately | `LineCollisionCache_Trace.inl:184-225`; `Ray.h:26-27` |
 | `FillLineCollisionCache` **returns** as soon as the cache is full | later bodies/leaves are not visited | `OptimisedAABBTree_FillCache.inl:199-200` |
 | `CollideSphereTriangleMesh` prepares a patch slot, then may merge into an existing patch and not count the slot | `numPatches` does not simply increase per contact | `SphereTriangle.inl:162-183` |
 | Sphere patch merge threshold is `dot >= 0.995` (`CloseNormal`) | contacts within ~5.7° share a patch | `GravityConstants.cpp:11` |
 
 Because of the byte-offset "triangle index", the probe also reports
-`triangleOrdinal` (within the leaf), `leaf`, and `headerIndex` so a hit can be
+`perTriangleOrdinal` (within the leaf), `leaf` and `headerIndex` so a hit can be
 identified unambiguously. No global triangle id is invented by the engine.
 
 ---
 
-## 7. Results (this machine, 2 November 2026)
+## 7. Results (this machine, 5 November 2026)
 
 Command: `python probes/collision-oracle/tests/run_collision_oracle.py`
 
@@ -262,31 +371,61 @@ configure-native                   PASS
 build-native                       PASS
 native-warning-free                PASS 0 warning line(s)
 build-wasm                         PASS
+native-exe-present                 PASS
+native-tests-present               PASS
+wasm-module-present                PASS
 native-selftest                    PASS
 native-unit-tests                  PASS
 run-native                         PASS 0.02s
 run-native-repeat                  PASS
 determinism-native                 PASS
+native-status-ok                   PASS
+native-format-version-v2           PASS
+run-wasm                           PASS 0.09s
+run-wasm-repeat                    PASS
+determinism-wasm                   PASS
+wasm-status-ok                     PASS
 native-vs-wasm                     PASS
 native-vs-wasm-document            PASS (input.label excluded)
-determinism-wasm                   PASS
-run-reference                      PASS 0.34s
+run-reference                      PASS 0.35s
+reference-status-ok                PASS
 native-vs-python                   PASS
 malformed-rejection                PASS 13/13
-23/23 checks passed
+24/24 checks passed
 ```
 
-- `queryHash` (native = wasm32 = Python):
-  `f87365b79fc1217da4280d6d5748ca6dc6808b89382b87de43ddcbfe6c9b5d6e`
-- canonical record bytes: 7 768
+- `queryHash` (native = wasm32 = Python), formatVersion 2:
+  `620eceeaf22edeed5069ecfc7ce5a709be51963974e081a8f6ead6d986c1063f`
+- canonical record bytes: 9 816
 - input: `Level.levelphysics`, 1 945 409 bytes,
   SHA-256 `1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28`
 - native MSVC `/W4 /permissive-`: **0 warnings**
 - CTest: 2/2 (`collision_oracle_selftest`, `collision_oracle_unit`)
-- wasm32: 121 219 B `.wasm`, node run 0.08 s; native 0.02 s
+- wasm32: node run 0.09 s; native 0.02 s
+- repeat runs: native JSON byte-identical, wasm JSON byte-identical; native and
+  wasm whole documents identical except `build` and `input.label`
 - CTest unit binary also validates the real file: two meshes, 44 244
   triangles, `triangleBufferBytes == triangleCapacityBytes`, identity instance
   transforms, 64 evenly spaced file truncations rejected.
+- query outcomes unchanged: 15/24 rays hit, 60 sphere contacts across 17/24
+  sphere queries, cache fills 3/1/1/1/4/4/0/4 triangles, 5/8 cache traces hit.
+
+Manual engine comparison (engine still emits v1; see
+`tests/compare_engine_v1_to_v2.py`):
+
+```powershell
+python probes/collision-oracle/tests/compare_engine_v1_to_v2.py `
+  --engine _work/engine-gravity-spike/gravity_a.json `
+  --probe  _work/collision-oracle/native.json
+```
+
+Result: **840 assigned field groups match**, including bit-identical
+`enginePhysicsMaterial`/`engineEffectMaterial`, `patchNormal` and
+`engineNormalStored`. The only excluded field is `trace.collisionFlags`, which
+the engine's thin `Trace` never assigns (engine words `0x44a2fcbc`, `0x44863571`,
+`0x440a8229`, `0x448807cd`, `0x43060611`; v2 records
+`collisionFlagsAssignedByEngine=0` and a zero sentinel). No v2 `queryHash`
+equality is claimed because the engine harness has not been wired to v2 yet.
 
 Parsed level:
 
@@ -306,9 +445,6 @@ Parsed level:
 
 Union bounds: min `(−117.030, −107.368, 834.968)`, max
 `(1692.342, 125.976, 3485.234)`.
-
-Query outcomes: 15/24 rays hit, 60 sphere contacts across 17/24 sphere queries,
-cache fills 3/1/1/1/4/4/0/4 triangles, 5/8 cache traces hit.
 
 Two concrete rows:
 
@@ -356,7 +492,7 @@ Full table and the exact files: `_work/collision-oracle/summary.json`,
 | **`Routes` import scenes** (7 in this file) | not parsed; the block is validated and reported (`routesParsed:false`). They are route/trigger geometry, not the main static mesh. |
 | **Other import shape types** | only `E_ImportTriangleMesh_Shape` (0) is accepted; anything else stops with `unsupported_shape_type` at the offset. |
 | **`C_ShapeInstance` transform application** | reported, not applied. All instances in this file are identity, so applying them would be a no-op, but the probe does not claim to support non-identity instances. |
-| **The engine's approximate `Normalise`** | the retail PC build uses `_mm_rsqrt_ps` + one Newton–Raphson step (`SIMD_SSE.inl:937-939`), which is not correctly rounded and has no wasm equivalent. The probe uses exact `1/sqrtf` and records `normalisation:"exact-ieee-1/sqrt"`. Any port that must be bit-identical to retail normals has to emulate that instruction. |
+| **The engine's approximate `Normalise`** | the retail PC build uses `_mm_rsqrt_ps` + one Newton–Raphson step (`SIMD_SSE.inl:937-939`), which is not correctly rounded and has no wasm equivalent. v2 records the engine-shaped value with the non-PS3 `ReciprocalSqrt` rule (exact `1/sqrt`, zero for `len2<=0`) as `patchNormal`/`engineNormalStored`, and labels the exact probe value `contactNormalDerived`/`normalDerivedNormalised`. A retail-binary bit comparison still needs the instruction emulated. |
 | **Engine integration, vehicle physics, a playable game** | explicitly out of scope. |
 
 ---
@@ -365,10 +501,12 @@ Full table and the exact files: `_work/collision-oracle/summary.json`,
 
 ```text
 _work/collision-oracle/summary.json       all checks, hashes, malformed table
-_work/collision-oracle/native.json        native x64 document
+_work/collision-oracle/native.json        native x64 document (formatVersion 2)
 _work/collision-oracle/native2.json       repeat run (byte-identical)
 _work/collision-oracle/wasm.json          wasm32 document
+_work/collision-oracle/wasm2.json         repeat run (byte-identical)
 _work/collision-oracle/reference.json     independent Python document
+_work/collision-oracle/v1/*.json          preserved v1 evidence (superseded)
 _work/collision-oracle/logs/*.log         every command's stdout/stderr
 _work/collision-oracle/malformed/*.bin    the rejected inputs
 ```

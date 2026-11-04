@@ -78,6 +78,9 @@ def load(path):
 
 def compare_queries(native, other, label, failures):
     keys = ('rays', 'spheres', 'cacheQueries')
+    if other.get('formatVersion') != native.get('formatVersion'):
+        failures.append('%s: formatVersion %r != %r'
+                        % (label, native.get('formatVersion'), other.get('formatVersion')))
     for key in keys:
         a = native.get(key, [])
         b = other.get(key, [])
@@ -189,6 +192,7 @@ def main(argv):
 
     native = load(native_json) if os.path.exists(native_json) else {}
     check('native-status-ok', native.get('status') == 'ok')
+    check('native-format-version-v2', native.get('formatVersion') == 2)
     if native.get('status') != 'ok':
         print(json.dumps(native, indent=1)[:2000])
         return 1
@@ -336,6 +340,7 @@ def main(argv):
         input=dict(path=os.path.relpath(LEVEL, ROOT).replace('\\', '/'),
                    size=len(raw), sha256=sha256_file(LEVEL)),
         results=dict(
+            formatVersion=native.get('formatVersion'),
             queryHash=native.get('hashes', {}).get('queryHash'),
             canonicalRecordBytes=native.get('hashes', {}).get('canonicalRecordBytes'),
             meshHashes=[m.get('triangleHash') for m in native.get('meshes', [])],

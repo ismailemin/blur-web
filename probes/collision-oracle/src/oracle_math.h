@@ -65,10 +65,23 @@ namespace oracle
 	inline float length_sq(const Vec3& a) { return dot(a, a); }
 	inline float length(const Vec3& a) { return std::sqrt(dot(a, a)); }
 
-	// C_Normal(HVec3) -> Normalise(); exact IEEE form here.
+	// C_Normal(HVec3) -> Normalise(); exact IEEE form here. A zero-length
+	// input yields NaN (0 * inf), which is the probe-derived value.
 	inline Vec3 normalise(const Vec3& a)
 	{
 		const float len2 = dot(a, a);
+		const float inv = 1.0f / std::sqrt(len2);
+		return a * inv;
+	}
+
+	// Maths::ReciprocalSqrt / Normalise on a non-PS3 build: the reciprocal is
+	// 0 for length2 <= 0, so a zero-length input yields the zero vector, not
+	// NaN (MathsUtil.h:562-566; VectorOp.inl:1246-1284). This is the exact
+	// value the engine stores in C_ContactPatch::m_Normal.
+	inline Vec3 normalise_engine(const Vec3& a)
+	{
+		const float len2 = dot(a, a);
+		if (!(len2 > 0.0f)) return Vec3(0.0f, 0.0f, 0.0f);
 		const float inv = 1.0f / std::sqrt(len2);
 		return a * inv;
 	}

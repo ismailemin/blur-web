@@ -146,6 +146,16 @@ bit-birebir. Native sayısal referans DX SDK yüzünden bloklu; 7 web-only dosya
 MSVC önişlenmiş çıktısı aynı. Kanıt:
 `docs/work/verification/T-007-vehicle-physics.md`.
 
+**Collision probe v2 (5 Kasım, P24):** `formatVersion 2` kayıtları engine
+değerleri ile probe raporlamasını ayırıyor (`body/triangle/engineMaterial`,
+`patchNormal`/`contactNormalDerived`, `engineTriangleStreamValue`/
+`perTriangleOrdinal`, `engineNormalStored`, `collisionFlagsAssignedByEngine`).
+Native/wasm/Python **byte-identical**, 24+24+8; `queryHash 620eceea…063f`,
+9.816 B. Gravity v1 dokümanıyla **840 atanmış alan grubu** eşleşiyor; yalnız
+engine'in hiç atamadığı `trace.collisionFlags` hariç. `verify_gravity.py` v2'ye
+bağlandı ve **PASS (v2 field-level)**. Kanıt:
+`docs/work/verification/T-005d-collision-v2.md`.
+
 ### T-005e — Kontroller ve kamera
 - Klavye/gamepad; özgün araç girdi semantiği.
 - Kamera, HUD ve yarış durumu.

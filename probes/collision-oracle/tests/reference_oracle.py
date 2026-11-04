@@ -109,6 +109,15 @@ def normalise(a):
     return vscale(a, inv)
 
 
+def normalise_engine(a):
+    """Maths::ReciprocalSqrt / Normalise on a non-PS3 build: zero for length2 <= 0."""
+    len2 = dot(a, a)
+    if not (len2 > 0.0):
+        return (0.0, 0.0, 0.0)
+    inv = fdiv(1.0, f32(math.sqrt(len2)))
+    return vscale(a, inv)
+
+
 def clampf(v, lo, hi):
     return lo if v < lo else (hi if v > hi else v)
 
@@ -739,6 +748,7 @@ def fill_line_cache(level, box_centre, box_extents, flt, negative_normal, max_co
                     slot += 1
                     continue
                 count = (node['tsi'] - a) if (a + num_tris > node['tsi']) else num_tris
+                group_first_ordinal = a
                 for i in range(count):
                     tri = mesh['triangles'][header['first_triangle'] + i]
                     v0 = leaf_vertex(mesh, node, tri['a'])
@@ -759,11 +769,13 @@ def fill_line_cache(level, box_centre, box_extents, flt, negative_normal, max_co
                         return cache, stats
                     cache.append(dict(a=v0, b=v1, c=v2, normal=normal,
                                       normalPacked=tri['normal'],
-                                      engineIndex=leaf['buffer_start'] + tri['ordinal'],
-                                      ordinal=tri['ordinal'], leaf=leaf['node'],
+                                      engineTriangleStreamValue=leaf['buffer_start'] + group_first_ordinal,
+                                      leafStartOrdinal=group_first_ordinal,
+                                      perTriangleOrdinal=tri['ordinal'], leaf=leaf['node'],
                                       collisionFlags=header['collisionFlags'],
                                       physicsMaterial=header['physicsMaterial'],
                                       effectMaterial=header['effectMaterial'] & 0xFFFF,
+                                      effectMaterialRaw=header['effectMaterial'],
                                       userData=header['userDataFlags']))
                 a += num_tris
                 slot += 1
@@ -791,11 +803,17 @@ def cache_trace(cache, ray):
     if hit_index < 0:
         return None
     tri = cache[hit_index]
-    return dict(hit=True, leaf=tri['leaf'], engineIndex=tri['engineIndex'],
-                ordinal=tri['ordinal'], collisionFlags=tri['collisionFlags'],
-                physicsMaterial=tri['physicsMaterial'],
-                effectMaterial=tri['effectMaterial'], userData=tri['userData'],
-                normalPacked=tri['normalPacked'], normal=normalise(tri['normal']),
+    return dict(hit=True, leaf=tri['leaf'],
+                engineTriangleStreamValue=tri['engineTriangleStreamValue'],
+                leafStartOrdinal=tri['leafStartOrdinal'],
+                perTriangleOrdinal=tri['perTriangleOrdinal'],
+                collisionFlagsAssignedByEngine=False, engineCollisionFlags=0,
+                cachedTriangleCollisionFlags=tri['collisionFlags'],
+                physicsMaterialStored=tri['physicsMaterial'],
+                effectMaterialStored=tri['effectMaterial'],
+                effectMaterialRaw=tri['effectMaterialRaw'], userData=tri['userData'],
+                normalPacked=tri['normalPacked'],
+                normalStored=tri['normal'], normal=normalise(tri['normal']),
                 contact=contact, distance=length(vsub(ray['start'], contact)))
 
 
@@ -862,17 +880,18 @@ def sphere_query_mesh(mesh, centre, radius, flt):
                 d = vsub(point, centre)
                 if dot(d, d) > radius_sq:
                     continue
-                surface = normalise(d)
+                engine_surface = normalise_engine(d)   # engine C_Normal(d)
+                derived_normal = normalise(d)          # probe-added, NaN at zero
 
                 patch = None
                 incr = 0
                 if num_patches < 6:
                     patch = num_patches
-                    patches[patch]['normal'] = surface
+                    patches[patch]['normal'] = engine_surface
                     patches[patch]['points'] = 0
                     incr = 1
                 for j in range(num_patches):
-                    if dot(patches[j]['normal'], surface) >= 0.995:
+                    if dot(patches[j]['normal'], engine_surface) >= 0.995:
                         patch = j
                         incr = 0
                         break
@@ -882,12 +901,17 @@ def sphere_query_mesh(mesh, centre, radius, flt):
                 penetration = f32(radius - dot(d, nrm))
                 if patches[patch]['points'] < 16:
                     patches[patch]['points'] += 1
-                    contacts.append(dict(point=point, surfaceNormal=surface,
+                    contacts.append(dict(point=point, surfaceNormal=derived_normal,
+                                         patchNormal=patches[patch]['normal'],
                                          penetration=penetration,
                                          ordinal=tri['ordinal'],
                                          engineHashValue=group_offset + i,
-                                         physicsMaterial=header['physicsMaterial'],
-                                         effectMaterial=header['effectMaterial'],
+                                         bodyPhysicsMaterial=mesh['physicsMaterialIndex'],
+                                         trianglePhysicsMaterial=header['physicsMaterial'],
+                                         enginePhysicsMaterial=mesh['physicsMaterialIndex'] | (header['physicsMaterial'] << 16),
+                                         bodyEffectMaterial=mesh['effectMaterialIndex'],
+                                         triangleEffectMaterial=header['effectMaterial'],
+                                         engineEffectMaterial=mesh['effectMaterialIndex'] | (header['effectMaterial'] << 16),
                                          patch=patch))
             offset = group_offset + num_tris * 12
             a += num_tris
@@ -1073,6 +1097,11 @@ class Bin:
 
 
 def build_records(level):
+    """Emit formatVersion 2 canonical records.
+
+    Every divergent field is stored twice: the exact engine value and the
+    probe-derived reporting value, in separate fields. See README section 4.
+    """
     rays, spheres, cache_queries = build_table(level)
     canonical = bytearray()
     out_rays = []
@@ -1093,7 +1122,7 @@ def build_records(level):
         rec = Bin()
         rec.u8(1)
         rec.u8(1 if result else 0)
-        rec.u16(0)
+        rec.u16(2)
         rec.u32(i)
         if result:
             mesh = level['meshes'][mesh_index]
@@ -1129,7 +1158,7 @@ def build_records(level):
         rec.u8(2)
         hit_pos = len(rec.b)
         rec.u8(0)
-        rec.u16(0)
+        rec.u16(2)
         rec.u32(i)
         rec.f32(sq['radius'])
         rec.vec3(sq['centre'])
@@ -1147,9 +1176,14 @@ def build_records(level):
                 body_data.u32(c['ordinal'])
                 body_data.u32(c['engineHashValue'])
                 body_data.u32(c['patch'])
-                body_data.u32(c['physicsMaterial'])
-                body_data.u32(c['effectMaterial'])
+                body_data.u32(c['bodyPhysicsMaterial'])
+                body_data.u32(c['trianglePhysicsMaterial'])
+                body_data.u32(c['enginePhysicsMaterial'])
+                body_data.u32(c['bodyEffectMaterial'])
+                body_data.u32(c['triangleEffectMaterial'])
+                body_data.u32(c['engineEffectMaterial'])
                 body_data.vec3(c['point'])
+                body_data.vec3(c['patchNormal'])
                 body_data.vec3(c['surfaceNormal'])
                 body_data.f32(c['penetration'])
         rec.b[hit_pos] = 1 if any_hit else 0
@@ -1168,7 +1202,7 @@ def build_records(level):
         rec = Bin()
         rec.u8(3)
         rec.u8(1 if trace else 0)
-        rec.u16(0)
+        rec.u16(2)
         rec.u32(i)
         rec.u32(len(cache))
         rec.u32(stats['bodiesConsidered'])
@@ -1177,34 +1211,42 @@ def build_records(level):
         rec.u32(stats['trianglesTested'])
         rec.u32(stats['trianglesRejectedByNormal'])
         for t in cache:
-            rec.u32(t['engineIndex'])
-            rec.u32(t['ordinal'])
+            rec.u32(t['engineTriangleStreamValue'])
+            rec.u32(t['leafStartOrdinal'])
+            rec.u32(t['perTriangleOrdinal'])
             rec.u32(t['leaf'])
             rec.u32(t['collisionFlags'])
             rec.u32(t['physicsMaterial'])
             rec.u32(t['effectMaterial'])
+            rec.u32(t['effectMaterialRaw'])
             rec.u32(t['userData'])
             rec.u32(t['normalPacked'])
             rec.vec3(t['a'])
             rec.vec3(t['b'])
             rec.vec3(t['c'])
         if trace:
-            rec.u32(trace['engineIndex'])
-            rec.u32(trace['ordinal'])
+            rec.u32(trace['engineTriangleStreamValue'])
+            rec.u32(trace['leafStartOrdinal'])
+            rec.u32(trace['perTriangleOrdinal'])
             rec.u32(trace['leaf'])
-            rec.u32(trace['collisionFlags'])
-            rec.u32(trace['physicsMaterial'])
-            rec.u32(trace['effectMaterial'])
+            rec.u32(1 if trace['collisionFlagsAssignedByEngine'] else 0)
+            rec.u32(trace['engineCollisionFlags'])
+            rec.u32(trace['cachedTriangleCollisionFlags'])
+            rec.u32(trace['physicsMaterialStored'])
+            rec.u32(trace['effectMaterialStored'])
+            rec.u32(trace['effectMaterialRaw'])
             rec.u32(trace['userData'])
             rec.u32(trace['normalPacked'])
             rec.vec3(trace['contact'])
+            rec.vec3(trace['normalStored'])
             rec.vec3(trace['normal'])
             rec.f32(trace['distance'])
         else:
-            for _ in range(3):
+            for _ in range(4):
                 rec.u32(0xFFFFFFFF)
-            for _ in range(5):
+            for _ in range(8):
                 rec.u32(0)
+            rec.vec3((0.0, 0.0, 0.0))
             rec.vec3((0.0, 0.0, 0.0))
             rec.vec3((0.0, 0.0, 0.0))
             rec.f32(0.0)
@@ -1264,7 +1306,7 @@ def main(argv):
     with open(args.input, 'rb') as fh:
         data = fh.read()
 
-    result = dict(status='ok', inputSize=len(data),
+    result = dict(formatVersion=2, status='ok', inputSize=len(data),
                   inputSha256=hashlib.sha256(data).hexdigest())
     try:
         level = load_level(data)

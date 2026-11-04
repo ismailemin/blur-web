@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import struct
 import subprocess
@@ -598,44 +599,73 @@ def main() -> int:
     if report["fixtureInputs"]["rays"] or report["fixtureInputs"]["spheres"]:
         raise Failed(f"the query fixture differs from the oracle: {report['fixtureInputs']}")
 
-    cmp = compare_records(engine, oracle)
-    report["records"] = cmp["kinds"]
-    report["firstDivergence"] = cmp["first"]
-
-    def check_documented_divergence():
-        for kind, expected in EXPECTED_DIVERGENCE.items():
-            got = cmp["kinds"][kind]
-            if got["same"] != expected["same"] or got["different"] != expected["different"]:
-                raise Failed(
-                    f"{kind}: {got['same']} same/{got['different']} different, "
-                    f"expected {expected['same']}/{expected['different']}")
-            if got["divergentFields"] != expected["fields"]:
-                raise Failed(
-                    f"{kind}: divergent fields changed: {got['divergentFields']} "
-                    f"!= {expected['fields']}")
-        first = cmp["first"]
-        for key, value in EXPECTED_FIRST_DIVERGENCE.items():
-            if first is None or first.get(key) != value:
-                got = None if first is None else first.get(key)
-                raise Failed(f"first divergence {key}: {got} != {value}")
-
-    check_documented_divergence()
-    report["hashes"] = {
-        "expected": EXPECTED_QUERY_HASH,
-        "engine": engine["hashes"]["queryHash"],
-        "equal": engine["hashes"]["queryHash"] == EXPECTED_QUERY_HASH,
-        "canonicalRecordBytes": engine["hashes"]["canonicalRecordBytes"],
-        "expectedCanonicalRecordBytes": EXPECTED_RECORD_BYTES,
-    }
-    if engine["hashes"]["canonicalRecordBytes"] != EXPECTED_RECORD_BYTES:
-        raise Failed("canonical record byte count differs from the oracle")
-
-    if report["hashes"]["equal"]:
-        report["status"] = "PASS"
-    else:
-        report["status"] = "DIVERGED (documented)"
+    oracle_version = oracle.get("formatVersion", 1)
+    if oracle_version >= 2:
+        comparator = ROOT / "probes/collision-oracle/tests/compare_engine_v1_to_v2.py"
+        if not comparator.is_file():
+            raise Blocked("the oracle is formatVersion 2 but the v1-to-v2 comparator is missing")
+        p = run([sys.executable, str(comparator), "--engine", str(out_a),
+                 "--probe", str(ORACLE)], LOGS / "v2-field-compare.log")
+        text = (p.stdout or "") + (p.stderr or "")
+        if p.returncode != 0:
+            raise Failed("v2 field comparison failed:\n" + text[-4000:])
+        match = re.search(r"checked (\d+) assigned field group", text)
+        report["records"] = {
+            "formatVersion": 2,
+            "assignedFieldGroups": int(match.group(1)) if match else None,
+            "traceCollisionFlags": "excluded: the engine's thin Trace never assigns it",
+        }
+        report["firstDivergence"] = None
+        report["hashes"] = {
+            "engineFormatVersion": 1,
+            "engine": engine["hashes"]["queryHash"],
+            "probeFormatVersion": 2,
+            "probe": oracle.get("queryHash") or oracle.get("hashes", {}).get("queryHash"),
+            "equal": False,
+            "note": "record layouts differ; the comparison is field-level, not a shared hash",
+        }
+        report["status"] = "PASS (v2 field-level)"
         if args.require_hash:
-            raise Failed("queryHash differs from the committed oracle hash")
+            raise Failed("queryHash equality is not comparable across v1 engine and v2 probe layouts")
+    else:
+        cmp = compare_records(engine, oracle)
+        report["records"] = cmp["kinds"]
+        report["firstDivergence"] = cmp["first"]
+
+        def check_documented_divergence():
+            for kind, expected in EXPECTED_DIVERGENCE.items():
+                got = cmp["kinds"][kind]
+                if got["same"] != expected["same"] or got["different"] != expected["different"]:
+                    raise Failed(
+                        f"{kind}: {got['same']} same/{got['different']} different, "
+                        f"expected {expected['same']}/{expected['different']}")
+                if got["divergentFields"] != expected["fields"]:
+                    raise Failed(
+                        f"{kind}: divergent fields changed: {got['divergentFields']} "
+                        f"!= {expected['fields']}")
+            first = cmp["first"]
+            for key, value in EXPECTED_FIRST_DIVERGENCE.items():
+                if first is None or first.get(key) != value:
+                    got = None if first is None else first.get(key)
+                    raise Failed(f"first divergence {key}: {got} != {value}")
+
+        check_documented_divergence()
+        report["hashes"] = {
+            "expected": EXPECTED_QUERY_HASH,
+            "engine": engine["hashes"]["queryHash"],
+            "equal": engine["hashes"]["queryHash"] == EXPECTED_QUERY_HASH,
+            "canonicalRecordBytes": engine["hashes"]["canonicalRecordBytes"],
+            "expectedCanonicalRecordBytes": EXPECTED_RECORD_BYTES,
+        }
+        if engine["hashes"]["canonicalRecordBytes"] != EXPECTED_RECORD_BYTES:
+            raise Failed("canonical record byte count differs from the oracle")
+
+        if report["hashes"]["equal"]:
+            report["status"] = "PASS"
+        else:
+            report["status"] = "DIVERGED (documented)"
+            if args.require_hash:
+                raise Failed("queryHash differs from the committed oracle hash")
 
     report["pcPath"] = {
         "engineSourceEdits": len(touched),
@@ -653,10 +683,18 @@ def main() -> int:
     print(f"wasm            {report['wasm']['bytes']} B {hash_a[:16]} ({objects} objects)")
     print(f"deterministic   build={report['wasm']['deterministic']} run={report['run']['repeatIdentical']}")
     print(f"meshes          {report['structure']['meshes']} (counts match the oracle)")
-    for kind, v in report["records"].items():
-        print(f"{kind:<14} same={v['same']} different={v['different']} fields={v['divergentFields']}")
+    if report["records"].get("formatVersion") == 2:
+        print(f"records         v2 field-level: {report['records']['assignedFieldGroups']} assigned "
+              f"field groups match")
+        print("                trace.collisionFlags excluded (engine never assigns it)")
+    else:
+        for kind, v in report["records"].items():
+            print(f"{kind:<14} same={v['same']} different={v['different']} fields={v['divergentFields']}")
     print(f"queryHash       engine {report['hashes']['engine']}")
-    print(f"                oracle {EXPECTED_QUERY_HASH}  equal={report['hashes']['equal']}")
+    if report["hashes"].get("probeFormatVersion") == 2:
+        print(f"                probe  {report['hashes']['probe']}  layouts differ; field-level compare")
+    else:
+        print(f"                oracle {EXPECTED_QUERY_HASH}  equal={report['hashes']['equal']}")
     if report["firstDivergence"]:
         f = report["firstDivergence"]
         print(f"first divergent query {f['canonicalQueryIndex']} {f['label']} byte {f['byteOffset']} "

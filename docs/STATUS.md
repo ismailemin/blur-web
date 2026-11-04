@@ -423,4 +423,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Canlı: **90 tick / 262 frame**, 127 frame sıfır tick; geometri **2 upload** (mesh başına bir kez), kare başına tek 26.112 B uniform + 102 draw. Tick 0→90 kayması **190,16 px**; console **0 mesaj**.
 - Hareket `motion:"synthetic"`; fizik değil. Kanıt: `docs/work/verification/T-007-render-packet.md`.
 
+## 5 Kasım 2026 — collision probe formatVersion 2
+
+- v2 kayıtları engine değerleri ile probe raporlamasını ayırıyor: `body/triangle/engineMaterial`, `patchNormal`/`contactNormalDerived`, `engineTriangleStreamValue`/`perTriangleOrdinal`, `engineNormalStored`, `collisionFlagsAssignedByEngine`.
+- Native/wasm/Python **byte-identical** (24 ray + 24 sphere + 8 cache); `queryHash 620eceea…063f`, 9.816 B; 24/24 kontrol. v1 üretimi emekli, düzeni belgeli.
+- Gravity v1 dokümanıyla **840 atanmış alan grubu** eşleşiyor; yalnız engine'in hiç atamadığı `trace.collisionFlags` hariç. `verify_gravity.py` v2'ye bağlandı: **PASS (v2 field-level)**.
+- Kanıt: `docs/work/verification/T-005d-collision-v2.md`, `probes/collision-oracle/README.md`.
+
 

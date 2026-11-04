@@ -1,6 +1,7 @@
 #include "oracle_run.h"
 
 #include <cstring>
+#include <utility>
 
 #include "level_physics.h"
 #include "probe_io.h"
@@ -16,7 +17,7 @@ namespace oracle
 			Json j;
 			j.begin_object();
 			j.key("probe"); j.value_string("collision-oracle");
-			j.key("formatVersion"); j.value_u32(1);
+			j.key("formatVersion"); j.value_u32(2);
 			j.key("status"); j.value_string("error");
 			j.key("input");
 			j.begin_object();
@@ -71,7 +72,7 @@ namespace oracle
 		{
 			b.u8(1);
 			b.u8(r.hit ? 1 : 0);
-			b.u16(0);
+			b.u16(2); // formatVersion
 			b.u32(index);
 			b.u32(r.hit ? r.meshIndex : 0xFFFFFFFFu);
 			b.u32(r.hit ? r.leafIndex : 0xFFFFFFFFu);
@@ -84,7 +85,7 @@ namespace oracle
 			b.u32(r.hit ? r.userData : 0u);
 			b.u32(r.hit ? r.normalPacked : 0u);
 			b.vec3(r.contact.x, r.contact.y, r.contact.z);
-			b.vec3(r.normal.x, r.normal.y, r.normal.z);
+			b.vec3(r.normalStored.x, r.normalStored.y, r.normalStored.z);
 			b.f32(r.hit ? r.distance : 0.0f);
 			b.u32(bodiesTested);
 		}
@@ -97,12 +98,12 @@ namespace oracle
 			j.key("hit"); j.value_bool(r.hit);
 			j.key("mesh"); j.value_u32(r.hit ? r.meshIndex : 0xFFFFFFFFu);
 			j.key("leaf"); j.value_u32(r.hit ? r.leafIndex : 0xFFFFFFFFu);
-			j.key("triangleOrdinal"); j.value_u32(r.hit ? r.triangleOrdinal : 0xFFFFFFFFu);
-			j.key("engineTriangleIndex"); j.value_u32(r.hit ? r.engineTriangleIndex : 0xFFFFFFFFu);
+			j.key("perTriangleOrdinal"); j.value_u32(r.hit ? r.triangleOrdinal : 0xFFFFFFFFu);
+			j.key("engineTriangleStreamValue"); j.value_u32(r.hit ? r.engineTriangleIndex : 0xFFFFFFFFu);
 			j.key("header"); j.value_u32(r.hit ? r.headerIndex : 0xFFFFFFFFu);
 			j.key("collisionFlags"); j.value_u32(r.hit ? r.collisionFlags : 0u);
-			j.key("physicsMaterial"); j.value_u32(r.hit ? r.physicsMaterial : 0u);
-			j.key("effectMaterial"); j.value_u32(r.hit ? r.effectMaterial : 0u);
+			j.key("trianglePhysicsMaterial"); j.value_u32(r.hit ? r.physicsMaterial : 0u);
+			j.key("triangleEffectMaterial"); j.value_u32(r.hit ? r.effectMaterial : 0u);
 			j.key("userData"); j.value_u32(r.hit ? r.userData : 0u);
 			j.key("normalPacked"); j.value_hex(r.hit ? r.normalPacked : 0u);
 			j.key("start"); emit_vec3(j, e.ray.start);
@@ -111,7 +112,7 @@ namespace oracle
 			j.key("maxDistance"); j.value_bits(e.ray.maxDistance);
 			j.key("bodiesTested"); j.value_u32(bodiesTested);
 			j.key("contact"); emit_vec3(j, r.contact);
-			j.key("normal"); emit_vec3(j, r.normal);
+			j.key("normalStored"); emit_vec3(j, r.normalStored);
 			j.key("distance"); j.value_bits(r.distance);
 			j.key("record"); j.value_string(recordHex);
 			j.end_object();
@@ -201,7 +202,7 @@ namespace oracle
 		Json j;
 		j.begin_object();
 		j.key("probe"); j.value_string("collision-oracle");
-		j.key("formatVersion"); j.value_u32(1);
+		j.key("formatVersion"); j.value_u32(2);
 		j.key("status"); j.value_string("ok");
 
 		j.key("scope");
@@ -214,7 +215,8 @@ namespace oracle
 		j.key("rayRadius"); j.value_bits(0.0f);
 		j.key("fatTrace"); j.value_string("unsupported");
 		j.key("sphereQuery"); j.value_string("CollideSphereTriangleMesh<6,16>");
-		j.key("normalisation"); j.value_string("exact-ieee-1/sqrt");
+		j.key("normalisation"); j.value_string("engine: Normalise/ReciprocalSqrt (zero at len2<=0); probe-derived: exact-ieee-1/sqrt");
+		j.key("recordContract"); j.value_string("formatVersion 2: engine value and probe-derived value are separate fields");
 		j.key("sphereDecode"); j.value_string("HenDN3 11-11-10 signed normalised");
 		j.key("filter"); j.value_string("C_CollisionFilter() defaults (accept-all mask)");
 		j.key("floatEncoding"); j.value_string("binary32 little-endian bit pattern, 8 hex digits");
@@ -292,12 +294,13 @@ namespace oracle
 			record.u8(2);
 			std::size_t hitPos = record.data().size();
 			record.u8(0); // patched after the per-body loop
-			record.u16(0);
+			record.u16(2); // formatVersion
 			record.u32(i);
 			record.f32(e.radius);
 			record.vec3(e.centre.x, e.centre.y, e.centre.z);
 
 			Bin bodyData;
+			std::vector<std::pair<std::uint32_t, SphereContact> > contacts;
 			for (const Mesh& mesh : level.meshes)
 			{
 				SphereResult sr;
@@ -307,13 +310,19 @@ namespace oracle
 				for (const SphereContact& c : sr.contacts)
 				{
 					++totalContacts;
+					contacts.push_back(std::make_pair(mesh.index, c));
 					bodyData.u32(mesh.index);
 					bodyData.u32(c.triangleOrdinal);
 					bodyData.u32(c.engineHashValue);
 					bodyData.u32(c.patchIndex);
-					bodyData.u32(c.physicsMaterial);
-					bodyData.u32(c.effectMaterial);
+					bodyData.u32(c.bodyPhysicsMaterial);
+					bodyData.u32(c.trianglePhysicsMaterial);
+					bodyData.u32(c.enginePhysicsMaterial);
+					bodyData.u32(c.bodyEffectMaterial);
+					bodyData.u32(c.triangleEffectMaterial);
+					bodyData.u32(c.engineEffectMaterial);
 					bodyData.vec3(c.point.x, c.point.y, c.point.z);
+					bodyData.vec3(c.patchNormal.x, c.patchNormal.y, c.patchNormal.z);
 					bodyData.vec3(c.surfaceNormal.x, c.surfaceNormal.y, c.surfaceNormal.z);
 					bodyData.f32(c.penetration);
 				}
@@ -333,6 +342,29 @@ namespace oracle
 			j.key("radius"); j.value_bits(e.radius);
 			j.key("headersFiltered"); j.value_u32(headersFiltered);
 			j.key("contactCount"); j.value_u32(totalContacts);
+			j.key("contacts");
+			j.begin_array();
+			for (const std::pair<std::uint32_t, SphereContact>& entry : contacts)
+			{
+				const SphereContact& c = entry.second;
+				j.begin_object();
+				j.key("mesh"); j.value_u32(entry.first);
+				j.key("perTriangleOrdinal"); j.value_u32(c.triangleOrdinal);
+				j.key("engineHashValue"); j.value_u32(c.engineHashValue);
+				j.key("patchIndex"); j.value_u32(c.patchIndex);
+				j.key("bodyPhysicsMaterial"); j.value_u32(c.bodyPhysicsMaterial);
+				j.key("trianglePhysicsMaterial"); j.value_u32(c.trianglePhysicsMaterial);
+				j.key("enginePhysicsMaterial"); j.value_u32(c.enginePhysicsMaterial);
+				j.key("bodyEffectMaterial"); j.value_u32(c.bodyEffectMaterial);
+				j.key("triangleEffectMaterial"); j.value_u32(c.triangleEffectMaterial);
+				j.key("engineEffectMaterial"); j.value_u32(c.engineEffectMaterial);
+				j.key("point"); emit_vec3(j, c.point);
+				j.key("patchNormal"); emit_vec3(j, c.patchNormal);
+				j.key("contactNormalDerived"); emit_vec3(j, c.surfaceNormal);
+				j.key("penetration"); j.value_bits(c.penetration);
+				j.end_object();
+			}
+			j.end_array();
 			j.key("record"); j.value_string(hex_bytes(record.data()));
 			j.end_object();
 		}
@@ -353,7 +385,7 @@ namespace oracle
 			Bin record;
 			record.u8(3);
 			record.u8(trace.hit ? 1 : 0);
-			record.u16(0);
+			record.u16(2); // formatVersion
 			record.u32(i);
 			record.u32(cache.high);
 			record.u32(stats.bodiesConsidered);
@@ -364,12 +396,14 @@ namespace oracle
 			for (std::uint32_t k = 0; k < cache.high; ++k)
 			{
 				const CacheTriangle& t = cache.entries[k];
-				record.u32(t.engineTriangleIndex);
+				record.u32(t.engineTriangleStreamValue);
+				record.u32(t.leafStartOrdinal);
 				record.u32(t.triangleOrdinal);
 				record.u32(t.leafIndex);
 				record.u32(t.collisionFlags);
 				record.u32(t.physicsMaterial);
 				record.u32(t.effectMaterial);
+				record.u32(t.effectMaterialRaw);
 				record.u32(t.userData);
 				record.u32(t.normalPacked);
 				record.vec3(t.a.x, t.a.y, t.a.z);
@@ -377,14 +411,19 @@ namespace oracle
 				record.vec3(t.c.x, t.c.y, t.c.z);
 			}
 			record.u32(trace.hit ? trace.engineTriangleIndex : 0xFFFFFFFFu);
+			record.u32(trace.hit ? trace.leafStartOrdinal : 0xFFFFFFFFu);
 			record.u32(trace.hit ? trace.triangleOrdinal : 0xFFFFFFFFu);
 			record.u32(trace.hit ? trace.leafIndex : 0xFFFFFFFFu);
+			record.u32(trace.hit ? (trace.collisionFlagsAssignedByEngine ? 1u : 0u) : 0u);
+			record.u32(trace.hit ? trace.engineCollisionFlags : 0u);
 			record.u32(trace.hit ? trace.collisionFlags : 0u);
 			record.u32(trace.hit ? trace.physicsMaterial : 0u);
 			record.u32(trace.hit ? trace.effectMaterial : 0u);
+			record.u32(trace.hit ? trace.effectMaterialRaw : 0u);
 			record.u32(trace.hit ? trace.userData : 0u);
 			record.u32(trace.hit ? trace.normalPacked : 0u);
 			record.vec3(trace.contact.x, trace.contact.y, trace.contact.z);
+			record.vec3(trace.normalStored.x, trace.normalStored.y, trace.normalStored.z);
 			record.vec3(trace.normal.x, trace.normal.y, trace.normal.z);
 			record.f32(trace.hit ? trace.distance : 0.0f);
 
@@ -398,8 +437,50 @@ namespace oracle
 			j.key("headersFiltered"); j.value_u32(stats.headersFiltered);
 			j.key("trianglesTested"); j.value_u32(stats.trianglesTested);
 			j.key("trianglesRejectedByNormal"); j.value_u32(stats.trianglesRejectedByNormal);
-			j.key("traceHit"); j.value_bool(trace.hit);
-			j.key("traceTriangleIndex"); j.value_u32(trace.hit ? trace.engineTriangleIndex : 0xFFFFFFFFu);
+			j.key("entries");
+			j.begin_array();
+			for (std::uint32_t k = 0; k < cache.high; ++k)
+			{
+				const CacheTriangle& t = cache.entries[k];
+				j.begin_object();
+				j.key("engineTriangleStreamValue"); j.value_u32(t.engineTriangleStreamValue);
+				j.key("leafStartOrdinal"); j.value_u32(t.leafStartOrdinal);
+				j.key("perTriangleOrdinal"); j.value_u32(t.triangleOrdinal);
+				j.key("leaf"); j.value_u32(t.leafIndex);
+				j.key("collisionFlags"); j.value_u32(t.collisionFlags);
+				j.key("physicsMaterialStored"); j.value_u32(t.physicsMaterial);
+				j.key("effectMaterialStored"); j.value_u32(t.effectMaterial);
+				j.key("effectMaterialRaw"); j.value_u32(t.effectMaterialRaw);
+				j.key("userData"); j.value_u32(t.userData);
+				j.key("normalPacked"); j.value_hex(t.normalPacked);
+				j.key("a"); emit_vec3(j, t.a);
+				j.key("b"); emit_vec3(j, t.b);
+				j.key("c"); emit_vec3(j, t.c);
+				j.end_object();
+			}
+			j.end_array();
+			j.key("trace");
+			j.begin_object();
+			j.key("hit"); j.value_bool(trace.hit);
+			j.key("engineTriangleStreamValue");
+			j.value_u32(trace.hit ? trace.engineTriangleIndex : 0xFFFFFFFFu);
+			j.key("leafStartOrdinal"); j.value_u32(trace.hit ? trace.leafStartOrdinal : 0xFFFFFFFFu);
+			j.key("perTriangleOrdinal"); j.value_u32(trace.hit ? trace.triangleOrdinal : 0xFFFFFFFFu);
+			j.key("leaf"); j.value_u32(trace.hit ? trace.leafIndex : 0xFFFFFFFFu);
+			j.key("collisionFlagsAssignedByEngine");
+			j.value_u32(trace.hit ? (trace.collisionFlagsAssignedByEngine ? 1u : 0u) : 0u);
+			j.key("engineCollisionFlagsValue"); j.value_u32(trace.hit ? trace.engineCollisionFlags : 0u);
+			j.key("cachedTriangleCollisionFlags"); j.value_u32(trace.hit ? trace.collisionFlags : 0u);
+			j.key("physicsMaterialStored"); j.value_u32(trace.hit ? trace.physicsMaterial : 0u);
+			j.key("effectMaterialStored"); j.value_u32(trace.hit ? trace.effectMaterial : 0u);
+			j.key("effectMaterialRaw"); j.value_u32(trace.hit ? trace.effectMaterialRaw : 0u);
+			j.key("userData"); j.value_u32(trace.hit ? trace.userData : 0u);
+			j.key("normalPacked"); j.value_hex(trace.hit ? trace.normalPacked : 0u);
+			j.key("contact"); emit_vec3(j, trace.contact);
+			j.key("engineNormalStored"); emit_vec3(j, trace.normalStored);
+			j.key("normalDerivedNormalised"); emit_vec3(j, trace.normal);
+			j.key("distance"); j.value_bits(trace.hit ? trace.distance : 0.0f);
+			j.end_object();
 			j.key("record"); j.value_string(hex_bytes(record.data()));
 			j.end_object();
 		}
