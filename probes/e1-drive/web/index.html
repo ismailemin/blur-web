@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Blur E1 drive slice — wasm vehicle physics + WebGPU packet consumer</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="hud" aria-label="drive summary"></div>
+<div id="error" hidden></div>
+<div id="legend">
+  <strong>E1 drive slice</strong> — wasm RacingPhysics on the River collision mesh → render packet v1.1 → WebGPU<br>
+  diagnostic shading · materials not applied · wheels not drawn (no wheel mesh in scope)
+</div>
+<div id="keys">
+  <strong>W</strong>/<strong>↑</strong> throttle · <strong>S</strong>/<strong>↓</strong> brake ·
+  <strong>A</strong> <strong>D</strong> steer · <strong>Space</strong> handbrake · <strong>R</strong> reset ·
+  drag = orbit camera · wheel = zoom
+</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

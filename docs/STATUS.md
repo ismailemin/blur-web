@@ -430,4 +430,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Gravity v1 dokümanıyla **840 atanmış alan grubu** eşleşiyor; yalnız engine'in hiç atamadığı `trace.collisionFlags` hariç. `verify_gravity.py` v2'ye bağlandı: **PASS (v2 field-level)**.
 - Kanıt: `docs/work/verification/T-005d-collision-v2.md`, `probes/collision-oracle/README.md`.
 
+## 5 Kasım 2026 — E1 drive connector
+
+- `probes/e1-drive/` gerçek araç fiziğini render packet v1.1 ve WebGPU'ya bağladı; 186 nesnelik closure, modül 1.003.249 B.
+- 300 tick scripted sürüş (120 gaz/120 coast/60 fren): **45,378 m**, hız 0,002→14,986→0,448 m/s, temas **301/301**, NaN **0**; state hash `83f76590…08e1f` iki ayrı instance ve reset+replay'de aynı.
+- Packet 301 tick, 103 draw, 3.396.616 B, `fa7e660b…d769c1`; her tick hash'i Node tanımıyla yeniden hesaplanıp doğrulandı.
+- Headless Edge/WebGPU: 742 frame/299 tick, geometri **3 upload**, 0 console mesajı; tick 0/150/300 ekran görüntüleri.
+- Sınırlar: diagnostic materyaller, yol collision geometrisi, teker çizimi yok, box gravity proxy, XT handle açık. Kanıt: `docs/work/verification/T-007-e1-drive.md`.
+
 

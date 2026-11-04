@@ -156,6 +156,14 @@ yüzünden bloklu; 7 web-only dosyanın MSVC önişlenmiş çıktısı aynı. Ka
 sıfır toleransla; canlı koşu 90 tick/262 frame; geometri bir kez yükleniyor,
 kare başına yalnız uniform + draw; tick 0→90 kayması 190,16 px; console boş.
 
+**E1d/E1e connector (5 Kasım):** `probes/e1-drive/` gerçek araç fiziğini packet
+v1.1 ve WebGPU'ya bağladı. 300 tick scripted sürüş: **45,378 m**, hız
+0,002→14,986→0,448 m/s, temas 301/301, NaN 0; state hash `83f76590…08e1f` iki
+instance'ta aynı; packet 301 tick/103 draw/3.396.616 B. Headless Edge: 742
+frame/299 tick, geometri 3 upload, console **0 mesaj**. Sınır: materyaller
+diagnostic, yol collision geometrisi, teker çizimi yok. Kanıt:
+`docs/work/verification/T-007-e1-drive.md`.
+
 **T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
 makine gerekli. T-006b tamam: wire format struct ABI; `wchar_t` (MSVC 2/wasm32 4)

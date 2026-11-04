@@ -1,6 +1,6 @@
 # T-007 — E1 oynanabilir dikey dilim
 
-**Durum:** in-progress (E1b/E1c tamam; E1a streamer çalışıyor/parse bloklu; E1d sırada)
+**Durum:** in-progress (E1b/E1c/E1d tamam; E1e kısmi; E1a streamer/parse bloklu; E1f sırada)
 **Sahip:** ana ajan
 **Başlangıç:** 4 Kasım 2026
 **Bitiş:** —
@@ -49,15 +49,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-vehicle-physics.md`,
   `docs/work/analysis/engine-vehicle-physics.md`, `engine/verify_vehicle.py`.
 
-### E1d — Döngü, girdi, kamera
-- Sabit adım sürücüsü (T-005c probe) → engine tick.
-- Klavye/gamepad → motor girdi semantiği.
-- Chase camera, HUD/debug overlay, pause/hitch politikası.
+### E1d — Döngü, girdi, kamera  ✅
+- Sabit adım sürücüsü (T-005c kuralları) → engine tick; WASD/oklar; chase camera.
+- 300 tick scripted sürüş: 45,378 m, 0,002→14,986→0,448 m/s, temas 301/301,
+  NaN 0; iki instance + reset+replay aynı state hash.
+- Kanıt: `docs/work/verification/T-007-e1-drive.md`.
 
-### E1e — WebGPU entegrasyonu
-- Packet v1 tüketicisi gerçek oyun durumunu çizer: pist + araç + tekerler.
-- Eksik materyal/doku açıkça raporlanır; tahmini renk yok.
-- Console temiz; 60 Hz hedefi.
+### E1e — WebGPU entegrasyonu  ◐
+- Gerçek araç durumu → packet v1.1 → WebGPU; 103 draw, geometri 3 upload,
+  742 frame/299 tick, console **0 mesaj**; tick 0/150/300 ekran görüntüleri.
+- Eksik: `draws[]` hâlâ committed packet'ten; materyaller diagnostic; yol
+  collision geometrisi; teker çizimi yok.
+- Kanıt: `docs/work/verification/T-007-e1-drive.md`.
 
 ### E1f — İlk sürülebilir tur (kabul)
 - Start → tur → finish; çarpışma, checkpoint, respawn.
