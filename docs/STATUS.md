@@ -438,4 +438,9 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Headless Edge/WebGPU: 742 frame/299 tick, geometri **3 upload**, 0 console mesajı; tick 0/150/300 ekran görüntüleri.
 - Sınırlar: diagnostic materyaller, yol collision geometrisi, teker çizimi yok, box gravity proxy, XT handle açık. Kanıt: `docs/work/verification/T-007-e1-drive.md`.
 
+## 5 Kasım 2026 — T-008 PoC hedefi
+
+- Kullanıcı testi için PoC tanımı: tek URL, River, **≥4 gerçek araç**, seçilebilir, WASD + chase camera, sabit adım, console 0. Kart: `docs/work/tasks/T-008-browser-poc.md`.
+- Paralel agent'lar: P23 çoklu araç roster'ı, P22 `levelrender` engine parse, P25 Stage B pist geometrisi. Sırada teker/kompozit ve PoC paketleme.
+
 

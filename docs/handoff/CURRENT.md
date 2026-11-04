@@ -164,6 +164,12 @@ frame/299 tick, geometri 3 upload, console **0 mesaj**. Sınır: materyaller
 diagnostic, yol collision geometrisi, teker çizimi yok. Kanıt:
 `docs/work/verification/T-007-e1-drive.md`.
 
+**T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
+araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
+`docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list
+(P22) ve Stage B pist (P25) agent'ları çalışıyor; teker/kompozit ve paketleme
+sırada.
+
 **T-006 analizi:** T-006a tamam: PC LAN auth'suz; keşif UDP 50001, oyun UDP
 3074-3173; iki istemci aynı makinede çalışmaz (`SO_REUSEADDR` yok), iki fiziksel
 makine gerekli. T-006b tamam: wire format struct ABI; `wchar_t` (MSVC 2/wasm32 4)

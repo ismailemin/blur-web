@@ -125,3 +125,13 @@ temas 301/301, console 0; packet 301 tick/103 draw. E1e kısmi: `draws[]` hâlâ
 committed packet'ten, materyaller diagnostic, teker çizimi yok. E1a streamer
 359/359; `levelrender` Scene parse'ı bloklu. Sıradaki: engine draw-list +
 kamera + teker; sonra E1f tam tur. E2 yalnız karar kapısı düşerse.
+
+## 6. T-008 — Tarayıcı PoC
+
+**Durum:** in-progress
+**Kart:** `docs/work/tasks/T-008-browser-poc.md`
+
+Hedef: tek URL, River haritası, ≥4 gerçek araç seçimi, WASD + chase camera,
+sabit adım, console temiz. Çalışan agent'lar: P23 (çoklu araç), P22 (engine
+draw-list), P25 (Stage B pist). Sırada: teker/kompozit görsel, PoC paketleme ve
+`docs/handoff/E1_POC.md` kullanıcı kılavuzu.
