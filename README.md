@@ -25,9 +25,9 @@ a native Windows reference build and race harness.
 - Multi-instance API on the same block: grouped by shared archived CullNode bounds;
   block27 emits 22 instances, 13,162 vertices / 10,308 triangles; 35 other-block
   instances are counted, not guessed.
-- Multi-block scan (blocks15/17/26/27/31/32): Stage A blocks 27+15+17 yield 36
-  instances, 22,924 vertices / 17,301 triangles; blocks26/32 need cross-chunk
-  grouping (Stage B) and block31 an extra prerequisite.
+- Multi-block bundle scan (blocks15/17/26/27/31/32): **56 instances, 34,632
+  vertices / 25,521 triangles**; block31 (1 instance) still needs its extra
+  ChunkInfo prerequisite.
 - PC texture decoder (BC1/BC2/BC3 and selected uncompressed formats).
 - XT/FLSK schema metadata only.
 - Native x64 Amax Release build passes; stationary Brighton race renders.

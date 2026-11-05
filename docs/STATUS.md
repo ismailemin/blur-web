@@ -450,4 +450,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `OpenStreamFile` buffer hint sentinel (16 KiB) olarak düzeltildi; prerequisite'lı chunk okunmadan reddediliyor.
 - Kalan: resource block/render list importu, `ProcessLoadChunk`, doku/decompression. Kanıt: `docs/work/verification/T-007-streaming.md`.
 
+## 5 Kasım 2026 — T-003 Stage B (cross-chunk)
+
+- `level_instances_bundle_inspect` eklendi: node bir kez, 1–16 geometry chunk bundle'ı; her instance'ın VB/IB bloğu bağımsız çözülüyor. Eski API'ler korunuyor.
+- Grup anahtarı: bayt-özdeş arşiv CullNode kaydı + sabit transform satırı; blok kimliği yalnız üye çözümü için. Eksik üyeli grup bütün olarak tutuluyor (`incompleteBoundsGroupInstances`), kısmi emit yok.
+- Sonuç: blok26+32 **20** instance / 11.708 / 8.220; blok15/17/26/27/32 toplam **56 instance / 34.632 vertex / 25.521 üçgen**; blok31 1 instance prerequisite bekliyor. Blok27 regresyonu 22/13.162/10.308.
+- Üç native bundle koşusu byte-identical; JSON SHA `647ee7d3…148d`; CTest **15/15**, tam suite **30/30**, `--skip-build` 29/29, MSVC `/W4` 0 uyarı; native/wasm/Python eşit.
+- Negatif testler: duplicate/truncated/swapped chunk, bozuk ARCH, bilinmeyen blok, tek-ULP kayıt değişimi → grup bölünüp 3 üye reddediliyor; kısmi blok26 bundle 10 instance'ı 6 incomplete grupta tutuyor.
+- Headless Edge: 20/8.220, 56/34.632/25.521 ve 22/13.162/10.308 presetleri console temiz. Kanıt: `docs/work/verification/T-003-stageB.md`.
+
 

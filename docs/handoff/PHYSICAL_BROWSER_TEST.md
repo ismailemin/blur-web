@@ -50,9 +50,9 @@ Adres: **http://127.0.0.1:8765/**
 1. **Sahne örneği** → **River · tüm desteklenen**.
 2. **Sahne parçasını aç**.
 3. Beklenen:
-   - `36 instance çizildi · 20 sınır uyuşmazlığı · 1 blok atlandı`
-   - `17301 üçgen`
-   - Blok26/32 Stage B bekliyor; bu bir hata değil.
+   - `56 instance çizildi · 0 sınır uyuşmazlığı · 1 blok atlandı`
+   - `34632 vertex / 25521 üçgen`
+   - Blok31 prerequisite bekliyor; bu bir hata değil.
 
 ## Test 5 — Showroom
 
@@ -80,8 +80,7 @@ Kanıt: `_work/logs/t003-stageA-browser-*.json` ve aynı adlı `.png` dosyaları
 - Oynanabilir oyun yok; kamera dışında kontrol/fizik yok.
 - Corvette’in 54 çizimi hâlâ tanılama yüzeyi; runtime boya/ışık yok.
 - Level materyalleri/görünürlük yok.
-- Blok26/32 chunk'lar arası (Stage B) ve blok31 prerequisite henüz yok; toplam 57
-  instance'ın 36'sı çiziliyor.
+- Blok31 (1 instance) prerequisite bekliyor; toplam 57 instance'ın 56'sı çiziliyor.
 - WebGPU yoksa model canvas açılmaz; `chrome://gpu` kontrol edilmeli.
 
 ## Sorun giderme

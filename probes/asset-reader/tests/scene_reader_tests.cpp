@@ -146,8 +146,7 @@ void real_level_tests(const char* level_path,const char* geometry_path,const cha
     check(result==inspect_level(level,geometry,nodes),"Level output is nondeterministic");
     std::cout<<"Actual river Scene index, 344 vertices/208 triangles/5 draws, explicit instance scope and malformed stream/binding checks passed\n";
 }
-void real_instance_tests(const char* level_path,const char* geometry_path,const char* node_path){
-    const auto level=read_file(level_path),geometry=read_file(geometry_path),node=read_file(node_path);
+void real_instance_tests(const char* level_path,const char* geometry_path,const char* node_path){    const auto level=read_file(level_path),geometry=read_file(geometry_path),node=read_file(node_path);
     auto* raw=level_instances_inspect(level.data(),level.size(),geometry.data(),geometry.size(),node.data(),node.size(),27,253);
     check(raw!=nullptr,"Allocation failed");std::string result(raw);scene_free(raw);
     check(ok(result),result.c_str());
@@ -167,7 +166,84 @@ void real_instance_tests(const char* level_path,const char* geometry_path,const 
     check(has(all,"\"vertexCount\":13162,\"triangleCount\":10308"),"All-instance block27 geometry counts changed");
     check(has(all,"\"boundsMaxAbsoluteDifference\":6.02443715e-05"),"All-instance bounds agreement changed");
     std::cout<<"Actual River block27/node253 instance0: 805 vertices/726 triangles, archived bounds 3.86511e-05 passed\n";
-    std::cout<<"Block27 all supported instances: 14 emitted/8 unsupported/35 other-block, 7308 vertices/6106 triangles passed\n";
+    std::cout<<"Block27 all supported instances: 22 emitted/0 unsupported/35 other-block, 13162 vertices/10308 triangles passed\n";
+    check(has(all,"\"boundsGroups\":34"),"All-instance group count changed");
+}
+size_t find_nth(const Bytes& haystack,const Bytes& needle,size_t nth){
+    if(needle.empty()||needle.size()>haystack.size())return std::string::npos;
+    size_t found=0;
+    for(size_t i=0;i+needle.size()<=haystack.size();i++)
+        if(std::memcmp(haystack.data()+i,needle.data(),needle.size())==0&&++found==nth)return i;
+    return std::string::npos;
+}
+void real_instance_bundle_tests(const char* level_path,const char* node_path,const char* block15_path,const char* block17_path,
+                                const char* block26_path,const char* block27_path,const char* block32_path){
+    const auto level=read_file(level_path),node=read_file(node_path);
+    const auto b15=read_file(block15_path),b17=read_file(block17_path),b26=read_file(block26_path),
+               b27=read_file(block27_path),b32=read_file(block32_path);
+    const int32_t blocks[5]={15,17,26,27,32};
+    const unsigned char* pointers[5]={b15.data(),b17.data(),b26.data(),b27.data(),b32.data()};
+    const size_t sizes[5]={b15.size(),b17.size(),b26.size(),b27.size(),b32.size()};
+    auto raw=level_instances_bundle_inspect(level.data(),level.size(),node.data(),node.size(),253,blocks,pointers,sizes,5);
+    check(raw!=nullptr,"Bundle allocation failed");std::string all(raw);scene_free(raw);
+    check(ok(all),all.c_str());
+    check(has(all,"\"emittedInstanceCount\":56")&&has(all,"\"omittedOtherBlockInstances\":1")&&has(all,"\"unsupportedBoundsInstances\":0"),"Bundle instance counts changed");
+    check(has(all,"\"incompleteBoundsGroups\":0")&&has(all,"\"incompleteBoundsGroupInstances\":0"),"Complete bundle reported an incomplete group");
+    check(has(all,"\"vertexCount\":34632,\"triangleCount\":25521"),"Bundle geometry counts changed");
+    check(has(all,"\"boundsGroups\":34"),"Bundle group count changed");
+    check(has(all,"\"geometryBlocks\":[15,17,26,27,32]"),"Bundle block list changed");
+    check(has(all,"\"unsuppliedGeometryBlocks\":[31]"),"Block31 prerequisite is not reported as unsupplied");
+    check(has(all,"\"boundsMaxAbsoluteDifference\":6.02443715e-05"),"Bundle group union error changed");
+    check(has(all,"\"firstInstance\":33,\"instanceCount\":3,\"inScopeInstanceCount\":3"),"Cross-chunk group 43 membership changed");
+    auto repeat_raw=level_instances_bundle_inspect(level.data(),level.size(),node.data(),node.size(),253,blocks,pointers,sizes,5);
+    check(repeat_raw!=nullptr,"Bundle allocation failed");std::string repeat(repeat_raw);scene_free(repeat_raw);
+    check(all==repeat,"Bundle JSON nondeterministic");
+
+    const int32_t only26[1]={26};const unsigned char* only26_ptr[1]={b26.data()};const size_t only26_size[1]={b26.size()};
+    auto partial_raw=level_instances_bundle_inspect(level.data(),level.size(),node.data(),node.size(),253,only26,only26_ptr,only26_size,1);
+    check(partial_raw!=nullptr,"Partial bundle allocation failed");std::string partial(partial_raw);scene_free(partial_raw);
+    check(ok(partial),partial.c_str());
+    check(has(partial,"\"emittedInstanceCount\":0")&&has(partial,"\"incompleteBoundsGroupInstances\":10")&&has(partial,"\"incompleteBoundsGroups\":6")&&has(partial,"\"omittedOtherBlockInstances\":47"),"Partial group was not withheld as a whole");
+    check(has(partial,"\"vertexCount\":0,\"triangleCount\":0"),"Partial group emitted geometry");
+
+    const int32_t duplicate[2]={26,26};const unsigned char* duplicate_ptr[2]={b26.data(),b26.data()};const size_t duplicate_size[2]={b26.size(),b26.size()};
+    auto duplicate_raw=level_instances_bundle_inspect(level.data(),level.size(),node.data(),node.size(),253,duplicate,duplicate_ptr,duplicate_size,2);
+    check(duplicate_raw!=nullptr,"Duplicate bundle allocation failed");std::string duplicate_json(duplicate_raw);scene_free(duplicate_raw);
+    check(!ok(duplicate_json)&&has(duplicate_json,"Duplicate geometry block"),"Duplicate geometry block accepted");
+
+    Bytes truncated(b26.begin(),b26.end()-1);
+    const unsigned char* truncated_ptr[1]={truncated.data()};const size_t truncated_size[1]={truncated.size()};
+    auto truncated_raw=level_instances_bundle_inspect(level.data(),level.size(),node.data(),node.size(),253,only26,truncated_ptr,truncated_size,1);
+    check(truncated_raw!=nullptr,"Truncated bundle allocation failed");std::string truncated_json(truncated_raw);scene_free(truncated_raw);
+    check(!ok(truncated_json)&&has(truncated_json,"length differs"),"Truncated geometry chunk accepted");
+
+    const int32_t cross[2]={26,32};
+    const unsigned char* wrong_ptr[2]={b32.data(),b32.data()};const size_t wrong_size[2]={b32.size(),b32.size()};
+    auto wrong_raw=level_instances_bundle_inspect(level.data(),level.size(),node.data(),node.size(),253,cross,wrong_ptr,wrong_size,2);
+    check(wrong_raw!=nullptr,"Wrong-chunk allocation failed");std::string wrong_json(wrong_raw);scene_free(wrong_raw);
+    check(!ok(wrong_json)&&has(wrong_json,"length differs"),"Swapped geometry chunk accepted");
+
+    Bytes corrupt=b26;corrupt[0]='X';
+    const unsigned char* corrupt_ptr[1]={corrupt.data()};const size_t corrupt_size[1]={corrupt.size()};
+    auto corrupt_raw=level_instances_bundle_inspect(level.data(),level.size(),node.data(),node.size(),253,only26,corrupt_ptr,corrupt_size,1);
+    check(corrupt_raw!=nullptr,"Corrupt bundle allocation failed");std::string corrupt_json(corrupt_raw);scene_free(corrupt_raw);
+    check(!ok(corrupt_json)&&has(corrupt_json,"signature"),"Corrupt stream signature accepted");
+
+    // One ULP in one member's archived CullNode record must split the group and
+    // reject all three members; a byte-identity merge would emit 20 instances.
+    const unsigned char record35[32]={0x6b,0xa3,0xc8,0xc2,0xbe,0x74,0xb6,0x40,0x71,0xa0,0x82,0x44,0x22,0xe2,0xa0,0xc2,
+                                      0xd7,0x56,0x23,0x41,0xff,0x2a,0x83,0x44,0x00,0x00,0xc0,0x42,0x00,0x00,0x7a,0x43};
+    const Bytes needle(record35,record35+sizeof(record35));
+    const size_t at=find_nth(node,needle,3);
+    check(at!=std::string::npos,"Instance35 archived record occurrence missing");
+    Bytes perturbed_node=node;perturbed_node[at+12]=static_cast<unsigned char>(perturbed_node[at+12]^0x01);
+    const unsigned char* cross_ptr[2]={b26.data(),b32.data()};const size_t cross_size[2]={b26.size(),b32.size()};
+    auto perturbed_raw=level_instances_bundle_inspect(level.data(),level.size(),perturbed_node.data(),perturbed_node.size(),253,cross,cross_ptr,cross_size,2);
+    check(perturbed_raw!=nullptr,"Perturbed bundle allocation failed");std::string perturbed(perturbed_raw);scene_free(perturbed_raw);
+    check(ok(perturbed),perturbed.c_str());
+    check(has(perturbed,"\"emittedInstanceCount\":17")&&has(perturbed,"\"unsupportedBoundsInstances\":3"),"One-byte record change did not reject the whole group");
+    std::cout<<"River bundle blocks15/17/26/27/32: 56 instances/34632 vertices/25521 triangles, 34 groups, error 6.02444e-05 passed\n";
+    std::cout<<"Partial block26 bundle withholds 10 instances as 6 incomplete groups; malformed/truncated/duplicate/one-byte record cases rejected passed\n";
 }
 
 void real_car_tests(const char* path){
@@ -201,8 +277,10 @@ int main(int argc,char**argv){try{
     check(!ok(inspect(nullptr,0)),"Null accepted");unsigned char tiny[4]={' ',' ','C','P'};check(!ok(inspect(tiny,std::numeric_limits<size_t>::max())),"Oversize accepted");scene_free(nullptr);
     check(!ok(index_level(nullptr,0)),"Null level index accepted");check(!ok(index_level(tiny,std::numeric_limits<size_t>::max())),"Oversize level index accepted");
     char* invalid_level=level_mesh_inspect(tiny,std::numeric_limits<size_t>::max(),tiny,4,tiny,4,252,253);check(invalid_level!=nullptr,"Null level API error");check(!ok(invalid_level),"Oversize level mesh accepted");scene_free(invalid_level);
+    char* invalid_bundle=level_instances_bundle_inspect(tiny,4,tiny,4,253,nullptr,nullptr,nullptr,0);check(invalid_bundle!=nullptr,"Null bundle API error");check(!ok(invalid_bundle),"Null/empty bundle accepted");scene_free(invalid_bundle);
     if(argc==5&&std::strcmp(argv[1],"--level")==0){real_level_tests(argv[2],argv[3],argv[4]);return 0;}
     if(argc==5&&std::strcmp(argv[1],"--instances")==0){real_instance_tests(argv[2],argv[3],argv[4]);return 0;}
+    if(argc==9&&std::strcmp(argv[1],"--instances-bundle")==0){real_instance_bundle_tests(argv[2],argv[3],argv[4],argv[5],argv[6],argv[7],argv[8]);return 0;}
     if(argc==3&&std::strcmp(argv[1],"--car")==0){real_car_tests(argv[2]);return 0;}
     material_and_uv_tests();
     const auto input=fixture();auto output=inspect(input.data(),input.size());check(ok(output),output.c_str());check(has(output,"\"indices\":[0,1,2]"),"Triangle list changed");check(has(output,"\"fixtureOnly\":false"),"Generic parser mislabelled");check(has(output,"\"partialSceneTraversal\":true"),"Partial scope missing");check(has(output,"\"firstIndex\":0,\"indexCount\":3,\"albedoTexture\":null")&&has(output,"\"uv0Available\":false"),"Missing original UV0 became a source albedo mapping");

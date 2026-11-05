@@ -35,6 +35,17 @@ char* level_instances_all_inspect(const unsigned char* level_bytes, size_t level
                                   const unsigned char* geometry_bytes, size_t geometry_size,
                                   const unsigned char* node_bytes, size_t node_size,
                                   int32_t geometry_block, int32_t node_block);
+// Additive bundle variant for one CullNode group whose member draws bind VB/IB
+// blocks located in more than one supplied geometry chunk. `geometry_blocks[k]`
+// names the resource block supplied by `geometry_bytes[k]`; a group with any
+// member whose VB/IB block is not supplied is withheld as incomplete.
+char* level_instances_bundle_inspect(const unsigned char* level_bytes, size_t level_size,
+                                     const unsigned char* node_bytes, size_t node_size,
+                                     int32_t node_block,
+                                     const int32_t* geometry_blocks,
+                                     const unsigned char* const* geometry_bytes,
+                                     const size_t* geometry_sizes,
+                                     size_t geometry_count);
 void scene_free(void* pointer);
 #ifdef __cplusplus
 }

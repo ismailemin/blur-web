@@ -249,24 +249,44 @@ independent Python proof exactly (`5125314b…` and `886e2855…`). The browser 
 a **River · instance prova** preset; it is one instance, not a track.
 
 `level_instances_all_inspect(...)` is an additive variant over the same inputs.
-It groups **contiguous instances that share an identical archived CullNode bounds
-record and identical VB/IB blocks**, then compares the union of the group's draw
-AABBs to that shared record (tolerance `1e-4`). This matches the source contract:
-`renderlistbuild.cpp:579` writes one CullNode bounds record per object draw, so a
-single draw must not be compared against the whole-object record. Metadata adds
-`boundsGrouping` and `boundsGroups`; `emittedInstanceCount` counts instances, not
-groups. It also returns `requiredGeometryBlocks` and per-instance VB/IB source
-identities, so a caller can fetch and merge every relevant geometry chunk. A
-block with zero supported instances returns `status:"ok"` with
-`emittedInstanceCount:0` and explicit `unsupportedBoundsInstances`; callers must
-not treat that as a binding.
-Block27/node253 yields **22 emitted**, **0 unsupported bounds**, **35
-other-block**, with **13,162vertices/10,308triangles** and maximum bound error
-`6.02444e-05`. A multi-block scan (`[15,17,26,27,31,32]`) adds block15's12 and
-block17's2 instances: **Stage A total 36 instances, 22,924vertices/17,301
-triangles**. Blocks26/32 need cross-chunk group assembly (Stage B); block31 needs
-an additional ChunkInfo prerequisite. The browser exposes
-**River · tüm desteklenen** for the merge. It is not a full track.
+It groups **contiguous instances that share a byte-identical archived CullNode
+bounds record and the same resolved constant transform row**, then compares the
+union of the group's draw AABBs to that shared record (tolerance `1e-4`). This
+matches the source contract: `renderlistbuild.cpp:579` writes one CullNode bounds
+record per object draw, so a single draw must not be compared against the
+whole-object record, and the constant row is the CullNode proxy recommended by
+the analysis. Metadata adds `boundsGrouping`, `boundsGroups`,
+`boundsGroupDetails`, `incompleteBoundsGroups` and
+`incompleteBoundsGroupInstances`; `emittedInstanceCount` counts instances, not
+groups. It also returns `requiredGeometryBlocks`, `unsuppliedGeometryBlocks` and
+per-instance VB/IB source identities, so a caller can fetch and merge every
+relevant geometry chunk. A block with zero supported instances returns
+`status:"ok"` with `emittedInstanceCount:0` and explicit counts; callers must not
+treat that as a binding. Block27/node253 yields **22 emitted**, **0 unsupported
+bounds**, **35 other-block**, with **13,162vertices/10,308triangles** and maximum
+bound error `6.02444e-05`. A multi-block scan (`[15,17,26,27,32]`) adds block15's
+12, block17's 2 and block26+32's 20 instances: **Stage A+B total 56 instances,
+34,632vertices/25,521triangles**.
+
+`level_instances_bundle_inspect(level, levelSize, node, nodeSize, nodeBlock,
+geometryBlocks[], geometryPointers[], geometrySizes[], geometryCount)` is the
+additive cross-chunk variant. Each `geometryBlocks[k]` names the resource block
+containing the LOD0 item supplied by `geometryPointers[k]`/`geometrySizes[k]`.
+Blocks must be distinct, must not equal `nodeBlock`, and `geometryCount` is
+bounded to 1..16; each chunk must match its ChunkInfo stored size and have no
+additional prerequisites. A member draw's VB
+and IB blocks are resolved independently to the supplied chunks, so one CullNode
+group may combine block26 (chunk85) and block32 (chunk88) draws and is compared to
+its single archived record as a whole. A group with some members bound to
+supplied chunks and some to unsupplied blocks is **incomplete**: every supplied
+member is withheld and counted in `incompleteBoundsGroupInstances`; no partial
+group is emitted. A group whose members are all unsupplied is counted as
+other-block. Bundle metadata adds `bundledGeometry:true`, `geometryBlocks` and
+per-chunk `geometryChunks[{block,chunkIndex,itemIndex,streamOffset}]`; it does not
+silently alias a single `geometryBlock`. The browser exposes
+**River · blok26+32 · 20 instance** (bundle blocks26+32) and
+**River · tüm desteklenen · 56 instance** (blocks15/17/26/27/32); block31 still
+needs the additional ChunkInfo prerequisite flow. This is not a full track.
 
 
 The native three-input river fixture yields344vertices,208triangles,five direct

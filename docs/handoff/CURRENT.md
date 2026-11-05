@@ -19,8 +19,8 @@
 - `level_instances_all_inspect` aynı blokta **22 instance** çiziyor:
   **13.162 vertex / 10.308 üçgen**, 0 sınır uyuşmazlığı, 35 instance başka blok
   (en büyük sınır farkı **6.02444e-05**).
-- Çoklu blok taraması: `requiredGeometryBlocks=[15,17,26,27,31,32]`; Stage A
-  blok27+15+17 toplam **36 instance**, **22.924 vertex / 17.301 üçgen**.
+- Çoklu blok bundle taraması: `requiredGeometryBlocks=[15,17,26,27,31,32]`;
+  blok27+15+17+26+32 toplam **56 instance**, **34.632 vertex / 25.521 üçgen**.
   Browser'da **River · tüm desteklenen** preset'i var.
 - P2 analizi: arşiv `instanceBounds` kayıtları draw başına değil **CullNode
   (yerleştirilmiş nesne) başına**; 57 instance 34 transform-sabit grubuna ve 34
@@ -43,12 +43,13 @@
 
 ## Sıradaki iş
 
-**T-003 Stage A tamam:** gruplu AABB birleşimi; blok27 22, blok15 12, blok17 2
-→ **36 instance / 22.924 vertex / 17.301 üçgen**. Suite 29/29, CTest 14/14;
-headless Edge/WebGPU 22 ve 36 instance console temiz. **Kalan:** Stage B
-(blok26/32 → 56 instance), blok31 prerequisite, materyaller, görünürlük, yüksek
-LOD'lar. Kart: `docs/work/tasks/T-003-scene-traversal.md`; kanıt:
-`docs/work/verification/T-003-stageA.md`.
+**T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
+blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
+25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56
+presetleri console temiz. **Kalan:** blok31 prerequisite, materyaller,
+görünürlük, yüksek LOD'lar. Kart:
+`docs/work/tasks/T-003-scene-traversal.md`; kanıt:
+`docs/work/verification/T-003-stageB.md`.
 
 **T-005 tek oyunculu dikey dilim** alt görevlere bölündü:
 `T-005a` motor/WASM/platform fizibilitesi, `T-005b` streaming, `T-005c`
@@ -183,15 +184,16 @@ T-006e/f gerçek yarış T-005g ve T-004 kapılarına bağlı. Kanıt:
 
 ## Bilinen engeller / riskler
 
-- 18 instance destekli; P2'ye göre bounds grouping düzeltilince Stage A 36,
-  Stage B 56 instance'a çıkmalı. Blok31 prerequisite; CPU vertex expansion var.
+- **56 instance** destekli (Stage A+B); blok31 (1 instance) prerequisite
+  bekliyor. CPU vertex expansion var.
 - Native sürüş referansı T-004 düzeltmesiyle kararlı (7/7 temiz koşu).
-- Fizik, kontroller, ses, save/streaming, tek oyunculu yarış ve multiplayer
-  başlamadı.
+- Araç fiziği wasm'da çalışıyor (gerçek XT, 4 teker teması); renderer ve yarış
+  kuralları henüz yok.
 - **Fiziksel Chrome testi (4 Kasım): 4/4 geçti** — Corvette 30.591/36.193,
   River 22 instance 13.162/10.308, tüm desteklenen 36 instance 22.924/17.301,
-  Showroom 11.590/7.987; console temiz. Kalan: Stage B (blok26/32), blok31,
-  base7–10 stream semantiği, level materyalleri/görünürlük/yüksek LOD'lar.
+  Showroom 11.590/7.987; console temiz. Stage B sonrası headless: **56 instance /
+  34.632 / 25.521**, console temiz. Kalan: blok31, base7–10 stream semantiği,
+  level materyalleri/görünürlük/yüksek LOD'lar.
 - Oyun verisi ve `_work/` Git dışında; kanıtlar yeniden üretim komutuyla birlikte
   dokümanda tutulmalı.
 
