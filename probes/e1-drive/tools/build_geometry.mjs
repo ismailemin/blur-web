@@ -6,10 +6,15 @@
 //         _work/car-parts/cars/index.json + one manifest/mesh pair per roster
 //         car (probes/car-parts/tools/build_all_manifests.py): the real body
 //         geometry of every car this slice drives, with 4 wheel groups each.
-//         Read only; every manifest is pinned by SHA-256 and every draw range is
-//         cross-checked against its mesh before it is used.
-// Output: _work/e1-drive/geometry.json — the level mesh + collision surface, and
-//         one body per roster car (mesh, draws, parts, wheel groups and nodes).
+//         _work/level-candidates/probes/00-usa_la_river-g88-n283/reference.json
+//         and .../08-usa_la_river-g56-n289/reference.json: the committed
+//         level_inspect direct-draw references used as the real track visual.
+//         Read only; every reference and manifest is pinned by SHA-256 and every
+//         draw range is validated against its mesh before it is used.
+// Output: _work/e1-drive/geometry.json — the level mesh, the real River track
+//         visual (committed level_inspect direct draws), one body per roster car
+//         (mesh, draws, parts, wheel groups and nodes), and the collision surface
+//         kept as hidden physics provenance.
 //         Nothing is re-derived from the game files here; the packet populates
 //         the level half and the car-parts manifests the vehicle half, and every
 //         input hash is recorded.
@@ -481,7 +486,303 @@ for (const rosterCar of roster.cars) {
   }
 }
 
-const trackMesh = {
+// ------------------------------------------------------- real track visual
+//
+// The committed `level_inspect` direct-draw references (one JSON per block/node
+// pair, produced by the read-only level reader and checked native/WASM/Python in
+// docs/plan/level-candidates.md) are the real River render geometry. They are
+// pinned by SHA-256 so a regenerated or hand-edited reference is a hard failure.
+//
+// Two sections are concatenated into one mesh (one upload, the same bounded
+// upload count as before):
+//   * block88/node283 — the instructed asset: 95 draws, 17,782 vertices,
+//     9,343 triangles. Its source bounds (x 944..2478, z 2206..3237) do NOT
+//     overlap the drive box (x -120..-10, z 1010..1090), so it is drawn at its
+//     true world position and cannot be the ground under the scripted car;
+//   * block56/node289 — the committed direct-draw section that DOES overlap the
+//     drive box (9 of its 49 draws, and its road y at the spawn is 5.80685,
+//     within 0.0006 m of the engine's 5.8074 ground probe). This is what makes
+//     the drive screenshots show real road instead of the diagnostic slab.
+// Both are source positions and indices, only concatenated: no transform, no
+// clipping, no re-derivation.
+const TRACK_VISUAL_ID = 'river.track.visual';
+const TRACK_VISUAL_SECTIONS = [
+  {
+    key: 'river.block88.node283',
+    geometryBlock: 88,
+    nodeBlock: 283,
+    path: '_work/level-candidates/probes/00-usa_la_river-g88-n283/reference.json',
+    sha256: 'sha256:e2a830f40af73ddcab928f719212c0bbdc77416b276b83c5a6e05ac48c887b89',
+    role: 'instructed direct-draw set; 95 draws / 17,782 vertices / 9,343 triangles',
+    driveBoxOverlap: false
+  },
+  {
+    key: 'river.block56.node289',
+    geometryBlock: 56,
+    nodeBlock: 289,
+    path: '_work/level-candidates/probes/08-usa_la_river-g56-n289/reference.json',
+    sha256: 'sha256:ac570f64be34a0e0480173c8c31f3784e28200e7a6ddfe14a7bf462a458dccaf',
+    role: 'drive-covering direct-draw section (bounds cross the drive box; road y matches the collision probe at the spawn)',
+    driveBoxOverlap: true
+  }
+];
+
+const IDENTITY_WORLD = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+function float32Hash(values) {
+  const buffer = Buffer.alloc(values.length * 4);
+  values.forEach((value, index) => buffer.writeFloatLE(value, index * 4));
+  return createHash('sha256').update(buffer).digest('hex');
+}
+function uint32Hash(values) {
+  const buffer = Buffer.alloc(values.length * 4);
+  values.forEach((value, index) => buffer.writeUInt32LE(value, index * 4));
+  return createHash('sha256').update(buffer).digest('hex');
+}
+
+function loadTrackVisualSection(spec) {
+  const file = path.join(ROOT, spec.path);
+  if (!existsSync(file)) {
+    throw new Error('missing ' + spec.path + ' — the committed level_inspect direct-draw reference is an input');
+  }
+  const bytes = readFileSync(file);
+  const fileSha = sha256(bytes);
+  if (fileSha !== spec.sha256) {
+    throw new Error(spec.key + ': reference is not the pinned level_inspect output: ' + fileSha +
+      ' (expected ' + spec.sha256 + ')');
+  }
+  const doc = JSON.parse(bytes.toString('utf8'));
+  if (doc.vertexCount !== doc.positions.length / 3) {
+    throw new Error(spec.key + ': vertexCount does not match positions');
+  }
+  if (doc.triangleCount * 3 !== doc.indices.length) {
+    throw new Error(spec.key + ': triangleCount does not match indices');
+  }
+  if (float32Hash(doc.positions) !== doc.positionsFloat32LESha256 ||
+      uint32Hash(doc.indices) !== doc.indicesUint32LESha256) {
+    throw new Error(spec.key + ': reference value hashes do not match its own positions/indices');
+  }
+  return { ...spec, doc, bytes };
+}
+
+const trackSections = TRACK_VISUAL_SECTIONS.map(loadTrackVisualSection);
+const trackPositions = [];
+const trackIndices = [];
+const trackDraws = [];
+const trackSectionRecords = [];
+let trackVertexBase = 0;
+let trackIndexBase = 0;
+
+for (const section of trackSections) {
+  const doc = section.doc;
+  for (const value of doc.positions) trackPositions.push(value);
+  for (const value of doc.indices) trackIndices.push(value + trackVertexBase);
+
+  const drawStartCount = trackDraws.length;
+  for (const draw of doc.draws) {
+    if (!Number.isInteger(draw.firstIndex) || !Number.isInteger(draw.indexCount) ||
+        draw.indexCount <= 0 || draw.indexCount % 3 !== 0 ||
+        draw.firstIndex < 0 || draw.firstIndex + draw.indexCount > doc.indices.length) {
+      throw new Error(section.key + ': draw ' + draw.primitiveIndex + ' has an invalid index range');
+    }
+    let minIndex = Infinity;
+    let maxIndex = -Infinity;
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    for (let offset = draw.firstIndex; offset < draw.firstIndex + draw.indexCount; offset++) {
+      const vertex = doc.indices[offset];
+      if (!Number.isInteger(vertex) || vertex < 0 || vertex >= doc.vertexCount) {
+        throw new Error(section.key + ': draw ' + draw.primitiveIndex + ' index ' + vertex + ' is outside the source mesh');
+      }
+      if (vertex < minIndex) minIndex = vertex;
+      if (vertex > maxIndex) maxIndex = vertex;
+      for (let axis = 0; axis < 3; axis++) {
+        const value = doc.positions[vertex * 3 + axis];
+        if (value < min[axis]) min[axis] = value;
+        if (value > max[axis]) max[axis] = value;
+      }
+    }
+    trackDraws.push({
+      id: section.key + '.draw.' + trackDraws.length,
+      meshId: TRACK_VISUAL_ID,
+      vertexOffset: trackVertexBase + minIndex,
+      vertexCount: maxIndex - minIndex + 1,
+      indexOffset: trackIndexBase + draw.firstIndex,
+      indexCount: draw.indexCount,
+      materialId: null,
+      materialReason:
+        'asset-reader direct draw: the level material list is decoded but not applied by this slice; ' +
+        'the draw keeps its source index range and is rendered with the diagnostic albedo (materialsApplied:false)',
+      layer: 'opaque',
+      bounds: { min: min.map((value) => Number(value.toFixed(6))), max: max.map((value) => Number(value.toFixed(6))) },
+      worldKind: 'baked-into-mesh',
+      trackVisual: 'asset-reader-direct-draws',
+      source: {
+        tool: 'level_inspect (committed direct-draw reference)',
+        reference: section.path,
+        referenceSha256: section.sha256,
+        geometryBlock: section.geometryBlock,
+        nodeBlock: section.nodeBlock,
+        drawIndex: trackDraws.length,
+        primitiveIndex: draw.primitiveIndex,
+        primitiveOffset: draw.primitiveOffset,
+        declaration: draw.declaration,
+        topology: draw.topology,
+        sourceVertexBuffer: draw.sourceVertexBuffer,
+        sourceIndexBuffer: draw.sourceIndexBuffer,
+        sourceFirstIndex: draw.firstIndex,
+        sourceIndexCount: draw.indexCount,
+        world: IDENTITY_WORLD,
+        worldReason: 'noInstanceTransform: direct draw, no instance placement; identity is the source world'
+      }
+    });
+  }
+
+  trackSectionRecords.push({
+    key: section.key,
+    geometryBlock: section.geometryBlock,
+    nodeBlock: section.nodeBlock,
+    role: section.role,
+    driveBoxOverlap: section.driveBoxOverlap,
+    reference: section.path,
+    referenceSha256: section.sha256,
+    referenceBytes: section.bytes.length,
+    vertexCount: doc.vertexCount,
+    triangleCount: doc.triangleCount,
+    drawCount: doc.draws.length,
+    drawIndexRange: [drawStartCount, trackDraws.length - 1],
+    bounds: {
+      min: doc.bounds.min.map((value) => Number(value.toFixed(6))),
+      max: doc.bounds.max.map((value) => Number(value.toFixed(6)))
+    },
+    positionsFloat32LESha256: doc.positionsFloat32LESha256,
+    indicesUint32LESha256: doc.indicesUint32LESha256,
+    usedVertexBuffers: doc.usedVertexBuffers
+  });
+
+  trackVertexBase += doc.vertexCount;
+  trackIndexBase += doc.indices.length;
+}
+
+const trackMin = [Infinity, Infinity, Infinity];
+const trackMax = [-Infinity, -Infinity, -Infinity];
+for (let index = 0; index < trackPositions.length; index += 3) {
+  for (let axis = 0; axis < 3; axis++) {
+    const value = trackPositions[index + axis];
+    if (value < trackMin[axis]) trackMin[axis] = value;
+    if (value > trackMax[axis]) trackMax[axis] = value;
+  }
+}
+
+const trackVisualMesh = {
+  id: TRACK_VISUAL_ID,
+  storage: 'inline-json',
+  vertexCount: trackPositions.length / 3,
+  indexCount: trackIndices.length,
+  positions: trackPositions,
+  indices: trackIndices,
+  positionsSha256: 'sha256:' + float32Hash(trackPositions),
+  indicesSha256: 'sha256:' + uint32Hash(trackIndices),
+  coordinateSpace: 'world',
+  source: {
+    tool: 'level_inspect (committed direct-draw references)',
+    trackVisual: 'asset-reader-direct-draws',
+    sections: trackSectionRecords,
+    note:
+      'real River levelrender direct draws, concatenated without transform or clipping; ' +
+      'the per-draw source index ranges are preserved; materials are diagnostic, no texture is bound'
+  }
+};
+
+const trackVisual = {
+  label: 'asset-reader-direct-draws',
+  meshId: TRACK_VISUAL_ID,
+  draws: trackDraws,
+  sections: trackSectionRecords,
+  vertexCount: trackVisualMesh.vertexCount,
+  triangleCount: trackVisualMesh.indexCount / 3,
+  drawCount: trackDraws.length,
+  bounds: {
+    min: trackMin.map((value) => Number(value.toFixed(6))),
+    max: trackMax.map((value) => Number(value.toFixed(6)))
+  },
+  note:
+    'drawn instead of the diagnostic collision slab; block88/node283 is included verbatim but does not ' +
+    'overlap the drive box, block56/node289 is the committed section that does'
+};
+
+// Collision triangles that have no committed real render geometry above them are
+// kept as an explicitly labelled physics fallback. The test is data-derived: a
+// collision triangle is "covered" when its centroid lies inside a committed
+// block56/node289 triangle in XZ and the collision height is within 1.0 m of that
+// triangle's height (the spawn road matches to 0.0006 m). The covered part is not
+// drawn (the real road is there); the rest is drawn only so the drive does not
+// fall into a void where no real draw exists. No triangle is moved or invented.
+const COVER_Y_TOLERANCE = 1.0;
+const g56Section = trackSections.find((section) => section.key === 'river.block56.node289');
+if (!g56Section) throw new Error('the drive-covering block56/node289 reference is missing');
+const g56Doc = g56Section.doc;
+function g56HeightAt(px, pz) {
+  let best = null;
+  const positions = g56Doc.positions;
+  const indices = g56Doc.indices;
+  for (const draw of g56Doc.draws) {
+    for (let offset = draw.firstIndex; offset < draw.firstIndex + draw.indexCount; offset += 3) {
+      const a = indices[offset], b = indices[offset + 1], c = indices[offset + 2];
+      const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
+      const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2];
+      const cx = positions[c * 3], cy = positions[c * 3 + 1], cz = positions[c * 3 + 2];
+      const den = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+      if (Math.abs(den) < 1e-12) continue;
+      const l1 = ((bz - cz) * (px - cx) + (cx - bx) * (pz - cz)) / den;
+      const l2 = ((cz - az) * (px - cx) + (ax - cx) * (pz - cz)) / den;
+      const l3 = 1 - l1 - l2;
+      if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+      const y = l1 * ay + l2 * by + l3 * cy;
+      if (best === null || y > best) best = y;
+    }
+  }
+  return best;
+}
+
+let coveredTriangles = 0;
+let fallbackTriangles = 0;
+for (let triangle = 0; triangle < track.indices.length; triangle += 3) {
+  const a = track.indices[triangle];
+  const b = track.indices[triangle + 1];
+  const c = track.indices[triangle + 2];
+  const vertices = [a, b, c];
+  let cx = 0, cy = 0, cz = 0;
+  for (const vertex of vertices) {
+    cx += track.positions[vertex * 3];
+    cy += track.positions[vertex * 3 + 1];
+    cz += track.positions[vertex * 3 + 2];
+  }
+  cx /= 3; cy /= 3; cz /= 3;
+  const road = g56HeightAt(cx, cz);
+  if (road !== null && Math.abs(cy - road) <= COVER_Y_TOLERANCE) {
+    coveredTriangles++;
+    continue;
+  }
+  fallbackTriangles++;
+}
+const collisionCoverage = {
+  rule: 'a collision triangle is covered when its centroid is inside a real block56/node289 triangle in XZ and its y is within ' + COVER_Y_TOLERANCE + ' m of that triangle',
+  reference: g56Section.path,
+  referenceSha256: g56Section.sha256,
+  coveredTriangles,
+  fallbackTriangles,
+  reason:
+    'measured coverage only: the covered collision triangles are not drawn because the real track visual sits ' +
+    'there; the uncovered triangles are the part of the drive box with no committed real draw and are also not ' +
+    'drawn (the collision surface is physics-only in this slice)'
+};
+
+// The collision surface stays in the packet as explicit physics provenance, but
+// it is not a render draw: the wheels still trace Level.levelphysics, and no
+// collision triangle is re-derived or moved. `visible:false` is carried by both
+// the surface record and its draw when a consumer chooses to inspect it.
+const collisionMesh = {
   id: track.id,
   storage: 'inline-json',
   vertexCount: track.vertexCount,
@@ -494,7 +795,7 @@ const trackMesh = {
   source: track.source
 };
 
-const trackDraw = {
+const collisionDraw = {
   id: 'river.collision.surface',
   meshId: track.id,
   vertexOffset: 0,
@@ -503,9 +804,11 @@ const trackDraw = {
   indexCount: track.indexCount,
   materialId: null,
   materialReason:
-    'River collision geometry has no material binding in this slice; drawn with the diagnostic albedo. ' +
-    'It is the surface the wheels trace (Level.levelphysics), not retail render geometry',
+    'River collision geometry has no material binding in this slice. It is the surface the wheels trace ' +
+    '(Level.levelphysics), kept as physics provenance and NOT drawn (visible:false)',
   layer: 'opaque',
+  visible: false,
+  physicsOnly: true,
   bounds: track.bounds,
   worldKind: 'baked-into-mesh',
   source: {
@@ -516,12 +819,29 @@ const trackDraw = {
   }
 };
 
+const collisionSurface = {
+  id: 'river.collision.surface',
+  meshId: track.id,
+  visible: false,
+  physicsOnly: true,
+  vertexCount: track.vertexCount,
+  triangleCount: track.indexCount / 3,
+  coverage: collisionCoverage,
+  draw: collisionDraw,
+  mesh: collisionMesh,
+  bounds: track.bounds,
+  source: track.source,
+  reason:
+    'the simulated wheels trace usa_la_river/Level.levelphysics through the wasm physics; this collision ' +
+    'mesh is kept in the packet for provenance, is not in packet.meshes and is not uploaded or drawn'
+};
+
 const defaultSlug = roster.default;
 if (!bodies[defaultSlug]) throw new Error('roster default car has no body: ' + defaultSlug);
 
 const geometry = {
   kind: 'e1-drive.geometry',
-  version: 3,
+  version: 4,
   source: {
     packet: path.relative(ROOT, SOURCE).split(path.sep).join('/'),
     packetVersion: packet.version,
@@ -539,24 +859,43 @@ const geometry = {
         'is pinned by SHA-256 above and its draw ranges are re-derived from the mesh before use'
     },
     track: {
-      path: path.relative(ROOT, TRACK).split(path.sep).join('/'),
-      bytes: readFileSync(TRACK).length,
-      sha256: sha256(readFileSync(TRACK)),
-      vertices: track.vertexCount,
-      triangles: track.indexCount / 3,
-      bounds: track.bounds,
-      note: track.source.note
+      trackVisual: 'asset-reader-direct-draws',
+      visual: {
+        meshId: TRACK_VISUAL_ID,
+        bytes: trackVisualMesh.vertexCount * 12 + trackVisualMesh.indexCount * 4,
+        vertices: trackVisualMesh.vertexCount,
+        triangles: trackVisualMesh.indexCount / 3,
+        draws: trackDraws.length,
+        bounds: trackVisual.bounds,
+        sections: trackSectionRecords
+      },
+      collision: {
+        path: path.relative(ROOT, TRACK).split(path.sep).join('/'),
+        bytes: readFileSync(TRACK).length,
+        sha256: sha256(readFileSync(TRACK)),
+        vertices: track.vertexCount,
+        triangles: track.indexCount / 3,
+        bounds: track.bounds,
+        visible: false,
+        physicsOnly: true,
+        coverage: collisionCoverage,
+        note: track.source.note
+      }
     },
     note:
       'static geometry copied verbatim from the committed render-packet spike; ' +
       'level draws are world-space (instances baked by the reader), car draws are object-local; ' +
+      'track draws are the real River levelrender direct draws from the committed level_inspect references; ' +
       'part ids, wheel groups and rest-pose transforms are copied from each car\'s committed part manifest; ' +
-      'the collision surface comes from the level physics file through the collision-oracle reference parser'
+      'the collision surface comes from the level physics file through the collision-oracle reference parser ' +
+      'and is kept as hidden physics provenance, not drawn'
   },
   light: packet.lights[0],
   materials: packet.materials,
-  meshes: [meshEntry({ ...levelMesh, source: levelMesh.source }), trackMesh],
-  levelDraws: levelDraws.map(levelDrawEntry).concat([trackDraw]),
+  meshes: [meshEntry({ ...levelMesh, source: levelMesh.source }), trackVisualMesh],
+  levelDraws: levelDraws.map(levelDrawEntry),
+  trackVisual,
+  collisionSurface,
   carBodies: bodies,
   defaultCar: defaultSlug,
   fallbackBodies,
@@ -591,6 +930,32 @@ console.log(JSON.stringify({
   levelDraws: geometry.levelDraws.length,
   levelVertices: levelMesh.vertexCount,
   levelTriangles: levelMesh.indexCount / 3,
+  trackVisual: {
+    label: trackVisual.label,
+    meshId: TRACK_VISUAL_ID,
+    vertices: trackVisualMesh.vertexCount,
+    triangles: trackVisualMesh.indexCount / 3,
+    draws: trackDraws.length,
+    bounds: trackVisual.bounds,
+    sections: trackSectionRecords.map((section) => ({
+      key: section.key,
+      vertices: section.vertexCount,
+      triangles: section.triangleCount,
+      draws: section.drawCount,
+      driveBoxOverlap: section.driveBoxOverlap,
+      referenceSha256: section.referenceSha256
+    }))
+  },
+  collisionSurface: {
+    meshId: track.id,
+    vertices: track.vertexCount,
+    triangles: track.indexCount / 3,
+    visible: false,
+    physicsOnly: true,
+    coveredTriangles,
+    fallbackTriangles
+  },
+  meshes: geometry.meshes.length,
   bodies: Object.values(bodies).map((body) => ({
     slug: body.slug,
     meshId: body.meshId,

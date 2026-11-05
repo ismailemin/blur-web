@@ -31,6 +31,7 @@ deterministic state sequence.**
 | multi-car (P23) | **5 cars** of 62 `RP_CarDynamics` records, selectable at runtime, 164/164 checks, 20 browser captures, 0 console messages — see **§10** (this section's numbers are the original single-car run; §10 records what the roster changed) |
 | car parts + wheels (P28) | **29 parts / 80 draws**, **4 wheel groups** (8 wheel nodes), 202/202 checks, 20 browser captures, 0 console messages — see **§11** |
 | per-car meshes (P29) | **5 of 5 roster cars** draw their own real body/wheels (100/88/104/115/84 draws, 34/23/31/31/29 parts), 214/214 checks, distinct body mesh hashes, 3 uploads per page, 0 console messages — see **§12** |
+| real track visual (P31) | **144 real direct draws** (32,290 vertices / 19,167 triangles: block88/node283 95/17,782/9,343 + block56/node289 49/14,508/9,824), collision slab hidden as physics provenance, 231/231 checks, 20 captures, 0 console messages — see **§13** |
 
 ---
 
@@ -298,6 +299,11 @@ Artifacts:
 ---
 
 ## 8. Limits (carried in the packet's own `diagnostics`)
+
+> **Superseded for the visual surface by §13 (P31).** The collision slab is no
+> longer drawn: the real River direct-draw track visual is drawn instead and the
+> collision mesh is hidden physics provenance. The material, camera, wheel and
+> one-car limits below still apply.
 
 - **Diagnostic materials.** Identity albedo, one directional light,
   screen-space-derivative face normals. No texture pixels, shadow, post,
@@ -725,3 +731,126 @@ $node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
 Details, screenshots and limits are in
 `docs/work/verification/T-007-per-car-meshes.md` and
 `docs/work/analysis/e1-car-parts.md` §4.7.
+
+---
+
+## 13. Real River track visual from level_inspect direct draws (T-007/E1k, P31)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this document and `docs/work/verification/T-007-track-visual.md`. No change to
+`probes/asset-reader/`, `probes/render-packet/`, `probes/car-parts/`, the engine,
+tools, `upstream/` or `game-data/`. Physics is unchanged: all five state sequence
+hashes are exactly the P29 values (Corvette `83f76590…008e1f`).
+
+### 13.1 What changed
+
+The diagnostic collision slab is no longer drawn. `build_geometry.mjs` now reads
+the committed `level_inspect` direct-draw references and emits geometry **v4**:
+
+| section | source | vertices | triangles | draws | reference SHA-256 |
+| --- | --- | ---: | ---: | ---: | --- |
+| `river.block88.node283` | `_work/level-candidates/probes/00-usa_la_river-g88-n283/reference.json` | 17,782 | 9,343 | 95 | `e2a830f4…887b89` |
+| `river.block56.node289` | `_work/level-candidates/probes/08-usa_la_river-g56-n289/reference.json` | 14,508 | 9,824 | 49 | `ac570f64…8dccaf` |
+| **track visual (merged)** | one mesh, `river.track.visual` | **32,290** | **19,167** | **144** | both pinned above |
+
+Both references are pinned by file SHA-256; the tool re-hashes the reference
+positions/indices in Node and refuses a regenerated or hand-edited file. The two
+sections are concatenated without transform or clipping: every source draw keeps
+its `primitiveIndex`, `firstIndex`, `indexCount`, declared primitive offset,
+topology and source buffers, with the merged-mesh offsets recorded. The Mesh and
+draws are labelled `trackVisual:"asset-reader-direct-draws"`; materials stay
+diagnostic (`materialId:null`, `materialsApplied:false`).
+
+Why two sections: the instructed `block88/node283` set is **not under the drive**.
+Its committed bounds are `x 944.037…2477.923, z 2205.934…3237.170`; the drive box
+is `x −120…−10, z 1010…1090`, so zero of its 17,782 vertices overlap. It is
+included verbatim, at its true source position, but cannot be the ground in a
+chase frame. `block56/node289` is the committed direct-draw section whose bounds
+cross the drive box; its road height at the spawn `(-88, 1050)` is **5.80685**,
+within 0.0006 m of the engine's `e1_ground_probe` result **5.8074**. That is the
+section visible under the car in the screenshots.
+
+The full collision surface (230 vertices / 381 triangles) is kept as
+`packet.physicsSurfaces[0]` with `visible:false` and `physicsOnly:true`. It is
+**not** in `packet.meshes`, so the consumer neither uploads nor draws it. The
+wheels still trace the whole `Level.levelphysics` mesh through wasm physics.
+
+### 13.2 Coverage limit (measured, not hidden)
+
+A collision triangle is counted as covered when its centroid is inside a
+`block56/node289` triangle in XZ and its height is within 1.0 m of that triangle:
+
+| collision triangles in the drive box | covered by real draws | no committed real draw |
+| ---: | ---: | ---: |
+| 381 | 67 | 314 |
+
+The no-draw part is where the car leaves `block56/node289` near `x = −55` and in
+the off-road area. No ground is drawn there (the collision slab is physics-only),
+which is why the `coast`/`end` chase frames show the car against the background.
+This is a scope limit of the committed direct-draw geometry, not a physics or
+camera change. The HUD reports both counts in every frame.
+
+### 13.3 Verification gate
+
+```powershell
+$node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
+$py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py   probes/e1-drive/tools/extract_track.py      # collision mesh input (unchanged)
+& $node probes/e1-drive/tools/build_geometry.mjs     # geometry v4
+& $node probes/e1-drive/tools/verify_e1_drive.mjs    # 231/231 checks
+& $node probes/e1-drive/tools/capture_browser.mjs --port 8811   # 20 captures
+```
+
+- `_work/e1-drive/geometry.json` — **12,215,183 B**, SHA-256
+  `dfb93f39301477ce6848ab946525dddd07365c4bf7d0ffebb1c6aaee9e3dc3a3`;
+  `trackVisual.drawCount:144`, `vertexCount:32,290`, `triangleCount:19,167`.
+- `_work/e1-drive/run.json` — **PASS, 231/231 checks** (214 P29 + 17 track
+  checks). The five state sequence hashes are unchanged from P29:
+  `83f76590…008e1f`, `8d6cd4d4…dac66c2`, `b1c63d20…7220a7e2`,
+  `fb3909b6…c9bdb6`, `5b4ae49d…4fd4067`.
+- Per-car packet (draws = 22 level props + 144 track + car; nodes = 9):
+
+| car | draws | bytes | packet hash |
+| --- | ---: | ---: | --- |
+| Corvette ZR1 | 266 | 6,984,197 | `994a0a4b…83753e6` |
+| Lotus Exige Cup260 | 254 | 6,940,535 | `dc7c6ff5…abefd89a` |
+| Dodge Challenger | 270 | 6,719,038 | `96834cd9…b9c89d51` |
+| Ford Focus RS | 281 | 6,880,669 | `e1580e57…348b314d` |
+| Audi R8 V10 | 250 | 6,790,388 | `7c94f801…5ee3b4e5` |
+
+- Headless Edge/WebGPU, 1600×900, adapter `nvidia / blackwell`, **20 captures**
+  (5 cars × ticks 0/150/240/300): **0 console messages**, **3 geometry uploads**
+  per page (1,623,888–1,716,240 B depending on the body), constant across frames,
+  and `drawsIssued = frames × draws`. Every capture reports
+  `trackVisual:"asset-reader-direct-draws"`, `trackDraws:144`,
+  `trackTriangles:19,167`, `collisionVisible:false`. The browser state hash
+  equals node's for every capture; the car matrix is bit-identical; the packet
+  hash is byte-exact for 17/20 (the other three are the documented Node-24 vs
+  Edge-156 `Math.atan2` camera ulp from §10.4, not a physics difference).
+
+### 13.4 Evidence
+
+| path | content |
+| --- | --- |
+| `_work/e1-drive/geometry.json` | geometry v4: level mesh, merged real track visual, per-car bodies, hidden collision |
+| `_work/e1-drive/run.json` | 231 checks, per-car packets, track/collision counts |
+| `_work/e1-drive/browser-evidence.json` | 20 captures, console log, packet-hash agreement, track fields |
+| `_work/e1-drive/browser-<slug>-{start,mid,coast,end}.png` | per-car real-track frames |
+| `docs/work/verification/T-007-track-visual.md` | the P31 gate record |
+
+### 13.5 Limits
+
+- **Two sections, not the whole track.** block88/node283 does not overlap the
+  drive and block56/node289 ends near `x = −55`; the last ~12 m and the off-road
+  area have no committed real draw, so no ground is drawn there.
+- **Diagnostic materials.** The track keeps its source draw ranges but is shaded
+  with the diagnostic albedo; no level material or texture is bound.
+- **No visibility or culling.** All 144 direct draws are submitted; the far
+  block88/node283 geometry is outside the chase view and is not culled.
+- **Collision is physics-only.** The collision slab is hidden and not uploaded;
+  it is retained in `packet.physicsSurfaces` only so the physics provenance is
+  explicit.
+- **One car, one loaded block, no game.** No race rules, audio, multiplayer,
+  opponents or engine streaming claim.

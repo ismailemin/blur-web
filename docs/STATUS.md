@@ -508,6 +508,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Packet 312 kayıt / **151 drawable** / 161 omitted; hash `96b24f076495aea5`; 56 nesne, 823.931 B, **70/70**, PC parity.
 - Kalan: dokular (yalnız indeks), `ProcessLoadChunk`, culling/LOD, blok31; PoC producer'ına bağlama. Kanıt: `docs/work/verification/T-007-drawlist-56.md`.
 
+## 5 Kasım 2026 — gerçek yol görseli
+
+- geometry v4: **144 direct draw / 19.167 üçgen** (block88/node283 + sürüş bölgesini kaplayan block56/node289); 32.290 vertex. Collision mesh `visible:false`, `physicsOnly:true`, upload/draw edilmiyor.
+- 5 araçta 250–281 draw; 3 geometri upload; 20 capture, console **0**; `verify_e1_drive` **231/231**; state hash'ler değişmedi.
+- Drive box'ta 67/314 collision üçgeni gerçek draw ile kaplı; track sonu/off-road boş. Diagnostic materyaller. Kanıt: `docs/work/verification/T-007-track-visual.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

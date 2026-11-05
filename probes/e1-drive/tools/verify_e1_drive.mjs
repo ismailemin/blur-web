@@ -145,8 +145,8 @@ check('roster covers at least four real cars', roster.roster.cars.length >= 4,
 // ------------------------------------------------- per-car body-mesh gates
 const bodies = geometry.carBodies ?? {};
 const rosterSlugs = roster.roster.cars.map((car) => car.slug);
-check('geometry carries one real body per roster car (v3)',
-      geometry.version === 3 && rosterSlugs.every((slug) => bodies[slug]) &&
+check('geometry carries one real body per roster car (v4)',
+      geometry.version === 4 && rosterSlugs.every((slug) => bodies[slug]) &&
       Object.keys(bodies).length === rosterSlugs.length,
       `${Object.keys(bodies).length} bodies, geometry v${geometry.version}`);
 check('every body names its own model, manifest and mesh',
@@ -199,6 +199,53 @@ check('every body is split into one body node and spin/static wheel nodes coveri
           new Set(body.carNodes.flatMap((node) => node.drawIds)).size === body.carDraws.length;
       }),
       rosterSlugs.map((slug) => `${bodies[slug]?.carNodes?.length} nodes`).join(', '));
+
+// ------------------------------------------------------- real track visual
+const trackVisual = geometry.trackVisual;
+const trackDraws = Array.isArray(trackVisual?.draws) ? trackVisual.draws : [];
+const trackSection = (key) => trackVisual?.sections?.find((section) => section.key === key);
+const section88 = trackSection('river.block88.node283');
+const section56 = trackSection('river.block56.node289');
+check('geometry carries the real track visual from committed level_inspect direct draws (v4)',
+      geometry.version === 4 && trackVisual?.label === 'asset-reader-direct-draws' &&
+      geometry.meshes.some((mesh) => mesh.id === trackVisual?.meshId) &&
+      trackDraws.length === trackVisual?.drawCount && trackDraws.length > 0,
+      `${trackVisual?.label ?? 'missing'} / ${trackDraws.length} draws`);
+check('the instructed block88/node283 section is verbatim and pinned',
+      section88 && section88.vertexCount === 17782 && section88.triangleCount === 9343 &&
+      section88.drawCount === 95 && section88.driveBoxOverlap === false &&
+      /^sha256:[0-9a-f]{64}$/.test(section88.referenceSha256 ?? ''),
+      section88 ? `${section88.vertexCount}/${section88.triangleCount}/${section88.drawCount}` : 'missing');
+check('the drive-covering block56/node289 section is present and pinned',
+      section56 && section56.vertexCount === 14508 && section56.triangleCount === 9824 &&
+      section56.drawCount === 49 && section56.driveBoxOverlap === true &&
+      /^sha256:[0-9a-f]{64}$/.test(section56.referenceSha256 ?? ''),
+      section56 ? `${section56.vertexCount}/${section56.triangleCount}/${section56.drawCount}` : 'missing');
+check('every real track draw keeps a valid source index range and the direct-draw label',
+      trackDraws.length > 0 && trackDraws.every((draw) =>
+        Number.isInteger(draw.indexOffset) && draw.indexOffset >= 0 &&
+        Number.isInteger(draw.indexCount) && draw.indexCount > 0 && draw.indexCount % 3 === 0 &&
+        Number.isInteger(draw.vertexOffset) && draw.vertexOffset >= 0 &&
+        draw.trackVisual === 'asset-reader-direct-draws' &&
+        draw.source?.worldReason === 'noInstanceTransform: direct draw, no instance placement; identity is the source world'),
+      trackDraws.length + ' draws');
+check('the collision surface is hidden physics provenance, not a mesh upload',
+      geometry.collisionSurface?.visible === false &&
+      geometry.collisionSurface?.physicsOnly === true &&
+      geometry.collisionSurface?.draw?.visible === false &&
+      /^(sha256:)?[0-9a-f]{64}$/.test(geometry.collisionSurface?.source?.sha256 ?? '') &&
+      !geometry.meshes.some((mesh) => mesh.id === geometry.collisionSurface?.meshId),
+      geometry.collisionSurface?.triangleCount + ' collision triangles');
+check('the uploaded geometry is bounded to the level and the one real track visual mesh',
+      geometry.meshes.length === 2 && geometry.meshes[1].id === trackVisual?.meshId,
+      `${geometry.meshes.length} static meshes`);
+check('the collision coverage is measured against the committed drive-covering real draws',
+      geometry.collisionSurface?.coverage?.coveredTriangles > 0 &&
+      geometry.collisionSurface?.coverage?.fallbackTriangles > 0 &&
+      geometry.collisionSurface.coverage.coveredTriangles + geometry.collisionSurface.coverage.fallbackTriangles ===
+        geometry.collisionSurface.triangleCount,
+      `${geometry.collisionSurface?.coverage?.coveredTriangles ?? 0} covered / ` +
+      `${geometry.collisionSurface?.coverage?.fallbackTriangles ?? 0} no-draw triangles`);
 
 /** One full scripted run of one car in a fresh wasm module instance. */
 async function runOnce(car, fieldBytes) {
@@ -371,10 +418,23 @@ for (const car of cars) {
         packet.version === 1.1 && Array.isArray(packet.updates), String(packet.version));
   check(`${car.name}: one packet tick per scripted tick plus the settled tick`,
         packet.updates.length === SCRIPT_TICKS + 1, String(packet.updates.length));
-  check(`${car.name}: the packet has the expected draw count (22 level props + 1 collision surface + ${expectedCarDraws} car)`,
-        packet.draws.length === 23 + expectedCarDraws &&
-        packet.diagnostics.sequence.staticDrawCount === 23,
+  const expectedStaticDraws = 22 + trackDraws.length;
+  check(`${car.name}: the packet has the expected draw count (22 level props + ${trackDraws.length} real track draws + ${expectedCarDraws} car)`,
+        packet.draws.length === expectedStaticDraws + expectedCarDraws &&
+        packet.diagnostics.sequence.staticDrawCount === expectedStaticDraws,
         String(packet.draws.length));
+  check(`${car.name}: the packet draws the real track visual and labels the direct-draw path`,
+        packet.diagnostics.extras.track?.trackVisual === 'asset-reader-direct-draws' &&
+        packet.diagnostics.extras.track?.drawCount === trackDraws.length &&
+        packet.draws.filter((draw) => draw.meshId === trackVisual.meshId).length === trackDraws.length,
+        JSON.stringify(packet.diagnostics.extras.track?.drawCount));
+  check(`${car.name}: the collision surface stays in the packet as hidden physics provenance`,
+        packet.physicsSurfaces?.length === 1 &&
+        packet.physicsSurfaces[0].visible === false &&
+        packet.physicsSurfaces[0].physicsOnly === true &&
+        packet.physicsSurfaces[0].mesh?.vertexCount === geometry.collisionSurface.vertexCount &&
+        !packet.meshes.some((mesh) => mesh.id === geometry.collisionSurface.meshId),
+        `${packet.physicsSurfaces?.[0]?.triangleCount ?? 0} collision triangles`);
   check(`${car.name}: materials are diagnostic and labelled`,
         packet.diagnostics.materialsApplied === false &&
         packet.draws.every((draw) => typeof draw.materialReason === 'string' && draw.materialReason.length > 0));
@@ -633,8 +693,20 @@ const report = {
     levelDraws: geometry.levelDraws.length,
     levelVertices: geometry.meshes[0].vertexCount,
     levelTriangles: geometry.meshes[0].indexCount / 3,
-    trackVertices: geometry.meshes[1]?.vertexCount ?? 0,
-    trackTriangles: (geometry.meshes[1]?.indexCount ?? 0) / 3,
+    trackVertices: trackVisual?.vertexCount ?? 0,
+    trackTriangles: trackVisual?.triangleCount ?? 0,
+    trackDraws: trackVisual?.drawCount ?? 0,
+    trackLabel: trackVisual?.label ?? null,
+    trackSections: trackVisual?.sections ?? [],
+    collisionSurface: {
+      meshId: geometry.collisionSurface?.meshId ?? null,
+      vertices: geometry.collisionSurface?.vertexCount ?? 0,
+      triangles: geometry.collisionSurface?.triangleCount ?? 0,
+      visible: geometry.collisionSurface?.visible ?? null,
+      physicsOnly: geometry.collisionSurface?.physicsOnly ?? null,
+      uploaded: geometry.meshes.some((mesh) => mesh.id === geometry.collisionSurface?.meshId),
+      coverage: geometry.collisionSurface?.coverage ?? null
+    },
     bodies: roster.roster.cars.map((car) => {
       const body = resolveCarBody(geometry, car.slug);
       return {
@@ -689,6 +761,16 @@ console.log(JSON.stringify({
   status: report.status,
   wasm: `${report.module.wasmBytes} B ${report.module.wasmSha256.slice(0, 16)} (${report.module.objects} objects)`,
   roster: `${report.roster.counts.selected} cars of ${report.roster.counts.records} records`,
+  track: {
+    label: report.geometry.trackLabel,
+    draws: report.geometry.trackDraws,
+    vertices: report.geometry.trackVertices,
+    triangles: report.geometry.trackTriangles,
+    fallbackTriangles: report.geometry.collisionSurface.coverage?.fallbackTriangles ?? 0,
+    coveredTriangles: report.geometry.collisionSurface.coverage?.coveredTriangles ?? 0,
+    collisionVisible: report.geometry.collisionSurface.visible,
+    collisionUploaded: report.geometry.collisionSurface.uploaded
+  },
   cars: results.map((entry) => ({
     car: entry.name,
     slug: entry.slug,

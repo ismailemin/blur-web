@@ -63,13 +63,14 @@ const MID_TICK = 150;
 const run = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
 const geometry = JSON.parse(readFileSync(path.join(OUT, 'geometry.json'), 'utf8'));
 const roster = JSON.parse(readFileSync(path.join(OUT, 'cars.json'), 'utf8'));
-// The page uploads exactly three meshes: the level, the selected car's body and
-// the collision surface. One body is in each packet, so the upload stays bounded
-// per car instead of growing with the roster.
+// The page uploads exactly three meshes: the level props, the real track visual
+// and the selected car's body. The collision surface is hidden physics provenance
+// in packet.physicsSurfaces, so it is neither uploaded nor drawn.
 const MESH_COUNT = 3;
 const meshBytes = (mesh) => mesh.positions.length * 4 + mesh.indices.length * 4;
 const levelMesh = geometry.meshes[0];
-const trackMesh = geometry.meshes[1];
+const trackMesh = geometry.meshes.find((mesh) => mesh.id === geometry.trackVisual.meshId);
+if (!trackMesh) throw new Error('geometry has no real track visual mesh');
 
 const cars = run.cars.filter((car) => !ONLY_CAR || car.slug === ONLY_CAR || car.name === ONLY_CAR);
 if (cars.length === 0) {
@@ -93,7 +94,13 @@ function expectedFor(car) {
     body,
     uploadBytes: meshBytes(levelMesh) + meshBytes(body.mesh) + meshBytes(trackMesh),
     parts: body.carParts.length,
-    draws: body.carDraws.length,
+    draws: 22 + geometry.trackVisual.drawCount + body.carDraws.length,
+    trackDraws: geometry.trackVisual.drawCount,
+    trackTriangles: geometry.trackVisual.triangleCount,
+    trackLabel: geometry.trackVisual.label,
+    fallbackTriangles: geometry.collisionSurface.coverage?.fallbackTriangles ?? 0,
+    coveredTriangles: geometry.collisionSurface.coverage?.coveredTriangles ?? 0,
+    collisionVisible: packet.diagnostics.extras.collisionSurface?.visible ?? null,
     nodes: body.carNodes.length,
     wheelNodes: body.carNodes.filter((node) => node.id !== 'e1.car.body').length,
     bodyMeshId: body.meshId,
@@ -232,6 +239,9 @@ async function capture(car, label, tick) {
       uniformWrites: p.uniformWrites, uniformBytes: p.uniformBytes, drawsIssued: p.drawsIssued,
       draws: p.draws, parts: p.parts, carDraws: p.carDraws, packetNodes: p.packetNodes,
       wheelNodes: p.wheelNodes, wheelAngles: p.wheelAngles,
+      trackVisual: p.trackVisual, trackDraws: p.trackDraws, trackTriangles: p.trackTriangles,
+      collisionVisible: p.collisionVisible, collisionFallbackTriangles: p.collisionFallbackTriangles,
+      collisionCoveredTriangles: p.collisionCoveredTriangles,
       bodyMesh: p.bodyMesh, bodyManifest: p.bodyManifest,
       tickHash: p.tickHash, tick0Hash: p.tick0Hash, packetHash: p.packetHash,
       matrixChecksum: p.matrixChecksum, movedScreen: p.movedScreen, camera: p.camera,
@@ -370,9 +380,17 @@ for (const car of cars) {
           entry.probe.movedScreen.y > 0 && entry.probe.movedScreen.y < VIEWPORT.height,
           JSON.stringify(entry.probe.movedScreen));
     check(`${car.slug}/${entry.label}: the car is drawn as its own manifest parts and draws`,
-          entry.probe.parts === expected.parts && entry.probe.carDraws === expected.draws,
+          entry.probe.parts === expected.parts && entry.probe.carDraws === expected.draws - 22 - expected.trackDraws,
           entry.probe.parts + ' parts / ' + entry.probe.carDraws + ' draws, expected ' +
           expected.parts + ' / ' + expected.draws);
+    check(`${car.slug}/${entry.label}: the real track visual is drawn and the collision surface is hidden`,
+          entry.probe.trackVisual === expected.trackLabel &&
+          entry.probe.trackDraws === expected.trackDraws &&
+          entry.probe.trackTriangles === expected.trackTriangles &&
+          entry.probe.collisionVisible === false &&
+          entry.probe.draws === expected.draws,
+          entry.probe.trackDraws + ' track draws / ' + entry.probe.trackTriangles + ' tri / draws ' +
+          entry.probe.draws + ' expected ' + expected.draws);
     check(`${car.slug}/${entry.label}: the packet carries one body and one matrix per wheel node`,
           entry.probe.packetNodes === expected.nodes &&
           entry.probe.wheelNodes === expected.wheelNodes &&
@@ -543,6 +561,12 @@ console.log(JSON.stringify({
     carDraws: entry.probe.carDraws,
     packetNodes: entry.probe.packetNodes,
     wheelNodes: entry.probe.wheelNodes,
+    trackVisual: entry.probe.trackVisual,
+    trackDraws: entry.probe.trackDraws,
+    trackTriangles: entry.probe.trackTriangles,
+    collisionVisible: entry.probe.collisionVisible,
+    collisionFallbackTriangles: entry.probe.collisionFallbackTriangles,
+    collisionCoveredTriangles: entry.probe.collisionCoveredTriangles,
     wheelAngleMax: Math.max(...Object.values(entry.probe.wheelAngles ?? { frontleft: 0 }).map((value) => Math.abs(value))),
     frames: entry.probe.frames,
     ticksExecuted: entry.probe.ticksExecuted,

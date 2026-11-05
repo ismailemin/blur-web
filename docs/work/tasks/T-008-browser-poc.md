@@ -35,7 +35,8 @@ sürüşü deneyebileceği PoC.
 | Connector (WASD, chase camera, fixed step) | P21 | ✅ |
 | Çoklu araç roster'ı | P23 | ✅ |
 | `levelrender` engine parse | P22 | ✅ |
-| Engine CPU draw list | P27 | ◐ (95 draw; world/materials açık) |
+| Gerçek yol görseli | P31 | ✅ (144 draw / 19.167 tri) |
+| Engine CPU draw list | P27 + P30 + P32 | ✅ 56 instance; PoC'ye bağlama sırada |
 | Stage B pist instance'ları | P25 | ✅ |
 | Araç başına gerçek gövde | P29 | ✅ |
 | Teker/kompozit görsel | P26 + P28 | ✅ (entegre) |

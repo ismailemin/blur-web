@@ -78,6 +78,12 @@ const state = {
   carDraws: 0,
   packetNodes: 0,
   wheelNodes: 0,
+  trackVisual: null,
+  trackDraws: 0,
+  trackTriangles: 0,
+  collisionVisible: null,
+  collisionFallbackTriangles: 0,
+  collisionCoveredTriangles: 0,
   input: [0, 0, 0, 0],
   frames: 0,
   ticksExecuted: 0,
@@ -113,6 +119,9 @@ function publish() {
     ['input', 'thr ' + state.input[0].toFixed(2) + ' brk ' + state.input[1].toFixed(2) +
       ' str ' + state.input[2].toFixed(2) + ' hb ' + state.input[3].toFixed(2)],
     ['parts', state.parts + ' parts · ' + state.carDraws + ' draws · ' + state.packetNodes + ' nodes (' + state.wheelNodes + ' wheel)'],
+    ['track', state.trackDraws + ' real draws · ' + state.trackTriangles + ' tri · no-draw ' +
+      state.collisionFallbackTriangles + ' tri · slab ' +
+      (state.collisionVisible === false ? 'hidden' : state.collisionVisible === true ? 'visible' : '—')],
     ['body', state.bodyMesh ?? '—'],
     ['wheel spin', Object.entries(state.wheelAngles).map(([corner, angle]) => corner + ' ' + angle.toFixed(2)).join(' ')],
     ['frames', String(state.frames) + ' · ticks ' + state.ticksExecuted],
@@ -265,6 +274,13 @@ async function startTimeline(tick0, { reload = false } = {}) {
   state.carDraws = partsInfo?.drawCount ?? 0;
   state.packetNodes = session.packet.nodes.length;
   state.wheelNodes = session.packet.diagnostics.extras.wheels.wheelNodes.length;
+  const trackInfo = session.packet.diagnostics.extras.track;
+  state.trackVisual = trackInfo?.trackVisual ?? null;
+  state.trackDraws = trackInfo?.drawCount ?? 0;
+  state.trackTriangles = trackInfo?.triangleCount ?? 0;
+  state.collisionFallbackTriangles = trackInfo?.coverage?.fallbackTriangles ?? 0;
+  state.collisionCoveredTriangles = trackInfo?.coverage?.coveredTriangles ?? 0;
+  state.collisionVisible = session.packet.diagnostics.extras.collisionSurface?.visible ?? null;
   state.bodyMesh = session.packet.diagnostics.extras.drive.car?.bodyMesh ?? null;
   state.bodyManifest = partsInfo?.manifest ?? null;
   state.wheelAngles = session.wheelSpin.angle;

@@ -6,7 +6,9 @@
 //   * `syncTimeline()` accepts ticks appended after `load()`, because the drive
 //     slice produces its timeline live instead of pre-building the sequence;
 //   * a draw may carry `diagnosticColour` + `spins`, which set a debug albedo and
-//     a local-angle spin marker. Materials are still not applied.
+//     a local-angle spin marker. Materials are still not applied;
+//   * a draw with `visible:false` is not submitted (the P31 packet keeps the
+//     collision surface out of `draws` entirely, so this is a safety path).
 // Everything else (pipeline, upload counting, interpolation, camera handling) is
 // unchanged from the committed consumer.
 //
@@ -340,6 +342,10 @@ export class PacketConsumer {
       if (draw.indexOffset + draw.indexCount > draw.mesh.indexCount) throw new Error('draw ' + draw.id + ' index range exceeds mesh');
       if (!isRigid(draw.world)) throw new Error('draw ' + draw.id + ' world matrix is not rigid');
     }
+    // E1 drive-slice delta: a draw may be explicitly hidden (`visible:false`).
+    // The hidden physics collision surface is not a draw in this packet, but the
+    // flag keeps the contract honest if a producer carries it here.
+    this.visibleDraws = this.draws.filter((draw) => draw.visible !== false);
 
     this.timeline = null;
     if (packet.version === 1.1) {
@@ -572,6 +578,7 @@ export class PacketConsumer {
     let activeMesh = null;
     for (let index = 0; index < this.draws.length; index++) {
       const draw = this.draws[index];
+      if (draw.visible === false) continue;
       if (activeMesh !== draw.meshId) {
         pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
         pass.setIndexBuffer(draw.mesh.indexBuffer, 'uint32');
@@ -586,7 +593,7 @@ export class PacketConsumer {
     this.stats.renders++;
     this.stats.uniformWrites++;
     this.stats.uniformBytes += bytes.byteLength;
-    this.stats.drawsIssued += this.draws.length;
+    this.stats.drawsIssued += this.visibleDraws.length;
     this.stats.cursor = frame.cursor;
     this.stats.renderTick = frame.tickFloor;
     this.stats.alpha = frame.alpha;

@@ -3,9 +3,11 @@
 // Input:  one wasm state snapshot per fixed tick (position, body axes, wheels)
 //         and the static geometry produced by tools/build_geometry.mjs, which
 //         embeds one real body/wheel manifest per roster car.
-// Output: a v1.1 packet whose static half is the committed River block27 geometry
-//         plus the selected car's body, and whose timeline is one `updates[]`
-//         entry per engine tick, plus a deterministic chase camera.
+// Output: a v1.1 packet whose static half is the committed River block27 geometry,
+//         the real River track visual (committed level_inspect direct draws) and
+//         the selected car's body, and whose timeline is one `updates[]` entry per
+//         engine tick, plus a deterministic chase camera. The collision surface is
+//         carried in `physicsSurfaces` with visible:false as physics provenance.
 //
 // The engine owns all motion. This module converts units and frames only:
 //   * the car's local->world matrix is the three body axes the engine reports
@@ -39,8 +41,8 @@ export const WHEEL_CORNERS = Object.freeze(['frontleft', 'frontright', 'backleft
  * one car mesh and never a car it is not driving.
  */
 export function resolveCarBody(geometry, slug) {
-  if (!geometry || geometry.version !== 3 || !geometry.carBodies) {
-    throw new Error('geometry does not carry per-car bodies; rebuild it with ' +
+  if (!geometry || geometry.version !== 4 || !geometry.carBodies) {
+    throw new Error('geometry does not carry per-car bodies and the v4 track visual; rebuild it with ' +
       '`node probes/e1-drive/tools/build_geometry.mjs`');
   }
   const key = slug ?? geometry.defaultCar;
@@ -201,6 +203,45 @@ export function createSession(geometry, tick0, options = {}) {
     worldKind: 'baked-into-mesh'
   }));
 
+  // The real River render geometry: committed level_inspect direct draws, drawn
+  // at their source world positions. The collision surface is not a draw; it
+  // travels in `physicsSurfaces` with visible:false as physics provenance.
+  const trackVisual = geometry.trackVisual;
+  if (!trackVisual || trackVisual.label !== 'asset-reader-direct-draws' ||
+      !Array.isArray(trackVisual.draws) || trackVisual.draws.length === 0) {
+    throw new Error('geometry does not carry the v4 real track visual (asset-reader-direct-draws); ' +
+      'rebuild it with `node probes/e1-drive/tools/build_geometry.mjs`');
+  }
+  const trackMesh = geometry.meshes.find((mesh) => mesh.id === trackVisual.meshId);
+  if (!trackMesh) throw new Error('geometry track visual names a missing mesh ' + trackVisual.meshId);
+  const collisionSurface = geometry.collisionSurface;
+  if (!collisionSurface || collisionSurface.visible !== false || !collisionSurface.mesh) {
+    throw new Error('geometry is missing the hidden physics collision surface; rebuild it with ' +
+      '`node probes/e1-drive/tools/build_geometry.mjs`');
+  }
+  const physicsSurfaces = [{
+    id: collisionSurface.id,
+    meshId: collisionSurface.meshId,
+    visible: false,
+    physicsOnly: true,
+    vertexCount: collisionSurface.vertexCount,
+    triangleCount: collisionSurface.triangleCount,
+    bounds: collisionSurface.bounds,
+    source: collisionSurface.source,
+    reason: collisionSurface.reason,
+    mesh: collisionSurface.mesh,
+    draw: {
+      ...collisionSurface.draw,
+      world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    }
+  }];
+  const trackDraws = trackVisual.draws.map((draw) => ({
+    ...draw,
+    world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+    worldKind: 'baked-into-mesh'
+  }));
+  const staticDraws = levelDraws.concat(trackDraws);
+
   const wheelByCorner = new Map(body.wheelGroups.map((group) => [group.corner, group]));
   for (const corner of WHEEL_CORNERS) {
     if (!wheelByCorner.has(corner)) throw new Error('geometry has no wheel group for ' + corner);
@@ -249,7 +290,7 @@ export function createSession(geometry, tick0, options = {}) {
     lastTick: null
   };
 
-  const meshes = [geometry.meshes[0], body.mesh, geometry.meshes[1]].map((mesh) => ({
+  const meshes = [geometry.meshes[0], trackMesh, body.mesh].map((mesh) => ({
     id: mesh.id,
     storage: mesh.storage,
     vertexCount: mesh.vertexCount,
@@ -261,7 +302,6 @@ export function createSession(geometry, tick0, options = {}) {
     coordinateSpace: mesh.coordinateSpace,
     source: mesh.source
   }));
-  const trackMesh = geometry.meshes[1];
 
   const vertexTotal = meshes.reduce((sum, mesh) => sum + mesh.vertexCount, 0);
   const triangleTotal = meshes.reduce((sum, mesh) => sum + mesh.indexCount / 3, 0);
@@ -333,7 +373,8 @@ export function createSession(geometry, tick0, options = {}) {
     lights: [geometry.light],
     meshes,
     materials: geometry.materials,
-    draws: levelDraws.concat(carDraws),
+    draws: staticDraws.concat(carDraws),
+    physicsSurfaces,
     placedObjects: [{
       meshId: body.meshId,
       placement: 'engine-spawn-transform',
@@ -345,7 +386,7 @@ export function createSession(geometry, tick0, options = {}) {
     nodes: carNodes,
     updates: [],
     diagnostics: {
-      drawCount: levelDraws.length + carDraws.length,
+      drawCount: staticDraws.length + carDraws.length,
       meshCount: meshes.length,
       vertexTotal,
       triangleTotal,
@@ -355,9 +396,11 @@ export function createSession(geometry, tick0, options = {}) {
       materialsApplied: false,
       lighting: 'diagnostic-directional',
       scope:
-        'River block27/node253 supported instances plus the ' + body.name + ' body drawn as ' +
+        'River block27/node253 supported instances plus the real River track visual (' +
+        trackDraws.length + ' level_inspect direct draws, ' + trackVisual.triangleCount +
+        ' triangles) and the ' + body.name + ' body drawn as ' +
         body.carParts.length + ' manifest parts / ' + body.carDraws.length + ' draws with four spinning ' +
-        'wheel groups; the body and wheel poses come from the wasm RacingPhysics/Gravity step, materials ' +
+        'wheel groups; the collision mesh stays in the packet as hidden physics provenance; materials ' +
         'and lighting are diagnostic',
       sequence: {
         tickCount: 0,
@@ -368,7 +411,7 @@ export function createSession(geometry, tick0, options = {}) {
           '(usa_la_river/Level.levelphysics); no parametric path, no keyframes, no synthetic motion',
         alphaSource: 'per-tick alpha is 0 (tick-exact); the consumer supplies its own fixed-step alpha',
         nodeIds: carNodes.map((node) => node.id),
-        staticDrawCount: levelDraws.length,
+        staticDrawCount: staticDraws.length,
         movedDrawCount: carDraws.length,
         firstTickHash: null,
         lastTickHash: null
@@ -422,12 +465,41 @@ export function createSession(geometry, tick0, options = {}) {
           reason: 'RP_SurfaceMappingList is not installed; engine grip/rolling/MI scales are the documented neutral values'
         },
         track: {
-          id: trackMesh?.id ?? null,
-          source: 'usa_la_river/Level.levelphysics through the collision-oracle reference parser',
-          triangles: (trackMesh?.indexCount ?? 0) / 3,
+          id: trackVisual.meshId,
+          trackVisual: trackVisual.label,
+          drawCount: trackDraws.length,
+          vertexCount: trackMesh.vertexCount,
+          triangleCount: trackMesh.indexCount / 3,
+          bounds: trackVisual.bounds,
+          sections: trackVisual.sections.map((section) => ({
+            key: section.key,
+            geometryBlock: section.geometryBlock,
+            nodeBlock: section.nodeBlock,
+            drawCount: section.drawCount,
+            vertexCount: section.vertexCount,
+            triangleCount: section.triangleCount,
+            driveBoxOverlap: section.driveBoxOverlap,
+            reference: section.reference,
+            referenceSha256: section.referenceSha256
+          })),
           reason:
-            'the committed River draw set is props near the road, not the road surface; this draw is the collision ' +
-            'surface the wheels actually trace, labelled as diagnostic collision geometry (no material binding)'
+            'real River levelrender direct draws from the committed level_inspect references are drawn ' +
+            'instead of the diagnostic collision slab; every draw keeps its source index range, ' +
+            'materials remain diagnostic (materialsApplied:false) and no texture is bound',
+          coverage: collisionSurface.coverage ?? null
+        },
+        collisionSurface: {
+          id: collisionSurface.id,
+          visible: false,
+          physicsOnly: true,
+          vertexCount: collisionSurface.vertexCount,
+          triangleCount: collisionSurface.triangleCount,
+          bounds: collisionSurface.bounds,
+          source: collisionSurface.source,
+          reason:
+            'the simulated wheels trace usa_la_river/Level.levelphysics through the wasm physics; this ' +
+            'collision mesh is kept in packet.physicsSurfaces for provenance and is not in packet.meshes, ' +
+            'so it is neither uploaded nor drawn'
         },
         carBodyShape: 'box-from-XT-geometry',
         carBodyShapeReason: 'retail builds the gravity body from the model import; this slice uses the T-005d box proxy',
@@ -437,6 +509,7 @@ export function createSession(geometry, tick0, options = {}) {
       },
       approximations: [
         'level and vehicle materials are not applied; car parts use a diagnostic per-part colour, all other draws use a neutral albedo, under one directional light',
+        'the real track visual keeps every source draw index range but is shaded with the diagnostic albedo; its level material ids are not bound',
         'no shadow, post-process, particle or effect pass exists in this consumer',
         'face normals come from screen-space derivatives of the world position, not from original vertex normals',
         'the car mesh is aligned to the engine body frame directly; the retail mesh import and its offset are not recovered',
@@ -455,12 +528,15 @@ export function createSession(geometry, tick0, options = {}) {
       limits: [
         car
           ? 'one car at a time, selected from the RP_CarDynamics roster at runtime: not a race, a game loop or a full level'
-          : 'one car, one loaded River collision mesh, one camera: not a race, a game loop or a full level',
+          : 'one car, one loaded River track visual, one camera: not a race, a game loop or a full level',
         'no audio, no HUD beyond diagnostics, no multiplayer, no race rules',
         'the car body is the selected roster car\'s own real mesh; its paint, materials and shader parameters are not decoded',
         'packet v1.1 is JSON with inline geometry; it is not an engine draw-list integration',
-        'the geometry is a spike fixture (block27/node253) while the simulation runs on the whole level physics mesh, ' +
-          'so the car can leave the drawn area if it drives far enough',
+        'the real track visual covers the committed direct-draw sections only (block88/node283 and block56/node289); ' +
+          'block88/node283 lies outside the drive box, and block56/node289 ends around x = -55, so the last ~12 m of ' +
+          'the script and the off-road area have no committed real draw geometry and no ground is drawn there',
+        'the collision surface is retained as hidden physics provenance (packet.physicsSurfaces, visible:false) and ' +
+          'is never drawn; the wheels still trace the whole Level.levelphysics mesh',
         'native-vs-wasm numeric parity is blocked by the DirectX SDK (T-007-vehicle-physics.md §7)'
       ]
     }

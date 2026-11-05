@@ -5,9 +5,11 @@ instances). That set is props near the road, not the road itself: the surface th
 wheels actually trace is `usa_la_river/Level.levelphysics`, which is not part of
 the render packet. Without it the car drives on an invisible surface.
 
-This tool emits the collision triangles inside one world-space box so the slice
-can draw the exact surface it drives on, labelled as a diagnostic collision
-surface (it has no material binding and is not retail render geometry).
+This tool emits the collision triangles inside one world-space box. The E1 drive
+slice no longer draws them as the track visual: the real River render geometry is
+drawn instead (committed `level_inspect` direct draws), and this mesh is kept in
+the packet as hidden physics provenance (`visible:false`) and used to measure how
+much of the drive box the real draws cover.
 
 It reuses the collision oracle's independent Python reference parser
 (`probes/collision-oracle/tests/reference_oracle.py`), whose derivation was
@@ -130,7 +132,8 @@ def main(argv):
             "keptPerMesh": per_mesh,
             "note": (
                 "physics collision geometry, not retail render geometry: the level material list "
-                "and any visual mesh are not bound, so this is drawn with the diagnostic albedo"
+                "and any visual mesh are not bound. The E1 drive packet keeps this mesh as hidden "
+                "physics provenance (visible:false) and draws the real level_inspect direct draws"
             )
         },
         "vertexCount": vertex_count,

@@ -16,6 +16,15 @@ using that car's physics wheel angular velocity. Brake calipers stay static
 (`VehicleActor.cpp:5198`). Materials remain diagnostic; per-part colours and the
 wheel spin marker are debug aids, labelled in the packet diagnostics.
 
+The car drives on the whole River collision mesh, but the **drawn** track is the
+real River render geometry: the committed `level_inspect` direct draws
+(block88/node283, 95 draws / 17,782 vertices / 9,343 triangles, plus the
+drive-covering block56/node289 section), merged into one labelled
+`river.track.visual` mesh. The diagnostic collision surface is no longer drawn;
+it stays in the packet as hidden physics provenance (`visible:false`). See
+`docs/work/verification/T-007-track-visual.md` for the counts and the measured
+coverage limit.
+
 Nothing in this directory is engine code and nothing here edits the probes it
 reuses. The engine still runs the car; the packet still describes the frame; the
 WebGPU backend still renders the packet.
@@ -86,10 +95,10 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 1. build the library module (185 reused T-005d objects + this slice's harness TU)
 & $node probes/e1-drive/tools/build_module.mjs --force-objects
 
-# 2. collision surface under the drive (level physics → mesh, via the oracle parser)
+# 2. collision surface under the drive (physics provenance; kept hidden, not drawn)
 & $py   probes/e1-drive/tools/extract_track.py
 
-# 3. static geometry (committed packet meshes + level draws + collision surface + 5 car bodies)
+# 3. static geometry (level packet + real level_inspect track visual + 5 car bodies + hidden collision)
 & $node probes/e1-drive/tools/build_geometry.mjs
 
 # 4. decode the car roster (every RP_CarDynamics record + one field list per car)
@@ -141,16 +150,23 @@ tyres and drivetrain, and `e1_info().car` reports which record it decoded.
 `web/packet-adapter.js` is shared by the browser and the node verifier, so the
 packet the browser renders is produced by the same code the verifier validates.
 
-- `draws[]`: 22 committed level instances (world-space, identity transform) + the
-  diagnostic River collision surface + that car's own draw ranges (100 / 88 / 104
-  / 115 / 84). Every car draw carries its manifest `partId`/`partKind`,
-  `wheelPart`, `spins`, `nodeId` and a labelled `diagnosticColour`.
-- `meshes[]`: exactly three — the level mesh, the selected car's own body mesh,
-  and the collision surface. One body per packet keeps the upload bounded
-  (3 uploads, ~1.01–1.11 MB) instead of growing with the roster.
+- `draws[]`: 22 committed level instances (world-space, identity transform) + the **real
+  River track visual** (144 `level_inspect` direct draws: 95 from block88/node283 and
+  49 from block56/node289) + that car's own draw ranges (100 / 88 / 104 / 115 / 84).
+  Every car draw carries its manifest `partId`/`partKind`, `wheelPart`, `spins`,
+  `nodeId` and a labelled `diagnosticColour`. Every track draw keeps its source
+  index range and is labelled `trackVisual:"asset-reader-direct-draws"`.
+- `meshes[]`: exactly three — the level mesh, the real track visual (one merged
+  mesh, 32,290 vertices / 19,167 triangles) and the selected car's own body mesh.
+  One body per packet keeps the upload bounded (3 uploads, ~1.62–1.72 MB) instead
+  of growing with the roster. The collision surface is **not** in `meshes`.
+- `physicsSurfaces[]`: one hidden collision surface (`visible:false`,
+  `physicsOnly:true`, 230 vertices / 381 triangles) carried for provenance only;
+  it is not uploaded and not drawn.
 - `nodes[]`: **nine** nodes — `e1.car.body` (all non-wheel parts) plus, per wheel
   corner, a `.spin` node (tyre/rim/brake disc) and a `.static` node (brake
-  caliper). Each draw is owned by exactly one node.
+  caliper). Each car draw is owned by exactly one node; static level/track draws
+  need no node.
 - `updates[]`: one entry per engine tick: the chase-orbit camera, the body matrix
   (three body axes as columns + position) and eight wheel matrices. The wheel
   matrix is `body × MdlDat rest translation × Rx(angle)`; the angle integrates
@@ -158,6 +174,13 @@ packet the browser renders is produced by the same code the verifier validates.
   `body × rest` only. Every tick is hashed with the committed canonical form.
 - `draws[].bounds` for the car are recomputed from the mesh's local AABB at the
   tick-0 pose, so the reference frame's bounds are real.
+- `diagnostics.extras.track`: the real track visual label
+  (`asset-reader-direct-draws`), 144 draws / 32,290 vertices / 19,167 triangles,
+  both source sections (block88/node283 95/17,782/9,343 and block56/node289
+  49/14,508/9,824) with their pinned reference SHA-256 values, and the measured
+  collision coverage (67 covered / 314 no-draw triangles in the drive box).
+- `diagnostics.extras.collisionSurface`: the hidden collision surface
+  (`visible:false`, `physicsOnly:true`, 381 triangles) and where it came from.
 - `diagnostics.extras.drive.car`: the car this timeline describes (name, record
   index/id, drivetrain, mass, field-file SHA-256) **and the real body it draws**
   (`bodyMesh`, `bodyManifest`, `bodyManifestSha256`, `bodyVertexCount`,
@@ -211,14 +234,16 @@ sequence hash, and the Corvette's sequence hash is exactly the T-007 value
 ## Evidence
 
 `_work/e1-drive/run.json` (all cars), `state-<slug>.json`, `packet-<slug>.json`,
-`geometry.json` (level + collision surface + one real body per car),
-`cars.json` (the 62-record roster + gate), `browser-evidence.json`,
+`geometry.json` (level packet + real track visual + one real body per car + hidden
+collision), `cars.json` (the 62-record roster + gate), `browser-evidence.json`,
 `browser-<slug>-{start,mid,coast,end}.png`,
 `browser-<slug>-wheels-240.png` (side view, wheel geometry),
 `browser-evidence-wheels.json`; `packet.json`/`state_a.json` are the default
-car's aliases. The per-car body/wheel integration is recorded in
+car's aliases. The track visual, its two source sections and the coverage limit
+are recorded in `docs/work/verification/T-007-track-visual.md`; the per-car
+body/wheel integration is recorded in
 `docs/work/verification/T-007-per-car-meshes.md`; details and numbers:
-`docs/work/analysis/e1-drive-slice.md` §10–11 and
+`docs/work/analysis/e1-drive-slice.md` §10–13 and
 `docs/work/verification/T-007-multi-car.md`.
 
 ## Limits (also carried in the packet's own diagnostics)
@@ -237,12 +262,22 @@ car's aliases. The per-car body/wheel integration is recorded in
   spun on their wheel node, but their `partKind` is `unclassified` and the
   pairing is `previewAssignment` — no corner label is claimed. The Audi tyre tier
   is `containment` because its element boxes are larger than the geometry.
-- **The collision surface is not retail render geometry.** The committed River
-  draw set is props near the road; the road itself only exists as collision
-  triangles, which are drawn here as a labelled diagnostic surface. Nearly
-  edge-on slabs therefore speckle (derivative normals at grazing angles). The
-  selection box covers the whole script for every car (`x −120…−10`,
-  `381` triangles).
+- **The track visual is real River render geometry, but it does not cover the
+  whole script.** It is built from the committed `level_inspect` direct draws:
+  block88/node283 (95 draws / 17,782 vertices / 9,343 triangles, as instructed)
+  and block56/node289 (49 / 14,508 / 9,824). Measured fact: block88/node283
+  bounds are `x 944…2478, z 2206…3237` and do **not** overlap the drive box
+  (`x −120…−10, z 1010…1090`); block56/node289 does (its road y at the spawn is
+  5.80685 vs the engine's 5.8074 ground probe). block56/node289 ends near
+  `x = −55`, so the last ~12 m of the script (and the off-road area) have no
+  committed real draw and no ground is drawn there. The HUD says
+  `144 real draws · 19167 tri · no-draw 314 tri · slab hidden`.
+- **The collision surface is physics-only and hidden.** The wheels still trace
+  `Level.levelphysics`, but the collision mesh is now carried in
+  `packet.physicsSurfaces` with `visible:false`; it is not uploaded and not
+  drawn. The diagnostic slab is therefore gone; only real draw geometry is
+  rendered. Nearly edge-on real slabs still speckle (derivative normals at
+  grazing angles).
 - **Wheels use rest-pose placement and physics spin only.** The four wheel groups
   sit at their `MdlDat` element translations; tyre/rim/brake disc rotate about
   element-local `+X` by the integrated physics wheel angular velocity, and the

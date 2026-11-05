@@ -216,6 +216,13 @@ Packet 312 kayıt / **151 drawable**, hash `96b24f076495aea5`; 56 nesne,
 823.931 B, 70/70. Blok31 prerequisite; dokular/culling yok. Kanıt:
 `docs/work/verification/T-007-drawlist-56.md`.
 
+**Gerçek yol görseli (P31):** geometry v4, **144 direct draw / 19.167 üçgen**
+(block88/node283 + block56/node289 sürüş bölgesi); collision mesh
+`visible:false` physics-only. 5 araçta 250–281 draw; 3 geometri upload; console
+0; `verify_e1_drive` **231/231**. Drive box'ta 67/314 collision üçgeni gerçek
+draw ile kaplı; track sonu/off-road çizilmiyor. Kanıt:
+`docs/work/verification/T-007-track-visual.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

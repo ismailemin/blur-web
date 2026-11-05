@@ -60,11 +60,14 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 ### E1e — WebGPU entegrasyonu  ✅ (E1)
 - Gerçek araç durumu → packet v1.1 → WebGPU; **araç başına kendi gövdesi**,
   29–34 parça, 4 teker grubu fizik açısıyla dönüyor, kaliper sabit.
-- 5 araç: 84–115 draw, ayrı gövde mesh hash'i; geometri 3 upload; console **0**.
-- Eksik: `draws[]` hâlâ producer'dan (engine draw-list değil); materyaller
-  diagnostic, süspansiyon/steer/camber yok, rest-pose teker konumu.
-- Kanıt: `docs/work/verification/T-007-per-car-meshes.md`,
-  `docs/work/verification/T-007-car-parts-integration.md`.
+- **Track visual (P31):** 144 gerçek direct draw / 19.167 üçgen
+  (block88/node283 + block56/node289); collision mesh `visible:false`,
+  physics-only. 5 araç: 250–281 draw.
+- 3 geometri upload; console **0**; `verify_e1_drive` **231/231**.
+- Kalan: track kapsamı (drive box 67/314 collision üçgeni çizili), engine
+  draw list / materyaller, süspansiyon/steer/camber.
+- Kanıt: `docs/work/verification/T-007-track-visual.md`,
+  `docs/work/verification/T-007-per-car-meshes.md`.
 
 ### E1f — İlk sürülebilir tur (kabul)
 - Start → tur → finish; çarpışma, checkpoint, respawn.
