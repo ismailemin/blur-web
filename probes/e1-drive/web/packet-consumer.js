@@ -195,7 +195,14 @@ export class PacketConsumer {
       alpha: 0,
       renderTick: 0,
       matrixChecksum: '0x00000000',
-      tickHash: null
+      tickHash: null,
+      // E1 drive-slice soak delta: counts every GPU buffer this consumer owns
+      // and destroys them when a new packet is loaded. A rebuild/restart otherwise
+      // re-uploads geometry into fresh buffers and leaves the old ones alive; the
+      // soak gate measures created - destroyed == live and that live does not grow.
+      packetLoads: 0,
+      buffersCreated: 0,
+      buffersDestroyed: 0
     };
 
     canvas.addEventListener('pointerdown', (event) => {
@@ -270,12 +277,44 @@ export class PacketConsumer {
     this.sceneLayout = sceneLayout;
   }
 
+  /**
+   * Release the GPU buffers owned by the previous packet (soak instrumentation).
+   * Called at the start of every `load`; the first load is a no-op. Destroying a
+   * buffer still referenced by an already-submitted command is legal in WebGPU,
+   * and the soak restarts `load` from an animation frame, so the queue has
+   * completed the prior frame.
+   */
+  releaseGeometry() {
+    for (const buffer of this.buffers) {
+      try { buffer.destroy(); } catch { /* already lost: not a leak */ }
+      this.stats.buffersDestroyed++;
+    }
+    this.buffers = [];
+    this.meshes = new Map();
+    this.meshBounds = null;
+    this.draws = [];
+    this.visibleDraws = [];
+    this.uniformBuffer = null;
+    this.sceneBuffer = null;
+    this.drawBindGroup = null;
+    this.sceneBindGroup = null;
+    this.timeline = null;
+    this.updateMaps = null;
+    this.drawMovers = null;
+  }
+
   async load(packet) {
     if (packet.kind !== 'blur.render-packet') throw new Error('packet kind ' + packet.kind + ' is not blur.render-packet');
     if (!SUPPORTED_VERSIONS.includes(packet.version)) throw new Error('packet version ' + packet.version + ' is not supported');
     if (packet.camera.matrixConvention !== MATRIX_CONVENTION) throw new Error('packet camera matrix convention is not the documented v1 convention');
     this.packet = packet;
     await this.init();
+    // E1 drive-slice soak delta: one page can rebuild its timeline many times
+    // (mode switches / restarts). Wait for queued work, then release the previous
+    // packet's buffers so GPU memory is bounded by one packet, not by load count.
+    if (this.device) await this.device.queue.onSubmittedWorkDone();
+    this.releaseGeometry();
+    this.stats.packetLoads++;
 
     for (const mesh of packet.meshes) {
       if (mesh.storage !== 'inline-json') throw new Error('mesh ' + mesh.id + ' uses unsupported storage ' + mesh.storage);
@@ -294,6 +333,7 @@ export class PacketConsumer {
       });
       this.device.queue.writeBuffer(indexBuffer, 0, indices);
       this.buffers.push(vertexBuffer, indexBuffer);
+      this.stats.buffersCreated += 2;
       this.meshes.set(mesh.id, { vertexBuffer, indexBuffer, vertexCount: mesh.vertexCount, indexCount: mesh.indexCount });
       // Mesh AABB, used only to frame the moving body for screenshot evidence.
       if (!this.meshBounds) this.meshBounds = new Map();
@@ -316,6 +356,7 @@ export class PacketConsumer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
     this.buffers.push(this.uniformBuffer);
+    this.stats.buffersCreated++;
     this.drawBindGroup = this.device.createBindGroup({
       layout: this.drawLayout,
       entries: [{ binding: 0, resource: { buffer: this.uniformBuffer, offset: 0, size: 144 } }]
@@ -330,6 +371,7 @@ export class PacketConsumer {
     this.sceneBuffer = this.device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(this.sceneBuffer, 0, sceneBytes);
     this.buffers.push(this.sceneBuffer);
+    this.stats.buffersCreated++;
     this.sceneBindGroup = this.device.createBindGroup({
       layout: this.sceneLayout,
       entries: [{ binding: 0, resource: { buffer: this.sceneBuffer, offset: 0, size: 48 } }]

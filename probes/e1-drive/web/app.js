@@ -28,6 +28,12 @@
 //   ?telemetry=1        three deterministic telemetry manoeuvres (standing start,
 //                       80 km/h brake, steering sweep), metric table + 60 Hz
 //                       traces in a panel; diagnostics only, physics unchanged
+//   ?soak=1             deterministic soak session: repeats drive -> sprint ->
+//                       telemetry segments, rebuilding the world between every
+//                       segment, for `?soakSeconds=` simulated seconds (default
+//                       300 = 5 min at 60 Hz). Records frame times, heap, scheduler
+//                       pool, buffer counts and state/packet hashes. Driven by
+//                       tools/soak_browser.mjs; see T-007-soak.md.
 //
 // URL parameters:
 //   ?car=<slug>     roster car to drive (default: the roster's recorded default)
@@ -39,6 +45,7 @@ import { PacketConsumer } from './packet-consumer.js';
 import { FixedStepDriver, FLAG } from './fixed-step.js';
 import { createSession } from './packet-adapter.js';
 import { hashOf } from './packet-hash.js';
+import { sha256Hex } from './sha256.js';
 import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
 import { validateSprintLayout } from './sprint-layout.js';
@@ -52,6 +59,7 @@ import {
 const params = new URLSearchParams(location.search);
 const SCRIPT_PARAM = params.get('script');
 const TELEMETRY = params.get('telemetry') === '1';
+const SOAK = params.get('soak') === '1';
 if (TELEMETRY) document.documentElement.dataset.telemetry = 'running';
 if (SCRIPT_PARAM && SCRIPT_PARAM !== 'drive' && SCRIPT_PARAM !== 'sprint') {
   throw new Error('unknown script ' + JSON.stringify(SCRIPT_PARAM) + ' (use drive or sprint)');
@@ -62,9 +70,22 @@ if (TELEMETRY && SCRIPT_PARAM) {
 if (TELEMETRY && params.has('hold')) {
   throw new Error('?telemetry=1 holds its own presentation tick; drop the hold parameter');
 }
-const LEGACY_DRIVE = !TELEMETRY && SCRIPT_PARAM === 'drive' && params.get('manual') !== '1';
-const SCRIPTED_SPRINT = !TELEMETRY && SCRIPT_PARAM === 'sprint';
-const SPRINT_MODE = !TELEMETRY && !LEGACY_DRIVE;
+if (SOAK && (TELEMETRY || SCRIPT_PARAM || params.has('hold') || params.has('sprintfall'))) {
+  throw new Error('?soak=1 is its own deterministic session; drop telemetry/script/hold/sprintfall');
+}
+const SOAK_SECONDS = params.has('soakSeconds') ? Number(params.get('soakSeconds')) : 300;
+const SOAK_TICKS_PER_FRAME = params.has('soakTicksPerFrame') ? Number(params.get('soakTicksPerFrame')) : 1;
+if (SOAK) {
+  if (!Number.isInteger(SOAK_SECONDS) || SOAK_SECONDS < 5 || SOAK_SECONDS > 3600) {
+    throw new Error('soakSeconds must be an integer in [5, 3600]');
+  }
+  if (!Number.isInteger(SOAK_TICKS_PER_FRAME) || SOAK_TICKS_PER_FRAME < 1 || SOAK_TICKS_PER_FRAME > 8) {
+    throw new Error('soakTicksPerFrame must be an integer in [1, 8]');
+  }
+}
+const LEGACY_DRIVE = !TELEMETRY && !SOAK && SCRIPT_PARAM === 'drive' && params.get('manual') !== '1';
+const SCRIPTED_SPRINT = !TELEMETRY && !SOAK && SCRIPT_PARAM === 'sprint';
+const SPRINT_MODE = !TELEMETRY && !SOAK && !LEGACY_DRIVE;
 const SPRINT_FALL = params.get('sprintfall') === '1';
 if (SPRINT_FALL && !SCRIPTED_SPRINT) throw new Error('?sprintfall=1 needs ?script=sprint');
 const HOLD = params.has('hold') ? Number(params.get('hold')) : null;
@@ -96,7 +117,7 @@ const state = {
   error: null,
   adapter: null,
   mode: LEGACY_DRIVE ? 'script:drive' : SCRIPTED_SPRINT ? (SPRINT_FALL ? 'script:sprint-fall' : 'script:sprint')
-    : TELEMETRY ? 'telemetry' : 'keyboard-sprint',
+    : TELEMETRY ? 'telemetry' : SOAK ? 'soak' : 'keyboard-sprint',
   hold: HOLD,
   holdReached: HOLD === null ? false : HOLD === 0,
   car: null,
@@ -157,7 +178,11 @@ const state = {
   restarts: 0,
   // Telemetry (`?telemetry=1` only).
   telemetry: null,
-  telemetryBusy: false
+  telemetryBusy: false,
+  // Soak (`?soak=1` only): a deterministic segment schedule, frame-time ring and
+  // heap/pool/upload checkpoints. The full report is published when it finishes.
+  soak: null,
+  soakReport: null
 };
 
 function publish() {
@@ -196,6 +221,13 @@ function publish() {
       ' · ' + Math.round(sprint.progress * 100) + '%']);
     rows.push(['best', state.sprintBest === null ? '—' :
       state.sprintBest.toFixed(3) + ' s' + (state.sprintResult?.improved ? ' (new)' : '')]);
+  }
+  if (state.soak) {
+    const soak = state.soak;
+    rows.push(['soak', soak.phase + ' · cycle ' + soak.cycle + ' · ' +
+      soak.totalTicks + '/' + soak.targetTicks + ' ticks' +
+      (soak.frames ? ' · ' + soak.frames + ' frames' : '') +
+      (soak.status ? ' · ' + soak.status : '')]);
   }
   rows.push(
     ['tick', String(state.displayTick) + ' (engine ' + state.engineTick + ') · ' + state.phase],
@@ -288,6 +320,7 @@ window.addEventListener('unhandledrejection', (event) => fail('unhandled rejecti
 
 const keys = new Set();
 window.addEventListener('keydown', (event) => {
+  if (SOAK) return; // the soak plan owns the session; no keyboard/restart input
   if (event.key === 'r' || event.key === 'R') {
     // Both modes rebuild the world in place: the scene's scheduler groups are
     // created and destroyed with the scene, so one wasm instance can be rebuilt
@@ -334,6 +367,7 @@ let fieldBytes = null;
 let sprintRules = null;
 let bestTimes = null;
 let pendingRespawn = null;
+let soakLayout = null;
 // Cumulative in-place rebuilds of this page's single wasm instance in telemetry
 // mode (one e1_create in loadEngine, then one e1_reset per manoeuvre and per R).
 let telemetryResets = 0;
@@ -393,7 +427,7 @@ async function loadEngine() {
     fetch(LEVEL_URL, { cache: 'no-store' }),
     fetch(fieldsUrl(car), { cache: 'no-store' }),
     fetch(SPAWN_URL, { cache: 'no-store' }),
-    SPRINT_MODE ? fetch(SPRINT_URL, { cache: 'no-store' }) : Promise.resolve(null)
+    SPRINT_MODE || SOAK ? fetch(SPRINT_URL, { cache: 'no-store' }) : Promise.resolve(null)
   ]);
   for (const [label, response] of [['geometry', geometryResponse], ['level', levelResponse],
                                     ['car fields (' + car.slug + ')', fieldsResponse], ['spawn', spawnResponse]]) {
@@ -406,7 +440,7 @@ async function loadEngine() {
 
   const tick0 = createWorld(spawn.x, spawn.z, spawn.heading);
 
-  if (SPRINT_MODE) {
+  if (SPRINT_MODE || SOAK) {
     if (!sprintResponse.ok) {
       throw new Error('sprint layout fetch failed: HTTP ' + sprintResponse.status +
         ' — run `node probes/e1-drive/tools/build_sprint.mjs` (or `node tools/verify_e1_drive.mjs` first)');
@@ -415,6 +449,7 @@ async function loadEngine() {
     const checked = validateSprintLayout(layout, geometry, spawn);
     if (!checked.ok) throw new Error('sprint layout rejected: ' + checked.errors.join('; '));
     sprintRules = createSprintRules(layout);
+    soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
     state.sprintLayout = {
       hash: layout.hash,
@@ -453,6 +488,7 @@ async function loadEngine() {
 
 /** The input the current mode and rules allow for the step that reaches `tick`. */
 function currentInput(tick) {
+  if (SOAK) return soakPhaseInput(tick);
   if (LEGACY_DRIVE) return scriptedInput(tick);
   if (SPRINT_FALL) {
     return sprintRules.respawns > 0 ? sprintRules.gateInput([1, 0, 0, 0]) : respawnScriptInput(tick);
@@ -522,11 +558,14 @@ async function respawnAt(target, nowUs) {
 }
 
 /** Rebuild the world and restart the packet timeline from the settled tick. */
-async function startTimeline(tick0, { reload = false, rejoin = false } = {}) {
+async function startTimeline(tick0, {
+  reload = false, rejoin = false,
+  packetScript = SPRINT_MODE ? SPRINT_PACKET_SCRIPT : undefined
+} = {}) {
   session = createSession(geometry, tick0, {
     spawn: { ...spawn, source: spawn.source ?? 'probes/e1-drive/tools/spawn.mjs' },
     car: state.car,
-    script: SPRINT_MODE ? SPRINT_PACKET_SCRIPT : undefined,
+    script: packetScript === null ? undefined : packetScript,
     camera: Object.keys(CAMERA_OVERRIDE).length ? CAMERA_OVERRIDE : undefined
   });
   state.cameraOverride = Object.keys(CAMERA_OVERRIDE).length ? { ...CAMERA_OVERRIDE } : null;
@@ -581,7 +620,9 @@ function applyState(snapshot) {
   state.suspension = snapshot.wheels.map((wheel) => wheel.suspension);
   state.wheelAngular = snapshot.wheels.map((wheel) => wheel.angular);
   state.input = snapshot.input;
-  state.phase = TELEMETRY ? 'telemetry' : LEGACY_DRIVE ? phaseAt(snapshot.tick) : (sprintRules ? sprintRules.phase : 'keyboard');
+  state.phase = TELEMETRY ? 'telemetry'
+    : SOAK ? (sprintRules ? sprintRules.phase : 'soak-drive')
+      : LEGACY_DRIVE ? phaseAt(snapshot.tick) : (sprintRules ? sprintRules.phase : 'keyboard');
   if (sprintRules) state.sprint = sprintRules.snapshot(snapshot);
 }
 
@@ -782,6 +823,590 @@ async function runTelemetryMode() {
   publish();
 }
 
+// ------------------------------------------------------------------ soak
+// `?soak=1`: deterministic session endurance. Segments repeat
+//
+//   drive      300 scripted ticks (throttle / coast / brake)
+//   sprint     countdown, both checkpoints, finish, 120-tick brake tail
+//   telemetry  the three diagnostic manoeuvres run synchronously
+//
+// Each segment starts with `e1_reset()` (a full world rebuild) and builds a new
+// packet timeline; the consumer reloads its three meshes (and now destroys the
+// previous buffers). Ticks are always 1/60 s. The loop advances
+// `?soakTicksPerFrame=` ticks per animation frame (default 1), so the tick
+// sequence, every state hash, every packet hash and every telemetry metric are
+// independent of wall-clock frame timing; only the frame-time measurements are
+// likely to differ between two runs.
+
+const SOAK_PHASE_ORDER = Object.freeze(['drive', 'sprint', 'telemetry']);
+const SOAK_DRIVE_TICKS = SCRIPT_TICKS;
+const SOAK_SPRINT_MAX_TICKS = 600;
+const SOAK_SPRINT_TAIL_TICKS = 120;
+const SOAK_SAMPLE_TICKS = 60;   // one heap/pool/upload sample per simulated second
+
+let soakPhase = 'idle';
+let soakCycle = 0;
+let soakTargetTicks = 0;
+let soakTotalTicks = 0;
+let soakTicksPerFrame = 1;
+let soakLastTimestamp = null;
+let soakFrameSamples = [];
+let soakSamples = [];
+let soakTransitions = [];
+let soakCheckpoints = [];
+let soakTelemetry = [];
+let soakPhaseTicks = { drive: 0, sprint: 0, telemetry: 0 };
+let soakPhaseSegments = { drive: 0, sprint: 0, telemetry: 0 };
+let soakLastSampleTick = 0;
+let soakNaN = 0;
+let soakStartMs = 0;
+let soakOpenPhase = null;
+let soakDone = false;
+
+/** Input the soak plan asks for on the step that reaches `tick`. */
+function soakPhaseInput(tick) {
+  if (soakPhase === 'drive') return scriptedInput(tick);
+  if (soakPhase === 'sprint' && sprintRules) return sprintScriptInput(sprintRules);
+  return [0, 0, 0, 0];
+}
+
+function soakDiag() {
+  const diag = JSON.parse(module.UTF8ToString(module._e1_diag()));
+  const groups = Array.isArray(diag.scheduler?.groups) ? diag.scheduler.groups : [];
+  const group = groups[diag.group] ?? null;
+  return {
+    group: diag.group,
+    policy: diag.policy,
+    poolSize: diag.scheduler?.poolSize ?? null,
+    poolHead: diag.scheduler?.poolHead ?? null,
+    queued: diag.scheduler?.queued ?? null,
+    executing: diag.scheduler?.executing ?? null,
+    groupQueued: group?.queued ?? null,
+    groupExecuting: group?.executing ?? null,
+    groupDependencies: group?.dependencies ?? null,
+    wasmHeapBytes: module.HEAPU8.length
+  };
+}
+
+function soakMemory(forceGc) {
+  if (forceGc && typeof window.gc === 'function') {
+    try { window.gc(); } catch { /* --expose-gc was not granted */ }
+  }
+  const memory = typeof performance !== 'undefined' ? performance.memory : null;
+  return {
+    usedJsHeapBytes: memory ? memory.usedJSHeapSize : null,
+    totalJsHeapBytes: memory ? memory.totalJSHeapSize : null,
+    jsLimitBytes: memory ? memory.jsHeapSizeLimit : null,
+    gcAvailable: typeof window.gc === 'function'
+  };
+}
+
+function soakBuffers() {
+  const stats = consumer.stats;
+  return {
+    packetLoads: stats.packetLoads,
+    buffersCreated: stats.buffersCreated,
+    buffersDestroyed: stats.buffersDestroyed,
+    buffersLive: stats.buffersCreated - stats.buffersDestroyed,
+    geometryUploads: stats.geometryUploads,
+    geometryUploadBytes: stats.geometryUploadBytes,
+    uniformWrites: stats.uniformWrites,
+    drawsIssued: stats.drawsIssued,
+    renders: stats.renders,
+    drawsPerFrame: consumer.draws.length
+  };
+}
+
+function soakProgress(status = null) {
+  if (consumer.adapterInfo) {
+    state.adapter = [consumer.adapterInfo.vendor, consumer.adapterInfo.architecture, consumer.adapterInfo.device]
+      .filter(Boolean).join(' / ') || 'unnamed adapter';
+  }
+  state.soak = {
+    phase: soakPhase,
+    cycle: soakCycle,
+    totalTicks: soakTotalTicks,
+    targetTicks: soakTargetTicks,
+    frames: consumer.stats.renders,
+    ticksPerFrame: soakTicksPerFrame,
+    segments: soakPhaseSegments.drive + soakPhaseSegments.sprint + soakPhaseSegments.telemetry,
+    done: soakDone,
+    status: status ?? state.soak?.status ?? null
+  };
+}
+
+function soakSample() {
+  soakSamples.push({
+    tick: soakTotalTicks,
+    phase: soakPhase,
+    cycle: soakCycle,
+    frames: consumer.stats.renders,
+    ...soakDiag(),
+    ...soakBuffers(),
+    ...soakMemory(false)
+  });
+}
+
+function soakCheckpoint(label, extra = {}) {
+  const stateNow = session?.lastState ?? readState();
+  const packet = session?.packet ?? null;
+  const lastUpdate = packet?.updates?.[packet.updates.length - 1] ?? null;
+  const row = {
+    label,
+    phase: soakPhase,
+    cycle: soakCycle,
+    totalTicks: soakTotalTicks,
+    phaseTicks: soakPhaseTicks[soakPhase] ?? 0,
+    engineTick: stateNow.tick,
+    stateHash: hashOf(stateNow),
+    finite: stateNow.finite,
+    anyContact: stateNow.anyContact,
+    speed: stateNow.speed,
+    position: stateNow.position.slice(),
+    packetTicks: packet?.updates?.length ?? null,
+    lastUpdateHash: lastUpdate?.hash ?? null,
+    ...soakDiag(),
+    ...soakBuffers(),
+    ...soakMemory(true),
+    ...extra
+  };
+  soakCheckpoints.push(row);
+  return row;
+}
+
+async function soakBeginPhase(name, tick0 = null) {
+  soakPhase = name;
+  soakPhaseSegments[name]++;
+  soakLastTimestamp = null;
+  soakOpenPhase = name;
+  if (name === 'drive') {
+    soakCycle++;
+    state.sprint = null;
+    state.sprintResult = null;
+    state.sprintBanner = null;
+    sprintRules = null;
+    const world0 = tick0 ?? engine.reset();
+    const tick1 = await startTimeline(world0, { reload: true, packetScript: null });
+    applyState(tick1);
+    soakPhaseTicks[name] += 1;
+    soakTotalTicks += 1;
+  } else if (name === 'sprint') {
+    const world0 = engine.reset();
+    sprintRules = createSprintRules(soakLayout);
+    const tick1 = await startTimeline(world0, { reload: true, packetScript: SPRINT_PACKET_SCRIPT });
+    applyState(tick1);
+    soakPhaseTicks[name] += 1;
+    soakTotalTicks += 1;
+  } else if (name === 'telemetry') {
+    // Synchronous by design: the series is three manoeuvres with an e1_reset
+    // between each. Its duration is recorded as a mode-switch hitch, not hidden
+    // inside a frame-time percentile.
+    const started = performance.now();
+    const series = runTelemetrySeries(engine);
+    const syncMs = performance.now() - started;
+    const manoeuvres = {};
+    let ticks = 0;
+    for (const manoeuvre of TELEMETRY_MANOEUVRE_ORDER) {
+      const states = series.states[manoeuvre];
+      const hashes = states.map((snapshot) => hashOf(snapshot));
+      ticks += Math.max(0, states.length - 1);
+      manoeuvres[manoeuvre] = {
+        ticks: states.length,
+        traceHash: hashOf(hashes),
+        aggregate: 'sha256:' + sha256Hex(hashes.join('\n'))
+      };
+    }
+    soakPhaseTicks[name] += ticks;
+    soakTotalTicks += ticks;
+    soakTelemetry.push({
+      cycle: soakCycle,
+      syncMs,
+      plan: series.plan,
+      metrics: summariseTelemetryMetrics(series.metrics),
+      manoeuvres
+    });
+    session = null;
+    sprintRules = null;
+    const last = series.states.lateral[series.states.lateral.length - 1];
+    state.engineTick = last.tick;
+    state.displayTick = last.tick;
+    applyState(last);
+  }
+  soakLastSampleTick = soakTotalTicks;
+  soakSample();
+  soakProgress();
+  publish();
+}
+
+async function soakCompletePhase(name) {
+  if (soakOpenPhase !== name) return null;
+  let extra = {};
+  const currentTick = session?.lastState?.tick ?? state.engineTick;
+  const naturalComplete = name === 'drive' ? currentTick >= SOAK_DRIVE_TICKS
+    : name === 'sprint'
+      ? (sprintRules?.phase === 'finished' &&
+          currentTick - sprintRules.finishTick >= SOAK_SPRINT_TAIL_TICKS) || currentTick >= SOAK_SPRINT_MAX_TICKS
+      : true;
+  extra.truncated = !naturalComplete;
+  if (name === 'drive' || name === 'sprint') {
+    if (session) {
+      const packet = session.finalise();
+      extra.packetHash = packet.hash;
+      extra.packetTicks = packet.updates.length;
+      extra.lastUpdateHash = packet.updates[packet.updates.length - 1]?.hash ?? null;
+    }
+    const hashes = state.tickHashes.map((row) => row.stateHash);
+    extra.stateSequenceHash = 'sha256:' + sha256Hex(hashes.join('\n'));
+    extra.stateTicks = hashes.length;
+  }
+  if (name === 'sprint' && sprintRules) {
+    extra.finishSeconds = sprintRules.finishTimeSeconds;
+    extra.finishTick = sprintRules.finishTick;
+    extra.checkpointsPassed = sprintRules.checkpointsPassed;
+    extra.respawns = sprintRules.respawns;
+    extra.sprintPhase = sprintRules.phase;
+  }
+  if (name === 'telemetry' && soakTelemetry.length) {
+    const last = soakTelemetry[soakTelemetry.length - 1];
+    extra.telemetry = {
+      syncMs: last.syncMs,
+      manoeuvres: last.manoeuvres,
+      metrics: last.metrics,
+      plan: last.plan
+    };
+  }
+  soakOpenPhase = null;
+  return soakCheckpoint(name + '-complete', extra);
+}
+
+function soakStepTicks(count) {
+  if (soakPhase === 'telemetry') return { ticks: 0, complete: true };
+  let stepped = 0;
+  while (stepped < count && soakTotalTicks < soakTargetTicks) {
+    const nextTick = state.engineTick + 1;
+    engine.setInput(currentInput(nextTick));
+    const snapshot = engine.step();
+    if (!session) throw new Error('soak: no live timeline for engine tick ' + snapshot.tick);
+    const update = session.appendState(snapshot);
+    state.tickHashes.push({ tick: snapshot.tick, stateHash: hashOf(snapshot), packetHash: update.hash });
+    state.ticksExecuted++;
+    soakTotalTicks++;
+    soakPhaseTicks[soakPhase]++;
+    stepped++;
+    if (snapshot.finite !== 1) soakNaN++;
+    if (sprintRules) {
+      const events = sprintRules.step(snapshot);
+      handleSprintEvents(events);
+    }
+    applyState(snapshot);
+    if (soakTotalTicks - soakLastSampleTick >= SOAK_SAMPLE_TICKS) {
+      soakLastSampleTick = soakTotalTicks;
+      soakSample();
+    }
+    if (soakPhase === 'drive' && snapshot.tick >= SOAK_DRIVE_TICKS) {
+      return { ticks: stepped, complete: true };
+    }
+    if (soakPhase === 'sprint') {
+      if (sprintRules?.phase === 'finished' &&
+          snapshot.tick - sprintRules.finishTick >= SOAK_SPRINT_TAIL_TICKS) {
+        return { ticks: stepped, complete: true };
+      }
+      if (snapshot.tick >= SOAK_SPRINT_MAX_TICKS) return { ticks: stepped, complete: true };
+    }
+  }
+  return { ticks: stepped, complete: soakTotalTicks >= soakTargetTicks };
+}
+
+function soakPercentile(sorted, fraction) {
+  if (!sorted.length) return null;
+  const index = (sorted.length - 1) * fraction;
+  const low = Math.floor(index);
+  const high = Math.ceil(index);
+  if (low === high) return sorted[low];
+  return sorted[low] + (sorted[high] - sorted[low]) * (index - low);
+}
+
+function soakStats(values, digits = 3) {
+  const numbers = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!numbers.length) return null;
+  const round = (value) => (Number.isFinite(value) ? Number(value.toFixed(digits)) : null);
+  const mean = numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+  return {
+    count: numbers.length,
+    min: round(numbers[0]),
+    p50: round(soakPercentile(numbers, 0.5)),
+    p95: round(soakPercentile(numbers, 0.95)),
+    p99: round(soakPercentile(numbers, 0.99)),
+    max: round(numbers[numbers.length - 1]),
+    mean: round(mean)
+  };
+}
+
+function soakSummariseReport(wallMs) {
+  const frameValues = soakFrameSamples.filter((sample) => Number.isFinite(sample.frameMs));
+  const steadyValues = frameValues.slice(30);
+  const phaseFrameStats = {};
+  for (const phase of SOAK_PHASE_ORDER) {
+    const rows = frameValues.filter((sample) => sample.phase === phase);
+    phaseFrameStats[phase] = rows.length ? {
+      frameMs: soakStats(rows.map((sample) => sample.frameMs)),
+      workMs: soakStats(rows.map((sample) => sample.workMs)),
+      ticks: rows.reduce((sum, sample) => sum + sample.ticks, 0)
+    } : null;
+  }
+  const frameMs = soakStats(frameValues.map((sample) => sample.frameMs));
+  const workMs = soakStats(frameValues.map((sample) => sample.workMs));
+  const longFrames = {
+    over16_7: frameValues.filter((sample) => sample.frameMs > 16.7).length,
+    over33_3: frameValues.filter((sample) => sample.frameMs > 33.3).length,
+    over50: frameValues.filter((sample) => sample.frameMs > 50).length,
+    over100: frameValues.filter((sample) => sample.frameMs > 100).length
+  };
+
+  const heapValues = [...new Set([...soakSamples, ...soakCheckpoints].map((row) => row.wasmHeapBytes)
+    .filter((value) => Number.isFinite(value)))];
+  const checkpointHeaps = soakCheckpoints.map((row) => row.usedJsHeapBytes).filter((value) => Number.isFinite(value));
+  const checkpointHalf = Math.floor(checkpointHeaps.length / 2);
+  const checkpointMean = (values) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
+  const earlyHeapMean = checkpointMean(checkpointHeaps.slice(0, checkpointHalf));
+  const lateHeapMean = checkpointMean(checkpointHeaps.slice(checkpointHalf));
+  const jsHeap = {
+    gcAvailable: typeof window.gc === 'function',
+    checkpointSamples: checkpointHeaps.length,
+    first: checkpointHeaps.length ? checkpointHeaps[0] : null,
+    last: checkpointHeaps.length ? checkpointHeaps[checkpointHeaps.length - 1] : null,
+    min: checkpointHeaps.length ? Math.min(...checkpointHeaps) : null,
+    max: checkpointHeaps.length ? Math.max(...checkpointHeaps) : null,
+    earlyMeanBytes: earlyHeapMean === null ? null : Math.round(earlyHeapMean),
+    lateMeanBytes: lateHeapMean === null ? null : Math.round(lateHeapMean),
+    driftBytes: earlyHeapMean === null || lateHeapMean === null ? null : Math.round(lateHeapMean - earlyHeapMean),
+    growthBytes: checkpointHeaps.length ? checkpointHeaps[checkpointHeaps.length - 1] - checkpointHeaps[0] : null,
+    note: 'checkpoint values are after window.gc(); first-to-last can be negative (V8 released memory). ' +
+      'driftBytes compares the second half of the run with the first half. rawSamples are uncollected samples.',
+    rawSamples: soakStats([...soakSamples, ...soakCheckpoints].map((row) => row.usedJsHeapBytes), 0)
+  };
+  const poolHeads = [...new Set([...soakSamples, ...soakCheckpoints].map((row) => row.poolHead)
+    .filter((value) => Number.isFinite(value)))];
+  const poolSizes = [...new Set([...soakSamples, ...soakCheckpoints].map((row) => row.poolSize)
+    .filter((value) => Number.isFinite(value)))];
+  const queued = [...new Set([...soakSamples, ...soakCheckpoints].map((row) => row.queued)
+    .filter((value) => Number.isFinite(value)))];
+  const groups = [...new Set(soakCheckpoints.map((row) => row.group))];
+  const groupDependencies = [...new Set(soakCheckpoints.map((row) => row.groupDependencies))];
+  const groupQueued = [...new Set(soakCheckpoints.map((row) => row.groupQueued))];
+  const poolValid = soakCheckpoints.every((row) => row.group >= 0 && row.group < row.poolSize &&
+    row.groupDependencies === 0 && row.groupExecuting === 0);
+  const bufferLive = [...new Set([...soakSamples, ...soakCheckpoints].map((row) => row.buffersLive))];
+  const uploadsPerLoad = soakCheckpoints.map((row) => row.packetLoads > 0 ? row.geometryUploads / row.packetLoads : null)
+    .filter((value) => Number.isFinite(value));
+  const final = soakCheckpoints[soakCheckpoints.length - 1] ?? null;
+  const stats = consumer.stats;
+
+  const checks = [
+    { label: 'simulated budget reached', ok: soakTotalTicks >= soakTargetTicks,
+      detail: `${soakTotalTicks}/${soakTargetTicks} ticks` },
+    { label: 'no NaN/Inf state in any soak tick', ok: soakNaN === 0, detail: `${soakNaN} non-finite ticks` },
+    { label: 'wasm heap did not grow', ok: heapValues.length === 1,
+      detail: heapValues.map((value) => value + ' B').join(', ') },
+    { label: 'scheduler pool and group handles stayed fixed', ok: poolHeads.length === 1 && poolSizes.length === 1 &&
+      queued.length === 1 && poolValid,
+      detail: `head ${poolHeads.join('/')} size ${poolSizes.join('/')} queued ${queued.join('/')} groups ${groups.join(',')}` },
+    { label: 'GPU packet buffers stayed bounded across every reload', ok: bufferLive.length === 1 &&
+      final !== null && final.buffersLive === bufferLive[0],
+      detail: `live ${bufferLive.join('/')}, created ${stats.buffersCreated}, destroyed ${stats.buffersDestroyed}` },
+    { label: 'every timeline load uploaded exactly the three packet meshes', ok: uploadsPerLoad.every((value) => value === 3),
+      detail: uploadsPerLoad.map((value) => value.toFixed(3)).join('/') },
+    { label: 'one uniform write and one draw set per rendered frame', ok: stats.uniformWrites === stats.renders &&
+      stats.drawsIssued === stats.renders * consumer.draws.length,
+      detail: `${stats.uniformWrites}/${stats.renders} uniform, ${stats.drawsIssued} draws` },
+    { label: 'every segment produced its deterministic checkpoint', ok:
+      soakPhaseSegments.drive > 0 && soakPhaseSegments.sprint > 0 && soakPhaseSegments.telemetry > 0 &&
+      soakCheckpoints.filter((row) => row.label === 'drive-complete').length === soakPhaseSegments.drive &&
+      soakCheckpoints.filter((row) => row.label === 'sprint-complete').length === soakPhaseSegments.sprint &&
+      soakCheckpoints.filter((row) => row.label === 'telemetry-complete').length === soakPhaseSegments.telemetry,
+      detail: `${soakPhaseSegments.drive} drive / ${soakPhaseSegments.sprint} sprint / ${soakPhaseSegments.telemetry} telemetry segments` }
+  ];
+  const failures = checks.filter((check) => !check.ok).map((check) => check.label + ': ' + check.detail);
+  return {
+    kind: 'e1-drive.soak-session',
+    version: 1,
+    car: state.car,
+    spawn,
+    spec: {
+      targetTicks: soakTargetTicks,
+      seconds: soakTargetTicks / TICK_HZ,
+      tickHz: TICK_HZ,
+      ticksPerFrame: soakTicksPerFrame,
+      phases: SOAK_PHASE_ORDER,
+      driveTicks: SOAK_DRIVE_TICKS,
+      sprintMaxTicks: SOAK_SPRINT_MAX_TICKS,
+      sprintTailTicks: SOAK_SPRINT_TAIL_TICKS,
+      sampleTicks: SOAK_SAMPLE_TICKS
+    },
+    status: failures.length ? 'FAIL' : 'PASS',
+    failures,
+    checks,
+    wallMs: Number(wallMs.toFixed(1)),
+    simulatedSeconds: Number((soakTotalTicks / TICK_HZ).toFixed(3)),
+    totalTicks: soakTotalTicks,
+    targetTicks: soakTargetTicks,
+    cycles: soakCycle,
+    segments: soakPhaseSegments,
+    phaseTicks: soakPhaseTicks,
+    frames: {
+      rendered: stats.renders,
+      counted: frameValues.length,
+      skippedWarmup: frameValues.length - steadyValues.length,
+      frameMs,
+      steadyFrameMs: soakStats(steadyValues.map((sample) => sample.frameMs)),
+      workMs,
+      longFrames,
+      byPhase: phaseFrameStats
+    },
+    memory: {
+      wasmHeapBytes: heapValues,
+      wasmHeapConstant: heapValues.length === 1,
+      jsHeap,
+      preciseMemoryInfo: typeof performance !== 'undefined' && !!performance.memory
+    },
+    scheduler: {
+      poolHeads, poolSizes, queued, groups, groupDependencies, groupQueued,
+      valid: poolValid
+    },
+    buffers: {
+      packetLoads: stats.packetLoads,
+      buffersCreated: stats.buffersCreated,
+      buffersDestroyed: stats.buffersDestroyed,
+      buffersLive: stats.buffersCreated - stats.buffersDestroyed,
+      liveValues: bufferLive,
+      geometryUploads: stats.geometryUploads,
+      geometryUploadBytes: stats.geometryUploadBytes,
+      uploadsPerLoad: uploadsPerLoad[0] ?? null,
+      uniformWrites: stats.uniformWrites,
+      drawsIssued: stats.drawsIssued,
+      drawsPerFrame: consumer.draws.length,
+      renders: stats.renders
+    },
+    transitions: soakTransitions,
+    checkpoints: soakCheckpoints,
+    telemetry: soakTelemetry,
+    samples: soakSamples
+  };
+}
+
+async function soakFinalReport() {
+  if (soakOpenPhase) await soakCompletePhase(soakOpenPhase);
+  soakDone = true;
+  const wallMs = performance.now() - soakStartMs;
+  soakPhase = 'done';
+  const report = soakSummariseReport(wallMs);
+  state.soakReport = report;
+  soakProgress(report.status);
+  state.soak.done = true;
+  state.soak.phase = 'done';
+  state.soak.status = report.status;
+  state.consumer = report.status === 'PASS' ? 'running' : 'error';
+  document.documentElement.dataset.soak = report.status;
+  publish();
+}
+
+function soakIdleFrame() {
+  consumer.syncTimeline();
+  consumer.renderFrame({ cursor: state.engineTick });
+  requestAnimationFrame(soakIdleFrame);
+}
+
+async function runSoakMode(initialTick0) {
+  soakTargetTicks = SOAK_SECONDS * TICK_HZ;
+  soakTicksPerFrame = SOAK_TICKS_PER_FRAME;
+  soakStartMs = performance.now();
+  soakTotalTicks = 0;
+  soakCycle = 0;
+  soakDone = false;
+  soakLastTimestamp = null;
+  soakFrameSamples = [];
+  soakSamples = [];
+  soakTransitions = [];
+  soakCheckpoints = [];
+  soakTelemetry = [];
+  soakPhaseTicks = { drive: 0, sprint: 0, telemetry: 0 };
+  soakPhaseSegments = { drive: 0, sprint: 0, telemetry: 0 };
+  soakNaN = 0;
+  state.soakReport = null;
+  state.consumer = 'loading';
+  await soakBeginPhase('drive', initialTick0);
+  let phase = 'drive';
+  try {
+    while (!soakDone) {
+      if (phase === 'telemetry') {
+        const started = performance.now();
+        await soakCompletePhase('telemetry');
+        if (soakTotalTicks >= soakTargetTicks) break;
+        await soakBeginPhase('drive');
+        soakTransitions.push({ from: 'telemetry', to: 'drive', atTick: soakTotalTicks,
+          ms: Number((performance.now() - started).toFixed(1)) });
+        phase = 'drive';
+        continue;
+      }
+      if (soakTotalTicks >= soakTargetTicks) break;
+      const now = await new Promise((resolve) => requestAnimationFrame(resolve));
+      const frameStart = performance.now();
+      const dt = soakLastTimestamp === null ? null : now - soakLastTimestamp;
+      soakLastTimestamp = now;
+      const stepped = soakStepTicks(soakTicksPerFrame);
+
+      state.displayTick = state.engineTick;
+      const anglesAtDisplay = state.wheelAnglesByTick?.[state.displayTick];
+      if (anglesAtDisplay && anglesAtDisplay.tick === state.displayTick) state.wheelAngles = anglesAtDisplay.angles;
+      const cameraAtDisplay = state.updates?.[state.displayTick]?.camera;
+      if (cameraAtDisplay) {
+        state.cameraDistance = cameraAtDisplay.orbit.distance;
+        state.cameraOcclusion = cameraAtDisplay.occlusion ?? null;
+      }
+      consumer.syncTimeline();
+      const rendered = consumer.renderFrame({ cursor: state.engineTick });
+      if (rendered) {
+        state.frames = consumer.stats.renders;
+        state.tickHash = rendered.frame.tickHash;
+        state.matrixChecksum = consumer.stats.matrixChecksum;
+        state.geometryUploads = consumer.stats.geometryUploads;
+        state.geometryUploadBytes = consumer.stats.geometryUploadBytes;
+        state.uniformWrites = consumer.stats.uniformWrites;
+        state.drawsIssued = consumer.stats.drawsIssued;
+        state.draws = consumer.draws.length;
+        if (state.consumer !== 'error') state.consumer = 'running';
+      }
+      const workMs = performance.now() - frameStart;
+      if (dt !== null && dt >= 0) {
+        soakFrameSamples.push({ phase, frameMs: dt, workMs, ticks: stepped.ticks, tick: state.engineTick });
+      }
+      if (soakFrameSamples.length % 30 === 0) {
+        soakProgress();
+        publish();
+      }
+
+      if (stepped.complete && soakTotalTicks < soakTargetTicks) {
+        const started = performance.now();
+        await soakCompletePhase(phase);
+        const next = SOAK_PHASE_ORDER[(SOAK_PHASE_ORDER.indexOf(phase) + 1) % SOAK_PHASE_ORDER.length];
+        await soakBeginPhase(next);
+        soakTransitions.push({ from: phase, to: next, atTick: soakTotalTicks,
+          ms: Number((performance.now() - started).toFixed(1)) });
+        phase = next;
+      }
+    }
+    await soakFinalReport();
+    requestAnimationFrame(soakIdleFrame);
+  } catch (error) {
+    state.soakReport = { kind: 'e1-drive.soak-session', version: 1, status: 'FAIL',
+      failures: ['abort: ' + (error?.message ?? String(error))], error: String(error?.stack ?? error), checks: [] };
+    state.soak = { ...(state.soak ?? {}), phase: 'failed', done: true, status: 'FAIL',
+      totalTicks: soakTotalTicks, targetTicks: soakTargetTicks };
+    document.documentElement.dataset.soak = 'FAIL';
+    fail(error.message);
+  }
+}
+
 async function doReset(nowUs) {
   if (pendingRespawn) return;
   try {
@@ -915,6 +1540,14 @@ async function main() {
     publish();
     if (consumer.device) await consumer.device.queue.onSubmittedWorkDone();
     requestAnimationFrame(frame);
+    return;
+  }
+
+  if (SOAK) {
+    state.adapter = consumer.adapterInfo
+      ? [consumer.adapterInfo.vendor, consumer.adapterInfo.architecture, consumer.adapterInfo.device].filter(Boolean).join(' / ') || 'unnamed adapter'
+      : 'unnamed adapter';
+    await runSoakMode(tick0);
     return;
   }
 

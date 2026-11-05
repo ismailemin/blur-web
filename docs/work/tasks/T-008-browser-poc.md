@@ -41,6 +41,7 @@ sürüşü deneyebileceği PoC.
 | Dinamik telemetrisi | P39 | ✅ (423/423) |
 | Reset/restart düzeltmesi | P40 | ✅ (10+ rebuild) |
 | Uzun pist koridoru | P41 | ✅ (539,81 m) |
+| Soak/performans | P42 | ✅ (18.000 tick) |
 | Engine CPU draw list | P27 + P30 + P32 | ✅ 56 instance; PoC'ye bağlama sırada |
 | Stage B pist instance'ları | P25 | ✅ |
 | Araç başına gerçek gövde | P29 | ✅ |

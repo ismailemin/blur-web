@@ -142,6 +142,11 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/build_module.mjs --debug            # symbol-map build for wasm stacks
 & $node probes/e1-drive/tools/repro_reset.mjs --debug
 
+# 9. deterministic soak session (headless Edge/WebGPU): 5 simulated minutes,
+#    drive -> sprint -> telemetry, e1_reset rebuild at every segment; two runs
+& $node probes/e1-drive/tools/soak_browser.mjs --minutes 5 --runs 2
+& $node probes/e1-drive/tools/soak_browser.mjs --minutes 5 --runs 2 --ticks-per-frame 1  # one tick per rAF
+
 # interactive
 & $node probes/e1-drive/tools/serve.mjs            # http://127.0.0.1:8801/ (keyboard sprint)
 & $node probes/e1-drive/tools/serve.mjs --port 8801  # /?script=sprint&car=audi-r8v10-stock
@@ -333,7 +338,41 @@ pins all five drive and sprint state sequence hashes and all five drive packet
 hashes, and the page recomputes the series itself and matches the node metrics
 and per-tick state hashes exactly.
 
-## What the browser adds
+## Soak (`?soak=1`)
+
+`?soak=1&soakSeconds=<n>&soakTicksPerFrame=<k>&car=<slug>` runs a deterministic
+session endurance plan with no wall-clock input:
+
+1. **drive** — the 300-tick scripted drive, then `e1_reset()` and a new packet timeline;
+2. **sprint** — countdown, both checkpoints, finish, 120-tick brake tail, then `e1_reset()`;
+3. **telemetry** — the three diagnostic manoeuvres, each after an `e1_reset()`;
+4. repeat until `soakSeconds` of 1/60 s ticks have run.
+
+Every segment after the first drive builds a new world (full level import +
+180-tick settle) and reloads the packet's three meshes. The browser page (not the
+engine) records one wall-clock frame interval and CPU work time per rendered frame,
+one wasm-heap/scheduler/buffer sample per simulated second, the state sequence and
+packet hash after every segment, and the telemetry metrics/trace hashes. `tools/soak_browser.mjs` runs the
+plan twice in two fresh page instances, takes start/mid/end screenshots, and gates:
+
+- 0 console messages of any kind;
+- requested simulated tick budget reached (fixed 1/60 s ticks, deterministic
+  sequence independent of frame pacing);
+- no NaN/Inf state and no abort;
+- wasm heap constant, scheduler pool head/group handles constant, GPU packet
+  buffers bounded (created − destroyed = live = one packet's 8 buffers);
+- exactly three mesh uploads per timeline load and one uniform write/draw set
+  per frame;
+- every complete drive/sprint segment reproduces the node verifier's state
+  sequence hash and finish, every telemetry segment reproduces the node metrics
+  and per-tick trace hashes, and the two soak runs have identical checkpoint
+  hashes. Browser packet hashes may differ from Node in the documented
+  `Math.atan2`/`Math.sin` last bit; state sequences are the exact gate.
+
+The page's frame-time percentiles are measurements of this headless WebGPU loop.
+Headless Edge is not vsync-limited and this is not a claim about the user's GPU,
+display or retail frame rate. See `docs/work/verification/T-007-soak.md`.
+
 
 `web/app.js` owns the loop: character-key input (WASD/arrows/space, R to restart),
 the fixed-step driver, the engine step, the sprint rules, the adapter append, and
@@ -349,9 +388,11 @@ HUD block and a results overlay.
 page's car selector; `?car` defaults to the roster's recorded default, so the
 original single-car links still work.
 
-`web/packet-consumer.js` is a copy of the committed consumer with one added
-method, `syncTimeline()`, which accepts ticks appended after `load()`. No other
-line changed.
+`web/packet-consumer.js` is a copy of the committed consumer with two additions:
+`syncTimeline()`, which accepts ticks appended after `load()`, and a soak-only
+buffer lifecycle (`releaseGeometry()` + `stats.packetLoads/buffersCreated/
+buffersDestroyed`, invoked at every `load()`) so repeated timeline rebuilds cannot
+grow GPU memory. The render/pipeline code is unchanged.
 
 `web/fixed-step.js` and `web/interpolate.js` are verbatim copies of the committed
 modules; `web/packet-camera.mjs` is a verbatim copy of the producer/validator
@@ -391,7 +432,8 @@ scheduler pool, plus the one-instance telemetry and sprint-restart comparison),
 `browser-evidence.json`,
 `browser-evidence-sprint.json`, `browser-evidence-respawn.json`,
 `browser-evidence-telemetry.json`, `browser-evidence-restart.json`,
-`browser-evidence-telemetry-restart.json`,
+`browser-evidence-telemetry-restart.json`, `browser-evidence-soak.json`,
+`soak-run-{1,2}.json`, `browser-soak-run{1,2}-{start,mid,end}.png`,
 `browser-<slug>-{start,mid,coast,end}.png`,
 `browser-<slug>-sprint-{start,checkpoint,finish}.png`,
 `browser-<slug>-sprint-restart-{before,countdown,finish}.png`,
@@ -513,5 +555,15 @@ per-car metrics and plausibility comparison are recorded in
   multiplayer, culling or engine streaming, and no per-car handling claim. The
   sprint rules are this slice's own bookkeeping; they are not the retail race
   mode and carry no BPR/score/XP claim.
+- **The soak is a session endurance proxy, not a retail frame-rate claim.** It
+  runs deterministic fixed 1/60 s ticks; `?soakTicksPerFrame=` (default 1 on the
+  page, 4 in the tool's fast path) controls how many ticks one animation frame
+  advances. Frame times and JS heap are measured in headless Edge/WebGPU; the
+  headless compositor is not vsync-limited, so the wall-clock intervals are not
+  the user's display cadence. GPU buffer count is bounded by destroying the
+  previous packet's buffers on every reload; the soak gate requires
+  created − destroyed = live = 8 (three meshes + uniform + scene) at every
+  checkpoint. Five simulated minutes = 18,000 ticks; a one-tick-per-frame run
+  completed in ~70 s here because headless rAF is not throttled to 60 Hz.
 - **Native parity** is blocked by the DirectX SDK, as recorded in
   `T-007-vehicle-physics.md`.

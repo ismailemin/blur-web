@@ -263,6 +263,11 @@ sabit 268.435.456 B; telemetri tek instance; `R` yerinde restart.
 `verify_e1_drive` **488/488**; console 0. Kanıt:
 `docs/work/verification/T-007-reset-fix.md`.
 
+**P42 soak:** 18.000 tick / 5 sim-dk, iki koşu; frame p95 8,06 ms,
+CPU işi p95 0,59 ms, 0 frame >16,7 ms; heap 268.435.456 B sabit; GPU buffer
+208 create/200 destroy/8 live; console **0**, abort 0; 38 checkpoint iki koşuda
+aynı. Kanıt: `docs/work/verification/T-007-soak.md`.
+
 **Pist koridoru (P41):** spawn'dan **539,81 m** kesintisiz sürülebilir koridor
 (6 section: g56-n289, g58-n265, g50-n265, g71-n209, g64-n209, g59-n265;
 299 draw / 47.790 üçgen). 2.257 örnek, %99,73 kapsama, 3 boşluk toplam

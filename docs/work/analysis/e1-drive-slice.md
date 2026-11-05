@@ -1313,3 +1313,76 @@ every metric identical. Legacy passes are unchanged: telemetry 5/5 exact, sprint
 - Unchanged: one measured 29 m strip, no lap, one car at a time, diagnostic
   materials, no retail- or full-game claim, native parity blocked by the DirectX
   SDK.
+
+## 18. Deterministic 5-minute soak: long session, restarts and mode switches (T-007/soak, P42)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-soak.md`. No engine, wasm module,
+`probes/render-packet/`, `probes/car-parts/`, `tools/`, `upstream/` or `game-data/`
+change. Physics is unchanged: every complete drive segment is the node verifier's
+`sha256:83f76590…008e1f`, every complete sprint segment is
+`sha256:fdd893bd…e62622` at finish tick 258 / 2.800 s, and every telemetry
+segment reproduces the P39 metrics and trace hashes exactly.
+
+### 18.1 The session plan
+
+`?soak=1&soakSeconds=<n>&soakTicksPerFrame=<k>&car=<slug>` is a new page mode.
+It repeats a three-segment cycle with no wall-clock input:
+
+| segment | ticks | boundary |
+| --- | ---: | --- |
+| drive | 300 | 2 s throttle / 2 s coast / 1 s brake, then `e1_reset()` + new timeline |
+| sprint | ~379 | countdown, both checkpoints, finish, 120-tick brake tail, then `e1_reset()` + new timeline |
+| telemetry | ~779 | the P39 three-manoeuvre series, each after `e1_reset()` |
+
+A 5-minute session is 18,000 fixed 1/60 s ticks. `soakTicksPerFrame` controls how
+many ticks one animation frame advances (default 1); tick inputs, state hashes,
+packet hashes, telemetry metrics and the final tick count are independent of frame
+pacing. The page records per-frame rAF interval and CPU work, one wasm-heap /
+scheduler / buffer sample per simulated second, a checkpoint after every segment
+(state sequence hash, packet hash, last-update hash, scheduler group, heap,
+buffers) and the full telemetry metrics/trace hashes.
+
+`probes/e1-drive/tools/soak_browser.mjs` runs the plan twice in fresh page/module
+instances, takes start/mid/end screenshots and gates the two runs against each
+other and against `run.json`. `web/packet-consumer.js` gained a bounded buffer
+lifecycle (`releaseGeometry()`, `packetLoads`, `buffersCreated/Destroyed`) because
+this is the first path that reloads a timeline dozens of times in one page; the
+render/pipeline code did not change.
+
+### 18.2 Measured, 5 simulated minutes × 2 runs (one tick per frame)
+
+| evidence | run 1 | run 2 |
+| --- | ---: | ---: |
+| simulated ticks | 18,000 (300.000 s) | 18,000 (300.000 s) |
+| wall time | 70.20 s | 70.68 s |
+| cycles / drive / sprint / telemetry segments | 13 / 13 / 13 / 12 | 13 / 13 / 13 / 12 |
+| packet timeline loads | 26 | 26 |
+| frame time p50 / p95 / p99 / max | 7.63 / 8.06 / 8.535 / 11.013 ms | 7.97 / 8.06 / 8.52 / 8.995 ms |
+| CPU work per frame p50 / p95 / p99 / max | 0.325 / 0.59 / 0.68 / 0.98 ms | 0.315 / 0.59 / 0.695 / 1.405 ms |
+| frames over 16.7 ms | 0 | 0 |
+| wasm heap | 268,435,456 B constant | 268,435,456 B constant |
+| scheduler pool | head 5, size 16, queued 2, group 0, deps 0 | same |
+| GPU buffers | 208 created / 200 destroyed / 8 live | same |
+| geometry uploads | 78 (3 per load) | 78 |
+| uniform writes / draws issued | 8,688 / 2,311,008 | 8,688 / 2,311,008 |
+| JS heap, post-GC early → late mean | 39.87 → 38.05 MB (−1.82 MB) | 39.86 → 38.10 MB (−1.76 MB) |
+| console messages | 0 | 0 |
+| NaN / abort | 0 / 0 | 0 / 0 |
+
+The two runs have **38 identical checkpoint records** (label, cycle, tick, state
+hash, last-update hash, packet hash, telemetry aggregates/metrics). The 13th
+sprint is truncated by the 18,000-tick budget and labelled `truncated`; it is not
+compared with the node finish, but it is identical in both runs. Browser packet
+hashes differ from Node in the documented `Math.atan2`/`Math.sin` last bit, while
+browser-to-browser packet hashes are identical; state sequences, finishes and
+telemetry hashes are exact.
+
+Headless rAF runs at ~123 Hz here, so 18,000 one-tick frames take ~70 s rather
+than 300 s. The frame intervals are a measurement of this headless loop, not a
+user-display or retail frame-rate claim. `verify_e1_drive.mjs` remains **488/488
+PASS** and the portable suite is unchanged.
+
+Full method, evidence paths, screenshots and limits:
+`docs/work/verification/T-007-soak.md`.

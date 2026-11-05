@@ -560,6 +560,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 6 section kullanıldı: g56-n289, g58-n265, g50-n265, g71-n209, g64-n209, g59-n265; 299 draw / 47.790 üçgen / 78.712 vertex.
 - Daha uzun 748,05 m rota var ama g64→g59 dikişinde 1,406 m dikey basamak. Kapalı tur committed veriyle yok (en yakın bileşen 109 m uzakta). Kanıt: `docs/work/analysis/track-coverage.md`, `probes/track-coverage/`.
 
+## 5 Kasım 2026 — PoC soak/performans
+
+- `?soak=1`: **5 sim-dk / 18.000 tick**, iki bağımsız koşu; 13 drive + 13 sprint + 12 telemetri segmenti, 26 packet-timeline yüklemesi.
+- Frame interval p50/p95/p99: **7,63–7,97 / 8,06 / 8,52–8,535 ms**; CPU işi p95 0,59 ms; **0** frame >16,7 ms (headless proxy).
+- Heap **268.435.456 B sabit**; scheduler pool head 5/queued 2; GPU buffer 208 create / 200 destroy / 8 live; JS heap GC sonrası 39,87→38,05 MB (sızıntı yok).
+- Console **0**, abort 0, NaN 0; 38 checkpoint iki koşuda aynı. `verify_e1_drive` **488/488**, soak gate PASS. Kanıt: `docs/work/verification/T-007-soak.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.
