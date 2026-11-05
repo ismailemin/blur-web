@@ -1,9 +1,10 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 2 Kasım 2026
-**Aşama:** Aşama 4 sonu (gerçek asset/önizleme), Aşama 5 (tek oyunculu yarış) başlamadı.
+**Güncelleme:** 5 Kasım 2026
+**Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, 5 araç, tarayıcıda test edilebilir.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
-**Son commit'ler:** Gravity wasm `3965a7c`, C_OverlayFs `e13f54b`, PAK consumer `c1f58eb`, T-005c A2 `194d0c4`, engine overlay `a80cfbe`, T-005d oracle `a881257`.
+**Son commit'ler:** `e6f99ed` wire encoder, `2b8af8c` 310 m sprint, `ad7043d` PoC checker, `145fac1` engine packet.
+**KAPANMA/RESUME:** [`RESUME_2026-11-05.md`](RESUME_2026-11-05.md) — P55 araç dokuları commit edilmedi; sunucu shell ID'si ve kurtarma adımları orada.
 
 ## Şu an neredeyiz?
 

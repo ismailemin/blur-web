@@ -1,5 +1,7 @@
 # NEXT — sıradaki görevler
 
+**KAPANMA/RESUME:** [`RESUME_2026-11-05.md`](RESUME_2026-11-05.md)
+
 Sıra bağlayıcıdır. Bir görev kapanmadan sonraki kod görevine geçilmez.
 
 ## 1. T-003 — Scene/level kapsamını genişletme
