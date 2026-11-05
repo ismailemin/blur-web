@@ -174,6 +174,12 @@ geometri 3 upload; 18/20 packet hash birebir, 2'si kamera `atan2` bir-ulp farkı
 (state/matris birebir). Sınır: her araç Corvette C3 gövdesiyle çiziliyor, teker
 yok. Kanıt: `docs/work/verification/T-007-multi-car.md`.
 
+**Araç parçaları (P26):** Corvette modelinden 29 parça / 80 draw; 76 kanıtlı,
+4 yan-belirsiz. 4 teker grubu `+X` ekseninde; lastik tread+sidewall birleşimi
+0.000343–0.000648 m; kaliper sabit. Headless Edge console 0, 0→0.9 rad arası
+7.149 piksel farkı. Henüz E1 drive packet'ine bağlanmadı. Kanıt:
+`docs/work/verification/T-007-car-parts.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blur · Corvette parça manifesti · WebGPU</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <header id="hud">
+    <div>
+      <h1>Corvette C3 Race · parça manifesti</h1>
+      <p id="status">Manifest yükleniyor…</p>
+    </div>
+    <div id="counts"></div>
+  </header>
+
+  <section id="controls">
+    <label><input id="spin" type="checkbox" checked> Tekerleri döndür</label>
+    <label>Hız <input id="rate" type="range" min="0" max="8" step="0.1" value="1.8"></label>
+    <label>Açı <input id="angle" type="range" min="-180" max="180" step="1" value="0"> <span id="angle-value">0°</span></label>
+    <button id="spin-90" type="button">+90°</button>
+    <button id="reset-camera" type="button">Kamerayı sıfırla</button>
+  </section>
+
+  <aside id="wheel-panel">
+    <h2>Teker grupları</h2>
+    <p class="note">Eksen: eleman-yerel <code>+X</code>; ad ve dönüşüm MdlDat elemanından. Lastik köşe renginde; jant gümüş, disk kırmızı, kaliper sarı ve sabit. Dönüş bandı yalnız tanılamadır.</p>
+    <div id="wheel-groups"></div>
+  </aside>
+
+  <aside id="legend-panel">
+    <h2>Parçalar</h2>
+    <p class="note">Renkler tanılama amaçlıdır; oyun materyali değildir.</p>
+    <div id="legend"></div>
+  </aside>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -466,6 +466,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Browser: 20 capture (4 tick × 5 araç), console **0**, geometri 3 upload/1.090.380 B. 18/20 packet hash birebir; 2'si kamera `atan2` bir-ulp (state/matris birebir). Araç seçici + `?car=` + `--car` çalışıyor.
 - Sınır: her araç Corvette C3 gövdesiyle çiziliyor (per-car mesh yok), teker yok. Kanıt: `docs/work/verification/T-007-multi-car.md`.
 
+## 5 Kasım 2026 — araç parça/teker manifesti
+
+- Corvette modelinden **29 parça / 80 draw**: 76 kanıtlı, 4 yan-belirsiz (ön disk/kaliper). 32 shell draw grup-kanıtlı, leaf isim uydurulmadı.
+- **4 teker grubu** (`+X` dönüş ekseni); lastik köşe kanıtı tread+sidewall birleşimi 0.000343–0.000648 m; kaliper `VehicleActor.cpp:5198` gereği sabit.
+- Headless Edge: console 0, 2 geometri upload, 0→0.9 rad arası **7.149 piksel** farkı; ekran görüntüsü `_work/car-parts/browser-parts-angle090.png`.
+- Sınır: ilk RenderList LOD0, çeviri-only rest poz, süspansiyon/steer/camber yok; henüz drive packet'ine bağlanmadı. Kanıt: `docs/work/verification/T-007-car-parts.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

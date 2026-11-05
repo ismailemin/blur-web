@@ -85,9 +85,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - `draws[]` committed packet yerine engine sahne/çizim listesinden.
 - `levelrender` engine serialiser'ıyla parse; materyal eksikleri açık.
 
-### E1i — Teker/kompozit görsel
-- Teker mesh'i veya kompozit gövde; teker dönüşü/temas görseli.
-- Materyal sadakati E2 kapsamı; E1'de diagnostic kalır.
+### E1i — Teker/kompozit görsel (P26)  ✅ (manifest)
+- Corvette modelinden 29 parça / 80 draw: 76 kanıtlı, 4 yan-belirsiz.
+- 4 teker grubu, `+X` dönüş ekseni; lastik köşe kanıtı tread+sidewall
+  birleşimi (0.000343–0.000648 m); kaliper sabit (`VehicleActor.cpp:5198`).
+- Headless Edge: console 0, 2 geometri upload, 0→0.9 rad arası 7.149 piksel
+  farkı; ekran görüntüsü var.
+- Kalan: manifest’i E1 drive packet’ine bağlamak; süspansiyon/steer/camber
+  matrisleri yok.
+- Kanıt: `docs/work/verification/T-007-car-parts.md`,
+  `docs/work/analysis/e1-car-parts.md`.
 
 ## Pipeline (bağımlılık sırası)
 
