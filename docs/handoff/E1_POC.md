@@ -70,8 +70,10 @@ doğrulayıcısıyla aynı hash'i vermelidir.
 
 ## Bilinen sınırlar (beklenen)
 
-- **Her araç Corvette C3 gövdesiyle çiziliyor**; per-car mesh henüz yok.
-- **Tekerlekler çizilmiyor**; temas/süspansiyon HUD'da.
+- **Her araç kendi `.model` gövdesi ve tekerleriyle çiziliyor** (5 ayrı mesh).
+- Tekerler fizik açısıyla dönüyor; kaliper sabit. Teker **konumu** rest-pose
+  (süspansiyon/steer/camber yok). Simetrik teker draw'larının bir kısmı AABB ile
+  köşeye atanamıyor; `unclassified` olarak çiziliyor, isim uydurulmuyor.
 - Materyaller diagnostic; doku/boya/gölge/post yok.
 - Pist yüzeyi collision geometrisi; gerçek yol draw set’i değil.
 - Box gravity proxy, nötr yüzey skalarları, XT `physicsParameters` açık.
