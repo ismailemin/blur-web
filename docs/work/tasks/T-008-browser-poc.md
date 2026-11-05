@@ -39,6 +39,7 @@ sürüşü deneyebileceği PoC.
 | Chase camera occlusion | P36 | ✅ (BVH; 268/268) |
 | Sprint + checkpoint + finish | P37 | ✅ (348/348) |
 | Dinamik telemetrisi | P39 | ✅ (423/423) |
+| Reset/restart düzeltmesi | P40 | ✅ (10+ rebuild) |
 | Engine CPU draw list | P27 + P30 + P32 | ✅ 56 instance; PoC'ye bağlama sırada |
 | Stage B pist instance'ları | P25 | ✅ |
 | Araç başına gerçek gövde | P29 | ✅ |

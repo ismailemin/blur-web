@@ -224,6 +224,10 @@ the P36 positions/speeds (`-66.25, 1049.38` at 14.526 m/s at tick 150;
   The three traces are SVG drawn from the measured samples; there is no telemetry
   HUD in the retail sense and no per-parameter engine readout (torque, gear,
   RPM), because the state does not expose them.
+- **~~One module rebuild limit~~ — Superseded by P40** (`T-007-reset-fix.md`):
+  the root cause was missing `Scheduler::CreateGroup`/group handles in
+  `C_Scene`; the fix supports 10+ rebuilds per instance and in-place restart.
+  The paragraph below is the historical measurement, kept for the record.
 - **One module rebuild limit (measured, not fixed here).** This wasm build cannot
   rebuild the same module instance more than about three times: the third
   `e1_reset()` after `e1_create` aborts with an out-of-bounds, and the fourth

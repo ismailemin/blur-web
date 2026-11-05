@@ -46,7 +46,7 @@ import { SPRINT_EVENT, createSprintRules } from './sprint-rules.js';
 import { createBestTimes } from './sprint-best.js';
 import { respawnScriptInput, sprintScriptInput, SPRINT_PACKET_SCRIPT } from './sprint-script.js';
 import {
-  createWasmTelemetryEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
+  createWasmResetEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
   TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_PACKET_SCRIPT, TELEMETRY_SPEC
 } from './telemetry.js';
 const params = new URLSearchParams(location.search);
@@ -153,8 +153,11 @@ const state = {
   sprintResult: null,
   sprintBanner: null,
   respawning: false,
+  // Number of in-place world rebuilds (R / sprint restart). Never a page reload.
+  restarts: 0,
   // Telemetry (`?telemetry=1` only).
-  telemetry: null
+  telemetry: null,
+  telemetryBusy: false
 };
 
 function publish() {
@@ -286,10 +289,19 @@ window.addEventListener('unhandledrejection', (event) => fail('unhandled rejecti
 const keys = new Set();
 window.addEventListener('keydown', (event) => {
   if (event.key === 'r' || event.key === 'R') {
-    // The telemetry mode runs three fresh wasm instances; the module build cannot
-    // rebuild one instance more than about three times (recorded in
-    // T-007-telemetry.md), so R reloads the page instead of calling e1_reset.
-    if (TELEMETRY) { location.reload(); return; }
+    // Both modes rebuild the world in place: the scene's scheduler groups are
+    // created and destroyed with the scene, so one wasm instance can be rebuilt
+    // any number of times (docs/work/verification/T-007-reset-fix.md).
+    if (TELEMETRY) {
+      if (!state.telemetryBusy) {
+        state.telemetryBusy = true;
+        runTelemetryMode()
+          .then(() => { state.restarts += 1; publish(); })
+          .catch((error) => fail(error.message))
+          .finally(() => { state.telemetryBusy = false; });
+      }
+      return;
+    }
     doReset(Math.round(performance.now() * 1000));
     return;
   }
@@ -322,6 +334,9 @@ let fieldBytes = null;
 let sprintRules = null;
 let bestTimes = null;
 let pendingRespawn = null;
+// Cumulative in-place rebuilds of this page's single wasm instance in telemetry
+// mode (one e1_create in loadEngine, then one e1_reset per manoeuvre and per R).
+let telemetryResets = 0;
 
 function readState() {
   return JSON.parse(module.UTF8ToString(module._e1_get_state()));
@@ -636,7 +651,8 @@ function renderTelemetryPanel() {
       '0–80 ' + number(zero['80'].seconds, 3) + ' s · ' +
       '<span class="t-metric">0–100 ' + number(zero['100'].seconds, 3) + ' s</span>') +
     row('speed at 86 m', number(accel.endSpeedKph, 1) + ' km/h · ' + accel.nanTicks + ' NaN · ' +
-      telemetry.instances + ' wasm instances') +
+      telemetry.instances + ' wasm instance · ' + telemetry.builds + ' world builds (' +
+      telemetry.resets + ' e1_reset)') +
     row('brake from 80', 'entry ' + number(brake.entrySpeedKph, 2) + ' km/h → ' +
       number(brake.distanceMetres, 2) + ' m in ' + number(brake.brakingTimeSeconds, 3) + ' s') +
     row('deceleration', 'peak ' + number(brake.peakDecelMps2, 2) + ' m/s² (' + number(brake.peakDecelG, 2) +
@@ -663,17 +679,21 @@ function renderTelemetryPanel() {
 
 /** Run the series and build the presented timeline from the accel run. */
 async function runTelemetryMode() {
-  const engineSet = await createWasmTelemetryEngineSet({
+  // One wasm module instance, rebuilt with e1_reset between manoeuvres (and
+  // again on every R). The page's own module is reused, so R never reloads.
+  const engineSet = await createWasmResetEngineSet({
     factory: engineFactory,
+    module,
     levelBytes,
     fieldBytes,
     spawn: { x: spawn.x, z: spawn.z, heading: spawn.heading },
-    count: TELEMETRY_MANOEUVRE_ORDER.length,
-    label: car.slug
+    label: car.slug,
+    prebuilt: true
   });
   const started = performance.now();
   const series = runTelemetrySeries(engineSet);
   const seriesMs = Math.round(performance.now() - started);
+  telemetryResets += engineSet.resets;
   const metrics = series.metrics;
   const hashes = {};
   for (const manoeuvre of TELEMETRY_MANOEUVRE_ORDER) {
@@ -741,7 +761,12 @@ async function runTelemetryMode() {
       '80 km/h; lateral: throttle then a square steering sweep derived from the tick',
     hashes,
     seriesMs,
-    instances: TELEMETRY_MANOEUVRE_ORDER.length,
+    instances: 1,
+    resets: telemetryResets,
+    builds: telemetryResets + 1,
+    heapBytes: engineSet.heapBytes,
+    rebuildModel: 'one wasm module instance: e1_create once, e1_reset() before every manoeuvre and on R ' +
+      '(docs/work/verification/T-007-reset-fix.md)',
     presentation: { manoeuvre: 'accel', tick: presentTick, reason: '0–100 km/h crossing, on the drawn road' },
     packetHash: session.packet.hash,
     ticks: Object.fromEntries(TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) =>
@@ -771,6 +796,7 @@ async function doReset(nowUs) {
     applyState(tick1);
     state.engineTick = tick1.tick;
     state.ticksExecuted = 0;
+    state.restarts += 1;
     holdReached = HOLD !== null && HOLD <= tick1.tick ? true : holdReached;
     driver.reset(nowUs);
     publish();

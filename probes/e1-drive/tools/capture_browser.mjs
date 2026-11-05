@@ -60,8 +60,9 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'respawn', 'telemetry'].includes(MODE)) {
-  throw new Error('unknown --mode ' + JSON.stringify(MODE) + ' (drive, sprint, respawn or telemetry)');
+if (!['drive', 'sprint', 'respawn', 'telemetry', 'restart', 'telemetry-restart'].includes(MODE)) {
+  throw new Error('unknown --mode ' + JSON.stringify(MODE) +
+    ' (drive, sprint, respawn, telemetry, restart or telemetry-restart)');
 }
 const DIAGNOSTIC_CAMERA = /(^|&)cam(dist|height)=/.test(EXTRA_QUERY);
 const MID_TICK = 150;
@@ -352,7 +353,9 @@ function cameraMaxDelta(a, b) {
 if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
     : MODE === 'respawn' ? await respawnCapturePass()
-      : await telemetryCapturePass();
+      : MODE === 'restart' ? await restartCapturePass()
+        : MODE === 'telemetry-restart' ? await telemetryRestartCapturePass()
+          : await telemetryCapturePass();
   await shutdown();
   await sleep(400);
   console.log(JSON.stringify(result.summary, null, 2));
@@ -731,8 +734,13 @@ async function telemetryCapturePass() {
           presentation: p.telemetry.presentation,
           ticks: p.telemetry.ticks,
           instances: p.telemetry.instances,
+          resets: p.telemetry.resets ?? null,
+          builds: p.telemetry.builds ?? null,
+          heapBytes: p.telemetry.heapBytes ?? null,
+          rebuildModel: p.telemetry.rebuildModel ?? null,
           seriesMs: p.telemetry.seriesMs
         } : null,
+        restarts: p.restarts ?? 0,
         selector: select ? { options: select.options.length, value: select.value } : null,
         panel: panel ? {
           hidden: panel.hidden,
@@ -845,6 +853,12 @@ async function telemetryCapturePass() {
       geometryUploads: full.geometryUploads,
       geometryUploadBytes: full.geometryUploadBytes,
       matrices: full.render?.matrices?.length ?? null,
+      instances: full.telemetry?.instances ?? null,
+      resets: full.telemetry?.resets ?? null,
+      builds: full.telemetry?.builds ?? null,
+      heapBytes: full.telemetry?.heapBytes ?? null,
+      rebuildModel: full.telemetry?.rebuildModel ?? null,
+      restarts: full.restarts ?? 0,
       gpu: full.gpu,
       canvas: full.canvas,
       messages: shotMessages
@@ -1212,3 +1226,330 @@ console.log(JSON.stringify({
   })))
 }, null, 2));
 if (evidence.verdict !== 'clean-console-and-gates') process.exitCode = 1;
+
+/**
+ * In-place sprint restart (`--mode restart`): one page load, one finish, `R`,
+ * a second finish. Nothing may reload: the same page, the same wasm instance and
+ * the same probe object continue, and the restarted attempt must reproduce the
+ * same finish time, the same finish tick and the same per-tick state hashes
+ * while the stored best time is kept. Before the fix this path did not exist for
+ * telemetry (`R` reloaded) and a third rebuild aborted.
+ */
+async function restartCapturePass() {
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  if (!runDocument.sprint?.cars) {
+    throw new Error('run.json has no sprint block - run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const sprintRun = runDocument.sprint;
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const shotPath = (slug, name) => path.join(OUT, `browser-${slug}-${name}.png`);
+  const shoot = async (slug, name) => {
+    const data = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const file = shotPath(slug, name);
+    writeFileSync(file, Buffer.from(data.data, 'base64'));
+    return path.relative(ROOT, file).split(path.sep).join('/');
+  };
+  const pressRestart = async () => {
+    for (const type of ['keyDown', 'keyUp']) {
+      await send('Input.dispatchKeyEvent', {
+        type, key: 'r', code: 'KeyR', windowsVirtualKeyCode: 82, nativeVirtualKeyCode: 82,
+        text: type === 'keyDown' ? 'r' : undefined
+      });
+    }
+  };
+  const readProbe = async () => evaluate(`(()=>{
+    const p = window.e1DriveProbe;
+    if (!p) return null;
+    return {
+      state: p.consumer, error: p.error, frames: p.frames, restarts: p.restarts ?? 0,
+      engineTick: p.engineTick, displayTick: p.displayTick, phase: p.phase,
+      sprint: p.sprint ?? null, sprintResult: p.sprintResult ?? null, sprintBest: p.sprintBest ?? null,
+      finishTick: p.sprint?.finishTick ?? null,
+      tickHashes: (p.tickHashes ?? []).map((entry) => ({ tick: entry.tick, stateHash: entry.stateHash })),
+      geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
+      draws: p.draws, drawsIssued: p.drawsIssued, matrixCount: p.updates?.[p.displayTick]?.matrices?.length ?? null,
+      timelineTicks: p.updates?.length ?? null, car: p.car, speed: p.speed, position: p.position,
+      bestStored: (()=>{try{return localStorage.getItem('e1-drive.sprint.best.v1');}catch{return null;}})(),
+      overlays: {
+        resultsHidden: document.getElementById('results')?.hidden ?? null,
+        resultsTime: document.getElementById('results-time')?.textContent ?? null,
+        resultsBest: document.getElementById('results-best')?.textContent ?? null,
+        countdownText: document.getElementById('countdown')?.textContent ?? null
+      }
+    };
+  })()`);
+  const waitFor = async (label, predicate, attempts = 600) => {
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const probe = await readProbe().catch(() => null);
+      if (probe && probe.state === 'error') throw new Error(label + ': page error: ' + probe.error);
+      if (probe && predicate(probe)) return probe;
+      await sleep(200);
+    }
+    throw new Error(label + ': timed out');
+  };
+
+  const rows = [];
+  for (const car of cars) {
+    const entry = sprintRun.cars.find((candidate) => candidate.slug === car.slug);
+    if (!entry) throw new Error('run.json has no sprint result for ' + car.slug);
+    messages.length = 0;
+    const url = origin + '/?script=sprint&car=' + encodeURIComponent(car.slug);
+    await send('Page.navigate', { url });
+
+    const finished = await waitFor(car.slug + ' first finish',
+      (probe) => probe.state === 'running' && probe.sprint?.finished === true && probe.frames >= 12);
+    const firstShot = await shoot(car.slug, 'sprint-restart-before');
+    const loadMessages = messages.splice(0);
+    const firstFinishTick = finished.sprint.finishTick;
+    const firstHash = finished.tickHashes.find((row) => row.tick === firstFinishTick)?.stateHash ?? null;
+
+    await pressRestart();
+    const restarted = await waitFor(car.slug + ' restart',
+      (probe) => probe.restarts >= 1 && probe.sprint?.phase === 'countdown' && probe.sprintResult === null);
+    const restartShot = await shoot(car.slug, 'sprint-restart-countdown');
+    const second = await waitFor(car.slug + ' second finish',
+      (probe) => probe.restarts >= 1 && probe.sprint?.finished === true);
+    const secondShot = await shoot(car.slug, 'sprint-restart-finish');
+    const restartMessages = messages.splice(0);
+    const secondHash = second.tickHashes.find((row) => row.tick === second.sprint.finishTick)?.stateHash ?? null;
+
+    passCheck(`${car.slug}: the first attempt finishes with both checkpoints`,
+      finished.sprint?.finished === true && finished.sprint?.checkpointsPassed === 2 &&
+      Math.abs(finished.sprint.finishTimeSeconds - entry.finish.timeSeconds) < 1e-6,
+      JSON.stringify({ time: finished.sprint?.finishTimeSeconds, node: entry.finish.timeSeconds }));
+    passCheck(`${car.slug}: R restarts in place, never reloading the page`,
+      restarted.restarts === 1 && restarted.sprint.phase === 'countdown' &&
+      restarted.sprint.elapsedTicks === 0 && restarted.sprint.finishTick === null &&
+      restarted.sprintResult === null && restarted.tickHashes.length < 30,
+      JSON.stringify({ restarts: restarted.restarts, engineTick: restarted.engineTick,
+        phase: restarted.sprint?.phase, elapsed: restarted.sprint?.elapsedTicks,
+        timeline: restarted.tickHashes.length }));
+    passCheck(`${car.slug}: the restarted sprint reproduces the finish time and tick`,
+      second.sprint?.finished === true && second.sprint.finishTick === firstFinishTick &&
+      Math.abs(second.sprint.finishTimeSeconds - finished.sprint.finishTimeSeconds) < 1e-9 &&
+      second.sprint.checkpointsPassed === 2,
+      JSON.stringify({ first: finished.sprint?.finishTimeSeconds, second: second.sprint?.finishTimeSeconds,
+        firstTick: firstFinishTick, secondTick: second.sprint?.finishTick }));
+    passCheck(`${car.slug}: the restarted sprint reproduces the per-tick state hash at the finish`,
+      firstHash !== null && firstHash === secondHash, (firstHash ?? 'none') + ' vs ' + (secondHash ?? 'none'));
+    passCheck(`${car.slug}: the best time survives the in-place restart`,
+      firstFinishTick !== null && finished.bestStored === second.bestStored &&
+      /best /.test(second.overlays.resultsBest ?? ''),
+      JSON.stringify({ first: finished.bestStored, second: second.bestStored, best: second.overlays.resultsBest }));
+    passCheck(`${car.slug}: the restarted page still renders the rebuilt packet (9 matrices, one draw per draw)`,
+      second.matrixCount === 9 && second.geometryUploads >= MESH_COUNT &&
+      second.geometryUploads % MESH_COUNT === 0 && second.drawsIssued === second.frames * second.draws,
+      `${second.geometryUploads} uploads, ${second.matrixCount} matrices, ${second.drawsIssued} draws`);
+    const blocking = [...loadMessages, ...restartMessages].filter((message) => message.source !== 'console.log');
+    passCheck(`${car.slug}: console is clean across the restart`, blocking.length === 0,
+      blocking.map((message) => message.source + ' ' + message.text).join(' | '));
+
+    rows.push({
+      car: car.name,
+      slug: car.slug,
+      url: url.replace(origin, ''),
+      restartUrl: origin,
+      first: {
+        finishSeconds: finished.sprint.finishTimeSeconds,
+        finishTick: firstFinishTick,
+        stateHashAtFinish: firstHash,
+        bestStored: finished.bestStored,
+        screenshot: firstShot
+      },
+      restart: {
+        restarts: restarted.restarts,
+        engineTick: restarted.engineTick,
+        phase: restarted.sprint.phase,
+        elapsedTicks: restarted.sprint.elapsedTicks,
+        resultCleared: restarted.sprintResult === null,
+        screenshot: restartShot
+      },
+      second: {
+        finishSeconds: second.sprint.finishTimeSeconds,
+        finishTick: second.sprint.finishTick,
+        stateHashAtFinish: secondHash,
+        bestStored: second.bestStored,
+        resultsBest: second.overlays.resultsBest,
+        screenshot: secondShot
+      },
+      frames: second.frames,
+      restarts: second.restarts,
+      geometryUploads: second.geometryUploads,
+      matrices: second.matrixCount,
+      messages: [...loadMessages, ...restartMessages]
+    });
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages);
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'restart',
+    note: 'R on a finished scripted sprint; the same page, wasm instance and probe object continue ' +
+      '(docs/work/verification/T-007-reset-fix.md)',
+    layout: { hash: sprintRun.layout.hash },
+    cars: rows,
+    console: { totalMessages: allMessages.length, errorsAndWarnings: 0, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: passFailures.length === 0 && allMessages.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-restart.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-restart.log'), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-gates',
+    summary: {
+      verdict: evidence.verdict,
+      consoleMessages: evidence.console.totalMessages,
+      failures: passFailures,
+      cars: rows.map((row) => ({
+        car: row.car, slug: row.slug,
+        firstSeconds: row.first.finishSeconds, secondSeconds: row.second.finishSeconds,
+        finishTick: row.first.finishTick, stateHashAtFinish: row.second.stateHashAtFinish,
+        restarts: row.restarts, before: row.first.screenshot, countdown: row.restart.screenshot,
+        finish: row.second.screenshot
+      }))
+    }
+  };
+}
+
+/**
+ * `R` in telemetry mode without a reload (`--mode telemetry-restart`): the page
+ * runs the series once in one instance, R re-runs the same series in the same
+ * instance, and the probe's `restarts` counter (which only exists in this page
+ * instance) must advance while every per-tick state hash trace stays identical.
+ * A `location.reload()` would zero it and lose the comparison.
+ */
+async function telemetryRestartCapturePass() {
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  const telemetryRun = runDocument.telemetry;
+  if (!telemetryRun?.cars) throw new Error('run.json has no telemetry block');
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const car = cars[0];
+  const entry = telemetryRun.cars.find((candidate) => candidate.slug === car.slug);
+  if (!entry) throw new Error('run.json has no telemetry result for ' + car.slug);
+
+  const readProbe = async () => evaluate(`(()=>{
+    const p = window.e1DriveProbe;
+    if (!p) return null;
+    return {
+      state: p.consumer, error: p.error, frames: p.frames, restarts: p.restarts ?? 0,
+      ready: p.telemetry?.ready === true,
+      telemetry: p.telemetry ? {
+        instances: p.telemetry.instances, resets: p.telemetry.resets ?? null,
+        builds: p.telemetry.builds ?? null, heapBytes: p.telemetry.heapBytes ?? null,
+        hashes: p.telemetry.hashes, metrics: p.telemetry.metrics, plan: p.telemetry.plan,
+        presentation: p.telemetry.presentation
+      } : null,
+      geometryUploads: p.geometryUploads, matrices: p.updates?.[p.displayTick]?.matrices?.length ?? null,
+      draws: p.draws, drawsIssued: p.drawsIssued, frames: p.frames,
+      panel: (() => { const el = document.getElementById('telemetry'); return el ? {
+        hidden: el.hidden, svgs: el.querySelectorAll('svg').length, tables: el.querySelectorAll('table').length } : null; })()
+    };
+  })()`);
+  const waitFor = async (label, predicate, attempts = 600) => {
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const probe = await readProbe().catch(() => null);
+      if (probe && probe.state === 'error') throw new Error(label + ': page error: ' + probe.error);
+      if (probe && predicate(probe)) return probe;
+      await sleep(200);
+    }
+    throw new Error(label + ': timed out');
+  };
+  const shoot = async (name) => {
+    const data = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const file = path.join(OUT, `browser-${car.slug}-telemetry-${name}.png`);
+    writeFileSync(file, Buffer.from(data.data, 'base64'));
+    return path.relative(ROOT, file).split(path.sep).join('/');
+  };
+
+  messages.length = 0;
+  const url = origin + '/?telemetry=1&car=' + encodeURIComponent(car.slug);
+  await send('Page.navigate', { url });
+  const first = await waitFor('telemetry first series',
+    (probe) => probe.state === 'running' && probe.ready && probe.frames >= 12);
+  const beforeShot = await shoot('restart-before');
+  const beforeMessages = messages.splice(0);
+
+  messages.length = 0;
+  for (const type of ['keyDown', 'keyUp']) {
+    await send('Input.dispatchKeyEvent', {
+      type, key: 'r', code: 'KeyR', windowsVirtualKeyCode: 82, nativeVirtualKeyCode: 82,
+      text: type === 'keyDown' ? 'r' : undefined
+    });
+  }
+  const second = await waitFor('telemetry restart',
+    (probe) => probe.state === 'running' && probe.restarts >= 1 && probe.ready && probe.frames >= 12);
+  const afterShot = await shoot('restart-after');
+  const afterMessages = messages.splice(0);
+
+  const manoeuvres = Object.keys(first.telemetry.hashes);
+  const sameHashes = manoeuvres.every((manoeuvre) =>
+    first.telemetry.hashes[manoeuvre]?.traceHash === second.telemetry.hashes[manoeuvre]?.traceHash &&
+    first.telemetry.hashes[manoeuvre]?.ticks === second.telemetry.hashes[manoeuvre]?.ticks);
+  const sameMetrics = JSON.stringify(first.telemetry.metrics) === JSON.stringify(second.telemetry.metrics);
+
+  passCheck(`${car.slug}: the telemetry page runs one wasm instance, rebuilt between manoeuvres`,
+    first.telemetry.instances === 1 && first.telemetry.builds === 4 && first.telemetry.resets === 3,
+    JSON.stringify({ instances: first.telemetry.instances, builds: first.telemetry.builds,
+      resets: first.telemetry.resets }));
+  passCheck(`${car.slug}: R re-runs telemetry in place (no reload: the probe restarts counter advances)`,
+    second.restarts === 1 && second.ready === true &&
+    second.telemetry.builds === 7 && second.telemetry.resets === 6,
+    JSON.stringify({ restarts: second.restarts, builds: second.telemetry.builds,
+      resets: second.telemetry.resets }));
+  passCheck(`${car.slug}: the re-run reproduces every per-tick telemetry state hash`,
+    sameHashes, manoeuvres.map((manoeuvre) => manoeuvre + ':' +
+      (first.telemetry.hashes[manoeuvre]?.traceHash === second.telemetry.hashes[manoeuvre]?.traceHash
+        ? 'match' : 'DIFF')).join(' '));
+  passCheck(`${car.slug}: the re-run reproduces every measured metric exactly`, sameMetrics,
+    JSON.stringify({ accel100: second.telemetry.metrics?.accel?.zeroToSpeedKph?.['100']?.seconds }));
+  passCheck(`${car.slug}: the panel and the packet still render after the restart`,
+    second.panel && second.panel.hidden === false && second.panel.svgs === 3 && second.panel.tables === 1 &&
+    second.geometryUploads >= MESH_COUNT && second.geometryUploads % MESH_COUNT === 0 &&
+    second.matrices === 9 && second.drawsIssued === second.frames * second.draws,
+    JSON.stringify({ panel: second.panel, uploads: second.geometryUploads, matrices: second.matrices,
+      draws: second.drawsIssued, frames: second.frames }));
+  const blocking = [...beforeMessages, ...afterMessages].filter((message) => message.source !== 'console.log');
+  passCheck(`${car.slug}: console is clean across the telemetry restart`, blocking.length === 0,
+    blocking.map((message) => message.source + ' ' + message.text).join(' | '));
+
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'telemetry-restart',
+    note: 'R re-runs the whole telemetry series in the same page and wasm instance; the per-tick state ' +
+      'hashes and metrics must be identical (docs/work/verification/T-007-reset-fix.md)',
+    car: { slug: car.slug, name: car.name },
+    first: { instances: first.telemetry.instances, resets: first.telemetry.resets,
+      builds: first.telemetry.builds, heapBytes: first.telemetry.heapBytes,
+      hashes: first.telemetry.hashes, metrics: first.telemetry.metrics,
+      presentation: first.telemetry.presentation, screenshot: beforeShot },
+    second: { restarts: second.restarts, instances: second.telemetry.instances,
+      resets: second.telemetry.resets, builds: second.telemetry.builds, heapBytes: second.telemetry.heapBytes,
+      hashes: second.telemetry.hashes, metrics: second.telemetry.metrics,
+      presentation: second.telemetry.presentation, screenshot: afterShot },
+    sameHashes, sameMetrics,
+    console: { totalMessages: beforeMessages.length + afterMessages.length, errorsAndWarnings: 0,
+      messages: [...beforeMessages, ...afterMessages] },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: passFailures.length === 0 && beforeMessages.length + afterMessages.length === 0
+      ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-telemetry-restart.json'),
+    JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-telemetry-restart.log'), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-gates',
+    summary: {
+      verdict: evidence.verdict,
+      consoleMessages: evidence.console.totalMessages,
+      failures: passFailures,
+      car: car.slug,
+      first: { instances: evidence.first.instances, builds: evidence.first.builds,
+        resets: evidence.first.resets, heapBytes: evidence.first.heapBytes, screenshot: beforeShot },
+      second: { restarts: evidence.second.restarts, builds: evidence.second.builds,
+        resets: evidence.second.resets, heapBytes: evidence.second.heapBytes, screenshot: afterShot },
+      sameHashes, sameMetrics
+    }
+  };
+}

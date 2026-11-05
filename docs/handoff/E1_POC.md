@@ -91,8 +91,8 @@ doğrulayıcısıyla aynı hash'i vermelidir.
 - Box gravity proxy, nötr yüzey skalarları, XT `physicsParameters` açık.
 - Telemetri: 0–100 sırası Audi → Corvette → Lotus → Dodge → Focus; ölçüm
   86 m’lik bantta, “top speed” Vmax değil.
-- `R` restart sayfayı yeniler (kütüphane 3. resetten sonra abort ediyor;
-  bilinen sınır).
+- `R` restart artık yerinde rebuild (180-tick settle; tek kare hitch), sayfa
+  yenilemesi yok.
 - Yarış kuralları/checkpoint/finish, ses, multiplayer yok.
 
 ## Sorun giderme

@@ -255,6 +255,14 @@ Corvette 3,650 → Lotus 3,833 → Dodge 4,633 → Focus 5,133. `verify_e1_drive
 **423/423**; 5 telemetri capture, console 0. Sınır: 86 m bant, Vmax değil.
 Kanıt: `docs/work/verification/T-007-telemetry.md`.
 
+**Reset düzeltmesi (P40):** `C_Scene` scheduler group handle'ları hiç
+oluşturulmuyordu; `Flush` stale `m_Group` ile pool'a erişiyordu. Build/release
+yollarına `CreateGroup`/`DestroyGroup` eklendi (engine değişmedi). Tek
+instance'ta **10+ rebuild**, 5 araç × 10 = 50 rebuild aynı state hash'i; heap
+sabit 268.435.456 B; telemetri tek instance; `R` yerinde restart.
+`verify_e1_drive` **488/488**; console 0. Kanıt:
+`docs/work/verification/T-007-reset-fix.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

@@ -8,12 +8,17 @@
 // `engine/verify_vehicle.py --fresh` from the patched tree with the flag set
 // repeated below.
 //
-// Usage: node probes/e1-drive/tools/build_module.mjs [--force-objects]
+// Usage: node probes/e1-drive/tools/build_module.mjs [--force-objects] [--debug]
+//
+// `--debug` builds a second, diagnostic-only pair (`e1_drive_debug.mjs`/`.wasm`)
+// with `-g` and a symbol map so a wasm trap can be resolved to a function name.
+// The shipped `e1_drive.*` artifacts are unchanged by that flag.
 //
 // Outputs (never committed):
 //   _work/e1-drive/module/e1_drive.mjs
 //   _work/e1-drive/module/e1_drive.wasm
 //   _work/e1-drive/module/build.json
+//   _work/e1-drive/module/e1_drive_debug.mjs + .wasm + .symbols   (--debug only)
 //   _work/logs/e1-drive/build_*.log
 
 import { spawnSync } from 'node:child_process';
@@ -60,7 +65,7 @@ const INCLUDE_DIRS = [
 
 const EXPORTS = [
   '_e1_create', '_e1_reset', '_e1_set_input', '_e1_step',
-  '_e1_get_state', '_e1_info', '_e1_ground_probe', '_e1_last_error',
+  '_e1_get_state', '_e1_info', '_e1_ground_probe', '_e1_last_error', '_e1_diag',
   '_malloc', '_free'
 ];
 
@@ -75,6 +80,7 @@ const LINK = [
 ];
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
+const DEBUG = process.argv.includes('--debug');
 
 function run(label, args) {
   mkdirSync(LOGS, { recursive: true });
@@ -117,6 +123,15 @@ for (const tag of ['a', 'b']) {
   links.push(js);
 }
 
+if (DEBUG) {
+  // Diagnostic build only: keep every function name so a trap stack resolves to
+  // a symbol, and keep assertions on. Same objects, same optimisation flags.
+  const js = path.join(OUT, 'e1_drive_debug.mjs');
+  run('build_link_debug', [EM, ...objects, ...LINK, '-g', '-sASSERTIONS=1',
+                           '--emit-symbol-map', '-o', js]);
+  links.push(js);
+}
+
 const wasmA = path.join(OUT, 'e1_drive_a.wasm');
 const wasmB = path.join(OUT, 'e1_drive_b.wasm');
 const hashA = sha256(readFileSync(wasmA));
@@ -141,6 +156,8 @@ const report = {
   ownObjects: 1,
   ownSource: rel(OURS),
   ownSourceSha256: sha256(readFileSync(OURS)),
+  debugModule: DEBUG ? rel(path.join(OUT, 'e1_drive_debug.mjs')) : null,
+  debugSymbols: DEBUG ? rel(path.join(OUT, 'e1_drive_debug.symbols')) : null,
   reusedObjectsFrom: rel(OBJECTS),
   harnessObjectExcluded: '185_vehicle_harness.o (T-005d batch harness, 32 MiB static buffer)',
   exports: EXPORTS,

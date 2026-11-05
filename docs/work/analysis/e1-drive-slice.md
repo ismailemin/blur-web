@@ -1185,11 +1185,131 @@ clean (4/4 exact, P36 positions/speeds). Screenshots:
 - **Lateral is a response at a fixed steer**, not a grip limit; entry speed
   differs per car (29.8–64.6 km/h) and is reported.
 - **Peak deceleration includes a one-tick transient**; the mean is reported too.
-- **Module rebuild limit, measured and not fixed here:** this wasm build aborts on
-  a third `e1_reset()` or fourth `e1_create()` in one instance. Every existing
-  path stays below that, but telemetry needs three rebuilds, so it uses one fresh
-  instance per manoeuvre; `R` reloads the page. Recorded in
-  `T-007-telemetry.md`.
+- **Module rebuild limit — Superseded by §17.** This section recorded, correctly
+  for the build it measured, that the wasm module aborts on a third `e1_reset()`
+  or fourth `e1_create()` in one instance, and that telemetry therefore used one
+  fresh instance per manoeuvre with `R` reloading the page. The limit was a
+  library defect (an uninitialised `C_Scene` scheduler group handle flushing
+  stale heap bytes), not an engine limit; it is fixed in §17, so telemetry now
+  runs in one instance and `R` rebuilds in place. The historical measurement and
+  its workaround are kept here as the record of what was true at P39.
 - **No retail-fidelity claim.** Diagnostic visuals, unchanged physics, one
   measured strip, five XT cars, no opponents/audio/multiplayer/streaming.
 - Native-vs-wasm parity remains blocked by the DirectX SDK.
+
+## 17. Rebuild limit fixed: one wasm instance, 10+ restarts (T-007/reset, P40)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-reset-fix.md`. No engine patch,
+no change to `probes/car-parts/`, `probes/render-packet/`, `tools/`, `upstream/`
+or `game-data/`. Physics is unchanged: the verifier's five drive state sequence
+hashes, five drive packet hashes and five sprint sequence hashes are still the
+P36/P37 anchors.
+
+### 17.1 The defect was a scene, not the engine
+
+P39 recorded that this wasm build aborts on a third `e1_reset()` after
+`e1_create()` or a fourth `e1_create()` in one instance, and worked around it
+with one fresh instance per telemetry manoeuvre and a page reload on `R`. P40
+reproduced it and resolved the trap to a function:
+
+```text
+Scheduler::Flush(int, bool, unsigned int)
+Gravity::C_Scene::WaitForDeferredContacts(...)
+Gravity::C_Scene::_Simulate(...)
+e1::BuildWorld()
+```
+
+`C_Scene` flushes its scheduler group every tick. The group handles are members
+the scene constructor does not initialise (`Scene.cpp:133-136` has the
+`CreateGroup` calls commented out) and the retail game assigns them explicitly
+(`GameWorld.cpp:562-563`). This library's `BuildWorld` set the task policy but
+not the handles, so `Flush` indexed `jqPool.BatchGroupPool[m_Group]` with heap
+leftovers. On a fresh zeroed heap that value was 0 and the flush silently
+returned; after the first freed-block reuse it was another number whose
+`NDependencies` was also stale, so the dependency walk left the pool. That is
+the whole "about three rebuilds" behaviour: heap reuse, not an engine counter.
+
+Measured with the new `e1_diag()` export on the unfixed build: builds 1 and 2
+reported `group = 0`, build 3 reported `group = 10`, and build 4 trapped. The
+value 10 was never returned by `CreateGroup()` in that instance.
+
+### 17.2 The fix
+
+The scene owns its two scheduler groups for the lifetime the library gives a
+world:
+
+- `BuildWorld`: `Scheduler::CreateGroup()` twice, then
+  `SetInternalGroupHandle` / `SetBroadPhaseGroupHandle` — exactly the two retail
+  calls, made once per built world;
+- `ReleaseWorld`: after the scene is released (its destructor flushes both
+  handles), `Scheduler::DestroyGroup` both, returning the slots to the pool;
+- `World` starts both handles at `JQ_GROUP_NONE`, so a partial build cannot
+  destroy a group it did not create.
+
+No engine file changed. No reload, no second module, no physics parameter.
+
+### 17.3 Measured (`_work/e1-drive/reset-cycles.json`)
+
+One wasm instance per car, built with `e1_create` and rebuilt nine more times
+with alternating `e1_reset`/`e1_create`, replaying the same 30 scripted ticks
+after every rebuild:
+
+| car | cycles | resets | identical 30-tick hashes | heap | pool head | group handle | deps |
+| --- | ---: | ---: | --- | --- | ---: | ---: | ---: |
+| Corvette ZR1 | 10 | 5 | yes | 268,435,456 B | 5 | 0 | 0 |
+| Lotus Exige | 10 | 5 | yes | 268,435,456 B | 5 | 0 | 0 |
+| Dodge Challenger | 10 | 5 | yes | 268,435,456 B | 5 | 0 | 0 |
+| Ford Focus RS | 10 | 5 | yes | 268,435,456 B | 5 | 0 | 0 |
+| Audi R8 V10 | 10 | 5 | yes | 268,435,456 B | 5 | 0 | 0 |
+
+Every rebuild starts at tick 0 with `contacts = "1111"`, 0 non-finite states,
+and the same per-tick hash sequence. The scheduler pool keeps 16 slots with the
+free-list head at 5 in every cycle (three physics static groups + this world's
+two), dependencies 0, and the same steady-state queued count (the physics
+timer's two deferred batches at the end of a tick — present in the first build,
+never growing). `repro_reset.mjs --cycles 20 --mode reset` and
+`--mode create` extend this to twenty rebuilds through each entry point.
+
+The telemetry series now runs twice in one instance (six manoeuvre runs, one
+`e1_create` + five `e1_reset`) with per-tick hashes and all metrics bit-identical
+to the fresh-instance reference. The sprint restart path reconstructs the same
+inputs, the same per-tick hashes and the same finish on all five cars:
+2.800 / 2.850 / 3.000 / 3.267 / 2.283 s at ticks 258 / 261 / 270 / 286 / 227.
+
+### 17.4 Verification
+
+`_work/e1-drive/run.json` — **PASS, 488/488 checks** (423 P39 + 65 new). The new
+checks are 13 per car: seven on the 10 rebuild cycles (completion, hash identity,
+tick-0 contact, constant heap, non-growing pool and valid created group handles,
+reset-counter semantics, 0 NaN), three on the one-instance telemetry series
+(6 manoeuvres / 5 resets / 1 create, hash identity with the reference, constant
+heap and finite metrics), and three on the sprint restart (finish and both
+checkpoints, identical inputs/hashes/finish, constant heap and pool).
+
+Browser, headless Edge/WebGPU: `--mode restart` is
+`clean-console-and-gates` for **5/5 cars** with **0 console messages** — the
+probe's `restarts` counter goes 0 → 1 (a reload cannot preserve it), the phase
+returns to `countdown` with `elapsedTicks = 0`, `sprintResult` is cleared, the
+`localStorage` best is kept, and the second finish has the same time and the same
+finish-tick state hash. `--mode telemetry-restart` proves `R` re-runs telemetry
+in place: 4 world builds before, 7 after, one instance, every trace hash and
+every metric identical. Legacy passes are unchanged: telemetry 5/5 exact, sprint
+15 captures at 12/15 exact packet hashes (the three documented last-bit
+`atan2`/`sin` differences), Corvette drive 4/4 exact.
+`tools/verify_asset_probe.py --skip-build` — **Passed 29 checks**.
+
+### 17.5 Limits
+
+- Each rebuild still re-imports the level and re-runs the 180-tick settle
+  (15–37 ms), so a restart is a one-frame hitch, not a resumable hot reload.
+- The group lifetime is per world. The pool has 16 slots; a world that rebuilt
+  more than 16 times without destroying its groups would fail loudly in
+  `CreateGroup` (jobqueue.cpp:457-462). This library destroys them, and the
+  verifier checks the head does not move.
+- The steady-state queue count is 2, not 0 (the physics timer's deferred
+  batches); it is measured and required to stay constant, not hidden.
+- Unchanged: one measured 29 m strip, no lap, one car at a time, diagnostic
+  materials, no retail- or full-game claim, native parity blocked by the DirectX
+  SDK.

@@ -339,13 +339,12 @@ export function analyseTelemetry(manoeuvre, states, extra = {}) {
  * Build the engine interface `runTelemetrySeries` expects from pre-created wasm
  * instances, one per manoeuvre.
  *
- * Why one instance per manoeuvre: `e1_reset()` and `e1_create()` cannot rebuild
- * the same module instance more than about three times (measured: the third
- * reset and the fourth create abort with an out-of-bounds/abort in this build —
- * see the telemetry verification record). Each fresh wasm instance runs exactly
- * one `e1_create` plus the 180-tick settle, which is the proven path every other
- * run in this slice uses. Nothing about the physics changes; only where the
- * world is built.
+ * This is the independent reference set: every manoeuvre runs in its own module
+ * instance after exactly one `e1_create` plus the 180-tick settle, the path every
+ * other run in this slice uses. It is kept so the verifier can prove that the
+ * one-instance rebuild set below produces the same numbers and the same per-tick
+ * state hashes; the page uses the rebuild set. (The rebuild limit that once
+ * forced this split is fixed: docs/work/verification/T-007-reset-fix.md.)
  */
 export async function createWasmTelemetryEngineSet({ factory, levelBytes, fieldBytes, spawn, count = 3, label = 'telemetry' }) {
   const instances = [];
@@ -392,6 +391,74 @@ export async function createWasmTelemetryEngineSet({ factory, levelBytes, fieldB
     step() {
       if (!current) throw new Error(label + ' step before reset');
       return current.step();
+    }
+  };
+}
+
+/**
+ * The same engine interface, backed by ONE wasm module instance that is rebuilt
+ * with `e1_reset()` between manoeuvres.
+ *
+ * This is the path the recorded rebuild limit used to forbid: `e1_reset()` on
+ * the third and fourth rebuild aborted because the physics scene was flushing an
+ * uninitialised scheduler group handle (root cause and measurements in
+ * docs/work/verification/T-007-reset-fix.md). With the scene groups created and
+ * destroyed with the scene, one instance can be rebuilt any number of times, so
+ * the telemetry series no longer needs three module instances and `R` no longer
+ * needs a page reload.
+ *
+ * `prebuilt: true` means `module` already holds a world (the page's own module),
+ * so the first `reset()` rebuilds it with `e1_reset()`; otherwise the first
+ * `reset()` builds it with `e1_create()`.
+ */
+export async function createWasmResetEngineSet({ factory, module: given = null, levelBytes, fieldBytes, spawn,
+                                                 label = 'telemetry', prebuilt = false }) {
+  const module = given ?? await factory();
+  const levelPtr = module._malloc(levelBytes.length);
+  const fieldsPtr = module._malloc(fieldBytes.length + 1);
+  if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const read = () => JSON.parse(module.UTF8ToString(module._e1_get_state()));
+  const info = () => JSON.parse(module.UTF8ToString(module._e1_info()));
+
+  let built = prebuilt;
+  let resets = 0;
+  let creates = prebuilt ? 1 : 0;
+  const build = () => {
+    const ok = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+                                 spawn.x, spawn.z, spawn.heading);
+    if (!ok) throw new Error(`${label} e1_create failed: ` + module.UTF8ToString(module._e1_last_error()));
+    built = true;
+    creates++;
+  };
+
+  return {
+    module,
+    kind: 'one-instance-rebuild',
+    instances: [{ module }],
+    get info() { return info(); },
+    get resets() { return resets; },
+    get creates() { return creates; },
+    /** Total worlds built in this instance: e1_create calls plus e1_reset calls. */
+    get builds() { return creates + resets; },
+    get heapBytes() { return module.HEAPU8.length; },
+    /** Rebuild the world in this instance and return the new settled tick 0. */
+    reset() {
+      if (built) {
+        if (!module._e1_reset()) {
+          throw new Error(`${label} e1_reset failed: ` + module.UTF8ToString(module._e1_last_error()));
+        }
+        resets++;
+      } else {
+        build();
+      }
+      return read();
+    },
+    setInput: (input) => module._e1_set_input(input[0], input[1], input[2], input[3]),
+    step: () => {
+      if (!module._e1_step()) throw new Error(label + ' e1_step failed: ' + module.UTF8ToString(module._e1_last_error()));
+      return read();
     }
   };
 }

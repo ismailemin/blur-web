@@ -123,8 +123,9 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/build_sprint.mjs
 
 # 6. scripted drive of every roster car twice, sprint runs + respawn + layout
-#    checks, telemetry series twice + input replay, in fresh module instances
-#    and packet validation (423 checks)
+#    checks, telemetry series twice + input replay, 10 create/reset rebuilds per
+#    car in one instance, one-instance telemetry and sprint restart, packet
+#    validation (488 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 
 # 7. headless Edge/WebGPU screenshots + console gate
@@ -132,6 +133,14 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint    # start/cp/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
 & $node probes/e1-drive/tools/capture_browser.mjs --mode telemetry # metric panel per car
+& $node probes/e1-drive/tools/capture_browser.mjs --mode restart   # R on a finished sprint, 5 cars
+& $node probes/e1-drive/tools/capture_browser.mjs --mode telemetry-restart # R in telemetry, no reload
+
+# 8. one-instance rebuild reproduction (10+ create/reset cycles, exact trap + heap/pool log)
+& $node probes/e1-drive/tools/repro_reset.mjs --cycles 10
+& $node probes/e1-drive/tools/repro_reset.mjs --cycles 20 --mode reset
+& $node probes/e1-drive/tools/build_module.mjs --debug            # symbol-map build for wasm stacks
+& $node probes/e1-drive/tools/repro_reset.mjs --debug
 
 # interactive
 & $node probes/e1-drive/tools/serve.mjs            # http://127.0.0.1:8801/ (keyboard sprint)
@@ -151,19 +160,20 @@ harness, with the batch harness replaced by a library ABI:
 | export | meaning |
 | --- | --- |
 | `e1_create(level, levelLen, fields, fieldsLen, x, z, heading)` | decode/validate the car field list, load the level, build the scene, place the car at the ground-probed `(x,z)` with `heading`, run the 180-tick settle. Returns 1/0. **The field list is the car selector**: one `cars/<slug>.fields` per roster car, decoded from its `RP_CarDynamics` record. |
-| `e1_reset()` | rebuild scene + car and re-run the settle; `tick` goes back to 0. |
+| `e1_reset()` | rebuild scene + car and re-run the settle; `tick` goes back to 0. Rebuilds the same instance in place; the scene creates and destroys its own scheduler groups, so it can be called repeatedly (measured 10–20 times per instance, `T-007-reset-fix.md`). |
 | `e1_set_input(throttle, brake, steer, handbrake)` | the next `e1_step` uses these `CarControls`. |
 | `e1_step()` | exactly one `C_Scene::Simulate(1/60)` + `PhysicsTimer::UpdatePhysicsTimer()`. |
 | `e1_get_state()` | JSON snapshot of this tick: position, the three body axes, velocity, angular velocity, ground-relative speed, four wheel records (contact, suspension, position, spin, surface, userData, ground normal), `finite`, `anyContact`, and the input actually applied. |
 | `e1_info()` | car name, XT handle id, ground/start Y, dt, settle-tick count, current tick, reset count, `sizeof(CarDynamicsXt)`. |
 | `e1_ground_probe(x, z)` | the same fill+trace the wheel uses, as JSON: hit, height, normal, cached triangle count. Used to prove the spawn instead of guessing it. |
+| `e1_diag()` | diagnostic snapshot of the live world: scene/body/car pointers, the scene's scheduler group handle and policy, and the scheduler pool (size, free-list head, global counters, per-group queued/executing/dependencies/next/event). Used by `tools/repro_reset.mjs` and the verifier to prove rebuilds do not leak groups; not on the physics path. |
 | `e1_last_error()` | the message behind a 0 return. |
 
 Floats are printed with `%.9g` (round-trip exact for binary32). A non-finite
 value is emitted as the string `"NaN"`/`"Inf"` and the tick's `finite` flag goes
 0, so the JSON never becomes unparseable and a NaN can never hide.
 
-Measured: build 1,003,249 B, deterministic across two links; `e1_create` including
+Measured: build 1,004,335 B, deterministic across two links; `e1_create` including
 the 180-tick settle takes 15–37 ms in node for the roster cars, 300 scripted ticks
 take 24–34 ms. The library takes no per-car code path: the XT record alone decides
 mass, inertia scales, geometry, suspension, steering, brakes, engine, gearbox,
@@ -293,9 +303,10 @@ the timer still running (2.45 s → 4.45 s) and the checkpoint kept.
 
 Three deterministic manoeuvres per car, measured from the engine state and shown
 as a metric table plus three 60 Hz traces. Inputs are functions of the tick only
-(the brake step tick is measured in the accel run of the same series); each
-manoeuvre runs in a fresh wasm instance because this build cannot rebuild one
-instance more than about three times (recorded in `T-007-telemetry.md`).
+(the brake step tick is measured in the accel run of the same series). All three
+manoeuvres run in **one wasm instance**, rebuilt with `e1_reset()` between them
+(one `e1_create` + two resets per series), and `R` re-runs the series in the same
+instance without a page reload. See `T-007-reset-fix.md`.
 
 | manoeuvre | input | measured |
 | --- | --- | --- |
@@ -374,13 +385,19 @@ events, inputs and the start/checkpoint/finish capture updates),
 `telemetry-<slug>.json` (full 60 Hz traces, metrics, hash aggregates and unit
 definitions),
 `geometry.json` (level packet + real track visual + one real body per car + hidden
-collision), `cars.json` (the 62-record roster + gate), `browser-evidence.json`,
+collision), `cars.json` (the 62-record roster + gate), `reset-cycles.json`
+(10 create/reset cycles per car in one instance with per-cycle hashes, heap and
+scheduler pool, plus the one-instance telemetry and sprint-restart comparison),
+`browser-evidence.json`,
 `browser-evidence-sprint.json`, `browser-evidence-respawn.json`,
-`browser-evidence-telemetry.json`,
+`browser-evidence-telemetry.json`, `browser-evidence-restart.json`,
+`browser-evidence-telemetry-restart.json`,
 `browser-<slug>-{start,mid,coast,end}.png`,
 `browser-<slug>-sprint-{start,checkpoint,finish}.png`,
+`browser-<slug>-sprint-restart-{before,countdown,finish}.png`,
 `browser-<slug>-sprint-respawn.png`,
 `browser-<slug>-telemetry.png` (+ `-car.png`),
+`browser-<slug>-telemetry-restart-{before,after}.png`,
 `browser-<slug>-wheels-240.png` (side view, wheel geometry),
 `browser-evidence-wheels.json`; `packet.json`/`state_a.json` are the default
 car's aliases. The track visual, its two source sections and the coverage limit
@@ -392,8 +409,10 @@ rule, the before/after frames and the near-field limit are recorded in
 derivation and respawn are recorded in
 `docs/work/verification/T-007-sprint-rules.md`; the telemetry manoeuvres,
 per-car metrics and plausibility comparison are recorded in
-`docs/work/verification/T-007-telemetry.md`; details and numbers:
-`docs/work/analysis/e1-drive-slice.md` §10–16 and
+`docs/work/verification/T-007-telemetry.md`; the rebuild-limit root cause, the
+10-cycle/one-instance measurements and the restart evidence are recorded in
+`docs/work/verification/T-007-reset-fix.md`; details and numbers:
+`docs/work/analysis/e1-drive-slice.md` §10–17 and
 `docs/work/verification/T-007-multi-car.md`.
 
 ## Limits (also carried in the packet's own diagnostics)
@@ -470,11 +489,21 @@ per-car metrics and plausibility comparison are recorded in
   response, not a grip limit; "top speed" is the maximum inside the 86 m window.
   No Vmax run, 100–0 km/h stop, lap time or retail handling claim. All numbers
   come from the unchanged engine and are traceable to `telemetry-<slug>.json`.
-- **The module build cannot rebuild one instance more than about three times.**
-  Measured: the third `e1_reset()` after `e1_create` aborts out-of-bounds and the
-  fourth `e1_create` aborts; every existing path stays below that. Telemetry uses
-  one fresh instance per manoeuvre and `R` reloads the page in telemetry mode.
-  Recorded in `T-007-telemetry.md`; not fixed here.
+- **One wasm instance can be rebuilt (fixed in P40).** A 3rd `e1_reset()` / 4th
+  `e1_create()` used to abort because the `C_Scene` never created or set its
+  scheduler group handles, so `Scheduler::Flush` indexed stale heap bytes. The
+  scene now creates its two groups with `Scheduler::CreateGroup()`, installs them
+  like `GameWorld.cpp:562-563`, and destroys them with the scene. Measured: 10
+  create/reset cycles per car in one instance with identical state hashes,
+  constant 256 MiB heap and a constant scheduler pool; six telemetry manoeuvres
+  and the sprint restart also run in one instance. Root cause, measurements and
+  remaining limits: `docs/work/verification/T-007-reset-fix.md`.
+- **The rebuild is still a full rebuild.** Each `e1_reset()`/`e1_create()`
+  re-imports the level and re-runs the 180-tick settle (15–37 ms), so a restart
+  or respawn is a one-frame hitch; it is not a resumable hot reload. The
+  scheduler pool has 16 slots and this library returns its two per world, so the
+  free-list head does not move; a build that leaked groups would fail loudly in
+  `CreateGroup`.
 - **Respawn rebuilds the world at the last checkpoint.** That is the module's
   `e1_create` path (180-tick settle), so a respawn costs a one-frame hitch and the
   car restarts from rest at the gate; the attempt timer keeps running and the

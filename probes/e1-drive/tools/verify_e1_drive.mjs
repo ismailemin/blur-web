@@ -50,7 +50,7 @@ import { SPRINT_EVENT, createSprintRules } from '../web/sprint-rules.js';
 import { SPRINT_SCRIPT_TICKS, SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput } from '../web/sprint-script.js';
 import { createBestTimes } from '../web/sprint-best.js';
 import {
-  createWasmTelemetryEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
+  createWasmResetEngineSet, createWasmTelemetryEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
   TELEMETRY_MANOEUVRE, TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_SPEC, tickAtSpeedKph
 } from '../web/telemetry.js';
 import { TICK0_LIMITS } from './spawn.mjs';
@@ -1282,6 +1282,206 @@ async function replayTelemetryInputs(car, fieldBytes, inputs) {
   return rows;
 }
 
+/** Read the live world's scheduler/world diagnostics (see e1_diag in the library). */
+function readDiag(module) {
+  return JSON.parse(module.UTF8ToString(module._e1_diag()));
+}
+
+const RESET_CYCLE_COUNT = 10;
+const RESET_CYCLE_TICKS = 30;
+
+/**
+ * Rebuild one wasm instance `cycles` times (alternating `e1_reset()` and a second
+ * `e1_create()`) and replay the same 30 scripted ticks after every rebuild.
+ *
+ * This is the measured regression for the rebuild limit: before the fix the
+ * third `e1_reset()` aborted with a wasm out-of-bounds. Every cycle must produce
+ * the same per-tick state hashes, the same heap size and the same scheduler pool
+ * shape (no leaked group handles, no growing queue).
+ */
+async function runResetCycles(car, fieldBytes, cycles = RESET_CYCLE_COUNT) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const module = await factory();
+  const levelPtr = module._malloc(levelBytes.length);
+  const fieldsPtr = module._malloc(fieldBytes.length + 1);
+  if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const read = () => JSON.parse(module.UTF8ToString(module._e1_get_state()));
+  const info = () => JSON.parse(module.UTF8ToString(module._e1_info()));
+
+  const build = (via) => {
+    const ok = via === 'create'
+      ? module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+                          TICK0_LIMITS.x, TICK0_LIMITS.z, TICK0_LIMITS.heading)
+      : module._e1_reset();
+    if (!ok) throw new Error(`${car.name}: ${via} failed: ` + module.UTF8ToString(module._e1_last_error()));
+  };
+
+  const rows = [];
+  for (let cycle = 0; cycle < cycles; cycle++) {
+    // Cycle 0 builds with e1_create; every later cycle alternates, so both
+    // entry points are rebuilt many times in the same instance.
+    build(cycle === 0 ? 'create' : (cycle % 2 === 1 ? 'reset' : 'create'));
+    const tick0 = read();
+    const diag = readDiag(module);
+    const hashes = [hashOfLocal(tick0)];
+    let nan = tick0.finite === 1 ? 0 : 1;
+    for (let tick = 1; tick <= RESET_CYCLE_TICKS; tick++) {
+      const input = scriptedInput(tick);
+      module._e1_set_input(input[0], input[1], input[2], input[3]);
+      if (!module._e1_step()) throw new Error(`${car.name}: step failed at cycle ${cycle} tick ${tick}`);
+      const state = read();
+      if (state.finite !== 1) nan++;
+      hashes.push(hashOfLocal(state));
+    }
+    const infoNow = info();
+    const group = diag.scheduler.groups?.[diag.group] ?? null;
+    rows.push({
+      cycle,
+      via: cycle === 0 ? 'create' : (cycle % 2 === 1 ? 'reset' : 'create'),
+      tick0: tick0.tick,
+      resets: infoNow.resets,
+      contacts0: tick0.contacts.join(''),
+      nan,
+      position: tick0.position,
+      stateHash: hashOfLocal(tick0),
+      traceHash: hashOfLocal(hashes),
+      hashes,
+      heapBytes: module.HEAPU8.length,
+      scheduler: {
+        group: diag.group,
+        policy: diag.policy,
+        poolSize: diag.scheduler.poolSize,
+        poolHead: diag.scheduler.poolHead,
+        queued: diag.scheduler.queued,
+        executing: diag.scheduler.executing,
+        groupQueued: group?.queued ?? null,
+        groupExecuting: group?.executing ?? null,
+        groupDependencies: group?.dependencies ?? null
+      }
+    });
+  }
+  return { rows, module };
+}
+
+/**
+ * The telemetry series run TWICE in one module instance (six manoeuvre runs,
+ * five resets) and compared with the fresh-instance reference run. The series
+ * must be bit-identical: same per-tick state hashes and the same metrics.
+ */
+async function runTelemetryResetSeries(car, fieldBytes, reference) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const engine = await createWasmResetEngineSet({
+    factory,
+    levelBytes,
+    fieldBytes,
+    spawn: { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, heading: TICK0_LIMITS.heading },
+    label: car.slug + ' reset set'
+  });
+  const heap0 = engine.heapBytes;
+  const started = Date.now();
+  const first = runTelemetrySeries(engine);
+  const second = runTelemetrySeries(engine);
+  const ms = Date.now() - started;
+  const heap1 = engine.heapBytes;
+  const matches = TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) => {
+    const referenceHashes = reference.series.states[manoeuvre].map((state) => hashOfLocal(state));
+    const firstHashes = first.states[manoeuvre].map((state) => hashOfLocal(state));
+    const secondHashes = second.states[manoeuvre].map((state) => hashOfLocal(state));
+    return {
+      manoeuvre,
+      ticks: firstHashes.length,
+      firstMatchesReference: firstHashes.length === referenceHashes.length &&
+        firstHashes.every((hash, index) => hash === referenceHashes[index]),
+      secondMatchesReference: secondHashes.length === referenceHashes.length &&
+        secondHashes.every((hash, index) => hash === referenceHashes[index]),
+      firstAggregate: aggregate(firstHashes),
+      secondAggregate: aggregate(secondHashes),
+      referenceAggregate: aggregate(referenceHashes)
+    };
+  });
+  return {
+    resets: engine.resets,
+    creates: engine.creates,
+    builds: engine.builds,
+    manoeuvres: TELEMETRY_MANOEUVRE_ORDER.length * 2,
+    ms,
+    heapBytes: { before: heap0, after: heap1 },
+    matches,
+    identical: matches.every((entry) => entry.firstMatchesReference && entry.secondMatchesReference),
+    series: [first, second]
+  };
+}
+
+/**
+ * Two scripted sprints in ONE wasm instance: the first attempt is the normal run,
+ * the second starts with `e1_reset()` (the `R` / API restart path) and replays the
+ * same rules and script. Both attempts must produce the same input sequence, the
+ * same per-tick state hashes and the same finish.
+ */
+async function runSprintRestart(car, fieldBytes) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const module = await factory();
+  const levelPtr = module._malloc(levelBytes.length);
+  const fieldsPtr = module._malloc(fieldBytes.length + 1);
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const read = () => JSON.parse(module.UTF8ToString(module._e1_get_state()));
+
+  const attempt = (restart) => {
+    const ok = restart
+      ? module._e1_reset()
+      : module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+                          TICK0_LIMITS.x, TICK0_LIMITS.z, TICK0_LIMITS.heading);
+    if (!ok) throw new Error(`${car.name}: sprint ${restart ? 'restart' : 'create'} failed: ` +
+                             module.UTF8ToString(module._e1_last_error()));
+    const rules = createSprintRules(derivedLayout);
+    const state0 = read();
+    rules.prime(state0);
+    const hashes = [hashOfLocal(state0)];
+    const inputs = [];
+    const events = [];
+    for (let tick = 1; tick <= SPRINT_SCRIPT_TICKS; tick++) {
+      const input = sprintScriptInput(rules);
+      inputs.push(input);
+      module._e1_set_input(input[0], input[1], input[2], input[3]);
+      if (!module._e1_step()) throw new Error(`${car.name}: sprint restart step failed at ${tick}`);
+      const state = read();
+      hashes.push(hashOfLocal(state));
+      events.push(...rules.step(state));
+      if (rules.phase === 'finished' && state.tick - rules.finishTick >= 120) break;
+    }
+    return {
+      state0,
+      hashes,
+      inputs,
+      events,
+      finish: events.find((event) => event.type === SPRINT_EVENT.FINISH) ?? null,
+      checkpoints: events.filter((event) => event.type === SPRINT_EVENT.CHECKPOINT).length,
+      respawns: events.filter((event) => event.type === SPRINT_EVENT.RESPAWN).length,
+      traceHash: hashOfLocal(hashes),
+      inputHash: hashOfLocal(inputs)
+    };
+  };
+
+  const first = attempt(false);
+  const heap0 = module.HEAPU8.length;
+  const second = attempt(true);
+  const diag = readDiag(module);
+  return {
+    first,
+    second,
+    restartMatches: first.traceHash === second.traceHash &&
+      first.inputHash === second.inputHash &&
+      first.finish?.tick === second.finish?.tick &&
+      first.finish?.timeSeconds === second.finish?.timeSeconds &&
+      first.checkpoints === second.checkpoints && first.respawns === second.respawns,
+    heapBytes: { before: heap0, after: module.HEAPU8.length },
+    scheduler: { group: diag.group, poolHead: diag.scheduler.poolHead, queued: diag.scheduler.queued }
+  };
+}
+
 // Every car's drive and sprint state sequence hash from the P36/P37 records. The
 // telemetry pass must not move them: it uses its own instances and never touches
 // the drive, sprint or keyboard paths.
@@ -1314,10 +1514,12 @@ const PHYSICS_ANCHORS = Object.freeze({
 });
 
 const telemetryResults = [];
+const telemetryReferenceStates = new Map();
 for (const car of cars) {
   const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
   const runA = await runTelemetryForCar(car, fieldBytes);
   const runB = await runTelemetryForCar(car, fieldBytes);
+  telemetryReferenceStates.set(car.slug, runA.series.states);
   const replay = await replayTelemetryInputs(car, fieldBytes, runA.series.inputs);
   const metrics = runA.series.metrics;
   const summary = summariseTelemetryMetrics(metrics);
@@ -1566,6 +1768,162 @@ check('telemetry: every car completes the sweep on the ground with the same stee
         entry.metrics.lateral.yawSignPerSteerSign ===
           telemetryResults[0].metrics.lateral.yawSignPerSteerSign),
       telemetryResults.map((entry) => `${entry.slug}:${entry.metrics.lateral.yawSignPerSteerSign}`).join(', '));
+
+// ------------------------------------------------------- rebuild limit (fixed)
+// One wasm instance is rebuilt 10 times per car, a second `e1_create()` included,
+// and the same 30 scripted ticks are replayed after every rebuild. The state
+// hashes, the heap size and the scheduler pool must all stay identical: that is
+// the fixed limit, measured rather than reloaded around.
+const resetResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const run = await runResetCycles(car, fieldBytes, RESET_CYCLE_COUNT);
+  const rows = run.rows;
+  const first = rows[0];
+  const sameTrace = rows.every((row) => row.traceHash === first.traceHash);
+  const sameHashes = rows.every((row) => row.hashes.length === first.hashes.length &&
+    row.hashes.every((hash, index) => hash === first.hashes[index]));
+  const heapSizes = [...new Set(rows.map((row) => row.heapBytes))];
+  const poolHeads = [...new Set(rows.map((row) => row.scheduler.poolHead))];
+  const poolSizes = [...new Set(rows.map((row) => row.scheduler.poolSize))];
+  const poolQueued = [...new Set(rows.map((row) => row.scheduler.queued))];
+  const groupHandles = rows.map((row) => row.scheduler.group);
+  const groupQueued = [...new Set(rows.map((row) => row.scheduler.groupQueued))];
+  const validHandles = rows.every((row) => row.scheduler.group >= 0 &&
+    row.scheduler.group < row.scheduler.poolSize &&
+    row.scheduler.groupDependencies === 0 &&
+    row.scheduler.groupExecuting === 0);
+  // `e1_create` zeroes the counter before building, `e1_reset` increments it, so a
+  // create row is always 1 and a reset row is the previous row's value + 1.
+  const resetCounterOk = rows.every((row, index) =>
+    row.via === 'create' ? row.resets === 1 : row.resets === rows[index - 1].resets + 1);
+  const resetCycleCount = rows.filter((row) => row.via === 'reset').length;
+
+  check(`${car.name}: ${RESET_CYCLE_COUNT} create/reset rebuilds complete in one wasm instance`,
+        rows.length === RESET_CYCLE_COUNT && resetCycleCount > 0, `${rows.length} cycles, ${resetCycleCount} resets`);
+  check(`${car.name}: every rebuild replays the same 30-tick state hashes`,
+        sameTrace && sameHashes, `${rows.map((row) => row.traceHash.slice(0, 10)).join(' ')}`);
+  check(`${car.name}: every rebuild starts at tick 0 with all four wheels on the ground`,
+        rows.every((row) => row.tick0 === 0 && row.contacts0 === '1111'),
+        rows.map((row) => `${row.via}:${row.tick0}/${row.contacts0}`).join(' '));
+  check(`${car.name}: the rebuilt world keeps the module heap size`,
+        heapSizes.length === 1 && heapSizes[0] === rows[0].heapBytes,
+        heapSizes.join(', ') + ' B');
+  check(`${car.name}: the scheduler pool does not grow or leak group handles across rebuilds`,
+        poolHeads.length === 1 && poolSizes.length === 1 && poolQueued.length === 1 &&
+        groupQueued.length === 1 && validHandles,
+        `head ${poolHeads.join('/')} size ${poolSizes.join('/')} queued ${poolQueued.join('/')} ` +
+        `group queued ${groupQueued.join('/')} groups ${groupHandles.join(',')}`);
+  check(`${car.name}: the reset counter and the state stay finite across every rebuild`,
+        resetCounterOk && rows.every((row) => row.nan === 0),
+        `resets ${rows.map((row) => row.via + ':' + row.resets).join(' ')}`);
+  check(`${car.name}: every rebuilt group handle is a created group with no dependencies`,
+        validHandles, `groups ${groupHandles.join(',')} dependencies ` +
+        `${rows.map((row) => row.scheduler.groupDependencies).join(',')}`);
+
+  resetResults.push({
+    slug: car.slug,
+    name: car.name,
+    cycles: RESET_CYCLE_COUNT,
+    ticksPerCycle: RESET_CYCLE_TICKS,
+    traceHash: first.traceHash,
+    stateHash: first.stateHash,
+    sameTrace,
+    heapBytes: heapSizes,
+    scheduler: {
+      poolSize: poolSizes[0], poolHeads, queued: poolQueued, groupQueued,
+      groupHandles, allValid: validHandles
+    },
+    rows
+  });
+  log.push(`${car.slug}: ${RESET_CYCLE_COUNT} rebuilds in one instance, trace ${first.traceHash.slice(0, 16)}, ` +
+           `heap ${heapSizes[0]} B, pool head ${poolHeads.join('/')}`);
+}
+
+// One instance, the telemetry series twice (six manoeuvre runs, five resets).
+// The reference is the fresh-instance series already run for this car above.
+const telemetryResetResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const reference = telemetryResults.find((entry) => entry.slug === car.slug);
+  const referenceSeries = {
+    series: { states: telemetryReferenceStates.get(car.slug) }
+  };
+  if (!reference || !referenceSeries.series.states) {
+    throw new Error('missing fresh-instance telemetry reference for ' + car.slug);
+  }
+  const run = await runTelemetryResetSeries(car, fieldBytes, referenceSeries);
+  const nano = run.series.flatMap((series) => TELEMETRY_MANOEUVRE_ORDER
+    .map((manoeuvre) => series.metrics[manoeuvre].nanTicks)).reduce((a, b) => a + b, 0);
+  check(`${car.name}: six telemetry manoeuvres (the series twice) run in one wasm instance`,
+        run.manoeuvres === 6 && run.resets === 5 && run.creates === 1 && run.builds === 6,
+        `${run.manoeuvres} manoeuvres, ${run.resets} resets, ${run.creates} create, ${run.builds} builds`);
+  check(`${car.name}: the rebuilt telemetry series is bit-identical to the fresh-instance series`,
+        run.identical, run.matches.map((entry) => `${entry.manoeuvre}:${entry.firstMatchesReference}`).join(' '));
+  check(`${car.name}: the one-instance telemetry series keeps the heap and stays finite`,
+        run.heapBytes.before === run.heapBytes.after && nano === 0 && run.series.every((series) =>
+          TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) => series.metrics[manoeuvre].finite === true)),
+        `heap ${run.heapBytes.before}/${run.heapBytes.after} B, ${nano} NaN`);
+  telemetryResetResults.push({
+    slug: car.slug,
+    name: car.name,
+    manoeuvres: run.manoeuvres,
+    resets: run.resets,
+    builds: run.builds,
+    ms: run.ms,
+    heapBytes: run.heapBytes,
+    identical: run.identical,
+    matches: run.matches,
+    reference: reference ? {
+      accel100: reference.metrics.accel.zeroToSpeedKph['100'].seconds,
+      brakeDistanceMetres: reference.metrics.brake.distanceMetres,
+      lateralG: reference.metrics.lateral.peakLateralAbsG
+    } : null,
+    rebuilt: {
+      accel100: run.series[0].metrics.accel.zeroToSpeedKph['100'].seconds,
+      brakeDistanceMetres: run.series[0].metrics.brake.distanceMetres,
+      lateralG: run.series[0].metrics.lateral.peakLateralAbsG
+    }
+  });
+  log.push(`${car.slug}: telemetry reset set ${run.manoeuvres} manoeuvres, ${run.resets} resets, ${run.ms} ms, ` +
+           `identical ${run.identical}`);
+}
+
+// Sprint restart in one instance: the finish, the input sequence and the per-tick
+// state hashes must be identical after `e1_reset()` (the R / API restart path).
+const sprintRestartResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const run = await runSprintRestart(car, fieldBytes);
+  check(`${car.name}: sprint restart (R/API) completes in the same wasm instance without a reload`,
+        run.second.finish !== null && run.second.checkpoints === 2 && run.second.respawns === 0,
+        run.second.finish ? `${run.second.finish.timeSeconds} s, ${run.second.checkpoints} checkpoints` : 'no finish');
+  check(`${car.name}: the restarted sprint replays the same inputs, state hashes and finish`,
+        run.restartMatches, `${run.first.traceHash.slice(0, 12)} vs ${run.second.traceHash.slice(0, 12)}, ` +
+        `${run.first.finish?.timeSeconds} vs ${run.second.finish?.timeSeconds} s`);
+  check(`${car.name}: the restart keeps the heap and the scheduler pool`,
+        run.heapBytes.before === run.heapBytes.after &&
+        run.scheduler.poolHead === resetResults.find((entry) => entry.slug === car.slug)?.scheduler.poolHeads[0],
+        `heap ${run.heapBytes.before}/${run.heapBytes.after} B, pool head ${run.scheduler.poolHead}`);
+  sprintRestartResults.push({
+    slug: car.slug,
+    name: car.name,
+    finishSeconds: run.first.finish?.timeSeconds ?? null,
+    finishTick: run.first.finish?.tick ?? null,
+    checkpoints: run.first.checkpoints,
+    ticks: run.first.hashes.length,
+    traceHash: run.first.traceHash,
+    inputHash: run.first.inputHash,
+    restartTraceHash: run.second.traceHash,
+    restartFinishSeconds: run.second.finish?.timeSeconds ?? null,
+    restartTick: run.second.finish?.tick ?? null,
+    restartMatches: run.restartMatches,
+    heapBytes: run.heapBytes,
+    scheduler: run.scheduler
+  });
+  log.push(`${car.slug}: sprint restart ${run.first.finish?.timeSeconds} s -> ${run.second.finish?.timeSeconds} s, ` +
+           `identical ${run.restartMatches}`);
+}
 
 
 // ------------------------------------------------------------- sprint rules tests
@@ -1970,6 +2328,20 @@ const report = {
       'is recorded rather than explained'
     ]
   },
+  // The fixed rebuild limit: N create/reset cycles per car in one instance, one
+  // instance for six telemetry manoeuvres, and the in-place sprint restart.
+  resetCycles: {
+    kind: 'e1-drive.reset-cycles',
+    version: 1,
+    cyclesPerCar: RESET_CYCLE_COUNT,
+    ticksPerCycle: RESET_CYCLE_TICKS,
+    telemetryManoeuvresPerInstance: 6,
+    note: 'the scene creates and destroys its own scheduler groups, so one wasm instance can be ' +
+      'rebuilt; root cause and measurements in docs/work/verification/T-007-reset-fix.md',
+    cars: resetResults,
+    telemetrySeries: telemetryResetResults,
+    sprintRestart: sprintRestartResults
+  },
   cars: results,
   defaultCar: defaultForAliases.slug,
   // Backward-compatible views of the default car (the single-car document shape).
@@ -1992,6 +2364,17 @@ writeFileSync(path.join(OUT, 'telemetry.json'), JSON.stringify({
   ordering: report.telemetry.ordering,
   anomalies: report.telemetry.anomalies,
   cars: telemetryResults
+}, null, 2) + '\n', 'utf8');
+writeFileSync(path.join(OUT, 'reset-cycles.json'), JSON.stringify({
+  kind: 'e1-drive.reset-cycles',
+  version: 1,
+  cyclesPerCar: RESET_CYCLE_COUNT,
+  ticksPerCycle: RESET_CYCLE_TICKS,
+  telemetryManoeuvresPerInstance: 6,
+  note: report.resetCycles.note,
+  cars: resetResults,
+  telemetrySeries: telemetryResetResults,
+  sprintRestart: sprintRestartResults
 }, null, 2) + '\n', 'utf8');
 writeFileSync(path.join(LOGS, 'verify.log'), log.join('\n') + '\n' +
   checks.map((entry) => (entry.ok ? 'PASS ' : 'FAIL ') + entry.label +
@@ -2074,6 +2457,31 @@ console.log(JSON.stringify({
       lateralG: entry.metrics.lateral.peakLateralAbsG,
       yawDegPerSec: entry.metrics.lateral.peakYawRateAbsDegPerSec,
       yawResponseTicks: entry.metrics.lateral.yawResponseTicks
+    }))
+  },
+  resetCycles: {
+    cyclesPerCar: RESET_CYCLE_COUNT,
+    ticksPerCycle: RESET_CYCLE_TICKS,
+    cars: resetResults.map((entry) => ({
+      slug: entry.slug,
+      cycles: entry.cycles,
+      sameTrace: entry.sameTrace,
+      traceHash: entry.traceHash,
+      heapBytes: entry.heapBytes,
+      poolHeads: entry.scheduler.poolHeads,
+      groupHandles: entry.scheduler.groupHandles
+    })),
+    telemetrySeries: telemetryResetResults.map((entry) => ({
+      slug: entry.slug,
+      manoeuvres: entry.manoeuvres,
+      resets: entry.resets,
+      identical: entry.identical
+    })),
+    sprintRestart: sprintRestartResults.map((entry) => ({
+      slug: entry.slug,
+      finishSeconds: entry.finishSeconds,
+      restartFinishSeconds: entry.restartFinishSeconds,
+      matches: entry.restartMatches
     }))
   },
   checks: `${checks.filter((entry) => entry.ok).length}/${checks.length}`,

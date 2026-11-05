@@ -75,6 +75,9 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   `verify_e1_drive` **348/348**; console 0.
 - Gate'ler kaplı yol bandından türetildi (x = −88 → −59; her kolon 61/61 draw +
   61/61 collision).
+- **P40 reset fix:** `C_Scene` group handle'ları oluşturuluyor/yok ediliyor;
+  tek instance'ta **10+ rebuild**, telemetri tek instance, `R` yerinde restart
+  (sayfa yenilemesi yok); 50 rebuild aynı hash, heap sabit.
 - Kalan: tam tur (kapalı pist track kapsamı gerekiyor), finish sonrası akış.
 - Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
 

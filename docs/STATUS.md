@@ -547,6 +547,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_e1_drive` **423/423**; browser serisi node ile birebir; 5 capture, console 0; fizik state hash'leri P36/P37 anchor'larıyla aynı.
 - Bilinen sınır: bu build 3. `e1_reset`/4. `e1_create` sonrası abort ediyor; telemetri her manevra için yeni instance kullanıyor, `R` sayfayı yeniliyor. Kanıt: `docs/work/verification/T-007-telemetry.md`.
 
+## 5 Kasım 2026 — reset/restart düzeltmesi
+
+- Kök neden: `Gravity::C_Scene` scheduler group handle'larını hiç oluşturmuyordu (`Scene.cpp:133-136` yorumlu); `Flush` stale `m_Group` ile pool'a erişiyordu. Önce 1–2 rebuild'de group=0 sessiz, 3.'de group=10, 4.'de trap.
+- Düzeltme `e1_drive_lib.cpp` içinde: build'de iki `CreateGroup` + retail `Set…GroupHandle`, release'te `DestroyGroup`. Engine overlay değişmedi.
+- Tek instance'ta **10+ rebuild** (5 araç × 10 = 50) aynı 30-tick hash; heap sabit 268.435.456 B; pool head 5, queued 2. Telemetri tek instance; `R` yerinde restart (sprint süreleri aynı).
+- `verify_e1_drive` **488/488**; 5/5 restart capture console 0. Kanıt: `docs/work/verification/T-007-reset-fix.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

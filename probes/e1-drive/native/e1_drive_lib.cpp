@@ -84,6 +84,12 @@ XtU32 XtGetRecordSize( const XtRecord* ) { XtMissing( "XtGetRecordSize" ); retur
 XtU32 XtGetRecordFixupCount( const XtRecord* ) { XtMissing( "XtGetRecordFixupCount" ); return 0; }
 void XtGenerateRecordFixups( const XtRecord*, XtU32*, XtU32 ) { XtMissing( "XtGenerateRecordFixups" ); }
 
+// The scheduler pool lives in jobqueue.cpp; only the diagnostics below read it.
+namespace Scheduler
+{
+	extern TaskPool jqPool;
+}
+
 namespace e1
 {
 
@@ -533,6 +539,12 @@ struct World
 	Collision::C_CollisionFilter filter;
 	RacingPhysics::Car* car;
 	Gravity::C_Body* body;
+	// The scene's scheduler group handles. C_Scene's constructor leaves both
+	// members uninitialised (Scene.cpp:133-136 creates none) and the retail game
+	// assigns them from C_SchedulerConfig (GameWorld.cpp:562-563); a scene that
+	// flushes an uninitialised handle reads stale heap bytes as a group index.
+	Scheduler::GroupHandle group;
+	Scheduler::GroupHandle broadPhaseGroup;
 	float groundY;
 	float startY;
 	float input[4]; // throttle, brake, steer, handbrake
@@ -543,6 +555,7 @@ struct World
 		: created( false ), ready( false ), levelCopy( 0 ), levelLen( 0 ), dyn(), buffers(),
 		  physicsParametersHandle( 0 ), startX( 0 ), startZ( 0 ), heading( 0 ), scene( 0 ),
 		  importScene( 0 ), staticInstance( 0 ), car( 0 ), body( 0 ),
+		  group( Scheduler::JQ_GROUP_NONE ), broadPhaseGroup( Scheduler::JQ_GROUP_NONE ),
 		  groundY( 0 ), startY( 0 ), tick( 0 ), resetCount( 0 )
 	{
 		error[0] = 0;
@@ -561,6 +574,39 @@ static void SetError( const char* text )
 }
 
 static Scheduler::PolicyHandle gScenePolicy = 0;
+
+// ---------------------------------------------------------------------------
+// Diagnostic read of the scheduler pool, used to prove what the scene's group
+// handles are. `m_Group` is a C_Scene member the scene constructor does not
+// initialise (the retail game sets it with SetInternalGroupHandle, GameWorld.cpp
+// :562-563); the pool itself is only partly initialised by SetGroupPoolSize.
+// Reading it back is the only way to tell a valid handle from stale heap bytes.
+// ---------------------------------------------------------------------------
+
+static void AppendSchedulerDiagnostics( char*& p, char* end )
+{
+	const ::Scheduler::TaskPool& pool = ::Scheduler::jqPool;
+	int n;
+	n = std::snprintf( p, (size_t)( end - p ),
+	                   "\"scheduler\":{\"active\":%d,\"poolSize\":%d,\"poolHead\":%d,"
+	                   "\"queued\":%d,\"executing\":%d,\"groups\":[",
+	                   pool.ThisPtr ? 1 : 0, pool.BatchGroupPoolSize, pool.BatchGroupPoolHead,
+	                   pool.QueuedBatchCount, pool.ExecutingBatchCount );
+	if ( n > 0 ) p += n;
+	const int groups = pool.BatchGroupPool ? pool.BatchGroupPoolSize : 0;
+	for ( int i = 0; i < groups; ++i )
+	{
+		const Scheduler::TaskGroup& group = pool.BatchGroupPool[i];
+		n = std::snprintf( p, (size_t)( end - p ),
+		                   "%s{\"id\":%d,\"queued\":%d,\"executing\":%d,\"dependencies\":%d,"
+		                   "\"next\":%d,\"event\":%u}",
+		                   i ? "," : "", i, group.QueuedBatchCount, group.ExecutingBatchCount,
+		                   group.NDependencies, group.Next, (unsigned)group.bUsingEvent );
+		if ( n > 0 ) p += n;
+	}
+	n = std::snprintf( p, (size_t)( end - p ), "]}" );
+	if ( n > 0 ) p += n;
+}
 
 static bool InitialiseScheduler()
 {
@@ -650,6 +696,13 @@ static void ReleaseWorld()
 		Gravity::C_PhysicsSDK::PhysicsSDK()->ReleaseScene( gWorld.scene );
 		gWorld.scene = 0;
 	}
+	// The scene destructor flushes both group handles (Scene.cpp:150-151), so the
+	// groups can only be returned to the pool after the scene is gone. DestroyGroup
+	// flushes the group and sets the handle back to JQ_GROUP_NONE.
+	if ( gWorld.broadPhaseGroup != Scheduler::JQ_GROUP_NONE )
+		Scheduler::DestroyGroup( gWorld.broadPhaseGroup );
+	if ( gWorld.group != Scheduler::JQ_GROUP_NONE )
+		Scheduler::DestroyGroup( gWorld.group );
 	gWorld.ready = false;
 }
 
@@ -683,6 +736,17 @@ static bool BuildWorld()
 	// it the scene's internal task policy stays zero and the vehicle integration
 	// job never runs (measured: throttle produced no force).
 	scene->SetInternalTaskPolicy( gScenePolicy );
+	// GameWorld.cpp:562-563 also installs the two scheduler groups the physics
+	// jobs run in. C_Scene's constructor creates none and leaves both members
+	// uninitialised (Scene.cpp:133-136), so without this the scene flushes a heap
+	// value as a group index. One pair per scene, created here and destroyed with
+	// the scene, is the lifetime this library gives the world; 16 pool slots are
+	// requested above and 3 are already taken by the physics statics
+	// (integrate.cpp:30-31, carnetworkphysics.cpp:43).
+	gWorld.group = Scheduler::CreateGroup();
+	gWorld.broadPhaseGroup = Scheduler::CreateGroup();
+	scene->SetInternalGroupHandle( gWorld.group );
+	scene->SetBroadPhaseGroupHandle( gWorld.broadPhaseGroup );
 
 	Sys::C_MemoryStream stream( (U8*)( gWorld.levelCopy + mainOffset + 16 ), (U32)( mainLen - 16 ) );
 	gWorld.importScene = sdk->CreateImportScene();
@@ -1084,6 +1148,32 @@ const char* e1_info()
 	               kWarmupTicks, gWorld.tick, gWorld.resetCount,
 	               (unsigned)sizeof( RacingPhysics::CarDynamicsXt ) );
 	return s_info;
+}
+
+// Diagnostic snapshot of the live world's scheduler wiring. Not used by the
+// page or by the physics path: it exists so the rebuild limit can be measured
+// instead of guessed (which group handle the release/build code leaves behind,
+// and what the scheduler pool holds after each cycle).
+extern "C" __attribute__( ( visibility( "default" ) ) )
+const char* e1_diag()
+{
+	using namespace e1;
+	static char s_diag[4096];
+	char* p = s_diag;
+	char* end = s_diag + sizeof s_diag - 1;
+	int n = std::snprintf( p, (size_t)( end - p ),
+	                       "{\"status\":\"%s\",\"ready\":%d,\"created\":%d,\"tick\":%d,\"resets\":%u,"
+	                       "\"scene\":%u,\"body\":%u,\"car\":%u,\"group\":%d,\"policy\":%d,",
+	                       gWorld.ready ? "ok" : "error", gWorld.ready ? 1 : 0, gWorld.created ? 1 : 0,
+	                       gWorld.tick, gWorld.resetCount,
+	                       (unsigned)(size_t)gWorld.scene, (unsigned)(size_t)gWorld.body,
+	                       (unsigned)(size_t)gWorld.car,
+	                       gWorld.scene ? (int)gWorld.scene->GetInternalGroupHandle() : -1000,
+	                       gWorld.scene ? (int)gWorld.scene->GetInternalTaskPolicy() : -1000 );
+	if ( n > 0 ) p += n;
+	AppendSchedulerDiagnostics( p, end );
+	std::snprintf( p, (size_t)( end - p ), "}" );
+	return s_diag;
 }
 
 // Probe the collision mesh at one point without creating a car. Used to choose
