@@ -209,6 +209,13 @@ hash `4603a94e0871461c`; 56 nesne, 814.345 B, 65/65, PC parity. Kalan:
 blok15/17/26/32 importu, dokular, culling, PoC producer'ına bağlama. Kanıt:
 `docs/work/verification/T-007-drawlist-v2.md`.
 
+**Engine 56-instance draw list (P32):** blok15/17/26/27/32 import edildi
+(3 chunk, 15 item, 22 VB, 15 IB). **56/57 instance**, **34.632 vertex / 25.521
+üçgen**; 56/56 matris ve bounds Stage B okuyucusuyla 1e-5, 57/57 VB/IB.
+Packet 312 kayıt / **151 drawable**, hash `96b24f076495aea5`; 56 nesne,
+823.931 B, 70/70. Blok31 prerequisite; dokular/culling yok. Kanıt:
+`docs/work/verification/T-007-drawlist-56.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

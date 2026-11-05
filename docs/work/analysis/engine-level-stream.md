@@ -946,3 +946,109 @@ stage A+B       57 transform rows equal to _work/level-instances/stageB-python-r
 pc parity       4 TUs preprocessed identical (streammanager.cpp:108025, streamdata.cpp:111514, archive.cpp:111399, resources.cpp:108104 lines)
 verdict         PASS
 ```
+
+## 14. P32 — full Stage A+B CPU draw list (56 instances)
+
+This section supersedes §13.6 items 1 (the "only two node/geometry pairs" part),
+3 (the `56-stage geometry needs blocks 15/17/26/32` part) and the corresponding
+"geometry totals not reproduced" note in §13.4. It is still a data-extraction
+record: no renderer, GPU, vehicle or game claim is made.
+
+### 14.1 What changed
+
+The P30 harness imported geometry block 27 for the instance list and emitted the
+22 instances bound to it. P32 imports the remaining Stage B blocks with the same
+`LodReader<ResourceBlock::Resources>` deserialiser (CPU-only, no GPU object):
+
+| Block | Chunk | Item |
+| ---: | ---: | ---: |
+| 15 | 86 | 2 |
+| 17 | 86 | 3 |
+| 26 | 85 | 1 |
+| 27 | 88 | 7 |
+| 32 | 88 | 8 |
+
+Each stream chunk is loaded and parsed **once**, up to the highest item the
+bundle needs, recording every item's own `(block, vbBase, vbCount, ibBase,
+ibCount)` slice. This matters because the archive is sequential: parsing chunk
+88 again for block 32, or chunk 86 again for block 17, would retain all preceding
+items twice and exceed the bounded arena. Node chunk 53 is parsed first so its
+primitive records start at index 0; the geometry chunks then append.
+
+Block 31 is deliberately not imported: chunk 96 declares six prerequisites
+(`[82,90,91,87,94,95]`). Its one instance carries
+`reason=geometryBlockPrerequisite`; the unsupported block is listed with the
+reason rather than treated as an empty geometry.
+
+### 14.2 Measured result (`verify_stream.py --fresh`, exit 0, 122.2 s)
+
+| Check | Result |
+| --- | --- |
+| patch | unchanged, 16 modified, 77,284 B, sha256 `5fa2b1b743c388030d1a0bc8b73fe951acfea92406a29cf7b71b2dbb75019b71` |
+| build | 56 TUs, wasm **823,931 B**, sha256 `d716589963011041ae26bc47e0ca34e9d20edca4de4e26723c32dd7023e20f6b`, two builds identical |
+| harness | **70/70** checks; two runs identical; a second full run repeats every hash |
+| geometry import | 3 chunks / 15 items / **22 VBs / 15 IBs**, 2,595,776 B retained, 0 compressed, 0 arena/record overflow |
+| instance records | **57**; **56 drawable**, **1** omitted (block 31 prerequisite) |
+| totals | **34,632 vertices / 25,521 triangles** |
+| P30 subset | block 27 alone: **22 draws / 10,308 triangles / 13,162 vertices** (unchanged) |
+| matrices | 57/57 constant affine; **56/56** equal to the committed Stage B bundle reader at 1e-5; 22/22 also equal to the P30 block-27 reader |
+| bounds | **56/56** archived instance bounds equal at 1e-5 |
+| VB/IB | **57/57** equal to the Stage B reader's `instanceSources` |
+| materials | 57/57 instance records carry a static `g_tAlbedo`; 243 rows / 26 types / 121 albedo / 38 world / 0 type-8 |
+| packet | **312 records** (255 direct + 57 instance), **151 drawable**, 161 omitted, hash `96b24f076495aea5` |
+| P27 direct | unchanged: 95 bound, 9,343 triangles, 17,782 vertices, hash `fd525c1452869aee` |
+| PC parity | 4 patched TUs preprocessed identical (108,025 / 111,514 / 111,399 / 108,104 lines) |
+
+`vertexCount` is the number of **distinct referenced source vertices** per
+instance, not the width of the LOD vertex range. The two coincide for block 27
+(hence P30's 13,162) but not for blocks 15/17/26/32; the LOD-range sum was
+44,056, so the engine now counts the referenced set, which is what the committed
+Stage B reader reports.
+
+### 14.3 Reference match
+
+`verify_stream.py` now runs the committed reader as
+`level_inspect --instances-bundle` over blocks 15/17/26/27/32. Its output,
+written to `_work/logs/engine-stream-spike/reference-instances-bundle.json`, is
+**byte-identical** to `_work/level-instances/stageB-all.json` (SHA-256
+`647ee7d374555764d85500060f8aedc364600c8edcfcc91b1ed89c58fbb7148d`), the artifact
+recorded for the Stage B bundle in T-003. `stageB-python-reference.json`
+contributes the independent totals (56 / 34,632 / 25,521) and all 57 transform
+rows. No matrix, bounds or source mismatch occurred, so there is no first
+mismatch or byte offset to report.
+
+### 14.4 Remaining blockers
+
+1. Textures are indices, not images; nothing is decoded, created or sampled.
+2. `StreamData::ProcessLoadChunk` is still not driven.
+3. No visibility, culling, LOD selection, sorting or batching; one RenderList
+   (node253), LOD0 only.
+4. Block 31 stays out pending the prerequisite flow; with it the node would be
+   57 instances / 35,386 vertices / 26,077 triangles.
+5. Runtime-only material values (`DATA_INDEX`/`TEXTURE_PTR`) are not imported.
+6. No renderer, GPU, browser, vehicle or game claim; `C_OverlayFs` remains one
+   read-only layer.
+
+### 14.5 Evidence (P32)
+
+| Path | Content |
+| --- | --- |
+| `_work/logs/engine-stream-spike/verify-summary.json`* | every number above |
+| `_work/logs/engine-stream-spike/p32-verify-fresh-final.log` | fresh PASS transcript |
+| `_work/logs/engine-stream-spike/p32-verify-reuse-1.log` | second full run, identical |
+| `_work/logs/engine-stream-spike/reference-instances-bundle.json`* | committed Stage B reader output |
+| `_work/engine-stream-spike/out/stream_harness_a.wasm`* | 823,931 B |
+| `docs/work/verification/T-007-drawlist-56.md` | verification record |
+
+`*` = regenerated by `engine/verify_stream.py`.
+
+### 14.6 Commands
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py engine/verify_stream.py --fresh
+& $py engine/verify_stream.py
+& $py engine/verify_stream.py --skip-native
+& $py tools/verify_asset_probe.py --skip-build
+```
+

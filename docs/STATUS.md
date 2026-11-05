@@ -501,6 +501,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Packet draw list: **312 kayıt** (255 direct + 57 instance), **117 drawable**, hash `4603a94e0871461c`; 56 nesne, 814.345 B, 65/65, PC parity.
 - Kalan: blok15/17/26/32 importu, dokular, culling/LOD, `ProcessLoadChunk`; PoC producer'ına bağlama. Kanıt: `docs/work/verification/T-007-drawlist-v2.md`.
 
+## 5 Kasım 2026 — engine 56-instance draw list
+
+- Blok15/17/26/27/32 CPU deserialiser ile import edildi: 3 chunk / 15 item / 22 VB / 15 IB; blok31 prerequisite nedeniyle dışarıda.
+- **56/57 instance**, **34.632 vertex / 25.521 üçgen** — Stage A+B referansıyla birebir. 56/56 matris ve bounds 1e-5 içinde, 57/57 VB/IB eşit.
+- Packet 312 kayıt / **151 drawable** / 161 omitted; hash `96b24f076495aea5`; 56 nesne, 823.931 B, **70/70**, PC parity.
+- Kalan: dokular (yalnız indeks), `ProcessLoadChunk`, culling/LOD, blok31; PoC producer'ına bağlama. Kanıt: `docs/work/verification/T-007-drawlist-56.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

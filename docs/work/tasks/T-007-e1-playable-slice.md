@@ -83,17 +83,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-multi-car.md`,
   `probes/e1-drive/cars/roster.json`.
 
-### E1h — Engine draw list (P27 + P30)  ◐
-- 95 direct draw + 57 instance; **22/22** instance matrisi ve bounds
-  `level_inspect` ile 1e-5 içinde; 57/57 VB/IB ve transform satırı eşleşiyor.
-- Materyaller: 243 sabit satır / 26 tip; 121 `g_tAlbedo`, 38 `g_mWorld`;
-  type-8 nested yolu implement edildi (River'da 0).
-- **Packet draw list:** 312 kayıt (255 direct + 57 instance), 117 drawable;
-  hash `4603a94e0871461c`; 56 nesne, 814.345 B, 65/65, PC parity.
-- Kalan: blok15/17/26/32 importu (56-stage geometri), dokular, visibility/
-  culling/LOD, `ProcessLoadChunk`; PoC producer'ına bağlama.
-- Kanıt: `docs/work/verification/T-007-drawlist-v2.md`,
-  `docs/work/verification/T-007-streaming.md` §P27.
+### E1h — Engine draw list (P27 + P30 + P32)  ✅ (56 instance)
+- **56/57 instance** (blok31 prerequisite), **34.632 vertex / 25.521 üçgen**;
+  56/56 matris ve bounds Stage B okuyucusuyla 1e-5 içinde; 57/57 VB/IB.
+- **Packet:** 312 kayıt (255 direct + 57 instance), **151 drawable**;
+  hash `96b24f076495aea5`; 56 nesne, 823.931 B, 70/70, PC parity.
+- Materyaller: 243 satır / 26 tip; 121 albedo; type-8 yolu hazır.
+- Kalan: dokular (indeks), visibility/culling/LOD, `ProcessLoadChunk`, blok31;
+  PoC producer'ına bağlama.
+- Kanıt: `docs/work/verification/T-007-drawlist-56.md`,
+  `docs/work/verification/T-007-drawlist-v2.md`.
 
 ### E1i — Teker/kompozit görsel (P26)  ✅ (manifest)
 - Corvette modelinden 29 parça / 80 draw: 76 kanıtlı, 4 yan-belirsiz.

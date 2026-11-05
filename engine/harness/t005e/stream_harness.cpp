@@ -281,6 +281,9 @@ struct DrawTotals
 	int indexErrors;
 	int instances;
 	int basePrimitives;
+	int instanceBlock27Draws;
+	int instanceBlock27Triangles;
+	int instanceBlock27Vertices;
 	uint64_t hash;
 };
 
@@ -293,6 +296,46 @@ struct GeometryView
 	const WebSpike::BufferRecord* indexBuffers;
 	int indexBufferCount;
 };
+
+// P32: the instance list's geometry is spread over several stream chunks (15,
+// 17, 26, 27, 32). Each supplied block keeps its own buffer view into the same
+// per-chunk record tables; a block that is deliberately not imported (31, whose
+// chunk declares prerequisites) is listed with the reason to report, never
+// silently treated as empty.
+struct GeometrySet
+{
+	int count;
+	GeometryView views[ 8 ];
+
+	int unsupportedCount;
+	struct
+	{
+		S32 block;
+		const char* reason;
+	} unsupported[ 8 ];
+};
+
+const GeometryView* findGeometry( const GeometrySet& set, S32 block )
+{
+	for ( int i = 0; i < set.count; i++ )
+	{
+		if ( set.views[ i ].block == block )
+			return &set.views[ i ];
+	}
+
+	return 0;
+}
+
+const char* unsupportedGeometryReason( const GeometrySet& set, S32 block )
+{
+	for ( int i = 0; i < set.unsupportedCount; i++ )
+	{
+		if ( set.unsupported[ i ].block == block )
+			return set.unsupported[ i ].reason;
+	}
+
+	return 0;
+}
 
 void fnv_f32( uint64_t& hash, F32 value )
 {
@@ -865,6 +908,67 @@ RenderingData::Target::ResourceBlock::Resources* parseChunkItem(
 	return target;
 }
 
+// P32: parse one geometry chunk once, up to and including maxItem, recording
+// each item's own buffer slice. The engine archive is sequential, so a later
+// item can only be reached through the earlier ones; parsing the chunk once is
+// what keeps the five supplied blocks inside the bounded arena (parsing the
+// same chunk again per block would retain its preceding items twice).
+struct ItemBuffers
+{
+	S32 block;
+	int vertexBase;
+	int vertexCount;
+	int indexBase;
+	int indexCount;
+};
+
+bool parseChunkUpToItem( const std::vector<U8>& bytes,
+	RenderingData::Target::Scene* scene, const ChunkRange& range, int maxItem,
+	ItemBuffers* items, int* itemCount )
+{
+	Sys::C_MemoryStream stream( const_cast<U8*>( &bytes[ 0 ] ), (U32)bytes.size() );
+	Arch::BinaryInputArchive ar( stream );
+
+	S32 nItems = 0;
+	ar >> nItems;
+
+	const RenderingData::ChunkInfo& info =
+		scene->GetStreamData().GetChunkInfo( range.chunk );
+
+	if ( nItems != info.GetNumItems() || maxItem < 0 || maxItem >= nItems )
+		return false;
+
+	*itemCount = 0;
+
+	for ( int i = 0; i <= maxItem; i++ )
+	{
+		const S32 lod = info.GetItem( i ).lod;
+		const int vb0 = WebSpike::Draws().vertexBuffers;
+		const int ib0 = WebSpike::Draws().indexBuffers;
+
+		RenderingData::Target::ResourceBlock::Resources* resources =
+			new RenderingData::Target::ResourceBlock::Resources();
+		resources->pScene = scene;
+
+		WebSpike::ParseResourceBlockLodArchive( ar, *resources, lod );
+
+		items[ *itemCount ].block = info.GetItem( i ).block;
+		items[ *itemCount ].vertexBase = vb0;
+		items[ *itemCount ].vertexCount =
+			WebSpike::Draws().vertexBuffers - vb0;
+		items[ *itemCount ].indexBase = ib0;
+		items[ *itemCount ].indexCount =
+			WebSpike::Draws().indexBuffers - ib0;
+		++*itemCount;
+
+		// Only the item's descriptors and payload bytes are kept; its node
+		// tree is not walked for a geometry-only chunk.
+		delete resources;
+	}
+
+	return true;
+}
+
 // Emit one draw record. Every field comes from the archive; a field that the
 // engine did not bind is printed as null with a reason token, never guessed.
 void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawIndex,
@@ -1404,7 +1508,7 @@ struct InstanceBinding
 void bindInstanceGeometry( const RenderingData::Target::RenderListNode& list,
 	const WebSpike::PrimitiveRecord& base,
 	const RenderingData::RenderListNode::Instance& instance,
-	const GeometryView& geometry, InstanceBinding* out )
+	const GeometrySet& geometries, InstanceBinding* out )
 {
 	memset( out, 0, sizeof( *out ) );
 	out->vbBlock = -1;
@@ -1525,25 +1629,29 @@ void bindInstanceGeometry( const RenderingData::Target::RenderListNode& list,
 	out->ibIndex = indexIndex.GetIndex();
 	out->indexSource = base.indexBuffer;
 
-	if ( out->vbBlock != geometry.block || out->ibBlock != geometry.block )
+	const GeometryView* geometry = findGeometry( geometries, out->vbBlock );
+
+	if ( geometry == 0 || out->ibBlock != geometry->block )
 	{
-		out->reason = "geometryBlockNotImported";
+		const char* unsupported = unsupportedGeometryReason( geometries,
+			out->vbBlock );
+		out->reason = unsupported ? unsupported : "geometryBlockNotImported";
 		return;
 	}
 
-	if ( !geometry.valid )
+	if ( !geometry->valid )
 	{
 		out->reason = "geometryResourcesMissing";
 		return;
 	}
 
-	if ( out->vbIndex < 0 || out->vbIndex >= geometry.vertexBufferCount )
+	if ( out->vbIndex < 0 || out->vbIndex >= geometry->vertexBufferCount )
 	{
 		out->reason = "vertexBufferNotImported";
 		return;
 	}
 
-	if ( out->ibIndex < 0 || out->ibIndex >= geometry.indexBufferCount )
+	if ( out->ibIndex < 0 || out->ibIndex >= geometry->indexBufferCount )
 	{
 		out->reason = "indexBufferNotImported";
 		return;
@@ -1555,8 +1663,8 @@ void bindInstanceGeometry( const RenderingData::Target::RenderListNode& list,
 		return;
 	}
 
-	const WebSpike::BufferRecord& vb = geometry.vertexBuffers[ out->vbIndex ];
-	const WebSpike::BufferRecord& ib = geometry.indexBuffers[ out->ibIndex ];
+	const WebSpike::BufferRecord& vb = geometry->vertexBuffers[ out->vbIndex ];
+	const WebSpike::BufferRecord& ib = geometry->indexBuffers[ out->ibIndex ];
 	const WebSpike::LodRecord& lod = base.lods[ 0 ];
 	out->vb = &vb;
 	out->ib = &ib;
@@ -1723,9 +1831,37 @@ int countInstanceTriangles( const InstanceBinding& binding, int topology )
 	return triangles;
 }
 
+// The committed Stage B reader reports vertexCount as the number of distinct
+// source vertex indices actually referenced by the instance's LOD0 span, not
+// the whole minIndex..minIndex+vertices-1 range. For block 27 the two coincide;
+// for blocks 15/17/26/32 the range contains vertices no index uses. Counting
+// only the referenced set is what keeps the 56-stage total at 34,632.
+int countInstanceUsedVertices( const InstanceBinding& binding )
+{
+	std::vector<U32> used;
+	used.reserve( (size_t)binding.lod->indices );
+
+	const U8* payload = (const U8*)WebSpike::Draws().arena +
+		binding.ib->payloadOffset;
+
+	for ( int j = 0; j < binding.lod->indices; j++ )
+	{
+		if ( binding.ib->stride == 2 )
+			used.push_back(
+				(U32)( (const U16*)payload )[ binding.lod->offset + j ] );
+		else
+			used.push_back(
+				( (const U32*)payload )[ binding.lod->offset + j ] );
+	}
+
+	std::sort( used.begin(), used.end() );
+	used.erase( std::unique( used.begin(), used.end() ), used.end() );
+	return (int)used.size();
+}
+
 void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resources,
-	const ChunkRange& range, const GeometryView& geometry, DrawTotals* totals,
-	PacketState* packet )
+	const ChunkRange& range, const GeometrySet& geometries, int primitiveBase,
+	DrawTotals* totals, PacketState* packet )
 {
 	const WebSpike::DrawListState& draws = WebSpike::Draws();
 	int primitiveCursor = 0;
@@ -1776,7 +1912,7 @@ void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resource
 			inventory.worldRows, inventory.albedoRows, inventory.type8Rows,
 			inventory.runtimeRows, inventory.externalRows );
 
-		const int baseStart = primitiveCursor + numPrimitives;
+		const int baseStart = primitiveBase + primitiveCursor + numPrimitives;
 
 		for ( int i = 0; i < numInstances; i++ )
 		{
@@ -1854,7 +1990,7 @@ void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resource
 
 			if ( base != 0 )
 			{
-				bindInstanceGeometry( *list, *base, instance, geometry,
+				bindInstanceGeometry( *list, *base, instance, geometries,
 					&binding );
 				packetRecord.sourceOffset = base->streamOffset;
 				packetRecord.layer = base->blendEnable ? "alpha" : "opaque";
@@ -1868,13 +2004,24 @@ void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resource
 					packetRecord.indexCount = binding.lod->indices;
 					triangleCount = countInstanceTriangles( binding,
 						base->topology );
+					const int usedVertexCount =
+						countInstanceUsedVertices( binding );
 
 					totals->triangles += triangleCount;
 					totals->triangleIndices += triangleCount * 3;
-					// The committed instances-all reader reports the sum of the
-					// per-draw LOD vertex ranges, not the sum of used source
-					// vertex-buffer counts.
-					totals->vertices += binding.lod->vertices;
+					// The committed instance readers report the number of
+					// distinct referenced source vertices, not the raw LOD
+					// vertex-range width.
+					totals->vertices += usedVertexCount;
+
+					// P32: the P30 result (block 27 alone) is kept as a
+					// regression subset inside the extended 56-stage list.
+					if ( binding.vbBlock == 27 )
+					{
+						++totals->instanceBlock27Draws;
+						totals->instanceBlock27Triangles += triangleCount;
+						totals->instanceBlock27Vertices += usedVertexCount;
+					}
 				}
 			}
 
@@ -1902,7 +2049,10 @@ void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resource
 			{
 				++packet->omitted;
 				if ( binding.reason &&
-					strcmp( binding.reason, "geometryBlockNotImported" ) == 0 )
+					( strcmp( binding.reason,
+						"geometryBlockNotImported" ) == 0 ||
+						strcmp( binding.reason,
+							"geometryBlockPrerequisite" ) == 0 ) )
 					++packet->instanceOtherBlock;
 			}
 
@@ -2425,122 +2575,220 @@ int main( int argc, char** argv )
 			}
 		}
 
-		// Geometry block 27: the instance list's own geometry. It is parsed
-		// after block 88 has been consumed, because both payloads use the same
-		// bounded arena; ResetChunkRecords rewinds the arena (it does not clear
-		// block 88's bytes), and this parse overwrites them. Nothing reads
-		// block 88 after this point.
-		static WebSpike::BufferRecord instVb[ WebSpike::kMaxBuffers ];
-		static WebSpike::BufferRecord instIb[ WebSpike::kMaxBuffers ];
-		int instVbCount = 0;
-		int instIbCount = 0;
-		bool instanceGeometryOk = false;
+		// --- P32: Stage A+B instance geometry (blocks 15/17/26/27/32) ------
+		// The five supplied geometry blocks live in three stream chunks. Each
+		// chunk is parsed once, up to the highest item the bundle needs, and
+		// every item's own buffer slice is recorded before the next chunk
+		// appends. Block 31 is deliberately not imported: its chunk declares
+		// prerequisites, which this slice does not traverse.
+		static const S32 kInstanceGeometryBlocks[ 5 ] = { 15, 17, 26, 27, 32 };
+
+		GeometrySet instanceGeometries;
+		memset( &instanceGeometries, 0, sizeof( instanceGeometries ) );
+
+		WebSpike::ResetChunkRecords();
+
+		// 1. The node chunk first, so its primitive records start at index 0.
+		ChunkRange nodeRange;
+		memset( &nodeRange, 0, sizeof( nodeRange ) );
+		bool nodeLocated = false;
+		RenderingData::Target::ResourceBlock::Resources* nodeResources = 0;
+		int nodePrimitiveBase = 0;
 		{
-			WebSpike::ResetChunkRecords();
+			nodeLocated = findChunkItem( scene->GetStreamData(),
+				kInstanceNodeBlock, 0, &nodeRange );
+			printf( "webfiledraw chunk name=instancenode block=%d chunk=%d item=%d "
+				"lod=%d offset=%llu bytes=%llu located=%d\n",
+				(int)kInstanceNodeBlock, (int)nodeRange.chunk,
+				(int)nodeRange.item, (int)nodeRange.lod,
+				(unsigned long long)nodeRange.offset,
+				(unsigned long long)nodeRange.bytes, nodeLocated ? 1 : 0 );
+			check( "drawlist_instance_node_located", nodeLocated );
 
-			ChunkRange range;
-			const S32 kInstanceGeometryBlock = 27;
-			const bool located = findChunkItem( scene->GetStreamData(),
-				kInstanceGeometryBlock, 0, &range );
-			printf( "webfiledraw chunk name=instancegeometry block=%d chunk=%d "
-				"item=%d lod=%d offset=%llu bytes=%llu located=%d\n",
-				(int)kInstanceGeometryBlock, (int)range.chunk, (int)range.item,
-				(int)range.lod, (unsigned long long)range.offset,
-				(unsigned long long)range.bytes, located ? 1 : 0 );
-			check( "drawlist_instance_geometry_located", located );
-
-			if ( located )
+			if ( nodeLocated )
 			{
 				std::vector<U8> bytes;
-				int vbBase = 0;
-				int ibBase = 0;
-				RenderingData::Target::ResourceBlock::Resources* resources =
-					loadChunkCopy( manager, stream, range, bytes )
-					? parseChunkItem( bytes, scene, range, &vbBase, &ibBase, 0 ) : 0;
-				instanceGeometryOk = resources != 0;
-
-				const WebSpike::DrawListState& draws = WebSpike::Draws();
-				// The block-27 item is not the first item in its chunk, so its
-				// buffers begin at vbBase/ibBase. Snapshot exactly that item.
-				instVbCount = draws.vertexBuffers - vbBase;
-				instIbCount = draws.indexBuffers - ibBase;
-
-				for ( int i = 0; i < instVbCount && i < WebSpike::kMaxBuffers; i++ )
-					instVb[ i ] = draws.vertexBuffer[ vbBase + i ];
-				for ( int i = 0; i < instIbCount && i < WebSpike::kMaxBuffers; i++ )
-					instIb[ i ] = draws.indexBuffer[ ibBase + i ];
-
-				printf( "webfiledraw chunk name=instancegeometry parsed=%d vbs=%d "
-					"ibs=%d nodes=%d retained=%d compressed=%d\n",
-					instanceGeometryOk ? 1 : 0, instVbCount, instIbCount,
-					draws.resourceNodes, draws.arenaUsed, draws.compressedBuffers );
-
-				check( "drawlist_instance_geometry_import",
-					instanceGeometryOk && instVbCount > 0 && instIbCount > 0 &&
-					draws.compressedBuffers == 0 && draws.arenaExhausted == 0 );
-
-				delete resources;
+				nodeResources = loadChunkCopy( manager, stream, nodeRange, bytes )
+					? parseChunkItem( bytes, scene, nodeRange, 0, 0,
+						&nodePrimitiveBase ) : 0;
 			}
 		}
 
-		GeometryView instanceGeometry;
-		instanceGeometry.block = 27;
-		instanceGeometry.valid = instanceGeometryOk;
-		instanceGeometry.vertexBuffers = instVb;
-		instanceGeometry.vertexBufferCount = instVbCount;
-		instanceGeometry.indexBuffers = instIb;
-		instanceGeometry.indexBufferCount = instIbCount;
+		// 2. Locate all five blocks, grouping them by chunk.
+		ChunkRange geometryRanges[ 5 ];
+		bool allBlocksLocated = true;
 
-		// Node block 253: the render list whose 57 instances are compared with
-		// level_inspect --instances-all. Each instance's constant affine
-		// g_mWorld is read from the render list's constant material rows.
+		for ( int k = 0; k < 5; k++ )
 		{
-			WebSpike::ResetChunkRecords();
-
-			ChunkRange range;
+			memset( &geometryRanges[ k ], 0, sizeof( geometryRanges[ k ] ) );
 			const bool located = findChunkItem( scene->GetStreamData(),
-				kInstanceNodeBlock, 0, &range );
-			printf( "webfiledraw chunk name=instancenode block=%d chunk=%d item=%d "
-				"lod=%d offset=%llu bytes=%llu located=%d\n",
-				(int)kInstanceNodeBlock,
-				(int)range.chunk, (int)range.item, (int)range.lod,
-				(unsigned long long)range.offset,
-				(unsigned long long)range.bytes, located ? 1 : 0 );
-			check( "drawlist_instance_node_located", located );
+				kInstanceGeometryBlocks[ k ], 0, &geometryRanges[ k ] );
+			allBlocksLocated = allBlocksLocated && located;
+			printf( "webfiledraw chunk name=instancegeometry block=%d chunk=%d "
+				"item=%d lod=%d offset=%llu bytes=%llu located=%d\n",
+				(int)kInstanceGeometryBlocks[ k ],
+				(int)geometryRanges[ k ].chunk, (int)geometryRanges[ k ].item,
+				(int)geometryRanges[ k ].lod,
+				(unsigned long long)geometryRanges[ k ].offset,
+				(unsigned long long)geometryRanges[ k ].bytes,
+				located ? 1 : 0 );
+		}
+		check( "drawlist_instance_geometry_located", allBlocksLocated );
 
-			if ( located )
+		// 3. Parse each distinct chunk once, up to its highest requested item.
+		ItemBuffers parsedItems[ 64 ];
+		int parsedItemCount = 0;
+		int parsedChunks = 0;
+		bool geometryParsed = allBlocksLocated;
+
+		for ( int k = 0; k < 5 && geometryParsed; k++ )
+		{
+			const S32 chunk = geometryRanges[ k ].chunk;
+			bool seen = false;
+
+			for ( int j = 0; j < k; j++ )
+				if ( geometryRanges[ j ].chunk == chunk )
+					seen = true;
+
+			if ( seen )
+				continue;
+
+			int maxItem = geometryRanges[ k ].item;
+
+			for ( int j = k + 1; j < 5; j++ )
+				if ( geometryRanges[ j ].chunk == chunk )
+					maxItem = std::max<int>( maxItem, geometryRanges[ j ].item );
+
+			std::vector<U8> bytes;
+
+			if ( !loadChunkCopy( manager, stream, geometryRanges[ k ], bytes ) )
 			{
-				std::vector<U8> bytes;
-				RenderingData::Target::ResourceBlock::Resources* resources =
-					loadChunkCopy( manager, stream, range, bytes )
-					? parseChunkItem( bytes, scene, range, 0, 0, 0 ) : 0;
-				const bool parsed = resources != 0;
-
-				DrawTotals totals;
-				memset( &totals, 0, sizeof( totals ) );
-				totals.hash = fnv_begin();
-
-				if ( parsed )
-					emitInstanceNode( resources, range, instanceGeometry,
-						&totals, &packet );
-
-				printf( "webfiledraw instances node=%d renderlists=%d "
-					"instanceCount=%d basePrimitives=%d draws=%d triangles=%d "
-					"vertices=%d\n",
-					(int)kInstanceNodeBlock, totals.renderLists, totals.instances,
-					totals.basePrimitives, packet.instanceDrawable, totals.triangles,
-					totals.vertices );
-				check( "drawlist_instance_import", parsed && totals.renderLists > 0 );
-				check( "drawlist_instance_count", totals.instances == 57 );
-				check( "drawlist_base_primitive_count",
-					totals.basePrimitives == 36 );
-				check( "drawlist_instance_triangles",
-					totals.triangles == 10308 );
-				check( "drawlist_instance_vertices",
-					totals.vertices == 13162 );
-
-				delete resources;
+				geometryParsed = false;
+				break;
 			}
+
+			int produced = 0;
+
+			if ( !parseChunkUpToItem( bytes, scene, geometryRanges[ k ], maxItem,
+					parsedItems + parsedItemCount, &produced ) )
+			{
+				geometryParsed = false;
+				break;
+			}
+
+			parsedItemCount += produced;
+			++parsedChunks;
+		}
+
+		// 4. One view per supplied block, pointing at that item's own slice.
+		int builtViews = 0;
+
+		for ( int k = 0; k < 5; k++ )
+		{
+			const ItemBuffers* hit = 0;
+
+			for ( int i = 0; i < parsedItemCount; i++ )
+			{
+				if ( parsedItems[ i ].block == kInstanceGeometryBlocks[ k ] )
+					hit = &parsedItems[ i ];
+			}
+
+			GeometryView view;
+			memset( &view, 0, sizeof( view ) );
+			view.block = kInstanceGeometryBlocks[ k ];
+
+			if ( hit != 0 )
+			{
+				view.valid = hit->vertexCount > 0 && hit->indexCount > 0;
+				view.vertexBuffers =
+					WebSpike::Draws().vertexBuffer + hit->vertexBase;
+				view.vertexBufferCount = hit->vertexCount;
+				view.indexBuffers =
+					WebSpike::Draws().indexBuffer + hit->indexBase;
+				view.indexBufferCount = hit->indexCount;
+				++builtViews;
+			}
+
+			instanceGeometries.views[ instanceGeometries.count++ ] = view;
+		}
+
+		{
+			const WebSpike::DrawListState& instDraws = WebSpike::Draws();
+			printf( "webfiledraw chunk name=instancegeometry parsed=%d vbs=%d "
+				"ibs=%d nodes=%d retained=%d compressed=%d blocks=%d chunks=%d "
+				"items=%d\n",
+				geometryParsed ? 1 : 0, instDraws.vertexBuffers,
+				instDraws.indexBuffers, instDraws.resourceNodes,
+				instDraws.arenaUsed, instDraws.compressedBuffers, builtViews,
+				parsedChunks, parsedItemCount );
+
+			check( "drawlist_instance_geometry_import",
+				geometryParsed && builtViews == 5 &&
+				instDraws.compressedBuffers == 0 &&
+				instDraws.arenaExhausted == 0 );
+		}
+
+		// 5. Block 31 stays out with its prerequisite reason, not as an
+		// unimported blank. Its chunk is reported but never loaded.
+		{
+			ChunkRange range;
+			memset( &range, 0, sizeof( range ) );
+			const bool located = findChunkItem( scene->GetStreamData(), 31, 0,
+				&range );
+			const RenderingData::ChunkInfo* info = located
+				? &scene->GetStreamData().GetChunkInfo( range.chunk ) : 0;
+			const int prerequisites = info ? info->GetNumPrerequisites() : 0;
+
+			printf( "webfiledraw instancegeometry unsupported block=31 chunk=%d "
+				"prerequisites=%d imported=0 reason=geometryBlockPrerequisite\n",
+				located ? (int)range.chunk : -1, prerequisites );
+			check( "drawlist_instance_geometry_prereq",
+				located && info != 0 && prerequisites > 0 );
+
+			instanceGeometries.unsupported[
+				instanceGeometries.unsupportedCount ].block = 31;
+			instanceGeometries.unsupported[
+				instanceGeometries.unsupportedCount ].reason =
+				"geometryBlockPrerequisite";
+			++instanceGeometries.unsupportedCount;
+		}
+
+		// 6. Node block 253: the render list whose 57 instances are compared
+		// with the committed Stage B reader. Each instance's constant affine
+		// g_mWorld is read from the render list's constant material rows.
+		if ( nodeResources != 0 )
+		{
+			DrawTotals totals;
+			memset( &totals, 0, sizeof( totals ) );
+			totals.hash = fnv_begin();
+
+			emitInstanceNode( nodeResources, nodeRange, instanceGeometries,
+				nodePrimitiveBase, &totals, &packet );
+
+			printf( "webfiledraw instances node=%d renderlists=%d "
+				"instanceCount=%d basePrimitives=%d draws=%d triangles=%d "
+				"vertices=%d block27Draws=%d block27Triangles=%d "
+				"block27Vertices=%d\n",
+				(int)kInstanceNodeBlock, totals.renderLists, totals.instances,
+				totals.basePrimitives, packet.instanceDrawable, totals.triangles,
+				totals.vertices, totals.instanceBlock27Draws,
+				totals.instanceBlock27Triangles, totals.instanceBlock27Vertices );
+			check( "drawlist_instance_import",
+				totals.renderLists > 0 && nodeLocated );
+			check( "drawlist_instance_count", totals.instances == 57 );
+			check( "drawlist_base_primitive_count",
+				totals.basePrimitives == 36 );
+			check( "drawlist_instance_triangles", totals.triangles == 25521 );
+			check( "drawlist_instance_vertices", totals.vertices == 34632 );
+			check( "drawlist_instance_block27_draws",
+				totals.instanceBlock27Draws == 22 );
+			check( "drawlist_instance_block27_triangles",
+				totals.instanceBlock27Triangles == 10308 );
+			check( "drawlist_instance_block27_vertices",
+				totals.instanceBlock27Vertices == 13162 );
+
+			delete nodeResources;
+			nodeResources = 0;
 		}
 
 		printf( "webfiledraw packet summary records=%d drawable=%d omitted=%d "
@@ -2579,7 +2827,9 @@ int main( int argc, char** argv )
 		check( "packet_records_total",
 			packet.records == packet.directRecords + packet.instanceRecords );
 		check( "packet_drawable", packet.directDrawable == 95 &&
-			packet.instanceDrawable == 22 );
+			packet.instanceDrawable == 56 );
+		check( "packet_instance_other_block",
+			packet.instanceOtherBlock == 1 );
 		check( "packet_direct_world_null",
 			packet.directWorldNull == packet.directRecords );
 		check( "packet_hash", packet.hash != 0 );

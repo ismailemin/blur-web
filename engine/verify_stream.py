@@ -195,13 +195,17 @@ EXPECTED_CHECKS = [
     "drawlist_no_gpu_objects", "drawlist_renderlist_handler",
     # P30 constant materials, instance transforms and packet draw list
     "drawlist_instance_geometry_located", "drawlist_instance_geometry_import",
+    "drawlist_instance_geometry_prereq",
     "drawlist_instance_triangles", "drawlist_instance_vertices",
+    "drawlist_instance_block27_draws", "drawlist_instance_block27_triangles",
+    "drawlist_instance_block27_vertices",
     "packet_material_rows", "packet_material_albedo", "packet_material_world",
     "packet_material_type8", "packet_direct_material_ids",
     "packet_instance_material_ids",
     "packet_instance_worlds", "packet_instance_world_affine",
     "packet_instance_sources", "packet_direct_records",
     "packet_instance_records", "packet_records_total", "packet_drawable",
+    "packet_instance_other_block",
     "packet_direct_world_null", "packet_hash",
 ]
 
@@ -210,6 +214,9 @@ EXPECTED_CHECKS = [
 # engine ChunkInfo table itself, so no probe-supplied range enters the run.
 DRAW_REFERENCE = (88, 283)
 INSTANCE_REFERENCE = (27, 253)
+# P32: the Stage A+B bundle, in the same order the committed bundle reader
+# records it. Block 31 is absent by design (its chunk declares prerequisites).
+STAGE_B_GEOMETRY_BLOCKS = (15, 17, 26, 27, 32)
 
 # The fourteen patched files and their required token counts. Nothing else may
 # be in the patch. Counts are exact: a web branch that grows without this table
@@ -670,13 +677,16 @@ def run_harness(js: Path, tag: str) -> dict:
     draw_instances = {}
     m = re.search(r"webfiledraw instances node=(\d+) renderlists=(\d+) "
                   r"instanceCount=(\d+) basePrimitives=(\d+) draws=(\d+) "
-                  r"triangles=(\d+) vertices=(\d+)", out)
+                  r"triangles=(\d+) vertices=(\d+) block27Draws=(\d+) "
+                  r"block27Triangles=(\d+) block27Vertices=(\d+)", out)
     if m:
         draw_instances = {
             "node": int(m.group(1)), "renderLists": int(m.group(2)),
             "instanceCount": int(m.group(3)), "basePrimitives": int(m.group(4)),
             "draws": int(m.group(5)), "triangles": int(m.group(6)),
-            "vertices": int(m.group(7)),
+            "vertices": int(m.group(7)), "block27Draws": int(m.group(8)),
+            "block27Triangles": int(m.group(9)),
+            "block27Vertices": int(m.group(10)),
         }
     draw_materials = []
     for m in re.finditer(r"webfiledraw material node=(\d+) chunk=(\d+) "
@@ -692,7 +702,8 @@ def run_harness(js: Path, tag: str) -> dict:
         })
     draw_instance_geometry = re.search(
         r"webfiledraw chunk name=instancegeometry parsed=(\d+) vbs=(\d+) "
-        r"ibs=(\d+) nodes=(\d+) retained=(\d+) compressed=(\d+)", out)
+        r"ibs=(\d+) nodes=(\d+) retained=(\d+) compressed=(\d+) blocks=(\d+) "
+        r"chunks=(\d+) items=(\d+)", out)
     packet_summary = re.search(
         r"webfiledraw packet summary records=(\d+) drawable=(\d+) omitted=(\d+) "
         r"direct=(\d+) directDrawable=(\d+) directOtherBlock=(\d+) instance=(\d+) "
@@ -790,7 +801,8 @@ def run_harness(js: Path, tag: str) -> dict:
             "instances": draw_instances,
             "materials": draw_materials,
             "instance_geometry": {k: int(v) for k, v in zip(
-                ("parsed", "vbs", "ibs", "nodes", "retained", "compressed"),
+                ("parsed", "vbs", "ibs", "nodes", "retained", "compressed",
+                 "blocks", "chunks", "items"),
                 draw_instance_geometry.groups())},
             "packet_summary": {
                 k: (packet_summary.group(23) if k == "hash" else int(v))
@@ -1138,6 +1150,33 @@ def reference_instances(index: dict, pair: tuple) -> dict:
     return doc
 
 
+def reference_instances_bundle(index: dict, blocks: tuple) -> dict:
+    """The committed Stage B reader: level_inspect --instances-bundle.
+
+    Each block's item is located in the engine ChunkInfo table, the whole chunk
+    is copied out of the stream file, and the committed bundle reader resolves
+    the blocks together. This is the same C++ reader whose Stage B result is
+    recorded in docs/work/verification/T-003-stageB.md.
+    """
+    node = extract_chunk(index, INSTANCE_REFERENCE[1], 0,
+                         f"block{INSTANCE_REFERENCE[1]}.chunk")
+    args = [LEVEL_INSPECT, "--instances-bundle", LEVEL_RENDER, node,
+            str(INSTANCE_REFERENCE[1])]
+    for block in blocks:
+        chunk = extract_chunk(index, block, 0, f"block{block}.chunk")
+        args.extend([str(block), str(chunk)])
+    p = run(args, log=LOGS / "level-inspect-instances-bundle.log")
+    if p.returncode != 0:
+        raise Failed("level_inspect --instances-bundle reference failed: "
+                     + ((p.stderr or p.stdout).strip())[-800:])
+    doc = json.loads(p.stdout)
+    if doc.get("status") != "ok":
+        raise Failed(f"level_inspect bundle reference: {doc.get('status')}")
+    (LOGS / "reference-instances-bundle.json").write_text(
+        p.stdout, encoding="utf-8")
+    return doc
+
+
 def compare_draw_list(result: dict, index: dict) -> dict:
     """Every bound draw against the committed asset-reader's direct draws.
 
@@ -1187,24 +1226,44 @@ def compare_draw_list(result: dict, index: dict) -> dict:
             meta["omittedOtherBlockPrimitives"]:
         raise Failed("engine primitive count differs from the reference")
 
-    inst = reference_instances(index, INSTANCE_REFERENCE)
-    imeta = inst["metadata"]
-    engine_instances = draws["instances"]
-    if engine_instances["instanceCount"] != imeta["instanceCount"]:
-        raise Failed(f"engine instance count {engine_instances['instanceCount']} "
-                     f"!= reference {imeta['instanceCount']}")
-    if engine_instances["basePrimitives"] != imeta["basePrimitiveCount"]:
-        raise Failed(f"engine base primitive count "
-                     f"{engine_instances['basePrimitives']} != reference "
-                     f"{imeta['basePrimitiveCount']}")
-    if engine_instances["triangles"] != imeta["triangleCount"]:
-        raise Failed(f"engine instance triangles {engine_instances['triangles']} "
-                     f"!= reference {imeta['triangleCount']}")
-    if engine_instances["vertices"] != imeta["vertexCount"]:
-        raise Failed(f"engine instance vertices {engine_instances['vertices']} "
-                     f"!= reference {imeta['vertexCount']}")
+    # P30 keeps its block-27-only reference (22 in-scope instances). P32 adds
+    # the committed Stage B bundle reader, which emits 56 of the 57 instances
+    # with blocks 15/17/26/27/32; block 31 remains unsupplied because its chunk
+    # declares prerequisites.
+    inst27 = reference_instances(index, INSTANCE_REFERENCE)
+    imeta27 = inst27["metadata"]
+    bundle = reference_instances_bundle(index, STAGE_B_GEOMETRY_BLOCKS)
+    bmeta = bundle["metadata"]
 
-    # --- P30: packet shape, constant materials and instance transforms -----
+    engine_instances = draws["instances"]
+    if engine_instances["instanceCount"] != bmeta["instanceCount"]:
+        raise Failed(f"engine instance count {engine_instances['instanceCount']} "
+                     f"!= Stage B reference {bmeta['instanceCount']}")
+    if engine_instances["basePrimitives"] != bmeta["basePrimitiveCount"]:
+        raise Failed(f"engine base primitive count "
+                     f"{engine_instances['basePrimitives']} != Stage B reference "
+                     f"{bmeta['basePrimitiveCount']}")
+    if engine_instances["triangles"] != bmeta["triangleCount"]:
+        raise Failed(f"engine instance triangles {engine_instances['triangles']} "
+                     f"!= Stage B reference {bmeta['triangleCount']}")
+    if engine_instances["vertices"] != bmeta["vertexCount"]:
+        raise Failed(f"engine instance vertices {engine_instances['vertices']} "
+                     f"!= Stage B reference {bmeta['vertexCount']}")
+
+    # P30 regression: block 27 alone must still produce its 22/10,308/13,162.
+    if engine_instances["block27Draws"] != imeta27["emittedInstanceCount"]:
+        raise Failed(f"block-27 subset emits {engine_instances['block27Draws']} "
+                     f"draws, P30 reference {imeta27['emittedInstanceCount']}")
+    if engine_instances["block27Triangles"] != imeta27["triangleCount"]:
+        raise Failed(f"block-27 subset triangles "
+                     f"{engine_instances['block27Triangles']} != "
+                     f"{imeta27['triangleCount']}")
+    if engine_instances["block27Vertices"] != imeta27["vertexCount"]:
+        raise Failed(f"block-27 subset vertices "
+                     f"{engine_instances['block27Vertices']} != "
+                     f"{imeta27['vertexCount']}")
+
+    # --- P30/P32: packet shape, constant materials and instance transforms --
     packet = draws["packet_summary"]
     records = draws["packet_records"]
     if len(records) != packet["records"]:
@@ -1215,72 +1274,103 @@ def compare_draw_list(result: dict, index: dict) -> dict:
 
     instance_records = [r for r in records if r["kind"] == "instance"]
     direct_records = [r for r in records if r["kind"] == "direct"]
-    if len(instance_records) != imeta["instanceCount"]:
+    if len(instance_records) != bmeta["instanceCount"]:
         raise Failed(f"packet has {len(instance_records)} instance records, "
-                     f"reference {imeta['instanceCount']}")
+                     f"Stage B reference {bmeta['instanceCount']}")
     if len(direct_records) != meta["primitiveCount"] + \
             meta["omittedOtherBlockPrimitives"]:
         raise Failed("packet direct record count differs from the reference")
 
-    if packet["instanceDrawable"] != imeta["emittedInstanceCount"]:
+    if packet["instanceDrawable"] != bmeta["emittedInstanceCount"]:
         raise Failed(f"engine emitted {packet['instanceDrawable']} instance "
-                     f"draws, reference {imeta['emittedInstanceCount']}")
-    if packet["instanceOtherBlock"] != imeta["omittedOtherBlockInstances"]:
+                     f"draws, Stage B reference {bmeta['emittedInstanceCount']}")
+    if packet["instanceOtherBlock"] != bmeta["omittedOtherBlockInstances"]:
         raise Failed(f"engine omitted {packet['instanceOtherBlock']} other-block "
-                     f"instance draws, reference "
-                     f"{imeta['omittedOtherBlockInstances']}")
+                     f"instance draws, Stage B reference "
+                     f"{bmeta['omittedOtherBlockInstances']}")
     if packet["worldInvalid"] != 0:
         raise Failed(f"{packet['worldInvalid']} instances have no provable "
                      "constant affine g_mWorld")
 
-    # Every instance's resolved VB/IB source against the committed reader's
-    # instanceSources list (57 records).
-    sources = {row["instanceIndex"]: row for row in imeta["instanceSources"]}
+    # Every instance's resolved VB/IB source against the committed Stage B
+    # reader's instanceSources list (57 records, including block 31).
+    sources = {row["instanceIndex"]: row for row in bmeta["instanceSources"]}
     for record in instance_records:
         index = record["instance"]
         want = sources.get(index)
         if want is None:
-            raise Failed(f"reference has no instanceSources record {index}")
+            raise Failed(f"Stage B reference has no instanceSources record {index}")
         if record["vb"] != (want["vertexBlock"], want["vertexIndex"]):
             raise Failed(f"instance {index} (source {record['source']}) VB "
-                         f"{record['vb']} != reference "
+                         f"{record['vb']} != Stage B reference "
                          f"{(want['vertexBlock'], want['vertexIndex'])}")
         if record["ib"] != (want["indexBlock"], want["indexIndex"]):
             raise Failed(f"instance {index} (source {record['source']}) IB "
-                         f"{record['ib']} != reference "
+                         f"{record['ib']} != Stage B reference "
                          f"{(want['indexBlock'], want['indexIndex'])}")
 
-    # Every emitted instance matrix against the committed reader, 1e-5.
-    reference_instances_by_index = {
-        row["instanceIndex"]: row for row in imeta["instances"]}
-    matrices_compared = 0
-    for record in instance_records:
-        want = reference_instances_by_index.get(record["instance"])
-        if want is None:
-            continue
+    # Material coverage: every direct and instance record must carry the
+    # serialised static albedo id, with no null or runtime-only fallback.
+    for record in records:
+        if record.get("materialId") in (None, "null", ""):
+            raise Failed(f"packet record {record['index']} "
+                         f"({record['kind']}) has no material id")
+        if record.get("materialReason") != "none":
+            raise Failed(f"packet record {record['index']} "
+                         f"({record['kind']}) materialReason "
+                         f"{record.get('materialReason')} != none")
+
+    def compare_matrix_bounds(record: dict, want: dict, label: str) -> None:
         if not record["world"] or len(record["world"]) != 16:
             raise Failed(f"instance {record['instance']} has no world matrix")
         for k, (have, expect) in enumerate(zip(record["world"], want["matrix"])):
             if abs(have - expect) > 1e-5:
                 raise Failed(f"instance {record['instance']} "
                              f"(source {record['source']}) world[{k}] "
-                             f"{have!r} != reference {expect!r} (1e-5)")
+                             f"{have!r} != {label} {expect!r} (1e-5)")
         archived = want["archivedInstanceBounds"]
         have_bounds = record["boundsMin"] + record["boundsMax"]
         for k, (have, expect) in enumerate(zip(have_bounds, archived[:6])):
             if abs(have - expect) > 1e-5:
                 raise Failed(f"instance {record['instance']} "
                              f"(source {record['source']}) bounds[{k}] "
-                             f"{have!r} != reference {expect!r} (1e-5)")
-        matrices_compared += 1
+                             f"{have!r} != {label} {expect!r} (1e-5)")
 
-    if matrices_compared != imeta["emittedInstanceCount"]:
+    # Every emitted instance matrix and archived bounds against the committed
+    # Stage B bundle reader, 1e-5 (56 records; block 31 is not emitted there).
+    bundle_by_index = {
+        row["instanceIndex"]: row for row in bmeta["instances"]}
+    reference27_by_index = {
+        row["instanceIndex"]: row for row in imeta27["instances"]}
+    matrices_compared = 0
+    block27_compared = 0
+
+    for record in instance_records:
+        want = bundle_by_index.get(record["instance"])
+        if want is not None:
+            compare_matrix_bounds(record, want, "Stage B reference")
+            matrices_compared += 1
+
+        # P30 regression: the same 22 block-27 instances still match the
+        # single-block reader's values.
+        if record["vb"] and record["vb"][0] == INSTANCE_REFERENCE[0]:
+            want27 = reference27_by_index.get(record["instance"])
+            if want27 is None:
+                raise Failed(f"P30 reference has no matrix for block-27 "
+                             f"instance {record['instance']}")
+            compare_matrix_bounds(record, want27, "P30 reference")
+            block27_compared += 1
+
+    if matrices_compared != bmeta["emittedInstanceCount"]:
         raise Failed(f"compared {matrices_compared} instance matrices, "
-                     f"reference {imeta['emittedInstanceCount']}")
+                     f"Stage B reference {bmeta['emittedInstanceCount']}")
+    if block27_compared != imeta27["emittedInstanceCount"]:
+        raise Failed(f"compared {block27_compared} block-27 instance matrices, "
+                     f"P30 reference {imeta27['emittedInstanceCount']}")
 
     # The committed Stage A+B reference carries the transform row for all 57
-    # instances (the direct reader emitted only the 22 in-scope matrices). It is
-    # read only when present; this gate never writes outside its log directory.
+    # instances and the independent geometry totals. It is read only when
+    # present; this gate never writes outside its log directory.
     stage_b_report = {"present": False}
     stage_b_path = ROOT / "_work/level-instances/stageB-python-reference.json"
     if stage_b_path.is_file():
@@ -1301,13 +1391,26 @@ def compare_draw_list(result: dict, index: dict) -> dict:
                 raise Failed(f"instance {record['instance']} "
                              f"(source {record['source']}) world row "
                              f"{record['worldRow']} != Stage A+B reference {want}")
+
+        stage_ab = stage_b["stageAB"]
+        for key, have in (("instanceCount", bmeta["emittedInstanceCount"]),
+                          ("vertexCount", bmeta["vertexCount"]),
+                          ("triangleCount", bmeta["triangleCount"])):
+            if stage_ab[key] != have:
+                raise Failed(f"Stage A+B reference {key}={stage_ab[key]} != "
+                             f"Stage B bundle reader {have}")
+
         stage_b_report = {
             "present": True, "path": str(stage_b_path.relative_to(ROOT)),
             "rows_compared": len(rows),
-            "stageAB": stage_b["stageAB"],
-            "scope": "transform row per instance; the 56-stage geometry "
-                     "totals need blocks 15/17/26/32, which this slice does "
-                     "not import",
+            "stageAB": stage_ab,
+            "bundleInstanceCount": bmeta["instanceCount"],
+            "bundleEmittedInstanceCount": bmeta["emittedInstanceCount"],
+            "bundleOmittedOtherBlockInstances":
+                bmeta["omittedOtherBlockInstances"],
+            "scope": "57 transform rows, Stage A+B totals and the 56 emitted "
+                     "matrices/bounds compared with the committed Stage B "
+                     "reader; block 31 stays out for its prerequisites",
         }
 
     if packet["materialRows"] <= 0 or packet["materialTypes"] <= 0:
@@ -1339,17 +1442,40 @@ def compare_draw_list(result: dict, index: dict) -> dict:
         "packet_material_lists": draws["materials"],
         "instance_geometry": draws["instance_geometry"],
         "instance_matrices_compared": matrices_compared,
+        "instance_matrices_compared_p30": block27_compared,
         "instance_sources_compared": len(instance_records),
+        "stage_b_bundle": {
+            "blocks": list(STAGE_B_GEOMETRY_BLOCKS),
+            "instanceCount": bmeta["instanceCount"],
+            "emittedInstanceCount": bmeta["emittedInstanceCount"],
+            "omittedOtherBlockInstances":
+                bmeta["omittedOtherBlockInstances"],
+            "unsupportedBoundsInstances":
+                bmeta["unsupportedBoundsInstances"],
+            "vertexCount": bmeta["vertexCount"],
+            "triangleCount": bmeta["triangleCount"],
+            "boundsMaxAbsoluteDifference":
+                bmeta["boundsMaxAbsoluteDifference"],
+            "unsuppliedGeometryBlocks":
+                bmeta["unsuppliedGeometryBlocks"],
+        },
+        "block27_subset": {
+            "draws": engine_instances["block27Draws"],
+            "triangles": engine_instances["block27Triangles"],
+            "vertices": engine_instances["block27Vertices"],
+        },
         "stage_b_reference": stage_b_report,
         "reference_tools": ["probes/asset-reader level_inspect (direct draws)",
-                            "probes/asset-reader level_inspect --instances-all"],
+                            "probes/asset-reader level_inspect --instances-all",
+                            "probes/asset-reader level_inspect --instances-bundle"],
         "reference_scope": "firstIndex/indexCount spans and counts; primitive "
                            "offsets, declarations, topology and VB/IB source "
                            "indices are printed by the engine but the committed "
                            "direct-draw API does not expose them; P30 adds 22 "
                            "instance world matrices, 57 VB/IB source bindings "
-                           "and the instance bounds, all against the same "
-                           "committed reader at 1e-5",
+                           "and the instance bounds; P32 adds the 56-instance "
+                           "Stage A+B bundle (34,632 vertices / 25,521 "
+                           "triangles, all matrices/bounds at 1e-5, VB/IB equal)",
     }
 
 
@@ -1630,12 +1756,17 @@ def main() -> int:
           f"{pk['materialType8Rows']}")
     print(f"transforms      {pk['worlds']} instance world matrices "
           f"({pk['worldInvalid']} invalid), "
-          f"{dl['instance_matrices_compared']} equal to level_inspect at 1e-5; "
-          f"{dl['instance_sources_compared']} VB/IB bindings equal")
+          f"{dl['instance_matrices_compared']} equal to the Stage B reader at "
+          f"1e-5 ({dl['instance_matrices_compared_p30']} of them to the P30 "
+          f"block-27 reader); {dl['instance_sources_compared']} VB/IB bindings equal")
     sb = dl["stage_b_reference"]
     if sb["present"]:
-        print(f"stage A+B       {sb['rows_compared']} transform rows equal to "
-              f"{sb['path']}; 56-stage geometry totals not imported")
+        b = dl["stage_b_bundle"]
+        print(f"stage A+B       {b['emittedInstanceCount']}/{b['instanceCount']} "
+              f"instances, {b['vertexCount']} vertices, {b['triangleCount']} "
+              f"triangles (blocks {','.join(map(str, b['blocks']))}); "
+              f"{sb['rows_compared']} transform rows equal; block "
+              f"{','.join(map(str, b['unsuppliedGeometryBlocks']))} prerequisites")
     print(f"levelrender     {report['whole_files']['levelrender']['bytes']} B "
           f"fnv=0x{report['whole_files']['levelrender']['fnv1a64']}")
     print(f"levelphysics    {report['whole_files']['levelphysics']['bytes']} B "
