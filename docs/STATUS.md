@@ -682,6 +682,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Hayalet araç aynı car mesh'inden ikinci pipeline ile translucent çiziliyor; çarpışma/fizik/packet girişi yok, ek buffer/texture/geometry upload yok.
 - `G`/`?ghost=1`, HUD `Δt/Δd`; `verify_e1_drive` **678/678**, 5 capture console 0, fizik hash'leri değişmedi. Kanıt: `docs/work/verification/T-007-ghost.md`.
 
+## 6 Kasım 2026 — prop collision verisi
+
+- Görünür mesh'lerden **468 statik OBB** (8 instance + 460 track-visual); roadside 373 aktif; 95 on-course `active:false`.
+- Resolver: 2.98×1.68 m car OBB, SAT, μ=0.45, 7 substeps @31 m/s; head-on gap 0.001 m, glancing %96 teğetsel, 0 tunneling; 52/52 PASS.
+- **Önemli:** 310 m hattı 52–61 / 114–122 / 125–128 / 181–207 m kümelerinde prop kesiyor; all-visible hattı kapatır. Lap-01'de ölçülüp entegre edilecek. Kanıt: `docs/work/analysis/prop-collision.md`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

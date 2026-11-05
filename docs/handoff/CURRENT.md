@@ -363,6 +363,13 @@ pipeline ile çiziliyor, çarpışma/fizik yok, ek upload yok. `G` aç/kapa,
 `?ghost=1`; HUD `Δt/Δd`. `verify_e1_drive` **678/678**; 5 capture console 0.
 Kanıt: `docs/work/verification/T-007-ghost.md`.
 
+**Prop collision (P66):** görünür mesh'lerden **468 statik OBB** (373 roadside
+aktif, 95 on-course hariç). Resolver: 2.98×1.68 m car OBB, SAT push-out,
+μ=0.45, 7 substeps @31 m/s; head-on 0.001 m gap, glancing %96 teğetsel,
+0 tunneling. **310 m hattı dört kümede prop kesiyor**; all-visible hattı
+kapatıyor. Lap-01 entegrasyonu P67'de. Kanıt:
+`docs/work/analysis/prop-collision.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

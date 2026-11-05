@@ -158,6 +158,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Sıradaki: E1'e motor sesi entegrasyonu (RPM sürüşüyle), sonra tyre/collision.
 - Kanıt: `docs/work/analysis/audio-feasibility.md`, `probes/audio/`.
 
+### E1k — Prop collision (P66)  ✅ (veri + resolver)
+- 468 statik OBB collider (8 instance + 460 track-visual component); roadside
+  profili 373 aktif; 95 on-course bileşen `active:false` (310 m hattı dört
+  kümede kesiyor: 52–61, 114–122, 125–128, 181–207 m).
+- Resolver: 2.98×1.68 m car OBB, SAT push-out, Coulomb μ=0.45, 7 substeps
+  @31 m/s; head-on 0.001 m gap, glancing %96 teğetsel, 0 tunneling.
+- **Önemli:** all-visible 310 m hattını kesiyor; lap-01 için ayrı ölçüm gerek.
+  Entegrasyon P67 lap modunda yapılacak.
+- Kanıt: `docs/work/analysis/prop-collision.md`, `probes/prop-collision/`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
