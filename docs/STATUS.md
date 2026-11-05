@@ -635,6 +635,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Düzeltme: `applyCanvasAspect()` canvas oranını `consumer.cameraShape.aspect` ve `session.packet.camera.aspect`'e uygular; resize dinlenir; throw kaldırıldı.
 - CDP manuel W testi: tick 93→274, hız **31,36 m/s**, console 0. `verify_e1_drive` **570/570**.
 
+## 6 Kasım 2026 — soak 310 m regresyonu
+
+- 310 m varsayılanı sonrası soak'ın drive/telemetry segmentleri node anchor'larıyla uyuşmuyordu: ortak dünya kurs tangentinde (0,767 rad) kuruluyordu.
+- Düzeltme: soak drive/telemetry fazları **legacy spawn heading** (1,5708), sprint fazı kurs tangent'i ile dünya kuruyor.
+- `soak_browser --minutes 1 --runs 2`: **PASS**, 0 failure, 145 canlı doku sabit. `verify_e1_drive` **570/570**.
+
 ## 6 Kasım 2026 — araç dokuları entegre
 
 - 5 araçta 491 draw'dan **224'ü** gerçek albedo + UV0 ile dokulandı: Corvette 50, Lotus 48, Dodge 42, Focus 37, Audi 47; 40 doku / 18.178.048 B RGBA.

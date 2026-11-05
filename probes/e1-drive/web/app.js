@@ -533,8 +533,10 @@ async function loadEngine() {
     bestTimes = createBestTimes(storage, SPRINT_BEST_KEY);
     state.sprintBest = bestTimes.bestFor(car.slug);
     // The 310 m course starts on the measured tangent of its start gate; the
-    // 29 m regression course keeps the committed drive spawn heading.
-    tick0 = createWorld(spawn.x, spawn.z, layoutStartHeading(layout, spawn));
+    // 29 m regression course keeps the committed drive spawn heading. The soak
+    // schedule runs drive/telemetry segments whose node anchors were recorded
+    // at the legacy spawn heading, so its shared world keeps that heading.
+    tick0 = createWorld(spawn.x, spawn.z, SOAK ? spawn.heading : layoutStartHeading(layout, spawn));
   } else {
     tick0 = createWorld(spawn.x, spawn.z, spawn.heading);
   }
@@ -1089,13 +1091,13 @@ async function soakBeginPhase(name, tick0 = null) {
     state.sprintResult = null;
     state.sprintBanner = null;
     sprintRules = null;
-    const world0 = tick0 ?? engine.reset();
+    const world0 = tick0 ?? createWorld(spawn.x, spawn.z, spawn.heading);
     const tick1 = await startTimeline(world0, { reload: true, packetScript: null });
     applyState(tick1);
     soakPhaseTicks[name] += 1;
     soakTotalTicks += 1;
   } else if (name === 'sprint') {
-    const world0 = engine.reset();
+    const world0 = createWorld(spawn.x, spawn.z, layoutStartHeading(soakLayout, spawn));
     sprintRules = createSprintRules(soakLayout);
     const tick1 = await startTimeline(world0, { reload: true, packetScript: SPRINT_PACKET_SCRIPT });
     applyState(tick1);
@@ -1106,6 +1108,7 @@ async function soakBeginPhase(name, tick0 = null) {
     // between each. Its duration is recorded as a mode-switch hitch, not hidden
     // inside a frame-time percentile.
     const started = performance.now();
+    createWorld(spawn.x, spawn.z, spawn.heading);
     const series = runTelemetrySeries(engine);
     const syncMs = performance.now() - started;
     const manoeuvres = {};
