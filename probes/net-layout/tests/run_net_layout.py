@@ -34,9 +34,23 @@ ROOT = Path(__file__).resolve().parents[3]
 PROBE = ROOT / 'probes' / 'net-layout'
 OUT = ROOT / '_work' / 'net-layout'
 LOGS = ROOT / '_work' / 'logs' / 'net-layout'
+GOLDEN = OUT / 'golden'
 NATIVE_BUILD = ROOT / '_work' / 'build' / 'net-layout-native'
 WASM_BUILD = OUT / 'build'
 EMSDK = ROOT / '_work' / 'toolchains' / 'emsdk'
+
+# Fixture name -> (native byte length, carries a wchar_t-dependent field).
+# The second flag is what the negative test keys on: a fixture that embeds a
+# name must fail the raw-struct path on wasm, and join_data (no wchar_t) must
+# not, which keeps the negative test honest.
+GOLDEN_EXPECTED = {
+    'base_profile': (56, True),
+    'start_race_player': (104, True),
+    'start_race': (2104, True),
+    'join_request_1local': (125, True),
+    'join_reply_host_1local': (117, True),
+    'join_data_host_0peers': (85, False),
+}
 
 WASM_FLAGS = [
     '-std=c++17', '-O2', '-Wall', '-Wextra', '-Wpedantic',
@@ -108,7 +122,8 @@ def build_wasm(label: str, short_wchar: bool) -> Path:
         raise RuntimeError(f'emsdk not found at {EMSDK}')
     out = WASM_BUILD / f'net_layout_{label}.mjs'
     cmd = [sys.executable, str(emxx),
-           str(PROBE / 'src' / 'probe_core.cpp'), str(PROBE / 'src' / 'wasm_entry.cpp'),
+           str(PROBE / 'src' / 'probe_core.cpp'), str(PROBE / 'src' / 'wire_encoder.cpp'),
+           str(PROBE / 'src' / 'wasm_entry.cpp'),
            f'-DWIRE_PROBE_FLAGS={label}']
     cmd += WASM_FLAGS
     if short_wchar:
@@ -248,6 +263,144 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# golden fixtures (explicit encoder)
+# ---------------------------------------------------------------------------
+def golden_map(doc: dict) -> dict[str, dict]:
+    return {f['name']: f for f in doc.get('golden', {}).get('fixtures', [])}
+
+
+def write_golden_fixtures(native: dict) -> dict:
+    """Materialise the native encoder output as .bin + banner .json files."""
+    GOLDEN.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for f in native['golden']['fixtures']:
+        blob = bytes.fromhex(f['hex'])
+        bin_path = GOLDEN / f"{f['name']}.bin"
+        bin_path.write_bytes(blob)
+        digest = hashlib.sha256(blob).hexdigest()
+        banner = {
+            'schema': 'blur-wire-golden-fixture/1',
+            'case': f['name'],
+            'kind': f['kind'],
+            'source': native['golden']['source'],
+            'upstream_commit': native['upstreamCommit'],
+            'encoder': native['golden']['encoder'],
+            'scope': native['golden']['scope'],
+            'length': len(blob),
+            'sha256': digest,
+            'fnv1a64': f['fnv1a64'],
+            'wchar_dependent': f['wcharDependent'],
+            'raw_variant': f['rawVariant'],
+            'file': bin_path.name,
+        }
+        (GOLDEN / f"{f['name']}.json").write_text(
+            json.dumps(banner, indent=2) + '\n', encoding='utf-8')
+        entries.append({
+            'name': f['name'],
+            'file': bin_path.relative_to(ROOT).as_posix(),
+            'banner': (GOLDEN / f"{f['name']}.json").relative_to(ROOT).as_posix(),
+            'size': len(blob),
+            'sha256': digest,
+            'fnv1a64': f['fnv1a64'],
+            'wcharDependent': f['wcharDependent'],
+        })
+
+    manifest = {
+        'schema': 'blur-wire-golden-manifest/1',
+        'source': native['golden']['source'],
+        'upstreamCommit': native['upstreamCommit'],
+        'encoder': native['golden']['encoder'],
+        'scope': native['golden']['scope'],
+        'namePolicy': native['golden']['namePolicy'],
+        'startRacePolicy': native['golden']['startRacePolicy'],
+        'fixtures': entries,
+    }
+    manifest_path = GOLDEN / 'manifest.json'
+    manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    return {'manifest': manifest_path.relative_to(ROOT).as_posix(),
+            'manifestSha256': sha256(manifest_path), 'fixtures': entries}
+
+
+def check_golden(native: dict, native_second: dict, wasm4: dict | None,
+                 wasm2: dict | None) -> dict:
+    gn = golden_map(native)
+    names = sorted(gn)
+    record('golden-fixtures-present', names == sorted(GOLDEN_EXPECTED),
+           f'{len(names)} fixtures: {names}')
+
+    bad_size = [n for n, (size, _) in GOLDEN_EXPECTED.items()
+                if n in gn and gn[n]['size'] != size]
+    record('golden-sizes-match-native-contract', not bad_size,
+           f'expected {[s for s, _ in GOLDEN_EXPECTED.values()]}, '
+           f'got {[gn[n]["size"] for n in names]}'
+           + (f'; bad: {bad_size}' if bad_size else ''))
+
+    bad_hash = []
+    for n, f in gn.items():
+        try:
+            blob = bytes.fromhex(f['hex'])
+        except ValueError:
+            bad_hash.append(n)
+            continue
+        if len(blob) != f['size'] or hashlib.sha256(blob).hexdigest() != f['sha256']:
+            bad_hash.append(n)
+    record('golden-sha256-matches-bytes', not bad_hash,
+           '' if not bad_hash else f'differ: {bad_hash}')
+
+    record('golden-deterministic-across-runs',
+           native.get('golden') == native_second.get('golden'),
+           'native run 1 vs run 2')
+
+    dependent = [n for n, (_, dep) in GOLDEN_EXPECTED.items() if dep]
+    native_raw_bad = [n for n in dependent
+                      if not gn[n]['rawVariant']['matchesGolden']]
+    record('native-raw-equals-golden', not native_raw_bad,
+           f'raw sizes {[gn[n]["rawVariant"]["size"] for n in dependent]}'
+           + (f'; differ: {native_raw_bad}' if native_raw_bad else ''))
+
+    if wasm4 is not None and wasm2 is not None:
+        g4, g2 = golden_map(wasm4), golden_map(wasm2)
+
+        def encoder_equal(other: dict[str, dict]) -> bool:
+            return all(n in other and other[n]['hex'] == gn[n]['hex']
+                       and other[n]['sha256'] == gn[n]['sha256'] for n in names)
+
+        record('wasm-default-encoder-matches-native', encoder_equal(g4),
+               f'wchar_t={wasm4["build"]["wcharBytes"]}')
+        record('wasm-short-wchar-encoder-matches-native', encoder_equal(g2),
+               f'wchar_t={wasm2["build"]["wcharBytes"]}')
+
+        default_raw_same = [n for n in dependent if g4[n]['rawVariant']['matchesGolden']]
+        record('wasm-default-raw-differs-on-wchar-fixtures', not default_raw_same,
+               'raw sizes ' + str([g4[n]['rawVariant']['size'] for n in dependent])
+               + (f'; unexpectedly equal: {default_raw_same}' if default_raw_same else ''))
+
+        short_raw_same = [n for n in dependent if g2[n]['rawVariant']['matchesGolden']]
+        record('wasm-short-wchar-raw-differs-on-wchar-fixtures', not short_raw_same,
+               'raw sizes ' + str([g2[n]['rawVariant']['size'] for n in dependent])
+               + (f'; unexpectedly equal: {short_raw_same}' if short_raw_same else ''))
+
+        # Positive control: a record with no wchar_t-dependent field is safe on
+        # the raw path, so the negative checks above are not vacuous.
+        control = 'join_data_host_0peers'
+        ok_control = (gn[control]['rawVariant']['matchesGolden']
+                      and g4[control]['rawVariant']['matchesGolden']
+                      and g2[control]['rawVariant']['matchesGolden'])
+        record('wchar-free-record-raw-is-identical', ok_control,
+               f'{control} raw == golden on native, wasm4 and wasm2')
+
+    written = write_golden_fixtures(native)
+    written_ok = all(
+        (ROOT / e['file']).stat().st_size == e['size']
+        and sha256(ROOT / e['file']) == e['sha256']
+        for e in written['fixtures'])
+    record('golden-fixtures-written', written_ok,
+           f'{len(written["fixtures"])} .bin + banner .json, manifest '
+           f'{written["manifestSha256"][:16]}…')
+    return written
+
+
 def markdown_table(native: dict, wasm4: dict) -> str:
     n = normalise(native)
     w = normalise(wasm4)
@@ -319,6 +472,7 @@ def main() -> int:
            '' if not problems else f'{len(problems)} differences, first: {problems[0]}')
 
     if args.native_only:
+        check_golden(native, native2, None, None)
         return summarise(CHECKS, args)
 
     wasm4 = run_wasm(WASM_BUILD / 'net_layout_wasm32-default-wchar4.mjs', wasm4_path, 'default')
@@ -398,6 +552,7 @@ def main() -> int:
     record('wasm-short-wchar-2', wasm2['build']['wcharBytes'] == 2, str(wasm2['build']['wcharBytes']))
 
     native_n = normalise(native)
+    golden_written = check_golden(native, native2, wasm4, wasm2)
     table = markdown_table(native, wasm4)
     (OUT / 'layout-table.md').write_text(table, encoding='utf-8')
 
@@ -419,6 +574,7 @@ def main() -> int:
         'nativeLayout': native_n,
         'wcharDeltaDefaultWasm': delta,
         'wcharDeltaShortWchar': delta_short,
+        'golden': golden_written,
         'checks': [{'name': n, 'pass': ok, 'detail': d} for n, ok, d in CHECKS],
     }
     (OUT / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n', encoding='utf-8')

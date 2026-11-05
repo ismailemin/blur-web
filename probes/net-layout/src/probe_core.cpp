@@ -19,6 +19,7 @@
 
 #include "probe_core.h"
 #include "wire_decls.h"
+#include "wire_encoder.h"
 
 #include <cstdio>
 #include <cstring>
@@ -551,6 +552,395 @@ namespace wireprobe
 	}
 
 	// -----------------------------------------------------------------------
+	// golden fixtures: explicit encoder vs. raw struct copy
+	//
+	// The golden bytes come from src/wire_encoder.cpp, which never uses a
+	// struct's memory image. The raw variant is the legacy path (memcpy of the
+	// same source objects, or a record that inserts a raw BaseProfile slice).
+	// On native the two must agree; on wasm they must not, for every fixture
+	// that carries a name. That comparison is the point of the encoder.
+	// -----------------------------------------------------------------------
+	static const uint32_t kFixturePacketVersion = 0x0F000001u;	// NetVersion.h:39-43, gold
+	static const uint64_t kFixtureHostConsoleId = 0x1122334455667788ull;
+	static const uint64_t kFixtureSenderConsoleId = 0x8877665544332211ull;
+	static const uint32_t kFixtureDlcMask = 0x0000000Fu;
+	static const uint16_t kFixtureUpKbps = 1024;
+	static const uint16_t kFixtureDownKbps = 2048;
+
+	static void fillFixtureCommonAddress(unsigned char (&addr)[wirecodec::kCommonAddressSize])
+	{
+		// Synthetic placeholder, not a DemonWare common address. Fixed so the
+		// fixture is reproducible and no real transport blob is committed.
+		for (int i = 0; i < wirecodec::kCommonAddressSize; ++i)
+		{
+			addr[i] = (unsigned char)(0x80 + i);
+		}
+	}
+
+	static void clearStartRacePlayer(RacerNet::NetStartRacePacketPlayer& p)
+	{
+		// Explicit zero of every field of an unused slot. This is the fixture
+		// policy recommended in net-layout.md §7/§8.1: the full 20-slot array
+		// travels, but slots outside mNumPlayerVehicles carry zeros, not the
+		// previous race's bytes.
+		p.m_User.m_Uid = 0;
+		p.m_User.m_IsGuest = false;
+		for (int i = 0; i < SYSTEM_PROFILE_NAME_LENGTH; ++i)
+		{
+			p.m_User.m_Name[i] = (WCHAR)0;
+		}
+		p.mJoinRef = 0;
+		p.mPrimaryJoinRef = 0;
+		p.mStartPos = 0;
+		p.mTeam = 0;
+		p.mAiAvatarId = 0;
+		p.mAiMultiplayerRank = 0;
+
+		p.mVehicle.m_xtVehicleId = 0;
+		p.mVehicle.m_xtColourId = 0;
+		p.mVehicle.m_VehicleContentPack = 0;
+		p.mVehicle.m_AutoGears = 0;
+		p.mVehicle.m_CharacterId = 0;
+		p.mVehicle.m_PickupSlots = 0;
+		p.mVehicle.m_ShieldSlots = 0;
+		p.mVehicle.m_AdditionalHealthPips = 0;
+		p.mVehicle.m_AdditionalHP = 0;
+
+		for (int i = 0; i < UI::E_MULTIPLAYER_LOADOUT_SLOT_MAX; ++i)
+		{
+			p.mLoadOut.slots.storage[i] = (UI::E_MultiplayerVehicleAbilities)0;
+		}
+	}
+
+	static void setStartRaceFixture(RacerNet::NetStartRacePacket& o)
+	{
+		o.mHostId = 0x8877665544332211ull;
+		o.mHostStartTime = 0x01020304;
+		o.mRandomSeed = 0x05060708;
+		o.mNumPlayerVehicles = 2;
+		o.mNumAIVehicles = 1;
+		o.mOriginalHostJoinId = 3;
+		o.mEvntIndex = 4;
+		for (int i = 0; i < RacerNet::NET_MAX_VEHICLES; ++i)
+		{
+			if (i < 2)
+			{
+				setStartRacePacketPlayer(o.mPlayer.storage[i]);
+				o.mPlayer.storage[i].mJoinRef = (U8)(i + 1);
+				o.mPlayer.storage[i].mPrimaryJoinRef = (U8)(i + 1);
+				o.mPlayer.storage[i].mStartPos = (U8)(i + 1);
+			}
+			else
+			{
+				clearStartRacePlayer(o.mPlayer.storage[i]);
+			}
+		}
+	}
+
+	struct GoldenFixture
+	{
+		std::string name;
+		std::string kind;			// "struct" or "record"
+		bool wcharDependent;
+		int expectedSize;
+		Bytes golden;
+		Bytes raw;
+	};
+
+	template <typename Fn>
+	static Bytes encodeRecord(Fn fn, bool& ok)
+	{
+		Bytes out((size_t)wirecodec::kMaxRecordSize);
+		wirecodec::Writer w(out.data(), (int)out.size());
+		fn(w);
+		ok = w.ok();
+		out.resize((size_t)w.size());
+		return out;
+	}
+
+	static void appendBytes(Bytes& out, const unsigned char* p, int n)
+	{
+		out.insert(out.end(), p, p + n);
+	}
+
+	template <typename T>
+	static void appendRaw(Bytes& out, const T& value)
+	{
+		appendBytes(out, reinterpret_cast<const unsigned char*>(&value), (int)sizeof(T));
+	}
+
+	static void appendU8(Bytes& out, uint8_t v) { out.push_back((unsigned char)v); }
+
+	static void appendU16(Bytes& out, uint16_t v)
+	{
+		out.push_back((unsigned char)(v & 0xFFu));
+		out.push_back((unsigned char)((v >> 8) & 0xFFu));
+	}
+
+	static void appendU32(Bytes& out, uint32_t v)
+	{
+		out.push_back((unsigned char)(v & 0xFFu));
+		out.push_back((unsigned char)((v >> 8) & 0xFFu));
+		out.push_back((unsigned char)((v >> 16) & 0xFFu));
+		out.push_back((unsigned char)((v >> 24) & 0xFFu));
+	}
+
+	static void appendU64(Bytes& out, uint64_t v)
+	{
+		for (int i = 0; i < 8; ++i)
+		{
+			out.push_back((unsigned char)((v >> (8 * i)) & 0xFFu));
+		}
+	}
+
+	static Bytes rawJoinRequest(const wirecodec::JoinRequestFields& f,
+		const SysProfile::BaseProfile& player,
+		const RacerNet::NetPlayerProfileGameData& profileData)
+	{
+		// Legacy shape: every scalar is a field write, but BaseProfile is
+		// memcpy-ed as sizeof(BaseProfile). This is exactly what changes size
+		// and encoding on wasm.
+		Bytes out;
+		appendU32(out, f.packetVersion);
+		appendU8(out, f.recipientJoinId);
+		appendU64(out, f.hostConsoleId);
+		appendU64(out, f.senderConsoleId);
+		appendBytes(out, f.commonAddress, wirecodec::kCommonAddressSize);
+		appendU16(out, f.upStreamKbps);
+		appendU16(out, f.downStreamKbps);
+		appendU32(out, f.dlcMask);
+		appendU8(out, 1);
+		appendRaw(out, player);
+		appendU8(out, f.voiceBanned);
+		appendRaw(out, profileData);
+		appendU8(out, f.joinId);
+		return out;
+	}
+
+	static Bytes rawJoinReply(const wirecodec::JoinReplyFields& f,
+		const SysProfile::BaseProfile& player,
+		const RacerNet::NetPlayerProfileGameData& profileData)
+	{
+		Bytes out;
+		appendU8(out, f.updatedLocalDataFollows);
+		appendU8(out, f.updatedLocalCount);
+		appendU8(out, f.updatedJoinId);
+		appendU64(out, f.hostConsoleId);
+		appendBytes(out, f.commonAddress, wirecodec::kCommonAddressSize);
+		appendU16(out, f.upStreamKbps);
+		appendU16(out, f.downStreamKbps);
+		appendU32(out, f.dlcMask);
+		appendU8(out, 1);
+		appendRaw(out, player);
+		appendU8(out, f.joinId);
+		appendU8(out, f.voiceBanned);
+		appendRaw(out, profileData);
+		appendU8(out, f.host);
+		appendU8(out, f.playerState);
+		return out;
+	}
+
+	static bool buildGoldenFixtures(std::vector<GoldenFixture>& fixtures, std::string& err)
+	{
+		fixtures.clear();
+
+		// --- source objects: zero storage + explicit field assignment ------
+		alignas(SysProfile::BaseProfile) unsigned char bpStorage[sizeof(SysProfile::BaseProfile)];
+		std::memset(bpStorage, 0, sizeof(bpStorage));
+		SysProfile::BaseProfile& bp = *new (bpStorage) SysProfile::BaseProfile;
+		setBaseProfile(bp);
+
+		alignas(RacerNet::NetPlayerProfileGameData) unsigned char pgdStorage[sizeof(RacerNet::NetPlayerProfileGameData)];
+		std::memset(pgdStorage, 0, sizeof(pgdStorage));
+		RacerNet::NetPlayerProfileGameData& pgd = *new (pgdStorage) RacerNet::NetPlayerProfileGameData;
+		setNetPlayerProfileGameData(pgd);
+
+		alignas(RacerNet::NetStartRacePacketPlayer) unsigned char srpStorage[sizeof(RacerNet::NetStartRacePacketPlayer)];
+		std::memset(srpStorage, 0, sizeof(srpStorage));
+		RacerNet::NetStartRacePacketPlayer& srp = *new (srpStorage) RacerNet::NetStartRacePacketPlayer;
+		setStartRacePacketPlayer(srp);
+		srp.mJoinRef = 1;
+		srp.mPrimaryJoinRef = 1;
+
+		alignas(RacerNet::NetStartRacePacket) unsigned char srStorage[sizeof(RacerNet::NetStartRacePacket)];
+		std::memset(srStorage, 0, sizeof(srStorage));
+		RacerNet::NetStartRacePacket& sr = *new (srStorage) RacerNet::NetStartRacePacket;
+		setStartRaceFixture(sr);
+
+		alignas(RacerNet::NetRaceSettings) unsigned char nrsStorage[sizeof(RacerNet::NetRaceSettings)];
+		std::memset(nrsStorage, 0, sizeof(nrsStorage));
+		RacerNet::NetRaceSettings& nrs = *new (nrsStorage) RacerNet::NetRaceSettings;
+		setNetRaceSettings(nrs);
+
+		wirecodec::JoinRequestFields jrq;
+		jrq.packetVersion = kFixturePacketVersion;
+		jrq.recipientJoinId = 2;
+		jrq.hostConsoleId = kFixtureHostConsoleId;
+		jrq.senderConsoleId = kFixtureSenderConsoleId;
+		fillFixtureCommonAddress(jrq.commonAddress);
+		jrq.upStreamKbps = kFixtureUpKbps;
+		jrq.downStreamKbps = kFixtureDownKbps;
+		jrq.dlcMask = kFixtureDlcMask;
+		jrq.player = &bp;
+		jrq.voiceBanned = 0;
+		jrq.profileData = &pgd;
+		jrq.joinId = 6;
+
+		wirecodec::JoinReplyFields jrp;
+		jrp.updatedLocalDataFollows = 1;
+		jrp.updatedLocalCount = 1;
+		jrp.updatedJoinId = 2;
+		jrp.hostConsoleId = kFixtureHostConsoleId;
+		fillFixtureCommonAddress(jrp.commonAddress);
+		jrp.upStreamKbps = kFixtureUpKbps;
+		jrp.downStreamKbps = kFixtureDownKbps;
+		jrp.dlcMask = kFixtureDlcMask;
+		jrp.player = &bp;
+		jrp.joinId = 6;
+		jrp.voiceBanned = 0;
+		jrp.profileData = &pgd;
+		jrp.host = 1;
+		jrp.playerState = 4;	// Idle, t006-wire-format.md §1.6
+		// -------------------------------------------------------------------
+
+		bool ok = true;
+
+		{
+			GoldenFixture f;
+			f.name = "base_profile";
+			f.kind = "struct";
+			f.wcharDependent = true;
+			f.expectedSize = wirecodec::kBaseProfileSize;
+			f.golden = encodeRecord([&](wirecodec::Writer& w) { wirecodec::writeBaseProfile(w, bp); }, ok);
+			f.raw = imageWith<SysProfile::BaseProfile>(0x00, setBaseProfile);
+			fixtures.push_back(f);
+			if (!ok) { err = "encode base_profile failed"; return false; }
+		}
+		{
+			GoldenFixture f;
+			f.name = "start_race_player";
+			f.kind = "struct";
+			f.wcharDependent = true;
+			f.expectedSize = wirecodec::kStartRacePlayerSize;
+			f.golden = encodeRecord([&](wirecodec::Writer& w) { wirecodec::writeStartRacePlayer(w, srp); }, ok);
+			f.raw = imageWith<RacerNet::NetStartRacePacketPlayer>(0x00,
+				[](RacerNet::NetStartRacePacketPlayer& o) {
+					setStartRacePacketPlayer(o);
+					o.mJoinRef = 1;
+					o.mPrimaryJoinRef = 1;
+				});
+			fixtures.push_back(f);
+			if (!ok) { err = "encode start_race_player failed"; return false; }
+		}
+		{
+			GoldenFixture f;
+			f.name = "start_race";
+			f.kind = "struct";
+			f.wcharDependent = true;
+			f.expectedSize = wirecodec::kStartRaceSize;
+			f.golden = encodeRecord([&](wirecodec::Writer& w) { wirecodec::writeStartRace(w, sr, 2); }, ok);
+			f.raw = imageWith<RacerNet::NetStartRacePacket>(0x00, setStartRaceFixture);
+			fixtures.push_back(f);
+			if (!ok) { err = "encode start_race failed"; return false; }
+		}
+		{
+			GoldenFixture f;
+			f.name = "join_request_1local";
+			f.kind = "record";
+			f.wcharDependent = true;
+			f.expectedSize = wirecodec::kJoinRequest1LocalSize;
+			f.golden = encodeRecord([&](wirecodec::Writer& w) { wirecodec::writeJoinRequest1Local(w, jrq); }, ok);
+			f.raw = rawJoinRequest(jrq, bp, pgd);
+			fixtures.push_back(f);
+			if (!ok) { err = "encode join_request_1local failed"; return false; }
+		}
+		{
+			GoldenFixture f;
+			f.name = "join_reply_host_1local";
+			f.kind = "record";
+			f.wcharDependent = true;
+			f.expectedSize = wirecodec::kJoinReplyHost1LocalSize;
+			f.golden = encodeRecord([&](wirecodec::Writer& w) { wirecodec::writeJoinReplyHost1Local(w, jrp); }, ok);
+			f.raw = rawJoinReply(jrp, bp, pgd);
+			fixtures.push_back(f);
+			if (!ok) { err = "encode join_reply_host_1local failed"; return false; }
+		}
+		{
+			GoldenFixture f;
+			f.name = "join_data_host_0peers";
+			f.kind = "record";
+			f.wcharDependent = false;	// no wchar_t and no wchar-dependent type
+			f.expectedSize = wirecodec::kJoinDataHost0PeersSize;
+			f.golden = encodeRecord([&](wirecodec::Writer& w) { wirecodec::writeJoinDataHost0Peers(w, nrs); }, ok);
+			// Raw path: memcpy of NetRaceSettings (wchar-free, layouts agree).
+			f.raw.clear();
+			appendRaw(f.raw, nrs);
+			appendU8(f.raw, 0);
+			fixtures.push_back(f);
+			if (!ok) { err = "encode join_data_host_0peers failed"; return false; }
+		}
+
+		for (size_t i = 0; i < fixtures.size(); ++i)
+		{
+			if ((int)fixtures[i].golden.size() != fixtures[i].expectedSize)
+			{
+				err = "fixture " + fixtures[i].name + " has size " +
+					num((int)fixtures[i].golden.size()) + ", expected " +
+					num(fixtures[i].expectedSize) + " (encoder bug)";
+				return false;
+			}
+		}
+		return true;
+	}
+
+	static bool rawMatches(const GoldenFixture& f)
+	{
+		return f.raw.size() == f.golden.size() &&
+			(f.raw.empty() || std::memcmp(f.raw.data(), f.golden.data(), f.raw.size()) == 0);
+	}
+
+	static std::string goldenJson(void)
+	{
+		std::vector<GoldenFixture> fixtures;
+		std::string err;
+		const bool built = buildGoldenFixtures(fixtures, err);
+
+		std::string out = "{\n";
+		out += "    \"schema\": \"blur-wire-golden/1\",\n";
+		out += "    \"source\": \"derived\",\n";
+		out += "    \"encoder\": \"explicit-field-wise-little-endian/1\",\n";
+		out += "    \"scope\": {\"engineIntegration\": false, \"liveCapture\": \"none\", \"gameImplemented\": false},\n";
+		out += "    \"namePolicy\": {\"encoding\": \"utf-16le\", \"units\": 17, \"terminator\": \"unit 16 is NUL in this fixture\"},\n";
+		out += "    \"startRacePolicy\": {\"slots\": 20, \"filledSlots\": 2, \"unfilledSlots\": \"explicit zero, not stale\"},\n";
+		if (!built)
+		{
+			out += "    \"buildError\": " + jsonStr(err.c_str()) + ",\n";
+		}
+		out += "    \"fixtures\": [";
+		for (size_t i = 0; i < fixtures.size(); ++i)
+		{
+			const GoldenFixture& f = fixtures[i];
+			const bool match = rawMatches(f);
+			out += (i ? ",\n" : "\n");
+			out += "      {\"name\": " + jsonStr(f.name.c_str());
+			out += ", \"kind\": " + jsonStr(f.kind.c_str());
+			out += ", \"size\": " + num((int)f.golden.size());
+			out += ", \"wcharDependent\": ";
+			out += f.wcharDependent ? "true" : "false";
+			out += ", \"sha256\": " + jsonStr(wirecodec::sha256Hex(f.golden.empty() ? nullptr : f.golden.data(), f.golden.size()).c_str());
+			out += ", \"fnv1a64\": " + jsonStr(hex64(fnv1a64(f.golden.empty() ? nullptr : f.golden.data(), (int)f.golden.size())).c_str());
+			out += ", \"hex\": " + jsonStr(hexBytes(f.golden.empty() ? nullptr : f.golden.data(), (int)f.golden.size()).c_str());
+			out += ", \"rawVariant\": {\"size\": " + num((int)f.raw.size());
+			out += ", \"sha256\": " + jsonStr(wirecodec::sha256Hex(f.raw.empty() ? nullptr : f.raw.data(), f.raw.size()).c_str());
+			out += ", \"matchesGolden\": ";
+			out += match ? "true" : "false";
+			out += "}}";
+		}
+		out += "\n    ]\n  }";
+		return out;
+	}
+
+	// -----------------------------------------------------------------------
 	// the report
 	// -----------------------------------------------------------------------
 	static std::string buildJson(void)
@@ -999,7 +1389,8 @@ namespace wireprobe
 			out += "    " + recs[i];
 			out += (i + 1 == recs.size()) ? "\n" : ",\n";
 		}
-		out += "  ]\n}\n";
+		out += "  ],\n";
+		out += "  \"golden\": " + goldenJson() + "\n}\n";
 		return out;
 	}
 
@@ -1045,6 +1436,52 @@ namespace wireprobe
 		{
 			err = "records section missing";
 			return false;
+		}
+
+		// Explicit encoder: the golden fixtures are built from field values, so
+		// their sizes are the native constants on every target. This is the
+		// property that makes the wasm build byte-identical to MSVC.
+		{
+			std::string goldenErr;
+			std::vector<GoldenFixture> fixtures;
+			if (!buildGoldenFixtures(fixtures, goldenErr))
+			{
+				err = "golden fixtures: " + goldenErr;
+				return false;
+			}
+			const int expectedSizes[] = {
+				wirecodec::kBaseProfileSize, wirecodec::kStartRacePlayerSize,
+				wirecodec::kStartRaceSize, wirecodec::kJoinRequest1LocalSize,
+				wirecodec::kJoinReplyHost1LocalSize, wirecodec::kJoinDataHost0PeersSize,
+			};
+			if (fixtures.size() != sizeof(expectedSizes) / sizeof(expectedSizes[0]))
+			{
+				err = "unexpected golden fixture count";
+				return false;
+			}
+			for (size_t i = 0; i < fixtures.size(); ++i)
+			{
+				if ((int)fixtures[i].golden.size() != expectedSizes[i])
+				{
+					err = "golden fixture size mismatch: " + fixtures[i].name;
+					return false;
+				}
+			}
+
+			// Known-answer tests for the hash used in the fixture banner.
+			const unsigned char abc[3] = { 'a', 'b', 'c' };
+			if (wirecodec::sha256Hex(abc, 3) !=
+				"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+			{
+				err = "SHA-256 known-answer test failed (abc)";
+				return false;
+			}
+			if (wirecodec::sha256Hex(nullptr, 0) !=
+				"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+			{
+				err = "SHA-256 known-answer test failed (empty)";
+				return false;
+			}
 		}
 
 		return true;

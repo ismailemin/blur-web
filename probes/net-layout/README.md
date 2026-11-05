@@ -26,6 +26,7 @@ For every type that is `memcpy`-ed into a datagram (`src/probe_core.cpp`):
 | bitfield position | bit-pattern probe: build an all-zero object, set exactly one bitfield to all ones, and record which bits of the object representation changed. Bitfields cannot be `offsetof`-ed and their allocation unit is compiler-defined, so this is the authoritative check |
 | padding | the object is constructed twice over `0xCD` and over `0xA5` storage, every field is then assigned the same values, and the bytes that still differ are exactly the bytes nothing wrote. Those bytes travel on the wire but carry no field |
 | canonical record | a fixed field assignment, zero-filled storage, whole-object hex + FNV-1a 64 |
+| golden fixture | the explicit encoder (`src/wire_encoder.cpp`) emits the native wire bytes; the same field values are encoded natively and on wasm32 and compared byte-for-byte, and the legacy raw struct copy is compared against the same bytes as a negative test |
 
 It also builds **derived records**: the exact byte sequences the P0 packet
 writers emit. Those writers are field-by-field (`WriteU8`/`WriteBuffer`), not
@@ -55,7 +56,8 @@ Use the bundled Python if `python` is a Store alias:
 `C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe`.
 
 One command (declaration gate, native build + CTest, two wasm builds, three
-reference models, all comparisons, determinism, evidence):
+reference models, all comparisons, golden encoder fixtures, determinism,
+evidence):
 
 ```powershell
 python probes/net-layout/tests/run_net_layout.py
@@ -84,7 +86,8 @@ $cmake = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7
 
 $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
 & $py _work/toolchains/emsdk/upstream/emscripten/em++.py `
-  probes/net-layout/src/probe_core.cpp probes/net-layout/src/wasm_entry.cpp `
+  probes/net-layout/src/probe_core.cpp probes/net-layout/src/wire_encoder.cpp `
+  probes/net-layout/src/wasm_entry.cpp `
   -std=c++17 -O2 -Wno-invalid-offsetof -Wno-reorder-ctor -fshort-wchar `
   -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=node,web -sALLOW_MEMORY_GROWTH=0 `
   --no-entry -sEXPORTED_FUNCTIONS=_wire_layout_json,_wire_layout_selftest `
@@ -128,7 +131,14 @@ declarations (copied verbatim).
                "canonicalHex": "…", "canonicalHash": "0x…" } ],
   "records": [ { "name": "join_request_1local", "size": 125,
                  "fields": [ { "name": "packetVersion", "offset": 0, "size": 4,
-                               "count": 1, "source": "NetRace.cpp:2449" } ] } ]
+                               "count": 1, "source": "NetRace.cpp:2449" } ] } ],
+  "golden": { "schema": "blur-wire-golden/1", "source": "derived",
+              "encoder": "explicit-field-wise-little-endian/1",
+              "fixtures": [ { "name": "base_profile", "size": 56,
+                              "sha256": "…", "fnv1a64": "0x…", "hex": "…",
+                              "wcharDependent": true,
+                              "rawVariant": { "size": 56, "sha256": "…",
+                                              "matchesGolden": true } } ] }
 }
 ```
 
@@ -154,7 +164,8 @@ every target: little-endian, `WCHAR` is `wchar_t`, the four datagram headers are
 probes/net-layout/
   CMakeLists.txt                 native build (MSVC /W4 /permissive-)
   src/wire_decls.h               traceable transcription of the wire declarations
-  src/probe_core.h|.cpp          measurement core, derived records, JSON, self test
+  src/wire_encoder.h|.cpp        explicit little-endian encoder for the wchar_t-affected records
+  src/probe_core.h|.cpp          measurement core, derived records, golden fixtures, JSON, self test
   src/probe_main.cpp             native CLI
   src/wasm_entry.cpp             wasm32 exports: wire_layout_json, wire_layout_selftest
   tests/reference_layout.py      independent layout model (msvc / itanium × wchar 2 / 4)
@@ -178,6 +189,14 @@ version:
   and **48** with `-fshort-wchar` — so `-fshort-wchar` alone does not restore
   parity;
 * `NetStartRacePacket` is 2104 / 2584 / 1944 bytes respectively.
+
+The explicit encoder now emits the native wire bytes on all three targets:
+`BaseProfile` 56, `NetStartRacePacketPlayer` 104, `NetStartRacePacket` 2104,
+`join_request_1local` 125, `join_reply_host_1local` 117 and
+`join_data_host_0peers` 85. The runner writes these as golden `.bin` + banner
+`.json` files under `_work/net-layout/golden/` and asserts that the raw struct
+path does **not** match them on wasm (while `join_data`, which has no `wchar_t`,
+does). See `docs/work/analysis/net-layout.md` §11.
 
 ---
 

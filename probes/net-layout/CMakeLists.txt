@@ -15,7 +15,7 @@ function(net_layout_warnings target)
   endif()
 endfunction()
 
-add_library(net_layout_core STATIC src/probe_core.cpp)
+add_library(net_layout_core STATIC src/probe_core.cpp src/wire_encoder.cpp)
 target_include_directories(net_layout_core PUBLIC src)
 if(MSVC)
   target_compile_definitions(net_layout_core PUBLIC WIRE_PROBE_FLAGS=native-msvc-x64-wchar2)
