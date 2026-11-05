@@ -1,5 +1,11 @@
 # T-007 track visual — real River direct draws instead of the collision slab
 
+> **Superseded in part by P43/P46** (`T-007-extended-sprint.md`,
+> `T-007-ledge-fix.md`): the default visual now includes the six-section 540 m
+> corridor (394 draws / 57,133 triangles) behind `?survey=1`, and the playable
+> sprint remains the 29 m course. This document records the original two-section
+> visual and its measurements.
+
 **Date:** 5 November 2026
 **Owner:** P31 (sub-agent)
 **Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,

@@ -1,8 +1,9 @@
 # E1 PoC — tarayıcıda sürüş testi
 
 **Tarih:** 5 Kasım 2026
-**Ne:** wasm RacingPhysics + River collision mesh + WebGPU render.
-**Değil:** tam oyun değil. Yarış kuralları, ses, menü, teker çizimi ve orijinal
+**Ne:** wasm RacingPhysics + River collision mesh + gerçek araç/pist geometrisi +
+WebGPU.
+**Değil:** tam oyun değil. Ses, menü, rakip/AI, multiplayer ve orijinal
 materyaller yok.
 
 ## Başlatma
@@ -14,28 +15,34 @@ powershell -ExecutionPolicy Bypass -File tools\run_e1_poc.ps1
 
 Aç: **http://127.0.0.1:8801/**
 
-Alternatif (doğrudan):
-
-```powershell
-node probes\e1-drive\tools\serve.mjs --port 8801
-```
-
-Durdurmak için `Ctrl+C`.
+Alternatif: `node probes\e1-drive\tools\serve.mjs --port 8801`
 
 Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 
+## Modlar
+
+| URL | Ne |
+|---|---|
+| `/` | Serbest sürüş + sprint kuralları (29 m parkur) |
+| `/?script=drive` | Deterministik 300 tick sürüş |
+| `/?script=sprint` | Deterministik sprint (5 araç) |
+| `/?telemetry=1&car=<slug>` | 0–100, fren, yanal grip + grafikler |
+| `/?survey=1` | 539,81 m River görsel koridoru (oynanabilir parkur **değil**) |
+
 ## Araçlar
 
-Üstteki **CAR** listesinden seçilir. URL ile de seçilebilir:
-`http://127.0.0.1:8801/?car=audi-r8v10-stock`
+Üstteki **CAR** listesi veya `?car=`:
 
-| Araç | Slug | Beklenen mesafe / tepe hız |
+| Araç | Slug | Sprint (29 m) |
 |---|---|---:|
-| Corvette ZR1 | `corvette-zr1-stock` | 45,378 m / 15,44 m/s |
-| Lotus Exige Cup260 | `lotus-exige-cup260-stock` | 40,641 m / 15,08 m/s |
-| Dodge Challenger | `dodge-challenger-stock` | 41,041 m / 13,85 m/s |
-| Ford Focus RS (FWD) | `ford-focusrs-stock` | 30,664 m / 12,36 m/s |
-| Audi R8 V10 (AWD) | `audi-r8v10-stock` | 69,447 m / 21,54 m/s |
+| Corvette ZR1 | `corvette-zr1-stock` | 2,800 s |
+| Lotus Exige Cup260 | `lotus-exige-cup260-stock` | 2,850 s |
+| Dodge Challenger | `dodge-challenger-stock` | 3,000 s |
+| Ford Focus RS (FWD) | `ford-focusrs-stock` | 3,267 s |
+| Audi R8 V10 (AWD) | `audi-r8v10-stock` | 2,283 s |
+
+Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
+Dodge 4,633 → Focus 5,133 s.
 
 ## Kontroller
 
@@ -45,69 +52,54 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 | `S` / `↓` | fren |
 | `A` / `D` / `←` / `→` | direksiyon |
 | `Space` | el freni |
-| `R` | reset (yeni settle) |
+| `R` | yerinde restart (sayfa yenilemez) |
 | Fare sürükle | kamera orbit |
 | Tekerlek | zoom |
 
-## Deterministik scripted mod
+## Sprint
 
-Aynı girdi dizisiyle (120 gaz / 120 coast / 60 fren) tekrar üretilebilir:
-
-```text
-http://127.0.0.1:8801/?script=drive
-http://127.0.0.1:8801/?script=drive&car=audi-r8v10-stock
-```
-
-Sprint:
-
-```text
-http://127.0.0.1:8801/?script=sprint
-```
-
-Telemetri (0–50/0–100, fren, yanal grip + grafikler):
-
-```text
-http://127.0.0.1:8801/?telemetry=1&car=audi-r8v10-stock
-```
-
-HUD'da araç, tick, hız, temas, packet/tick hash ve state hash görünür. Node
-doğrulayıcısıyla aynı hash'i vermelidir.
+- Countdown → 2 checkpoint → finish (29 m düz parkur)
+- Süre, checkpoint sayısı, araç başına en iyi süre (`localStorage`)
+- Off-course → checkpoint’ten respawn; süre/checkpoint korunur
+- Kamera prop’ların içine girmiyor (BVH occlusion)
 
 ## Beklenen
 
-- Console'da **0 mesaj** (error/warning/log yok).
-- WebGPU canvas; araç + diagnostic pist yüzeyi.
-- 60 Hz hedef; sabit adım 1/60.
-- Her araç için ayrı state hash'i; iki koşu aynı.
+- Console’da **0 mesaj**
+- WebGPU canvas; araç kendi gövdesi/tekerleriyle
+- Gerçek pist draw’ları: 29 m sprint bölgesi + prop’lar
+- Sabit adım 1/60; deterministik hash’ler
 
-## Bilinen sınırlar (beklenen)
+## Bilinen sınırlar
 
-- **Her araç kendi `.model` gövdesi ve tekerleriyle çiziliyor** (5 ayrı mesh).
-- Tekerler fizik açısıyla dönüyor; kaliper sabit. Teker **konumu** rest-pose
-  (süspansiyon/steer/camber yok). Simetrik teker draw'larının bir kısmı AABB ile
-  köşeye atanamıyor; `unclassified` olarak çiziliyor, isim uydurulmuyor.
+- **Oynanabilir parkur 29 m**; 540 m görsel koridor `?survey=1` ile izlenir ama
+  **parkur değildir**: ölçülen çizgi 57,82 m’de 50 m’lik collision duvarından
+  geçiyor; şasi 52,7–53,4 m’de duruyor. Uydurma çözüm yok.
+- Kapalı tur yok (committed veriyle mümkün değil).
 - Materyaller diagnostic; doku/boya/gölge/post yok.
-- Pist yüzeyi collision geometrisi; gerçek yol draw set’i değil.
-- Box gravity proxy, nötr yüzey skalarları, XT `physicsParameters` açık.
-- Telemetri: 0–100 sırası Audi → Corvette → Lotus → Dodge → Focus; ölçüm
-  86 m’lik bantta, “top speed” Vmax değil.
-- `R` restart artık yerinde rebuild (180-tick settle; tek kare hitch), sayfa
-  yenilemesi yok.
-- Yarış kuralları/checkpoint/finish, ses, multiplayer yok.
+- Teker konumu rest-pose; süspansiyon/steer/camber yok.
+- Box gravity proxy; XT `physicsParameters` açık.
+- Ses, rakip, multiplayer yok.
 
 ## Sorun giderme
 
 | Belirti | Kontrol |
 |---|---|
-| `artifacts are missing` | `tools/run_e1_poc.ps1` çıktısındaki build komutlarını çalıştır |
+| `artifacts are missing` | `tools/run_e1_poc.ps1` çıktısındaki build komutları |
 | WebGPU yok | Chrome güncel mi, donanım hızlandırma açık mı? |
-| Araç görünmüyor | `?script=drive` ile dene; console'a bak |
-| 404 | Sunucu 8801'de mi? `_work/e1-drive/` mevcut mu? |
+| Araç görünmüyor | `?script=drive` dene; console’a bak |
+| 404 | Sunucu 8801’de mi? `_work/e1-drive/` mevcut mu? |
 
 ## Kanıt
 
 - `_work/e1-drive/browser-<car>-{start,mid,coast,end}.png`
-- `_work/e1-drive/browser-evidence.json`
-- `docs/work/verification/T-007-e1-drive.md`
-- `docs/work/verification/T-007-multi-car.md`
-- `docs/work/verification/T-003-stageB.md`
+- `_work/e1-drive/browser-<car>-sprint-*.png`
+- `_work/e1-drive/browser-evidence*.json`
+- `docs/work/verification/T-007-sprint-rules.md`
+- `docs/work/verification/T-007-per-car-meshes.md`
+- `docs/work/verification/T-007-track-visual.md`
+- `docs/work/verification/T-007-camera-collision.md`
+- `docs/work/verification/T-007-telemetry.md`
+- `docs/work/verification/T-007-reset-fix.md`
+- `docs/work/verification/T-007-soak.md`
+- `docs/work/verification/T-007-ledge-fix.md`

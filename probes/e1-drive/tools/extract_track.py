@@ -5,7 +5,9 @@ instances). That set is props near the road, not the road itself: the surface th
 wheels actually trace is `usa_la_river/Level.levelphysics`, which is not part of
 the render packet. Without it the car drives on an invisible surface.
 
-This tool emits the collision triangles inside one world-space box. The E1 drive
+This tool emits the collision triangles inside two world-space boxes: the legacy
+300-tick drive box and the bounding box of the measured 539.81 m corridor (read
+from `_work/track-coverage/corridor.json`, expanded by a margin). The E1 drive
 slice no longer draws them as the track visual: the real River render geometry is
 drawn instead (committed `level_inspect` direct draws), and this mesh is kept in
 the packet as hidden physics provenance (`visible:false`) and used to measure how
@@ -39,19 +41,51 @@ LEVEL = ROOT / "game-data/Blur/levels/usa_la_river/Level.levelphysics"
 DEFAULT_OUT = ROOT / "_work/e1-drive/track.json"
 PARSER = ROOT / "probes/collision-oracle/tests/reference_oracle.py"
 
-# The box that contains the whole 300-tick script for every roster car (the
-# slowest car leaves the spawn by 30.7 m, the fastest AWD car by 69.4 m: spawn
-# x = -88, so the run reaches x ~ -18.6) plus the visible props around it and the
-# chase camera's working area behind the car. Chosen from the measured runs in
-# _work/e1-drive/run.json, not from a guess.
+# Boxes that contain the surfaces this slice drives and measures.
+#
+#   * the legacy 300-tick drive box (the first sprint): spawn x = -88, the
+#     slowest car leaves by 30.7 m and the fastest by 69.4 m, plus the visible
+#     props and the chase camera's working area;
+#   * the measured 539.81 m corridor (docs/work/analysis/track-coverage.md): its
+#     bounding box comes from the committed measured path (`corridor.json`
+#     course width rows), expanded by the chase-camera margin. It is read from
+#     the measurement artifact, not typed in, and the file hash is recorded.
 BOX_MIN = (-120.0, 0.0, 1010.0)
 BOX_MAX = (-10.0, 20.0, 1090.0)
+CORRIDOR = ROOT / "_work/track-coverage/corridor.json"
+CORRIDOR_MARGIN = 10.0
 
 
-def inside(p):
-    return (BOX_MIN[0] <= p[0] <= BOX_MAX[0] and
-            BOX_MIN[1] <= p[1] <= BOX_MAX[1] and
-            BOX_MIN[2] <= p[2] <= BOX_MAX[2])
+def corridor_box():
+    """Measured course bounding box + margin, or None when the artifact is absent."""
+    if not CORRIDOR.is_file():
+        return None
+    doc = json.loads(CORRIDOR.read_text(encoding="utf-8"))
+    xs = [row["x"] for row in doc["course"]["width"]["rows"]]
+    zs = [row["z"] for row in doc["course"]["width"]["rows"]]
+    return {
+        "min": [min(xs) - CORRIDOR_MARGIN, BOX_MIN[1], min(zs) - CORRIDOR_MARGIN],
+        "max": [max(xs) + CORRIDOR_MARGIN, BOX_MAX[1], max(zs) + CORRIDOR_MARGIN],
+        "source": "_work/track-coverage/corridor.json course.width.rows bounds + " +
+                  str(CORRIDOR_MARGIN) + " m margin",
+        "sha256": hashlib.sha256(CORRIDOR.read_bytes()).hexdigest(),
+    }
+
+
+def triangle_intersects_box(vertices, box):
+    """Triangle AABB intersects the box: the selection rule for the collision mesh.
+
+    An "all vertices inside" rule leaves holes where the collision surface is made
+    of large triangles whose far vertices lie outside the box (the level mesh is a
+    low-poly valley, not a dense grid). Gate coverage is measured across the whole
+    corridor, so the triangles that cross a box edge must be present.
+    """
+    for axis in range(3):
+        low = min(v[axis] for v in vertices)
+        high = max(v[axis] for v in vertices)
+        if high < box["min"][axis] or low > box["max"][axis]:
+            return False
+    return True
 
 
 def main(argv):
@@ -64,6 +98,16 @@ def main(argv):
         return 3
     data = LEVEL.read_bytes()
     level = oracle.load_level(data)
+
+    boxes = [{
+        "min": list(BOX_MIN),
+        "max": list(BOX_MAX),
+        "source": "legacy 300-tick drive box (measured runs in _work/e1-drive/run.json)",
+        "sha256": None,
+    }]
+    corridor = corridor_box()
+    if corridor is not None:
+        boxes.append(corridor)
 
     positions = []
     indices = []
@@ -92,7 +136,7 @@ def main(argv):
             a = vertices[base + triangle["a"]]
             b = vertices[base + triangle["b"]]
             c = vertices[base + triangle["c"]]
-            if not (inside(a) and inside(b) and inside(c)):
+            if not any(triangle_intersects_box((a, b, c), box) for box in boxes):
                 skipped += 1
                 continue
             indices.extend((vertex_id(a), vertex_id(b), vertex_id(c)))
@@ -121,9 +165,8 @@ def main(argv):
             "parser": "probes/collision-oracle/tests/reference_oracle.py (load_level)",
             "parserSha256": hashlib.sha256(PARSER.read_bytes()).hexdigest(),
             "selection": {
-                "boxMin": list(BOX_MIN),
-                "boxMax": list(BOX_MAX),
-                "rule": "a triangle is kept when all three of its vertices are inside the box"
+                "boxes": boxes,
+                "rule": "a triangle is kept when its axis-aligned bounding box intersects any of the boxes"
             },
             "levelMeshes": len(level["meshes"]),
             "levelTriangles": sum(len(m["triangles"]) for m in level["meshes"]),
@@ -133,7 +176,9 @@ def main(argv):
             "note": (
                 "physics collision geometry, not retail render geometry: the level material list "
                 "and any visual mesh are not bound. The E1 drive packet keeps this mesh as hidden "
-                "physics provenance (visible:false) and draws the real level_inspect direct draws"
+                "physics provenance (visible:false) and draws the real direct draws. The measured "
+                "corridor box is added so gate coverage can be re-measured over the whole 539.81 m "
+                "course; the wasm wheels always trace the complete Level.levelphysics file"
             )
         },
         "vertexCount": vertex_count,

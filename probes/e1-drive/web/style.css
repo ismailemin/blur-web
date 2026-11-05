@@ -124,6 +124,24 @@ html, body {
 #event[data-kind="checkpoint"] { color: #8fe3b0; border-color: rgba(143, 227, 176, 0.55); }
 #event[data-kind="respawn"] { color: var(--warn); border-color: rgba(232, 196, 111, 0.6); }
 
+#survey-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translateX(-50%);
+  max-width: 980px;
+  padding: 8px 16px;
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--warn);
+  background: rgba(8, 14, 20, 0.9);
+  border: 1px solid rgba(232, 196, 111, 0.55);
+  border-radius: 6px;
+  pointer-events: none;
+}
+#survey-banner[hidden] { display: none; }
+
 #results {
   position: fixed;
   left: 50%;

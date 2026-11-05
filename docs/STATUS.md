@@ -567,6 +567,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Heap **268.435.456 B sabit**; scheduler pool head 5/queued 2; GPU buffer 208 create / 200 destroy / 8 live; JS heap GC sonrası 39,87→38,05 MB (sızıntı yok).
 - Console **0**, abort 0, NaN 0; 38 checkpoint iki koşuda aynı. `verify_e1_drive` **488/488**, soak gate PASS. Kanıt: `docs/work/verification/T-007-soak.md`.
 
+## 5 Kasım 2026 — 540 m parkur denemesi ve fallback
+
+- P43 540 m sprint'i kurdu (394 draw / 57.133 tri görsel; 2 checkpoint + finish; %99,73 kaplama) ama 5 araç **~53 m'de durdu**: g58→g50 ekleminde 7,16 cm collision yükseltisi.
+- P46 engine ray probe ile asıl nedeni buldu: ölçülen çizgi **57,82 m'de 50 m'lik collision duvarından** geçiyor; 55,7–59,7 m'de 0,05–1,8 m pinch var. Proxy lift (0,10 m) sadece 55,96 m'ye taşıyor; duvar çözülmüyor.
+- **Fallback:** oynanabilir sprint **29 m** (P37/P42, 488→514/514) olarak kaldı; 540 m görsel `?survey=1` ile etiketli (394 draw / 57.133 tri / 3 upload). Proxy lift varsayılan değil.
+- `verify_e1_drive` **514/514**, 5 araç drive hash'leri P36 anchor'larıyla aynı; sprint capture 15/15 console 0; survey capture console 0. Kanıt: `docs/work/verification/T-007-ledge-fix.md`.
+
 ## 5 Kasım 2026 — engine geniş pist section'ları
 
 - 6 section (g56-n289, g58-n265, g50-n265, g71-n209, g64-n209, g59-n265) engine CPU draw list'ine alındı.

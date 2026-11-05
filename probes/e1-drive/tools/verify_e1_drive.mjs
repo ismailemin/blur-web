@@ -53,6 +53,8 @@ import {
   createWasmResetEngineSet, createWasmTelemetryEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
   TELEMETRY_MANOEUVRE, TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_SPEC, tickAtSpeedKph
 } from '../web/telemetry.js';
+import { buildCorridorSurvey } from '../web/corridor-survey.js';
+import { LIMIT_STATIONS, runLimitStation, stationPose, writeCorridorProbe } from './corridor_probe.mjs';
 import { TICK0_LIMITS } from './spawn.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -217,12 +219,26 @@ check('every body is split into one body node and spin/static wheel nodes coveri
       rosterSlugs.map((slug) => `${bodies[slug]?.carNodes?.length} nodes`).join(', '));
 
 // ------------------------------------------------------- real track visual
+// The visual is the instructed block88/node283 section plus the six measured
+// corridor sections of the 539.81 m course. The corridor totals are pinned to the
+// track-coverage measurement (299 draws / 47,790 triangles / 78,712 vertices), so
+// a lost or duplicated section fails here before any sprint is run.
 const trackVisual = geometry.trackVisual;
 const trackDraws = Array.isArray(trackVisual?.draws) ? trackVisual.draws : [];
 const trackSection = (key) => trackVisual?.sections?.find((section) => section.key === key);
 const section88 = trackSection('river.block88.node283');
 const section56 = trackSection('river.block56.node289');
-check('geometry carries the real track visual from committed level_inspect direct draws (v4)',
+const corridorKeys = [
+  'river.block56.node289', 'river.block58.node265', 'river.block50.node265',
+  'river.block71.node209', 'river.block64.node209', 'river.block59.node265'
+];
+const corridorSections = corridorKeys.map((key) => trackSection(key));
+const corridorTotals = corridorSections.reduce((sum, section) => ({
+  draws: sum.draws + (section?.drawCount ?? 0),
+  triangles: sum.triangles + (section?.triangleCount ?? 0),
+  vertices: sum.vertices + (section?.vertexCount ?? 0)
+}), { draws: 0, triangles: 0, vertices: 0 });
+check('geometry carries the real track visual from committed direct draws (v4)',
       geometry.version === 4 && trackVisual?.label === 'asset-reader-direct-draws' &&
       geometry.meshes.some((mesh) => mesh.id === trackVisual?.meshId) &&
       trackDraws.length === trackVisual?.drawCount && trackDraws.length > 0,
@@ -232,11 +248,25 @@ check('the instructed block88/node283 section is verbatim and pinned',
       section88.drawCount === 95 && section88.driveBoxOverlap === false &&
       /^sha256:[0-9a-f]{64}$/.test(section88.referenceSha256 ?? ''),
       section88 ? `${section88.vertexCount}/${section88.triangleCount}/${section88.drawCount}` : 'missing');
-check('the drive-covering block56/node289 section is present and pinned',
-      section56 && section56.vertexCount === 14508 && section56.triangleCount === 9824 &&
-      section56.drawCount === 49 && section56.driveBoxOverlap === true &&
-      /^sha256:[0-9a-f]{64}$/.test(section56.referenceSha256 ?? ''),
-      section56 ? `${section56.vertexCount}/${section56.triangleCount}/${section56.drawCount}` : 'missing');
+check('the six measured corridor sections are present, pinned and ordered as measured',
+      corridorSections.every((section) => section &&
+        Number.isFinite(section.courseMetres) && section.courseOverlap === true &&
+        /^sha256:[0-9a-f]{64}$/.test(section.referenceSha256 ?? '') &&
+        /^[0-9a-f]{64}$/.test(section.positionsFloat32LESha256 ?? '') &&
+        /^[0-9a-f]{64}$/.test(section.indicesUint32LESha256 ?? '')) &&
+      corridorSections.every((section) => section.drawIndexRange[1] - section.drawIndexRange[0] + 1 === section.drawCount),
+      corridorSections.map((section) => section?.key + ':' + section?.courseMetres + 'm').join(' '));
+check('the corridor section totals are the measured 299 draws / 47,790 triangles / 78,712 vertices',
+      corridorTotals.draws === 299 && corridorTotals.triangles === 47790 && corridorTotals.vertices === 78712 &&
+      geometry.source.track.corridor.drawCount === 299 &&
+      geometry.source.track.corridor.triangleCount === 47790 &&
+      geometry.source.track.corridor.vertexCount === 78712,
+      `${corridorTotals.draws}/${corridorTotals.triangles}/${corridorTotals.vertices}`);
+check('the merged track visual keeps the instructed section plus the corridor without duplicate sections',
+      trackDraws.length === 394 && trackVisual.triangleCount === 57133 && trackVisual.vertexCount === 96494 &&
+      new Set(trackDraws.map((draw) => draw.id)).size === trackDraws.length &&
+      new Set((trackVisual.sections ?? []).map((section) => section.key)).size === 7,
+      `${trackDraws.length} draws / ${trackVisual.triangleCount} tri / ${trackVisual.vertexCount} verts`);
 check('every real track draw keeps a valid source index range and the direct-draw label',
       trackDraws.length > 0 && trackDraws.every((draw) =>
         Number.isInteger(draw.indexOffset) && draw.indexOffset >= 0 &&
@@ -255,7 +285,7 @@ check('the collision surface is hidden physics provenance, not a mesh upload',
 check('the uploaded geometry is bounded to the level and the one real track visual mesh',
       geometry.meshes.length === 2 && geometry.meshes[1].id === trackVisual?.meshId,
       `${geometry.meshes.length} static meshes`);
-check('the collision coverage is measured against the committed drive-covering real draws',
+check('the collision coverage is measured against the committed corridor draws',
       geometry.collisionSurface?.coverage?.coveredTriangles > 0 &&
       geometry.collisionSurface?.coverage?.fallbackTriangles > 0 &&
       geometry.collisionSurface.coverage.coveredTriangles + geometry.collisionSurface.coverage.fallbackTriangles ===
@@ -271,13 +301,148 @@ check('the collision coverage is measured against the committed drive-covering r
 const occluder = buildOccluder(geometry);
 const occluderDescribe = occluder.describe();
 check('camera occlusion is built from the visible static meshes only',
-      occluderDescribe.triangles === 10308 + 19167 &&
+      occluderDescribe.triangles === 10308 + 57133 &&
       occluderDescribe.meshes.length === 2 &&
       occluderDescribe.meshes.every((mesh) => mesh.coordinateSpace === 'world') &&
       occluderDescribe.meshes.some((mesh) => mesh.id === geometry.trackVisual.meshId) &&
       !occluderDescribe.meshes.some((mesh) => mesh.id === geometry.collisionSurface.meshId),
       `${occluderDescribe.triangles} triangles from ` +
       occluderDescribe.meshes.map((mesh) => mesh.id + ':' + mesh.triangleCount).join(', '));
+
+// ------------------------------------------------- extended corridor survey
+// The 539.81 m corridor is measured, drawn and *not* a race course. P43's extended
+// sprint stopped at the 6.4 cm section-join rise; the survey below records why the
+// corridor cannot be a course at all: its measured line crosses vertical collision
+// faces (cliffs), and a coverage path has no notion of a wall. The survey artefact
+// is re-derived here with the engine's own ray query, and the physical limit is
+// measured per car by driving at it (tools/corridor_probe.mjs).
+const SURVEY_FILE = path.join(OUT, 'corridor-survey.json');
+if (!existsSync(SURVEY_FILE)) {
+  throw new Error('corridor survey missing — run `node probes/e1-drive/tools/build_corridor_survey.mjs` first');
+}
+const surveyFileBytes = readFileSync(SURVEY_FILE);
+const surveyFile = JSON.parse(surveyFileBytes.toString('utf8'));
+const surveySpawn = { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, heading: TICK0_LIMITS.heading, source: TICK0_LIMITS.source };
+
+// One fresh module instance provides the engine's collision trace. The car never
+// moves: e1_create builds the static world, e1_ray_probe queries it.
+async function createCollisionProbe() {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const instance = await factory();
+  const levelPtr = instance._malloc(levelBytes.length);
+  const fieldBytes = readFileSync(path.join(ROOT, cars[0].fields.path));
+  const fieldsPtr = instance._malloc(fieldBytes.length + 1);
+  instance.HEAPU8.set(levelBytes, levelPtr);
+  instance.HEAPU8.set(fieldBytes, fieldsPtr);
+  if (!instance._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+                           TICK0_LIMITS.x, TICK0_LIMITS.z, TICK0_LIMITS.heading)) {
+    throw new Error('collision probe e1_create failed: ' + instance.UTF8ToString(instance._e1_last_error()));
+  }
+  const info = JSON.parse(instance.UTF8ToString(instance._e1_info()));
+  const probe = (x, y, z, dx, dy, dz, distance) => JSON.parse(instance.UTF8ToString(
+    instance._e1_ray_probe(x, y, z, dx, dy, dz, distance)));
+  return { instance, probe, info };
+}
+
+const collisionProbe = await createCollisionProbe();
+const surveyCourse = JSON.parse(readFileSync(path.join(OUT, 'course.json'), 'utf8'));
+const derivedSurvey = buildCorridorSurvey(geometry, surveyCourse, surveySpawn, { probe: collisionProbe.probe });
+check('the corridor survey is exactly the one derived from this geometry and course (no hand-edited survey)',
+      canonicalJson(surveyFile) === canonicalJson(derivedSurvey),
+      surveyFile.hash ?? 'no survey hash');
+check('the shipped chassis proxy is the faithful XT box for every car (no hidden physics change)',
+      collisionProbe.info.chassisProxy === 'box-from-XT-geometry' &&
+      collisionProbe.info.chassisProxyLift === 0,
+      `${collisionProbe.info.chassisProxy} lift ${collisionProbe.info.chassisProxyLift}`);
+check('the corridor survey carries the measured six-section totals',
+      surveyFile.corridor?.totals?.draws === 299 && surveyFile.corridor?.totals?.triangles === 47790 &&
+      surveyFile.corridor?.totals?.vertices === 78712 &&
+      surveyFile.corridor?.sections?.length === 6,
+      surveyFile.corridor?.sections?.map((section) => section.key + ':' + section.courseMetres + 'm').join(' '));
+check('the survey gates sit on measured samples and are perpendicular to the local path',
+      surveyFile.gates.length === 4 &&
+      surveyFile.gates.every((gate) => {
+        const sample = surveyCourse.samples[gate.sampleIndex];
+        return sample && Math.abs(sample.x - gate.x) < 1e-6 && Math.abs(sample.z - gate.z) < 1e-6 &&
+          Math.abs(gate.arc - sample.arc) < 1e-6 &&
+          Math.abs(gate.tangent.tx * (gate.b[0] - gate.a[0]) +
+            gate.tangent.tz * (gate.b[1] - gate.a[1])) < 0.02;
+      }),
+      surveyFile.gates.map((gate) => gate.id + '@' + gate.arc.toFixed(2)).join(' '));
+check('every survey gate line is covered by a real draw and a collision triangle (61/61)',
+      surveyFile.gates.every((gate) => gate.coverage.covered &&
+        gate.coverage.drawnSamples === gate.coverage.samples &&
+        gate.coverage.collisionSamples === gate.coverage.samples),
+      surveyFile.gates.map((gate) => gate.id + ':' + gate.coverage.drawnSamples + '/' +
+        gate.coverage.samples).join(' '));
+check('the survey records the measured section-join rise (6.36 cm in 0.94 m) that stopped P43',
+      Math.abs(surveyFile.drivability.chassisRise.firstAboveLimit?.riseMetres - 0.0636) < 1e-3 &&
+      Math.abs(surveyFile.drivability.chassisRise.firstAboveLimit?.arc - 52.19) < 0.3 &&
+      surveyFile.drivability.chassisRise.firstAboveLimit?.gradePercent > 6 &&
+      surveyFile.drivability.chassisRise.firstAboveLimit?.gradePercent < 7.2,
+      JSON.stringify(surveyFile.drivability.chassisRise.firstAboveLimit));
+const solidCrossings = surveyFile.drivability.wallCrossings.filter((crossing) =>
+  crossing.engineProbe?.solid === true);
+check('the measured path crosses vertical collision faces and the survey marks them, not hides them',
+      surveyFile.drivability.wallCrossings.length === 4 && solidCrossings.length === 2 &&
+      surveyFile.drivability.wallCrossings.every((crossing) => crossing.faceHeightMetres > 40),
+      surveyFile.drivability.wallCrossings.map((crossing) =>
+        crossing.arc.toFixed(2) + (crossing.engineProbe?.solid ? ' solid' : ' not-solid')).join(', '));
+check('the first engine-confirmed wall crossing is the measured course limit (57.82 m)',
+      Math.abs(surveyFile.drivability.courseLimitArc - 57.82) < 0.05 &&
+      surveyFile.drivability.drivable === false,
+      `${surveyFile.drivability.courseLimitArc} m, drivable=${surveyFile.drivability.drivable}`);
+check('the steepest local grade near the corridor end is the measured 31 % drop',
+      Math.abs(Math.abs(surveyFile.drivability.steepestGradeLast20m.gradePercent) - 31.24) < 0.5,
+      `${surveyFile.drivability.steepestGradeLast20m.gradePercent} % at arc ` +
+      `${surveyFile.drivability.steepestGradeLast20m.fromArc}`);
+
+// Per-car physical limit: the car is placed on the measured line before each limit,
+// pointing along it, and holds full throttle with zero steer.
+const corridorProbeResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const stations = [];
+  for (const station of LIMIT_STATIONS) {
+    const pose = stationPose(surveyCourse, station);
+    const instance = await (await import(pathToFileURL(MODULE).href)).default();
+    const levelPtr = instance._malloc(levelBytes.length);
+    const fieldsPtr = instance._malloc(fieldBytes.length + 1);
+    instance.HEAPU8.set(levelBytes, levelPtr);
+    instance.HEAPU8.set(fieldBytes, fieldsPtr);
+    if (!instance._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+                             pose.x, pose.z, pose.heading)) {
+      throw new Error(`corridor limit probe create failed for ${car.name} at ${station.id}: ` +
+        instance.UTF8ToString(instance._e1_last_error()));
+    }
+    stations.push(runLimitStation(instance, surveyCourse, station));
+  }
+  const written = writeCorridorProbe(car, stations, surveyCourse, {
+    chassisProxyLift: collisionProbe.info.chassisProxyLift,
+    wasmSha256: build.wasmSha256
+  });
+  const rise = stations.find((station) => station.id === 'section-join-rise');
+  const pinch = stations.find((station) => station.id === 'cliff-pinch');
+  check(`${car.name}: the faithful box proxy cannot climb the 6.4 cm section-join rise (P43's stop reproduced)`,
+        rise.crossedLimit === false && rise.endArc > 52.2 && rise.endArc < 53.4,
+        `arc ${rise.startArc} -> ${rise.endArc} m (limit ${rise.limitArc} m, ${rise.endSpeed} m/s)`);
+  check(`${car.name}: the car cannot drive the measured line through the cliff pinch`,
+        pinch.crossedLimit === false && pinch.endArc > 55.2 && pinch.endArc < 56.4,
+        `stops at arc ${pinch.endArc} m (${pinch.advancedMetres} m from arc ${pinch.startArc}), ` +
+        `${pinch.endSpeed} m/s`);
+  check(`${car.name}: both corridor limit probes keep wheel contact and stay finite`,
+        rise.nonFiniteTicks === 0 && pinch.nonFiniteTicks === 0 &&
+        rise.contactTicks === rise.rows.length && pinch.contactTicks === pinch.rows.length,
+        `${rise.contactTicks}/${rise.rows.length} and ${pinch.contactTicks}/${pinch.rows.length} contact ticks`);
+  corridorProbeResults.push({
+    slug: car.slug,
+    rise: { startArc: rise.startArc, endArc: rise.endArc, crossed: rise.crossedLimit },
+    pinch: { startArc: pinch.startArc, endArc: pinch.endArc, advancedMetres: pinch.advancedMetres,
+      speed: pinch.endSpeed, crossed: pinch.crossedLimit },
+    nonFiniteTicks: rise.nonFiniteTicks + pinch.nonFiniteTicks,
+    file: written.file
+  });
+}
 
 // ------------------------------------------------------------- sprint layout
 // The sprint gates are derived from the geometry, not typed in. The committed
@@ -1488,27 +1653,27 @@ async function runSprintRestart(car, fieldBytes) {
 const PHYSICS_ANCHORS = Object.freeze({
   'corvette-zr1-stock': {
     drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
-    packet: 'sha256:9462fda8174920159217ba44d048ab9d52f6a86353ebd6f6b8a5b140ea59157a',
+    packet: 'sha256:ac6501fd078c2e69d21590d1e05aa925154d6b2b21c38f884c0afc5e4514e106',
     sprint: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
   },
   'lotus-exige-cup260-stock': {
     drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
-    packet: 'sha256:f29563306ef8622a67f09437e030bb1bfff5479b69f298c724de66d98f278e62',
+    packet: 'sha256:e128f73199d22a9169fbd8721e7f061142962abcca3545efdb02455cd47a8ffe',
     sprint: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
   },
   'dodge-challenger-stock': {
     drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
-    packet: 'sha256:d866be004068a16532383d35e8a84e424b99c3f249159708ee8850e8f960373e',
+    packet: 'sha256:62808a417c717c88456d5bfdac44d1be72cb1babfa49a7930e5d7b3b9288612a',
     sprint: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
   },
   'ford-focusrs-stock': {
     drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
-    packet: 'sha256:fa9e334d9bfbc56281162dd2ed5efeaf3f0551126a67c92e1ffeb8a77d46a28d',
+    packet: 'sha256:384dade24e201b52d631910c31c8b10d62c6e43e2dfc48bf3c4bc3f2b9d432f1',
     sprint: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
   },
   'audi-r8v10-stock': {
     drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
-    packet: 'sha256:4a9b317992227e03a9a94969e025034a664977b9354622c3a1bdc3e05c189888',
+    packet: 'sha256:d9620adc699d120d42580b5fc0360a360bbab52fc3c8a96254929d5c00d5f69b',
     sprint: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
   }
 });
@@ -2343,6 +2508,27 @@ const report = {
     sprintRestart: sprintRestartResults
   },
   cars: results,
+  // The extended corridor is measured, drawn and *not* a course (P46): the survey
+  // record and the per-car physical limit are part of the gate.
+  corridor: {
+    kind: 'e1-drive.corridor-survey-check',
+    version: 1,
+    surveyHash: surveyFile.hash,
+    surveyPath: path.relative(ROOT, SURVEY_FILE).split(path.sep).join('/'),
+    drivable: surveyFile.drivability.drivable,
+    courseLimitArc: surveyFile.drivability.courseLimitArc,
+    wallCrossings: surveyFile.drivability.wallCrossings.map((crossing) => ({
+      arc: crossing.arc,
+      faceHeightMetres: crossing.faceHeightMetres,
+      engineSolid: crossing.engineProbe?.solid ?? null
+    })),
+    chassisRise: surveyFile.drivability.chassisRise.firstAboveLimit,
+    steepestGradeLast20m: surveyFile.drivability.steepestGradeLast20m,
+    gates: surveyFile.gates.map((gate) => ({ id: gate.id, arc: gate.arc, covered: gate.coverage.covered })),
+    probe: corridorProbeResults,
+    note: 'measured course limit: the measured line crosses a 50 m vertical collision face the engine confirms ' +
+      'solid; the playable sprint is the 29 m straight'
+  },
   defaultCar: defaultForAliases.slug,
   // Backward-compatible views of the default car (the single-car document shape).
   drive: defaultForAliases.drive,

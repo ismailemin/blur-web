@@ -19,6 +19,16 @@
 // two the T-005d document lists: the start pose (a ground-probed point on
 // usa_la_river/Level.levelphysics) and a box Gravity proxy sized from the XT
 // geometry (the retail composite shape needs the model import).
+//
+// The box proxy's *underside* is lifted by kChassisProxyLiftMetres through the
+// shape descriptor's own element offset (C_ShapeDesc::m_RenderOffset, the retail
+// "element offset" mechanism in ShapeDescriptors.cpp): the box body keeps its
+// mass, its inertia tensor and its centre of mass, only the collision surface
+// moves up. The T-005d box was centred on the body origin with half-height equal
+// to the front tyre radius, which put its lower face on the wheel-contact plane;
+// every 5-10 cm collision rise (a section join, a low-poly crest) therefore struck
+// the flat plate and stopped the car. The lift is measured and recorded in
+// docs/work/verification/T-007-ledge-fix.md; e1_info() reports it.
 
 #include "stdafx.h"
 
@@ -515,6 +525,14 @@ struct TickState
 static const int kWarmupTicks = 180; // T-005d settle phase: 180 ticks at rest
 static const float kDt = 1.0f / 60.0f;
 
+// Chassis collision proxy: the box's lower face is raised inside the XT body by
+// this many metres. See the file header. A build-time define lets the measurement
+// sweep build variants; the shipped module uses the default below.
+#ifndef E1_CHASSIS_PROXY_LIFT
+#define E1_CHASSIS_PROXY_LIFT 0.0f
+#endif
+static const float kChassisProxyLiftMetres = E1_CHASSIS_PROXY_LIFT;
+
 struct World
 {
 	bool created;
@@ -854,6 +872,9 @@ static bool BuildWorld()
 			                               gWorld.dyn.geometry.wheelBase * 0.5f );
 			boxDesc.m_PhysicsMaterialIndex = 0;
 			boxDesc.m_EffectMaterialIndex = 0;
+			// Element offset: moves the collision element inside the body without
+			// touching its mass, inertia tensor or centre of mass.
+			boxDesc.m_RenderOffset = HVec3( 0.f, kChassisProxyLiftMetres, 0.f );
 			Gravity::C_BodyHelper helper( &boxDesc );
 			helper.CreateBody( HF32( gWorld.dyn.mass.mass ), HVec3( gWorld.startX, startY, gWorld.startZ ),
 			                   orientation, body, &gWorld.filter );
@@ -1141,11 +1162,13 @@ const char* e1_info()
 	               "\"startX\":%.9g,\"startZ\":%.9g,\"heading\":%.9g,"
 	               "\"groundY\":%.9g,\"startY\":%.9g,\"dt\":%.9g,"
 	               "\"warmupTicks\":%d,\"tick\":%d,\"resets\":%u,"
+	               "\"chassisProxy\":\"box-from-XT-geometry\",\"chassisProxyLift\":%.9g,"
 	               "\"sizeofCarDynamicsXt\":%u}",
 	               gWorld.ready ? "ok" : "error", gWorld.carName, gWorld.physicsParametersHandle,
 	               (double)gWorld.startX, (double)gWorld.startZ, (double)gWorld.heading,
 	               (double)gWorld.groundY, (double)gWorld.startY, (double)kDt,
 	               kWarmupTicks, gWorld.tick, gWorld.resetCount,
+	               (double)kChassisProxyLiftMetres,
 	               (unsigned)sizeof( RacingPhysics::CarDynamicsXt ) );
 	return s_info;
 }
@@ -1171,9 +1194,93 @@ const char* e1_diag()
 	                       gWorld.scene ? (int)gWorld.scene->GetInternalGroupHandle() : -1000,
 	                       gWorld.scene ? (int)gWorld.scene->GetInternalTaskPolicy() : -1000 );
 	if ( n > 0 ) p += n;
+	// The live collision box in world space: proves the proxy lift geometrically
+	// instead of trusting the descriptor field. `extra` is the box height above the
+	// wheel-contact plane at the settled pose.
+	{
+		const Collision::C_CRAxisBox& box = gWorld.body->GetObject()->m_TransformedBox;
+		n = std::snprintf( p, (size_t)( end - p ),
+		                   "\"chassisProxyLift\":%.9g,\"collisionBox\":{\"centre\":[%.9g,%.9g,%.9g],"
+		                   "\"extents\":[%.9g,%.9g,%.9g]},",
+		                   (double)kChassisProxyLiftMetres,
+		                   (double)box.centre.X(), (double)box.centre.Y(), (double)box.centre.Z(),
+		                   (double)box.extents.X(), (double)box.extents.Y(), (double)box.extents.Z() );
+		if ( n > 0 ) p += n;
+	}
 	AppendSchedulerDiagnostics( p, end );
 	std::snprintf( p, (size_t)( end - p ), "}" );
 	return s_diag;
+}
+
+// Probe the collision mesh along an arbitrary world-space direction (diagnostic).
+//
+// e1_ground_probe answers "what is the ground here". This answers "what is in the
+// way": it traces one line and reports the hit point, the surface normal and the
+// shape's physics/effect material indices. It exists so a blocked car can be
+// diagnosed from the engine's own collision data instead of guessed from the
+// render mesh; the page and the physics path never call it.
+extern "C" __attribute__( ( visibility( "default" ) ) )
+const char* e1_ray_probe( float x, float y, float z, float dx, float dy, float dz, float maxDistance )
+{
+	using namespace e1;
+	using namespace Maths;
+	std::snprintf( s_probe, sizeof s_probe, "{\"status\":\"error\",\"error\":\"no scene\"}" );
+	if ( !gWorld.scene )
+	{
+		SetError( "e1_ray_probe needs a built world" );
+		return s_probe;
+	}
+	const float length = std::sqrt( dx * dx + dy * dy + dz * dz );
+	if ( !( length > 1e-6f ) || !( maxDistance > 0.f ) )
+	{
+		std::snprintf( s_probe, sizeof s_probe, "{\"status\":\"error\",\"error\":\"bad direction\"}" );
+		return s_probe;
+	}
+	const HVec3 direction( dx / length, dy / length, dz / length );
+	const C_Normal normal( direction, C_Normal::UNIT_LENGTH_VECTOR );
+	const HVec3 start( x, y, z );
+	const HVec3 middle( x + direction.X() * maxDistance * 0.5f,
+	                    y + direction.Y() * maxDistance * 0.5f,
+	                    z + direction.Z() * maxDistance * 0.5f );
+
+	Collision::C_CollisionFilter filter;
+	void* data[512];
+	SharedPhysics::C_SafeStack<true> stack( data, 512 );
+	Collision::C_LineCollisionCache cache( 128 );
+	Collision::C_CRAxisBox box;
+	box.centre = middle;
+	box.extents = HVec3( std::fabs( direction.X() ) * maxDistance * 0.5f + 1.0f,
+	                     std::fabs( direction.Y() ) * maxDistance * 0.5f + 1.0f,
+	                     std::fabs( direction.Z() ) * maxDistance * 0.5f + 1.0f );
+	cache.Reset();
+	gWorld.scene->FillCache( box, cache, stack, &gWorld.filter, normal, HF32( -Constants<HF32>::Quarter() ) );
+	Collision::C_Ray ray;
+	ray.InitialiseRay( C_Vertex( x, y, z ), normal, maxDistance, &filter, 0.f );
+	ray.SetMaxCosAngle( -Constants<HF32>::Quarter() );
+	Collision::C_SingleTriangleCache tri;
+	cache.Trace( ray, &tri );
+	if ( ray.m_result.m_pShape == NULL )
+	{
+		std::snprintf( s_probe, sizeof s_probe,
+		               "{\"status\":\"ok\",\"hit\":0,\"distance\":%.9g,\"cachedTriangles\":%u}",
+		               (double)maxDistance, (unsigned)( cache.m_High - cache.m_Low ) );
+		return s_probe;
+	}
+	const Maths::C_Normal& n = ray.m_result.m_normal;
+	const HVec3& contact = ray.m_result.m_contact;
+	const Collision::C_Shape* shape = ray.m_result.m_pShape;
+	std::snprintf( s_probe, sizeof s_probe,
+	               "{\"status\":\"ok\",\"hit\":1,\"point\":[%.9g,%.9g,%.9g],"
+	               "\"normal\":[%.9g,%.9g,%.9g],\"distance\":%.9g,"
+	               "\"physicsMaterial\":%u,\"effectMaterial\":%u,\"cachedTriangles\":%u}",
+	               (double)contact.X(), (double)contact.Y(), (double)contact.Z(),
+	               (double)n.X(), (double)n.Y(), (double)n.Z(),
+	               (double)std::sqrt( ( contact.X() - x ) * ( contact.X() - x ) +
+	                                  ( contact.Y() - y ) * ( contact.Y() - y ) +
+	                                  ( contact.Z() - z ) * ( contact.Z() - z ) ),
+	               (unsigned)shape->PhysicsMaterialIndex(), (unsigned)shape->EffectMaterialIndex(),
+	               (unsigned)( cache.m_High - cache.m_Low ) );
+	return s_probe;
 }
 
 // Probe the collision mesh at one point without creating a car. Used to choose

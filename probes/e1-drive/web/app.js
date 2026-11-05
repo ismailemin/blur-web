@@ -60,7 +60,15 @@ const params = new URLSearchParams(location.search);
 const SCRIPT_PARAM = params.get('script');
 const TELEMETRY = params.get('telemetry') === '1';
 const SOAK = params.get('soak') === '1';
+// `?survey=1`: the extended corridor is drawn (the merged real track visual) but is
+// NOT a course. The banner states the measured limit; no race gate, timer or result
+// changes. The survey artefact itself is `_work/e1-drive/corridor-survey.json` and
+// the labelled page `_work/e1-drive/corridor-survey.html`.
+const SURVEY = params.get('survey') === '1';
 if (TELEMETRY) document.documentElement.dataset.telemetry = 'running';
+if (SURVEY && (TELEMETRY || SOAK)) {
+  throw new Error('?survey=1 is a track-visual label; drop telemetry/soak');
+}
 if (SCRIPT_PARAM && SCRIPT_PARAM !== 'drive' && SCRIPT_PARAM !== 'sprint') {
   throw new Error('unknown script ' + JSON.stringify(SCRIPT_PARAM) + ' (use drive or sprint)');
 }
@@ -255,7 +263,24 @@ function publish() {
     ['gpu', state.adapter ?? '—']
   );
   document.getElementById('hud').textContent = rows.map(([key, value]) => key.padEnd(10) + value).join('\n');
+  publishSurveyBanner();
   publishSprintOverlays();
+}
+
+/**
+ * `?survey=1`: label the drawn extended corridor. This mode adds no gate, timer or
+ * result and changes no packet field; it only states what was measured. The record
+ * behind it is `_work/e1-drive/corridor-survey.json` and the labelled page
+ * `_work/e1-drive/corridor-survey.html`.
+ */
+function publishSurveyBanner() {
+  const banner = document.getElementById('survey-banner');
+  if (!banner) return;
+  if (!SURVEY) { banner.hidden = true; return; }
+  banner.hidden = false;
+  banner.textContent = 'EXTENDED CORRIDOR SURVEY — the real 539.81 m River draw is in the scene; ' +
+    'it is not a course: the measured line crosses a 50 m collision face at 57.82 m, ' +
+    'the faithful chassis stops at 52.7-53.4 m. Playable sprint: 29 m straight.';
 }
 
 /** Countdown, event banner and results panel, all driven by rules state. */

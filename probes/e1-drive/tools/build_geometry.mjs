@@ -9,6 +9,10 @@
 //         _work/level-candidates/probes/00-usa_la_river-g88-n283/reference.json
 //         and .../08-usa_la_river-g56-n289/reference.json: the committed
 //         level_inspect direct-draw references used as the real track visual.
+//         _work/track-coverage/visual.json: the committed 46-section draw map
+//         measured by track-coverage, which supplies the other five sections of
+//         the 539.81 m corridor (block58/50/71/64/59) with their pinned
+//         positions/indices hashes and source draw ranges.
 //         Read only; every reference and manifest is pinned by SHA-256 and every
 //         draw range is validated against its mesh before it is used.
 // Output: _work/e1-drive/geometry.json — the level mesh, the real River track
@@ -505,25 +509,123 @@ for (const rosterCar of roster.cars) {
 //     the drive screenshots show real road instead of the diagnostic slab.
 // Both are source positions and indices, only concatenated: no transform, no
 // clipping, no re-derivation.
+// The measured 539.81 m corridor (docs/work/analysis/track-coverage.md) crosses six
+// committed sections. Five of them have no per-section level_inspect reference; the
+// committed measurement artifact `_work/track-coverage/visual.json` carries the same
+// first-RenderList direct draws and draw ranges for all 46 sections. It is pinned by
+// its recorded SHA-256 here and every used section is pinned again by the
+// positions/indices hashes that track-coverage measured from it.
+const TRACK_COVERAGE_VISUAL = {
+  path: '_work/track-coverage/visual.json',
+  sha256: 'sha256:877b4dc7e1f5ece197f0776239b33d23b0350f8cf77ef462c0c7a266a6abcb67',
+  geometryVersion: { kind: 'track-coverage.visual-sections', version: 1 }
+};
+
 const TRACK_VISUAL_ID = 'river.track.visual';
 const TRACK_VISUAL_SECTIONS = [
   {
     key: 'river.block88.node283',
     geometryBlock: 88,
     nodeBlock: 283,
+    sourceKind: 'level-inspect',
     path: '_work/level-candidates/probes/00-usa_la_river-g88-n283/reference.json',
     sha256: 'sha256:e2a830f40af73ddcab928f719212c0bbdc77416b276b83c5a6e05ac48c887b89',
     role: 'instructed direct-draw set; 95 draws / 17,782 vertices / 9,343 triangles',
-    driveBoxOverlap: false
+    driveBoxOverlap: false,
+    courseOverlap: false,
+    courseMetres: null
   },
   {
     key: 'river.block56.node289',
     geometryBlock: 56,
     nodeBlock: 289,
+    sourceKind: 'level-inspect',
     path: '_work/level-candidates/probes/08-usa_la_river-g56-n289/reference.json',
     sha256: 'sha256:ac570f64be34a0e0480173c8c31f3784e28200e7a6ddfe14a7bf462a458dccaf',
     role: 'drive-covering direct-draw section (bounds cross the drive box; road y matches the collision probe at the spawn)',
-    driveBoxOverlap: true
+    driveBoxOverlap: true,
+    courseOverlap: true,
+    courseMetres: 19.67
+  },
+  {
+    key: 'river.block58.node265',
+    geometryBlock: 58,
+    nodeBlock: 265,
+    sourceKind: 'track-coverage',
+    sectionKey: 'g58-n265',
+    vertexCount: 12227,
+    triangleCount: 7393,
+    drawCount: 41,
+    positionsSha256: '2565265ddb1732d5259cff9f10e3633a3a572c30649f81792d6dc64ac69c7757',
+    indicesSha256: '9578f1fb3688e4bab25f4cc80f429dc60228e1a1da98495ef854cadba8b2aca9',
+    role: 'measured corridor section on the sprint course',
+    driveBoxOverlap: false,
+    courseOverlap: true,
+    courseMetres: 45.01
+  },
+  {
+    key: 'river.block50.node265',
+    geometryBlock: 50,
+    nodeBlock: 265,
+    sourceKind: 'track-coverage',
+    sectionKey: 'g50-n265',
+    vertexCount: 13874,
+    triangleCount: 7740,
+    drawCount: 44,
+    positionsSha256: 'd3b29f46fab533f049e2fa251e01c1b691063279d63a1a30f8b88ee93f4277bf',
+    indicesSha256: '1ea461c94d13932425bf461f6200ec1b9fcbae3d2bb061de0267cc4a28f34b8f',
+    role: 'measured corridor section on the sprint course',
+    driveBoxOverlap: false,
+    courseOverlap: true,
+    courseMetres: 31.55
+  },
+  {
+    key: 'river.block71.node209',
+    geometryBlock: 71,
+    nodeBlock: 209,
+    sourceKind: 'track-coverage',
+    sectionKey: 'g71-n209',
+    vertexCount: 11524,
+    triangleCount: 6736,
+    drawCount: 56,
+    positionsSha256: '2ed051dd16c25868d9816671f331b0b6f83fb2b68a04736635cc731f1874013c',
+    indicesSha256: 'bffa2f5d40ec5b684af6d8d52e9b863c0a69825c6720971d27c3963ff33ebe35',
+    role: 'measured corridor section on the sprint course (longest share: 303.23 m)',
+    driveBoxOverlap: false,
+    courseOverlap: true,
+    courseMetres: 303.23
+  },
+  {
+    key: 'river.block64.node209',
+    geometryBlock: 64,
+    nodeBlock: 209,
+    sourceKind: 'track-coverage',
+    sectionKey: 'g64-n209',
+    vertexCount: 11145,
+    triangleCount: 6688,
+    drawCount: 40,
+    positionsSha256: '9fa0646e5b0c100c185f5ddf9824bbcf1b89b63d8014d512e293e1ec6bd04661',
+    indicesSha256: 'e42076fbaaf425e6621115a27462708eb9ef73739a47f87d1d914e1e107ba525',
+    role: 'measured corridor section on the sprint course (contains the finish)',
+    driveBoxOverlap: false,
+    courseOverlap: true,
+    courseMetres: 130.9
+  },
+  {
+    key: 'river.block59.node265',
+    geometryBlock: 59,
+    nodeBlock: 265,
+    sourceKind: 'track-coverage',
+    sectionKey: 'g59-n265',
+    vertexCount: 15434,
+    triangleCount: 9409,
+    drawCount: 69,
+    positionsSha256: '5baaefc87d08cdd2ec6311cdbcc51ad6ec0ddf64b920a6bd81c7f4f3eefb2660',
+    indicesSha256: '346df7d2f0c0f1ba4b4ddfb54e76d6cd5b7a4e0cadf3d48600a033abfc5f9b47',
+    role: 'measured corridor section on the sprint course (short 8.04 m share before the end seam)',
+    driveBoxOverlap: false,
+    courseOverlap: true,
+    courseMetres: 8.04
   }
 ];
 
@@ -540,7 +642,7 @@ function uint32Hash(values) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
-function loadTrackVisualSection(spec) {
+function loadLevelInspectSection(spec) {
   const file = path.join(ROOT, spec.path);
   if (!existsSync(file)) {
     throw new Error('missing ' + spec.path + ' — the committed level_inspect direct-draw reference is an input');
@@ -562,10 +664,89 @@ function loadTrackVisualSection(spec) {
       uint32Hash(doc.indices) !== doc.indicesUint32LESha256) {
     throw new Error(spec.key + ': reference value hashes do not match its own positions/indices');
   }
-  return { ...spec, doc, bytes };
+  return { ...spec, doc, bytes, sourceFile: spec.path, sourceSha256: spec.sha256 };
+}
+
+// The 46-section measurement artifact is loaded once and pinned by the hash the
+// track-coverage analysis recorded. A different file is a hard failure: the
+// sections below must not silently consume a regenerated or hand-edited map.
+let trackCoverageSource = null;
+function loadTrackCoverageDocument() {
+  if (trackCoverageSource) return trackCoverageSource;
+  const file = path.join(ROOT, TRACK_COVERAGE_VISUAL.path);
+  if (!existsSync(file)) {
+    throw new Error('missing ' + TRACK_COVERAGE_VISUAL.path + ' — the committed track-coverage draw map is an ' +
+      'input for the corridor sections; run `python probes/track-coverage/tools/build_reference.py` first');
+  }
+  const bytes = readFileSync(file);
+  const fileSha = sha256(bytes);
+  if (fileSha !== TRACK_COVERAGE_VISUAL.sha256) {
+    throw new Error(TRACK_COVERAGE_VISUAL.path + ' is not the pinned track-coverage output: ' + fileSha +
+      ' (expected ' + TRACK_COVERAGE_VISUAL.sha256 + ')');
+  }
+  const doc = JSON.parse(bytes.toString('utf8'));
+  if (doc.kind !== TRACK_COVERAGE_VISUAL.geometryVersion.kind ||
+      doc.version !== TRACK_COVERAGE_VISUAL.geometryVersion.version) {
+    throw new Error(TRACK_COVERAGE_VISUAL.path + ': kind/version is not ' +
+      TRACK_COVERAGE_VISUAL.geometryVersion.kind + ' v' + TRACK_COVERAGE_VISUAL.geometryVersion.version);
+  }
+  trackCoverageSource = { doc, bytes, file: TRACK_COVERAGE_VISUAL.path, sha256: TRACK_COVERAGE_VISUAL.sha256 };
+  return trackCoverageSource;
+}
+
+function loadTrackCoverageSection(spec) {
+  const source = loadTrackCoverageDocument();
+  const doc = source.doc.sections.find((section) => section.key === spec.sectionKey);
+  if (!doc) throw new Error(spec.key + ': section ' + spec.sectionKey + ' is missing from the track-coverage map');
+  if (doc.status !== 'ok') throw new Error(spec.key + ': section ' + spec.sectionKey + ' is not ok in the track-coverage map');
+  if (doc.vertexCount !== spec.vertexCount || doc.triangleCount !== spec.triangleCount ||
+      doc.drawCount !== spec.drawCount) {
+    throw new Error(spec.key + ': counts differ from the pinned track-coverage record (' +
+      doc.vertexCount + '/' + doc.triangleCount + '/' + doc.drawCount + ')');
+  }
+  if (doc.positions.length / 3 !== doc.vertexCount || doc.indices.length / 3 !== doc.triangleCount) {
+    throw new Error(spec.key + ': track-coverage section arrays do not match its own counts');
+  }
+  const positionsSha = float32Hash(doc.positions);
+  const indicesSha = uint32Hash(doc.indices);
+  if (positionsSha !== spec.positionsSha256 || indicesSha !== spec.indicesSha256) {
+    throw new Error(spec.key + ': track-coverage section values are not the pinned draws (' +
+      positionsSha + ' / ' + indicesSha + ')');
+  }
+  for (const draw of doc.draws) {
+    if (!Number.isInteger(draw.firstIndex) || !Number.isInteger(draw.indexCount) ||
+        draw.indexCount <= 0 || draw.indexCount % 3 !== 0 ||
+        draw.firstIndex < 0 || draw.firstIndex + draw.indexCount > doc.indices.length) {
+      throw new Error(spec.key + ': draw ' + draw.primitiveIndex + ' has an invalid index range');
+    }
+  }
+  return { ...spec, doc, bytes: null, sourceFile: source.file, sourceSha256: source.sha256,
+    sourceSection: spec.sectionKey };
+}
+
+function loadTrackVisualSection(spec) {
+  return spec.sourceKind === 'track-coverage'
+    ? loadTrackCoverageSection(spec)
+    : loadLevelInspectSection(spec);
 }
 
 const trackSections = TRACK_VISUAL_SECTIONS.map(loadTrackVisualSection);
+
+// The committed level_inspect reference and the track-coverage map are two
+// independent readers of the same source. For the one section that has both
+// (block56/node289) they must agree exactly; that equality is asserted, not
+// assumed, before the merged mesh is built.
+{
+  const reference = trackSections.find((section) => section.sourceKind === 'level-inspect' &&
+    section.key === 'river.block56.node289');
+  const measured = trackCoverageSource?.doc.sections.find((section) => section.key === 'g56-n289');
+  if (reference && measured) {
+    if (float32Hash(measured.positions) !== reference.doc.positionsFloat32LESha256 ||
+        uint32Hash(measured.indices) !== reference.doc.indicesUint32LESha256) {
+      throw new Error('river.block56.node289: the level_inspect reference and the track-coverage map disagree');
+    }
+  }
+}
 const trackPositions = [];
 const trackIndices = [];
 const trackDraws = [];
@@ -618,9 +799,12 @@ for (const section of trackSections) {
       worldKind: 'baked-into-mesh',
       trackVisual: 'asset-reader-direct-draws',
       source: {
-        tool: 'level_inspect (committed direct-draw reference)',
-        reference: section.path,
-        referenceSha256: section.sha256,
+        tool: section.sourceKind === 'track-coverage'
+          ? 'track-coverage build_reference.py direct draws (46-section draw map)'
+          : 'level_inspect (committed direct-draw reference)',
+        reference: section.sourceFile,
+        referenceSha256: section.sourceSha256,
+        sourceSection: section.sourceSection ?? null,
         geometryBlock: section.geometryBlock,
         nodeBlock: section.nodeBlock,
         drawIndex: trackDraws.length,
@@ -643,10 +827,14 @@ for (const section of trackSections) {
     geometryBlock: section.geometryBlock,
     nodeBlock: section.nodeBlock,
     role: section.role,
+    sourceKind: section.sourceKind,
     driveBoxOverlap: section.driveBoxOverlap,
-    reference: section.path,
-    referenceSha256: section.sha256,
-    referenceBytes: section.bytes.length,
+    courseOverlap: section.courseOverlap,
+    courseMetres: section.courseMetres,
+    reference: section.sourceFile,
+    referenceSha256: section.sourceSha256,
+    referenceBytes: section.bytes ? section.bytes.length : null,
+    sourceSection: section.sourceSection ?? null,
     vertexCount: doc.vertexCount,
     triangleCount: doc.triangleCount,
     drawCount: doc.draws.length,
@@ -655,9 +843,9 @@ for (const section of trackSections) {
       min: doc.bounds.min.map((value) => Number(value.toFixed(6))),
       max: doc.bounds.max.map((value) => Number(value.toFixed(6)))
     },
-    positionsFloat32LESha256: doc.positionsFloat32LESha256,
-    indicesUint32LESha256: doc.indicesUint32LESha256,
-    usedVertexBuffers: doc.usedVertexBuffers
+    positionsFloat32LESha256: doc.positionsFloat32LESha256 ?? section.positionsSha256,
+    indicesUint32LESha256: doc.indicesUint32LESha256 ?? section.indicesSha256,
+    usedVertexBuffers: doc.usedVertexBuffers ?? null
   });
 
   trackVertexBase += doc.vertexCount;
@@ -707,40 +895,68 @@ const trackVisual = {
     max: trackMax.map((value) => Number(value.toFixed(6)))
   },
   note:
-    'drawn instead of the diagnostic collision slab; block88/node283 is included verbatim but does not ' +
-    'overlap the drive box, block56/node289 is the committed section that does'
+    'drawn instead of the diagnostic collision slab; the six measured corridor sections of the 539.81 m course ' +
+    'are merged with the instructed block88/node283 section, each at its source world position with its own ' +
+    'draw ranges; block88/node283 lies three kilometres from the course and cannot cover it'
 };
 
 // Collision triangles that have no committed real render geometry above them are
 // kept as an explicitly labelled physics fallback. The test is data-derived: a
 // collision triangle is "covered" when its centroid lies inside a committed
-// block56/node289 triangle in XZ and the collision height is within 1.0 m of that
+// corridor triangle in XZ and the collision height is within 1.0 m of that
 // triangle's height (the spawn road matches to 0.0006 m). The covered part is not
-// drawn (the real road is there); the rest is drawn only so the drive does not
-// fall into a void where no real draw exists. No triangle is moved or invented.
+// drawn (the real road is there); the rest is the part of the old drive box with no
+// committed real draw. No triangle is moved or invented.
 const COVER_Y_TOLERANCE = 1.0;
-const g56Section = trackSections.find((section) => section.key === 'river.block56.node289');
-if (!g56Section) throw new Error('the drive-covering block56/node289 reference is missing');
-const g56Doc = g56Section.doc;
-function g56HeightAt(px, pz) {
-  let best = null;
-  const positions = g56Doc.positions;
-  const indices = g56Doc.indices;
-  for (const draw of g56Doc.draws) {
+const corridorSections = trackSections.filter((section) => section.courseOverlap);
+if (corridorSections.length !== 6) {
+  throw new Error('expected six measured corridor sections, got ' + corridorSections.length);
+}
+
+// The corridor triangles are bucketed in XZ so the coverage test does not scan
+// 47,790 triangles for every collision triangle. Deterministic: insertion order.
+const ROAD_BUCKET_METRES = 4;
+const roadBuckets = new Map();
+for (const section of corridorSections) {
+  const positions = section.doc.positions;
+  const indices = section.doc.indices;
+  for (const draw of section.doc.draws) {
     for (let offset = draw.firstIndex; offset < draw.firstIndex + draw.indexCount; offset += 3) {
-      const a = indices[offset], b = indices[offset + 1], c = indices[offset + 2];
-      const ax = positions[a * 3], ay = positions[a * 3 + 1], az = positions[a * 3 + 2];
-      const bx = positions[b * 3], by = positions[b * 3 + 1], bz = positions[b * 3 + 2];
-      const cx = positions[c * 3], cy = positions[c * 3 + 1], cz = positions[c * 3 + 2];
-      const den = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
-      if (Math.abs(den) < 1e-12) continue;
-      const l1 = ((bz - cz) * (px - cx) + (cx - bx) * (pz - cz)) / den;
-      const l2 = ((cz - az) * (px - cx) + (ax - cx) * (pz - cz)) / den;
-      const l3 = 1 - l1 - l2;
-      if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
-      const y = l1 * ay + l2 * by + l3 * cy;
-      if (best === null || y > best) best = y;
+      const triangle = [indices[offset], indices[offset + 1], indices[offset + 2]].map((vertex) => [
+        positions[vertex * 3], positions[vertex * 3 + 1], positions[vertex * 3 + 2]
+      ]);
+      const firstX = Math.floor(Math.min(triangle[0][0], triangle[1][0], triangle[2][0]) / ROAD_BUCKET_METRES);
+      const lastX = Math.floor(Math.max(triangle[0][0], triangle[1][0], triangle[2][0]) / ROAD_BUCKET_METRES);
+      const firstZ = Math.floor(Math.min(triangle[0][2], triangle[1][2], triangle[2][2]) / ROAD_BUCKET_METRES);
+      const lastZ = Math.floor(Math.max(triangle[0][2], triangle[1][2], triangle[2][2]) / ROAD_BUCKET_METRES);
+      for (let bucketX = firstX; bucketX <= lastX; bucketX++) {
+        for (let bucketZ = firstZ; bucketZ <= lastZ; bucketZ++) {
+          const key = bucketX + ':' + bucketZ;
+          let list = roadBuckets.get(key);
+          if (!list) { list = []; roadBuckets.set(key, list); }
+          list.push(triangle);
+        }
+      }
     }
+  }
+}
+
+function roadHeightAt(px, pz) {
+  const list = roadBuckets.get(Math.floor(px / ROAD_BUCKET_METRES) + ':' + Math.floor(pz / ROAD_BUCKET_METRES));
+  if (!list) return null;
+  let best = null;
+  for (const [a, b, c] of list) {
+    const ax = a[0], ay = a[1], az = a[2];
+    const bx = b[0], by = b[1], bz = b[2];
+    const cx = c[0], cy = c[1], cz = c[2];
+    const den = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+    if (Math.abs(den) < 1e-12) continue;
+    const l1 = ((bz - cz) * (px - cx) + (cx - bx) * (pz - cz)) / den;
+    const l2 = ((cz - az) * (px - cx) + (ax - cx) * (pz - cz)) / den;
+    const l3 = 1 - l1 - l2;
+    if (l1 < -1e-6 || l2 < -1e-6 || l3 < -1e-6) continue;
+    const y = l1 * ay + l2 * by + l3 * cy;
+    if (best === null || y > best) best = y;
   }
   return best;
 }
@@ -759,7 +975,7 @@ for (let triangle = 0; triangle < track.indices.length; triangle += 3) {
     cz += track.positions[vertex * 3 + 2];
   }
   cx /= 3; cy /= 3; cz /= 3;
-  const road = g56HeightAt(cx, cz);
+  const road = roadHeightAt(cx, cz);
   if (road !== null && Math.abs(cy - road) <= COVER_Y_TOLERANCE) {
     coveredTriangles++;
     continue;
@@ -767,14 +983,16 @@ for (let triangle = 0; triangle < track.indices.length; triangle += 3) {
   fallbackTriangles++;
 }
 const collisionCoverage = {
-  rule: 'a collision triangle is covered when its centroid is inside a real block56/node289 triangle in XZ and its y is within ' + COVER_Y_TOLERANCE + ' m of that triangle',
-  reference: g56Section.path,
-  referenceSha256: g56Section.sha256,
+  rule: 'a collision triangle is covered when its centroid is inside a real measured-corridor triangle in XZ and ' +
+    'its y is within ' + COVER_Y_TOLERANCE + ' m of that triangle',
+  reference: TRACK_COVERAGE_VISUAL.path,
+  referenceSha256: TRACK_COVERAGE_VISUAL.sha256,
+  corridorSections: corridorSections.map((section) => section.key),
   coveredTriangles,
   fallbackTriangles,
   reason:
     'measured coverage only: the covered collision triangles are not drawn because the real track visual sits ' +
-    'there; the uncovered triangles are the part of the drive box with no committed real draw and are also not ' +
+    'there; the uncovered triangles are the part of the old drive box with no committed real draw and are also not ' +
     'drawn (the collision surface is physics-only in this slice)'
 };
 
@@ -860,6 +1078,29 @@ const geometry = {
     },
     track: {
       trackVisual: 'asset-reader-direct-draws',
+      corridor: {
+        rule: 'the six measured sections of the 539.81 m usa_la_river corridor ' +
+          '(docs/work/analysis/track-coverage.md §4.3), merged verbatim at their source world positions',
+        lengthMetres: 539.808,
+        source: {
+          levelInspector: 'level_inspect direct draws',
+          trackCoverageMap: TRACK_COVERAGE_VISUAL.path,
+          trackCoverageMapSha256: TRACK_COVERAGE_VISUAL.sha256,
+          note: 'block56/node289 comes from its pinned level_inspect reference; the other five sections come ' +
+            'from the pinned 46-section track-coverage draw map, and their positions/indices hashes are ' +
+            'checked against the track-coverage record before use'
+        },
+        sections: trackSectionRecords.filter((section) => section.courseOverlap).map((section) => ({
+          key: section.key,
+          metres: section.courseMetres,
+          draws: section.drawCount,
+          triangles: section.triangleCount,
+          vertices: section.vertexCount
+        })),
+        drawCount: corridorSections.reduce((sum, section) => sum + section.doc.draws.length, 0),
+        triangleCount: corridorSections.reduce((sum, section) => sum + section.doc.triangleCount, 0),
+        vertexCount: corridorSections.reduce((sum, section) => sum + section.doc.vertexCount, 0)
+      },
       visual: {
         meshId: TRACK_VISUAL_ID,
         bytes: trackVisualMesh.vertexCount * 12 + trackVisualMesh.indexCount * 4,
@@ -937,11 +1178,15 @@ console.log(JSON.stringify({
     triangles: trackVisualMesh.indexCount / 3,
     draws: trackDraws.length,
     bounds: trackVisual.bounds,
+    corridor: geometry.source.track.corridor,
     sections: trackSectionRecords.map((section) => ({
       key: section.key,
+      sourceKind: section.sourceKind,
       vertices: section.vertexCount,
       triangles: section.triangleCount,
       draws: section.drawCount,
+      courseOverlap: section.courseOverlap,
+      courseMetres: section.courseMetres,
       driveBoxOverlap: section.driveBoxOverlap,
       referenceSha256: section.referenceSha256
     }))

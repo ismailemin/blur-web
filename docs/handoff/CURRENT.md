@@ -268,11 +268,12 @@ CPU işi p95 0,59 ms, 0 frame >16,7 ms; heap 268.435.456 B sabit; GPU buffer
 208 create/200 destroy/8 live; console **0**, abort 0; 38 checkpoint iki koşuda
 aynı. Kanıt: `docs/work/verification/T-007-soak.md`.
 
-**Pist koridoru (P41):** spawn'dan **539,81 m** kesintisiz sürülebilir koridor
-(6 section: g56-n289, g58-n265, g50-n265, g71-n209, g64-n209, g59-n265;
-299 draw / 47.790 üçgen). 2.257 örnek, %99,73 kapsama, 3 boşluk toplam
-1,413 m, max basamak 0,078 m. Kapalı tur committed veriyle yok; en yakın
-bileşen 109 m uzakta. Sıradaki: sprint'i 539,81 m'ye uzatmak. Kanıt:
+**Pist koridoru (P41) ve sınırı (P43/P46):** 539,81 m draw-coverage hattı
+ölçüldü (6 section, 299 draw / 47.790 üçgen; %99,73). **Ancak bu bir parkur
+değil:** ölçülen çizgi 57,82 m'de 50 m'lik collision duvarından geçiyor; şasi
+52,7–53,4 m'de duruyor. Proxy lift (0,10 m) ölçüldü, varsayılan yapılmadı.
+Oynanabilir sprint **29 m** kaldı; 540 m görsel `?survey=1` ile etiketli.
+Kanıt: `docs/work/verification/T-007-ledge-fix.md`,
 `docs/work/analysis/track-coverage.md`.
 
 **Engine track sections (P44):** 6 section engine draw list'inde **299 draw /

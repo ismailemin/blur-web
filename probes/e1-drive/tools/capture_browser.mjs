@@ -60,7 +60,7 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'respawn', 'telemetry', 'restart', 'telemetry-restart'].includes(MODE)) {
+if (!['drive', 'sprint', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
     ' (drive, sprint, respawn, telemetry, restart or telemetry-restart)');
 }
@@ -352,6 +352,7 @@ function cameraMaxDelta(a, b) {
 
 if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
+    : MODE === 'survey' ? await surveyCapturePass()
     : MODE === 'respawn' ? await respawnCapturePass()
       : MODE === 'restart' ? await restartCapturePass()
         : MODE === 'telemetry-restart' ? await telemetryRestartCapturePass()
@@ -543,6 +544,91 @@ async function sprintCapturePass() {
         packetHashExact: row.packetHashExact, cameraMaxDelta: row.cameraMaxDelta,
         messages: row.messages.length
       }))
+    }
+  };
+}
+
+/**
+ * Survey-label capture (`?survey=1`): the extended corridor is drawn in the scene
+ * (394 real track draws) and the page states that it is a survey, not a course. The
+ * capture proves the label is visible, the track visual is the merged 394-draw one,
+ * the sprint stays the 29 m course and the console is clean.
+ */
+async function surveyCapturePass() {
+  const car = cars[0];
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  messages.length = 0;
+  const url = origin + '/?script=sprint&survey=1&hold=120&car=' + encodeURIComponent(car.slug);
+  await send('Page.navigate', { url });
+  let live = null;
+  for (let attempt = 0; attempt < 400; attempt++) {
+    live = await evaluate(`(()=>{const p=window.e1DriveProbe;return p?{state:p.consumer,error:p.error,frames:p.frames,holdReached:p.holdReached,displayTick:p.displayTick}:null})()`).catch(() => null);
+    if (live && live.state === 'error') break;
+    if (live && live.state === 'running' && live.holdReached && live.frames >= 12) break;
+    await sleep(200);
+  }
+  if (!live) throw new Error('survey capture: page never published state');
+  if (live.state === 'error') throw new Error('survey capture: page error: ' + live.error);
+  const full = await evaluate(`(()=>{
+    const p = window.e1DriveProbe;
+    const banner = document.getElementById('survey-banner');
+    const canvas = document.getElementById('scene');
+    return {
+      mode: p.mode, engineTick: p.engineTick, displayTick: p.displayTick, frames: p.frames,
+      trackVisual: p.trackVisual, trackDraws: p.trackDraws, trackTriangles: p.trackTriangles,
+      collisionVisible: p.collisionVisible, geometryUploads: p.geometryUploads,
+      draws: p.draws, sprintLayoutHash: p.sprintLayoutHash,
+      sprintSpan: p.sprintLayout?.course?.span ?? null,
+      survey: { hidden: banner?.hidden ?? null, text: banner?.textContent ?? null },
+      canvas: { width: canvas.width, height: canvas.height }
+    };
+  })()`);
+  const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  const file = path.join(OUT, `browser-${car.slug}-survey.png`);
+  writeFileSync(file, Buffer.from(shot.data, 'base64'));
+
+  passCheck('survey: the labelled banner is visible and names the measured limit',
+    full.survey.hidden === false && /57\.82/.test(full.survey.text ?? '') &&
+    /not a course/i.test(full.survey.text ?? ''), JSON.stringify(full.survey));
+  passCheck('survey: the scene draws the merged real track visual (394 draws)',
+    full.trackVisual === 'asset-reader-direct-draws' && full.trackDraws === 394 &&
+    full.trackTriangles === 57133 && full.collisionVisible === false,
+    `${full.trackDraws} draws / ${full.trackTriangles} tri`);
+  passCheck('survey: the playable sprint is still the 29 m covered straight',
+    (() => {
+      const layout = JSON.parse(readFileSync(path.join(OUT, 'sprint.json'), 'utf8'));
+      return full.sprintLayoutHash === layout.hash &&
+        layout.course.span.lengthMetres > 28 && layout.course.span.lengthMetres < 30;
+    })(),
+    JSON.stringify({ page: full.sprintLayoutHash }));
+  const blocking = messages.filter((entry) => entry.source !== 'console.log');
+  passCheck('survey: console is clean', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  const evidence = {
+    mode: 'survey',
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    car: { slug: car.slug, name: car.name },
+    url: url.replace(origin, ''),
+    tick: full.displayTick,
+    track: { label: full.trackVisual, draws: full.trackDraws, triangles: full.trackTriangles,
+      collisionVisible: full.collisionVisible, geometryUploads: full.geometryUploads },
+    sprintSpan: full.sprintSpan,
+    banner: full.survey,
+    screenshot: path.relative(ROOT, file).split(path.sep).join('/'),
+    console: { totalMessages: messages.length, errorsAndWarnings: blocking.length, messages: messages.slice() },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-survey.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-survey.log'), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-gates',
+    summary: {
+      verdict: evidence.verdict, consoleMessages: messages.length,
+      errorsAndWarnings: blocking.length, failures: passFailures,
+      captures: [{ car: car.slug, label: 'survey', tick: full.displayTick, screenshot: evidence.screenshot,
+        trackDraws: full.trackDraws, bannerVisible: full.survey.hidden === false }]
     }
   };
 }

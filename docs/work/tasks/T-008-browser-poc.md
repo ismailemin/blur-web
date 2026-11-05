@@ -40,7 +40,8 @@ sürüşü deneyebileceği PoC.
 | Sprint + checkpoint + finish | P37 | ✅ (348/348) |
 | Dinamik telemetrisi | P39 | ✅ (423/423) |
 | Reset/restart düzeltmesi | P40 | ✅ (10+ rebuild) |
-| Uzun pist koridoru | P41 | ✅ (539,81 m) |
+| Uzun pist koridoru | P41 | ✅ (539,81 m ölçüm) |
+| 540 m sprint | P43/P46 | ⚠️ parkur değil; 29 m oynanabilir, 540 m `?survey=1` |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |
 | Soak/performans | P42 | ✅ (18.000 tick) |

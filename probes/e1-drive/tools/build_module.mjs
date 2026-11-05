@@ -52,6 +52,19 @@ const FLAGS = [
   '-include', path.join(ROOT, 'engine/harness/t005c/web_platform.h')
 ];
 
+// Chassis collision proxy lift (metres). The shipped module uses the source's
+// default; `--proxy-lift=<m>` builds a measurement variant only and records it in
+// build.json so no run can be confused about which proxy it used.
+const proxyLiftArg = process.argv.find((arg) => arg.startsWith('--proxy-lift='));
+const proxyLift = proxyLiftArg === undefined ? null : Number(proxyLiftArg.split('=')[1]);
+if (proxyLiftArg !== undefined && !(Number.isFinite(proxyLift) && proxyLift >= 0 && proxyLift <= 10)) {
+  throw new Error('--proxy-lift must be a number in [0, 10]');
+}
+if (proxyLift !== null) {
+  const literal = Number.isInteger(proxyLift) ? proxyLift.toFixed(1) : String(proxyLift);
+  FLAGS.push('-DE1_CHASSIS_PROXY_LIFT=' + literal + 'f');
+}
+
 const INCLUDE_DIRS = [
   path.join(ROOT, 'engine/harness/t005d-vehicle/display_shim'),
   RP, path.join(RP, 'include'),
@@ -66,6 +79,7 @@ const INCLUDE_DIRS = [
 const EXPORTS = [
   '_e1_create', '_e1_reset', '_e1_set_input', '_e1_step',
   '_e1_get_state', '_e1_info', '_e1_ground_probe', '_e1_last_error', '_e1_diag',
+  '_e1_ray_probe',
   '_malloc', '_free'
 ];
 
@@ -110,9 +124,11 @@ if (reused.length !== 185) {
 const harnessObject = path.join(OUT, 'e1_drive_lib.o');
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
 
-if (process.argv.includes('--force-objects') || !existsSync(harnessObject)) {
-  run('build_object', [EM, ...FLAGS, ...INCLUDE_DIRS, '-c', OURS, '-o', harnessObject]);
-}
+// Always recompile the harness object: the file is one translation unit, and a
+// cached object would silently keep a different proxy lift after a flag change.
+// (This cost 5 s and one wrong measurement once: the reuse rule was "compile only
+// when missing".)
+run('build_object', [EM, ...FLAGS, ...INCLUDE_DIRS, '-c', OURS, '-o', harnessObject]);
 
 const objects = reused.map((name) => path.join(OBJECTS, name)).concat([harnessObject]);
 
@@ -156,6 +172,7 @@ const report = {
   ownObjects: 1,
   ownSource: rel(OURS),
   ownSourceSha256: sha256(readFileSync(OURS)),
+  chassisProxyLiftMetres: proxyLift,
   debugModule: DEBUG ? rel(path.join(OUT, 'e1_drive_debug.mjs')) : null,
   debugSymbols: DEBUG ? rel(path.join(OUT, 'e1_drive_debug.symbols')) : null,
   reusedObjectsFrom: rel(OBJECTS),

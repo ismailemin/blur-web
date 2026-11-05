@@ -1386,3 +1386,156 @@ PASS** and the portable suite is unchanged.
 
 Full method, evidence paths, screenshots and limits:
 `docs/work/verification/T-007-soak.md`.
+
+## 19. The measured 539.81 m corridor: full track visual, path gates, and the chassis grade limit (T-007/extended, P43)
+
+**Status:** kept for the corridor measurement (geometry, course artifact, gates,
+coverage); §19.3's "the chassis is the blocker" reading is **superseded by §20**
+(P46): the measured line also crosses two engine-confirmed 50 m vertical collision
+faces, so the corridor is not drivable and the playable sprint is the 29 m straight.
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-extended-sprint.md`. No engine,
+wasm module, `probes/track-coverage/`, `probes/render-packet/`,
+`probes/car-parts/`, `tools/`, `upstream/` or `game-data/` change. The drive
+physics anchors are the P36 values; the sprint timeline is a new measured record.
+
+### 19.1 What was built
+
+The real track visual now merges the instructed `block88/node283` section with the
+six measured corridor sections of P41's 539.81 m course
+(`block56/58/50/71/64/59`). The corridor subtotal is exactly the measured
+**299 draws / 47,790 triangles / 78,712 vertices**; the merged visual is **394 /
+57,133 / 96,494** and still one mesh (2 meshes, 3 uploads). Five sections come from
+the pinned 46-section track-coverage draw map and are re-hashed against its
+recorded positions/indices; `block56/node289` keeps its pinned `level_inspect`
+reference, and the two independent readers are asserted equal.
+
+`tools/build_course.mjs` copies the measured 0.25 m samples into
+`_work/e1-drive/course.json` (539.808 m, 2,257 samples, 2,251 covered, three seams
+totalling 1.413 m). `web/sprint-layout.js` v2 places the start, the 1/3 and 2/3
+checkpoints and the finish on that line as measured samples, with every gate line
+perpendicular to the local 5 m tangent, 6 m wide, and re-measured independently
+(61/61 drawn and collision samples per gate, surface delta <= 0.7 mm). The finish
+is 2.121 m before the measured end. Progress, the next-gate distance, the off-course
+band and the respawn heading are all path-based; the fall rule is relative to the
+measured ground at the car's arc (the corridor descends 2.8 m, so the old
+spawn-height rule was wrong).
+
+### 19.2 What was measured
+
+`verify_e1_drive.mjs` re-measures all 2,248 course samples with its own barycentric
+code: 2,245 collision hits, 2,242 draws within 0.5 m (the six misses are the three
+recorded seams), coverage 99.733 %, gaps 1.414 m in three runs. It is **490/496**;
+the six failures are one recorded drivability check and one DNF check per car.
+15 headless Edge captures (5 cars x start / mid / stop) have **0 console messages**;
+the merged track is visible under the car (`394 real draws, 57133 tri`).
+
+### 19.3 The blocker (P43, superseded in 19.5)
+
+The scripted sprint is a real path follower (Stanley control on an 8 m moving
+average of the measured path, bounded inside the measured band). Every car drives
+53.2-53.8 m of the corridor and stops at the `g58 -> g50` section join, where the
+collision surface rises **7.16 cm across the seam (6.36 cm in the first 0.94 m
+window, 6.7 %)** while the drawn road stays flat. The E1 chassis is the documented box proxy whose skid plate sits at ground
+level, so the lip strikes the plate: the car stalls at 0.07-0.53 m/s with all four
+wheels in contact, and a direct probe shows it cannot move south across the rise
+from rest, while it climbs 2.5 % grades elsewhere. This is a vehicle-proxy limit,
+not a survey error; the full-chassis game car has suspension travel the proxy does
+not model. A second, larger blocker follows at arc 528-535 (up to 31 % local grade,
+61 cm).
+
+Consequence: the two checkpoints and the finish are unreachable in this PoC. The
+layout, coverage, gates and rules are verified; the sprint is a measured DNF. The
+possible fixes (raised proxy body, a course ending before arc 52, or keeping the
+corridor visual-only with the 29 m P37 sprint playable) are outside this slice's
+ownership and are recorded in `docs/work/verification/T-007-extended-sprint.md` section 7.
+
+## 20. The extended-sprint root cause and the survey fallback (T-007/ledge-fix, P46)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-ledge-fix.md`. No change to
+`probes/track-coverage/`, `probes/car-parts/`, `probes/render-packet/`, the engine,
+`tools/`, `upstream/` or `game-data/`.
+
+### 20.1 The saved P43 patch had to be repaired
+
+`_work/p43-drive.diff` was written through a lossy console pipeline: UTF-8 bytes
+were decoded as CP857, so every em dash, arrow and minus in the *context* lines
+became three characters (`—` → `ÔÇö`), and `git apply` failed on four files.
+Reversing the transform per line (`line.encode('cp857').decode('utf-8')`) produces a
+patch that applies cleanly; the repaired patch and the script are kept in
+`_work/e1-drive/`. The P43 blocker reproduces exactly (all five cars stop at the
+section join; the Corvette at 53.81 m), so the artifact was correct in substance.
+
+### 20.2 The chassis proxy was the second blocker
+
+The harness box is `trackWidth × 2·tyreRadius × wheelBase` centred on the car
+origin; measured at the settled spawn the box's lower face is **1.2 mm above the
+ground**, so the car skates on its skid plate. P46 implements the proxy fix as a
+*labelled option*: the box's collision element is offset upward with
+`C_ShapeDesc::m_RenderOffset` (the retail element offset), which moves only the
+collision surface — the car's tick-0 state, mass, inertia tensor and centre of mass
+are unchanged (measured: `e1_diag().collisionBox` centre +0.0999 m at lift 0.10,
+car state bit-identical). Measured with the same from-rest probe:
+
+| lift | instrument | section-join rise (arc 47.5 →) | cliff pinch (arc 54.8 →) |
+| ---: | --- | --- | --- |
+| 0.00 | limit probe | stops at 52.66 m | stops at 56.20 m |
+| 0.10 | limit probe | crosses the rise, stops at 55.96 m | stops at 55.96 m |
+| 0.25 | scripted sprint (path follower) | crosses the rise, reaches 57.88 m | not measured with the probe |
+
+The lift is faithful to the harness' own documentation and it fixes P43's blocker,
+but it does **not** make the corridor drivable. The shipped module stays at lift 0
+(the XT data's own skid-plate height), so the verified physics is untouched.
+
+### 20.3 The real blocker: the corridor crosses cliffs
+
+The corridor is a *coverage* measurement: a cell is covered when a committed draw
+is within 0.5 m of the collision surface. The 50 m vertical faces that bound the
+playable valley are drawn **and** collided, so their cells are covered and the
+measured Dijkstra line runs through the wall. Measured from the committed artifacts
+and confirmed with the engine's own ray query (`e1_ray_probe`, the same
+`FillCache`/`Trace` path the wheels use):
+
+| crossing | point | face height | engine-solid |
+| --- | --- | ---: | --- |
+| 10.66 m | (−84.70, 1040.70) | 50.0 m | no |
+| 57.82 m | (−49.85, 1011.00) | 50.0 m | **yes** |
+| 177.15 m | (30.00, 1063.77) | 50.0 m | no |
+| 530.71 m | (259.73, 1303.00) | 50.3 m | **yes** |
+
+The line also threads a pinch 0.05-1.8 m from two cliffs between arc 55.7 and
+59.7 m. Per-car from-rest probes: every car stops at **52.66-53.37 m** (the 6.36 cm
+rise) and, driven from 54.8 m, at **55.49-56.20 m** (the pinch), never past 56.5 m.
+So the measured course limit is the first engine-confirmed wall crossing at
+**57.82 m**, and the practical limit is the pinch just before it. This is a property
+of the measured route, not of the chassis: no proxy lift and no suspension travel
+makes a 50 m wall passable.
+
+### 20.4 What was shipped
+
+The extended sprint is therefore **reported, not offered as a course**:
+
+- the playable sprint is the **29 m straight** again (P37/P42 layout, rules, script,
+  page wiring, captures and soak restored from HEAD);
+- the **540 m visual stays drawn** (394 real draws / 57,133 triangles, 3 uploads)
+  and `?survey=1` labels it with the measured limit — no gate, timer, result or
+  packet field changes;
+- `web/corridor-survey.js` + `tools/build_corridor_survey.mjs` produce
+  `_work/e1-drive/corridor-survey.json` (sections, four gates with 61/61 coverage,
+  the four path/face crossings with the engine's confirmation, the 6.36 cm rise,
+  the −31.24 % drop, the three gaps) and a labelled `corridor-survey.html`;
+- `tools/corridor_probe.mjs` measures the per-car physical limit at both stations;
+- `verify_e1_drive.mjs` re-derives the survey with the engine's ray query
+  (canonical comparison), re-measures the gates, checks the limits and re-runs the
+  per-car probes: **514/514 checks, 0 failures**. The five drive state anchors are
+  still the P36 values (physics unchanged); the packet anchors moved explicitly
+  because the packet now carries 394 track draws instead of 144.
+
+Verification, per-car numbers, hashes, screenshots and limits:
+`docs/work/verification/T-007-ledge-fix.md`. The P43 record
+(`T-007-extended-sprint.md`) keeps the corridor measurement and is marked
+superseded where it read the chassis as the only blocker.
