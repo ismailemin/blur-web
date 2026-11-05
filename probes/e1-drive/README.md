@@ -104,7 +104,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 4. decode the car roster (every RP_CarDynamics record + one field list per car)
 & $py   probes/e1-drive/tools/car_roster.py            # --list prints all 62
 
-# 5. scripted drive of every roster car twice, in two module instances + packet + 202 checks
+# 5. scripted drive of every roster car twice, in two module instances + packet + 268 checks
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 
 # 6. headless Edge/WebGPU screenshots per car + console gate
@@ -167,7 +167,8 @@ packet the browser renders is produced by the same code the verifier validates.
   corner, a `.spin` node (tyre/rim/brake disc) and a `.static` node (brake
   caliper). Each car draw is owned by exactly one node; static level/track draws
   need no node.
-- `updates[]`: one entry per engine tick: the chase-orbit camera, the body matrix
+- `updates[]`: one entry per engine tick: the occlusion-resolved chase-orbit
+  camera (with its per-tick request/hit record), the body matrix
   (three body axes as columns + position) and eight wheel matrices. The wheel
   matrix is `body × MdlDat rest translation × Rx(angle)`; the angle integrates
   `e1_get_state().wheels[].angular` at the fixed 1/60 s step. The caliper node is
@@ -193,7 +194,18 @@ packet the browser renders is produced by the same code the verifier validates.
   translation in body-local space.
 
 The camera is an orbit camera behind the car; yaw follows the car with a fixed
-per-tick lag, so it is a pure function of the tick sequence (no wall clock).
+per-tick lag, so it is a pure function of the tick sequence (no wall clock). Its
+distance is collision-limited: every tick casts the segment from the car's aim
+point to the desired eye against the **visible static geometry** (level props +
+real track visual, 29,475 triangles) and places the eye 0.4 m in front of the
+first hit. Pull-in is immediate, push-out is eased by 0.08 of the gap per tick.
+Each update carries `camera.occlusion { requestedDistance, distance, blocked,
+nearField, hitDistance, hitMesh }`, and `diagnostics.extras.camera.occlusion`
+states the rule, the occluder and the parameters. `?camdist`/`?camheight`/
+`?camyaw` still change the requested orbit and are resolved the same way. The
+hidden `physicsSurfaces` and the car body are not occluders, and a hit closer
+than 3.4 m is a `nearField` prop crossing (the car is inside the prop) that the
+camera holds instead of collapsing into the car.
 
 ## What the browser adds
 
@@ -233,7 +245,8 @@ sequence hash, and the Corvette's sequence hash is exactly the T-007 value
 
 ## Evidence
 
-`_work/e1-drive/run.json` (all cars), `state-<slug>.json`, `packet-<slug>.json`,
+`_work/e1-drive/run.json` (all cars, including the camera ranges and
+blocked/near-field counts), `state-<slug>.json`, `packet-<slug>.json`,
 `geometry.json` (level packet + real track visual + one real body per car + hidden
 collision), `cars.json` (the 62-record roster + gate), `browser-evidence.json`,
 `browser-<slug>-{start,mid,coast,end}.png`,
@@ -242,8 +255,10 @@ collision), `cars.json` (the 62-record roster + gate), `browser-evidence.json`,
 car's aliases. The track visual, its two source sections and the coverage limit
 are recorded in `docs/work/verification/T-007-track-visual.md`; the per-car
 body/wheel integration is recorded in
-`docs/work/verification/T-007-per-car-meshes.md`; details and numbers:
-`docs/work/analysis/e1-drive-slice.md` §10–13 and
+`docs/work/verification/T-007-per-car-meshes.md`; the chase-camera occlusion
+rule, the before/after frames and the near-field limit are recorded in
+`docs/work/verification/T-007-camera-collision.md`; details and numbers:
+`docs/work/analysis/e1-drive-slice.md` §10–14 and
 `docs/work/verification/T-007-multi-car.md`.
 
 ## Limits (also carried in the packet's own diagnostics)
@@ -295,12 +310,19 @@ body/wheel integration is recorded in
   model import), so each body is drawn directly in the engine body frame. The
   five bodies visibly fit the engine chassis at the spawn, but the retail
   mesh→body alignment offset is not proven.
-- **The chase camera has no occlusion avoidance.** At tick 150 the slower cars
-  are still among the start-area props, so their mid frame shows terrain; the
-  coast/end frames show the car. The HUD and the state/packet comparison prove
-  the simulation in every frame. A `?camdist/camheight/camyaw` override exists
-  for diagnostic side/wheel screenshots only; it changes the camera, never
-  physics, and the default page never sets it.
+- **The chase camera resolves occlusion, but only with one cast per tick.**
+  The eye is pulled in front of the first hit against the visible static
+  geometry (level props + real track visual); the hidden collision surface and
+  the car body are not occluders, and nothing is swept between ticks (no
+  continuous collision). Pull-in is immediate, push-out eased by 0.08/tick, so
+  dense prop areas give a close rear view (resolved 3.02–9.31 m over a script;
+  at the recorded tick 150 the blocked cars sit at 3.15 / 4.61 / 5.34 / 6.32 m).
+  A hit closer than 3.4 m is a `nearField` prop crossing: the car is inside the
+  prop (physics has no prop collision), the camera holds its distance, and the
+  frame shows the prop — 26–36 ticks per car, recorded per tick, not hidden.
+  The consumer's manual drag/zoom debug camera is not occlusion-checked;
+  `?camdist/camheight/camyaw` are, change only the camera and never physics, and
+  the default page never sets them.
 - **One car, one block, no game.** No audio, race rules, opponents, culling or
   engine streaming, no per-car handling/AI claims.
 - **Native parity** is blocked by the DirectX SDK, as recorded in

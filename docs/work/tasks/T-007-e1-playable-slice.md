@@ -69,9 +69,12 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-track-visual.md`,
   `docs/work/verification/T-007-per-car-meshes.md`.
 
-### E1f — İlk sürülebilir tur (kabul)
+### E1f — İlk sürülebilir tur (kabul)  ◐
 - Start → tur → finish; çarpışma, checkpoint, respawn.
 - Tam tur + finish ekranı; performans ve bellek ölçümü.
+- **P36:** chase camera occlusion BVH (29.475 tri) ile prop içine girmiyor;
+  Focus/Dodge/Lotus mid karelerinde araç görünür; 268/268.
+- Sıradaki: sprint/checkpoint/finish kuralları (tam tur track kapsamı bekliyor).
 
 ### E1g — Çoklu araç (P23)  ✅
 - `RP_CarDynamics` 62 kayıt, 62/62 completeness gate; 5 araç seçildi:

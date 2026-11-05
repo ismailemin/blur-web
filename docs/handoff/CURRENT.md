@@ -223,6 +223,13 @@ Packet 312 kayıt / **151 drawable**, hash `96b24f076495aea5`; 56 nesne,
 draw ile kaplı; track sonu/off-road çizilmiyor. Kanıt:
 `docs/work/verification/T-007-track-visual.md`.
 
+**Kamera occlusion (P36):** görünür mesh'lerden (29.475 tri / 8.191 node) BVH;
+her tick `aim → eye` ışını, ilk isabetten 0,4 m öne çekme (pull-in anında,
+push-out 0,08/tick). Focus/Dodge/Lotus mid karelerinde araç artık görünür;
+`verify_e1_drive` **268/268**; 20 capture console 0. Near-field (<3,4 m) prop
+geçişi etiketli, çözülmüyor. Kanıt:
+`docs/work/verification/T-007-camera-collision.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

@@ -32,6 +32,7 @@ deterministic state sequence.**
 | car parts + wheels (P28) | **29 parts / 80 draws**, **4 wheel groups** (8 wheel nodes), 202/202 checks, 20 browser captures, 0 console messages — see **§11** |
 | per-car meshes (P29) | **5 of 5 roster cars** draw their own real body/wheels (100/88/104/115/84 draws, 34/23/31/31/29 parts), 214/214 checks, distinct body mesh hashes, 3 uploads per page, 0 console messages — see **§12** |
 | real track visual (P31) | **144 real direct draws** (32,290 vertices / 19,167 triangles: block88/node283 95/17,782/9,343 + block56/node289 49/14,508/9,824), collision slab hidden as physics provenance, 231/231 checks, 20 captures, 0 console messages — see **§13** |
+| camera collision (P36) | chase camera pulled in front of the first visible-geometry hit; **268/268 checks**, 5 state hashes unchanged, 20 captures + 1 near-field capture, 0 console messages — see **§14** |
 
 ---
 
@@ -854,3 +855,106 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
   explicit.
 - **One car, one loaded block, no game.** No race rules, audio, multiplayer,
   opponents or engine streaming claim.
+
+---
+
+## 14. Chase-camera collision against visible geometry (T-007/E1l, P36)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this document §14 and `docs/work/verification/T-007-camera-collision.md`. No
+change to the engine, the module, `probes/render-packet/`, `probes/car-parts/`,
+tools, `upstream/` or `game-data/`. All five state sequence hashes are exactly
+the P31 values (Corvette `83f76590…008e1f`); only the packet camera changes.
+
+### 14.1 The defect, measured
+
+The P31 record (§13, and §10.4 before it) states that the chase camera has no
+occlusion avoidance: at tick 150 the Focus RS, Dodge and Lotus are still among
+the start-area props, so their mid frame shows terrain instead of the car.
+Re-casting the unoccluded P31 camera against the scene reproduces it exactly:
+the desired eye at 9.3145 m is behind `river.block27.instances-all` at
+**4.040 m** (Focus), **6.918 m** (Dodge), **7.949 m** (Lotus) and **9.219 m**
+(Corvette); the Audi is clear at tick 150.
+
+### 14.2 What was added
+
+`web/camera-occlusion.js` (new) builds a deterministic median-split triangle BVH
+over `geometry.meshes` — the level props (10,308 triangles) and the real track
+visual (19,167) — **29,475 triangles / 8,191 nodes**, cached per geometry object.
+Only `coordinateSpace:'world'` meshes are accepted (a non-world mesh is a hard
+error, not a silent skip). `packet.physicsSurfaces` and the car body are not
+occluders: the collision surface is `visible:false` and undrawn, and the body
+sits on the segment. The cast is a two-sided Möller–Trumbore segment test.
+
+`ChaseCamera` keeps its parameters (`distance` 9.0, `height` 2.4, `lookHeight`
+1.0, yaw smoothing 0.18, `?camdist`/`?camheight`/`?camyaw`) and adds:
+
+- cast `target -> desired eye`; if hit, `distance = hit - 0.4 m` (hard floor
+  0.05 m), **pull-in immediate** so the eye is never behind a resolvable surface;
+- **push-out eased** by 0.08 of the gap per 1/60 s tick, so leaving a prop does
+  not pop;
+- if the first hit is closer than **3.4 m** the prop crosses the car itself
+  (physics has no prop collision); the camera holds its distance and records
+  `nearField:true` instead of collapsing into the car;
+- `orbit.distance` is the distance used, so the committed validator still
+  rebuilds view/projection from the declared orbit;
+- every update carries `camera.occlusion { requestedDistance, distance, blocked,
+  nearField, hitDistance, hitMesh, marginMetres, nearFieldMetres }`, and
+  `extras.camera.occlusion` states the rule, the occluder and why the hidden
+  surface is excluded.
+
+The page HUD shows `camera <used> / <requested> · pulled from <hit> m hit`.
+
+### 14.3 Verification
+
+```powershell
+& $node probes/e1-drive/tools/verify_e1_drive.mjs          # 268/268
+& $node probes/e1-drive/tools/capture_browser.mjs --port 8811
+```
+
+`_work/e1-drive/run.json` — **PASS, 268/268 checks** (231 P31 + 37 camera).
+Physics is unchanged: 301/301 contact ticks, 0 NaN, and the five state sequence
+hashes are the P31 values. Packets changed as they must (each update now carries
+the camera distance used and the occlusion record), are 6.82–7.09 MB, and keep
+250–281 draws / 9 nodes.
+
+| car | camera range | blocked | resolvable | near-field | resolved clear | packet hash |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | 3.10–9.31 m | 55 | 23 | 32 | 269 | `9462fda8…` |
+| Lotus Exige Cup260 | 3.04–9.31 m | 58 | 24 | 34 | 267 | `f2956330…` |
+| Dodge Challenger | 3.02–9.31 m | 60 | 26 | 34 | 267 | `d866be00…` |
+| Ford Focus RS | 3.07–9.31 m | 70 | 34 | 36 | 265 | `fa9e334d…` |
+| Audi R8 V10 | 3.11–9.31 m | 44 | 18 | 26 | 275 | `4a9b3179…` |
+
+The verifier re-casts the stored camera and the unoccluded P31 camera itself
+(it does not trust the adapter's record), asserts the camera is clear on every
+resolvable blocking tick, asserts the eye is in front of the first hit there,
+asserts the four capture ticks 0/150/240/300 are fully clear with no near-field
+exception, and pins the recorded tick-150 occlusion of the three cars the P31
+record named. Geometry is untouched (`dfb93f39…`, 12,215,183 B).
+
+### 14.4 Browser evidence
+
+Headless Edge/WebGPU, 1600×900, **20 captures** (5 cars × 0/150/240/300) plus
+one tick-129 near-field diagnostic: **0 console messages**, 3 uploads per page,
+`drawsIssued = frames × draws`, state hash and car matrix equal to node,
+camera within 1e-6, packet hash byte-exact for 17/20 (the same three `atan2`
+last-bit cases as P31). At tick 150 the page eye is pulled to 6.32 m (Corvette),
+5.34 m (Lotus), 4.61 m (Dodge), 3.15 m (Focus) of 9.315 m, and the mid frames
+show the car. Exact before/after hashes and the preserved P31 frames are in
+`T-007-camera-collision.md`.
+
+### 14.5 Limits
+
+- One cast per packet tick; no continuous collision, nothing swept between ticks.
+- Hidden physics geometry is not an occluder; only drawn props and track visual.
+- Near-field prop crossings (hit < 3.4 m, 26–36 ticks per car) are labelled, not
+  resolved: the car is inside the prop and the frame shows the prop.
+- Pull-in is along the orbit ray, so dense props give a close rear view
+  (per-car minimum 3.02–3.11 m; tick 150 is 3.15/4.61/5.34/6.32 m for
+  Focus/Dodge/Lotus/Corvette); there is no "rise over the obstacle" behaviour.
+- The consumer's manual drag/zoom debug camera is unchanged and not
+  occlusion-checked; `?camdist`/`?camheight`/`?camyaw` are.
+- Presentation camera only; still not the engine camera. No race rules, audio,
+  multiplayer, opponents or streaming claim.

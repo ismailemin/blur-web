@@ -99,6 +99,8 @@ const state = {
   tickHash: null,
   movedScreen: null,
   camera: 'chase',
+  cameraDistance: null,
+  cameraOcclusion: null,
   packetHash: null,
   draws: 0,
   tickHashes: []
@@ -123,6 +125,9 @@ function publish() {
       state.collisionFallbackTriangles + ' tri · slab ' +
       (state.collisionVisible === false ? 'hidden' : state.collisionVisible === true ? 'visible' : '—')],
     ['body', state.bodyMesh ?? '—'],
+    ['camera', state.cameraDistance === null ? '—' :
+      state.cameraDistance.toFixed(2) + ' m / ' + (state.cameraOcclusion?.requestedDistance ?? 0).toFixed(2) +
+      (state.cameraOcclusion?.blocked ? ' · pulled from ' + state.cameraOcclusion.hitDistance.toFixed(2) + ' m hit' : ' · clear')],
     ['wheel spin', Object.entries(state.wheelAngles).map(([corner, angle]) => corner + ' ' + angle.toFixed(2)).join(' ')],
     ['frames', String(state.frames) + ' · ticks ' + state.ticksExecuted],
     ['uploads', state.geometryUploads + ' geometry · ' + state.uniformWrites + ' uniform'],
@@ -380,6 +385,11 @@ function frame(nowMs) {
   state.displayTick = Math.floor(cursor);
   const anglesAtDisplay = state.wheelAnglesByTick?.[state.displayTick];
   if (anglesAtDisplay && anglesAtDisplay.tick === state.displayTick) state.wheelAngles = anglesAtDisplay.angles;
+  const cameraAtDisplay = state.updates?.[state.displayTick]?.camera;
+  if (cameraAtDisplay) {
+    state.cameraDistance = cameraAtDisplay.orbit.distance;
+    state.cameraOcclusion = cameraAtDisplay.occlusion ?? null;
+  }
 
   consumer.syncTimeline();
   const rendered = consumer.renderFrame({ cursor });

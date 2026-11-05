@@ -20,7 +20,9 @@
 //   * no suspension travel, steer or camber is applied: the manifest matrices
 //     are rest poses and the state does not carry those per-wheel rotations;
 //   * the camera is an orbit camera behind the car, so the packet validator can
-//     rebuild view/projection from yaw/pitch/distance and check them;
+//     rebuild view/projection from yaw/pitch/distance and check them; its
+//     distance is collision-limited against the visible static geometry and the
+//     per-tick request/hit is recorded in `camera.occlusion`;
 //   * every tick is hashed with the committed canonical form.
 //
 // Used by the browser page (live stepping) and by tools/verify_e1_drive.mjs
@@ -29,6 +31,7 @@
 
 import { MATRIX_CONVENTION, cameraFromOrbit, transformPoint } from './packet-camera.mjs';
 import { PACKET_KIND, PACKET_VERSION, hashOf, packetHash } from './packet-hash.js';
+import { buildOccluder } from './camera-occlusion.js';
 import { TICK_HZ } from './drive-script.js';
 
 export const CAR_NODE_ID = 'e1.car.body';
@@ -113,11 +116,31 @@ const shortestAngle = (delta) => {
   return value;
 };
 
+/** Unit vector from the orbit target toward the eye, matching `orbitView`. */
+function orbitDirection(yaw, pitch) {
+  return [Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw)];
+}
+
 /**
  * Chase camera. The eye sits behind the car along its own longitudinal axis
  * (the engine's local +Z, which is `state.axisZ`), looking at the chassis.
  * Yaw/pitch follow the car with a fixed per-tick lag so the camera is smooth but
  * still a pure function of the tick sequence (no wall-clock time anywhere).
+ *
+ * Occlusion (P36): the desired eye is the natural chase distance, but the car
+ * can be in front of a prop or an embankment. Every tick casts the segment from
+ * the aim point (`position + lookHeight`) to that desired eye against the
+ * visible static geometry (level props + real track visual, see
+ * `camera-occlusion.js`). If the segment is blocked, the eye is placed `margin`
+ * metres in front of the first hit instead of behind it. The resulting distance
+ * is a pure function of the state sequence too:
+ *
+ *   * pull-in is immediate — the eye is never left behind a surface for a tick;
+ *   * push-out is eased by `recovery` per tick, so leaving a prop does not pop.
+ *
+ * No continuous collision: one cast per packet tick at the resolved yaw/pitch;
+ * nothing is swept between ticks. `camera.occlusion` records the requested
+ * distance, the used distance and the hit for every tick.
  */
 export class ChaseCamera {
   constructor(intrinsics, options = {}) {
@@ -129,9 +152,26 @@ export class ChaseCamera {
     // Diagnostics only (?camyaw=): rotates the chase eye around the car so a
     // screenshot can show the side/wheels. Never set by the default page.
     this.yawOffset = options.yawOffset ?? 0;
+    // Occlusion. `occluder:null` or `occlusion:false` reproduces the pre-P36
+    // camera for diagnostics; the verifier re-casts the desired eye itself, so it
+    // does not have to trust this switch.
+    this.occluder = options.occluder ?? null;
+    this.occlusion = (options.occlusion ?? true) && this.occluder !== null;
+    this.occlusionMargin = options.occlusionMargin ?? 0.4;
+    // Hard floor only; a surface closer than margin + floor collapses the eye
+    // further rather than leaving it behind the surface (see resolveDistance).
+    this.occlusionMinimum = options.occlusionMinimum ?? 0.05;
+    this.occlusionRecovery = options.occlusionRecovery ?? 0.08;
+    // A hit closer than this to the aim point is inside the car's own rear
+    // envelope: the car is passing through the prop, so no eye distance can put
+    // the surface between the car and the camera and still keep the car in front
+    // of it. Moving the eye there would put it in the car, so the distance is
+    // held and the tick is recorded as nearField instead of being "resolved".
+    this.occlusionNearField = options.occlusionNearField ?? 3.4;
     this.yaw = null;
     this.pitch = Math.asin(this.height / Math.hypot(this.distance, this.height));
     this.orbitDistance = Math.hypot(this.distance, this.height);
+    this.resolvedDistance = null;
   }
 
   /** Desired yaw/pitch for a state, measured from the target to the desired eye. */
@@ -142,6 +182,44 @@ export class ChaseCamera {
     const yaw = Math.atan2(-fx, -fz) + this.yawOffset;
     const pitch = Math.asin(this.height / Math.hypot(this.distance, this.height));
     return { yaw, pitch, horizontal, distance: this.orbitDistance };
+  }
+
+  /**
+   * Distance the eye may use this tick, and the cast result that produced it.
+   * Exposed so the verifier can compare the resolved camera with the unoccluded
+   * one without duplicating the smoothing rule.
+   */
+  resolveDistance(target) {
+    const direction = orbitDirection(this.yaw, this.pitch);
+    const desiredEye = [
+      target[0] + direction[0] * this.orbitDistance,
+      target[1] + direction[1] * this.orbitDistance,
+      target[2] + direction[2] * this.orbitDistance
+    ];
+    let allowed = this.orbitDistance;
+    let hit = null;
+    let nearField = false;
+    if (this.occlusion) {
+      hit = this.occluder.castSegment(target, desiredEye);
+      if (hit) {
+        if (hit.distance <= this.occlusionNearField) {
+          // The prop crosses the car itself. Hold the current distance (a
+          // pull-in would be inside the car) and say so in the record.
+          nearField = true;
+          allowed = this.resolvedDistance ?? this.orbitDistance;
+        } else {
+          // In front of the surface, never behind it. Framing is secondary to
+          // not putting the eye inside geometry, so a surface closer than
+          // margin + floor collapses the eye further instead of clamping past it.
+          allowed = Math.max(this.occlusionMinimum, hit.distance - this.occlusionMargin);
+        }
+      }
+    }
+    if (this.resolvedDistance === null) this.resolvedDistance = allowed;
+    else if (nearField) this.resolvedDistance = allowed; // held
+    else if (allowed <= this.resolvedDistance) this.resolvedDistance = allowed; // pull in at once
+    else this.resolvedDistance += (allowed - this.resolvedDistance) * this.occlusionRecovery;
+    return { allowed, hit, nearField, distance: this.resolvedDistance };
   }
 
   /** Advance the lag by one tick and return the packet camera for this tick. */
@@ -155,9 +233,10 @@ export class ChaseCamera {
       this.pitch += (want.pitch - this.pitch) * this.smoothing;
     }
     const target = [state.position[0], state.position[1] + this.lookHeight, state.position[2]];
+    const resolved = this.resolveDistance(target);
     const built = cameraFromOrbit({
       target,
-      distance: this.orbitDistance,
+      distance: resolved.distance,
       yaw: this.yaw,
       pitch: this.pitch,
       near: this.intrinsics.near,
@@ -177,7 +256,18 @@ export class ChaseCamera {
       verticalFovRadians: this.intrinsics.verticalFovRadians,
       aspect: this.intrinsics.aspect,
       matrixConvention: MATRIX_CONVENTION,
-      orbit: { yaw: this.yaw, pitch: this.pitch, distance: this.orbitDistance }
+      orbit: { yaw: this.yaw, pitch: this.pitch, distance: resolved.distance },
+      occlusion: {
+        enabled: this.occlusion,
+        requestedDistance: this.orbitDistance,
+        distance: resolved.distance,
+        blocked: resolved.hit !== null,
+        nearField: resolved.nearField,
+        hitDistance: resolved.hit ? resolved.hit.distance : null,
+        hitMesh: resolved.hit ? resolved.hit.meshId : null,
+        marginMetres: this.occlusionMargin,
+        nearFieldMetres: this.occlusionNearField
+      }
     };
   }
 }
@@ -188,7 +278,10 @@ export class ChaseCamera {
  */
 export function createSession(geometry, tick0, options = {}) {
   const intrinsics = geometry.cameraIntrinsics;
-  const camera = new ChaseCamera(intrinsics, options.camera);
+  // The occluder is built once per geometry object; every session (browser page,
+  // node verifier run A/B, every car) reuses the same tree.
+  const occluder = options.occluder ?? buildOccluder(geometry);
+  const camera = new ChaseCamera(intrinsics, { ...(options.camera ?? {}), occluder });
   const reference = carMatrix(tick0);
   const cameraTick0 = camera.update(tick0);
 
@@ -422,9 +515,41 @@ export function createSession(geometry, tick0, options = {}) {
           stepSeconds: 1 / TICK_HZ,
           spawn: options.spawn ?? null,
           script: '2 s throttle, 2 s coast, 1 s brake (probes/e1-drive/web/drive-script.js)',
-          camera: 'chase orbit behind the car, yaw follows with a fixed per-tick lag',
+          camera: 'chase orbit behind the car, yaw follows with a fixed per-tick lag, ' +
+            'eye pulled in front of the first visible-geometry hit',
           stateFields: ['position', 'axisX', 'axisY', 'axisZ', 'speed', 'contacts', 'wheels'],
           ...(car ? { car } : {})
+        },
+        camera: {
+          mode: 'orbit-chase',
+          target: 'chassis position + lookHeight (1.0 m)',
+          yaw: 'follows the car with a fixed per-tick lag (smoothing 0.18)',
+          defaultDistanceMetres: 9.0,
+          defaultHeightMetres: 2.4,
+          orbitDistanceMetres: camera.orbitDistance,
+          occlusion: {
+            enabled: camera.occlusion,
+            query: 'segment from the aim point to the desired eye, first hit against the visible static triangles',
+            occluder: occluder.describe(),
+            hiddenPhysicsSurfacesUsed: false,
+            hiddenPhysicsSurfacesReason:
+              'packet.physicsSurfaces carries visible:false collision geometry that the consumer neither uploads ' +
+              'nor draws; pulling the camera in for an undrawn surface would produce a close-up with no visible ' +
+              'cause, so only the drawn level props and the real track visual occlude',
+            marginMetres: camera.occlusionMargin,
+            minimumDistanceMetres: camera.occlusionMinimum,
+            recoveryPerTick: camera.occlusionRecovery,
+            nearFieldMetres: camera.occlusionNearField,
+            nearFieldReason:
+              'a hit closer than nearFieldMetres is inside the car\'s own rear envelope: the car is passing through ' +
+              'the prop, so moving the eye in front of that hit would put it inside the car. The current distance is ' +
+              'held and `nearField:true` is recorded instead of claiming a resolved occlusion',
+            smoothing:
+              'pull-in is immediate so the eye is never left behind a resolvable hit; push-out eases by ' +
+              'recoveryPerTick (0.08 of the gap per 1/60 s tick) so leaving a prop does not pop',
+            perTickRecord:
+              'updates[].camera.occlusion { requestedDistance, distance, blocked, nearField, hitDistance, hitMesh }'
+          }
         },
         parts: {
           manifest: body.manifest,
@@ -537,6 +662,11 @@ export function createSession(geometry, tick0, options = {}) {
           'the script and the off-road area have no committed real draw geometry and no ground is drawn there',
         'the collision surface is retained as hidden physics provenance (packet.physicsSurfaces, visible:false) and ' +
           'is never drawn; the wheels still trace the whole Level.levelphysics mesh',
+        'the chase camera resolves occlusion with one target->eye segment cast per packet tick against the visible ' +
+          'static geometry (level props + real track visual); it is not continuous collision detection, it does not ' +
+          'sweep between ticks, and hidden physics geometry is not an occluder',
+        'the consumer\'s manual drag/zoom camera is a debug view and is not occlusion-checked; the packet chase ' +
+          'camera and the ?camdist/camheight/camyaw overrides are resolved the same way',
         'native-vs-wasm numeric parity is blocked by the DirectX SDK (T-007-vehicle-physics.md §7)'
       ]
     }

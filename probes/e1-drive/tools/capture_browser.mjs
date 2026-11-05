@@ -8,12 +8,12 @@
 //
 // Tick selection: every car is captured at the same ticks (`--ticks`, default
 // start / mid / coast-end / end) so cars can be compared at identical points of
-// the script. The extra coast-end capture (tick 240) is the unobstructed
-// mid-drive sample for the slower cars: at tick 150 their chase camera still
-// sits inside the start-area prop/berm geometry (this camera has no occlusion
-// avoidance). With `--car` only the named car is captured. Files are
-// `browser-<slug>-<label>.png`; the default car's captures are also copied to
-// the legacy `browser-<label>.png` names.
+// the script. At tick 150 the slower cars are still among the start-area props;
+// the chase camera resolves that occlusion against the visible static geometry
+// (P36), so the mid frame must show the car, not the inside of a prop. The
+// coast-end capture (tick 240) keeps the post-coast sample. With `--car` only
+// the named car is captured. Files are `browser-<slug>-<label>.png`; the default
+// car's captures are also copied to the legacy `browser-<label>.png` names.
 //
 // Assertions per capture:
 //   * the requested tick was reached and held with alpha 0
@@ -21,6 +21,7 @@
 //   * geometry uploads equal the mesh count and never grow with frames
 //   * one uniform buffer write and one draw per draw per frame
 //   * the per-tick state hash / packet hash equal the node producer's values
+//   * the page camera is clear of visible static geometry (re-cast here)
 //   * the car is framed by the chase camera
 //   * console is clean (no errors, no warnings, no logs)
 // Cross-car: distinct mid-drive positions and distinct state hashes.
@@ -30,6 +31,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.mjs';
+import { buildOccluder } from '../web/camera-occlusion.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const OUT = path.join(ROOT, '_work/e1-drive');
@@ -71,6 +73,9 @@ const meshBytes = (mesh) => mesh.positions.length * 4 + mesh.indices.length * 4;
 const levelMesh = geometry.meshes[0];
 const trackMesh = geometry.meshes.find((mesh) => mesh.id === geometry.trackVisual.meshId);
 if (!trackMesh) throw new Error('geometry has no real track visual mesh');
+// Same occluder the page built: the check below re-casts the page's own camera
+// target->eye segment against the visible static geometry.
+const occluder = buildOccluder(geometry);
 
 const cars = run.cars.filter((car) => !ONLY_CAR || car.slug === ONLY_CAR || car.name === ONLY_CAR);
 if (cars.length === 0) {
@@ -252,7 +257,13 @@ async function capture(car, label, tick) {
         hash: update.hash,
         matrix: update.matrices[0].world,
         matrices: update.matrices,
-        camera: { position: update.camera.position, view: update.camera.view, orbit: update.camera.orbit }
+        camera: {
+          position: update.camera.position,
+          target: update.camera.target,
+          view: update.camera.view,
+          orbit: update.camera.orbit,
+          occlusion: update.camera.occlusion ?? null
+        }
       } : null,
       canvas: { width: canvas.width, height: canvas.height }
     };
@@ -372,6 +383,26 @@ for (const car of cars) {
           DIAGNOSTIC_CAMERA ? 'diagnostic camera override, comparison skipped' :
           'max |delta| ' + (cameraDelta === null ? 'n/a' : cameraDelta.toExponential(3)) +
           ', packet hash exact: ' + (render?.hash === tickHash));
+    const pageCameraHit = render?.camera?.target && render?.camera?.position
+      ? occluder.castSegment(render.camera.target, render.camera.position) : null;
+    const pageCameraClear = !pageCameraHit ||
+      pageCameraHit.distance >= (render?.camera?.orbit?.distance ?? 0) - 1e-3;
+    const pageNearField = render?.camera?.occlusion?.nearField === true;
+    // Near-field means the car is passing through the prop itself (recorded per
+    // tick); no eye distance can resolve that, and the four capture ticks are
+    // asserted below to have no such exception.
+    check(`${car.slug}/${entry.label}: the page camera is clear of visible static geometry`,
+          DIAGNOSTIC_CAMERA || (render?.camera?.occlusion?.enabled === true &&
+            (pageCameraClear || pageNearField)),
+          DIAGNOSTIC_CAMERA ? 'diagnostic camera override, comparison skipped' :
+          (pageCameraClear
+            ? `clear, eye ${render?.camera?.orbit?.distance?.toFixed(2)} m of ` +
+              `${render?.camera?.occlusion?.requestedDistance?.toFixed(2)} m requested`
+            : pageNearField
+              ? `near-field prop crossing at ${render?.camera?.occlusion?.hitDistance?.toFixed(2)} m ` +
+                `(documented limit, car is inside the prop)`
+              : `hit at ${pageCameraHit.distance.toFixed(2)} m before the eye at ` +
+                `${render?.camera?.orbit?.distance?.toFixed(2)} m`));
     check(`${car.slug}/${entry.label}: canvas is the packet aspect`, entry.probe.canvas.width > 0 &&
           Math.abs(entry.probe.canvas.width / entry.probe.canvas.height - geometry.cameraIntrinsics.aspect) < 0.01);
     check(`${car.slug}/${entry.label}: the car stays framed by the chase camera`,
@@ -410,7 +441,10 @@ for (const car of cars) {
       nodePacketHash: tickHash ?? null,
       carMatrixExact: !!render && !!expectedUpdate &&
         render.matrix.every((value, index) => Object.is(value, expectedUpdate.matrices[0].world[index])),
-      cameraMaxDelta: cameraDelta
+      cameraMaxDelta: cameraDelta,
+      cameraOcclusion: render?.camera?.occlusion ?? null,
+      cameraClear: pageCameraClear,
+      cameraNearField: pageNearField
     };
   }
 
@@ -479,6 +513,27 @@ for (const car of cars) {
 }
 
 const midRuns = carResults.map((entry) => entry.runs.find((runEntry) => runEntry.tick === MID_TICK)).filter(Boolean);
+// P31 recorded that these three cars' mid frames showed terrain; P36's camera
+// must be blocked there (the prop is real) and resolved (the car is visible).
+const MID_OCCLUDED = ['lotus-exige-cup260-stock', 'dodge-challenger-stock', 'ford-focusrs-stock'];
+const midOccluded = carResults.filter((entry) => MID_OCCLUDED.includes(entry.slug));
+if (midOccluded.length === MID_OCCLUDED.length) {
+  const rows = midOccluded.map((entry) => {
+    const mid = entry.runs.find((runEntry) => runEntry.tick === MID_TICK);
+    return {
+      slug: entry.slug,
+      blocked: mid?.comparison?.cameraOcclusion?.blocked === true,
+      distance: mid?.comparison?.cameraOcclusion?.distance ?? null,
+      requested: mid?.comparison?.cameraOcclusion?.requestedDistance ?? null,
+      clear: mid?.comparison?.cameraClear === true,
+      nearField: mid?.comparison?.cameraNearField === true
+    };
+  });
+  check('the recorded tick-150 prop occlusion is resolved in the rendered mid frames',
+        rows.every((row) => row.blocked && row.clear && row.distance < row.requested &&
+          row.nearField !== true),
+        rows.map((row) => `${row.slug}: ${row.distance?.toFixed(2)} of ${row.requested?.toFixed(2)} m`).join(', '));
+}
 if (midRuns.length > 1) {
   const positions = new Set(midRuns.map((entry) => entry.probe.position.map((value) => value.toFixed(4)).join(',')));
   check('the cars are at different places at mid-drive', positions.size === midRuns.length,
@@ -568,6 +623,10 @@ console.log(JSON.stringify({
     collisionFallbackTriangles: entry.probe.collisionFallbackTriangles,
     collisionCoveredTriangles: entry.probe.collisionCoveredTriangles,
     wheelAngleMax: Math.max(...Object.values(entry.probe.wheelAngles ?? { frontleft: 0 }).map((value) => Math.abs(value))),
+    cameraDistance: entry.probe.render?.camera?.orbit?.distance ?? null,
+    cameraOcclusion: entry.probe.render?.camera?.occlusion ?? null,
+    cameraClear: entry.comparison?.cameraClear ?? null,
+    cameraNearField: entry.comparison?.cameraNearField ?? null,
     frames: entry.probe.frames,
     ticksExecuted: entry.probe.ticksExecuted,
     geometryUploads: entry.probe.geometryUploads,

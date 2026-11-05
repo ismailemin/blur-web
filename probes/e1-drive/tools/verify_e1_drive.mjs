@@ -40,6 +40,7 @@ import { isRigid } from '../../render-packet/web/interpolate.js';
 import { canonicalJson, hashOf as hashOfLocal } from '../web/packet-hash.js';
 import { sha256Hex } from '../web/sha256.js';
 import { createSession, resolveCarBody } from '../web/packet-adapter.js';
+import { buildOccluder } from '../web/camera-occlusion.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from '../web/drive-script.js';
 import { TICK0_LIMITS } from './spawn.mjs';
 
@@ -79,6 +80,10 @@ const wrapAngle = (value) => {
   while (angle < -Math.PI) angle += Math.PI * 2;
   return angle;
 };
+
+/** Unit vector from the orbit target toward the eye, matching packet-camera.mjs. */
+const orbitDirection = (yaw, pitch) =>
+  [Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw)];
 
 /**
  * Rotation of a wheel node relative to the body, about the proven element-local
@@ -246,6 +251,22 @@ check('the collision coverage is measured against the committed drive-covering r
         geometry.collisionSurface.triangleCount,
       `${geometry.collisionSurface?.coverage?.coveredTriangles ?? 0} covered / ` +
       `${geometry.collisionSurface?.coverage?.fallbackTriangles ?? 0} no-draw triangles`);
+
+// ------------------------------------------------------ camera occlusion
+// The chase camera resolves occlusion against the visible static geometry. The
+// occluder is built from geometry.meshes only: the hidden collision surface is
+// in physicsSurfaces (not meshes) and the car body is a per-car mesh, so neither
+// can be an occluder. Both facts are asserted here, not assumed.
+const occluder = buildOccluder(geometry);
+const occluderDescribe = occluder.describe();
+check('camera occlusion is built from the visible static meshes only',
+      occluderDescribe.triangles === 10308 + 19167 &&
+      occluderDescribe.meshes.length === 2 &&
+      occluderDescribe.meshes.every((mesh) => mesh.coordinateSpace === 'world') &&
+      occluderDescribe.meshes.some((mesh) => mesh.id === geometry.trackVisual.meshId) &&
+      !occluderDescribe.meshes.some((mesh) => mesh.id === geometry.collisionSurface.meshId),
+      `${occluderDescribe.triangles} triangles from ` +
+      occluderDescribe.meshes.map((mesh) => mesh.id + ':' + mesh.triangleCount).join(', '));
 
 /** One full scripted run of one car in a fresh wasm module instance. */
 async function runOnce(car, fieldBytes) {
@@ -501,6 +522,123 @@ for (const car of cars) {
   check(`${car.name}: tick 0 camera is the reference camera`,
         canonicalJson(packet.updates[0].camera) === canonicalJson(packet.camera));
 
+  // ------------------------------------------------------ camera occlusion
+  // Independent of the adapter's own record, re-cast both the collided segment
+  // (target -> stored eye) and the pre-P36 segment (target -> desired eye) with
+  // the same occluder. "Clear" means no visible triangle before the stored eye.
+  const cameraOcclusion = packet.diagnostics.extras.camera.occlusion;
+  const cameraMargin = cameraOcclusion.marginMetres;
+  const cameraNearField = cameraOcclusion.nearFieldMetres;
+  const cameraRows = packet.updates.map((update) => {
+    const camera = update.camera;
+    const target = camera.target;
+    const direction = orbitDirection(camera.orbit.yaw, camera.orbit.pitch);
+    const requested = camera.occlusion?.requestedDistance ?? camera.orbit.distance;
+    const desiredEye = [
+      target[0] + direction[0] * requested,
+      target[1] + direction[1] * requested,
+      target[2] + direction[2] * requested
+    ];
+    const legacyHit = occluder.castSegment(target, desiredEye);
+    const resolvedHit = occluder.castSegment(target, camera.position);
+    return {
+      tick: update.tick,
+      distance: camera.orbit.distance,
+      requested,
+      blocked: camera.occlusion?.blocked === true,
+      nearField: camera.occlusion?.nearField === true,
+      legacyHitDistance: legacyHit ? legacyHit.distance : null,
+      legacyHitMesh: legacyHit ? legacyHit.meshId : null,
+      resolvedHitDistance: resolvedHit ? resolvedHit.distance : null,
+      clear: !resolvedHit || resolvedHit.distance >= camera.orbit.distance - 1e-3
+    };
+  });
+
+  const resolvableBlocked = cameraRows.filter((row) =>
+    row.legacyHitDistance !== null && row.legacyHitDistance > cameraNearField);
+  const notClear = resolvableBlocked.filter((row) => !row.clear);
+  check(`${car.name}: the chase camera is clear of visible static geometry on every resolvable blocking tick`,
+        notClear.length === 0,
+        notClear.length === 0 ? `${resolvableBlocked.length} resolvable blocked ticks, all clear`
+          : `${notClear.length} blocked, e.g. tick ${notClear[0].tick} at ${notClear[0].resolvedHitDistance?.toFixed(2)} m`);
+
+  const badRecord = cameraRows.filter((row) =>
+    !Number.isFinite(row.requested) || !Number.isFinite(row.distance) ||
+    row.distance <= 0 || row.distance > row.requested + 1e-9 ||
+    row.blocked !== (row.legacyHitDistance !== null) ||
+    row.nearField !== (row.legacyHitDistance !== null && row.legacyHitDistance <= cameraNearField));
+  check(`${car.name}: every tick records the occlusion request, the hit and the distance actually used`,
+        badRecord.length === 0 && cameraOcclusion.enabled === true,
+        badRecord.length === 0 ? `${cameraRows.length} ticks, request ${cameraRows[0].requested.toFixed(3)} m`
+          : `${badRecord.length} invalid records`);
+
+  const notPulled = resolvableBlocked.filter((row) =>
+    !(row.distance <= row.legacyHitDistance - cameraMargin + 1e-6));
+  check(`${car.name}: the eye is pulled in front of the first hit on every resolvable blocking tick`,
+        notPulled.length === 0,
+        `${resolvableBlocked.length} resolvable blocked ticks of ${cameraRows.length}, ${notPulled.length} not pulled` +
+        (resolvableBlocked.length
+          ? `, closest hit ${Math.min(...resolvableBlocked.map((row) => row.legacyHitDistance)).toFixed(2)} m`
+          : ''));
+
+  // A near-field hit means the prop crosses the car itself; the camera holds its
+  // distance instead of pulling into the car. That decision must be recorded and
+  // must not silently change the distance.
+  const nearFieldRows = cameraRows.filter((row) => row.nearField);
+  const nearFieldNotHeld = nearFieldRows.filter((row) => {
+    const previous = cameraRows[cameraRows.indexOf(row) - 1];
+    return previous ? Math.abs(previous.distance - row.distance) > 1e-12 : false;
+  });
+  check(`${car.name}: near-field prop crossings are recorded and hold the camera distance`,
+        nearFieldNotHeld.length === 0 &&
+        nearFieldRows.every((row) => row.legacyHitDistance <= cameraNearField + 1e-9) &&
+        cameraNearField === packet.diagnostics.extras.camera.occlusion.nearFieldMetres,
+        `${nearFieldRows.length} near-field ticks (< ${cameraNearField} m), ${nearFieldNotHeld.length} moved`);
+
+  // The four ticks the browser captures must be fully resolved: no near-field
+  // exception, no hit before the stored eye. This is the screenshot gate.
+  const CAPTURE_TICKS = [0, 150, 240, 300];
+  const captureRows = CAPTURE_TICKS.map((tick) => cameraRows.find((row) => row.tick === tick));
+  check(`${car.name}: the four captured ticks are fully clear (no near-field exception)`,
+        captureRows.every((row) => row && row.clear && !row.nearField),
+        captureRows.map((row) => row ? `${row.tick}:` + (row.clear ? 'clear' : 'BLOCKED') +
+          '@' + row.distance.toFixed(2) + 'm' : 'missing').join(' '));
+
+  const distancesA = cameraRows.map((row) => row.distance);
+  const distancesB = runB.packet.updates.map((update) => update.camera.orbit.distance);
+  check(`${car.name}: the occlusion-resolved camera distance is identical in the second module instance`,
+        distancesA.length === distancesB.length && distancesA.every((value, index) => value === distancesB[index]),
+        distancesA.find((value, index) => value !== distancesB[index]) ?? '');
+  check(`${car.name}: the camera keeps the requested chase distance as its upper bound`,
+        cameraRows.every((row) => Math.abs(row.requested - packet.diagnostics.extras.camera.orbitDistanceMetres) < 1e-9) &&
+        Math.max(...distancesA) <= cameraRows[0].requested + 1e-9,
+        `${Math.min(...distancesA).toFixed(2)}..${Math.max(...distancesA).toFixed(2)} m of ` +
+        `${cameraRows[0].requested.toFixed(3)} m`);
+
+  const midRow = cameraRows.find((row) => row.tick === 150);
+  const cameraSummary = {
+    occluder: occluderDescribe,
+    requestedDistance: packet.diagnostics.extras.camera.orbitDistanceMetres,
+    marginMetres: cameraMargin,
+    nearFieldMetres: cameraNearField,
+    minimumDistanceMetres: cameraOcclusion.minimumDistanceMetres,
+    recoveryPerTick: cameraOcclusion.recoveryPerTick,
+    ticks: cameraRows.length,
+    blockedTicks: cameraRows.filter((row) => row.blocked).length,
+    resolvableBlockedTicks: resolvableBlocked.length,
+    nearFieldTicks: nearFieldRows.length,
+    clearTicks: cameraRows.filter((row) => row.clear).length,
+    minDistance: Math.min(...distancesA),
+    maxDistance: Math.max(...distancesA),
+    tick150: midRow ? {
+      legacyHitDistance: midRow.legacyHitDistance,
+      legacyHitMesh: midRow.legacyHitMesh,
+      resolvedDistance: midRow.distance,
+      clear: midRow.clear,
+      nearField: midRow.nearField
+    } : null
+  };
+
   const tickMismatch = packet.updates.filter((update, index) => update.tick !== runA.states[index].tick);
   check(`${car.name}: packet ticks equal state ticks`, tickMismatch.length === 0);
 
@@ -565,6 +703,7 @@ for (const car of cars) {
       resetMs: [runA.resetMs, runB.resetMs],
       scriptedTicksMs: [runA.simMs, runB.simMs]
     },
+    camera: cameraSummary,
     determinism: {
       separateModuleInstances: true,
       identicalStateHashes: hashesA.every((hash, index) => hash === hashesB[index]),
@@ -647,6 +786,21 @@ check('the cars are actually different machines',
       (new Set(results.map((entry) => entry.record.id)).size === results.length &&
        new Set(results.map((entry) => entry.drivetrain)).size > 1),
       results.map((entry) => `${entry.name}:${entry.drivetrain}`).join(', '));
+
+// The P31 record documented that the Focus RS, Dodge and Lotus mid frames showed
+// terrain because the camera had no occlusion avoidance. That defect must be
+// reproducible with the unoccluded camera and gone with the colliding one.
+const MID_OCCLUDED = ['lotus-exige-cup260-stock', 'dodge-challenger-stock', 'ford-focusrs-stock'];
+const midOccluded = MID_OCCLUDED.map((slug) => results.find((entry) => entry.slug === slug)).filter(Boolean);
+if (midOccluded.length === MID_OCCLUDED.length) {
+  check('the recorded tick-150 prop occlusion is reproduced by the unoccluded camera and resolved by the colliding one',
+        midOccluded.every((entry) => entry.camera.tick150 &&
+          entry.camera.tick150.legacyHitDistance !== null && entry.camera.tick150.clear &&
+          entry.camera.tick150.resolvedDistance <=
+            entry.camera.tick150.legacyHitDistance - entry.camera.marginMetres + 1e-6),
+        midOccluded.map((entry) => `${entry.slug}@150: unoccluded hit ` +
+          `${entry.camera.tick150?.legacyHitDistance?.toFixed(2)} m -> eye ${entry.camera.tick150?.resolvedDistance?.toFixed(2)} m`).join(', '));
+}
 
 const defaultResult = results.find((entry) => entry.default);
 if (defaultResult) {
@@ -731,6 +885,30 @@ const report = {
     sourcePacketHash: geometry.source.packetHash,
     trackSource: geometry.source.track
   },
+  camera: {
+    rule: 'chase orbit, yaw follows the car with a per-tick lag; the eye is pulled in front of the first ' +
+      'visible-geometry hit along the target->eye segment, pull-in immediate, push-out eased',
+    occluder: occluderDescribe,
+    hiddenPhysicsSurfacesUsed: false,
+    hiddenPhysicsSurfacesReason: 'physicsSurfaces are visible:false and are neither uploaded nor drawn, so they ' +
+      'are not occluders; only the drawn level props and real track visual are',
+    marginMetres: results[0]?.camera.marginMetres ?? null,
+    nearFieldMetres: results[0]?.camera.nearFieldMetres ?? null,
+    minimumDistanceMetres: results[0]?.camera.minimumDistanceMetres ?? null,
+    recoveryPerTick: results[0]?.camera.recoveryPerTick ?? null,
+    continuousCollision: false,
+    cars: results.map((entry) => ({
+      slug: entry.slug,
+      ticks: entry.camera.ticks,
+      blockedTicks: entry.camera.blockedTicks,
+      resolvableBlockedTicks: entry.camera.resolvableBlockedTicks,
+      nearFieldTicks: entry.camera.nearFieldTicks,
+      clearTicks: entry.camera.clearTicks,
+      minDistance: entry.camera.minDistance,
+      maxDistance: entry.camera.maxDistance,
+      tick150: entry.camera.tick150
+    }))
+  },
   roster: {
     path: path.relative(ROOT, ROSTER).split(path.sep).join('/'),
     source: roster.source,
@@ -770,6 +948,15 @@ console.log(JSON.stringify({
     coveredTriangles: report.geometry.collisionSurface.coverage?.coveredTriangles ?? 0,
     collisionVisible: report.geometry.collisionSurface.visible,
     collisionUploaded: report.geometry.collisionSurface.uploaded
+  },
+  camera: {
+    occluderTriangles: report.camera.occluder.triangles,
+    marginMetres: report.camera.marginMetres,
+    cars: report.camera.cars.map((entry) => ({
+      slug: entry.slug,
+      blockedTicks: entry.blockedTicks,
+      distance: entry.minDistance.toFixed(2) + '..' + entry.maxDistance.toFixed(2) + ' m'
+    }))
   },
   cars: results.map((entry) => ({
     car: entry.name,

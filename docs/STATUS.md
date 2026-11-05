@@ -514,6 +514,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 5 araçta 250–281 draw; 3 geometri upload; 20 capture, console **0**; `verify_e1_drive` **231/231**; state hash'ler değişmedi.
 - Drive box'ta 67/314 collision üçgeni gerçek draw ile kaplı; track sonu/off-road boş. Diagnostic materyaller. Kanıt: `docs/work/verification/T-007-track-visual.md`.
 
+## 5 Kasım 2026 — chase camera occlusion
+
+- Görünür mesh'lerden (block27 10.308 + track 19.167 = **29.475 tri / 8.191 node**) deterministik median-split BVH; her tick `aim → eye` Möller–Trumbore.
+- İlk isabetten 0,4 m öne çekme; pull-in anında, push-out 0,08/tick; near-field (<3,4 m) etiketli, araç içine çökmüyor. Parametreler (`?camdist` vb.) korundu.
+- Focus/Dodge/Lotus mid karelerinde araç görünür; `verify_e1_drive` **268/268**; 301/301 temas, 0 NaN; 20 capture console 0.
+- Kamera aralıkları 3.02–9.31 m; sınır: tek cast, continuous collision yok. Kanıt: `docs/work/verification/T-007-camera-collision.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.
