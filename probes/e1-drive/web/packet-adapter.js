@@ -514,7 +514,8 @@ export function createSession(geometry, tick0, options = {}) {
           simulation: 'wasm32 RacingPhysics + Gravity (T-005d 186-object closure)',
           stepSeconds: 1 / TICK_HZ,
           spawn: options.spawn ?? null,
-          script: '2 s throttle, 2 s coast, 1 s brake (probes/e1-drive/web/drive-script.js)',
+          script: options.script ??
+            '2 s throttle, 2 s coast, 1 s brake (probes/e1-drive/web/drive-script.js)',
           camera: 'chase orbit behind the car, yaw follows with a fixed per-tick lag, ' +
             'eye pulled in front of the first visible-geometry hit',
           stateFields: ['position', 'axisX', 'axisY', 'axisZ', 'speed', 'contacts', 'wheels'],

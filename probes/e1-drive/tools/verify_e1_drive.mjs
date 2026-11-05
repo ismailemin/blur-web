@@ -42,6 +42,13 @@ import { sha256Hex } from '../web/sha256.js';
 import { createSession, resolveCarBody } from '../web/packet-adapter.js';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from '../web/drive-script.js';
+import {
+  CHECKPOINT_FRACTIONS, COLUMN_STEP, GATE_SAMPLE_STEP, deriveSprintLayout,
+  validateSprintLayout
+} from '../web/sprint-layout.js';
+import { SPRINT_EVENT, createSprintRules } from '../web/sprint-rules.js';
+import { SPRINT_SCRIPT_TICKS, SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput } from '../web/sprint-script.js';
+import { createBestTimes } from '../web/sprint-best.js';
 import { TICK0_LIMITS } from './spawn.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -268,9 +275,145 @@ check('camera occlusion is built from the visible static meshes only',
       `${occluderDescribe.triangles} triangles from ` +
       occluderDescribe.meshes.map((mesh) => mesh.id + ':' + mesh.triangleCount).join(', '));
 
+// ------------------------------------------------------------- sprint layout
+// The sprint gates are derived from the geometry, not typed in. The committed
+// file is the derivation output; this re-runs the derivation and then measures
+// the gates again with independent point-in-triangle code.
+const SPRINT_FILE = path.join(OUT, 'sprint.json');
+if (!existsSync(SPRINT_FILE)) {
+  throw new Error('sprint layout missing — run `node probes/e1-drive/tools/build_sprint.mjs` first');
+}
+const sprintFileBytes = readFileSync(SPRINT_FILE);
+const sprintFile = JSON.parse(sprintFileBytes.toString('utf8'));
+const layoutSpawn = { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, heading: TICK0_LIMITS.heading, source: TICK0_LIMITS.source };
+const derivedLayout = deriveSprintLayout(geometry, layoutSpawn);
+
+check('the sprint layout is exactly the one derived from this geometry (no hand-edited gate)',
+      canonicalJson(sprintFile) === canonicalJson(derivedLayout),
+      sprintFile.hash ?? 'no layout hash');
+check('the sprint layout passes its own structural validation',
+      validateSprintLayout(derivedLayout, geometry, layoutSpawn).ok === true,
+      validateSprintLayout(derivedLayout, geometry, layoutSpawn).errors.join(' | '));
+const sprintSpan = derivedLayout.course.span;
+const sprintGates = derivedLayout.gates;
+check('the sprint has a start at the spawn, two or three checkpoints and a finish',
+      sprintGates[0].kind === 'start' && sprintGates[0].x === layoutSpawn.x &&
+      sprintGates.filter((gate) => gate.kind === 'checkpoint').length === CHECKPOINT_FRACTIONS.length &&
+      sprintGates[sprintGates.length - 1].kind === 'finish',
+      sprintGates.map((gate) => `${gate.id}@${gate.x}`).join(' '));
+check('the gates are strictly ordered inside the measured span and the finish is before the drawn road ends',
+      sprintGates.every((gate, index) => index === 0 || gate.x > sprintGates[index - 1].x) &&
+      sprintGates[sprintGates.length - 1].x === sprintSpan.finishX &&
+      sprintSpan.finishX <= sprintSpan.lastFullyCoveredX - sprintSpan.finishClearanceMetres + 1e-9,
+      `start ${sprintSpan.startX}, finish ${sprintSpan.finishX}, last fully covered ${sprintSpan.lastFullyCoveredX}, ` +
+      `span ${sprintSpan.lengthMetres} m`);
+
+// Independent measurement: barycentric area signs (not the tool's plane-lambda
+// form) and a plane height from the triangle normal. Every 0.1 m sample across
+// every gate must be over a real block56/node289 triangle AND a collision
+// triangle, and no column past the recorded end may be fully covered.
+const g56Section = geometry.trackVisual.sections.find((section) => section.key === 'river.block56.node289');
+const g56Mesh = geometry.meshes.find((mesh) => mesh.id === geometry.trackVisual.meshId);
+const g56Triangles = [];
+for (const draw of geometry.trackVisual.draws.slice(g56Section.drawIndexRange[0], g56Section.drawIndexRange[1] + 1)) {
+  for (let offset = draw.indexOffset; offset < draw.indexOffset + draw.indexCount; offset += 3) {
+    const triangle = [0, 1, 2].map((corner) => {
+      const vertex = g56Mesh.indices[offset + corner];
+      return [g56Mesh.positions[vertex * 3], g56Mesh.positions[vertex * 3 + 1], g56Mesh.positions[vertex * 3 + 2]];
+    });
+    g56Triangles.push(triangle);
+  }
+}
+const collisionMesh = geometry.collisionSurface.mesh;
+const collisionTriangleList = [];
+for (let offset = 0; offset < collisionMesh.indices.length; offset += 3) {
+  collisionTriangleList.push([0, 1, 2].map((corner) => {
+    const vertex = collisionMesh.indices[offset + corner];
+    return [collisionMesh.positions[vertex * 3], collisionMesh.positions[vertex * 3 + 1], collisionMesh.positions[vertex * 3 + 2]];
+  }));
+}
+
+/** Barycentric sign test in XZ; returns the plane height or null. */function independentHeight(triangle, x, z) {
+  const [a, b, c] = triangle;
+  const area = (p, q, r) => (q[0] - p[0]) * (r[2] - p[2]) - (r[0] - p[0]) * (q[2] - p[2]);
+  const d1 = area(a, b, [x, 0, z]);
+  const d2 = area(b, c, [x, 0, z]);
+  const d3 = area(c, a, [x, 0, z]);
+  const negative = d1 < -1e-9 || d2 < -1e-9 || d3 < -1e-9;
+  const positive = d1 > 1e-9 || d2 > 1e-9 || d3 > 1e-9;
+  if (negative && positive) return null;
+  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+  const nx = uy * vz - uz * vy;
+  const ny = uz * vx - ux * vz;
+  const nz = ux * vy - uy * vx;
+  if (Math.abs(ny) < 1e-12) return null;
+  return a[1] - (nx * (x - a[0]) + nz * (z - a[2])) / ny;
+}
+function independentHeightAt(triangles, x, z) {
+  let best = null;
+  for (const triangle of triangles) {
+    const height = independentHeight(triangle, x, z);
+    if (height !== null && (best === null || height > best)) best = height;
+  }
+  return best;
+}
+const gateSamples = sprintGates.map((gate) => {
+  let drawn = 0;
+  let collision = 0;
+  const samples = Math.round((gate.b[1] - gate.a[1]) / GATE_SAMPLE_STEP) + 1;
+  for (let sample = 0; sample < samples; sample++) {
+    const z = Number((gate.a[1] + sample * GATE_SAMPLE_STEP).toFixed(6));
+    if (independentHeightAt(g56Triangles, gate.x, z) !== null) drawn++;
+    if (independentHeightAt(collisionTriangleList, gate.x, z) !== null) collision++;
+  }
+  return { id: gate.id, x: gate.x, samples, drawn, collision };
+});
+check('every gate line is covered by the real track visual and by a collision triangle (independent re-measure)',
+      gateSamples.every((gate) => gate.drawn === gate.samples && gate.collision === gate.samples),
+      gateSamples.map((gate) => `${gate.id}:${gate.drawn}/${gate.samples} drawn, ${gate.collision}/${gate.samples} collision`).join(' '));
+
+const lastCovered = sprintSpan.lastFullyCoveredX;
+let coveredPastEnd = 0;
+let fullyCoveredColumns = 0;
+for (let x = sprintSpan.startX; x <= lastCovered + 0.25 + 1e-9; x += COLUMN_STEP) {
+  const rounded = Number(x.toFixed(6));
+  let ok = true;
+  const samples = Math.round((derivedLayout.course.band.halfWidthMetres * 2) / GATE_SAMPLE_STEP) + 1;
+  for (let sample = 0; sample < samples && ok; sample++) {
+    const z = Number((derivedLayout.course.band.z - derivedLayout.course.band.halfWidthMetres +
+      sample * GATE_SAMPLE_STEP).toFixed(6));
+    if (independentHeightAt(g56Triangles, rounded, z) === null) ok = false;
+    else if (independentHeightAt(collisionTriangleList, rounded, z) === null) ok = false;
+  }
+  if (ok) fullyCoveredColumns++;
+  if (rounded > lastCovered + 1e-9 && ok) coveredPastEnd++;
+}
+check('the measured covered segment is contiguous and the recorded end is the last fully covered column',
+      fullyCoveredColumns >= Math.round((lastCovered - sprintSpan.startX) / COLUMN_STEP) + 1 && coveredPastEnd === 0,
+      `${fullyCoveredColumns} fully covered columns, ${coveredPastEnd} past the recorded end ${lastCovered}`);
+const sprintLayoutCheck = {
+  hash: derivedLayout.hash,
+  file: path.relative(ROOT, SPRINT_FILE).split(path.sep).join('/'),
+  fileSha256: 'sha256:' + sha256(sprintFileBytes),
+  spawn: derivedLayout.source.spawn,
+  spawnGroundY: derivedLayout.course.spawnGroundY,
+  band: derivedLayout.course.band,
+  span: sprintSpan,
+  gates: sprintGates.map((gate) => ({
+    id: gate.id, kind: gate.kind, x: gate.x, z: gate.z, widthMetres: gate.widthMetres,
+    drawnSamples: gate.coverage.drawnSamples, collisionSamples: gate.coverage.collisionSamples,
+    samples: gate.coverage.samples, heightRange: gate.coverage.drawnHeightRange
+  })),
+  independentGateSamples: gateSamples,
+  fullyCoveredColumns,
+  coveredColumnsPastEnd: coveredPastEnd,
+  countdown: derivedLayout.countdown,
+  rules: derivedLayout.rules
+};
+
 /** One full scripted run of one car in a fresh wasm module instance. */
-async function runOnce(car, fieldBytes) {
-  const factory = (await import(pathToFileURL(MODULE).href)).default;
+async function runOnce(car, fieldBytes) {  const factory = (await import(pathToFileURL(MODULE).href)).default;
   const module = await factory();
   const levelPtr = module._malloc(levelBytes.length);
   const fieldsPtr = module._malloc(fieldBytes.length + 1);
@@ -358,10 +501,162 @@ async function runOnce(car, fieldBytes) {
   return { info, ground, resetMs, simMs, states, tableView, packet, replayMatches };
 }
 
+/** Replay a recorded input sequence without sprint rules: physics must not know. */
+async function replaySprintInputs(car, fieldBytes, inputs) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const module = await factory();
+  const levelPtr = module._malloc(levelBytes.length);
+  const fieldsPtr = module._malloc(fieldBytes.length + 1);
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const created = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+                                    TICK0_LIMITS.x, TICK0_LIMITS.z, TICK0_LIMITS.heading);
+  if (!created) throw new Error('sprint replay create failed for ' + car.name);
+  const hashes = [hashOfLocal(JSON.parse(module.UTF8ToString(module._e1_get_state())))];
+  for (const input of inputs) {
+    module._e1_set_input(input[0], input[1], input[2], input[3]);
+    if (!module._e1_step()) throw new Error('sprint replay step failed for ' + car.name);
+    hashes.push(hashOfLocal(JSON.parse(module.UTF8ToString(module._e1_get_state()))));
+  }
+  return hashes;
+}
+
+/** One deterministic sprint run of one car in a fresh wasm module instance. */
+async function runSprint(car, fieldBytes) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const module = await factory();
+  const levelPtr = module._malloc(levelBytes.length);
+  const fieldsPtr = module._malloc(fieldBytes.length + 1);
+  if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const t0 = Date.now();
+  const created = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+                                    TICK0_LIMITS.x, TICK0_LIMITS.z, TICK0_LIMITS.heading);
+  if (!created) throw new Error(`sprint e1_create failed for ${car.name}: ` + module.UTF8ToString(module._e1_last_error()));
+  const createMs = Date.now() - t0;
+
+  const rules = createSprintRules(derivedLayout);
+  const state0 = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+  const session = createSession(geometry, state0, {
+    spawn: { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, headingRad: TICK0_LIMITS.heading, source: TICK0_LIMITS.source },
+    script: SPRINT_PACKET_SCRIPT,
+    car: {
+      slug: car.slug, name: car.name, recordIndex: car.record.index, recordId: car.record.id,
+      drivetrain: car.drivetrain, mass: car.values.mass, fieldsSha256: car.fields.sha256
+    }
+  });
+  session.appendState(state0);
+  rules.prime(state0);
+  const states = [state0];
+  const inputs = [];
+  const events = [];
+  const rows = [{
+    tick: 0, phase: rules.phase, elapsedTicks: rules.elapsedTicks, elapsedSeconds: rules.elapsedSeconds,
+    speed: state0.speed, position: state0.position, progress: 0, stateHash: hashOfLocal(state0)
+  }];
+  const startMs = Date.now();
+  for (let tick = 1; tick <= SPRINT_SCRIPT_TICKS; tick++) {
+    const input = sprintScriptInput(rules);
+    inputs.push(input);
+    module._e1_set_input(input[0], input[1], input[2], input[3]);
+    if (!module._e1_step()) throw new Error(`sprint e1_step failed for ${car.name} at tick ${tick}`);
+    const state = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+    session.appendState(state);
+    states.push(state);
+    const tickEvents = rules.step(state);
+    events.push(...tickEvents);
+    const snapshot = rules.snapshot(state);
+    rows.push({
+      tick, phase: rules.phase, elapsedTicks: rules.elapsedTicks, elapsedSeconds: rules.elapsedSeconds,
+      speed: state.speed, position: state.position, progress: snapshot.progress, stateHash: hashOfLocal(state)
+    });
+    if (rules.phase === 'finished' && state.tick - rules.finishTick >= 120) break;
+  }
+  const simMs = Date.now() - startMs;
+  const packet = session.finalise();
+  return {
+    module, rules, states, inputs, events, rows, packet, createMs, simMs,
+    finish: events.find((event) => event.type === SPRINT_EVENT.FINISH) ?? null,
+    checkpoints: events.filter((event) => event.type === SPRINT_EVENT.CHECKPOINT),
+    go: events.find((event) => event.type === SPRINT_EVENT.GO) ?? null,
+    respawns: events.filter((event) => event.type === SPRINT_EVENT.RESPAWN)
+  };
+}
+
+/** Run the diagnostic off-course driver and rebuild at the checkpoint the rules picked. */
+async function runRespawnScenario(car, fieldBytes) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const module = await factory();
+  const levelPtr = module._malloc(levelBytes.length);
+  const fieldsPtr = module._malloc(fieldBytes.length + 1);
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const createAt = (x, z) => {
+    const ok = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+                                 x, z, TICK0_LIMITS.heading);
+    if (!ok) throw new Error('respawn create failed: ' + module.UTF8ToString(module._e1_last_error()));
+    return JSON.parse(module.UTF8ToString(module._e1_get_state()));
+  };
+  const rules = createSprintRules(derivedLayout);
+  rules.prime(createAt(TICK0_LIMITS.x, TICK0_LIMITS.z));
+  const events = [];
+  let rebuild = null;
+  let post = null;
+  for (let tick = 1; tick <= 600; tick++) {
+    if (rules.awaitingRejoin) {
+      const target = rules.respawnTarget();
+      const probe = JSON.parse(module.UTF8ToString(module._e1_ground_probe(target.x, target.z)));
+      const elapsedBefore = rules.elapsedTicks;
+      const gateProgressBefore = rules.checkpointsPassed;
+      const state0 = createAt(target.x, target.z);
+      rules.rejoin(state0);
+      rebuild = {
+        tick,
+        target,
+        probe,
+        elapsedBefore,
+        gateProgressBefore,
+        tickAfterBuild: state0.tick,
+        position: state0.position,
+        contacts: state0.contacts,
+        elapsedAfterRejoin: rules.elapsedTicks
+      };
+      const followPositions = [];
+      const followEvents = [];
+      for (let extra = 1; extra <= 120; extra++) {
+        const input = [1, 0, 0, 0];
+        module._e1_set_input(...input);
+        if (!module._e1_step()) throw new Error('respawn follow-up step failed');
+        const state = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+        for (const event of rules.step(state)) followEvents.push(event);
+        followPositions.push({ tick: extra, position: state.position, speed: state.speed, phase: rules.phase });
+      }
+      post = {
+        elapsed: rules.elapsedSeconds,
+        elapsedTicks: rules.elapsedTicks,
+        checkpointsPassed: rules.checkpointsPassed,
+        respawns: rules.respawns,
+        position: followPositions[followPositions.length - 1].position,
+        speed: followPositions[followPositions.length - 1].speed,
+        events: followEvents
+      };
+      break;
+    }
+    const input = respawnScriptInput(tick);
+    module._e1_set_input(...input);
+    if (!module._e1_step()) throw new Error('respawn scenario step failed at ' + tick);
+    const state = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+    const tickEvents = rules.step(state);
+    for (const event of tickEvents) events.push({ ...event });
+  }
+  return { rules, events, respawnEvents: events.filter((event) => event.type === SPRINT_EVENT.RESPAWN),
+    rebuild, post, module };
+}
+
 const distance = (a, b) => Math.hypot(a.position[0] - b.position[0], a.position[1] - b.position[1],
                                      a.position[2] - b.position[2]);
 const aggregate = (hashes) => 'sha256:' + sha256(Buffer.from(hashes.join('\n'), 'utf8'));
-
 const log = [];
 const results = [];
 
@@ -760,6 +1055,327 @@ for (const car of cars) {
   });
 }
 
+// ------------------------------------------------------------- sprint runs
+// Each roster car runs the deterministic sprint in its own fresh module. The
+// rules observe the physics; the recorded input sequence is replayed into
+// another fresh module with the rules switched off, and the two state hash
+// sequences must be identical — that is the proof that the race rules did not
+// change the simulation.
+const sprintResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const run = await runSprint(car, fieldBytes);
+  const hashes = run.states.map((state) => hashOfLocal(state));
+  const stateSequenceHash = aggregate(hashes);
+  const replayHashes = await replaySprintInputs(car, fieldBytes, run.inputs);
+  const replayMatches = replayHashes.length === hashes.length &&
+    replayHashes.every((hash, index) => hash === hashes[index]);
+  const countdownStates = run.states.slice(0, derivedLayout.countdown.ticks + 1);
+  const countdownRest = Math.max(...countdownStates.map((state) =>
+    Math.hypot(state.position[0] - run.states[0].position[0], state.position[2] - run.states[0].position[2])));
+  const countdownSpeed = Math.max(...countdownStates.map((state) => Math.abs(state.speed)));
+  const finish = run.finish;
+  const checkpoints = run.checkpoints;
+  const checkpointTick = checkpoints[0]?.tick ?? null;
+  const captureTicks = [
+    { label: 'start', tick: 0 },
+    // The checkpoint frame is the exact crossing tick. The start-area truck prop
+    // can cross the car there (physics has no prop collision), which is the
+    // documented near-field camera limit; the frame, banner, HUD and hashes are
+    // all from the crossing itself.
+    { label: 'checkpoint', tick: checkpointTick, eventTick: checkpointTick },
+    { label: 'finish', tick: finish?.tick ?? null, eventTick: finish?.tick ?? null }
+  ].filter((entry) => entry.tick !== null);
+  const captures = captureTicks.map(({ label, tick, eventTick }) => {
+    const update = run.packet.updates.find((entry) => entry.tick === tick);
+    const row = run.rows.find((entry) => entry.tick === tick);
+    return {
+      label,
+      tick,
+      eventTick: eventTick ?? null,
+      stateHash: row?.stateHash ?? null,
+      updateHash: update?.hash ?? null,
+      matrix: update?.matrices?.[0]?.world ?? null,
+      matrices: update?.matrices ?? null,
+      camera: update?.camera ?? null,
+      position: row?.position ?? null,
+      speed: row?.speed ?? null,
+      progress: row?.progress ?? null,
+      elapsedSeconds: row?.elapsedSeconds ?? null
+    };
+  });
+
+  check(`${car.name}: the sprint countdown holds the car at rest`,
+        countdownRest < 0.05 && countdownSpeed < 0.05,
+        `${countdownRest.toFixed(4)} m, ${countdownSpeed.toFixed(4)} m/s over ${countdownStates.length} ticks`);
+  check(`${car.name}: GO happens at the layout countdown tick`,
+        run.go?.tick === derivedLayout.countdown.ticks,
+        `${run.go?.tick ?? 'no GO'} vs ${derivedLayout.countdown.ticks}`);
+  const timerRows = run.rows.filter((row) => row.phase === 'running');
+  const timerMonotonic = timerRows.length > 1 && timerRows[0].elapsedTicks === 0 &&
+    timerRows.slice(1).every((row, index) => row.elapsedTicks === timerRows[index].elapsedTicks + 1);
+  const postFinishRows = run.rows.filter((row) => row.phase === 'finished');
+  check(`${car.name}: the timer advances one tick per running tick and freezes on the finish`,
+        timerMonotonic &&
+        postFinishRows.every((row) => Math.abs(row.elapsedTicks - finish.timeSeconds * TICK_HZ) < 1e-3) &&
+        run.rows.filter((row) => row.phase === 'countdown').every((row) => row.elapsedTicks === 0),
+        `${timerRows.length} running ticks, ${postFinishRows.length} finished ticks, finish ${finish?.timeSeconds ?? 'none'} s`);
+  check(`${car.name}: both checkpoints are crossed in order before the finish`,
+        checkpoints.length === derivedLayout.gates.filter((gate) => gate.kind === 'checkpoint').length &&
+        checkpoints.every((event, index) =>
+          event.id === 'checkpoint-' + (index + 1) &&
+          (index === 0 || event.tick > checkpoints[index - 1].tick) &&
+          (index === 0 || event.timeSeconds > checkpoints[index - 1].timeSeconds)) &&
+        checkpoints.every((event) => {
+          const gate = derivedLayout.gates[event.index];
+          return event.position[2] >= gate.a[1] - 1e-6 && event.position[2] <= gate.b[1] + 1e-6 &&
+            Math.abs(event.position[0] - gate.x) <= 1e-6;
+        }),
+        checkpoints.map((event) => `${event.id}@${event.tick}:${event.timeSeconds}`).join(' '));
+  const finishGate = derivedLayout.gates[derivedLayout.gates.length - 1];
+  check(`${car.name}: the finish fires once, inside the finish gate line, after both checkpoints`,
+        finish !== null && finish.checkpoints === 2 &&
+        Math.abs(finish.position[0] - finishGate.x) <= 1e-6 &&
+        finish.position[2] >= finishGate.a[1] - 1e-6 && finish.position[2] <= finishGate.b[1] + 1e-6 &&
+        finish.timeSeconds > checkpoints[checkpoints.length - 1].timeSeconds &&
+        run.respawns.length === 0,
+        finish ? `${finish.timeSeconds} s at tick ${finish.tick}, pos ${finish.position.map((v) => v.toFixed(2)).join(',')}` : 'no finish');
+  check(`${car.name}: the sprint covers the measured span under throttle`,
+        finish !== null && Math.abs((finish.position[0] - sprintSpan.startX) - sprintSpan.lengthMetres) <= 0.01 &&
+        finish.timeSeconds > 0.5,
+        finish ? `${(finish.position[0] - sprintSpan.startX).toFixed(3)} m of ${sprintSpan.lengthMetres} m in ${finish.timeSeconds} s` : 'no finish');
+  check(`${car.name}: the rules gated the input (zero in countdown, brake after the finish)`,
+        run.inputs.slice(0, derivedLayout.countdown.ticks).every((input) => input.every((value) => value === 0)) &&
+        run.inputs.slice(finish ? finish.tick : 0).every((input) => input[0] === 0 && input[1] === 1),
+        `${run.inputs.filter((input) => input[0] === 1).length} throttle ticks, ` +
+        `${run.inputs.filter((input) => input[1] === 1).length} brake ticks`);
+  check(`${car.name}: replaying the recorded inputs without the rules reproduces every state hash`,
+        replayMatches, replayMatches ? `${hashes.length} ticks` : 'state sequence differs');
+  check(`${car.name}: the sprint keeps wheel contact on every tick and no NaN`,
+        run.states.every((state) => state.anyContact === 1) && run.states.every((state) => state.finite === 1),
+        `${run.states.filter((state) => state.anyContact === 1).length}/${run.states.length} contact, ` +
+        `${run.states.filter((state) => state.finite !== 1).length} non-finite`);
+  check(`${car.name}: the car is still moving at the finish (a real sprint, not a teleport)`,
+        finish !== null && run.states[finish.tick].speed > 5,
+        finish ? `${run.states[finish.tick].speed.toFixed(2)} m/s` : 'no finish');
+
+  const sprintValidation = validatePacket(run.packet);
+  check(`${car.name}: the sprint produces a valid packet v1.1 timeline`,
+        sprintValidation.ok === true && run.packet.updates.length === run.states.length,
+        sprintValidation.errors.slice(0, 4).join(' | '));
+  check(`${car.name}: the sprint packet carries the sprint script label and nine matrices per tick`,
+        run.packet.diagnostics.extras.drive.script === SPRINT_PACKET_SCRIPT &&
+        run.packet.updates.every((update) => update.matrices.length === 9),
+        run.packet.diagnostics.extras.drive.script);
+
+  const sprintRunPath = path.join(OUT, `sprint-${car.slug}.json`);
+  writeFileSync(sprintRunPath, JSON.stringify({
+    kind: 'e1-drive.sprint-run',
+    version: 1,
+    car: { slug: car.slug, name: car.name, record: car.record, drivetrain: car.drivetrain, fields: car.fields },
+    layoutHash: derivedLayout.hash,
+    layoutFile: path.relative(ROOT, SPRINT_FILE).split(path.sep).join('/'),
+    tickHz: TICK_HZ,
+    countdownTicks: derivedLayout.countdown.ticks,
+    stateSequenceHash,
+    events: run.events,
+    finish,
+    checkpoints,
+    respawns: run.respawns,
+    ticks: run.rows,
+    inputs: run.inputs,
+    captures
+  }, null, 2) + '\n', 'utf8');
+
+  sprintResults.push({
+    slug: car.slug,
+    name: car.name,
+    drivetrain: car.drivetrain,
+    default: car.slug === defaultCar.slug,
+    layoutHash: derivedLayout.hash,
+    countdownTicks: derivedLayout.countdown.ticks,
+    goTick: run.go?.tick ?? null,
+    finish: finish ? {
+      timeSeconds: finish.timeSeconds,
+      tick: finish.tick,
+      position: finish.position,
+      speed: run.states[finish.tick].speed,
+      checkpoints: finish.checkpoints
+    } : null,
+    checkpoints: checkpoints.map((event) => ({
+      id: event.id, index: event.index, tick: event.tick,
+      timeSeconds: event.timeSeconds, position: event.position
+    })),
+    respawns: run.respawns.length,
+    ticks: run.states.length,
+    contactTicks: run.states.filter((state) => state.anyContact === 1).length,
+    nanTicks: run.states.filter((state) => state.finite !== 1).length,
+    maxX: run.rules.maxX,
+    progress: run.rules.snapshot().progress,
+    stateSequenceHash,
+    replayMatches,
+    packet: {
+      hash: run.packet.hash,
+      updates: run.packet.updates.length,
+      draws: run.packet.draws.length,
+      nodes: run.packet.nodes.length,
+      bytes: formatPacket(run.packet).length,
+      validationErrors: sprintValidation.errors.length
+    },
+    runPath: path.relative(ROOT, sprintRunPath).split(path.sep).join('/'),
+    captures
+  });
+}
+
+// ------------------------------------------------------------- sprint rules tests
+// Synthetic states exercise the order and respawn decisions without an engine;
+// the real-engine respawn below proves the same path end to end.
+function fakeState(tick, x, z, options = {}) {
+  const y = options.y ?? derivedLayout.course.spawnGroundY + 0.35;
+  const contact = options.contact ?? 1;
+  return {
+    tick,
+    position: [x, y, z],
+    speed: options.speed ?? 10,
+    contacts: [contact, contact, contact, contact],
+    anyContact: contact,
+    finite: options.finite ?? 1,
+    wheels: [],
+    input: [0, 0, 0, 0]
+  };
+}
+function advanceToGo(rules, x = sprintSpan.startX + 0.01) {
+  let tick = 0;
+  rules.prime(fakeState(tick, x, derivedLayout.course.band.z));
+  while (rules.phase === 'countdown') {
+    tick++;
+    rules.step(fakeState(tick, x, derivedLayout.course.band.z));
+  }
+  return tick;
+}
+const rulesLayout = derivedLayout;
+// Out-of-order test: the car starts just before checkpoint 2 (so checkpoint 1 was
+// never crossed) and is then moved across checkpoint 2 and the finish line.
+const orderRules = createSprintRules(rulesLayout);
+let orderTick = advanceToGo(orderRules, -70);
+const orderEvents = [];
+orderTick++;
+orderEvents.push(...orderRules.step(fakeState(orderTick, -68, derivedLayout.course.band.z)));
+orderTick++;
+orderEvents.push(...orderRules.step(fakeState(orderTick, -58, derivedLayout.course.band.z)));
+check('sprint rules: a finish crossed before the ordered checkpoints is rejected and labelled',
+      orderEvents.some((event) => event.type === SPRINT_EVENT.GATE_OUT_OF_ORDER) &&
+      orderEvents.some((event) => event.type === SPRINT_EVENT.FINISH_BLOCKED) &&
+      orderRules.phase === 'running',
+      orderEvents.map((event) => event.type).join(','));
+
+const belowRules = createSprintRules(rulesLayout);
+let belowTick = advanceToGo(belowRules);
+const belowEvents = belowRules.step(fakeState(belowTick + 1, sprintSpan.startX + 1, derivedLayout.course.band.z,
+  { y: derivedLayout.course.spawnGroundY - 2 }));
+check('sprint rules: falling below the measured ground triggers a respawn with a reason',
+      belowEvents.some((event) => event.type === SPRINT_EVENT.RESPAWN &&
+        event.reasons.includes('below-ground')) &&
+      belowRules.awaitingRejoin === true,
+      belowEvents.map((event) => event.type + ':' + (event.reasons ?? []).join('+')).join(','));
+
+const airRules = createSprintRules(rulesLayout);
+let airTick = advanceToGo(airRules);
+const airStartTick = airTick;
+let airEvents = [];
+for (let step = 1; step <= rulesLayout.rules.respawn.airborneTicks + 1; step++) {
+  airTick++;
+  airEvents.push(...airRules.step(fakeState(airTick, sprintSpan.startX + 2, derivedLayout.course.band.z,
+    { contact: 0 })));
+}
+const firstAir = airEvents.find((event) => event.type === SPRINT_EVENT.RESPAWN);
+check('sprint rules: an airborne car respawns after the configured number of ticks',
+      firstAir !== undefined && firstAir.reasons.includes('airborne') &&
+      firstAir.tick === airStartTick + rulesLayout.rules.respawn.airborneTicks,
+      firstAir ? `${firstAir.reasons.join('+')} at tick ${firstAir.tick}, expected ` +
+        `${airStartTick + rulesLayout.rules.respawn.airborneTicks}` : 'no respawn');
+
+const resetRules = createSprintRules(rulesLayout);
+advanceToGo(resetRules);
+resetRules.elapsedTicks = 123;
+resetRules.gateIndex = 3;
+resetRules.phase = 'finished';
+resetRules.finishTimeSeconds = 2.05;
+resetRules.reset();
+check('sprint rules: R restart resets the timer, gates and finish state',
+      resetRules.phase === 'countdown' && resetRules.elapsedTicks === 0 && resetRules.gateIndex === 1 &&
+      resetRules.finishTimeSeconds === null && resetRules.checkpointsPassed === 0,
+      resetRules.phase + ' ' + resetRules.elapsedTicks);
+
+// Best-time store: localStorage-shaped, including hostile storages.
+function fakeStorage(initial = null) {
+  const map = new Map(initial ? [[ 'e1-drive.sprint.best.v1', JSON.stringify(initial) ]] : []);
+  return {
+    map,
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => map.set(key, String(value))
+  };
+}
+const bestStorage = fakeStorage();
+const bestTimes = createBestTimes(bestStorage);
+const firstSubmit = bestTimes.submit('corvette-zr1-stock', { seconds: 2.8, car: 'Corvette_ZR1_Stock', checkpoints: 2, respawns: 0 });
+const slowerSubmit = bestTimes.submit('corvette-zr1-stock', { seconds: 3.1, car: 'Corvette_ZR1_Stock', checkpoints: 2, respawns: 0 });
+const fasterSubmit = bestTimes.submit('corvette-zr1-stock', { seconds: 2.65, car: 'Corvette_ZR1_Stock', checkpoints: 2, respawns: 1 });
+const otherCar = bestTimes.submit('audi-r8v10-stock', { seconds: 2.3, car: 'Audi_R8V10_Stock', checkpoints: 2, respawns: 0 });
+check('best times: the store keeps the fastest run per car and marks improvements',
+      firstSubmit.improved === true && slowerSubmit.improved === false &&
+      slowerSubmit.best === 2.8 && fasterSubmit.improved === true &&
+      fasterSubmit.best === 2.65 && otherCar.best === 2.3 &&
+      bestTimes.bestFor('corvette-zr1-stock') === 2.65 &&
+      bestTimes.bestFor('audi-r8v10-stock') === 2.3,
+      JSON.stringify({ corvette: bestTimes.bestFor('corvette-zr1-stock'), audi: bestTimes.bestFor('audi-r8v10-stock') }));
+const corruptStorage = fakeStorage();
+corruptStorage.map.set('e1-drive.sprint.best.v1', '{not json');
+const corruptBest = createBestTimes(corruptStorage);
+const corruptSubmit = corruptBest.submit('corvette-zr1-stock', { seconds: 2.9 });
+const throwingBest = createBestTimes({
+  getItem() { throw new Error('denied'); },
+  setItem() { throw new Error('quota'); }
+});
+const throwingSubmit = throwingBest.submit('corvette-zr1-stock', { seconds: 2.9 });
+check('best times: malformed JSON and a throwing storage degrade to no record instead of failing the page',
+      corruptSubmit.improved === true && corruptSubmit.best === 2.9 &&
+      throwingSubmit.improved === true && throwingBest.persistent === false &&
+      throwingBest.bestFor('corvette-zr1-stock') === null,
+      JSON.stringify({ corrupt: corruptSubmit.best, throwingPersistent: throwingBest.persistent }));
+
+// ------------------------------------------------------------- real respawn
+const respawnCar = results.find((entry) => entry.default) ?? results[0];
+const respawnRun = await runRespawnScenario(respawnCar, readFileSync(path.join(ROOT, respawnCar.fields.path)));
+const respawnEvent = respawnRun.respawnEvents[0] ?? null;
+const respawnRebuild = respawnRun.rebuild;
+check('respawn: the off-course car triggers exactly one respawn with a measured reason',
+      respawnRun.respawnEvents.length === 1 && respawnEvent !== null &&
+      respawnEvent.reasons.includes('outside-gate-band'),
+      respawnEvent ? `${respawnEvent.reasons.join('+')} at tick ${respawnEvent.tick}, z ${respawnEvent.position[2].toFixed(2)}` : 'no respawn');
+check('respawn: the car is rebuilt at the last passed checkpoint, on a real ground hit',
+      respawnRebuild !== null && respawnEvent !== null &&
+      respawnRebuild.target.gateId === respawnEvent.target.gateId &&
+      respawnRebuild.probe.hit === 1 &&
+      Math.abs(respawnRebuild.probe.y - derivedLayout.course.spawnGroundY) < 0.2 &&
+      Math.hypot(respawnRebuild.position[0] - respawnRebuild.target.x,
+        respawnRebuild.position[2] - respawnRebuild.target.z) < 1.0 &&
+      respawnRebuild.contacts.join('') === '1111' && respawnRebuild.tickAfterBuild === 0,
+      respawnRebuild ? `${respawnRebuild.target.gateId} at ${respawnRebuild.target.x},${respawnRebuild.target.z}, ` +
+        `probe y ${respawnRebuild.probe.y?.toFixed(3)}, car ${respawnRebuild.position.map((v) => v.toFixed(2)).join(',')}` : 'no rebuild');
+check('respawn: the attempt timer keeps running across the respawn and the gate progress is kept',
+      respawnRebuild !== null && respawnRun.post !== null &&
+      respawnRun.post.elapsedTicks > respawnRebuild.elapsedBefore &&
+      respawnRun.post.checkpointsPassed >= respawnRebuild.gateProgressBefore &&
+      respawnRun.post.respawns === 1,
+      respawnRun.post ? `elapsed ${respawnRun.post.elapsed} s, ${respawnRun.post.checkpointsPassed} checkpoints kept` : 'no post state');
+check('respawn: after the rebuild the car drives on from the checkpoint and stays on course',
+      respawnRun.post !== null && respawnRun.post.speed > 1 &&
+      Math.abs(respawnRun.post.position[2] - derivedLayout.course.band.z) <=
+        derivedLayout.course.band.halfWidthMetres + derivedLayout.rules.respawn.outsideBandMarginMetres,
+      respawnRun.post ? `${respawnRun.post.speed.toFixed(2)} m/s at ` +
+        respawnRun.post.position.map((v) => v.toFixed(2)).join(',') : 'no post state');
+
 // ------------------------------------------------------------- cross-car gates
 const distinctSequences = new Set(results.map((entry) => entry.determinism.stateSequenceHash));
 check('every car produces a distinct state sequence', distinctSequences.size === results.length,
@@ -786,6 +1402,30 @@ check('the cars are actually different machines',
       (new Set(results.map((entry) => entry.record.id)).size === results.length &&
        new Set(results.map((entry) => entry.drivetrain)).size > 1),
       results.map((entry) => `${entry.name}:${entry.drivetrain}`).join(', '));
+
+// ------------------------------------------------------------- cross-car sprint
+const sprintFinishers = sprintResults.filter((entry) => entry.finish !== null);
+check('every roster car finishes the sprint with both checkpoints',
+      sprintFinishers.length === sprintResults.length &&
+      sprintFinishers.every((entry) => entry.finish.checkpoints === 2),
+      sprintFinishers.map((entry) => `${entry.slug}:${entry.finish?.timeSeconds ?? 'DNF'} s`).join(', '));
+check('every car replays the sprint to the same state hashes with the rules switched off',
+      sprintResults.every((entry) => entry.replayMatches === true),
+      sprintResults.map((entry) => `${entry.slug}:${entry.replayMatches}`).join(', '));
+check('the sprint keeps a clean physics record for every car (contact every tick, no NaN)',
+      sprintResults.every((entry) => entry.contactTicks === entry.ticks && entry.nanTicks === 0),
+      sprintResults.map((entry) => `${entry.slug}:${entry.contactTicks}/${entry.ticks}, nan ${entry.nanTicks}`).join(' '));
+const audiResult = sprintResults.find((entry) => entry.drivetrain === 'AWD');
+const fwdResult = sprintResults.find((entry) => entry.drivetrain === 'FWD');
+if (audiResult && fwdResult) {
+  check('the same sprint script separates the drivetrains (AWD fastest, FWD slowest)',
+        audiResult.finish && fwdResult.finish &&
+        sprintResults.every((entry) => entry === audiResult || !entry.finish ||
+          entry.finish.timeSeconds > audiResult.finish.timeSeconds) &&
+        sprintResults.every((entry) => entry === fwdResult || !entry.finish ||
+          entry.finish.timeSeconds < fwdResult.finish.timeSeconds),
+        sprintResults.map((entry) => `${entry.slug}:${entry.finish?.timeSeconds ?? 'DNF'}`).join(', '));
+}
 
 // The P31 record documented that the Focus RS, Dodge and Lotus mid frames showed
 // terrain because the camera had no occlusion avoidance. That defect must be
@@ -887,8 +1527,7 @@ const report = {
   },
   camera: {
     rule: 'chase orbit, yaw follows the car with a per-tick lag; the eye is pulled in front of the first ' +
-      'visible-geometry hit along the target->eye segment, pull-in immediate, push-out eased',
-    occluder: occluderDescribe,
+      'visible-geometry hit along the target->eye segment, pull-in immediate, push-out eased',    occluder: occluderDescribe,
     hiddenPhysicsSurfacesUsed: false,
     hiddenPhysicsSurfacesReason: 'physicsSurfaces are visible:false and are neither uploaded nor drawn, so they ' +
       'are not occluders; only the drawn level props and real track visual are',
@@ -908,6 +1547,39 @@ const report = {
       maxDistance: entry.camera.maxDistance,
       tick150: entry.camera.tick150
     }))
+  },
+  sprint: {
+    layout: sprintLayoutCheck,
+    rules: derivedLayout.rules,
+    countdown: derivedLayout.countdown,
+    ruleTests: {
+      finishRejectedWithoutCheckpoints: true,
+      outOfOrderCheckpointIgnored: true,
+      belowGroundRespawn: belowEvents.map((event) => event.reasons ?? []).flat(),
+      airborneRespawnTicks: rulesLayout.rules.respawn.airborneTicks,
+      restartResetsTimer: true
+    },
+    bestTimes: {
+      key: 'e1-drive.sprint.best.v1',
+      corvette: bestTimes.bestFor('corvette-zr1-stock'),
+      audi: bestTimes.bestFor('audi-r8v10-stock'),
+      corruptJsonFallsBack: corruptSubmit.improved === true,
+      throwingStorageFallsBack: throwingBest.persistent === false
+    },
+    respawn: {
+      car: respawnCar.slug,
+      event: respawnEvent,
+      rebuilt: respawnRebuild,
+      post: respawnRun.post ? {
+        elapsed: respawnRun.post.elapsed,
+        elapsedTicks: respawnRun.post.elapsedTicks,
+        checkpointsPassed: respawnRun.post.checkpointsPassed,
+        respawns: respawnRun.post.respawns,
+        position: respawnRun.post.position,
+        speed: respawnRun.post.speed
+      } : null
+    },
+    cars: sprintResults
   },
   roster: {
     path: path.relative(ROOT, ROSTER).split(path.sep).join('/'),
@@ -957,6 +1629,28 @@ console.log(JSON.stringify({
       blockedTicks: entry.blockedTicks,
       distance: entry.minDistance.toFixed(2) + '..' + entry.maxDistance.toFixed(2) + ' m'
     }))
+  },
+  sprint: {
+    layoutHash: report.sprint.layout.hash,
+    span: report.sprint.layout.span,
+    gates: report.sprint.layout.gates.map((gate) => gate.id + '@' + gate.x + ' (' + gate.widthMetres + ' m)'),
+    cars: sprintResults.map((entry) => ({
+      car: entry.name,
+      slug: entry.slug,
+      finishSeconds: entry.finish?.timeSeconds ?? null,
+      finishTick: entry.finish?.tick ?? null,
+      checkpoints: entry.checkpoints.map((checkpoint) => checkpoint.id + '@' + checkpoint.timeSeconds),
+      ticks: entry.ticks,
+      progress: entry.progress,
+      replayMatches: entry.replayMatches,
+      packetHash: entry.packet.hash
+    })),
+    respawn: {
+      car: respawnCar.slug,
+      reasons: respawnEvent?.reasons ?? null,
+      target: respawnRebuild?.target.gateId ?? null,
+      elapsedAfter: respawnRun.post?.elapsed ?? null
+    }
   },
   cars: results.map((entry) => ({
     car: entry.name,

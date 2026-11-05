@@ -33,6 +33,7 @@ deterministic state sequence.**
 | per-car meshes (P29) | **5 of 5 roster cars** draw their own real body/wheels (100/88/104/115/84 draws, 34/23/31/31/29 parts), 214/214 checks, distinct body mesh hashes, 3 uploads per page, 0 console messages — see **§12** |
 | real track visual (P31) | **144 real direct draws** (32,290 vertices / 19,167 triangles: block88/node283 95/17,782/9,343 + block56/node289 49/14,508/9,824), collision slab hidden as physics provenance, 231/231 checks, 20 captures, 0 console messages — see **§13** |
 | camera collision (P36) | chase camera pulled in front of the first visible-geometry hit; **268/268 checks**, 5 state hashes unchanged, 20 captures + 1 near-field capture, 0 console messages — see **§14** |
+| sprint rules (P37) | point-to-point sprint on the measured 29 m covered segment: **348/348 checks** (268 P36 + 80 sprint), 5 sprint times 2.283–3.267 s, 15 sprint captures + 1 respawn capture, 0 console messages, legacy drive hashes unchanged — see **§15** |
 
 ---
 
@@ -958,3 +959,119 @@ show the car. Exact before/after hashes and the preserved P31 frames are in
   occlusion-checked; `?camdist`/`?camheight`/`?camyaw` are.
 - Presentation camera only; still not the engine camera. No race rules, audio,
   multiplayer, opponents or streaming claim.
+
+---
+
+## 15. Point-to-point sprint: checkpoints, timer, finish, respawn (T-007/E1m, P37)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-sprint-rules.md`. No change to the
+engine, the wasm module, `probes/render-packet/`, `probes/car-parts/`, tools,
+`upstream/` or `game-data/`. Physics is unchanged: the five 300-tick state
+sequence hashes and packet hashes are exactly the P36 values.
+
+### 15.1 The course is the measured draw, so it is a sprint
+
+A lap is impossible in the committed data: the real River draws cover one segment
+and the drawn ground under the driven line ends near `x = −48.5`. The sprint is
+therefore point-to-point on the measured segment, and every gate is derived from
+`geometry.json` (`tools/build_sprint.mjs` → `sprint.json`) rather than typed in:
+
+- corridor = spawn z ± 3 m; a column is covered when every 0.1 m sample has both
+  a real `river.block56.node289` triangle over it and a collision triangle under
+  it;
+- the fully covered band runs from the spawn to **x = −57.00** (125 columns at
+  0.25 m, no gap); the finish is 2 m before it (**−59.00**) so no gate line leaves
+  the drawn road;
+- start at the spawn (**−88.00**), checkpoints at 1/3 and 2/3 of the 29 m span
+  (**−78.25**, **−68.75**), all 6 m wide, all 61/61 drawn + 61/61 collision
+  samples;
+- the layout hash is `sha256:9e5b7bef…da4f703`; the verifier re-derives the
+  layout, re-hashes the file and re-measures every sample with independent
+  barycentric code.
+
+### 15.2 Rules implemented (all presentation/bookkeeping)
+
+`web/sprint-rules.js` is a pure tick state machine: 90-tick (1.5 s) 3-2-1
+countdown with input held at zero and the car measured at rest; timer from GO at
+60 Hz; checkpoints counted only in index order; finish only after both
+checkpoints; `finish-blocked`/`gate-out-of-order` events recorded instead of
+silently accepting them; respawn when the chassis is > 1 m below the measured
+spawn ground, airborne for 30 ticks, or outside the gate corridor; respawn target
+= last passed checkpoint; `R` restart clears timer and gates; best time per car in
+`localStorage` (milliseconds, only faster finishes replace it).
+
+The rules gate the *driver request*, not the engine: the scripted sprint records
+its input sequence, and a fresh module replaying that sequence with the rules
+switched off produces identical per-tick state hashes (379+ ticks per car). The
+default page runs the keyboard sprint; `?script=sprint` runs the scripted
+sprint; `?sprintfall=1` is the off-course respawn diagnostic; `?script=drive`
+keeps the original 300-tick drive with no rules.
+
+### 15.3 Verification
+
+`_work/e1-drive/run.json` — **PASS, 348/348 checks** (268 P36 + 80 sprint). New
+checks cover: layout derivation equality, independent gate coverage, covered-span
+end, countdown rest, GO tick, timer monotonicity and freeze, ordered checkpoints,
+finish gate/position/span, input gating (zero in countdown, brake after finish),
+rules-off replay, sprint packet validity and script label, four rule unit tests,
+the best-time store (including corrupt JSON and a throwing storage), and a real
+off-course respawn (one event at tick 237, reason `outside-gate-band`, rebuilt at
+checkpoint 1, timer 2.45 → 4.45 s, checkpoint kept, car drives on).
+
+| car | finish | tick | CP1 | CP2 | speed at finish | sprint state sequence hash |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | 2.800 s | 258 | 1.683 s | 2.317 s | 22.35 m/s | `fdd893bd…e62622` |
+| Lotus Exige Cup260 | 2.850 s | 261 | 1.733 s | 2.350 s | 20.83 m/s | `c9b17397…b52dfc` |
+| Dodge Challenger | 3.000 s | 270 | 1.783 s | 2.450 s | 19.05 m/s | `438e2e12…e12684` |
+| Ford Focus RS (FWD) | 3.267 s | 286 | 1.967 s | 2.683 s | 18.70 m/s | `cc911ea3…2af937` |
+| Audi R8 V10 (AWD) | 2.283 s | 227 | 1.317 s | 1.850 s | 24.26 m/s | `d52d4b8f…44dea` |
+
+Every car: two ordered checkpoints, no respawn, contact on every tick, 0 NaN, and
+a bit-identical rules-off replay. The AWD car is fastest and the FWD car slowest,
+as the unchanged physics predicts.
+
+Legacy mode is untouched: the 300-tick state hashes are the P36 anchors
+(Corvette `sha256:83f76590…008e1f`) and the five drive packet hashes are the P36
+values (`9462fda8…`, `f2956330…`, `d866be00…`, `fa9e334d…`, `4a9b3179…`). The
+adapter gained only an optional diagnostics `script` label; its default string is
+the old one, so no legacy packet byte moved.
+
+### 15.4 Browser evidence
+
+15 headless Edge/WebGPU sprint captures (5 cars × start / checkpoint / finish)
+plus one respawn capture: **0 console messages**, 3 geometry uploads per page at
+the expected byte count, `drawsIssued = frames × draws`, 9 matrices per tick,
+browser state hash equal to node for every capture, car matrix bit-identical,
+every matrix within 1e-12, camera within 1e-6. At the finish the results overlay
+shows the time and car and the best time is in `localStorage`. Packet hashes are
+byte-exact for **12/15**; the three exceptions are one `atan2` camera ulp (Dodge
+start, camera 2.3e-13) and two `sin/cos` wheel-matrix ulps at 5.6e-17 / 1.1e-16
+(Corvette finish, Dodge checkpoint), the same class of Node-24 vs Edge-156 JS
+difference recorded in §10.4, not a physics change.
+
+Screenshots: `browser-<slug>-sprint-{start,checkpoint,finish}.png` (+ 2× crops),
+`browser-corvette-zr1-stock-sprint-respawn.png`. The checkpoint frame is at the
+exact crossing tick inside the start-area truck prop (near-field camera limit:
+the car drives through the prop, so it can fill the view); the banner, HUD and
+state hashes are the crossing evidence, and the start/finish frames are clear.
+Evidence: `browser-evidence-sprint.json`, `browser-evidence-respawn.json`,
+per-car `sprint-<slug>.json`.
+
+### 15.5 Limits
+
+- **No lap / one segment.** 29 m of measured real draw; start→checkpoints→finish
+  only, no second lap, sectors or loop.
+- **Gates are rules geometry only**; no gate mesh is added to the render packet.
+- **Respawn rebuilds the world** through `e1_create` (180-tick settle): a frame
+  hitch and a restart from rest at the gate; the timer and passed checkpoints are
+  kept.
+- **Best time is local** (`localStorage`, per car, ms); no server, ghost or
+  leaderboard.
+- **No opponents, AI, traffic, race audio or multiplayer.** One car, one segment,
+  one chase camera; not the retail race mode.
+- **Rules are bookkeeping**: they gate the requested input only, proven by the
+  rules-off replay; penalties, collisions and wrong-way logic are out of scope.
+- Native-vs-wasm parity remains blocked by the DirectX SDK
+  (`T-007-vehicle-physics.md` §7).

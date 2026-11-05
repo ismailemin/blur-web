@@ -2,20 +2,32 @@
 //
 // Pipeline per frame:
 //
-//   keyboard (or the tick-scripted drive)        <- input
+//   keyboard / scripted input / sprint driver          <- input
 //     -> FixedStepDriver (1/60, 4-tick cap, pause rule)
-//     -> wasm e1_set_input / e1_step / e1_get_state     (engine owns the car)
-//     -> packet-adapter appendState  -> packet v1.1 updates[] (camera + matrix)
-//     -> PacketConsumer.renderFrame(cursor + alpha)     (WebGPU)
+//     -> wasm e1_set_input / e1_step / e1_get_state      (engine owns the car)
+//     -> sprint rules (countdown, gates, timer, respawn) (rules observe only)
+//     -> packet-adapter appendState -> packet v1.1 updates[] (camera + matrix)
+//     -> PacketConsumer.renderFrame(cursor + alpha)       (WebGPU)
 //
 // The driver is a verbatim copy of the committed fixed-step module, which is a
 // line-by-line port of the native scheduler probe; the packet consumer is the
 // committed consumer with one added method (`syncTimeline`) because this page
 // builds its timeline live instead of loading a finished one.
 //
+// Modes:
+//   /                   keyboard sprint: 3-2-1 countdown, timer, 2 checkpoints,
+//                       finish, results + best time, R restart, respawn
+//   ?script=sprint      the same sprint with the deterministic scripted driver
+//                       (throttle while running, brake after the finish)
+//   ?script=sprint&sprintfall=1
+//                       diagnostic driver that leaves the gate corridor to
+//                       exercise the respawn path on the real engine
+//   ?script=drive       the original 300-tick drive (2 s throttle, 2 s coast,
+//                       1 s brake) with no race rules, kept for the P23/P31/P36
+//                       evidence and for `?hold=` captures
+//
 // URL parameters:
 //   ?car=<slug>     roster car to drive (default: the roster's recorded default)
-//   ?script=drive   tick-scripted input (2 s throttle, 2 s coast, 1 s brake)
 //   ?hold=<tick>    stop stepping at that engine tick and hold it (screenshots)
 //   ?manual=1       keyboard input even when script=drive is present
 //   ?interpolate=0  render the last integer tick (default renders tick-1+alpha)
@@ -26,9 +38,20 @@ import { createSession } from './packet-adapter.js';
 import { hashOf } from './packet-hash.js';
 import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
-
+import { validateSprintLayout } from './sprint-layout.js';
+import { SPRINT_EVENT, createSprintRules } from './sprint-rules.js';
+import { createBestTimes } from './sprint-best.js';
+import { respawnScriptInput, sprintScriptInput, SPRINT_PACKET_SCRIPT } from './sprint-script.js';
 const params = new URLSearchParams(location.search);
-const SCRIPTED = params.get('script') === 'drive' && params.get('manual') !== '1';
+const SCRIPT_PARAM = params.get('script');
+if (SCRIPT_PARAM && SCRIPT_PARAM !== 'drive' && SCRIPT_PARAM !== 'sprint') {
+  throw new Error('unknown script ' + JSON.stringify(SCRIPT_PARAM) + ' (use drive or sprint)');
+}
+const LEGACY_DRIVE = SCRIPT_PARAM === 'drive' && params.get('manual') !== '1';
+const SCRIPTED_SPRINT = SCRIPT_PARAM === 'sprint';
+const SPRINT_MODE = !LEGACY_DRIVE;
+const SPRINT_FALL = params.get('sprintfall') === '1';
+if (SPRINT_FALL && !SCRIPTED_SPRINT) throw new Error('?sprintfall=1 needs ?script=sprint');
 const HOLD = params.has('hold') ? Number(params.get('hold')) : null;
 if (HOLD !== null && (!Number.isInteger(HOLD) || HOLD < 0)) throw new Error('hold must be a non-negative integer tick');
 const INTERPOLATE = params.get('interpolate') !== '0';
@@ -48,6 +71,7 @@ const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
 const GEOMETRY_URL = '/_work/e1-drive/geometry.json';
 const LEVEL_URL = '/_work/e1-drive/Level.levelphysics';
 const SPAWN_URL = '/_work/e1-drive/spawn.json';
+const SPRINT_URL = '/_work/e1-drive/sprint.json';
 
 const canvas = document.getElementById('scene');
 const driver = new FixedStepDriver();
@@ -56,7 +80,7 @@ const state = {
   consumer: 'idle',
   error: null,
   adapter: null,
-  mode: SCRIPTED ? 'script:drive' : 'keyboard',
+  mode: LEGACY_DRIVE ? 'script:drive' : SCRIPTED_SPRINT ? (SPRINT_FALL ? 'script:sprint-fall' : 'script:sprint') : 'keyboard-sprint',
   hold: HOLD,
   holdReached: HOLD === null ? false : HOLD === 0,
   car: null,
@@ -103,16 +127,41 @@ const state = {
   cameraOcclusion: null,
   packetHash: null,
   draws: 0,
-  tickHashes: []
+  tickHashes: [],
+  // Sprint (null in the legacy drive mode).
+  sprint: null,
+  sprintLayout: null,
+  sprintLayoutHash: null,
+  sprintEvents: [],
+  sprintBest: null,
+  sprintResult: null,
+  sprintBanner: null,
+  respawning: false
 };
 
 function publish() {
   document.documentElement.dataset.driveState = state.consumer;
   document.documentElement.dataset.holdReached = String(state.holdReached);
+  if (state.sprint) document.documentElement.dataset.sprint = state.sprint.phase;
   window.e1DriveProbe = state;
   const rows = [
     ['mode', state.mode + (state.hold === null ? '' : ' · hold ' + state.hold + (state.holdReached ? ' reached' : ''))],
-    ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—'],
+    ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—']
+  ];
+  if (state.sprint) {
+    const sprint = state.sprint;
+    const timer = sprint.finished ? sprint.finishTimeSeconds : sprint.elapsedSeconds;
+    rows.push(['sprint', sprint.phase + ' · ' + Number(timer).toFixed(3) + ' s' +
+      (sprint.finished ? ' · FINISHED' : '') + (sprint.respawns ? ' · ' + sprint.respawns + ' respawn' : '')]);
+    rows.push(['gates', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' cp · ' +
+      (sprint.nextGate
+        ? 'next ' + sprint.nextGate.id + ' in ' + Math.max(0, sprint.nextGate.distanceMetres).toFixed(1) + ' m'
+        : 'finish crossed') +
+      ' · ' + Math.round(sprint.progress * 100) + '%']);
+    rows.push(['best', state.sprintBest === null ? '—' :
+      state.sprintBest.toFixed(3) + ' s' + (state.sprintResult?.improved ? ' (new)' : '')]);
+  }
+  rows.push(
     ['tick', String(state.displayTick) + ' (engine ' + state.engineTick + ') · ' + state.phase],
     ['speed', state.speed.toFixed(2) + ' m/s · ' + state.speedKph.toFixed(0) + ' km/h'],
     ['position', state.position.map((value) => value.toFixed(2)).join(', ')],
@@ -136,8 +185,51 @@ function publish() {
     ['tick hash', state.tickHash ? state.tickHash.slice(7, 23) + '…' : '—'],
     ['checksum', state.matrixChecksum ?? '—'],
     ['gpu', state.adapter ?? '—']
-  ];
+  );
   document.getElementById('hud').textContent = rows.map(([key, value]) => key.padEnd(10) + value).join('\n');
+  publishSprintOverlays();
+}
+
+/** Countdown, event banner and results panel, all driven by rules state. */
+function publishSprintOverlays() {
+  const countdown = document.getElementById('countdown');
+  const banner = document.getElementById('event');
+  const results = document.getElementById('results');
+  if (!state.sprint) {
+    countdown.hidden = true;
+    banner.dataset.visible = '0';
+    results.hidden = true;
+    return;
+  }
+  const sprint = state.sprint;
+  const countdownLabel = sprint.phase === 'countdown'
+    ? sprint.countdownLabel
+    : (sprint.phase === 'running' && sprint.elapsedTicks <= 30 ? 'GO' : null);
+  countdown.textContent = countdownLabel ?? '';
+  countdown.hidden = countdownLabel === null;
+
+  const bannerVisible = state.sprintBanner && state.engineTick <= state.sprintBanner.untilTick;
+  if (bannerVisible) {
+    banner.textContent = state.sprintBanner.text;
+    banner.dataset.kind = state.sprintBanner.kind;
+    banner.dataset.visible = '1';
+  } else {
+    banner.dataset.visible = '0';
+  }
+
+  if (sprint.finished && state.sprintResult) {
+    results.hidden = false;
+    document.getElementById('results-time').textContent =
+      state.sprintResult.timeSeconds.toFixed(3) + ' s  ·  ' + state.sprintResult.car;
+    const best = state.sprintResult.bestSeconds;
+    document.getElementById('results-best').textContent =
+      'checkpoints ' + state.sprintResult.checkpoints + '/' + sprint.totalCheckpoints +
+      ' · respawns ' + state.sprintResult.respawns +
+      ' · best ' + (best === null ? '—' : best.toFixed(3) + ' s') +
+      (state.sprintResult.improved ? ' (new best)' : '');
+  } else {
+    results.hidden = true;
+  }
 }
 
 function fail(message) {
@@ -184,6 +276,11 @@ let session = null;
 let geometry = null;
 let spawn = null;
 let car = null;
+let levelBytes = null;
+let fieldBytes = null;
+let sprintRules = null;
+let bestTimes = null;
+let pendingRespawn = null;
 
 function readState() {
   return JSON.parse(module.UTF8ToString(module._e1_get_state()));
@@ -211,6 +308,20 @@ function populateSelector(roster, selected) {
   });
 }
 
+/** One world at an arbitrary spawn point: the same call `e1_create` the page loads with. */
+function createWorld(x, z, heading) {
+  const levelPtr = module._malloc(levelBytes.byteLength);
+  const fieldsPtr = module._malloc(fieldBytes.byteLength + 1);
+  if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const ok = module._e1_create(levelPtr, levelBytes.byteLength, fieldsPtr, fieldBytes.byteLength, x, z, heading);
+  module._free(levelPtr);
+  module._free(fieldsPtr);
+  if (!ok) throw new Error('e1_create failed at ' + x + ',' + z + ': ' + module.UTF8ToString(module._e1_last_error()));
+  return readState();
+}
+
 async function loadEngine() {
   const factory = (await import(ENGINE_MODULE)).default;
   module = await factory();
@@ -220,11 +331,12 @@ async function loadEngine() {
   state.car = carIdentity(car);
   populateSelector(roster, car);
 
-  const [geometryResponse, levelResponse, fieldsResponse, spawnResponse] = await Promise.all([
+  const [geometryResponse, levelResponse, fieldsResponse, spawnResponse, sprintResponse] = await Promise.all([
     fetch(GEOMETRY_URL, { cache: 'no-store' }),
     fetch(LEVEL_URL, { cache: 'no-store' }),
     fetch(fieldsUrl(car), { cache: 'no-store' }),
-    fetch(SPAWN_URL, { cache: 'no-store' })
+    fetch(SPAWN_URL, { cache: 'no-store' }),
+    SPRINT_MODE ? fetch(SPRINT_URL, { cache: 'no-store' }) : Promise.resolve(null)
   ]);
   for (const [label, response] of [['geometry', geometryResponse], ['level', levelResponse],
                                     ['car fields (' + car.slug + ')', fieldsResponse], ['spawn', spawnResponse]]) {
@@ -232,19 +344,34 @@ async function loadEngine() {
   }
   geometry = await geometryResponse.json();
   spawn = await spawnResponse.json();
-  const level = new Uint8Array(await levelResponse.arrayBuffer());
-  const fields = new Uint8Array(await fieldsResponse.arrayBuffer());
+  levelBytes = new Uint8Array(await levelResponse.arrayBuffer());
+  fieldBytes = new Uint8Array(await fieldsResponse.arrayBuffer());
 
-  const levelPtr = module._malloc(level.byteLength);
-  const fieldsPtr = module._malloc(fields.byteLength + 1);
-  if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
-  module.HEAPU8.set(level, levelPtr);
-  module.HEAPU8.set(fields, fieldsPtr);
-  const ok = module._e1_create(levelPtr, level.byteLength, fieldsPtr, fields.byteLength,
-                               spawn.x, spawn.z, spawn.heading);
-  module._free(levelPtr);
-  module._free(fieldsPtr);
-  if (!ok) throw new Error('e1_create failed: ' + module.UTF8ToString(module._e1_last_error()));
+  const tick0 = createWorld(spawn.x, spawn.z, spawn.heading);
+
+  if (SPRINT_MODE) {
+    if (!sprintResponse.ok) {
+      throw new Error('sprint layout fetch failed: HTTP ' + sprintResponse.status +
+        ' — run `node probes/e1-drive/tools/build_sprint.mjs` (or `node tools/verify_e1_drive.mjs` first)');
+    }
+    const layout = await sprintResponse.json();
+    const checked = validateSprintLayout(layout, geometry, spawn);
+    if (!checked.ok) throw new Error('sprint layout rejected: ' + checked.errors.join('; '));
+    sprintRules = createSprintRules(layout);
+    state.sprintLayoutHash = layout.hash;
+    state.sprintLayout = {
+      hash: layout.hash,
+      gates: layout.gates.map((gate) => ({ id: gate.id, kind: gate.kind, index: gate.index, x: gate.x, z: gate.z })),
+      span: layout.course.span,
+      band: layout.course.band,
+      countdownTicks: layout.countdown.ticks,
+      rules: layout.rules
+    };
+    let storage = null;
+    try { storage = window.localStorage; } catch { storage = null; }
+    bestTimes = createBestTimes(storage);
+    state.sprintBest = bestTimes.bestFor(car.slug);
+  }
 
   engine = {
     info: JSON.parse(module.UTF8ToString(module._e1_info())),
@@ -264,13 +391,85 @@ async function loadEngine() {
     throw new Error('engine decoded ' + JSON.stringify(engine.info.car) +
       ' but the roster asked for ' + JSON.stringify(car.name));
   }
+  return tick0;
+}
+
+/** The input the current mode and rules allow for the step that reaches `tick`. */
+function currentInput(tick) {
+  if (LEGACY_DRIVE) return scriptedInput(tick);
+  if (SPRINT_FALL) {
+    return sprintRules.respawns > 0 ? sprintRules.gateInput([1, 0, 0, 0]) : respawnScriptInput(tick);
+  }
+  if (SCRIPTED_SPRINT) return sprintScriptInput(sprintRules);
+  return sprintRules.gateInput(keyboardInput());
+}
+
+/** Record sprint events and persist a finish. Rules only; never touches physics. */
+function handleSprintEvents(events) {
+  for (const event of events) {
+    state.sprintEvents.push(event);
+    if (state.sprintEvents.length > 64) state.sprintEvents.shift();
+    state.sprintBanner = {
+      kind: event.type === SPRINT_EVENT.RESPAWN ? 'respawn' : event.type === SPRINT_EVENT.CHECKPOINT ? 'checkpoint' : 'other',
+      text: event.type === SPRINT_EVENT.CHECKPOINT
+        ? 'checkpoint ' + event.index + '/' + sprintRules.totalCheckpoints + ' · ' + event.timeSeconds.toFixed(3) + ' s'
+        : event.type === SPRINT_EVENT.RESPAWN
+          ? 'respawn · ' + event.reasons.join(', ') + ' · ' + event.timeSeconds.toFixed(3) + ' s'
+          : event.type.toUpperCase(),
+      untilTick: event.tick + 90
+    };
+    if (event.type === SPRINT_EVENT.FINISH) {
+      const submitted = bestTimes.submit(car.slug, {
+        seconds: event.timeSeconds,
+        car: car.name,
+        checkpoints: event.checkpoints,
+        respawns: sprintRules.respawns
+      });
+      state.sprintBest = submitted.best;
+      state.sprintResult = {
+        visible: true,
+        timeSeconds: event.timeSeconds,
+        position: event.position,
+        checkpoints: event.checkpoints,
+        respawns: sprintRules.respawns,
+        car: car.name,
+        slug: car.slug,
+        bestSeconds: submitted.best,
+        previousBestSeconds: submitted.previous,
+        improved: submitted.improved,
+        persistent: submitted.persistent
+      };
+    }
+  }
+}
+
+/** Rebuild the world at a checkpoint and continue the same attempt. */
+async function respawnAt(target, nowUs) {
+  state.respawning = true;
+  publish();
+  try {
+    const tick0 = createWorld(target.x, target.z, target.heading);
+    const tick1 = await startTimeline(tick0, { reload: true, rejoin: true });
+    applyState(tick1);
+    holdReached = HOLD !== null && HOLD <= tick1.tick ? true : holdReached;
+    state.ticksExecuted = 0;
+    driver.reset(nowUs);
+    publish();
+  } catch (error) {
+    state.respawning = false;
+    fail(error.message);
+    return;
+  }
+  state.respawning = false;
+  requestAnimationFrame(frame);
 }
 
 /** Rebuild the world and restart the packet timeline from the settled tick. */
-async function startTimeline(tick0, { reload = false } = {}) {
+async function startTimeline(tick0, { reload = false, rejoin = false } = {}) {
   session = createSession(geometry, tick0, {
     spawn: { ...spawn, source: spawn.source ?? 'probes/e1-drive/tools/spawn.mjs' },
     car: state.car,
+    script: SPRINT_MODE ? SPRINT_PACKET_SCRIPT : undefined,
     camera: Object.keys(CAMERA_OVERRIDE).length ? CAMERA_OVERRIDE : undefined
   });
   state.cameraOverride = Object.keys(CAMERA_OVERRIDE).length ? { ...CAMERA_OVERRIDE } : null;
@@ -298,13 +497,17 @@ async function startTimeline(tick0, { reload = false } = {}) {
   state.tick0Hash = update0.hash;
   state.tick0Update = update0;
   state.tick0State = tick0;
+  if (sprintRules) {
+    if (rejoin) sprintRules.rejoin(tick0);
+    else sprintRules.prime(tick0);
+  }
   // One more tick so the v1.1 consumer has a two-tick timeline to load.
-  const input = SCRIPTED ? scriptedInput(1) : [0, 0, 0, 0];
-  engine.setInput(input);
+  engine.setInput(currentInput(1));
   const tick1 = engine.step();
   const update1 = session.appendState(tick1);
   state.tickHashes.push({ tick: 1, stateHash: hashOf(tick1), packetHash: update1.hash });
   state.engineTick = tick1.tick;
+  if (sprintRules) handleSprintEvents(sprintRules.step(tick1));
   session.finalise();
   state.packetHash = session.packet.hash;
   if (reload) await consumer.load(session.packet);
@@ -321,13 +524,21 @@ function applyState(snapshot) {
   state.suspension = snapshot.wheels.map((wheel) => wheel.suspension);
   state.wheelAngular = snapshot.wheels.map((wheel) => wheel.angular);
   state.input = snapshot.input;
-  state.phase = SCRIPTED ? phaseAt(snapshot.tick) : 'keyboard';
+  state.phase = LEGACY_DRIVE ? phaseAt(snapshot.tick) : (sprintRules ? sprintRules.phase : 'keyboard');
+  if (sprintRules) state.sprint = sprintRules.snapshot(snapshot);
 }
 
 let holdReached = HOLD === null ? false : HOLD === 0;
 
 async function doReset(nowUs) {
+  if (pendingRespawn) return;
   try {
+    if (sprintRules) {
+      sprintRules.reset();
+      state.sprintResult = null;
+      state.sprintBanner = null;
+      state.sprintEvents.length = 0;
+    }
     const tick0 = engine.reset();
     const tick1 = await startTimeline(tick0, { reload: true });
     applyState(tick1);
@@ -342,36 +553,59 @@ async function doReset(nowUs) {
 }
 
 const MAX_LIVE_TICKS = 36000; // ~10 minutes of live driving; a spike, not an endurance test
+/** After the finish the rules brake; stop stepping once the car has settled. */
+const FINISH_TAIL_TICKS = 120;
 
 function frame(nowMs) {
   const nowUs = Math.round(nowMs * 1000);
 
-  if (!holdReached && session.packet.updates.length < MAX_LIVE_TICKS) {
+  if (!state.respawning && !holdReached && session.packet.updates.length < MAX_LIVE_TICKS) {
     const sample = driver.advanceTo(nowUs);
     if (sample.flags & FLAG.CAPPED) state.cappedFrames++;
     if (sample.flags & FLAG.PAUSED) state.pauseDrops++;
     if (sample.flags & FLAG.ZERO_TICK) state.zeroTickFrames++;
     for (let index = 0; index < sample.ticks; index++) {
       const nextTick = state.engineTick + 1;
-      const input = SCRIPTED ? scriptedInput(nextTick) : keyboardInput();
-      engine.setInput(input);
+      engine.setInput(currentInput(nextTick));
       const snapshot = engine.step();
       const update = session.appendState(snapshot);
       state.tickHashes.push({ tick: snapshot.tick, stateHash: hashOf(snapshot), packetHash: update.hash });
       state.ticksExecuted++;
+      if (sprintRules) {
+        const events = sprintRules.step(snapshot);
+        handleSprintEvents(events);
+      }
       applyState(snapshot);
+      if (sprintRules) {
+        if (sprintRules.awaitingRejoin) {
+          pendingRespawn = sprintRules.respawnTarget();
+          break;
+        }
+        if (sprintRules.phase === 'finished' && snapshot.tick - sprintRules.finishTick >= FINISH_TAIL_TICKS) {
+          holdReached = true;
+          state.holdReached = true;
+          break;
+        }
+      }
       if (HOLD !== null && state.engineTick >= HOLD) {
         holdReached = true;
         state.holdReached = true;
         break;
       }
-      if (SCRIPTED && state.engineTick >= SCRIPT_TICKS) {
+      if (LEGACY_DRIVE && state.engineTick >= SCRIPT_TICKS) {
         holdReached = true;
         state.holdReached = true;
         break;
       }
     }
     if (!sample.ticks) applyState(session.lastState);
+  }
+
+  if (pendingRespawn) {
+    const target = pendingRespawn;
+    pendingRespawn = null;
+    void respawnAt(target, nowUs);
+    return;
   }
 
   let cursor;
@@ -412,13 +646,13 @@ function frame(nowMs) {
 async function main() {
   state.consumer = 'loading';
   publish();
-  await loadEngine();
+  const tick0 = await loadEngine();
   state.adapter = consumer.adapterInfo
     ? [consumer.adapterInfo.vendor, consumer.adapterInfo.architecture, consumer.adapterInfo.device].filter(Boolean).join(' / ') || 'unnamed adapter'
     : 'unnamed adapter';
   state.draws = session ? session.packet.draws.length : 0;
 
-  const tick1 = await startTimeline(await readState(), { reload: true });
+  const tick1 = await startTimeline(tick0, { reload: true });
   applyState(tick1);
   state.adapter = consumer.adapterInfo
     ? [consumer.adapterInfo.vendor, consumer.adapterInfo.architecture, consumer.adapterInfo.device].filter(Boolean).join(' / ') || 'unnamed adapter'
@@ -429,8 +663,11 @@ async function main() {
     throw new Error('canvas aspect ' + canvasAspect.toFixed(4) + ' does not match the packet camera aspect ' +
                     session.packet.camera.aspect.toFixed(4));
   }
-  if (HOLD !== null && HOLD > SCRIPT_TICKS && SCRIPTED) {
+  if (HOLD !== null && LEGACY_DRIVE && HOLD > SCRIPT_TICKS) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sequence (' + SCRIPT_TICKS + ')');
+  }
+  if (HOLD !== null && SCRIPTED_SPRINT && HOLD > 600) {
+    throw new Error('hold tick ' + HOLD + ' is beyond the scripted sprint (600)');
   }
 
   state.consumer = 'running';

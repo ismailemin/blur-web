@@ -7,6 +7,15 @@ The first **connector** between the two proven halves of E1:
 - the dynamic render-packet consumer of `probes/render-packet/web/` (v1.1
   `nodes[]`/`updates[]`, fixed-step, interpolated, T-007/E1b).
 
+The page now runs a **point-to-point sprint** on the measured covered segment of
+the real River draw: a 3-2-1 countdown, a running timer, two checkpoints that must
+be crossed in order, a finish gate before the drawn road ends, a results overlay
+with a per-car best time in `localStorage`, `R` restart and a respawn at the last
+checkpoint when the car leaves the surface. It is still one car and one measured
+segment, **not a lap**; the rules are presentation/bookkeeping only and do not
+change the physics (the verifier replays every scripted sprint's input sequence
+into a fresh module and gets identical state hashes).
+
 The car is drawn from each car's own committed part manifest
 (`probes/car-parts/`): the Corvette ZR1 has **34 parts / 100 draws**, the Lotus
 Exige Cup260 **23 / 88**, the Dodge Challenger **31 / 104**, the Ford Focus RS
@@ -104,15 +113,21 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 4. decode the car roster (every RP_CarDynamics record + one field list per car)
 & $py   probes/e1-drive/tools/car_roster.py            # --list prints all 62
 
-# 5. scripted drive of every roster car twice, in two module instances + packet + 268 checks
+# 5. derive the sprint gates from the measured covered road (writes sprint.json)
+& $node probes/e1-drive/tools/build_sprint.mjs
+
+# 6. scripted drive of every roster car twice, sprint runs + respawn + layout
+#    checks, in fresh module instances and packet validation (348 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 
-# 6. headless Edge/WebGPU screenshots per car + console gate
-& $node probes/e1-drive/tools/capture_browser.mjs      # --car <slug> for one car
+# 7. headless Edge/WebGPU screenshots + console gate
+& $node probes/e1-drive/tools/capture_browser.mjs                  # drive captures
+& $node probes/e1-drive/tools/capture_browser.mjs --mode sprint    # start/cp/finish per car
+& $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
 
 # interactive
-& $node probes/e1-drive/tools/serve.mjs            # http://127.0.0.1:8801/
-& $node probes/e1-drive/tools/serve.mjs --port 8801  # /?script=drive&car=audi-r8v10-stock
+& $node probes/e1-drive/tools/serve.mjs            # http://127.0.0.1:8801/ (keyboard sprint)
+& $node probes/e1-drive/tools/serve.mjs --port 8801  # /?script=sprint&car=audi-r8v10-stock
 ```
 
 Outputs go to `_work/e1-drive/` (module, geometry, track, roster, per-car packets
@@ -207,12 +222,76 @@ hidden `physicsSurfaces` and the car body are not occluders, and a hit closer
 than 3.4 m is a `nearField` prop crossing (the car is inside the prop) that the
 camera holds instead of collapsing into the car.
 
+## Sprint rules
+
+The page is a **point-to-point sprint**, not a lap: the committed real track visual
+covers a 29 m segment of the drive and no lap exists in this data. The gates are
+derived from the geometry (`tools/build_sprint.mjs` → `_work/e1-drive/sprint.json`)
+and re-derived by the verifier, so no coordinate is typed in:
+
+| gate | x | width | coverage |
+| --- | ---: | ---: | --- |
+| start (spawn line) | −88.00 | 6 m (z 1047…1053) | 61/61 drawn + 61/61 collision samples |
+| checkpoint 1 | −78.25 | 6 m | 61/61 + 61/61 |
+| checkpoint 2 | −68.75 | 6 m | 61/61 + 61/61 |
+| finish | −59.00 | 6 m | 61/61 + 61/61 |
+
+Rule: a column is covered when every 0.1 m sample across the spawn corridor
+(z = spawn z ± 3 m) has **both** a real `block56/node289` triangle over it and a
+collision triangle under it. The fully covered segment runs from the spawn to
+**x = −57.00**; the finish sits 2 m before that (`finishClearanceMetres`), so no
+gate line has to leave the drawn road. The checkpoints are the 1/3 and 2/3 points
+of that span, snapped to a 0.25 m grid. The layout hash is
+`sha256:9e5b7befe60227ddf826ffa3fe5983e56ae091ac49e3cf1ad17005221da4f703`; the
+verifier re-hashes the file, re-derives it from `geometry.json` and re-measures
+every gate sample with independent barycentric code.
+
+| rule | value |
+| --- | --- |
+| countdown | 90 ticks (1.5 s, labels 3 / 2 / 1), input held at zero; timer starts at GO |
+| timer | engine ticks from GO at 60 Hz; keeps running across a respawn, freezes on the finish |
+| gate order | checkpoints count only in index order; a finish before the last checkpoint is recorded as `finish-blocked` |
+| respawn | chassis > 1 m below the measured spawn ground, 30 airborne ticks, or outside the gate corridor (±3 m + 1 m) |
+| respawn target | last passed checkpoint (start line before the first) |
+| best time | per car in `localStorage` key `e1-drive.sprint.best.v1`; only a faster finish overwrites |
+| restart | `R` resets the engine, timeline, timer and gate progress; the best time is kept |
+
+Modes: `/` = keyboard sprint, `?script=sprint` = deterministic scripted sprint
+(throttle while running, brake after the finish), `?script=sprint&sprintfall=1` =
+diagnostic driver that steers off the corridor to exercise respawn, and
+`?script=drive` = the original 300-tick drive with no rules (kept for the
+P23/P31/P36 evidence). Rules never touch physics: the verifier records each
+scripted sprint's input sequence, replays it into a fresh module with the rules
+switched off, and requires every state hash to match.
+
+Measured scripted sprints (`_work/e1-drive/run.json` → `sprint.cars`):
+
+| car | finish | tick | checkpoint 1 | checkpoint 2 | speed at finish | state sequence hash |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | **2.800 s** | 258 | 1.683 s | 2.317 s | 22.35 m/s | `fdd893bd…e62622` |
+| Lotus Exige Cup260 | **2.850 s** | 261 | 1.733 s | 2.350 s | 20.83 m/s | `c9b17397…b52dfc` |
+| Dodge Challenger | **3.000 s** | 270 | 1.783 s | 2.450 s | 19.05 m/s | `438e2e12…e12684` |
+| Ford Focus RS (FWD) | **3.267 s** | 286 | 1.967 s | 2.683 s | 18.70 m/s | `cc911ea3…2af937` |
+| Audi R8 V10 (AWD) | **2.283 s** | 227 | 1.317 s | 1.850 s | 24.26 m/s | `d52d4b8f…44dea` |
+
+Every car: 2/2 checkpoints in order, no respawn, wheel contact on every tick, 0
+NaN, and a bit-identical replay with the rules off. The AWD Audi is fastest and
+the FWD Focus slowest, as the drivetrain and the unchanged physics predict. A
+real off-course run (steer off the corridor) respawns once at checkpoint 1 with
+the timer still running (2.45 s → 4.45 s) and the checkpoint kept.
+
 ## What the browser adds
 
-`web/app.js` owns the loop: character-key input (WASD/arrows/space, R to reset),
-the fixed-step driver, the engine step, the adapter append, and the render. It
-renders `tick - 1 + alpha` so interpolation between the two most recent ticks is
-real, and holds an exact integer tick when `?hold=` is used for screenshots.
+`web/app.js` owns the loop: character-key input (WASD/arrows/space, R to restart),
+the fixed-step driver, the engine step, the sprint rules, the adapter append, and
+the render. It renders `tick - 1 + alpha` so interpolation between the two most
+recent ticks is real, and holds an exact integer tick when `?hold=` is used for
+screenshots. `web/sprint-rules.js` is the tick-driven rules state machine
+(countdown, timer, gate order, finish, respawn), `web/sprint-layout.js` derives /
+validates the gates, `web/sprint-best.js` is the `localStorage` best-time store,
+and `web/sprint-script.js` holds the scripted sprint driver plus the off-course
+respawn diagnostic. The page adds a countdown numeral, an event banner, a sprint
+HUD block and a results overlay.
 `web/cars.js` resolves `?car=<slug>` against the generated roster and fills the
 page's car selector; `?car` defaults to the roster's recorded default, so the
 original single-car links still work.
@@ -247,9 +326,14 @@ sequence hash, and the Corvette's sequence hash is exactly the T-007 value
 
 `_work/e1-drive/run.json` (all cars, including the camera ranges and
 blocked/near-field counts), `state-<slug>.json`, `packet-<slug>.json`,
+`sprint.json` (the derived layout), `sprint-<slug>.json` (per-car sprint ticks,
+events, inputs and the start/checkpoint/finish capture updates),
 `geometry.json` (level packet + real track visual + one real body per car + hidden
 collision), `cars.json` (the 62-record roster + gate), `browser-evidence.json`,
+`browser-evidence-sprint.json`, `browser-evidence-respawn.json`,
 `browser-<slug>-{start,mid,coast,end}.png`,
+`browser-<slug>-sprint-{start,checkpoint,finish}.png`,
+`browser-<slug>-sprint-respawn.png`,
 `browser-<slug>-wheels-240.png` (side view, wheel geometry),
 `browser-evidence-wheels.json`; `packet.json`/`state_a.json` are the default
 car's aliases. The track visual, its two source sections and the coverage limit
@@ -257,8 +341,10 @@ are recorded in `docs/work/verification/T-007-track-visual.md`; the per-car
 body/wheel integration is recorded in
 `docs/work/verification/T-007-per-car-meshes.md`; the chase-camera occlusion
 rule, the before/after frames and the near-field limit are recorded in
-`docs/work/verification/T-007-camera-collision.md`; details and numbers:
-`docs/work/analysis/e1-drive-slice.md` §10–14 and
+`docs/work/verification/T-007-camera-collision.md`; the sprint rules, gate
+derivation and respawn are recorded in
+`docs/work/verification/T-007-sprint-rules.md`; details and numbers:
+`docs/work/analysis/e1-drive-slice.md` §10–15 and
 `docs/work/verification/T-007-multi-car.md`.
 
 ## Limits (also carried in the packet's own diagnostics)
@@ -283,10 +369,11 @@ rule, the before/after frames and the near-field limit are recorded in
   and block56/node289 (49 / 14,508 / 9,824). Measured fact: block88/node283
   bounds are `x 944…2478, z 2206…3237` and do **not** overlap the drive box
   (`x −120…−10, z 1010…1090`); block56/node289 does (its road y at the spawn is
-  5.80685 vs the engine's 5.8074 ground probe). block56/node289 ends near
-  `x = −55`, so the last ~12 m of the script (and the off-road area) have no
-  committed real draw and no ground is drawn there. The HUD says
-  `144 real draws · 19167 tri · no-draw 314 tri · slab hidden`.
+  5.80685 vs the engine's 5.8074 ground probe). Measured for the sprint: the full
+  6 m gate band is covered to `x = −57.00`, and along the recorded car line the
+  last drawn ground is around `x = −48.5`; the tail of the 300-tick drive and the
+  off-road area have no committed real draw, so no ground is drawn there. The HUD
+  says `144 real draws · 19167 tri · no-draw 314 tri · slab hidden`.
 - **The collision surface is physics-only and hidden.** The wheels still trace
   `Level.levelphysics`, but the collision mesh is now carried in
   `packet.physicsSurfaces` with `visible:false`; it is not uploaded and not
@@ -323,7 +410,20 @@ rule, the before/after frames and the near-field limit are recorded in
   The consumer's manual drag/zoom debug camera is not occlusion-checked;
   `?camdist/camheight/camyaw` are, change only the camera and never physics, and
   the default page never sets them.
-- **One car, one block, no game.** No audio, race rules, opponents, culling or
-  engine streaming, no per-car handling/AI claims.
+- **The sprint is one measured segment, not a lap.** The committed real draws
+  cover 29 m from the spawn to x = −57 (last fully covered column); the finish is
+  at x = −59. There is no start/finish loop, no second sector, and the car cannot
+  drive a lap on drawn ground. Gates are **rules geometry only**: no gate mesh is
+  added to the render packet, so the gates appear in the HUD/banner, not as 3D
+  objects. The checkpoints are 1/3 and 2/3 of the measured span.
+- **Respawn rebuilds the world at the last checkpoint.** That is the module's
+  `e1_create` path (180-tick settle), so a respawn costs a one-frame hitch and the
+  car restarts from rest at the gate; the attempt timer keeps running and the
+  passed checkpoints are kept. The page's best time is per car and local to the
+  browser (`localStorage`), not a server record.
+- **One car, one block, no game.** No opponents, traffic, AI, race audio,
+  multiplayer, culling or engine streaming, and no per-car handling claim. The
+  sprint rules are this slice's own bookkeeping; they are not the retail race
+  mode and carry no BPR/score/XP claim.
 - **Native parity** is blocked by the DirectX SDK, as recorded in
   `T-007-vehicle-physics.md`.

@@ -85,3 +85,68 @@ html, body {
   color: #ffe4e6;
   white-space: pre-wrap;
 }
+
+/* Sprint overlays. Presentation only: the countdown value, the event banner and
+   the results panel are driven by the sprint rules' engine-tick state. */
+#countdown {
+  position: fixed;
+  left: 50%;
+  top: 16%;
+  transform: translateX(-50%);
+  font-size: 88px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #f2d06f;
+  text-shadow: 0 0 22px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  opacity: 0.95;
+}
+#countdown[hidden] { display: none; }
+
+#event {
+  position: fixed;
+  left: 50%;
+  top: 30%;
+  transform: translateX(-50%);
+  padding: 6px 18px;
+  font-size: 20px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: rgba(8, 14, 20, 0.82);
+  border: 1px solid rgba(111, 195, 232, 0.4);
+  border-radius: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms linear;
+}
+#event[data-visible="1"] { opacity: 1; }
+#event[data-kind="checkpoint"] { color: #8fe3b0; border-color: rgba(143, 227, 176, 0.55); }
+#event[data-kind="respawn"] { color: var(--warn); border-color: rgba(232, 196, 111, 0.6); }
+
+#results {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 30ch;
+  padding: 18px 24px;
+  text-align: left;
+  background: rgba(6, 12, 17, 0.92);
+  border: 1px solid rgba(111, 195, 232, 0.45);
+  border-radius: 8px;
+  color: var(--ink);
+  pointer-events: none;
+}
+#results[hidden] { display: none; }
+#results h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+#results .time { font-size: 30px; color: #f2d06f; }
+#results .best { color: var(--muted); }
+#results .best strong { color: var(--ink); }
+#results .hint { margin-top: 10px; color: var(--muted); }
+

@@ -236,6 +236,13 @@ geçişi etiketli, çözülmüyor. Kanıt:
 isim/hash/boyut/format/RGBA birebir; 56 nesne, 844.802 B, 76/76. Sampling/UV/
 mip seçimi yok. Kanıt: `docs/work/verification/T-007-engine-textures.md`.
 
+**Sprint kuralları (P37):** start + 2 checkpoint + finish; gate'ler kaplı yol
+bandından türetildi (x −88 → −59; her kolon 61/61 draw + collision). 5 araç
+süresi **2,283–3,267 s** (Audi en hızlı, Focus en yavaş); best time
+`localStorage`; respawn checkpoint'ten, süre/checkpoint korunuyor.
+`verify_e1_drive` **348/348**; 15 sprint capture, console 0. Kalan: tam tur
+(kapalı pist gerekir). Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

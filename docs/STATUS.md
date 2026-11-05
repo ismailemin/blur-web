@@ -527,6 +527,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Asset-reader `texture_inspect --raw` ile **102/102** isim/hash/boyut/seviye/format/RGBA birebir; ilk byte farkı yok.
 - 56 nesne, **844.802 B**, **76/76**, PC parity, 0 GPU objesi. Kalan: sampling/UV/wrap/filter/anisotropy, mip seçimi, sRGB, shared (-1) dokular. Kanıt: `docs/work/verification/T-007-engine-textures.md`.
 
+## 5 Kasım 2026 — sprint kuralları
+
+- Start + 2 checkpoint + finish; gate'ler kaplı yol bandından türetildi (x −88 → −59; her kolon 61/61 draw + 61/61 collision). `sprint.json` layout hash `9e5b7bef…`.
+- 5 araç süresi: Audi **2,283 s**, Corvette 2,800, Lotus 2,850, Dodge 3,000, Focus **3,267 s**; 2/2 checkpoint, 0 NaN, best time yerel.
+- Respawn: off-course → checkpoint-1, süre/checkpoint korunuyor; `R` restart. `verify_e1_drive` **348/348**; 15 sprint capture, console **0**.
+- Kalan: tam tur (kapalı pist), gate mesh'i yok (HUD/banner). Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

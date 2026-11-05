@@ -69,12 +69,14 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-track-visual.md`,
   `docs/work/verification/T-007-per-car-meshes.md`.
 
-### E1f — İlk sürülebilir tur (kabul)  ◐
-- Start → tur → finish; çarpışma, checkpoint, respawn.
-- Tam tur + finish ekranı; performans ve bellek ölçümü.
-- **P36:** chase camera occlusion BVH (29.475 tri) ile prop içine girmiyor;
-  Focus/Dodge/Lotus mid karelerinde araç görünür; 268/268.
-- Sıradaki: sprint/checkpoint/finish kuralları (tam tur track kapsamı bekliyor).
+### E1f — Sprint + ilk tur (kabul)  ◐
+- **P37 sprint (noktadan noktaya):** start + 2 checkpoint + finish; süre,
+  best time, respawn. 5 araç: **2,283–3,267 s** (Audi en hızlı, Focus en yavaş);
+  `verify_e1_drive` **348/348**; console 0.
+- Gate'ler kaplı yol bandından türetildi (x = −88 → −59; her kolon 61/61 draw +
+  61/61 collision).
+- Kalan: tam tur (kapalı pist track kapsamı gerekiyor), finish sonrası akış.
+- Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
 
 ### E1g — Çoklu araç (P23)  ✅
 - `RP_CarDynamics` 62 kayıt, 62/62 completeness gate; 5 araç seçildi:

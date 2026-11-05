@@ -59,6 +59,10 @@ const ONLY_CAR = option('--car', null);
 const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
+const MODE = option('--mode', 'drive');
+if (!['drive', 'sprint', 'respawn'].includes(MODE)) {
+  throw new Error('unknown --mode ' + JSON.stringify(MODE) + ' (drive, sprint or respawn)');
+}
 const DIAGNOSTIC_CAMERA = /(^|&)cam(dist|height)=/.test(EXTRA_QUERY);
 const MID_TICK = 150;
 
@@ -212,9 +216,10 @@ await send('Log.enable');
 await send('Page.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: VIEWPORT.width, height: VIEWPORT.height, deviceScaleFactor: 1, mobile: false });
 
-async function capture(car, label, tick) {
+async function capture(car, label, tick, options = {}) {
+  const script = options.script ?? 'drive';
   messages.length = 0;
-  const url = origin + '/?script=drive&car=' + encodeURIComponent(car.slug) + '&hold=' + tick +
+  const url = origin + '/?script=' + script + '&car=' + encodeURIComponent(car.slug) + '&hold=' + tick +
     (EXTRA_QUERY ? '&' + EXTRA_QUERY : '');
   await send('Page.navigate', { url });
   let probe = null;
@@ -236,6 +241,7 @@ async function capture(car, label, tick) {
     const update = p.updates ? p.updates[${tick}] : null;
     return {
       mode: p.mode, engineTick: p.engineTick, displayTick: p.displayTick, phase: p.phase, speed: p.speed, position: p.position,
+      holdReached: p.holdReached,
       contacts: p.contacts, input: p.input, car: p.car, roster: p.roster ? p.roster.counts : null,
       selector: select ? { options: select.options.length, value: select.value, text: select.options[select.selectedIndex]?.textContent } : null,
       frames: p.frames, ticksExecuted: p.ticksExecuted, cappedFrames: p.cappedFrames,
@@ -252,6 +258,22 @@ async function capture(car, label, tick) {
       matrixChecksum: p.matrixChecksum, movedScreen: p.movedScreen, camera: p.camera,
       gpu: p.adapter, spawn: p.spawn, info: p.engineInfo,
       tickHashes: p.tickHashes,
+      sprint: p.sprint ?? null,
+      sprintLayoutHash: p.sprintLayoutHash ?? null,
+      sprintLayout: p.sprintLayout ?? null,
+      sprintEvents: p.sprintEvents ?? [],
+      sprintResult: p.sprintResult ?? null,
+      sprintBest: p.sprintBest ?? null,
+      overlays: {
+        countdownHidden: document.getElementById('countdown')?.hidden ?? null,
+        countdownText: document.getElementById('countdown')?.textContent ?? null,
+        resultsHidden: document.getElementById('results')?.hidden ?? null,
+        resultsTime: document.getElementById('results-time')?.textContent ?? null,
+        resultsBest: document.getElementById('results-best')?.textContent ?? null,
+        eventText: document.getElementById('event')?.textContent ?? null,
+        eventVisible: document.getElementById('event')?.dataset.visible ?? null
+      },
+      bestStored: (() => { try { return localStorage.getItem('e1-drive.sprint.best.v1'); } catch { return null; } })(),
       render: update ? {
         tick: update.tick,
         hash: update.hash,
@@ -325,6 +347,309 @@ function cameraMaxDelta(a, b) {
   scan(a.orbit?.pitch, b.orbit?.pitch);
   scan(a.orbit?.distance, b.orbit?.distance);
   return max;
+}
+
+if (MODE !== 'drive') {
+  const result = MODE === 'sprint' ? await sprintCapturePass() : await respawnCapturePass();
+  await shutdown();
+  await sleep(400);
+  console.log(JSON.stringify(result.summary, null, 2));
+  process.exit(result.ok ? 0 : 1);
+}
+
+/**
+ * Start / checkpoint / finish captures of the scripted sprint, using the node
+ * sprint run (run.json → sprint.cars[].captures) as the expected state.
+ */
+async function sprintCapturePass() {
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  if (!runDocument.sprint?.cars) {
+    throw new Error('run.json has no sprint block — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const sprintRun = runDocument.sprint;
+  const rows = [];
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+
+  for (const car of cars) {
+    const entry = sprintRun.cars.find((candidate) => candidate.slug === car.slug);
+    if (!entry) throw new Error('run.json has no sprint result for ' + car.slug);
+    const body = geometry.carBodies[car.slug];
+    if (!body) throw new Error('geometry has no body for ' + car.slug);
+    const uploadBytes = meshBytes(levelMesh) + meshBytes(body.mesh) + meshBytes(trackMesh);
+    const draws = 22 + geometry.trackVisual.drawCount + body.carDraws.length;
+    const finishSeconds = entry.finish.timeSeconds;
+
+    for (const spec of entry.captures) {
+      const label = 'sprint-' + spec.label;
+      const shot = await capture(car, label, spec.tick, { script: 'sprint' });
+      const probe = shot.probe;
+      const state = probe.sprint;
+      const overlay = probe.overlays ?? {};
+      const cameraDelta = probe.render && spec.camera ? cameraMaxDelta(probe.render.camera, spec.camera) : null;
+      const matrixDelta = probe.render && Array.isArray(spec.matrices)
+        ? Math.max(...probe.render.matrices.map((entry, index) => {
+          const expected = spec.matrices[index]?.world;
+          if (!expected || expected.length !== entry.world.length) return Infinity;
+          return Math.max(...entry.world.map((value, axis) => Math.abs(value - expected[axis])));
+        }))
+        : null;
+
+      passCheck(`${car.slug}/${label}: held at tick ${spec.tick} with the update the page built`,
+        probe.holdReached === true && probe.displayTick === spec.tick && probe.render?.tick === spec.tick,
+        `display ${probe.displayTick}, render ${probe.render?.tick}`);
+      passCheck(`${car.slug}/${label}: the page drove the requested car`,
+        probe.car?.name === car.name && probe.sprintLayoutHash === sprintRun.layout.hash,
+        JSON.stringify({ car: probe.car?.name, layout: probe.sprintLayoutHash }));
+      passCheck(`${car.slug}/${label}: browser state hash equals the node sprint state`,
+        probe.tickHashes[spec.tick]?.stateHash === spec.stateHash,
+        (probe.tickHashes[spec.tick]?.stateHash ?? 'none') + ' vs ' + spec.stateHash);
+      passCheck(`${car.slug}/${label}: the car matrix is bit-identical to the node sprint packet`,
+        probe.render && spec.matrix &&
+        probe.render.matrix.every((value, index) => Object.is(value, spec.matrix[index])),
+        'matrix differs');
+      passCheck(`${car.slug}/${label}: every node matrix matches the node sprint packet within 1e-12`,
+        matrixDelta !== null && matrixDelta <= 1e-12,
+        'max |matrix delta| ' + (matrixDelta === null ? 'n/a' : matrixDelta.toExponential(3)));
+      passCheck(`${car.slug}/${label}: the browser camera matches the node sprint camera within 1e-6`,
+        cameraDelta !== null && cameraDelta <= 1e-6,
+        'max |delta| ' + (cameraDelta === null ? 'n/a' : cameraDelta.toExponential(3)));
+      passCheck(`${car.slug}/${label}: geometry uploads equal the level + own body + track meshes`,
+        probe.geometryUploads === MESH_COUNT && probe.geometryUploadBytes === uploadBytes,
+        probe.geometryUploads + ' uploads / ' + probe.geometryUploadBytes + ' B');
+      passCheck(`${car.slug}/${label}: one draw per draw per frame`,
+        probe.draws === draws && probe.drawsIssued === probe.frames * probe.draws,
+        probe.drawsIssued + ' draws / ' + probe.frames + ' frames * ' + probe.draws);
+      passCheck(`${car.slug}/${label}: nine matrices per rendered tick`,
+        probe.render?.matrices?.length === 9, String(probe.render?.matrices?.length));
+
+      if (spec.label === 'start') {
+        passCheck(`${car.slug}/${label}: the countdown is on screen and the timer has not started`,
+          state?.phase === 'countdown' && state.elapsedTicks === 0 && state.checkpointsPassed === 0 &&
+          state.countdownLabel === '3' && state.progress < 0.01 && overlay.countdownHidden === false &&
+          overlay.resultsHidden === true && probe.render?.matrices?.[0] !== undefined,
+          JSON.stringify({ phase: state?.phase, elapsed: state?.elapsedTicks, label: overlay.countdownText }));
+      } else if (spec.label === 'checkpoint') {
+        passCheck(`${car.slug}/${label}: a checkpoint is shown and the timer is running`,
+          state?.phase === 'running' && state.checkpointsPassed >= 1 &&
+          Math.abs(state.elapsedSeconds - spec.elapsedSeconds) < 1e-6 &&
+          Math.abs(state.progress - spec.progress) < 1e-6 && state.progress > 0.3 &&
+          overlay.resultsHidden === true &&
+          overlay.eventVisible === '1' && /checkpoint/i.test(overlay.eventText ?? ''),
+          JSON.stringify({ phase: state?.phase, cp: state?.checkpointsPassed, elapsed: state?.elapsedSeconds,
+            progress: state?.progress, banner: overlay.eventText }));
+      } else if (spec.label === 'finish') {
+        passCheck(`${car.slug}/${label}: the finish fires with the node time and both checkpoints`,
+          state?.finished === true && state.checkpointsPassed === 2 &&
+          Math.abs(state.finishTimeSeconds - finishSeconds) < 1e-6 &&
+          Math.abs(state.elapsedSeconds - finishSeconds) < 1e-6 &&
+          state.progress === 1,
+          JSON.stringify({ finished: state?.finished, time: state?.finishTimeSeconds, node: finishSeconds }));
+        passCheck(`${car.slug}/${label}: the results overlay shows the time, car and best`,
+          overlay.resultsHidden === false &&
+          (overlay.resultsTime ?? '').includes(finishSeconds.toFixed(3)) &&
+          (overlay.resultsTime ?? '').includes(car.name) &&
+          (overlay.resultsBest ?? '').includes('best ' + finishSeconds.toFixed(3)),
+          JSON.stringify({ time: overlay.resultsTime, best: overlay.resultsBest }));
+        let stored = null;
+        try { stored = probe.bestStored ? JSON.parse(probe.bestStored) : null; } catch { stored = null; }
+        const expectedBest = Number(finishSeconds.toFixed(3));
+        passCheck(`${car.slug}/${label}: the best time is persisted in localStorage for this car`,
+          stored?.cars?.[car.slug]?.seconds !== undefined &&
+          Math.abs(stored.cars[car.slug].seconds - expectedBest) < 1e-6 &&
+          probe.sprintResult?.improved === true &&
+          Math.abs(probe.sprintBest - expectedBest) < 1e-6,
+          JSON.stringify({ stored: stored?.cars?.[car.slug] ?? null, best: probe.sprintBest, improved: probe.sprintResult?.improved }));
+      } else {
+        passCheck(`${car.slug}/${label}: unknown sprint capture label`, false, spec.label);
+      }
+
+      rows.push({
+        car: car.name,
+        slug: car.slug,
+        label,
+        tick: spec.tick,
+        url: shot.url,
+        screenshot: shot.screenshot,
+        carCrop: shot.carCrop,
+        phase: state?.phase ?? null,
+        elapsedSeconds: state?.elapsedSeconds ?? null,
+        checkpointsPassed: state?.checkpointsPassed ?? null,
+        finished: state?.finished ?? null,
+        finishTimeSeconds: state?.finishTimeSeconds ?? null,
+        progress: state?.progress ?? null,
+        position: probe.position,
+        speed: probe.speed,
+        sprintResult: probe.sprintResult,
+        overlays: overlay,
+        stateHash: probe.tickHashes[spec.tick]?.stateHash ?? null,
+        nodeStateHash: spec.stateHash,
+        updateHash: probe.render?.hash ?? null,
+        nodeUpdateHash: spec.updateHash,
+        pageRender: probe.render,
+        packetHashExact: probe.render?.hash === spec.updateHash,
+        carMatrixExact: !!probe.render && !!spec.matrix &&
+          probe.render.matrix.every((value, index) => Object.is(value, spec.matrix[index])),
+        cameraMaxDelta: cameraDelta,
+        matrixMaxDelta: matrixDelta,
+        frames: probe.frames,
+        geometryUploads: probe.geometryUploads,
+        geometryUploadBytes: probe.geometryUploadBytes,
+        drawsIssued: probe.drawsIssued,
+        canvas: probe.canvas,
+        messages: shot.messages
+      });
+    }
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages);
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  passCheck('console is clean in every sprint capture', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  const exact = rows.filter((row) => row.packetHashExact).length;
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'sprint',
+    layout: { hash: sprintRun.layout.hash, span: sprintRun.layout.span },
+    cars: rows,
+    packetHashAgreement: { exact, total: rows.length, note:
+      'a mismatch is a documented last-bit transcendental difference between Node 24 and Edge 156 (Math.atan2 ' +
+      'in the chase camera or Math.sin/cos in a wheel spin matrix); the state hash, the car matrix and the ' +
+      '1e-12 matrix/camera tolerances are checked separately' },
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-sprint.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-sprint.log'), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-gates',
+    summary: {
+      verdict: evidence.verdict,
+      consoleMessages: evidence.console.totalMessages,
+      errorsAndWarnings: evidence.console.errorsAndWarnings,
+      packetHashAgreement: { exact, total: rows.length },
+      failures: passFailures,
+      captures: rows.map((row) => ({
+        car: row.car, label: row.label, tick: row.tick, phase: row.phase,
+        timeSeconds: row.finished ? row.finishTimeSeconds : row.elapsedSeconds,
+        checkpoints: row.checkpointsPassed, progress: row.progress,
+        screenshot: row.screenshot, carCrop: row.carCrop,
+        packetHashExact: row.packetHashExact, cameraMaxDelta: row.cameraMaxDelta,
+        messages: row.messages.length
+      }))
+    }
+  };
+}
+
+/**
+ * Diagnostic respawn capture: the page runs `?script=sprint&sprintfall=1`, the
+ * rules respawn the car at checkpoint 1 after it leaves the gate corridor, and
+ * the frame is captured after the rebuilt timeline has advanced.
+ */
+async function respawnCapturePass() {
+  const car = cars[0];
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  messages.length = 0;
+  const url = origin + '/?script=sprint&sprintfall=1&car=' + encodeURIComponent(car.slug);
+  await send('Page.navigate', { url });
+  let live = null;
+  for (let attempt = 0; attempt < 500; attempt++) {
+    live = await evaluate(`(()=>{const p=window.e1DriveProbe;return p?{state:p.consumer,error:p.error,frames:p.frames,engineTick:p.engineTick,respawning:p.respawning,sprint:p.sprint}:null})()`).catch(() => null);
+    if (live && live.state === 'error') break;
+    if (live && live.state === 'running' && live.sprint?.respawns >= 1 && live.respawning !== true &&
+        live.engineTick >= 12) break;
+    await sleep(200);
+  }
+  if (!live) throw new Error('respawn capture: page never published state');
+  if (live.state === 'error') throw new Error('respawn capture: page error: ' + live.error);
+
+  const full = await evaluate(`(()=>{
+    const p = window.e1DriveProbe;
+    const canvas = document.getElementById('scene');
+    return {
+      mode: p.mode, engineTick: p.engineTick, displayTick: p.displayTick, position: p.position, speed: p.speed,
+      frames: p.frames, ticksExecuted: p.ticksExecuted, respawning: p.respawning,
+      geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
+      draws: p.draws, drawsIssued: p.drawsIssued, sprint: p.sprint, sprintEvents: p.sprintEvents,
+      sprintResult: p.sprintResult, sprintBest: p.sprintBest, sprintLayoutHash: p.sprintLayoutHash,
+      sprintLayout: p.sprintLayout, tickHashes: p.tickHashes,
+      overlays: {
+        countdownHidden: document.getElementById('countdown')?.hidden ?? null,
+        resultsHidden: document.getElementById('results')?.hidden ?? null,
+        resultsTime: document.getElementById('results-time')?.textContent ?? null,
+        eventText: document.getElementById('event')?.textContent ?? null,
+        eventVisible: document.getElementById('event')?.dataset.visible ?? null
+      },
+      canvas: { width: canvas.width, height: canvas.height }
+    };
+  })()`);
+  const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  const file = path.join(OUT, `browser-${car.slug}-sprint-respawn.png`);
+  writeFileSync(file, Buffer.from(shot.data, 'base64'));
+  const crop = await send('Page.captureScreenshot', {
+    format: 'png', captureBeyondViewport: false,
+    clip: { x: Math.max(0, (full.canvas?.width ?? VIEWPORT.width) / 2 - 420), y: 120, width: 840, height: 620, scale: 1.4 }
+  });
+  const cropFile = path.join(OUT, `browser-${car.slug}-sprint-respawn-car.png`);
+  writeFileSync(cropFile, Buffer.from(crop.data, 'base64'));
+
+  const sprint = full.sprint;
+  const respawnLog = sprint?.respawnLog ?? [];
+  const first = respawnLog[0] ?? null;
+  const targetGate = full.sprintLayout?.gates?.find((gate) => gate.id === first?.target?.gateId);
+  passCheck('respawn: exactly one respawn event is recorded in the page',
+    sprint?.respawns === 1, String(sprint?.respawns));
+  passCheck('respawn: the event names the measured reason and the checkpoint it rebuilds at',
+    first !== null && first.reasons.includes('outside-gate-band') &&
+    first.target?.gateId === 'checkpoint-1' && targetGate !== undefined,
+    JSON.stringify(first));
+  passCheck('respawn: the page rebuilt the engine at the checkpoint and is driving again',
+    full.respawning !== true && full.engineTick >= 12 && full.ticksExecuted > 0 &&
+    sprint?.phase === 'running' &&
+    Math.abs(full.position[0] - (targetGate?.x ?? 0)) < 4 &&
+    Math.abs(full.position[2] - (targetGate?.z ?? 0)) < 4,
+    JSON.stringify({ tick: full.engineTick, position: full.position, phase: sprint?.phase }));
+  passCheck('respawn: the HUD reports the respawn and the timer kept running',
+    (full.overlays?.eventText ?? '').toLowerCase().includes('respawn') &&
+    sprint?.elapsedSeconds > (first?.timeSeconds ?? Infinity),
+    JSON.stringify({ banner: full.overlays?.eventText, elapsed: sprint?.elapsedSeconds }));
+  const blocking = messages.filter((entry) => entry.source !== 'console.log');
+  passCheck('respawn: console is clean', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+
+  const evidence = {
+    mode: 'respawn',
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    car: { slug: car.slug, name: car.name },
+    url: url.replace(origin, ''),
+    sprint,
+    respawnEvent: first,
+    targetGate: targetGate ?? null,
+    position: full.position,
+    screenshot: path.relative(ROOT, file).split(path.sep).join('/'),
+    carCrop: path.relative(ROOT, cropFile).split(path.sep).join('/'),
+    console: { totalMessages: messages.length, errorsAndWarnings: blocking.length, messages: messages.slice() },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-respawn.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-respawn.log'), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-gates',
+    summary: {
+      verdict: evidence.verdict,
+      car: car.slug,
+      respawns: sprint?.respawns ?? null,
+      event: first,
+      target: targetGate ?? null,
+      position: full.position,
+      screenshot: evidence.screenshot,
+      consoleMessages: messages.length,
+      failures: passFailures
+    }
+  };
 }
 
 const carResults = [];

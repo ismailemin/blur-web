@@ -11,6 +11,14 @@
 <canvas id="scene"></canvas>
 <div id="hud" aria-label="drive summary"></div>
 <div id="error" hidden></div>
+<div id="countdown" hidden></div>
+<div id="event" data-visible="0"></div>
+<div id="results" hidden>
+  <h2>FINISH</h2>
+  <div class="time" id="results-time">—</div>
+  <div class="best" id="results-best"></div>
+  <div class="hint">R — restart the sprint</div>
+</div>
 <div id="cars">
   <label for="car-select">car</label>
   <select id="car-select" aria-label="physics car">
@@ -18,12 +26,13 @@
   </select>
 </div>
 <div id="legend">
-  <strong>E1 drive slice</strong> — wasm RacingPhysics on the River collision mesh → render packet v1.1 → WebGPU<br>
+  <strong>E1 sprint slice</strong> — wasm RacingPhysics on the River collision mesh → render packet v1.1 → WebGPU<br>
+  point-to-point sprint on the measured covered segment · 2 checkpoints · timer · best time · respawn<br>
   physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · diagnostic shading · materials not applied · rest-pose wheel placement
 </div>
 <div id="keys">
   <strong>W</strong>/<strong>↑</strong> throttle · <strong>S</strong>/<strong>↓</strong> brake ·
-  <strong>A</strong> <strong>D</strong> steer · <strong>Space</strong> handbrake · <strong>R</strong> reset ·
+  <strong>A</strong> <strong>D</strong> steer · <strong>Space</strong> handbrake · <strong>R</strong> restart ·
   drag = orbit camera · wheel = zoom
 </div>
 <script type="module" src="./app.js"></script>
