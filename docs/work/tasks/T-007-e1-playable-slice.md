@@ -116,6 +116,11 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   sample ediliyor; 136 doku / 439.360 B RGBA; block88 95 draw diagnostic
   (`noBindingRowForSection`), 2 runtime-only. `verify_e1_drive` **522/522**;
   console 0; soak texture leak yok.
+- **Engine packet (P54):** 451 draw / 35 mesh / 252 materyal; 2.246.207 B,
+  hash `0e57f1e5…baba8`; UV 299/299, 297 statik doku; 83.210 üçgen /
+  131.880 vertex. Render-packet v1.1 şemasına karşı **8 ihlal / 4 not**
+  (timeline yok, topology strip, engine-buffer, null geometry) — producer
+  hazır, PoC tüketicisi için dönüşüm gerekli.
 - Kalan: mip/sRGB/anisotropy, materyal renk/blend, culling/LOD; PoC producer'ına
   bağlama.
 - Kanıt: `docs/work/verification/T-007-drawlist-57.md`,

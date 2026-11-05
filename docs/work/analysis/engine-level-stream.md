@@ -1785,3 +1785,139 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py engine/verify_stream.py
 & $py tools/verify_asset_probe.py --skip-build
 ```
+
+## 20. P54 — engine packet v1.1 static frame
+
+This section records the producer step that replaces the asset-reader packet
+producer with the engine harness output. It is still CPU data: no camera is
+invented, no geometry is inlined, no texture is sampled and no GPU object is
+created. Every value comes from the P30/P32/P38/P44/P45/P47 records the gate
+already verifies; a missing value is `null` plus a reason.
+
+### 20.1 Producer pipeline
+
+1. `run_harness` runs the wasm harness twice and requires identical stdout.
+   That stdout is the P30 node-253 packet (312 records), the P38 instance
+   records (topology added), the P44 section packet (1,355 records), the P45
+   UV0 rows (299) and the P34/P47 texture records.
+2. `build_engine_packet` joins them by the printed indices and section keys:
+   - node-253 packet index == `webfiledraw draw` index (direct) or
+     `webfiledraw instance` index (instance, offset 255);
+   - section packet order is the print order of `webfiledraw section chunk`
+     blocks, and the per-section local index joins the section draw and UV0
+     rows (the packet index printed by the harness is cumulative).
+3. The builder renames fields, scopes material ids and classifies the world
+   convention. It writes `_work/engine-stream-spike/out/packet-engine.json`
+   with Python's deterministic `json.dumps(indent=2, sort_keys=True)`, then
+   hashes the compact key-sorted body.
+4. `compare_engine_packet` asserts the counts, the per-draw ranges, the UV0
+   join, the texture identity, the world-kind split, the node drawIds, the six
+   sections, the file/hash pins and the structural violation/note lists.
+
+No engine source changed for the producer; the only harness change is the
+additive `topology=%d` field on the P38 instance line. It is outside every
+pinned hash (P30 packet `7c29fb2ec7769709`, P44 section packet
+`8b3a40324410327f`, P45/P47 aggregates are unchanged).
+
+### 20.2 Packet contract decisions
+
+- **Ranges are source LOD ranges.** `draws[].vertexOffset/vertexCount` are
+  `lod->minIndex/vertices`; `indexOffset/indexCount` are `lod->offset/indices`.
+  They address the engine buffer, which is what a future consumer will bind.
+  The compacted non-degenerate triangle span the harness also computes is
+  recorded per draw as `source.drawTriangles`, and the committed totals are
+  `diagnostics.triangleTotal = 83,210` / `vertexTotal = 131,880`.
+- **All 451 draws are triangle strips** (`topology=1`). The packet carries the
+  topology in `draws[].source.topology`; the v1.1 schema has no such member and
+  its `indexCount multipleOf 3` rule is therefore recorded as a violation on
+  346 draws. No index list is fabricated.
+- **World convention.** Instances carry `g_mWorld` and
+  `worldKind="packet-transform"` (the engine VB is object-local); direct and
+  section draws carry the identity with `worldKind="baked-into-mesh"` (POSITION
+  bytes are already level-world, P44). The engine reason token is preserved in
+  `source.worldReason`.
+- **Material ids are scoped by the material table.** The raw
+  `g_tAlbedo:<row>:<index>` string is not unique across node material chunks
+  (46 collisions between node 283/71/59/31/265 contexts), so the packet id is
+  `node<chunk>:<raw>` and `source.rawMaterialId` keeps the printed token. With
+  that scope every material resolves to exactly one albedo source.
+- **Meshes reference buffers.** `meshes[]` has `storage:"engine-buffer"` and
+  counts the referenced extent (`max(offset+count)`), flagged
+  `countKind:"referencedExtent"`. The buffer record counts are not printed for
+  the instance/section chunks, so they are not claimed.
+- **Omitted records are kept, not hidden.** The 160 node and 1,056 section
+  non-drawable records stay in `diagnostics.extras.omittedDraws` with their
+  reason, so the 312/1,355 record counts are reconstructable from the file.
+- **UV0 and textures are per draw.** A section draw carries
+  `source.uv0` (section/draw/byte range/stride/type/first vertex/count/hash/UV
+  range) and `source.texture` (block:index, name, texture hash, size, format,
+  RGBA hash, engine chunk/item, registry). Instance and direct draws keep
+  `uv0:null` with `uv0NotResolvedForThisRecord`, because P45 covered the six
+  section lists only.
+- **Camera, lights, timeline.** `camera:null` with a reason, `lights:[]`,
+  `placedObjects:[]`. `version` is 1.1 per the task, but the 1.1 timeline
+  (`nodes`/`updates`/`tickDurationSeconds`) is absent: this is a static frame,
+  and the schema violation/note lists say so.
+
+### 20.3 Measured result (`verify_stream.py --fresh`, exit 0, 128.0 s; reuse 114.2 s)
+
+| Check | Result |
+| --- | --- |
+| packet | 2,246,207 B, file sha256 `7bbcc442a2b118becc4a7781288f064dfd057fbc7e7b9695e14e304e4d44e936` |
+| packet hash | `sha256:0e57f1e51f539c052607171f3ee02eaaa1cc11710a2c962d7c203411582baba8` |
+| hash parity | equal to committed `packet-format.mjs` `packetHash()` |
+| determinism | two in-process builds and both full runs byte-identical |
+| node-253 | 312 records / 152 drawable / 160 omitted / 57 instances |
+| sections | 6 / 1,355 records / 299 drawable / 1,056 omitted / 299 / 47,790 / 78,712 |
+| draws / meshes / materials | 451 / 35 / 252 scoped (229 raw, 2 null) |
+| world | 57 packet-transform, 394 baked; 451 identity or affine, 0 invalid |
+| UV0 | 299/299 resolved, 2,731,480 B addressed, types 292 × 9 / 7 × 8 |
+| textures | 170 referenced (74 P34 + 96 track); 297 static / 2 runtime section bindings |
+| schema | 8 violations + 4 notes, schema read-only and unmodified |
+| wasm | 872,869 B, sha256 `06b80db39583c1110245387f4b2e2f5b6d8b2edf109629e61c2a9fe8ea013d36` |
+| patch | unchanged, `5fa2b1b743c388030d1a0bc8b73fe951acfea92406a29cf7b71b2dbb75019b71` |
+| harness / suite | 99/99 checks, portable suite 29/29 |
+
+### 20.4 Schema gaps
+
+The packet is structurally compared, not conformant. Pinned gaps: missing
+camera; absent 1.1 timeline and `diagnostics.sequence`; `meshes[].storage`
+`engine-buffer` outside the `inline-json` enum; null inline geometry and hashes;
+referenced-extent mesh counts; 346 strip ranges not divisible by 3; and
+topology, which the schema does not model. Nothing in the schema was edited;
+the gap list is pinned so it cannot drift silently.
+
+### 20.5 Remaining blockers
+
+1. No camera, no lights, no timeline, no tick loop.
+2. No inline geometry and no per-draw vertex element/stride/index-width
+   descriptors; the packet references engine buffers.
+3. Topology lives outside the schema (all 451 draws are strips).
+4. No sampling: wrap, filter, anisotropy, mip and texture matrices unresolved;
+   UV0 leaves `[0,1]`.
+5. UV0 is present for the 299 section draws only; 152 node-253 draws are null
+   with a reason.
+6. Two runtime-only albedo draws stay null (`g50-n265` primitives 241/242).
+7. No culling, LOD selection, sorting or batching; LOD0 only;
+   `instancesApplied:false`; `ProcessLoadChunk` still not driven.
+8. No renderer, GPU, browser, vehicle or game claim.
+
+### 20.6 Evidence (P54)
+
+| Path | Content |
+| --- | --- |
+| `_work/engine-stream-spike/out/packet-engine.json` | the packet |
+| `_work/logs/engine-stream-spike/p54-verify-fresh-final.json` / `.log` | fresh PASS, 128.0 s |
+| `_work/logs/engine-stream-spike/p54-verify-reuse-final.json` / `.log` | second full run, 114.2 s |
+| `_work/logs/engine-stream-spike/p54-asset-suite-final.log` | 29/29 portable suite |
+| `_work/logs/engine-stream-spike/a__run1.log` / `a__run2.log` | identical producer stdout |
+| `docs/work/verification/T-007-engine-packet.md` | verification record |
+
+### 20.7 Commands
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py engine/verify_stream.py --fresh
+& $py engine/verify_stream.py
+& $py tools/verify_asset_probe.py --skip-build
+```

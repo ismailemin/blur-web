@@ -326,6 +326,12 @@ Focus 15,22. 29 m `?course=short`. `verify_e1_drive` **550/550**; sprint/short/
 restart/respawn/survey capture console 0. Kanıt:
 `docs/work/verification/T-007-310m-course.md`.
 
+**Engine packet (P54):** 451 draw / 35 mesh / 252 materyal; 2.246.207 B,
+hash `0e57f1e5…baba8`; UV 299/299, 297 statik doku; 83.210 üçgen / 131.880
+vertex. Render-packet v1.1 şemasına karşı 8 ihlal / 4 not (timeline yok,
+topology strip, engine-buffer, null geometry) — producer hazır, tüketici için
+dönüşüm gerekli. Kanıt: `docs/work/verification/T-007-engine-packet.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

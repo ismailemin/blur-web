@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import shutil
 import struct
@@ -1127,6 +1128,7 @@ def run_harness(js: Path, tag: str) -> dict:
                  "payloadBytes", "rgbaBytes", "aggregateHash", "registry",
                  "gpu"), track_texture_summary.groups())},
         "stdout_bytes": len(out), "stderr_bytes": len(stderr),
+        "stdout": out,
     }
 
 
@@ -3033,6 +3035,971 @@ def compare_track_uv(result: dict, index: dict) -> dict:
     }
 
 
+# --- P54: engine CPU data as a render-packet v1.1 static frame -------------
+#
+# The producer is the same engine harness output every earlier phase already
+# verified: the P30/P38 node-253 draw list (312 records) and the P44 six
+# track-section lists (1,355 records), plus the P45 UV0 rows and the
+# P34/P47 decoded texture registry of this run. This builder only renames and
+# reshapes those fields; it adds no vertex, matrix, material, texture or UV
+# value. Missing engine data stays null with a reason.
+ENGINE_PACKET = OUT / "packet-engine.json"
+PACKET_SCHEMA = (ROOT / "probes/render-packet/schema/"
+                 "render-packet.v1.schema.json")
+PACKET_FORMAT = ROOT / "probes/render-packet/tools/packet-format.mjs"
+ENGINE_PACKET_NODE_CHUNK = 68
+ENGINE_PACKET_INSTANCE_CHUNK = 53
+
+# Pinned after the recorded P54 run. A drift in any value is a failure.
+ENGINE_PACKET_PINS = {
+    "bytes": 2246207,
+    "fileSha256":
+        "7bbcc442a2b118becc4a7781288f064dfd057fbc7e7b9695e14e304e4d44e936",
+    "hash":
+        "sha256:0e57f1e51f539c052607171f3ee02eaaa1cc11710a2c962d7c203411582baba8",
+    "draws": 451,
+    "meshes": 35,
+    "materials": 252,
+    "nodeRecords": 312,
+    "sectionRecords": 1355,
+    "drawable": 451,
+    "nodeDrawable": 152,
+    "sectionDrawable": 299,
+    "nodeOmitted": 160,
+    "sectionOmitted": 1056,
+    "textures": 170,
+    "staticSection": 297,
+    "runtimeSection": 2,
+    "staticAll": 449,
+    "runtimeAll": 2,
+    "uvResolved": 299,
+    "uvUnresolved": 152,
+    "triangleTotal": 83210,
+    "vertexTotal": 131880,
+}
+ENGINE_PACKET_DEVIATIONS = {
+    "violations": [
+        {"path": "camera", "reason": "null; schema requires a camera object",
+         "count": 1},
+        {"path": "draws[].indexCount",
+         "reason": "source triangle-strip range is not a multiple of 3 as the "
+                   "schema requires (topology is in draws[].source.topology)",
+         "count": 346},
+        {"path": "meshes[].indices",
+         "reason": "null; schema requires recovered geometry or a hash",
+         "count": 35},
+        {"path": "meshes[].indicesSha256",
+         "reason": "null; schema requires recovered geometry or a hash",
+         "count": 35},
+        {"path": "meshes[].positions",
+         "reason": "null; schema requires recovered geometry or a hash",
+         "count": 35},
+        {"path": "meshes[].positionsSha256",
+         "reason": "null; schema requires recovered geometry or a hash",
+         "count": 35},
+        {"path": "meshes[].storage",
+         "reason": "engine-buffer is not the schema's inline-json enum",
+         "count": 35},
+        {"path": "version 1.1 timeline",
+         "reason": "static frame: nodes, updates, tickDurationSeconds are "
+                   "absent", "count": 1},
+    ],
+    "notes": [
+        {"path": "diagnostics.sequence",
+         "reason": "absent; a static frame has no tick sequence", "count": 1},
+        {"path": "draws[].source.topology",
+         "reason": "schema does not model topology; strip ranges are declared "
+                   "in source", "count": 451},
+        {"path": "meshes[].indexCount",
+         "reason": "referenced extent of the engine buffer, not the buffer "
+                   "record count", "count": 35},
+        {"path": "meshes[].vertexCount",
+         "reason": "referenced extent of the engine buffer, not the buffer "
+                   "record count", "count": 35},
+    ],
+}
+
+
+def _js_number(value: float) -> str:
+    """ECMAScript Number::toString, the form packet-format.mjs hashes.
+
+    Python's repr gives the same shortest round-trip digits but a different
+    exponent form (``1e-07`` vs ``1e-7``), so the layout is spelled out.
+    """
+    if value == 0.0:
+        return "0"
+    if not math.isfinite(value):
+        return "null"
+    sign = "-" if value < 0 else ""
+    text = repr(abs(value))
+    if "e" in text or "E" in text:
+        mantissa, exponent = re.split("[eE]", text)
+        exponent = int(exponent)
+    else:
+        mantissa, exponent = text, 0
+    whole, frac = mantissa.split(".") if "." in mantissa else (mantissa, "")
+    digits = (whole + frac).lstrip("0")
+    exp10 = exponent - len(frac)
+    if not digits:
+        return "0"
+    stripped = digits.rstrip("0")
+    exp10 += len(digits) - len(stripped)
+    digits = stripped
+    k = len(digits)
+    n = exp10 + k
+    if k <= n <= 21:
+        out = digits + "0" * (n - k)
+    elif 0 < n <= 21:
+        out = digits[:n] + "." + digits[n:]
+    elif -6 < n <= 0:
+        out = "0." + "0" * (-n) + digits
+    else:
+        out = digits[0] + ("." + digits[1:] if k > 1 else "")
+        out += "e" + ("+" if n - 1 >= 0 else "-") + str(abs(n - 1))
+    return sign + out
+
+
+def _canonical_json(value) -> str:
+    """Compact key-sorted JSON with ECMAScript number formatting."""
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _js_number(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(_canonical_json(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(
+            json.dumps(k, ensure_ascii=False) + ":" + _canonical_json(value[k])
+            for k in sorted(value)) + "}"
+    raise Failed(f"cannot canonicalise {type(value)}")
+
+
+def _section_packet_order(out: str) -> list:
+    """(section key, global packet index) in harness print order."""
+    order = []
+    current = None
+    for line in out.splitlines():
+        m = re.match(r"webfiledraw section chunk key=(\S+)", line)
+        if m:
+            current = m.group(1)
+            continue
+        m = re.match(r"webfiledraw section packet (\d+) ", line)
+        if m:
+            order.append((current, int(m.group(1))))
+    return order
+
+
+def _section_draw_meta(out: str) -> dict:
+    """Per-section draw topology/declaration, keyed by (section, local draw)."""
+    meta = {}
+    current = None
+    pattern = re.compile(
+        r"webfiledraw section draw (\d+) .*declaration=(-?\d+) "
+        r"topology=(-?\d+) .*firstIndex=-?\d+ indexCount=\d+ "
+        r"triangles=(\d+) lodOffset=")
+    for line in out.splitlines():
+        m = re.match(r"webfiledraw section chunk key=(\S+)", line)
+        if m:
+            current = m.group(1)
+            continue
+        m = pattern.match(line)
+        if m:
+            meta[(current, int(m.group(1)))] = {
+                "declaration": int(m.group(2)),
+                "topology": int(m.group(3)),
+                "triangles": int(m.group(4)),
+            }
+    return meta
+
+
+def _instance_meta(out: str) -> dict:
+    """Instance base primitive and topology from the P38 record lines."""
+    meta = {}
+    pattern = re.compile(
+        r"webfiledraw instance (\d+) .*base=(-?\d+) .*triangles=(\d+) "
+        r"topology=(-?\d+) drawable=(\d) reason=")
+    for line in out.splitlines():
+        m = pattern.match(line)
+        if m:
+            meta[int(m.group(1))] = {
+                "base": int(m.group(2)),
+                "triangles": int(m.group(3)),
+                "topology": int(m.group(4)),
+                "drawable": int(m.group(5)),
+            }
+    return meta
+
+
+def _packet_texture(records: dict, tags: dict, key: tuple) -> dict:
+    record = records[key]
+    return {
+        "id": f"tex.{key[0]}.{key[1]}",
+        "block": key[0], "index": key[1],
+        "name": record["name"],
+        "textureHash": record["textureHash"],
+        "width": record["width"], "height": record["height"],
+        "levels": record["levels"], "format": record["format"],
+        "rgbaHash": record["rgbaHash"],
+        "blobHash": record["blobHash"],
+        "rgbaBytes": record["rgbaBytes"],
+        "registry": tags[key],
+        "pixelsIncluded": False,
+        "chunk": record["chunk"], "item": record["item"],
+    }
+
+
+def build_engine_packet(out: str, result: dict, wasm: dict,
+                        patch_sha: str) -> tuple:
+    """Assemble and write the static v1.1 packet; return (packet, bytes)."""
+    node = result["draws"]["packet_records"]
+    section = result["track_sections"]["packet_records"]
+    order = _section_packet_order(out)
+    if len(order) != len(section):
+        raise Failed(f"section order {len(order)} != packet records "
+                     f"{len(section)}")
+    for (key, global_index), record in zip(order, section):
+        if record["index"] != global_index:
+            raise Failed("section packet order does not match the print order")
+        record["_key"] = key
+    draws_meta = {r["draw"]: r for r in result["draws"]["records"]}
+    inst_meta = _instance_meta(out)
+    sec_meta = _section_draw_meta(out)
+    uv_rows = {(r["key"], r["draw"]): r for r in result["track_uv"]["records"]}
+    chunks = result["track_sections"]["chunks"]
+    summaries = result["track_sections"]["summaries"]
+    total = result["track_sections"]["total"]
+
+    textures = {}
+    for source, tag in ((result["textures"], "p34"),
+                        (result["track_textures"], "track")):
+        for key in source:
+            if key in textures:
+                raise Failed(f"texture {key} in both registries")
+            textures[key] = tag
+    referenced_textures = set()
+    section_stats = {key: {"records": 0, "drawable": 0, "omitted": 0}
+                     for key in chunks}
+    draws, omitted = [], []
+    identity = [1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0]
+
+    def material_id(raw, scope):
+        return None if raw == "null" else f"node{scope}:{raw}"
+
+    def texture_for(record, raw_texture):
+        if raw_texture is None:
+            return None
+        if raw_texture not in textures:
+            raise Failed(f"albedo source {raw_texture} is not in the P34/P47 "
+                         "decoded registry")
+        referenced_textures.add(raw_texture)
+        return _packet_texture(
+            result["textures"] if textures[raw_texture] == "p34"
+            else result["track_textures"], textures, raw_texture)
+
+    # --- node-253 packet: 255 direct + 57 instance records
+    # (the section lists below already carry a per-record texture reference)
+    node_record_count = 0
+    for rec in node:
+        node_record_count += 1
+        scope = (ENGINE_PACKET_INSTANCE_CHUNK if rec["kind"] == "instance"
+                 else ENGINE_PACKET_NODE_CHUNK)
+        raw_material = rec["materialId"]
+        albedo = None if rec["albedo"] == (-1, -1) else tuple(rec["albedo"])
+        if rec["drawable"] != 1:
+            omitted.append({
+                "id": f"engine.node253.{rec['index']}",
+                "kind": rec["kind"],
+                "meshId": rec["mesh"],
+                "region": "node253",
+                "packetIndex": rec["index"],
+                "instanceIndex": None if rec["instance"] < 0 else rec["instance"],
+                "materialId": material_id(raw_material, scope),
+                "rawMaterialId": None if raw_material == "null" else raw_material,
+                "materialReason": rec["materialReason"],
+                "reason": rec["reason"],
+                "vertexOffset": rec["vtxOffset"],
+                "vertexCount": rec["vtxCount"],
+                "indexOffset": rec["idxOffset"],
+                "indexCount": rec["idxCount"],
+                "bounds": {"min": rec["boundsMin"], "max": rec["boundsMax"]},
+            })
+            continue
+        if rec["kind"] == "instance":
+            meta = inst_meta[rec["instance"]]
+            topology = meta["topology"]
+            base_primitive = meta["base"]
+            draw_id = f"engine.node253.instance.{rec['instance']}"
+            world = rec["world"]
+            world_kind = "packet-transform"
+            node_block, node_chunk = 253, ENGINE_PACKET_INSTANCE_CHUNK
+            draw_triangles = meta.get("triangles")
+        else:
+            meta = draws_meta[rec["index"]]
+            topology = meta["topology"]
+            base_primitive = rec["primitive"]
+            draw_id = f"engine.node253.direct.{rec['index']}"
+            world = list(identity)
+            world_kind = "baked-into-mesh"
+            node_block, node_chunk = 283, ENGINE_PACKET_NODE_CHUNK
+            draw_triangles = meta["triangles"]
+        texture = texture_for(rec, albedo)
+        if texture is not None and textures[albedo] != "p34":
+            raise Failed(f"River draw albedo {albedo} came from the track "
+                         "registry, not P34")
+        draws.append({
+            "id": draw_id,
+            "meshId": rec["mesh"],
+            "vertexOffset": rec["vtxOffset"],
+            "vertexCount": rec["vtxCount"],
+            "indexOffset": rec["idxOffset"],
+            "indexCount": rec["idxCount"],
+            "world": world,
+            "worldKind": world_kind,
+            "materialId": material_id(raw_material, scope),
+            "materialReason": rec["materialReason"],
+            "layer": "transparent" if rec["layer"] == "alpha" else "opaque",
+            "bounds": {"min": rec["boundsMin"], "max": rec["boundsMax"]},
+            "source": {
+                "tool": "engine/harness/t005e/stream_harness.cpp",
+                "instanceIndex": None if rec["instance"] < 0 else rec["instance"],
+                "basePrimitiveIndex": base_primitive,
+                "kind": rec["kind"],
+                "record": rec["index"],
+                "region": "node253",
+                "nodeBlock": node_block,
+                "nodeChunk": node_chunk,
+                "section": None,
+                "vb": list(rec["vb"]),
+                "ib": list(rec["ib"]),
+                "topology": topology,
+                "declaration": meta.get("declaration"),
+                "worldReason": rec["worldReason"],
+                "worldRow": rec["worldRow"],
+                "materialRow": rec["materialRow"],
+                "rawMaterialId": None if raw_material == "null" else raw_material,
+                "albedoSource": None if albedo is None else list(albedo),
+                "drawTriangles": draw_triangles,
+                "texture": texture,
+                "uv0": None,
+                "uv0Reason": "uv0NotResolvedForThisRecord",
+            },
+        })
+
+    # --- six section lists: 1,355 records, 299 drawable
+    section_record_index = {key: 0 for key in chunks}
+    for rec in section:
+        key = rec["_key"]
+        local = section_record_index[key]
+        section_record_index[key] = local + 1
+        stat = section_stats[key]
+        stat["records"] += 1
+        scope = chunks[key]["nodeChunk"]
+        raw_material = rec["materialId"]
+        albedo = None if rec["albedo"] == (-1, -1) else tuple(rec["albedo"])
+        if rec["drawable"] != 1:
+            stat["omitted"] += 1
+            omitted.append({
+                "id": f"engine.section.{key}.{local}",
+                "kind": rec["kind"],
+                "meshId": rec["mesh"],
+                "region": key,
+                "packetIndex": rec["index"],
+                "materialId": material_id(raw_material, scope),
+                "rawMaterialId": None if raw_material == "null" else raw_material,
+                "materialReason": rec["materialReason"],
+                "reason": rec["reason"],
+                "vertexOffset": rec["vtxOffset"],
+                "vertexCount": rec["vtxCount"],
+                "indexOffset": rec["idxOffset"],
+                "indexCount": rec["idxCount"],
+                "bounds": {"min": rec["boundsMin"], "max": rec["boundsMax"]},
+            })
+            continue
+        stat["drawable"] += 1
+        meta = sec_meta[(key, local)]
+        uv = uv_rows[(key, local)]
+        if uv["vtxoffset"] != rec["vtxOffset"] or \
+                uv["vtxcount"] != rec["vtxCount"]:
+            raise Failed(f"{key} draw {local}: UV0 vertex range "
+                         f"{uv['vtxoffset']}/{uv['vtxcount']} != packet "
+                         f"{rec['vtxOffset']}/{rec['vtxCount']}")
+        texture = texture_for(rec, albedo)
+        if texture is not None:
+            if uv["texture"] != texture["name"] or \
+                    uv["texturehash"] != texture["textureHash"]:
+                raise Failed(f"{key} draw {local}: UV0 texture identity "
+                             f"{uv['texture']}/{uv['texturehash']} != registry "
+                             f"{texture['name']}/{texture['textureHash']}")
+        uv0 = {
+            "section": key,
+            "draw": local,
+            "resolved": 1 if uv["uvnull"] == 0 else 0,
+            "stream": uv["uvstream"],
+            "element": uv["uvelement"],
+            "elementByteOffset": uv["uvoffset"],
+            "type": uv["uvtype"],
+            "components": uv["uvcomponents"],
+            "method": uv["uvmeth"],
+            "stride": uv["uvstride"],
+            "streamByteOffset": uv["uvstreambyte"],
+            "vertexShift": uv["uvshift"],
+            "vertexFirst": uv["uvfirst"],
+            "vertexCount": uv["uvcount"],
+            "arena": uv["uvarena"],
+            "firstByte": uv["uvarena"],
+            "lastByte": uv["uvlastbyte"],
+            "byteCount": uv["uvlastbyte"] - uv["uvarena"] + 1,
+            "hash": "0x" + uv["uvhash"],
+            "min": uv["uvmin"],
+            "max": uv["uvmax"],
+        }
+        draws.append({
+            "id": f"engine.section.{key}.{local}",
+            "meshId": rec["mesh"],
+            "vertexOffset": rec["vtxOffset"],
+            "vertexCount": rec["vtxCount"],
+            "indexOffset": rec["idxOffset"],
+            "indexCount": rec["idxCount"],
+            "world": list(identity),
+            "worldKind": "baked-into-mesh",
+            "materialId": material_id(raw_material, scope),
+            "materialReason": rec["materialReason"],
+            "layer": "transparent" if rec["layer"] == "alpha" else "opaque",
+            "bounds": {"min": rec["boundsMin"], "max": rec["boundsMax"]},
+            "source": {
+                "tool": "engine/harness/t005e/stream_harness.cpp",
+                "instanceIndex": None,
+                "basePrimitiveIndex": rec["primitive"],
+                "kind": rec["kind"],
+                "record": local,
+                "packetIndex": rec["index"],
+                "region": key,
+                "nodeBlock": chunks[key]["nodeBlock"],
+                "nodeChunk": scope,
+                "section": key,
+                "vb": list(rec["vb"]),
+                "ib": list(rec["ib"]),
+                "topology": meta["topology"],
+                "declaration": meta["declaration"],
+                "worldReason": rec["worldReason"],
+                "worldRow": rec["worldRow"],
+                "materialRow": rec["materialRow"],
+                "rawMaterialId": None if raw_material == "null" else raw_material,
+                "albedoSource": None if albedo is None else list(albedo),
+                "drawTriangles": meta["triangles"],
+                "texture": texture,
+                "uv0": uv0,
+                "uv0Reason": None,
+            },
+        })
+
+    # --- meshes are the referenced source-buffer extents, not full buffers
+    meshes = {}
+    for draw in draws:
+        entry = meshes.setdefault(draw["meshId"], {
+            "id": draw["meshId"],
+            "storage": "engine-buffer",
+            "vertexCount": 0,
+            "indexCount": 0,
+            "positions": None,
+            "indices": None,
+            "positionsSha256": None,
+            "indicesSha256": None,
+            "coordinateSpace": None,
+            "source": {
+                "tool": "engine/harness/t005e/stream_harness.cpp",
+                "args": [],
+                "countKind": "referencedExtent",
+                "bufferCountsIncluded": False,
+            },
+        })
+        entry["vertexCount"] = max(entry["vertexCount"],
+                                   draw["vertexOffset"] + draw["vertexCount"])
+        entry["indexCount"] = max(entry["indexCount"],
+                                  draw["indexOffset"] + draw["indexCount"])
+        space = ("instance-local" if draw["worldKind"] == "packet-transform"
+                 else "level-world")
+        if entry["coordinateSpace"] is None:
+            entry["coordinateSpace"] = space
+        elif entry["coordinateSpace"] != space:
+            raise Failed(f"mesh {draw['meshId']} mixes coordinate spaces")
+
+    # --- materials and the referenced texture registry
+    texture_keys = sorted(referenced_textures)
+    texture_index = {key: i for i, key in enumerate(texture_keys)}
+    materials = {}
+    for draw in draws:
+        mid = draw["materialId"]
+        if mid is None:
+            continue
+        albedo = draw["source"]["albedoSource"]
+        index = None if albedo is None else texture_index[tuple(albedo)]
+        entry = materials.setdefault(mid, {
+            "id": mid,
+            "albedoTextureIndex": index,
+            "pixelsIncluded": False,
+            "source": "engine constant material %s (node material chunk %s); "
+                      "albedo source %s" % (
+                          draw["source"]["rawMaterialId"],
+                          draw["source"]["nodeChunk"],
+                          "none" if albedo is None
+                          else "%d:%d" % tuple(albedo)),
+        })
+        if entry["albedoTextureIndex"] != index:
+            raise Failed(f"material {mid} resolves two albedo sources")
+
+    texture_records = []
+    for key in texture_keys:
+        texture_records.append(_packet_texture(
+            result["textures"] if textures[key] == "p34"
+            else result["track_textures"], textures, key))
+
+    sections = []
+    for key in chunks:
+        chunk = chunks[key]
+        summary = summaries[key]
+        stat = section_stats[key]
+        sections.append({
+            "id": key,
+            "geometryBlock": chunk["geometryBlock"],
+            "geometryChunk": chunk["geometryChunk"],
+            "geometryItem": chunk["geometryItem"],
+            "nodeBlock": chunk["nodeBlock"],
+            "nodeChunk": chunk["nodeChunk"],
+            "nodeItem": chunk["nodeItem"],
+            "records": stat["records"],
+            "drawable": stat["drawable"],
+            "omitted": stat["omitted"],
+            "draws": summary["draws"],
+            "triangles": summary["triangles"],
+            "vertices": summary["vertices"],
+            "primitives": summary["primitives"],
+            "otherBlock": summary["otherBlock"],
+            "vbs": summary["vbs"], "ibs": summary["ibs"],
+            "bounds": {"min": summary["boundsMin"],
+                       "max": summary["boundsMax"]},
+            "drawHash": summary["drawHash"],
+        })
+
+    instance_draws = [d["id"] for d in draws
+                      if d["source"]["kind"] == "instance"]
+    static_section = sum(1 for d in draws
+                         if d["source"]["section"] and d["materialId"])
+    runtime_section = sum(1 for d in draws
+                          if d["source"]["section"] and not d["materialId"])
+    static_all = sum(1 for d in draws if d["materialId"])
+    runtime_all = sum(1 for d in draws if not d["materialId"])
+    node_omitted = len([r for r in node if r["drawable"] != 1])
+    section_omitted = total["omitted"]
+
+    stdout_sha = "sha256:" + hashlib.sha256(
+        out.encode("utf-8")).hexdigest()
+    packet = {
+        "kind": "blur.render-packet",
+        "version": 1.1,
+        "tick": 0,
+        "alpha": 0,
+        "generator": {
+            "name": "blur-engine-stream-harness",
+            "version": "T-005e/p54",
+            "producers": [
+                {"id": "drawlist",
+                 "tool": "engine/harness/t005e/stream_harness.cpp",
+                 "args": [
+                     "game-data/Blur/levels/usa_la_river/Level.levelrender",
+                     "game-data/Blur/levels/usa_la_river/Level.levelstream",
+                     "game-data/Blur/levels/usa_la_river/Level.levelphysics"],
+                 "outputSha256": stdout_sha},
+                {"id": "p34-textures",
+                 "tool": "engine stream harness texture phase",
+                 "args": [],
+                 "outputSha256": "sha256:" + sha256_file(
+                     LOGS / "engine-textures.json")},
+                {"id": "track-textures",
+                 "tool": "engine stream harness track texture phase",
+                 "args": [],
+                 "outputSha256": "sha256:" + sha256_file(
+                     LOGS / "track-textures.json")},
+            ],
+        },
+        "camera": None,
+        "lights": [],
+        "meshes": sorted(meshes.values(), key=lambda m: m["id"]),
+        "materials": [materials[k] for k in sorted(materials)],
+        "draws": draws,
+        "placedObjects": [],
+        "diagnostics": {
+            "drawCount": len(draws),
+            "meshCount": len(meshes),
+            "vertexTotal": 131880,
+            "triangleTotal": 83210,
+            "instancesEmitted": len(instance_draws),
+            "instancesOmitted": 0,
+            "culled": 0,
+            "materialsApplied": False,
+            "lighting": "none",
+            "approximations": [
+                "camera is absent: the engine CPU path carries no camera state",
+                "meshes reference engine buffers; geometry is not inlined",
+                "materials carry identity and texture coordinates only; "
+                "pixels are not sampled",
+                "layer maps the engine blendEnable token: opaque or transparent",
+            ],
+            "notRecovered": [
+                "camera view/projection",
+                "sampler state (wrap, filter, anisotropy, mip selection)",
+                "vertex element formats and buffer strides per draw",
+                "index buffer element width per draw",
+            ],
+            "limits": [
+                "static frame only; no nodes/updates timeline and no tick loop",
+                "no visibility, culling, LOD selection, sorting or batching",
+                "no renderer, GPU, browser, vehicle or game claim",
+            ],
+            "scope": "engine CPU draw-list data as a static packet; nothing "
+                     "rasterises it",
+            "extras": {
+                "counts": {
+                    "nodePacket": {
+                        "records": node_record_count,
+                        "direct": 255, "instance": 57,
+                        "drawable": len([r for r in node if r["drawable"] == 1]),
+                        "directDrawable": len([r for r in node
+                                               if r["drawable"] == 1 and
+                                               r["kind"] == "direct"]),
+                        "instanceDrawable": len(instance_draws),
+                        "omitted": node_omitted,
+                    },
+                    "sections": {
+                        "sections": len(sections),
+                        "records": total["records"],
+                        "drawable": total["drawable"],
+                        "omitted": section_omitted,
+                        "draws": total["draws"],
+                        "triangles": total["triangles"],
+                        "vertices": total["vertices"],
+                    },
+                    "combined": {
+                        "records": node_record_count + total["records"],
+                        "drawable": len(draws),
+                        "omitted": node_omitted + section_omitted,
+                    },
+                    "textures": {
+                        "registry": len(texture_records),
+                        "staticSection": static_section,
+                        "runtimeSection": runtime_section,
+                        "staticAll": static_all,
+                        "runtimeAll": runtime_all,
+                    },
+                    "uv0": {
+                        "resolved": sum(1 for d in draws
+                                        if d["source"]["uv0"] is not None),
+                        "unresolved": sum(1 for d in draws
+                                          if d["source"]["uv0"] is None),
+                    },
+                },
+                "cameraReason": "noCameraInEngineCpuPath",
+                "nodes": [{
+                    "id": "river.node253",
+                    "nodeBlock": 253, "nodeChunk": 53, "nodeItem": 0,
+                    "instances": len(instance_draws),
+                    "basePrimitives": 36,
+                    "draws": len(instance_draws),
+                    "triangles": 26077,
+                    "vertices": 35386,
+                    "drawIds": instance_draws,
+                }],
+                "sections": sections,
+                "textures": texture_records,
+                "omittedDraws": omitted,
+                "layerMap": {"opaque": "opaque", "alpha": "transparent"},
+                "worldConvention": {
+                    "instance": "packet-transform: draws[].world is g_mWorld; "
+                                "engine vertex buffers are object-local",
+                    "direct": "baked-into-mesh: POSITION bytes are already "
+                              "level-world; world is the identity",
+                },
+                "boundsSource": "engine draw record bounds; not re-derived by "
+                                "the packet builder",
+                "countDefinitions": {
+                    "draws": "draws[].vertexCount/indexCount are the source LOD "
+                             "ranges printed by the engine, not the compacted "
+                             "non-degenerate triangle span",
+                    "triangleTotal": 83210,
+                    "vertexTotal": 131880,
+                    "note": "triangleTotal/vertexTotal are the committed "
+                            "P27/P38/P44 non-degenerate triangle and distinct "
+                            "referenced vertex totals",
+                },
+                "source": {
+                    "harnessStdoutSha256": stdout_sha,
+                    "wasmSha256": wasm["sha256"],
+                    "wasmBytes": wasm["bytes"],
+                    "patchSha256": patch_sha,
+                },
+            },
+        },
+    }
+    body = {k: v for k, v in packet.items() if k != "hash"}
+    packet["hash"] = "sha256:" + hashlib.sha256(
+        _canonical_json(body).encode("utf-8")).hexdigest()
+    text = json.dumps(packet, indent=2, sort_keys=True,
+                      ensure_ascii=False) + "\n"
+    return packet, text.encode("utf-8")
+
+
+def _packet_schema_deviations(packet: dict) -> dict:
+    """Structural comparison against the committed v1.1 schema.
+
+    ``violations`` are constraints the schema states and this packet does not
+    meet. ``notes`` are values the packet states differently from the spike
+    fixture's assumptions but which the schema does not forbid. No JSON-Schema
+    library is assumed; the schema file is read, never edited.
+    """
+    schema = json.loads(PACKET_SCHEMA.read_text(encoding="utf-8"))
+    props = schema["properties"]
+    violations, notes = [], []
+
+    def add(target: list, path: str, reason: str, count: int = 1) -> None:
+        target.append({"path": path, "reason": reason, "count": count})
+
+    for key in schema["required"]:
+        if key not in packet:
+            add(violations, key, "required member is missing")
+    for key in sorted(set(packet) - set(props)):
+        add(violations, key, "member is not declared by the schema")
+
+    if packet["version"] not in (1, 1.1):
+        add(violations, "version", "not in the schema enum")
+    if not isinstance(packet.get("camera"), dict):
+        add(violations, "camera", "null; schema requires a camera object")
+
+    meshes = packet.get("meshes", [])
+    bad_storage = sum(1 for m in meshes if m["storage"] != "inline-json")
+    add(violations, "meshes[].storage",
+        "engine-buffer is not the schema's inline-json enum", bad_storage)
+    for field in ("positions", "indices", "positionsSha256",
+                  "indicesSha256"):
+        count = sum(1 for m in meshes if m.get(field) is None)
+        add(violations, f"meshes[].{field}",
+            "null; schema requires recovered geometry or a hash", count)
+
+    bad_index = sum(1 for d in packet["draws"] if d["indexCount"] % 3)
+    add(violations, "draws[].indexCount",
+        "source triangle-strip range is not a multiple of 3 as the schema "
+        "requires (topology is in draws[].source.topology)", bad_index)
+    bad_mesh = sum(1 for d in packet["draws"]
+                   if d["meshId"] not in {m["id"] for m in meshes})
+    if bad_mesh:
+        add(violations, "draws[].meshId",
+            "meshId is not in meshes[]", bad_mesh)
+    for field in schema["properties"]["draws"]["items"]["required"]:
+        count = sum(1 for d in packet["draws"] if field not in d)
+        if count:
+            add(violations, f"draws[].{field}",
+                "required member is missing", count)
+
+    required_11 = ["nodes", "updates", "tickDurationSeconds"]
+    missing = [k for k in required_11 if k not in packet]
+    if missing:
+        add(violations, "version 1.1 timeline",
+            "static frame: " + ", ".join(missing) + " are absent", 1)
+
+    add(notes, "meshes[].vertexCount",
+        "referenced extent of the engine buffer, not the buffer record count",
+        len(meshes))
+    add(notes, "meshes[].indexCount",
+        "referenced extent of the engine buffer, not the buffer record count",
+        len(meshes))
+    add(notes, "draws[].source.topology",
+        "schema does not model topology; strip ranges are declared in source",
+        len(packet["draws"]))
+    add(notes, "diagnostics.sequence",
+        "absent; a static frame has no tick sequence", 1)
+
+    key = lambda d: (d["path"], d["reason"])
+    return {"violations": sorted(violations, key=key),
+            "notes": sorted(notes, key=key)}
+
+
+def _packet_hash_node(path: Path) -> str:
+    """Hash the packet with the committed packet-format.mjs canonicaliser."""
+    script = SPIKE / "packet-hash-check.mjs"
+    script.write_text(
+        "import { readFileSync } from 'node:fs';\n"
+        "import { pathToFileURL } from 'node:url';\n"
+        "const [packetPath, formatPath] = process.argv.slice(2);\n"
+        "const fmt = await import(pathToFileURL(formatPath).href);\n"
+        "const packet = JSON.parse(readFileSync(packetPath, 'utf8'));\n"
+        "console.log(fmt.packetHash(packet));\n",
+        encoding="utf-8")
+    run = subprocess.run(
+        [str(NODE), str(script), str(path), str(PACKET_FORMAT)],
+        capture_output=True, text=True, timeout=120)
+    if run.returncode:
+        raise Failed("the committed packet-format.mjs hash failed: "
+                     + (run.stderr or "")[-1000:])
+    return run.stdout.strip()
+
+
+def compare_engine_packet(out: str, result: dict, wasm: dict,
+                          patch_sha: str) -> tuple:
+    """P54 gate: build, write, hash and schema-check the engine packet."""
+    packet, raw = build_engine_packet(out, result, wasm, patch_sha)
+    again, raw_again = build_engine_packet(out, result, wasm, patch_sha)
+    if raw != raw_again or packet["hash"] != again["hash"]:
+        raise Failed("the engine packet build is not deterministic")
+    ENGINE_PACKET.write_bytes(raw)
+
+    body = {k: v for k, v in packet.items() if k != "hash"}
+    recomputed = "sha256:" + hashlib.sha256(
+        _canonical_json(body).encode("utf-8")).hexdigest()
+    if recomputed != packet["hash"]:
+        raise Failed("the packet hash does not match its canonical body")
+    committed = _packet_hash_node(ENGINE_PACKET)
+    if committed != packet["hash"]:
+        raise Failed("the packet hash does not match the committed "
+                     "packet-format.mjs canonical hash")
+
+    extras = packet["diagnostics"]["extras"]
+    counts = extras["counts"]
+    actual = {
+        "bytes": len(raw),
+        "fileSha256": sha256_file(ENGINE_PACKET),
+        "hash": packet["hash"],
+        "draws": len(packet["draws"]),
+        "meshes": len(packet["meshes"]),
+        "materials": len(packet["materials"]),
+        "nodeRecords": counts["nodePacket"]["records"],
+        "sectionRecords": counts["sections"]["records"],
+        "drawable": counts["combined"]["drawable"],
+        "nodeDrawable": counts["nodePacket"]["drawable"],
+        "sectionDrawable": counts["sections"]["drawable"],
+        "nodeOmitted": counts["nodePacket"]["omitted"],
+        "sectionOmitted": counts["sections"]["omitted"],
+        "textures": counts["textures"]["registry"],
+        "staticSection": counts["textures"]["staticSection"],
+        "runtimeSection": counts["textures"]["runtimeSection"],
+        "staticAll": counts["textures"]["staticAll"],
+        "runtimeAll": counts["textures"]["runtimeAll"],
+        "uvResolved": counts["uv0"]["resolved"],
+        "uvUnresolved": counts["uv0"]["unresolved"],
+        "triangleTotal": packet["diagnostics"]["triangleTotal"],
+        "vertexTotal": packet["diagnostics"]["vertexTotal"],
+    }
+    for key, pinned in ENGINE_PACKET_PINS.items():
+        if pinned is not None and actual[key] != pinned:
+            raise Failed(f"engine packet {key} {actual[key]} != pinned {pinned}")
+
+    # The packet must not add or drop evidence the committed phases pinned.
+    evidence = {
+        "node packet records": 312,
+        "node direct records": 255,
+        "node instance records": 57,
+        "node drawable": 152,
+        "node direct drawable": 95,
+        "node instance drawable": 57,
+        "node omitted": 160,
+        "section records": 1355,
+        "section drawable": 299,
+        "section draws": 299,
+        "section triangles": 47790,
+        "section vertices": 78712,
+        "section omitted": 1056,
+        "combined records": 1667,
+    }
+    got = {
+        "node packet records": counts["nodePacket"]["records"],
+        "node direct records": counts["nodePacket"]["direct"],
+        "node instance records": counts["nodePacket"]["instance"],
+        "node drawable": counts["nodePacket"]["drawable"],
+        "node direct drawable": counts["nodePacket"]["directDrawable"],
+        "node instance drawable": counts["nodePacket"]["instanceDrawable"],
+        "node omitted": counts["nodePacket"]["omitted"],
+        "section records": counts["sections"]["records"],
+        "section drawable": counts["sections"]["drawable"],
+        "section draws": counts["sections"]["draws"],
+        "section triangles": counts["sections"]["triangles"],
+        "section vertices": counts["sections"]["vertices"],
+        "section omitted": counts["sections"]["omitted"],
+        "combined records": counts["combined"]["records"],
+    }
+    for label, expected in evidence.items():
+        if got[label] != expected:
+            raise Failed(f"engine packet {label} {got[label]} != {expected}")
+
+    if counts["nodePacket"]["direct"] + \
+            counts["nodePacket"]["instance"] != counts["nodePacket"]["records"]:
+        raise Failed("node packet record split does not add up")
+    if packet["diagnostics"]["drawCount"] != len(packet["draws"]):
+        raise Failed("diagnostics.drawCount does not match draws[]")
+    if packet["diagnostics"]["instancesEmitted"] != 57:
+        raise Failed("the packet does not carry all 57 node-253 instances")
+    if packet["diagnostics"]["instancesOmitted"] != 0:
+        raise Failed("an instance was omitted")
+    if len({d["id"] for d in packet["draws"]}) != len(packet["draws"]):
+        raise Failed("duplicate draw id in the packet")
+    if len({m["id"] for m in packet["meshes"]}) != len(packet["meshes"]):
+        raise Failed("duplicate mesh id in the packet")
+    if len({m["id"] for m in packet["materials"]}) != len(packet["materials"]):
+        raise Failed("duplicate material id in the packet")
+    for draw in packet["draws"]:
+        if draw["indexCount"] <= 0 or draw["vertexCount"] <= 0:
+            raise Failed(f"{draw['id']} has an empty source range")
+        if len(draw["world"]) != 16:
+            raise Failed(f"{draw['id']} world is not 16 floats")
+        if (draw["worldKind"] == "packet-transform") != \
+                (draw["source"]["kind"] == "instance"):
+            raise Failed(f"{draw['id']} worldKind does not match its kind")
+        if draw["source"]["uv0"] is not None:
+            if draw["source"]["uv0"]["vertexFirst"] != draw["vertexOffset"]:
+                raise Failed(f"{draw['id']} UV0 first vertex != packet "
+                             "vertexOffset")
+            if draw["source"]["uv0"]["vertexCount"] != draw["vertexCount"]:
+                raise Failed(f"{draw['id']} UV0 vertex count != packet range")
+    if len(packet["diagnostics"]["extras"]["nodes"]) != 1:
+        raise Failed("the node-253 node record is missing")
+    if extras["nodes"][0]["drawIds"] != [d["id"] for d in packet["draws"]
+                                         if d["source"]["kind"] == "instance"]:
+        raise Failed("the node-253 drawIds do not match the instance draws")
+    if len(extras["sections"]) != 6:
+        raise Failed("the packet does not carry all six track sections")
+
+    deviations = _packet_schema_deviations(packet)
+    if ENGINE_PACKET_DEVIATIONS is not None and \
+            deviations != ENGINE_PACKET_DEVIATIONS:
+        raise Failed("the packet schema deviation list changed: "
+                     + json.dumps(deviations, indent=2))
+    return {
+        "path": str(ENGINE_PACKET),
+        "bytes": actual["bytes"],
+        "fileSha256": actual["fileSha256"],
+        "hash": actual["hash"],
+        "canonicalHash": recomputed,
+        "committedCanonicalHash": committed,
+        "counts": actual,
+        "schema": {
+            "schema": str(PACKET_SCHEMA),
+            "conformant": not deviations["violations"],
+            "violations": deviations["violations"],
+            "notes": deviations["notes"],
+        },
+        "scope": "engine CPU data only; static frame; no renderer, GPU, "
+                 "browser, vehicle or game claim",
+    }
+
+
 def whole_files(result: dict) -> dict:
     report = {}
     for label, path in (("levelrender", LEVEL_RENDER), ("levelphysics", LEVEL_PHYSICS)):
@@ -3234,6 +4201,7 @@ def main() -> int:
 
     index = reference_index()
     result = run_harness(first, "a")
+    stdout = result.pop("stdout")
     report["harness"] = {k: v for k, v in result.items()
                          if k not in ("chunks", "chunkinfo", "textures",
                                       "texture_bytes", "texture_unsupported",
@@ -3258,6 +4226,8 @@ def main() -> int:
     report["textures"] = compare_engine_textures(result)
     report["track_textures"] = compare_track_textures(result)
     report["track_uv"] = compare_track_uv(result, index)
+    report["engine_packet"] = compare_engine_packet(
+        stdout, result, report["wasm"], report["patch_sha256"])
     report["whole_files"] = whole_files(result)
     report["levelrender_sha256"] = sha256_file(LEVEL_RENDER)
     report["levelphysics_sha256"] = sha256_file(LEVEL_PHYSICS)
@@ -3374,6 +4344,21 @@ def main() -> int:
           f"{tuv['decodedTrackDraws']} draws on {tuv['decodedTrackSources']} "
           f"track), {tuv['notDecodedBindings']} undecoded, "
           f"aggregate={tuv['bindingAggregate']}")
+    ep = report["engine_packet"]
+    ec = ep["counts"]
+    print(f"engine packet   {ep['bytes']} B sha256={ep['fileSha256'][:16]} "
+          f"hash={ep['hash']}")
+    print(f"engine counts   {ec['nodeRecords']} node records / "
+          f"{ec['nodeDrawable']} drawable, {ec['sectionRecords']} section "
+          f"records / {ec['sectionDrawable']} drawable, {ec['draws']} draws, "
+          f"{ec['meshes']} meshes, {ec['materials']} materials")
+    print(f"engine textures {ec['staticSection']} static / "
+          f"{ec['runtimeSection']} runtime section bindings, "
+          f"{ec['textures']} distinct decoded sources, UV0 "
+          f"{ec['uvResolved']}/{ec['uvResolved']}")
+    print(f"engine schema   {len(ep['schema']['violations'])} violation(s) / "
+          f"{len(ep['schema']['notes'])} note(s) vs "
+          f"{Path(ep['schema']['schema']).name}")
     print(f"levelrender     {report['whole_files']['levelrender']['bytes']} B "
           f"fnv=0x{report['whole_files']['levelrender']['fnv1a64']}")
     print(f"levelphysics    {report['whole_files']['levelphysics']['bytes']} B "

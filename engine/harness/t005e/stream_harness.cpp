@@ -4167,7 +4167,7 @@ void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resource
 				"primitiveIndex=%d base=%d material=%d:%d flags=0x%08x "
 				"streams=%d world=%s worldRow=%d materialId=%s "
 				"materialReason=%s vb=%d:%d ib=%d:%d vtxCount=%d idxCount=%d "
-				"triangles=%d drawable=%d reason=%s\n",
+				"triangles=%d topology=%d drawable=%d reason=%s\n",
 				i, (int)range.chunk, n, (int)instance.primitiveIndex,
 				baseIndex, (int)instance.material.index,
 				(int)instance.material.listIndex, (unsigned)instance.flags,
@@ -4177,7 +4177,8 @@ void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resource
 				packetRecord.materialReason, (int)binding.vbBlock,
 				(int)binding.vbIndex, (int)binding.ibBlock, (int)binding.ibIndex,
 				packetRecord.vertexCount, packetRecord.indexCount,
-				triangleCount, packetRecord.drawable ? 1 : 0,
+				triangleCount, base != 0 ? (int)base->topology : -1,
+				packetRecord.drawable ? 1 : 0,
 				packetRecord.reason );
 
 			emitPacketRecord( packet, packetRecord, "webfiledraw" );

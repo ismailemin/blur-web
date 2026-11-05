@@ -623,6 +623,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 5 araç bitiriyor: Audi **14,15 s**, Corvette 14,65, Lotus 14,77, Dodge 14,92, Focus 15,22; 2/2 checkpoint, 0 respawn, 0 NaN.
 - `verify_e1_drive` **550/550**; sprint/short/restart/respawn/survey capture console **0**; 310 m paket 500 draw / 1.060 update. Kanıt: `docs/work/verification/T-007-310m-course.md`.
 
+## 5 Kasım 2026 — engine packet v1.1 export
+
+- `_work/engine-stream-spike/out/packet-engine.json`: **451 draw / 35 mesh / 252 materyal**, 2.246.207 B, hash `0e57f1e5…baba8`; 83.210 üçgen / 131.880 vertex; UV 299/299; 297 statik + 2 runtime doku.
+- Render-packet v1.1 şemasına karşı **8 ihlal / 4 not**: timeline yok, topology strip (346 range 3'ün katı değil), `engine-buffer` enum dışı, geometry alanları null. Producer kanıtı; tüketici dönüşümü gerekli.
+- 56 nesne, 872.869 B, **99/99**, PC parity. Kanıt: `docs/work/verification/T-007-engine-packet.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.
