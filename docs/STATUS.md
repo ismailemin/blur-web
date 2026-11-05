@@ -629,6 +629,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Render-packet v1.1 şemasına karşı **8 ihlal / 4 not**: timeline yok, topology strip (346 range 3'ün katı değil), `engine-buffer` enum dışı, geometry alanları null. Producer kanıtı; tüketici dönüşümü gerekli.
 - 56 nesne, 872.869 B, **99/99**, PC parity. Kanıt: `docs/work/verification/T-007-engine-packet.md`.
 
+## 6 Kasım 2026 — manuel sürüş aspect hatası
+
+- Kullanıcı PoC'de araç hareket etmiyordu. Kök neden: `app.js` canvas aspect'i (2,07) packet kamera aspect'ine (1,78) eşit değilse **hard throw** ediyordu; sayfa `consumer=error`, tick 1'de kalıyordu.
+- Düzeltme: `applyCanvasAspect()` canvas oranını `consumer.cameraShape.aspect` ve `session.packet.camera.aspect`'e uygular; resize dinlenir; throw kaldırıldı.
+- CDP manuel W testi: tick 93→274, hız **31,36 m/s**, console 0. `verify_e1_drive` **570/570**.
+
 ## 6 Kasım 2026 — araç dokuları entegre
 
 - 5 araçta 491 draw'dan **224'ü** gerçek albedo + UV0 ile dokulandı: Corvette 50, Lotus 48, Dodge 42, Focus 37, Audi 47; 40 doku / 18.178.048 B RGBA.

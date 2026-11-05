@@ -1649,6 +1649,14 @@ function frame(nowMs) {
   requestAnimationFrame(frame);
 }
 
+function applyCanvasAspect() {
+  if (!consumer || !consumer.cameraShape) return;
+  const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+  consumer.cameraShape.aspect = aspect;
+  if (session && session.packet && session.packet.camera) session.packet.camera.aspect = aspect;
+}
+window.addEventListener('resize', applyCanvasAspect);
+
 async function main() {
   state.consumer = 'loading';
   publish();
@@ -1659,11 +1667,7 @@ async function main() {
     state.adapter = consumer.adapterInfo
       ? [consumer.adapterInfo.vendor, consumer.adapterInfo.architecture, consumer.adapterInfo.device].filter(Boolean).join(' / ') || 'unnamed adapter'
       : 'unnamed adapter';
-    const telemetryAspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
-    if (Math.abs(telemetryAspect - session.packet.camera.aspect) > 0.01) {
-      throw new Error('canvas aspect ' + telemetryAspect.toFixed(4) + ' does not match the packet camera aspect ' +
-                      session.packet.camera.aspect.toFixed(4));
-    }
+    applyCanvasAspect();
     state.consumer = 'running';
     publish();
     if (consumer.device) await consumer.device.queue.onSubmittedWorkDone();
@@ -1690,11 +1694,7 @@ async function main() {
     ? [consumer.adapterInfo.vendor, consumer.adapterInfo.architecture, consumer.adapterInfo.device].filter(Boolean).join(' / ') || 'unnamed adapter'
     : 'unnamed adapter';
 
-  const canvasAspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
-  if (Math.abs(canvasAspect - session.packet.camera.aspect) > 0.01) {
-    throw new Error('canvas aspect ' + canvasAspect.toFixed(4) + ' does not match the packet camera aspect ' +
-                    session.packet.camera.aspect.toFixed(4));
-  }
+  applyCanvasAspect();
   if (HOLD !== null && LEGACY_DRIVE && HOLD > SCRIPT_TICKS) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sequence (' + SCRIPT_TICKS + ')');
   }
