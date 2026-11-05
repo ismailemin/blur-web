@@ -466,4 +466,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Browser: 20 capture (4 tick × 5 araç), console **0**, geometri 3 upload/1.090.380 B. 18/20 packet hash birebir; 2'si kamera `atan2` bir-ulp (state/matris birebir). Araç seçici + `?car=` + `--car` çalışıyor.
 - Sınır: her araç Corvette C3 gövdesiyle çiziliyor (per-car mesh yok), teker yok. Kanıt: `docs/work/verification/T-007-multi-car.md`.
 
+## 5 Kasım 2026 — PoC çalıştırılabilir
+
+- `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.
+- Sunucu doğrulandı: `/` HTTP 200, `e1_drive.wasm` 1.003.249 B HTTP 200.
+- 5 araç seçici ve `?car=` URL'i; scripted mod `?script=drive&car=...`.
+- Kullanıcı testi için hazır; görsel sadakat/teker/engine draw-list işleri devam ediyor.
+
 

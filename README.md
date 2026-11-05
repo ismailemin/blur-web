@@ -96,6 +96,10 @@ For a physical Chrome/Brave check of the current asset viewer, see
 [`docs/handoff/PHYSICAL_BROWSER_TEST.md`](docs/handoff/PHYSICAL_BROWSER_TEST.md).
 That build is an asset viewer, **not** a playable game.
 
+For the drivable wasm/WebGPU PoC (River, five real XT cars), see
+[`docs/handoff/E1_POC.md`](docs/handoff/E1_POC.md) and run
+`tools/run_e1_poc.ps1`. It is a physics/renderer slice, not the full game.
+
 ## Scope and non-goals
 
 - Players must not need to install the Windows game or BlurRebuilt.

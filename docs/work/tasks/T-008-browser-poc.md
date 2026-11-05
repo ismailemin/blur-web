@@ -22,7 +22,8 @@ sürüşü deneyebileceği PoC.
 - [x] Her araçta settle + gaz/fren sürüşü çalışıyor; NaN yok, temas var.
 - [x] Her araç için ayrı deterministik state hash'i; iki koşu aynı.
 - [x] Headless Edge/WebGPU: 20 capture, console 0.
-- [ ] Tek URL/paketleme + kullanıcı kılavuzu (`docs/handoff/E1_POC.md`).
+- [x] Tek URL/paketleme + kullanıcı kılavuzu (`docs/handoff/E1_POC.md`
+  ve `tools/run_e1_poc.ps1`; `http://127.0.0.1:8801/`).
 - [x] Ana suite/CTest/engine verifier'ları regresyonsuz.
 
 ## Alt görevler / agent eşlemesi
