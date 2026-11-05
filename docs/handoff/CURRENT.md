@@ -275,6 +275,12 @@ aynı. Kanıt: `docs/work/verification/T-007-soak.md`.
 bileşen 109 m uzakta. Sıradaki: sprint'i 539,81 m'ye uzatmak. Kanıt:
 `docs/work/analysis/track-coverage.md`.
 
+**Engine track sections (P44):** 6 section engine draw list'inde **299 draw /
+47.790 üçgen / 78.712 vertex**; bounds 6/6 1e-5, primitive offset 299/299 eşit;
+packet hash `8b3a40324410327f`; 2 runtime-only materyal `null` + neden; 56 nesne,
+859.568 B, **88/88**, PC parity. Kanıt:
+`docs/work/verification/T-007-drawlist-track.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

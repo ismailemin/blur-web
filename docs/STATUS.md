@@ -567,6 +567,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Heap **268.435.456 B sabit**; scheduler pool head 5/queued 2; GPU buffer 208 create / 200 destroy / 8 live; JS heap GC sonrası 39,87→38,05 MB (sızıntı yok).
 - Console **0**, abort 0, NaN 0; 38 checkpoint iki koşuda aynı. `verify_e1_drive` **488/488**, soak gate PASS. Kanıt: `docs/work/verification/T-007-soak.md`.
 
+## 5 Kasım 2026 — engine geniş pist section'ları
+
+- 6 section (g56-n289, g58-n265, g50-n265, g71-n209, g64-n209, g59-n265) engine CPU draw list'ine alındı.
+- **299 draw / 47.790 üçgen / 78.712 vertex** — track-coverage referansıyla birebir; bounds 6/6 1e-5, primitive offset 299/299; packet hash `8b3a40324410327f`.
+- 2 `g50-n265` draw'ı runtime-only materyal: `materialId=null` + neden. 56 nesne, 859.568 B, **88/88**, PC parity. Kanıt: `docs/work/verification/T-007-drawlist-track.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

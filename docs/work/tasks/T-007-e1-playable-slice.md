@@ -107,6 +107,10 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - **Packet:** 312 kayıt (255 direct + 57 instance), **152 drawable**;
   hash `7c29fb2ec7769709`; 56 nesne, 849.609 B, 80/80, PC parity.
 - Dokular: 102/102 decode (P34); materyaller 243 satır / 26 tip.
+- **Track sections (P44):** 6 section (g56-n289, g58-n265, g50-n265,
+  g71-n209, g64-n209, g59-n265) engine draw list'inde **299 draw / 47.790
+  üçgen / 78.712 vertex**; bounds 6/6 1e-5, 299/299 primitive offset eşit;
+  packet hash `8b3a40324410327f`; 2 runtime-only materyal `null` + neden.
 - Kalan: sampling/UV/wrap/filter, visibility/culling/LOD, `ProcessLoadChunk`;
   PoC producer'ına bağlama.
 - Kanıt: `docs/work/verification/T-007-drawlist-57.md`,

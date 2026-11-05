@@ -1325,3 +1325,158 @@ textures        102/102 static textures decoded, 0 unsupported, 109808 B, aggreg
 texture compare 102/102 name+hash+size+format+RGBA equal to probes/asset-reader texture_inspect --raw
 verdict         PASS
 ```
+
+## 17. P44 — six-section 540 m track draw list
+
+This section adds the six committed sections of P41's 540 m River corridor to the
+engine CPU draw list. It remains a data-extraction record: no renderer, GPU,
+browser, vehicle or game claim is made, and `StreamData::ProcessLoadChunk` is
+still not driven. P27/P30/P32/P34/P38 results are unchanged.
+
+### 17.1 What changed
+
+`stream_harness.cpp` gained a section pass that mirrors the committed survey's
+selection rule (`tools/inspect_level_chunk.py`, `geometry()`): a primitive is
+part of a section when its POSITION vertex-buffer block and its index-buffer
+block both equal that section's geometry block.
+
+For each of the six sections the harness:
+
+1. locates the geometry block and the node block through the engine
+   `ChunkInfo` table with the existing `findChunkItem(block, lod=0)`. Both the
+   item count (`geometryMatches`/`nodeMatches`) and the located chunk/item are
+   printed; 0 matches or more than one match stops that section with
+   `sectionGeometryBlockNotInStream`/`sectionGeometryBlockAmbiguous` (and the
+   node equivalent);
+2. runs the same prerequisite flow as P38 for the geometry chunk and the node
+   chunk. All twelve lookups declare **0** prerequisites; the printed record is
+   taken from the engine table, not assumed;
+3. reads both chunks through `StreamManager` and parses them with the same
+   `LodReader<ResourceBlock::Resources>` deserialiser (no GPU object);
+4. emits every primitive into a separate `PacketState` with the
+   `webfiledraw section` print prefix, so the P30 packet hash, the P30 draw
+   records and the P34 texture-source set cannot change;
+5. decodes the section bounds from the **retained VB payload** already in the
+   arena, using the POSITION0 declaration element of each used buffer
+   (`type` 6 = 3×float, 7 = 4×float, 9 = 3×half; any other type, a non-zero
+   method, a compressed buffer, an endian-swap flag or a missing payload is a
+   named failure, never a guess).
+
+The six node chunks contain **one render list each and zero instances**
+(verified with the committed reader and printed by the harness). There is
+therefore no instance world matrix to emit for these sections: direct draws
+keep `world=null`, `worldReason=noInstanceTransform`, exactly as P27 does, and
+the geometry is already at its source world positions. No transform is
+invented. `instancesApplied:false` from the survey is preserved.
+
+### 17.2 Measured result (`verify_stream.py --fresh`, exit 0, 125.5 s)
+
+| section | geometry block / chunk / item | node block / chunk / item | draws | triangles | vertices |
+| --- | --- | --- | ---: | ---: | ---: |
+| `g56-n289` | 56 / 121 / 0 | 289 / 71 / 0 | 49 | 9,824 | 14,508 |
+| `g58-n265` | 58 / 156 / 0 | 265 / 59 / 0 | 41 | 7,393 | 12,227 |
+| `g50-n265` | 50 / 155 / 0 | 265 / 59 / 0 | 44 | 7,740 | 13,874 |
+| `g71-n209` | 71 / 122 / 0 | 209 / 31 / 0 | 56 | 6,736 | 11,524 |
+| `g64-n209` | 64 / 154 / 0 | 209 / 31 / 0 | 40 | 6,688 | 11,145 |
+| `g59-n265` | 59 / 119 / 0 | 265 / 59 / 0 | 69 | 9,409 | 15,434 |
+| **total** | | | **299** | **47,790** | **78,712** |
+
+Section bounds (engine, from the retained source positions):
+
+| section | bounds min x,y,z | bounds max x,y,z | draw hash |
+| --- | --- | --- | --- |
+| `g56-n289` | -374.990601, -2.72654033, 671.477905 | 189.129425, 50.2557755, 1606.3313 | `81c1cf5a5702e2ac` |
+| `g58-n265` | -330.12027, -5.82877922, 711.206909 | 241.082306, 22.8707752, 1202.47546 | `1121e16df1fd8065` |
+| `g50-n265` | -373.875916, -5.75075388, 519.184814 | 332.362732, 79.0795364, 1155.19287 | `9afd764fbb34c74e` |
+| `g71-n209` | -27.1878548, -1.74086308, 868.362 | 573.662292, 20.1502361, 1582.56165 | `5bc1ee13936809f7` |
+| `g64-n209` | 28.1798096, -1.7408576, 1125.40686 | 382.335907, 14.6068697, 1496.89636 | `f29ddf8870f12404` |
+| `g59-n265` | -102.067574, -1.61357033, 708.276367 | 486.852997, 21.3189697, 1455.15247 | `599cafeb75722454` |
+
+- Section packet: **1,355 records** (all direct), **299 drawable**, **1,056
+  omitted other-block**, `instanceRecords=0`, packet hash
+  **`8b3a40324410327f`**.
+- Materials: **297** drawable records carry a static `g_tAlbedo` id; **2**
+  `g50-n265` draws (node-chunk primitives 241 and 242) name a runtime-only
+  albedo parameter and keep `materialId=null`,
+  `materialReason=runtimeOnlyAlbedoParameter`. No id is invented.
+- GPU objects: **0**. Arena exhaustion, buffer/primitive/declaration overflow:
+  **0** in every section.
+
+### 17.3 Reference match
+
+The verifier reads `_work/track-coverage/corridor.json` and pins its canonical
+hash `sha256:10e197…49d0c`. It also cross-checks the six sections in the
+`visual.json` source (46 sections, SHA-256 `877b4dc7…cb67`).
+
+| Check | Result |
+| --- | --- |
+| section set and geometry/node block identities | 6/6 equal |
+| geometry/node chunk indices | 6/6 equal (121/71, 156/59, 155/59, 122/31, 154/31, 119/59) |
+| selected item | 0 in all twelve lookups, the reference's first LOD0 item |
+| per-section draws / triangles / vertices | **6/6 exactly equal** |
+| per-section bounds at 1e-5 | **6/6 equal**, max absolute difference **4.49e-6** |
+| per-draw primitive offsets (`engine_source − 4 == reader primitiveOffset`) | **299/299 equal** |
+| sums | **299 / 47,790 / 78,712**, equal to `corridor.json` |
+| corridor vs visual counts and bounds | equal |
+| first mismatch | **none**, so no offset is reported |
+
+The primitive-offset comparison is the exact-draw check: it compares the set of
+draw records in node-chunk archive order, not only their count. A mismatch would
+name the section, chunk, item, draw index and both byte offsets before raising;
+none occurred.
+
+### 17.4 Determinism, PC parity and gate
+
+- Patch unchanged: 16 modified files, 77,284 B, SHA-256
+  `5fa2b1b743c388030d1a0bc8b73fe951acfea92406a29cf7b71b2dbb75019b71`.
+- Wasm **859,568 B**, SHA-256
+  `bbd084b3e763225171a7b2eaa4f10dee48fbfa7b151804e4748e9f834c3269e0`,
+  **56 objects**; the two builds inside a run are byte-identical and two full
+  runs reproduce the same module, packet hash and totals.
+- Harness **88/88** checks (was 80/80). The six `drawlist_section_<key>`
+  checks plus `drawlist_section_all` and `drawlist_section_packet` are new.
+- The two harness runs inside a verify run print identical stdout
+  (`a__run1.log` == `a__run2.log`).
+- The four patched engine TUs still preprocess identically:
+  `streammanager.cpp` 108,025, `streamdata.cpp` 111,514, `archive.cpp` 111,399,
+  `resources.cpp` 108,104 code lines.
+- Portable suite: **29/29 PASS**, no regression.
+
+### 17.5 Remaining blockers
+
+1. Textures are indices plus CPU RGBA; nothing is sampled or bound. The P34
+   102/102 set is unchanged; the section pass does not extend it.
+2. Two `g50-n265` draws use runtime-only material values
+   (`DATA_INDEX`/`TEXTURE_PTR`). Their albedo id stays null with an explicit
+   reason; no static source exists in the committed data.
+3. `StreamData::ProcessLoadChunk` is still not driven. These six chunks declare
+   no prerequisites, so the resolved property here is the read/parse path, not
+   the engine's cache residency state.
+4. No visibility, culling, LOD selection, sorting or batching; LOD0 direct draws
+   only. `instancesApplied:false` is preserved; the six render lists carry no
+   instances.
+5. No renderer, GPU, browser, vehicle or game claim; `C_OverlayFs` remains one
+   read-only layer.
+
+### 17.6 Evidence (P44)
+
+| Path | Content |
+| --- | --- |
+| `_work/logs/engine-stream-spike/p44-verify-fresh-final-3.json` | every number above, machine-written |
+| `_work/logs/engine-stream-spike/p44-verify-fresh-final-3.log` | fresh PASS transcript, 125.5 s |
+| `_work/logs/engine-stream-spike/p44-verify-reuse-final-3.log` | second full run, identical, 113.8 s |
+| `_work/logs/engine-stream-spike/a__run1.log` / `a__run2.log` | identical harness stdout, including all section records |
+| `_work/logs/engine-stream-spike/p44-asset-suite-final-2.log` | 29/29 portable suite |
+| `_work/track-coverage/corridor.json` | P41 section reference, canonical hash |
+| `_work/track-coverage/visual.json` | P41 per-draw offsets and bounds |
+| `_work/engine-stream-spike/out/stream_harness_a.wasm` | module, 859,568 B |
+| `docs/work/verification/T-007-drawlist-track.md` | verification record |
+
+### 17.7 Commands
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py engine/verify_stream.py --fresh
+& $py engine/verify_stream.py
+& $py tools/verify_asset_probe.py --skip-build
+```

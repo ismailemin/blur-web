@@ -220,6 +220,11 @@ EXPECTED_CHECKS = [
     # P34 static texture decode from the River draw-list material sources
     "texture_refs", "texture_decoded", "texture_unsupported",
     "texture_payload", "texture_no_gpu", "texture_hash",
+    # P44 six track sections
+    "drawlist_section_g56_n289", "drawlist_section_g58_n265",
+    "drawlist_section_g50_n265", "drawlist_section_g71_n209",
+    "drawlist_section_g64_n209", "drawlist_section_g59_n265",
+    "drawlist_section_all", "drawlist_section_packet",
 ]
 
 # The committed asset-reader reference for the same level. Both pairs are
@@ -240,6 +245,17 @@ FULL_NODE_BLOCK31 = {"block": 31, "chunk": 96, "item": 2,
                      "usedVertices": 754}
 PACKET_HASH = "7c29fb2ec7769709"
 PREREQUISITE_HASH = "116a3286acb5f6c0"
+
+# P44: the six committed track sections (P41 survey). The reference file is the
+# committed corridor result; the totals are its `draws / triangles / vertices`.
+TRACK_SECTIONS = ("g56-n289", "g58-n265", "g50-n265", "g71-n209",
+                  "g64-n209", "g59-n265")
+TRACK_TOTAL = {"draws": 299, "triangles": 47790, "vertices": 78712}
+TRACK_CORRIDOR = ROOT / "_work/track-coverage/corridor.json"
+TRACK_VISUAL = ROOT / "_work/track-coverage/visual.json"
+TRACK_CORRIDOR_HASH = ("sha256:10e197c119a5edc79d7c54d1f5f728c4"
+                       "f1e2a8006a3e76d08caf0e0c8a349d0c")
+TRACK_SECTION_PACKET_HASH = "8b3a40324410327f"
 
 # The fourteen patched files and their required token counts. Nothing else may
 # be in the patch. Counts are exact: a web branch that grows without this table
@@ -777,6 +793,73 @@ def run_harness(js: Path, tag: str) -> dict:
         r"materialWorldRows=(\d+) materialType8Rows=(\d+) hash=0x([0-9a-f]{16})",
         out)
     packet_records = parse_packet_records(out)
+    # P44: the six track sections print with their own prefixes, so the P30
+    # packet regex above cannot see them and their hashes stay independent.
+    section_chunks = {}
+    for m in re.finditer(
+            r"webfiledraw section chunk key=(\S+) geometryBlock=(\d+) "
+            r"geometryChunk=(-?\d+) geometryItem=(-?\d+) geometryLocated=(\d+) "
+            r"geometryMatches=(\d+) nodeBlock=(\d+) nodeChunk=(-?\d+) "
+            r"nodeItem=(-?\d+) nodeLocated=(\d+) nodeMatches=(\d+)", out):
+        section_chunks[m.group(1)] = {
+            "geometryBlock": int(m.group(2)), "geometryChunk": int(m.group(3)),
+            "geometryItem": int(m.group(4)), "geometryLocated": int(m.group(5)),
+            "geometryMatches": int(m.group(6)),
+            "nodeBlock": int(m.group(7)), "nodeChunk": int(m.group(8)),
+            "nodeItem": int(m.group(9)), "nodeLocated": int(m.group(10)),
+            "nodeMatches": int(m.group(11)),
+        }
+    section_unsupported = [
+        m.group(1) for m in re.finditer(
+            r"webfiledraw section unsupported (.*)", out)
+    ]
+    section_summaries = {}
+    for m in re.finditer(
+            r"webfiledraw section summary key=(\S+) geometryBlock=(\d+) "
+            r"nodeBlock=(\d+) geometryChunk=(-?\d+) geometryItem=(-?\d+) "
+            r"nodeChunk=(-?\d+) nodeItem=(-?\d+) geometryDeclared=(-?\d+) "
+            r"nodeDeclared=(-?\d+) prereqChunks=(\d+) "
+            r"prereqHash=0x([0-9a-f]{16}) nodes=(\d+) renderlists=(\d+) "
+            r"primitives=(\d+) draws=(\d+) otherblock=(\d+) unbound=(\d+) "
+            r"triangles=(\d+) vertices=(\d+) indexerrors=(\d+) instances=(\d+) "
+            r"vbs=(\d+) ibs=(\d+) bounds=(\S+) "
+            r"boundsMin=([-+0-9.eE,]+) boundsMax=([-+0-9.eE,]+) "
+            r"drawhash=0x([0-9a-f]{16}) gpu=(\d+)", out):
+        key = m.group(1)
+        section_summaries[key] = {
+            "key": key,
+            "geometryBlock": int(m.group(2)), "nodeBlock": int(m.group(3)),
+            "geometryChunk": int(m.group(4)), "geometryItem": int(m.group(5)),
+            "nodeChunk": int(m.group(6)), "nodeItem": int(m.group(7)),
+            "geometryDeclared": int(m.group(8)),
+            "nodeDeclared": int(m.group(9)),
+            "prereqChunks": int(m.group(10)), "prereqHash": m.group(11),
+            "nodes": int(m.group(12)), "renderLists": int(m.group(13)),
+            "primitives": int(m.group(14)), "draws": int(m.group(15)),
+            "otherBlock": int(m.group(16)), "unbound": int(m.group(17)),
+            "triangles": int(m.group(18)), "vertices": int(m.group(19)),
+            "indexErrors": int(m.group(20)), "instances": int(m.group(21)),
+            "vbs": int(m.group(22)), "ibs": int(m.group(23)),
+            "bounds": m.group(24),
+            "boundsMin": [float(x) for x in m.group(25).split(",")],
+            "boundsMax": [float(x) for x in m.group(26).split(",")],
+            "drawHash": m.group(27), "gpu": int(m.group(28)),
+        }
+    section_total = None
+    m = re.search(
+        r"webfiledraw section total sections=(\d+) draws=(\d+) "
+        r"triangles=(\d+) vertices=(\d+) records=(\d+) drawable=(\d+) "
+        r"omitted=(\d+) packetHash=0x([0-9a-f]{16}) gpu=(\d+)", out)
+    if m:
+        section_total = {
+            "sections": int(m.group(1)), "draws": int(m.group(2)),
+            "triangles": int(m.group(3)), "vertices": int(m.group(4)),
+            "records": int(m.group(5)), "drawable": int(m.group(6)),
+            "omitted": int(m.group(7)), "packetHash": m.group(8),
+            "gpu": int(m.group(9)),
+        }
+    section_packet_records = parse_packet_records(
+        out, "webfiledraw section packet")
     texture_records = {}
     for m in re.finditer(
             r"webfiledraw texture block=(\d+) index=(\d+) name=(\S+) "
@@ -835,6 +918,9 @@ def run_harness(js: Path, tag: str) -> dict:
         raise Failed("the harness printed an incomplete P38 prerequisite report")
     if not (texture_summary and texture_records and texture_bytes):
         raise Failed("the harness printed an incomplete P34 texture report")
+    if not (section_total and section_chunks and section_summaries and
+            section_packet_records):
+        raise Failed("the harness printed an incomplete P44 track-section report")
     summary_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", summary.group(1))}
     counter_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", counters.group(1))}
     scene_fields = {k: int(v) for k, v in
@@ -941,6 +1027,13 @@ def run_harness(js: Path, tag: str) -> dict:
             "records": draw_records,
         },
         "textures": texture_records,
+        "track_sections": {
+            "chunks": section_chunks,
+            "unsupported": section_unsupported,
+            "summaries": section_summaries,
+            "total": section_total,
+            "packet_records": section_packet_records,
+        },
         "texture_bytes": texture_bytes,
         "texture_unsupported": texture_unsupported,
         "texture_summary": {
@@ -978,10 +1071,10 @@ def parse_draw_records(out: str) -> list[dict]:
     return records
 
 
-def parse_packet_records(out: str) -> list[dict]:
+def parse_packet_records(out: str, prefix: str = "webfiledraw packet") -> list[dict]:
     """The P30 packet-v1.1-compatible draw records as key=value dictionaries."""
     records = []
-    for m in re.finditer(r"webfiledraw packet (\d+) (.*)", out):
+    for m in re.finditer(re.escape(prefix) + r" (\d+) (.*)", out):
         record = {"index": int(m.group(1))}
         for token in m.group(2).split():
             if "=" not in token:
@@ -2049,6 +2142,313 @@ def compare_draw_list(result: dict, index: dict) -> dict:
     }
 
 
+def compare_track_sections(result: dict) -> dict:
+    """The six P41 track sections against the committed corridor reference.
+
+    Every number here comes from the engine path: geometry block, node block,
+    chunk indices and item indices are located through the engine ChunkInfo
+    table, the bytes are read through StreamManager, parsed with the engine
+    LodReader and emitted as draw records. The reference is the committed
+    `_work/track-coverage/corridor.json` (P41, canonical hash pinned) plus its
+    `visual.json` source sections. A mismatch names the section, the chunk/item
+    and the byte offsets of that section before it raises.
+    """
+    ts = result["track_sections"]
+    summaries = ts["summaries"]
+    chunk_rows = ts["chunks"]
+    total = ts["total"]
+
+    if set(summaries) != set(TRACK_SECTIONS) or \
+            set(chunk_rows) != set(TRACK_SECTIONS):
+        raise Failed(f"track section set {sorted(summaries)} != "
+                     f"{sorted(TRACK_SECTIONS)}")
+    if total["sections"] != len(TRACK_SECTIONS):
+        raise Failed(f"track section total reports {total['sections']} sections")
+    if total["gpu"] != 0:
+        raise Failed(f"track sections created {total['gpu']} GPU objects")
+    if ts["unsupported"]:
+        raise Failed("track section import reported unsupported items: " +
+                     "; ".join(ts["unsupported"]))
+
+    corridor_relative = TRACK_CORRIDOR.relative_to(ROOT).as_posix()
+    if not TRACK_CORRIDOR.is_file():
+        raise Failed(f"missing committed corridor reference {corridor_relative}")
+    corridor = json.loads(TRACK_CORRIDOR.read_text(encoding="utf-8"))
+    if corridor.get("kind") != "track-coverage.corridor":
+        raise Failed("the corridor reference has an unexpected kind")
+    if corridor.get("hash") != TRACK_CORRIDOR_HASH:
+        raise Failed(f"corridor reference canonical hash {corridor.get('hash')} "
+                     f"!= pinned {TRACK_CORRIDOR_HASH}")
+    reference_sections = corridor.get("sections") or {}
+    if set(reference_sections) != set(TRACK_SECTIONS):
+        raise Failed(f"corridor reference sections {sorted(reference_sections)} "
+                     f"!= {sorted(TRACK_SECTIONS)}")
+
+    visual_sections = {}
+    if TRACK_VISUAL.is_file():
+        visual_doc = json.loads(TRACK_VISUAL.read_text(encoding="utf-8"))
+        visual_sections = {
+            row["key"]: row for row in visual_doc.get("sections", [])
+            if row.get("status") == "ok"
+        }
+
+    table = result["chunkinfo"]
+    sums = {"draws": 0, "triangles": 0, "vertices": 0}
+    rows = []
+    offset_rows_compared = 0
+
+    def close(have: float, want: float) -> bool:
+        return abs(have - want) <= 1e-5
+
+    for key in TRACK_SECTIONS:
+        want = reference_sections[key]
+        have = summaries[key]
+        found = chunk_rows[key]
+        geometry_chunk = want["geometryChunkIndex"]
+        node_chunk = want["nodeChunkIndex"]
+        where = (f"section {key} (geometry block {want['geometryBlock']} / "
+                 f"chunk {geometry_chunk} item {found['geometryItem']}; "
+                 f"node block {want['nodeBlock']} / chunk {node_chunk} item "
+                 f"{found['nodeItem']})")
+
+        if have["geometryBlock"] != want["geometryBlock"]:
+            raise Failed(f"{where}: engine geometry block "
+                         f"{have['geometryBlock']} != reference "
+                         f"{want['geometryBlock']}")
+        if have["nodeBlock"] != want["nodeBlock"]:
+            raise Failed(f"{where}: engine node block {have['nodeBlock']} != "
+                         f"reference {want['nodeBlock']}")
+        if have["geometryChunk"] != geometry_chunk:
+            raise Failed(f"{where}: engine geometry chunk "
+                         f"{have['geometryChunk']} != reference {geometry_chunk}")
+        if have["nodeChunk"] != node_chunk:
+            raise Failed(f"{where}: engine node chunk {have['nodeChunk']} != "
+                         f"reference {node_chunk}")
+        if not found["geometryLocated"] or not found["nodeLocated"]:
+            raise Failed(f"{where}: engine did not locate both chunks")
+        if found["geometryMatches"] != 1 or found["nodeMatches"] != 1:
+            raise Failed(f"{where}: geometry matches "
+                         f"{found['geometryMatches']}, node matches "
+                         f"{found['nodeMatches']}; a section must be one "
+                         "concrete (block, lod=0) item")
+        if found["geometryChunk"] != geometry_chunk or \
+                found["nodeChunk"] != node_chunk:
+            raise Failed(f"{where}: chunk record disagrees with the summary")
+
+        expected_geometry_prereqs = len(
+            table[geometry_chunk]["prerequisites"])
+        expected_node_prereqs = len(table[node_chunk]["prerequisites"])
+        if have["geometryDeclared"] != expected_geometry_prereqs:
+            raise Failed(f"{where}: geometry chunk declares "
+                         f"{have['geometryDeclared']} prerequisites, engine "
+                         f"ChunkInfo says {expected_geometry_prereqs}")
+        if have["nodeDeclared"] != expected_node_prereqs:
+            raise Failed(f"{where}: node chunk declares {have['nodeDeclared']} "
+                         f"prerequisites, engine ChunkInfo says "
+                         f"{expected_node_prereqs}")
+        if expected_geometry_prereqs == 0 and expected_node_prereqs == 0 and \
+                have["prereqChunks"] != 0:
+            raise Failed(f"{where}: resolved {have['prereqChunks']} "
+                         "prerequisites for two prerequisite-free chunks")
+
+        for field, reference_field in (("draws", "drawCount"),
+                                       ("triangles", "triangleCount"),
+                                       ("vertices", "vertexCount")):
+            if have[field] != want[reference_field]:
+                raise Failed(f"{where}: engine {field} {have[field]} != "
+                             f"reference {reference_field} "
+                             f"{want[reference_field]}")
+            sums[field] += have[field]
+
+        if have["otherBlock"] != have["primitives"] - have["draws"]:
+            raise Failed(f"{where}: other-block {have['otherBlock']} != "
+                         f"primitives {have['primitives']} - draws "
+                         f"{have['draws']}")
+        if have["unbound"] != 0 or have["indexErrors"] != 0:
+            raise Failed(f"{where}: unbound={have['unbound']} "
+                         f"indexErrors={have['indexErrors']}")
+        if have["instances"] != 0:
+            raise Failed(f"{where}: engine reports {have['instances']} "
+                         "instances; these six node chunks carry none")
+        if have["bounds"] != "ok":
+            raise Failed(f"{where}: bounds failed with {have['bounds']}")
+        if have["gpu"] != 0:
+            raise Failed(f"{where}: created {have['gpu']} GPU objects")
+
+        want_min = want["bounds"]["min"]
+        want_max = want["bounds"]["max"]
+        for axis in range(3):
+            if not close(have["boundsMin"][axis], want_min[axis]):
+                raise Failed(f"{where}: boundsMin[{axis}] "
+                             f"{have['boundsMin'][axis]!r} != reference "
+                             f"{want_min[axis]!r} (1e-5)")
+            if not close(have["boundsMax"][axis], want_max[axis]):
+                raise Failed(f"{where}: boundsMax[{axis}] "
+                             f"{have['boundsMax'][axis]!r} != reference "
+                             f"{want_max[axis]!r} (1e-5)")
+
+        visual = visual_sections.get(key)
+        if visual is not None:
+            if (visual["drawCount"], visual["triangleCount"],
+                    visual["vertexCount"]) != (
+                    want["drawCount"], want["triangleCount"],
+                    want["vertexCount"]):
+                raise Failed(f"{where}: corridor and visual counts disagree")
+            for axis in range(3):
+                if not close(visual["bounds"]["min"][axis], want_min[axis]) or \
+                        not close(visual["bounds"]["max"][axis],
+                                  want_max[axis]):
+                    raise Failed(f"{where}: corridor and visual bounds "
+                                 "disagree")
+
+            # The committed reader's per-draw primitive offsets. The engine
+            # prints the archive position of the primitive's first field; the
+            # reader prints the same record after the 2-byte 'AR' tag and U16
+            # version, so engine_source - 4 is the reader's primitiveOffset.
+            reference_draws = visual.get("draws") or []
+            engine_offsets = [
+                record["source"] for record in ts["packet_records"]
+                if record["drawable"] == 1 and
+                record["vb"][0] == want["geometryBlock"]
+            ]
+            if len(engine_offsets) != len(reference_draws):
+                raise Failed(f"{where}: {len(engine_offsets)} engine draws != "
+                             f"{len(reference_draws)} reference draws")
+            for draw_index, (have_offset, reference) in enumerate(
+                    zip(engine_offsets, reference_draws)):
+                expected = reference["primitiveOffset"] + 4
+                if have_offset != expected:
+                    raise Failed(
+                        f"{where}: draw {draw_index} primitive offset "
+                        f"{have_offset} != reference {expected} "
+                        f"(reader offset {reference['primitiveOffset']})")
+            offset_rows_compared += len(reference_draws)
+
+        rows.append({
+            "key": key,
+            "geometryBlock": want["geometryBlock"],
+            "nodeBlock": want["nodeBlock"],
+            "geometryChunk": geometry_chunk,
+            "nodeChunk": node_chunk,
+            "draws": have["draws"],
+            "triangles": have["triangles"],
+            "vertices": have["vertices"],
+            "boundsMin": have["boundsMin"],
+            "boundsMax": have["boundsMax"],
+            "drawHash": have["drawHash"],
+        })
+
+    if sums != {"draws": TRACK_TOTAL["draws"],
+                "triangles": TRACK_TOTAL["triangles"],
+                "vertices": TRACK_TOTAL["vertices"]}:
+        raise Failed(f"track section sums {sums} != reference {TRACK_TOTAL}")
+    if (total["draws"], total["triangles"],
+            total["vertices"]) != (sums["draws"], sums["triangles"],
+                                   sums["vertices"]):
+        raise Failed(f"track section total {total} disagrees with the rows")
+
+    records = ts["packet_records"]
+    if len(records) != total["records"]:
+        raise Failed(f"track packet has {len(records)} records, summary says "
+                     f"{total['records']}")
+    if total["drawable"] != total["draws"] or \
+            total["omitted"] != total["records"] - total["drawable"]:
+        raise Failed(f"track packet shape {total} is inconsistent")
+    recomputed = packet_fnv(records)
+    if recomputed != total["packetHash"]:
+        raise Failed(f"track packet hash {total['packetHash']} != Python "
+                     f"recomputation {recomputed}")
+    if total["packetHash"] != TRACK_SECTION_PACKET_HASH:
+        raise Failed(f"track packet hash {total['packetHash']} != pinned "
+                     f"{TRACK_SECTION_PACKET_HASH}")
+
+    drawable = [r for r in records if r["drawable"] == 1]
+    omitted = [r for r in records if r["drawable"] != 1]
+    if len(drawable) != TRACK_TOTAL["draws"]:
+        raise Failed(f"{len(drawable)} drawable track records != "
+                     f"{TRACK_TOTAL['draws']}")
+
+    blocks = {want["geometryBlock"] for want in reference_sections.values()}
+    per_block = {}
+    static_material_draws = 0
+    runtime_material_draws = 0
+    for record in drawable:
+        if record["kind"] != "direct":
+            raise Failed(f"track record {record['index']} is not direct")
+        if record["world"] is not None:
+            raise Failed(f"track record {record['index']} claims an instance "
+                         "transform; these six lists have no instances")
+        if record["worldReason"] != "noInstanceTransform":
+            raise Failed(f"track record {record['index']} worldReason "
+                         f"{record['worldReason']}")
+        if record["vb"][0] != record["ib"][0] or record["vb"][0] not in blocks:
+            raise Failed(f"track record {record['index']} binds "
+                         f"vb={record['vb']} ib={record['ib']}, outside its "
+                         "section geometry block")
+        if record["vtxCount"] <= 0 or record["idxCount"] <= 0:
+            raise Failed(f"track record {record['index']} has an empty span")
+        reason = record.get("materialReason")
+        if reason == "none":
+            if record.get("materialId") in (None, "null", ""):
+                raise Failed(f"track record {record['index']} has no material id")
+            static_material_draws += 1
+        elif reason == "runtimeOnlyAlbedoParameter":
+            # DATA_INDEX/TEXTURE_PTR values are runtime-only and are not
+            # imported. The record keeps the explicit null and reason instead
+            # of inventing an id.
+            if record.get("materialId") not in (None, "null", ""):
+                raise Failed(f"track record {record['index']} claims a static "
+                             "id for a runtime-only material")
+            runtime_material_draws += 1
+        else:
+            raise Failed(f"track record {record['index']} materialReason "
+                         f"{reason}")
+        per_block[record["vb"][0]] = per_block.get(record["vb"][0], 0) + 1
+
+    if (static_material_draws, runtime_material_draws) != (297, 2):
+        raise Failed(f"track material coverage {static_material_draws} static / "
+                     f"{runtime_material_draws} runtime-only != 297/2")
+
+    for key in TRACK_SECTIONS:
+        want = reference_sections[key]
+        if per_block.get(want["geometryBlock"], 0) != want["drawCount"]:
+            raise Failed(f"section {key}: {per_block.get(want['geometryBlock'], 0)}"
+                         f" drawable records != reference {want['drawCount']}")
+
+    for record in omitted:
+        if record["reason"] != "geometryBlockNotImported":
+            raise Failed(f"track record {record['index']} omitted with "
+                         f"{record['reason']}, not an other-block primitive")
+
+    return {
+        "reference": corridor_relative,
+        "referenceVisual": TRACK_VISUAL.relative_to(ROOT).as_posix()
+            if TRACK_VISUAL.is_file() else None,
+        "referenceHash": TRACK_CORRIDOR_HASH,
+        "sections": rows,
+        "sectionCount": len(rows),
+        "draws": sums["draws"],
+        "triangles": sums["triangles"],
+        "vertices": sums["vertices"],
+        "packetRecords": len(records),
+        "packetDrawable": len(drawable),
+        "packetOmitted": len(omitted),
+        "packetHash": total["packetHash"],
+        "staticMaterialDraws": static_material_draws,
+        "runtimeOnlyMaterialDraws": runtime_material_draws,
+        "primitiveOffsetsCompared": offset_rows_compared,
+        "instances": 0,
+        "gpu": total["gpu"],
+        "scope": "direct draws only; P41 instancesApplied:false. The six node "
+                 "chunks declare 0 instances, so no world matrix exists to "
+                 "emit; direct draws keep world=null/noInstanceTransform and "
+                 "the section bounds are read from the retained source POSITION0 "
+                 "bytes. 297 draws carry a static g_tAlbedo id; 2 g50 draws "
+                 "(primitives 241/242) name a runtime-only albedo parameter and "
+                 "keep materialId=null with that explicit reason.",
+    }
+
+
 def whole_files(result: dict) -> dict:
     report = {}
     for label, path in (("levelrender", LEVEL_RENDER), ("levelphysics", LEVEL_PHYSICS)):
@@ -2253,7 +2653,7 @@ def main() -> int:
     report["harness"] = {k: v for k, v in result.items()
                          if k not in ("chunks", "chunkinfo", "textures",
                                       "texture_bytes", "texture_unsupported",
-                                      "texture_summary")}
+                                      "texture_summary", "track_sections")}
     report["reference"] = {
         "chunks": len(index["streamChunks"]),
         "resourceBlockCount": index["resourceBlockCount"],
@@ -2266,6 +2666,7 @@ def main() -> int:
     report["engine_table"] = compare_engine_table(result, index)
     report["chunks"] = compare_chunks(result, index)
     report["draw_list"] = compare_draw_list(result, index)
+    report["track_sections"] = compare_track_sections(result)
     report["textures"] = compare_engine_textures(result)
     report["whole_files"] = whole_files(result)
     report["levelrender_sha256"] = sha256_file(LEVEL_RENDER)
@@ -2360,6 +2761,10 @@ def main() -> int:
               f"{fn['block31']['triangles']} triangles / "
               f"{fn['block31']['usedVertices']} vertices; "
               f"{sb['fullNode']['instanceCount']} == independent reference")
+    trk = report["track_sections"]
+    print(f"track sections  {trk['sectionCount']} sections, {trk['draws']} draws / "
+          f"{trk['triangles']} triangles / {trk['vertices']} vertices, "
+          f"bounds at 1e-5 == {trk['reference']}, packet={trk['packetHash']}")
     print(f"levelrender     {report['whole_files']['levelrender']['bytes']} B "
           f"fnv=0x{report['whole_files']['levelrender']['fnv1a64']}")
     print(f"levelphysics    {report['whole_files']['levelphysics']['bytes']} B "

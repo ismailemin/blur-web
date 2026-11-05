@@ -249,6 +249,30 @@ bool findChunkItem( const RenderingData::Target::StreamData& table, S32 block,
 	return found == 1;
 }
 
+// P44: a section names one (block, lod) pair. Count how many ChunkInfo items
+// declare it so a missing or ambiguous section can fail with the exact item and
+// the exact reason instead of a bare "not found".
+int countChunkItems( const RenderingData::Target::StreamData& table, S32 block,
+	S32 lod )
+{
+	int matches = 0;
+
+	for ( int i = 0; i < table.GetNumChunks(); i++ )
+	{
+		const RenderingData::ChunkInfo& info = table.GetChunkInfo( i );
+
+		for ( int k = 0; k < info.GetNumItems(); k++ )
+		{
+			const RenderingData::ChunkInfo::Item& item = info.GetItem( k );
+
+			if ( item.block == block && item.lod == lod )
+				++matches;
+		}
+	}
+
+	return matches;
+}
+
 // One engine chunk read: LoadChunk + GetChunkData, then a private copy so the
 // chunk allocator can be released before the archive is walked.
 bool loadChunkCopy( RenderingData::Target::StreamManager& manager, Sys::I_File* file,
@@ -312,7 +336,8 @@ bool chunkRangeForIndex( const RenderingData::Target::StreamData& table, S32 chu
 
 bool resolvePrerequisiteChunk( const RenderingData::Target::StreamData& table,
 	RenderingData::Target::StreamManager& manager, Sys::I_File* file, S32 chunk,
-	int depth, PrerequisiteResolution* res, std::vector<U8>& state )
+	int depth, PrerequisiteResolution* res, std::vector<U8>& state,
+	const char* prefix )
 {
 	if ( chunk >= 0 && chunk < (S32)state.size() && state[ chunk ] == 2 )
 		return true;
@@ -368,7 +393,7 @@ bool resolvePrerequisiteChunk( const RenderingData::Target::StreamData& table,
 		}
 
 		if ( !resolvePrerequisiteChunk( table, manager, file, prerequisite,
-				depth + 1, res, state ) )
+				depth + 1, res, state, prefix ) )
 			return false;
 	}
 
@@ -407,9 +432,9 @@ bool resolvePrerequisiteChunk( const RenderingData::Target::StreamData& table,
 	res->bytes += range.bytes;
 	fnv_bytes( res->hash, &bytes[ 0 ], bytes.size() );
 
-	printf( "webfiledraw prerequisite chunk=%d depth=%d offset=%llu "
+	printf( "%s prerequisite chunk=%d depth=%d offset=%llu "
 		"bytes=%llu items=%d prerequisites=%d hash=0x%016llx resolved=1\n",
-		(int)chunk, depth, (unsigned long long)range.offset,
+		prefix, (int)chunk, depth, (unsigned long long)range.offset,
 		(unsigned long long)range.bytes, (int)info.GetNumItems(),
 		(int)info.GetNumPrerequisites(), (unsigned long long)hash );
 
@@ -419,7 +444,7 @@ bool resolvePrerequisiteChunk( const RenderingData::Target::StreamData& table,
 
 bool resolveChunkPrerequisites( const RenderingData::Target::StreamData& table,
 	RenderingData::Target::StreamManager& manager, Sys::I_File* file, S32 chunk,
-	PrerequisiteResolution* res )
+	PrerequisiteResolution* res, const char* prefix )
 {
 	memset( res, 0, sizeof( *res ) );
 	res->targetChunk = chunk;
@@ -452,18 +477,18 @@ bool resolveChunkPrerequisites( const RenderingData::Target::StreamData& table,
 	for ( int i = 0; i < direct; i++ )
 	{
 		if ( !resolvePrerequisiteChunk( table, manager, file, res->direct[ i ], 1,
-				res, state ) )
+				res, state, prefix ) )
 		{
-			printf( "webfiledraw prerequisite unsupported targetchunk=%d "
-				"reason=%s\n", (int)chunk, res->failure );
+			printf( "%s prerequisite unsupported targetchunk=%d "
+				"reason=%s\n", prefix, (int)chunk, res->failure );
 			return false;
 		}
 	}
 
 	res->ok = true;
-	printf( "webfiledraw prerequisite summary targetchunk=%d direct=%d "
+	printf( "%s prerequisite summary targetchunk=%d direct=%d "
 		"chunks=%d bytes=%llu hash=0x%016llx directList=",
-		(int)chunk, direct, res->resolvedCount,
+		prefix, (int)chunk, direct, res->resolvedCount,
 		(unsigned long long)res->bytes, (unsigned long long)res->hash );
 
 	for ( int i = 0; i < direct; i++ )
@@ -495,6 +520,12 @@ struct DrawTotals
 	int instanceBlock27Draws;
 	int instanceBlock27Triangles;
 	int instanceBlock27Vertices;
+	/* P44: per-section vertex-buffer use and the declaration element that
+	 * describes each used buffer's POSITION0. Indexed by the geometry view's
+	 * own VB index; a fixed bound, like the draw-list records. */
+	unsigned char usedVertex[ WebSpike::kMaxBuffers ];
+	int usedVertexDeclaration[ WebSpike::kMaxBuffers ];
+	int usedVertexElement[ WebSpike::kMaxBuffers ];
 	uint64_t hash;
 };
 
@@ -549,6 +580,228 @@ const char* unsupportedGeometryReason( const GeometrySet& set, S32 block )
 	return 0;
 }
 
+// --- P44: track-section bounds from retained source positions --------------
+//
+// The committed survey's section bounds are the min/max of every vertex in the
+// vertex buffers the section's draws actually use (tools/inspect_level_chunk.py,
+// geometry(): positions are expanded for every used VB, not only referenced
+// indices). The engine has the same bytes in the arena, so the bounds below are
+// read from the retained blob with the declaration element that describes the
+// POSITION0 stream. No coordinate is invented: an unsupported type, method,
+// endianness or a missing payload fails with a named reason.
+
+F32 halfToFloat( U16 value )
+{
+	const U32 sign = (U32)( value & 0x8000u ) << 16;
+	const U32 exponent = ( (U32)value >> 10 ) & 0x1fu;
+	U32 mantissa = (U32)value & 0x3ffu;
+	U32 bits;
+
+	if ( exponent == 0 )
+	{
+		if ( mantissa == 0 )
+		{
+			bits = sign;
+		}
+		else
+		{
+			// Subnormal half: normalise into the float exponent range.
+			U32 adjusted = 127 - 15 + 1;
+
+			while ( ( mantissa & 0x400u ) == 0 )
+			{
+				mantissa <<= 1;
+				--adjusted;
+			}
+
+			mantissa &= 0x3ffu;
+			bits = sign | ( adjusted << 23 ) | ( mantissa << 13 );
+		}
+	}
+	else if ( exponent == 31 )
+	{
+		bits = sign | 0x7f800000u | ( mantissa << 13 );
+	}
+	else
+	{
+		bits = sign | ( ( exponent - 15 + 127 ) << 23 ) | ( mantissa << 13 );
+	}
+
+	F32 result;
+	memcpy( &result, &bits, sizeof( result ) );
+	return result;
+}
+
+struct GeometryBounds
+{
+	bool valid;
+	const char* reason;
+	F32 min[ 3 ];
+	F32 max[ 3 ];
+};
+
+bool computeSectionBounds( const WebSpike::DrawListState& draws,
+	const GeometryView& geometry, const DrawTotals& totals, GeometryBounds* out )
+{
+	memset( out, 0, sizeof( *out ) );
+	out->reason = "none";
+	bool any = false;
+
+	for ( int i = 0; i < geometry.vertexBufferCount; i++ )
+	{
+		if ( !totals.usedVertex[ i ] )
+			continue;
+
+		const int declaration = totals.usedVertexDeclaration[ i ];
+		const int elementIndex = totals.usedVertexElement[ i ];
+
+		if ( declaration < 0 || declaration >= draws.declarations )
+		{
+			out->reason = "sectionBoundsDeclaration";
+			return false;
+		}
+
+		const WebSpike::DeclRecord& decl = draws.decl[ declaration ];
+
+		if ( elementIndex < 0 || elementIndex >= decl.count )
+		{
+			out->reason = "sectionBoundsElement";
+			return false;
+		}
+
+		const WebSpike::DeclElementRecord& element = decl.elements[ elementIndex ];
+
+		if ( element.usage != 0 || element.usageIndex != 0 )
+		{
+			out->reason = "sectionBoundsNotPosition";
+			return false;
+		}
+
+		if ( element.method != 0 )
+		{
+			out->reason = "sectionBoundsMethod";
+			return false;
+		}
+
+		const WebSpike::BufferRecord& vb = geometry.vertexBuffers[ i ];
+
+		if ( vb.compression != 0 )
+		{
+			out->reason = "sectionBoundsCompressed";
+			return false;
+		}
+
+		if ( vb.endianSwap != 0 )
+		{
+			out->reason = "sectionBoundsEndianSwap";
+			return false;
+		}
+
+		if ( !vb.payloadRetained )
+		{
+			out->reason = "sectionBoundsPayload";
+			return false;
+		}
+
+		if ( vb.stride <= 0 || vb.count < 0 )
+		{
+			out->reason = "sectionBoundsShape";
+			return false;
+		}
+
+		int components = 0;
+		int elementBytes = 0;
+
+		if ( element.type == 6 )
+		{
+			components = 3;
+			elementBytes = 12;
+		}
+		else if ( element.type == 7 )
+		{
+			components = 4;
+			elementBytes = 16;
+		}
+		else if ( element.type == 9 )
+		{
+			components = 3;
+			elementBytes = 6;
+		}
+		else
+		{
+			out->reason = "sectionBoundsType";
+			return false;
+		}
+
+		if ( element.offset < 0 || element.offset > vb.stride - elementBytes )
+		{
+			out->reason = "sectionBoundsElementRange";
+			return false;
+		}
+
+		const U8* payload = (const U8*)draws.arena + vb.payloadOffset;
+
+		for ( int v = 0; v < vb.count; v++ )
+		{
+			const U8* point = payload + (size_t)v * (size_t)vb.stride +
+				element.offset;
+			F32 xyz[ 3 ];
+
+			if ( element.type == 9 )
+			{
+				U16 half[ 3 ];
+				memcpy( half, point, sizeof( half ) );
+				xyz[ 0 ] = halfToFloat( half[ 0 ] );
+				xyz[ 1 ] = halfToFloat( half[ 1 ] );
+				xyz[ 2 ] = halfToFloat( half[ 2 ] );
+			}
+			else
+			{
+				F32 values[ 4 ];
+				memcpy( values, point, (size_t)components * sizeof( F32 ) );
+				xyz[ 0 ] = values[ 0 ];
+				xyz[ 1 ] = values[ 1 ];
+				xyz[ 2 ] = values[ 2 ];
+			}
+
+			for ( int k = 0; k < 3; k++ )
+			{
+				if ( !isfinite( xyz[ k ] ) )
+				{
+					out->reason = "sectionBoundsNonfinite";
+					return false;
+				}
+			}
+
+			if ( !any )
+			{
+				for ( int k = 0; k < 3; k++ )
+					out->min[ k ] = out->max[ k ] = xyz[ k ];
+				any = true;
+			}
+			else
+			{
+				for ( int k = 0; k < 3; k++ )
+				{
+					if ( xyz[ k ] < out->min[ k ] )
+						out->min[ k ] = xyz[ k ];
+					if ( xyz[ k ] > out->max[ k ] )
+						out->max[ k ] = xyz[ k ];
+				}
+			}
+		}
+	}
+
+	if ( !any )
+	{
+		out->reason = "sectionBoundsNoVertices";
+		return false;
+	}
+
+	out->valid = true;
+	return true;
+}
+
 void fnv_f32( uint64_t& hash, F32 value )
 {
 	U32 bits;
@@ -579,15 +832,23 @@ struct TextureRef
 TextureRef g_textureRefs[ kMaxTextureRefs ];
 int g_textureRefCount = 0;
 int g_textureRefOverflow = 0;
+// The texture ref set belongs to the two P34 River lists. The P44 track
+// sections run after the texture phase; they still resolve material ids but
+// must not extend the recorded 102-source set.
+bool g_collectTextureRefs = true;
 
 void resetTextureRefs()
 {
 	g_textureRefCount = 0;
 	g_textureRefOverflow = 0;
+	g_collectTextureRefs = true;
 }
 
 void addTextureRef( S32 block, int index )
 {
+	if ( !g_collectTextureRefs )
+		return;
+
 	if ( block < 0 || index < 0 )
 		return;
 
@@ -998,11 +1259,12 @@ struct PacketRecord
 	const char* reason;
 };
 
-void emitPacketRecord( PacketState* packet, const PacketRecord& record )
+void emitPacketRecord( PacketState* packet, const PacketRecord& record,
+	const char* prefix )
 {
-	printf( "webfiledraw packet %d kind=%s mesh=%s vb=%d:%d ib=%d:%d "
+	printf( "%s packet %d kind=%s mesh=%s vb=%d:%d ib=%d:%d "
 		"vtxOffset=%d vtxCount=%d idxOffset=%d idxCount=%d ",
-		record.index, record.kind == 0 ? "direct" : "instance", record.mesh,
+		prefix, record.index, record.kind == 0 ? "direct" : "instance", record.mesh,
 		(int)record.vbBlock, (int)record.vbIndex, (int)record.ibBlock,
 		(int)record.ibIndex, record.vertexOffset, record.vertexCount,
 		record.indexOffset, record.indexCount );
@@ -1796,11 +2058,13 @@ void printTextureHex( const U8* data, size_t bytes )
 void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawIndex,
 	int nodeIndex, const WebSpike::PrimitiveRecord& record, int primitiveIndex,
 	S32 chunkIndex, const GeometryView& geometry, const RenderingData::Bounds* pBounds,
-	unsigned char* usedVertexBuffer, DrawTotals* totals, PacketState* packet )
+	unsigned char* usedVertexBuffer, DrawTotals* totals, PacketState* packet,
+	const char* prefix )
 {
 	const WebSpike::DrawListState& draws = WebSpike::Draws();
 
 	int positionStream = -1;
+	int positionElement = -1;
 	const char* reason = 0;
 
 	if ( record.declaration < 0 || record.declaration >= draws.declarations )
@@ -1820,6 +2084,7 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 					reason = "duplicatePosition0";
 
 				positionStream = decl.elements[ e ].stream;
+				positionElement = e;
 				++found;
 			}
 		}
@@ -2059,17 +2324,21 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 		totals->triangleIndices += indexCount;
 
 		if ( vbIndex >= 0 && vbIndex < WebSpike::kMaxBuffers )
+		{
 			usedVertexBuffer[ vbIndex ] = 1;
+			totals->usedVertexDeclaration[ vbIndex ] = record.declaration;
+			totals->usedVertexElement[ vbIndex ] = positionElement;
+		}
 	}
 
-	printf( "webfiledraw draw %d chunk=%d nodeIndex=%d primitive=%d source=%d "
+	printf( "%s draw %d chunk=%d nodeIndex=%d primitive=%d source=%d "
 		"bound=%d reason=%s declaration=%d topology=%d lod=0 lodCount=%d "
 		"effect=%d vb=%d:%d ib=%d:%d "
 		"vbSource=%d ibSource=%d "
 		"firstIndex=%d indexCount=%d triangles=%d lodOffset=%d lodIndices=%d "
 		"minIndex=%d nVertices=%d baseMaterial=%d:%d instanceMaterial=%d:%d "
 		"flags=0x%08x blend=%d,%d,%d,%d,%d,%d,%d blendEnable=%d ",
-		drawIndex, (int)chunkIndex, nodeIndex, primitiveIndex, record.streamOffset,
+		prefix, drawIndex, (int)chunkIndex, nodeIndex, primitiveIndex, record.streamOffset,
 		bound ? 1 : 0, reason ? reason : "none", record.declaration,
 		record.topology, record.lodCount, record.effect, (int)vbBlock,
 		(int)vbIndex, (int)ibBlock,
@@ -2176,22 +2445,26 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 	else ++packet->directMaterialNull;
 	++packet->directWorldNull;
 
-	emitPacketRecord( packet, packetRecord );
+	emitPacketRecord( packet, packetRecord, prefix );
 }
 
 // Walk every node of the parsed block, emit render-list draws and instances,
 // and fill the deterministic totals.
 void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 	const ChunkRange& range, const GeometryView& geometry, DrawTotals* totals,
-	PacketState* packet )
+	PacketState* packet, const char* prefix )
 {
 	(void)range;
 
 	const WebSpike::DrawListState& draws = WebSpike::Draws();
-	unsigned char usedVertexBuffer[ WebSpike::kMaxBuffers ];
+	unsigned char* usedVertexBuffer = totals->usedVertex;
 
 	for ( int i = 0; i < WebSpike::kMaxBuffers; i++ )
-		usedVertexBuffer[ i ] = 0;
+	{
+		totals->usedVertex[ i ] = 0;
+		totals->usedVertexDeclaration[ i ] = -1;
+		totals->usedVertexElement[ i ] = -1;
+	}
 
 	int primitiveCursor = 0;
 	int drawIndex = 0;
@@ -2228,8 +2501,8 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 		totals->instances += numInstances;
 		totals->basePrimitives += numBasePrimitives;
 
-		printf( "webfiledraw list node=%d primitives=%d instances=%d "
-			"baseprimitives=%d instancebatches=%d dynamiclists=%d\n", n,
+		printf( "%s list node=%d primitives=%d instances=%d "
+			"baseprimitives=%d instancebatches=%d dynamiclists=%d\n", prefix, n,
 			numPrimitives, numInstances, numBasePrimitives,
 			list->GetNumInstanceBatches(), list->GetNumDynamicMaterialLists() );
 
@@ -2240,9 +2513,9 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 		packet->materialAlbedoRows += inventory.albedoRows;
 		packet->materialWorldRows += inventory.worldRows;
 		packet->materialType8Rows += inventory.type8Rows;
-		printf( "webfiledraw material node=%d chunk=%d types=%d rows=%d "
+		printf( "%s material node=%d chunk=%d types=%d rows=%d "
 			"worldRows=%d albedoRows=%d type8Rows=%d runtimeRows=%d externalRows=%d\n",
-			n, (int)range.chunk, inventory.types, inventory.rows,
+			prefix, n, (int)range.chunk, inventory.types, inventory.rows,
 			inventory.worldRows, inventory.albedoRows, inventory.type8Rows,
 			inventory.runtimeRows, inventory.externalRows );
 
@@ -2253,7 +2526,7 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 			if ( recordIndex >= draws.primitives )
 			{
 				++totals->unbound;
-				printf( "webfiledraw draw %d chunk=%d nodeIndex=%d primitive=%d "
+				printf( "%s draw %d chunk=%d nodeIndex=%d primitive=%d "
 					"source=-1 bound=0 reason=primitiveRecordMissing "
 					"declaration=-1 topology=-1 effect=-1 vb=-1:-1 ib=-1:-1 "
 					"firstIndex=0 indexCount=0 triangles=0 lodOffset=-1 "
@@ -2277,7 +2550,8 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 			}
 
 			emitOneDraw( *list, drawIndex, n, draws.primitive[ recordIndex ], i,
-				range.chunk, geometry, pBounds, usedVertexBuffer, totals, packet );
+				range.chunk, geometry, pBounds, usedVertexBuffer, totals, packet,
+				prefix );
 			++drawIndex;
 		}
 
@@ -2902,7 +3176,7 @@ void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resource
 				triangleCount, packetRecord.drawable ? 1 : 0,
 				packetRecord.reason );
 
-			emitPacketRecord( packet, packetRecord );
+			emitPacketRecord( packet, packetRecord, "webfiledraw" );
 		}
 
 		primitiveCursor += numPrimitives + numBasePrimitives;
@@ -3382,7 +3656,8 @@ int main( int argc, char** argv )
 				totals.hash = fnv_begin();
 
 				if ( parsed )
-					emitNodeDraws( resources, range, geometry, &totals, &packet );
+					emitNodeDraws( resources, range, geometry, &totals, &packet,
+						"webfiledraw" );
 
 				printf( "webfiledraw summary node=%d nodes=%d primitives=%d "
 					"renderlists=%d draws=%d otherblock=%d unbound=%d "
@@ -3493,7 +3768,7 @@ int main( int argc, char** argv )
 			PrerequisiteResolution resolution;
 
 			if ( !resolveChunkPrerequisites( scene->GetStreamData(), manager,
-					stream, chunk, &resolution ) )
+					stream, chunk, &resolution, "webfiledraw" ) )
 			{
 				prerequisitesResolved = false;
 				break;
@@ -4002,6 +4277,266 @@ int main( int argc, char** argv )
 		check( "texture_no_gpu", WebSpike::Draws().gpuObjectsCreated == 0 );
 		check( "texture_hash", textureAggregate != 0 );
 	}
+
+	// --- P44: six River track sections ------------------------------------
+	// The 540 m committed corridor is the union of six geometry-block /
+	// node-block sections. Each is located through the engine ChunkInfo table,
+	// resolved through the same prerequisite flow, parsed with the same
+	// LodReader deserialiser and emitted into its own packet. The P27/P30/P32/
+	// P34/P38 results above are untouched: a separate packet and a separate
+	// print prefix keep their hashes and checks identical.
+	struct TrackSectionDef
+	{
+		const char* key;
+		S32 geometryBlock;
+		S32 nodeBlock;
+	};
+
+	static const TrackSectionDef kTrackSections[ 6 ] = {
+		{ "g56-n289", 56, 289 },
+		{ "g58-n265", 58, 265 },
+		{ "g50-n265", 50, 265 },
+		{ "g71-n209", 71, 209 },
+		{ "g64-n209", 64, 209 },
+		{ "g59-n265", 59, 265 },
+	};
+
+	PacketState sectionPacket;
+	memset( &sectionPacket, 0, sizeof( sectionPacket ) );
+	sectionPacket.hash = fnv_begin();
+
+	int sectionCount = 0;
+	int sectionDraws = 0;
+	int sectionTriangles = 0;
+	int sectionVertices = 0;
+	bool sectionAllOk = true;
+
+	// The texture-source set belongs to the two P34 lists. The sections resolve
+	// the same material ids but must not extend the 102-source set.
+	g_collectTextureRefs = false;
+
+	for ( int s = 0; s < 6; s++ )
+	{
+		const TrackSectionDef& definition = kTrackSections[ s ];
+
+		WebSpike::ResetChunkRecords();
+
+		const RenderingData::Target::StreamData& table = scene->GetStreamData();
+		ChunkRange nodeRange;
+		ChunkRange geometryRange;
+		memset( &nodeRange, 0, sizeof( nodeRange ) );
+		memset( &geometryRange, 0, sizeof( geometryRange ) );
+
+		const bool nodeLocated = findChunkItem( table, definition.nodeBlock, 0,
+			&nodeRange );
+		const bool geometryLocated = findChunkItem( table, definition.geometryBlock,
+			0, &geometryRange );
+		const int geometryMatches = countChunkItems( table,
+			definition.geometryBlock, 0 );
+		const int nodeMatches = countChunkItems( table, definition.nodeBlock, 0 );
+
+		printf( "webfiledraw section chunk key=%s geometryBlock=%d "
+			"geometryChunk=%d geometryItem=%d geometryLocated=%d "
+			"geometryMatches=%d nodeBlock=%d nodeChunk=%d nodeItem=%d "
+			"nodeLocated=%d nodeMatches=%d\n", definition.key,
+			(int)definition.geometryBlock,
+			geometryLocated ? (int)geometryRange.chunk : -1,
+			geometryLocated ? (int)geometryRange.item : -1,
+			geometryLocated ? 1 : 0, geometryMatches,
+			(int)definition.nodeBlock,
+			nodeLocated ? (int)nodeRange.chunk : -1,
+			nodeLocated ? (int)nodeRange.item : -1, nodeLocated ? 1 : 0,
+			nodeMatches );
+
+		// A section is one concrete (block, lod=0) item. Missing or ambiguous
+		// is reported with that item and the reason, then stops the section;
+		// there is no empty/identity fallback.
+		if ( geometryMatches != 1 )
+		{
+			printf( "webfiledraw section unsupported key=%s item=geometryBlock "
+				"block=%d lod=0 matches=%d reason=%s\n", definition.key,
+				(int)definition.geometryBlock, geometryMatches,
+				geometryMatches == 0 ? "sectionGeometryBlockNotInStream"
+					: "sectionGeometryBlockAmbiguous" );
+		}
+
+		if ( nodeMatches != 1 )
+		{
+			printf( "webfiledraw section unsupported key=%s item=nodeBlock "
+				"block=%d lod=0 matches=%d reason=%s\n", definition.key,
+				(int)definition.nodeBlock, nodeMatches,
+				nodeMatches == 0 ? "sectionNodeBlockNotInStream"
+					: "sectionNodeBlockAmbiguous" );
+		}
+
+		bool prerequisitesOk = nodeLocated && geometryLocated &&
+			geometryMatches == 1 && nodeMatches == 1;
+		int geometryDeclared = -1;
+		int nodeDeclared = -1;
+		int prereqChunks = 0;
+		uint64_t prereqHash = fnv_begin();
+
+		if ( prerequisitesOk )
+		{
+			// Same flow as P38: a chunk whose ChunkInfo record declares
+			// prerequisites is resolved before it is read. These six chunks
+			// declare none, which the printed record states from the table.
+			for ( int pass = 0; pass < 2 && prerequisitesOk; pass++ )
+			{
+				const ChunkRange& range = pass == 0 ? geometryRange : nodeRange;
+				const RenderingData::ChunkInfo& info =
+					table.GetChunkInfo( range.chunk );
+				const int declared = info.GetNumPrerequisites();
+
+				if ( pass == 0 )
+					geometryDeclared = declared;
+				else
+					nodeDeclared = declared;
+
+				PrerequisiteResolution resolution;
+				memset( &resolution, 0, sizeof( resolution ) );
+				resolution.targetChunk = range.chunk;
+				resolution.hash = fnv_begin();
+				resolution.ok = true;
+
+				if ( declared > 0 && !resolveChunkPrerequisites( table, manager,
+						stream, range.chunk, &resolution, "webfiledraw section" ) )
+				{
+					prerequisitesOk = false;
+					break;
+				}
+
+				prereqChunks += resolution.resolvedCount;
+				fnv_u64( prereqHash, resolution.hash );
+				fnv_u32( prereqHash, (U32)resolution.resolvedCount );
+			}
+		}
+
+		std::vector<U8> nodeBytes;
+		std::vector<U8> geometryBytes;
+		RenderingData::Target::ResourceBlock::Resources* nodeResources = 0;
+		RenderingData::Target::ResourceBlock::Resources* geometryResources = 0;
+		int vbBase = 0;
+		int ibBase = 0;
+
+		if ( prerequisitesOk )
+			prerequisitesOk = loadChunkCopy( manager, stream, nodeRange, nodeBytes );
+
+		if ( prerequisitesOk )
+		{
+			nodeResources = parseChunkItem( nodeBytes, scene, nodeRange, 0, 0, 0 );
+			prerequisitesOk = nodeResources != 0;
+		}
+
+		if ( prerequisitesOk )
+			prerequisitesOk = loadChunkCopy( manager, stream, geometryRange,
+				geometryBytes );
+
+		if ( prerequisitesOk )
+		{
+			geometryResources = parseChunkItem( geometryBytes, scene, geometryRange,
+				&vbBase, &ibBase, 0 );
+			prerequisitesOk = geometryResources != 0;
+		}
+
+		const WebSpike::DrawListState& sectionState = WebSpike::Draws();
+
+		GeometryView sectionGeometry;
+		memset( &sectionGeometry, 0, sizeof( sectionGeometry ) );
+		sectionGeometry.block = definition.geometryBlock;
+		sectionGeometry.valid = geometryResources != 0;
+		sectionGeometry.vertexBuffers = sectionState.vertexBuffer + vbBase;
+		sectionGeometry.vertexBufferCount = sectionState.vertexBuffers - vbBase;
+		sectionGeometry.indexBuffers = sectionState.indexBuffer + ibBase;
+		sectionGeometry.indexBufferCount = sectionState.indexBuffers - ibBase;
+
+		DrawTotals totals;
+		memset( &totals, 0, sizeof( totals ) );
+		totals.hash = fnv_begin();
+
+		if ( prerequisitesOk )
+			emitNodeDraws( nodeResources, nodeRange, sectionGeometry, &totals,
+				&sectionPacket, "webfiledraw section" );
+
+		GeometryBounds bounds;
+		memset( &bounds, 0, sizeof( bounds ) );
+		bounds.reason = "notComputed";
+
+		if ( prerequisitesOk && totals.draws > 0 )
+			computeSectionBounds( sectionState, sectionGeometry, totals, &bounds );
+
+		printf( "webfiledraw section summary key=%s geometryBlock=%d "
+			"nodeBlock=%d geometryChunk=%d geometryItem=%d nodeChunk=%d "
+			"nodeItem=%d geometryDeclared=%d nodeDeclared=%d prereqChunks=%d "
+			"prereqHash=0x%016llx nodes=%d renderlists=%d primitives=%d "
+			"draws=%d otherblock=%d unbound=%d triangles=%d vertices=%d "
+			"indexerrors=%d instances=%d vbs=%d ibs=%d bounds=%s "
+			"boundsMin=%.9g,%.9g,%.9g boundsMax=%.9g,%.9g,%.9g "
+			"drawhash=0x%016llx gpu=%d\n",
+			definition.key, (int)definition.geometryBlock,
+			(int)definition.nodeBlock,
+			geometryLocated ? (int)geometryRange.chunk : -1,
+			geometryLocated ? (int)geometryRange.item : -1,
+			nodeLocated ? (int)nodeRange.chunk : -1,
+			nodeLocated ? (int)nodeRange.item : -1,
+			geometryDeclared, nodeDeclared, prereqChunks,
+			(unsigned long long)prereqHash, totals.nodes, totals.renderLists,
+			totals.primitives, totals.draws, totals.otherBlock, totals.unbound,
+			totals.triangles, totals.vertices, totals.indexErrors,
+			totals.instances, sectionGeometry.vertexBufferCount,
+			sectionGeometry.indexBufferCount, bounds.valid ? "ok" : bounds.reason,
+			bounds.min[ 0 ], bounds.min[ 1 ], bounds.min[ 2 ],
+			bounds.max[ 0 ], bounds.max[ 1 ], bounds.max[ 2 ],
+			(unsigned long long)totals.hash,
+			(int)sectionState.gpuObjectsCreated );
+
+		char checkName[ 96 ];
+		snprintf( checkName, sizeof( checkName ), "drawlist_section_%s",
+			definition.key );
+
+		for ( char* p = checkName; *p != 0; ++p )
+			if ( *p == '-' )
+				*p = '_';
+
+		const bool sectionOk = prerequisitesOk && nodeLocated && geometryLocated &&
+			totals.draws > 0 && totals.indexErrors == 0 && totals.unbound == 0 &&
+			bounds.valid && sectionState.gpuObjectsCreated == 0 &&
+			sectionState.arenaExhausted == 0 &&
+			sectionState.compressedBuffers == 0 &&
+			sectionState.bufferOverflow == 0 &&
+			sectionState.primitiveOverflow == 0 &&
+			sectionState.declarationOverflow == 0;
+
+		check( checkName, sectionOk );
+
+		if ( sectionOk )
+			++sectionCount;
+
+		sectionAllOk = sectionAllOk && sectionOk;
+		sectionDraws += totals.draws;
+		sectionTriangles += totals.triangles;
+		sectionVertices += totals.vertices;
+
+		delete geometryResources;
+		delete nodeResources;
+	}
+
+	printf( "webfiledraw section total sections=%d draws=%d triangles=%d "
+		"vertices=%d records=%d drawable=%d omitted=%d packetHash=0x%016llx "
+		"gpu=%d\n", sectionCount, sectionDraws, sectionTriangles,
+		sectionVertices, sectionPacket.records, sectionPacket.drawable,
+		sectionPacket.records - sectionPacket.drawable,
+		(unsigned long long)sectionPacket.hash,
+		(int)WebSpike::Draws().gpuObjectsCreated );
+
+	check( "drawlist_section_all", sectionAllOk && sectionCount == 6 );
+	check( "drawlist_section_packet",
+		sectionPacket.records == sectionPacket.directRecords &&
+		sectionPacket.instanceRecords == 0 &&
+		sectionPacket.drawable == sectionDraws &&
+		sectionPacket.omitted == sectionPacket.records - sectionDraws &&
+		sectionPacket.directMaterials + sectionPacket.directMaterialNull ==
+			sectionPacket.records );
 
 	// --- explicit failures: a missing range is never zero filled -----------
 	{
