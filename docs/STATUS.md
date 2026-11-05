@@ -629,6 +629,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Render-packet v1.1 şemasına karşı **8 ihlal / 4 not**: timeline yok, topology strip (346 range 3'ün katı değil), `engine-buffer` enum dışı, geometry alanları null. Producer kanıtı; tüketici dönüşümü gerekli.
 - 56 nesne, 872.869 B, **99/99**, PC parity. Kanıt: `docs/work/verification/T-007-engine-packet.md`.
 
+## 6 Kasım 2026 — araç dokuları entegre
+
+- 5 araçta 491 draw'dan **224'ü** gerçek albedo + UV0 ile dokulandı: Corvette 50, Lotus 48, Dodge 42, Focus 37, Audi 47; 40 doku / 18.178.048 B RGBA.
+- 267 draw diagnostic (45 paint, 66 light, 156 no-albedo); sampler repeat/linear/mip0; sRGB/paint/mip yok.
+- `verify_e1_drive` **570/570**; 20 capture console 0; 1 dk 2-run soak temiz; fizik hash'leri değişmedi. Geometry v6 45.180.725 B. Kanıt: `docs/work/verification/T-007-textured-cars.md`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

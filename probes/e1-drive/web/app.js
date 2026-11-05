@@ -165,6 +165,13 @@ const state = {
   trackTextures: 0,
   trackTextureBytes: 0,
   trackUvVertices: 0,
+  carTexturedDraws: 0,
+  carTextures: 0,
+  carTextureBytes: 0,
+  carUvVertices: 0,
+  carPaintDraws: 0,
+  carLightDraws: 0,
+  carNoAlbedoDraws: 0,
   collisionVisible: null,
   collisionFallbackTriangles: 0,
   collisionCoveredTriangles: 0,
@@ -270,6 +277,10 @@ function publish() {
     ['input', 'thr ' + state.input[0].toFixed(2) + ' brk ' + state.input[1].toFixed(2) +
       ' str ' + state.input[2].toFixed(2) + ' hb ' + state.input[3].toFixed(2)],
     ['parts', state.parts + ' parts · ' + state.carDraws + ' draws · ' + state.packetNodes + ' nodes (' + state.wheelNodes + ' wheel)'],
+    ['car tex', state.carTexturedDraws + ' textured (' + state.carTextures + ' tex, ' +
+      state.carTextureBytes + ' B) · diag ' + (state.carPaintDraws + state.carLightDraws + state.carNoAlbedoDraws) +
+      ' (paint ' + state.carPaintDraws + ', light ' + state.carLightDraws + ', no-albedo ' + state.carNoAlbedoDraws +
+      ') · uv ' + state.carUvVertices],
     ['track', state.trackDraws + ' real draws · ' + state.trackTriangles + ' tri · ' +
       state.trackTexturedDraws + ' textured (' + state.trackTextures + ' tex, ' +
       state.trackTextureBytes + ' B) · no-draw ' +
@@ -645,6 +656,14 @@ async function startTimeline(tick0, {
   state.trackTextures = trackInfo?.textures?.count ?? 0;
   state.trackTextureBytes = trackInfo?.textures?.rgbaBytes ?? 0;
   state.trackUvVertices = trackInfo?.uv ? trackInfo.uv.values / trackInfo.uv.components : 0;
+  const textureInfo = session.packet.diagnostics.extras.textures;
+  state.carTexturedDraws = partsInfo?.texturedDrawCount ?? 0;
+  state.carTextures = textureInfo?.car?.count ?? 0;
+  state.carTextureBytes = textureInfo?.car?.rgbaBytes ?? 0;
+  state.carUvVertices = partsInfo?.uvVertices ?? 0;
+  state.carPaintDraws = partsInfo?.drawClasses?.runtimePaintDraws ?? 0;
+  state.carLightDraws = partsInfo?.drawClasses?.runtimeLightBlendDraws ?? 0;
+  state.carNoAlbedoDraws = partsInfo?.drawClasses?.runtimeNoAlbedoDraws ?? 0;
   state.collisionFallbackTriangles = trackInfo?.coverage?.fallbackTriangles ?? 0;
   state.collisionCoveredTriangles = trackInfo?.coverage?.coveredTriangles ?? 0;
   state.collisionVisible = session.packet.diagnostics.extras.collisionSurface?.visible ?? null;
@@ -842,6 +861,14 @@ async function runTelemetryMode() {
   state.trackTextures = trackInfo?.textures?.count ?? 0;
   state.trackTextureBytes = trackInfo?.textures?.rgbaBytes ?? 0;
   state.trackUvVertices = trackInfo?.uv ? trackInfo.uv.values / trackInfo.uv.components : 0;
+  const textureInfo = session.packet.diagnostics.extras.textures;
+  state.carTexturedDraws = partsInfo?.texturedDrawCount ?? 0;
+  state.carTextures = textureInfo?.car?.count ?? 0;
+  state.carTextureBytes = textureInfo?.car?.rgbaBytes ?? 0;
+  state.carUvVertices = partsInfo?.uvVertices ?? 0;
+  state.carPaintDraws = partsInfo?.drawClasses?.runtimePaintDraws ?? 0;
+  state.carLightDraws = partsInfo?.drawClasses?.runtimeLightBlendDraws ?? 0;
+  state.carNoAlbedoDraws = partsInfo?.drawClasses?.runtimeNoAlbedoDraws ?? 0;
   state.collisionFallbackTriangles = trackInfo?.coverage?.fallbackTriangles ?? 0;
   state.collisionCoveredTriangles = trackInfo?.coverage?.coveredTriangles ?? 0;
   state.collisionVisible = session.packet.diagnostics.extras.collisionSurface?.visible ?? null;
@@ -1274,7 +1301,10 @@ function soakSummariseReport(wallMs) {
   const poolValid = soakCheckpoints.every((row) => row.group >= 0 && row.group < row.poolSize &&
     row.groupDependencies === 0 && row.groupExecuting === 0);
   const bufferLive = [...new Set([...soakSamples, ...soakCheckpoints].map((row) => row.buffersLive))];
+  const textureLive = [...new Set([...soakSamples, ...soakCheckpoints].map((row) => row.texturesLive))];
   const uploadsPerLoad = soakCheckpoints.map((row) => row.packetLoads > 0 ? row.geometryUploads / row.packetLoads : null)
+    .filter((value) => Number.isFinite(value));
+  const texturesPerLoad = soakCheckpoints.map((row) => row.packetLoads > 0 ? row.textureUploads / row.packetLoads : null)
     .filter((value) => Number.isFinite(value));
   const final = soakCheckpoints[soakCheckpoints.length - 1] ?? null;
   const stats = consumer.stats;
@@ -1291,6 +1321,13 @@ function soakSummariseReport(wallMs) {
     { label: 'GPU packet buffers stayed bounded across every reload', ok: bufferLive.length === 1 &&
       final !== null && final.buffersLive === bufferLive[0],
       detail: `live ${bufferLive.join('/')}, created ${stats.buffersCreated}, destroyed ${stats.buffersDestroyed}` },
+    { label: 'GPU textures stayed bounded across every reload (no texture leak)', ok: textureLive.length === 1 &&
+      final !== null && final.texturesLive === textureLive[0] &&
+      final.texturesLive === consumer.textureGroups.size &&
+      texturesPerLoad.length > 0 && texturesPerLoad.every((value) => value === consumer.textureGroups.size),
+      detail: `live ${textureLive.join('/')} of one packet (${consumer.textureGroups.size} textures), ` +
+        `created ${stats.texturesCreated}, destroyed ${stats.texturesDestroyed}, ` +
+        `uploaded per load ${texturesPerLoad.join('/')}` },
     { label: 'every timeline load uploaded exactly the three packet meshes', ok: uploadsPerLoad.every((value) => value === 3),
       detail: uploadsPerLoad.map((value) => value.toFixed(3)).join('/') },
     { label: 'one uniform write and one draw set per rendered frame', ok: stats.uniformWrites === stats.renders &&
@@ -1359,6 +1396,8 @@ function soakSummariseReport(wallMs) {
       texturesCreated: stats.texturesCreated,
       texturesDestroyed: stats.texturesDestroyed,
       texturesLive: stats.texturesCreated - stats.texturesDestroyed,
+      textureLiveValues: textureLive,
+      texturesPerPacket: consumer.textureGroups.size,
       geometryUploads: stats.geometryUploads,
       geometryUploadBytes: stats.geometryUploadBytes,
       uvUploadBytes: stats.uvUploadBytes,

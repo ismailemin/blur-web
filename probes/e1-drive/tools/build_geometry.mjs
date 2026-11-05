@@ -15,13 +15,16 @@
 //         positions/indices hashes and source draw ranges.
 //         _work/e1-drive/track-textures.json + track-uv.bin + textures/*.rgba:
 //         the P45/P47 UV0 and static albedo export (build_track_textures.py).
+//         _work/e1-drive/car-textures.json + car-uv-<slug>.bin: the P52 per-car
+//         draw/material/texture resolution and the committed scene-report UV0
+//         stream (build_car_textures.py), plus the committed P52 RGBA files.
 //         Read only; every reference and manifest is pinned by SHA-256 and every
 //         draw range is validated against its mesh before it is used.
 // Output: _work/e1-drive/geometry.json — the level mesh, the real River track
 //         visual (committed level_inspect direct draws) with its real P45 UV0
-//         stream and static albedo textures (geometry v5), one body per roster car
-//         (mesh, draws, parts, wheel groups and nodes), and the collision surface
-//         kept as hidden physics provenance.
+//         stream and static albedo textures, one body per roster car (mesh, real
+//         UV0, static albedo textures, draws, parts, wheel groups and nodes), and
+//         the collision surface kept as hidden physics provenance.
 //         Nothing is re-derived from the game files here; the packet populates
 //         the level half and the car-parts manifests the vehicle half, and every
 //         input hash is recorded.
@@ -71,6 +74,14 @@ const COMMITTED_MANIFESTS = {
 const COMMITTED_CAR_INDEX =
   'sha256:5042e714a309e28e19498a0d35e18fef941c0fac850e87bc0f986117bb9bc315';
 
+// P52's per-car material/texture record plus its UV0 export. Committed output of
+// `build_car_textures.py`; a different file is a hard failure, because the car
+// textures and bindings may only change when that export is rebuilt and every
+// consumer document is updated with it.
+const CAR_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/car-textures.json');
+const COMMITTED_CAR_TEXTURES =
+  'sha256:0342a3c6411f292de993e823fff2b400445037618c623961056590bd7f719d2b';
+
 const sourceBytes = readFileSync(SOURCE);
 const packet = JSON.parse(sourceBytes.toString('utf8'));
 if (packet.kind !== 'blur.render-packet' || packet.version !== 1.1) {
@@ -103,6 +114,122 @@ const roster = JSON.parse(rosterBytes.toString('utf8'));
 const rosterSlugs = roster.cars.map((car) => car.slug);
 if (rosterSlugs.join(',') !== carIndex.cars.map((car) => car.slug).join(',')) {
   throw new Error('car model index does not cover the e1-drive roster in order');
+}
+
+// ------------------------------------------------- P52 per-car textures + UV0
+//
+// `build_car_textures.py` exports, per roster car, the committed P52 material
+// resolution (draw → texture id/name/hash), the committed scene-report UV0
+// stream of the mesh, and the RGBA path/hash of every referenced image. The
+// manifest is pinned, every RGBA file is re-hashed before it is embedded, and
+// every draw range is required to equal the part manifest's.
+if (!existsSync(CAR_TEXTURE_MANIFEST)) {
+  throw new Error('missing ' + path.relative(ROOT, CAR_TEXTURE_MANIFEST) +
+    ' — run `python probes/e1-drive/tools/build_car_textures.py` first');
+}
+const carTextureBytes = readFileSync(CAR_TEXTURE_MANIFEST);
+const carTextureSha = sha256(carTextureBytes);
+if (carTextureSha !== COMMITTED_CAR_TEXTURES) {
+  throw new Error('car texture manifest is not the committed one: ' + carTextureSha +
+    ' (expected ' + COMMITTED_CAR_TEXTURES + ')');
+}
+const carTextureDoc = JSON.parse(carTextureBytes.toString('utf8'));
+if (carTextureDoc.kind !== 'e1-drive.car-textures' || carTextureDoc.version !== 1) {
+  throw new Error('car texture manifest kind/version is not e1-drive.car-textures v1');
+}
+if (carTextureDoc.pins?.p52RosterIndex !==
+    'sha256:77e73bfff8e324459d337f9ec1817f717e39aabfe0134433ca886c2a1774cd76' ||
+    carTextureDoc.pins?.carPartsIndex !== COMMITTED_CAR_INDEX) {
+  throw new Error('car texture manifest does not carry the committed P52 roster and car-parts indexes');
+}
+if (carTextureDoc.cars.length !== roster.cars.length) {
+  throw new Error('car texture manifest covers ' + carTextureDoc.cars.length + ' cars, the roster has ' +
+    roster.cars.length);
+}
+const carTextureBySlug = new Map(carTextureDoc.cars.map((record) => [record.slug, record]));
+for (let index = 0; index < roster.cars.length; index++) {
+  if (carTextureDoc.cars[index].slug !== roster.cars[index].slug) {
+    throw new Error('car texture manifest car ' + index + ' is ' + carTextureDoc.cars[index].slug +
+      ', the roster expects ' + roster.cars[index].slug);
+  }
+}
+
+function loadCarTexturePack(slug, carTexture) {
+  const uvPath = path.join(ROOT, carTexture.uvStream.path);
+  const uvBytes = readFileSync(uvPath);
+  if (uvBytes.length !== carTexture.uvStream.bytes || sha256(uvBytes) !== carTexture.uvStream.sha256) {
+    throw new Error(slug + ': car UV stream is not the one the manifest pinned');
+  }
+  if (uvBytes.length !== carTexture.uvStream.vertexCount * 8) {
+    throw new Error(slug + ': car UV stream length does not match its vertex count');
+  }
+  const values = new Float32Array(carTexture.uvStream.values);
+  for (let index = 0; index < values.length; index++) {
+    values[index] = uvBytes.readFloatLE(index * 4);
+    if (!Number.isFinite(values[index])) throw new Error(slug + ': car UV stream has a non-finite component');
+  }
+  const textures = carTexture.textures.map((texture) => {
+    const file = path.join(ROOT, texture.rgbaPath);
+    const bytes = readFileSync(file);
+    if (sha256(bytes) !== texture.rgbaSha256) {
+      throw new Error(slug + ': ' + texture.id + ' RGBA file is not the one the manifest pinned');
+    }
+    if (bytes.length !== texture.rgbaBytes || bytes.length !== texture.width * texture.height * 4) {
+      throw new Error(slug + ': ' + texture.id + ' RGBA length does not match its declared size');
+    }
+    return {
+      id: texture.id,
+      source: texture.p52Id,
+      kind: texture.kind,
+      block: texture.block,
+      index: texture.index,
+      sharedIndex: texture.sharedIndex,
+      name: texture.name,
+      textureHash: texture.textureHash,
+      width: texture.width,
+      height: texture.height,
+      levels: texture.levels,
+      formatName: texture.formatName,
+      sourceLod: texture.sourceLod,
+      rgbaPath: texture.rgbaPath,
+      rgbaBytes: texture.rgbaBytes,
+      rgbaSha256: texture.rgbaSha256,
+      rgbaFnv1a64: texture.rgbaFnv1a64,
+      drawCount: texture.drawCount,
+      lightDrawCount: texture.lightDrawCount,
+      referenceDrawCount: texture.referenceDrawCount,
+      rgbaBase64: bytes.toString('base64')
+    };
+  });
+  const ids = new Set(textures.map((texture) => texture.id));
+  if (ids.size !== textures.length) throw new Error(slug + ': car texture ids are not unique');
+  return {
+    uv: {
+      storage: 'base64-float32le',
+      components: 2,
+      vertexCount: carTexture.uvStream.vertexCount,
+      values: values.length,
+      bytes: uvBytes.length,
+      sha256: carTexture.uvStream.sha256,
+      bounds: carTexture.uvStream.bounds,
+      data: uvBytes.toString('base64'),
+      source: {
+        manifest: path.relative(ROOT, CAR_TEXTURE_MANIFEST).split(path.sep).join('/'),
+        manifestSha256: carTextureSha,
+        stream: carTexture.uvStream.path,
+        provenance: carTexture.sceneReport.uv0Source + ' (' + carTexture.sceneReport.path + ', ' +
+          carTexture.sceneReport.sha256 + '); its positions are numerically the part manifest mesh, and the ' +
+          'UV array is exported byte-exactly including the reader\'s signed zeros',
+      }
+    },
+    uvValues: values,
+    textures,
+    textureById: new Map(textures.map((texture) => [texture.id, texture])),
+    draws: carTexture.draws,
+    coverage: carTexture.coverage,
+    sampler: carTextureDoc.sampler,
+    record: carTexture
+  };
 }
 
 // The documented fallback: a roster car with no unambiguous model keeps the
@@ -198,8 +325,40 @@ function diagnosticColourFor(partKind, id, wheelPart, corner) {
   return base.map((value) => Math.max(0, Math.min(1, value + shift)));
 }
 
+const FNV_OFFSET_64 = 0xcbf29ce484222325n;
+const FNV_PRIME_64 = 0x100000001b3n;
+const MASK_64 = 0xffffffffffffffffn;
+
+/** FNV-1a 64 over raw bytes, as `build_car_textures.py` computes the UV0 hash. */
+function fnv1a64Hex(buffer) {
+  let value = FNV_OFFSET_64;
+  for (const byte of buffer) {
+    value ^= BigInt(byte);
+    value = (value * FNV_PRIME_64) & MASK_64;
+  }
+  return value.toString(16).padStart(16, '0');
+}
+
+/**
+ * Per-draw UV0 value hash: FNV-1a 64 over the little-endian float32 bits of every
+ * UV pair the draw's index range references, in index order. Identical to the
+ * exporter's hash, so the binding can only belong to the UVs that produced it.
+ */
+function drawUvHash(uvValues, indices, firstIndex, indexCount) {
+  const buffer = Buffer.alloc(indexCount * 8);
+  let offset = 0;
+  for (let offsetIndex = firstIndex; offsetIndex < firstIndex + indexCount; offsetIndex++) {
+    const vertex = indices[offsetIndex];
+    buffer.writeFloatLE(uvValues[vertex * 2], offset);
+    buffer.writeFloatLE(uvValues[vertex * 2 + 1], offset + 4);
+    offset += 8;
+  }
+  return fnv1a64Hex(buffer);
+}
+
 function buildBody(entry, options = {}) {
   const fallback = options.fallback === true;
+  const carTexturePack = options.carTextures ?? null;
   const manifestPath = fallback ? C3_MANIFEST : path.join(ROOT, entry.manifest);
   const manifestBytes = readFileSync(manifestPath);
   const manifestSha = sha256(manifestBytes);
@@ -233,6 +392,16 @@ function buildBody(entry, options = {}) {
   }
   if (mesh.vertexCount !== manifest.mesh.vertexCount || mesh.indexCount !== manifest.mesh.indexCount) {
     throw new Error(entry.slug + ': mesh counts differ from the manifest');
+  }
+  if (carTexturePack) {
+    if (carTexturePack.uv.vertexCount !== mesh.vertexCount) {
+      throw new Error(entry.slug + ': car UV stream has ' + carTexturePack.uv.vertexCount +
+        ' vertices, the mesh has ' + mesh.vertexCount);
+    }
+    if (carTexturePack.draws.length !== manifest.draws.length) {
+      throw new Error(entry.slug + ': P52 manifest has ' + carTexturePack.draws.length + ' draws, the part manifest has ' +
+        manifest.draws.length);
+    }
   }
   const positionBuffer = Buffer.alloc(mesh.positions.length * 4);
   mesh.positions.forEach((value, index) => positionBuffer.writeFloatLE(value, index * 4));
@@ -314,6 +483,37 @@ function buildBody(entry, options = {}) {
     const nodeId = group ? 'e1.car.wheel.' + group.corner + '.' + (spins ? 'spin' : 'static') : 'e1.car.body';
     const vertexOffset = manifestDraw.minIndex;
     const vertexCount = manifestDraw.maxIndex - manifestDraw.minIndex + 1;
+
+    // P52 material resolution for this exact draw. Draw order is proven equal by
+    // comparing the index range and part identity of every draw, and the per-draw
+    // UV0 value hash is recomputed from the mesh stream, so a texture can only be
+    // bound to the draw whose UVs produced it.
+    const materialDraw = carTexturePack ? carTexturePack.draws[manifestDraw.index] : null;
+    if (carTexturePack) {
+      if (!materialDraw) throw new Error(entry.slug + ': draw ' + manifestDraw.index +
+        ' is missing from the P52 car texture manifest');
+      if (materialDraw.firstIndex !== manifestDraw.firstIndex ||
+          materialDraw.indexCount !== manifestDraw.indexCount) {
+        throw new Error(entry.slug + ': draw ' + manifestDraw.index +
+          ' index range differs between the P52 manifest and the part manifest');
+      }
+      if ((materialDraw.partId ?? null) !== (manifestDraw.partId ?? null) ||
+          (materialDraw.renderPartId ?? null) !== renderPartId) {
+        throw new Error(entry.slug + ': draw ' + manifestDraw.index +
+          ' part identity differs between the P52 manifest and the part manifest');
+      }
+      const recomputed = drawUvHash(carTexturePack.uvValues, mesh.indices,
+        manifestDraw.firstIndex, manifestDraw.indexCount);
+      if ('0x' + recomputed !== materialDraw.uvHash) {
+        throw new Error(entry.slug + ': draw ' + manifestDraw.index + ' UV0 hash 0x' + recomputed +
+          ' does not match the exported ' + materialDraw.uvHash);
+      }
+    }
+    const texture = materialDraw?.textureId ? carTexturePack.textureById.get(materialDraw.textureId) : null;
+    if (materialDraw?.textureId && !texture) {
+      throw new Error(entry.slug + ': draw ' + manifestDraw.index + ' names unknown car texture ' +
+        materialDraw.textureId);
+    }
     return {
       id: entry.slug + '.draw.' + manifestDraw.index,
       meshId,
@@ -323,9 +523,27 @@ function buildBody(entry, options = {}) {
       indexOffset: manifestDraw.firstIndex,
       indexCount: manifestDraw.indexCount,
       materialId: null,
-      materialReason:
-        'no material is bound in this slice: the draw keeps the manifest albedoTexture id ' +
-        (manifestDraw.albedoTexture ?? 'none') + ' and is rendered with a diagnostic per-part colour',
+      materialReason: texture
+        ? 'P52 resolved this draw to the static albedo image ' + texture.id + ' (' + texture.name + ', ' +
+          texture.width + 'x' + texture.height + '); it is sampled with the mesh UV0 stream. Material colour, ' +
+          'blend state, mips and sRGB are not applied (materialsApplied:false)'
+        : 'no image is bound for this draw: ' +
+          (materialDraw?.reason ?? 'the P52 material record does not cover this draw') +
+          '; it is rendered with a diagnostic per-part colour',
+      textureId: texture ? texture.id : null,
+      uvFlipV: materialDraw?.uvFlipV === true,
+      textureBinding: {
+        status: materialDraw?.bindingStatus ?? 'noMaterialRecord',
+        reason: materialDraw?.reason ?? null,
+        source: materialDraw?.textureSource ?? null,
+        name: materialDraw?.textureName ?? null,
+        drawClass: materialDraw?.drawClass ?? null,
+        p52Status: materialDraw?.p52Status ?? null,
+        uvProvenance: 'car-mesh-uv0 (committed scene-report stream)',
+        uvHash: materialDraw?.uvHash ?? null,
+        uvRange: materialDraw?.uvRange ?? null,
+        uvConvention: texture ? 'sampled as (u, 1 - v)' : null,
+      },
       layer: 'opaque',
       bounds: manifestDraw.bounds,
       worldKind: 'packet-transform',
@@ -335,7 +553,14 @@ function buildBody(entry, options = {}) {
         indexRange: manifestDraw.indexRange,
         partId: manifestDraw.partId,
         match: manifestDraw.match ?? null,
-        unclassifiedReason: manifestDraw.unclassifiedReason ?? null
+        unclassifiedReason: manifestDraw.unclassifiedReason ?? null,
+        material: {
+          tool: 'probes/e1-drive/tools/build_car_textures.py (P52 resolution)',
+          manifest: path.relative(ROOT, CAR_TEXTURE_MANIFEST).split(path.sep).join('/'),
+          manifestSha256: carTextureSha,
+          p52Status: materialDraw?.p52Status ?? null,
+          materialId: materialDraw?.material?.id ?? null
+        }
       },
       localBounds,
       partId: manifestDraw.partId,
@@ -347,7 +572,10 @@ function buildBody(entry, options = {}) {
       nodeId,
       diagnosticColour: diagnosticColourFor(manifestDraw.partKind, renderPartId ?? manifestDraw.partId,
         wheelPart, group?.corner),
-      colourReason: 'diagnostic per-part colour for visual debugging; not a game material (materialsApplied:false)'
+      colourReason: texture
+        ? 'the diagnostic colour is carried for debugging but is not used: this draw samples its bound ' +
+          'texture, and the colour is not a game material (materialsApplied:false)'
+        : 'diagnostic per-part colour for visual debugging; not a game material (materialsApplied:false)'
     };
   });
   if (draws.length !== manifest.diagnostics.drawCount) {
@@ -418,6 +646,7 @@ function buildBody(entry, options = {}) {
       indexCount: mesh.indexCount,
       positions: mesh.positions,
       indices: mesh.indices,
+      uv: carTexturePack ? carTexturePack.uv : null,
       positionsSha256: positionValueSha256,
       indicesSha256: indexValueSha256,
       coordinateSpace: mesh.coordinateSpace,
@@ -430,6 +659,26 @@ function buildBody(entry, options = {}) {
         manifestSha256: manifestSha
       }
     },
+    textures: carTexturePack ? carTexturePack.textures : [],
+    texturePack: carTexturePack
+      ? {
+          manifest: path.relative(ROOT, CAR_TEXTURE_MANIFEST).split(path.sep).join('/'),
+          manifestSha256: carTextureSha,
+          p52Manifest: carTexturePack.record.materials.path,
+          p52ManifestSha256: carTexturePack.record.materials.sha256,
+          sceneReport: carTexturePack.record.sceneReport.path,
+          sceneReportSha256: carTexturePack.record.sceneReport.sha256,
+          sampler: carTexturePack.sampler,
+          uvConvention: carTextureDoc.uvConvention,
+          scopeLabels: carTextureDoc.scopeLabels,
+          coverage: carTexturePack.coverage,
+          materialScope:
+            'static g_MeshTexture pixels only: 224 of 491 draws sample a decoded static image with the ' +
+            'committed UV0 stream sampled as (u, 1-v); the 267 runtime-only draws keep the committed P52 ' +
+            'reason and the diagnostic albedo. Material colour, blend state, shader stages, mip chain and ' +
+            'sRGB interpretation are not applied',
+        }
+      : null,
     manifest: {
       path: path.relative(ROOT, manifestPath).split(path.sep).join('/'),
       bytes: manifestBytes.length,
@@ -482,7 +731,10 @@ const fallbackBodies = [];
 for (const rosterCar of roster.cars) {
   const entry = carIndex.cars.find((candidate) => candidate.slug === rosterCar.slug);
   if (entry && entry.mapped) {
-    const body = buildBody({ ...entry, name: rosterCar.name });
+    const carTexture = carTextureBySlug.get(rosterCar.slug);
+    if (!carTexture) throw new Error(rosterCar.slug + ': no P52 car texture record');
+    const carTextures = loadCarTexturePack(rosterCar.slug, carTexture);
+    const body = buildBody({ ...entry, name: rosterCar.name }, { carTextures });
     bodies[body.slug] = body;
   } else {
     const reason = entry?.reason ?? 'not present in the mapping index';
@@ -490,6 +742,37 @@ for (const rosterCar of roster.cars) {
       { fallback: true, reason });
     bodies[body.slug] = body;
     fallbackBodies.push({ slug: rosterCar.slug, reason });
+  }
+}
+
+// The five bodies must reproduce P52's coverage exactly: a silently dropped
+// texture or draw is the failure mode this whole pass exists to prevent.
+{
+  const bodyList = Object.values(bodies);
+  const totals = {
+    draws: bodyList.reduce((sum, body) => sum + body.carDraws.length, 0),
+    textured: bodyList.reduce((sum, body) =>
+      sum + body.carDraws.filter((draw) => draw.textureId !== null).length, 0),
+    paint: bodyList.reduce((sum, body) =>
+      sum + body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimePaintLookup').length, 0),
+    light: bodyList.reduce((sum, body) =>
+      sum + body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeLightBlend').length, 0),
+    noAlbedo: bodyList.reduce((sum, body) =>
+      sum + body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeShaderNoAlbedo').length, 0),
+    textures: bodyList.reduce((sum, body) => sum + body.textures.length, 0),
+    rgbaBytes: bodyList.reduce((sum, body) =>
+      sum + body.textures.reduce((inner, texture) => inner + texture.rgbaBytes, 0), 0),
+    uvBytes: bodyList.reduce((sum, body) => sum + (body.mesh.uv?.bytes ?? 0), 0),
+  };
+  const expected = { draws: 491, textured: 224, paint: 45, light: 66, noAlbedo: 156, textures: 40,
+    rgbaBytes: 18178048 };
+  for (const [key, value] of Object.entries(expected)) {
+    if (totals[key] !== value) {
+      throw new Error('car texture totals: ' + key + ' is ' + totals[key] + ', P52 recorded ' + value);
+    }
+  }
+  if (totals.textured + totals.paint + totals.light + totals.noAlbedo !== totals.draws) {
+    throw new Error('car draw classes do not cover every draw');
   }
 }
 
@@ -1210,7 +1493,7 @@ if (!bodies[defaultSlug]) throw new Error('roster default car has no body: ' + d
 
 const geometry = {
   kind: 'e1-drive.geometry',
-  version: 5,
+  version: 6,
   source: {
     packet: path.relative(ROOT, SOURCE).split(path.sep).join('/'),
     packetVersion: packet.version,
@@ -1223,9 +1506,23 @@ const geometry = {
       mappingRule: carIndex.mappingRule,
       pak: carIndex.pak,
       roster: carIndex.roster,
+      textures: {
+        manifest: path.relative(ROOT, CAR_TEXTURE_MANIFEST).split(path.sep).join('/'),
+        manifestSha256: carTextureSha,
+        p52RosterIndex: carTextureDoc.pins.p52RosterIndex,
+        drawClasses: carTextureDoc.coverage.drawClasses,
+        textures: carTextureDoc.totals.textures,
+        rgbaBytes: carTextureDoc.totals.rgbaBytes,
+        uvBytes: carTextureDoc.totals.uvBytes,
+        sampler: carTextureDoc.sampler,
+        uvConvention: carTextureDoc.uvConvention,
+        scopeLabels: carTextureDoc.scopeLabels,
+      },
       note:
         'one real body/wheel mesh per roster car from its own root.pak .model; every manifest and mesh ' +
-        'is pinned by SHA-256 above and its draw ranges are re-derived from the mesh before use'
+        'is pinned by SHA-256 above and its draw ranges are re-derived from the mesh before use. The ' +
+        'per-draw material resolution and decoded albedo images are P52 data, the UV0 stream is the ' +
+        'committed scene_inspect mesh stream the part mesh was built from',
     },
     track: {
       trackVisual: 'asset-reader-direct-draws',
@@ -1295,6 +1592,8 @@ const geometry = {
       'level draws are world-space (instances baked by the reader), car draws are object-local; ' +
       'track draws are the real River levelrender direct draws from the committed level_inspect references, ' +
       'with the real UV0 stream and the P44/P45/P47 static albedo texture where one was measured; ' +
+      'car draws keep their committed part manifest ranges and sample the P52 static albedo image with the ' +
+      'committed scene-report UV0 stream where P52 resolved one, and stay diagnostic otherwise; ' +
       'part ids, wheel groups and rest-pose transforms are copied from each car\'s committed part manifest; ' +
       'the collision surface comes from the level physics file through the collision-oracle reference parser ' +
       'and is kept as hidden physics provenance, not drawn'
@@ -1305,6 +1604,22 @@ const geometry = {
   levelDraws: levelDraws.map(levelDrawEntry),
   trackVisual,
   textures: textureRecords,
+  carTextures: {
+    kind: carTextureDoc.kind,
+    version: carTextureDoc.version,
+    manifest: path.relative(ROOT, CAR_TEXTURE_MANIFEST).split(path.sep).join('/'),
+    manifestSha256: carTextureSha,
+    p52RosterIndex: carTextureDoc.pins.p52RosterIndex,
+    carPartsIndex: carTextureDoc.pins.carPartsIndex,
+    sampler: carTextureDoc.sampler,
+    uvConvention: carTextureDoc.uvConvention,
+    scopeLabels: carTextureDoc.scopeLabels,
+    totals: carTextureDoc.totals,
+    coverage: carTextureDoc.coverage,
+    note:
+      'per-car P52 material resolution and decoded static albedo images. Each packet carries the static ' +
+      'level/track pack plus only the driven car\'s own textures, so the upload stays bounded by one car',
+  },
   texturePack: {
     kind: textureManifest.kind,
     version: textureManifest.version,
@@ -1400,6 +1715,11 @@ console.log(JSON.stringify({
     fallbackTriangles
   },
   meshes: geometry.meshes.length,
+  carTextures: {
+    manifest: path.relative(ROOT, CAR_TEXTURE_MANIFEST).split(path.sep).join('/'),
+    manifestSha256: carTextureSha,
+    totals: carTextureDoc.totals,
+  },
   bodies: Object.values(bodies).map((body) => ({
     slug: body.slug,
     meshId: body.meshId,
@@ -1411,6 +1731,11 @@ console.log(JSON.stringify({
     wheelGroups: body.wheelGroups.length,
     wheelSpinDraws: body.wheelGroups.reduce((sum, group) => sum + group.spinDraws.length, 0),
     wheelStaticDraws: body.wheelGroups.reduce((sum, group) => sum + group.staticDraws.length, 0),
+    texturedDraws: body.carDraws.filter((draw) => draw.textureId !== null).length,
+    textures: body.textures.length,
+    textureBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    uvBytes: body.mesh.uv?.bytes ?? 0,
+    uvValues: body.mesh.uv?.values ?? 0,
     positionsSha256: body.manifest.meshValueHashes.positionsFloat32LESha256,
     manifestSha256: body.manifest.sha256
   })),

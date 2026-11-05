@@ -14,7 +14,10 @@
 //     (sampler and scope metadata). A draw with `textureId` samples that texture
 //     with its own UV; a draw without one keeps the diagnostic albedo. The
 //     sampler is the explicit `TEXTURE_SAMPLER` choice (repeat + linear on mip0,
-//     rgba8unorm, no sRGB conversion): not recovered retail state.
+//     rgba8unorm, no sRGB conversion): not recovered retail state;
+//   * a draw may set `uvFlipV` (car packs), which samples (u, 1-v) because the
+//     decoded car images are stored V-down while their committed UV0 stream is
+//     V-up. The UV values are not modified; see geometry.carTextures.uvConvention.
 // Everything else (pipeline, upload counting, interpolation, camera handling) is
 // unchanged from the committed consumer.
 //
@@ -34,7 +37,9 @@
 // geometry. Neither is a game material or a texture sample. A draw may also carry
 // `textureId`, which is the P44/P45/P47 static albedo texture measured for that
 // draw: it is sampled with the mesh's real UV0 stream, and still is not the full
-// game material (no colour, blend, shader stages, mips or sRGB transform).
+// game material (no colour, blend, shader stages, mips or sRGB transform). A car
+// draw additionally carries `uvFlipV`, the declared (u, 1-v) sampling direction
+// for the P52 car pack.
 
 import { interpolateRigid, isRigid, matrixChecksum } from './interpolate.js';
 
@@ -67,7 +72,11 @@ struct VertexOut {
   let worldPosition = draw.world * vec4f(position, 1.0);
   result.world = worldPosition.xyz;
   result.local = position;
-  result.uv = uv;
+  // texParams.y declares the per-draw V direction. The car packs sample (u, 1-v)
+  // because their decoded images are stored V-down while the committed UV0 stream
+  // addresses them V-up (see geometry.carTextures.uvConvention); track and level
+  // draws keep the raw stream. The UV values themselves are never modified.
+  result.uv = vec2f(uv.x, select(uv.y, 1.0 - uv.y, draw.texParams.y > 0.5));
   result.position = draw.viewProjection * worldPosition;
   return result;
 }
@@ -783,8 +792,9 @@ export class PacketConsumer {
       bytes.set([colour[0], colour[1], colour[2], draw.spins ? 0.85 : 0], base + 32);
       // texParams.x = 1 only when a static albedo texture is bound. A textured
       // draw is tinted white so the sampled texel is used unchanged; no material
-      // colour is invented.
-      bytes.set([draw.textureId != null ? 1 : 0, 0, 0, 0], base + 36);
+      // colour is invented. texParams.y = 1 declares the car UV convention
+      // (u, 1-v); 0 keeps the raw UV0 stream (level and track packs).
+      bytes.set([draw.textureId != null ? 1 : 0, draw.uvFlipV === true ? 1 : 0, 0, 0], base + 36);
     }
     this.device.queue.writeBuffer(this.uniformBuffer, 0, bytes);
 

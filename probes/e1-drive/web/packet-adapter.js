@@ -44,9 +44,10 @@ export const WHEEL_CORNERS = Object.freeze(['frontleft', 'frontright', 'backleft
  * one car mesh and never a car it is not driving.
  */
 export function resolveCarBody(geometry, slug) {
-  if (!geometry || geometry.version !== 5 || !geometry.carBodies) {
-    throw new Error('geometry does not carry per-car bodies, the v5 track visual and its static albedo ' +
-      'textures; rebuild it with `node probes/e1-drive/tools/build_geometry.mjs`');
+  if (!geometry || geometry.version !== 6 || !geometry.carBodies) {
+    throw new Error('geometry does not carry per-car bodies, the v5 track visual, its static albedo ' +
+      'textures and the P52 per-car albedo textures with their UV0 stream; rebuild it with ' +
+      '`node probes/e1-drive/tools/build_geometry.mjs`');
   }
   const key = slug ?? geometry.defaultCar;
   const body = geometry.carBodies[key];
@@ -407,10 +408,33 @@ export function createSession(geometry, tick0, options = {}) {
     throw new Error('geometry does not carry the v5 static albedo textures; rebuild it with ' +
       '`node probes/e1-drive/tools/build_geometry.mjs`');
   }
-  const textureIds = new Set(geometry.textures.map((texture) => texture.id));
+  if (!Array.isArray(body.textures) || !body.texturePack || !body.mesh.uv) {
+    throw new Error('geometry body ' + body.slug + ' does not carry its P52 albedo textures and UV0 stream; ' +
+      'rebuild it with `node probes/e1-drive/tools/build_geometry.mjs`');
+  }
+  // The packet carries the static level/track pack plus only the driven car's own
+  // images, so the upload stays bounded by one car instead of the roster.
+  const packetTextures = geometry.textures.concat(body.textures);
+  const textureIds = new Set(packetTextures.map((texture) => texture.id));
+  if (textureIds.size !== packetTextures.length) {
+    throw new Error('the packet texture set contains duplicate ids');
+  }
   for (const draw of trackDraws) {
     if (draw.textureId !== null && !textureIds.has(draw.textureId)) {
       throw new Error('track draw ' + draw.id + ' names unknown texture ' + draw.textureId);
+    }
+  }
+  for (const draw of carDraws) {
+    if (draw.textureId != null && !textureIds.has(draw.textureId)) {
+      throw new Error('car draw ' + draw.id + ' names unknown texture ' + draw.textureId);
+    }
+    if (draw.textureId != null && draw.uvFlipV !== true) {
+      throw new Error('car draw ' + draw.id + ' binds a texture without the declared (u, 1-v) sampling');
+    }
+  }
+  for (const draw of trackDraws) {
+    if (draw.uvFlipV === true) {
+      throw new Error('track draw ' + draw.id + ' would be sampled with the car UV convention');
     }
   }
 
@@ -484,8 +508,9 @@ export function createSession(geometry, tick0, options = {}) {
     lights: [geometry.light],
     meshes,
     materials: geometry.materials,
-    textures: geometry.textures,
+    textures: packetTextures,
     texturePack: geometry.texturePack,
+    carTexturePack: body.texturePack,
     draws: staticDraws.concat(carDraws),
     physicsSurfaces,
     placedObjects: [{
@@ -512,9 +537,10 @@ export function createSession(geometry, tick0, options = {}) {
         'River block27/node253 supported instances plus the real River track visual (' +
         trackDraws.length + ' level_inspect direct draws, ' + trackVisual.triangleCount +
         ' triangles) and the ' + body.name + ' body drawn as ' +
-        body.carParts.length + ' manifest parts / ' + body.carDraws.length + ' draws with four spinning ' +
-        'wheel groups; the collision mesh stays in the packet as hidden physics provenance; materials ' +
-        'and lighting are diagnostic',
+        body.carParts.length + ' manifest parts / ' + body.carDraws.length + ' draws (' +
+        carDraws.filter((draw) => draw.textureId != null).length + ' sampling their P52 static albedo image) ' +
+        'with four spinning wheel groups; the collision mesh stays in the packet as hidden physics provenance; ' +
+        'materials and lighting remain diagnostic',
       sequence: {
         tickCount: 0,
         tickHz: TICK_HZ,
@@ -580,9 +606,43 @@ export function createSession(geometry, tick0, options = {}) {
           nodes: carNodes.map((node) => ({ id: node.id, drawCount: node.drawIds.length })),
           bodyDrawCount: carDraws.filter((draw) => draw.nodeId === CAR_NODE_ID).length,
           wheelDrawCount: carDraws.filter((draw) => draw.nodeId !== CAR_NODE_ID).length,
+          texturedDrawCount: carDraws.filter((draw) => draw.textureId != null).length,
+          textures: body.textures.length,
+          textureBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+          uvVertices: body.mesh.uv.vertexCount,
+          uvBytes: body.mesh.uv.bytes,
+          uvConvention: body.texturePack.uvConvention.sampleV,
+          drawClasses: body.texturePack.coverage,
+          materialScope: body.texturePack.materialScope,
           colours:
-            'diagnostic per-part colours for visual debugging only (materialsApplied:false); ' +
-            'they are not game materials, paint or texture pixels'
+            'diagnostic per-part colours for visual debugging only (materialsApplied:false); a draw with a ' +
+            'bound P52 static albedo image samples that image with the mesh UV0 stream and does not use the colour',
+        },
+        textures: {
+          levelAndTrack: {
+            count: geometry.textures.length,
+            rgbaBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+          },
+          car: {
+            count: body.textures.length,
+            rgbaBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+            manifest: body.texturePack.manifest,
+            manifestSha256: body.texturePack.manifestSha256,
+            p52Manifest: body.texturePack.p52Manifest,
+            sceneReport: body.texturePack.sceneReport,
+            sampler: body.texturePack.sampler,
+            scopeLabels: body.texturePack.scopeLabels,
+            drawClasses: body.texturePack.coverage,
+          },
+          uploaded: {
+            count: packetTextures.length,
+            rgbaBytes: packetTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+          },
+          reason:
+            'the packet carries the static level/track albedo pack plus only the driven car\'s own P52 ' +
+            'static images; 224 of 491 car draws are textured and the 267 runtime-only draws (45 paint ' +
+            'lookup, 66 light off/on blend, 156 _NO_ALBEDO) keep the diagnostic albedo and the committed ' +
+            'P52 reason. No mip chain, sRGB, material colour or blend state is applied',
         },
         wheels: {
           rendered: WHEELS_RENDERED,
@@ -670,8 +730,9 @@ export function createSession(geometry, tick0, options = {}) {
           '(the model import is out of scope), so the body may be rotated/offset relative to the chassis'
       },
       approximations: [
-        'level and vehicle materials are not applied; car parts use a diagnostic per-part colour, all other draws use a neutral albedo, under one directional light',
+        'level and vehicle materials are not applied; car draws with a P52 static albedo image sample that image, every other car draw uses a diagnostic per-part colour, and all non-car draws use a neutral albedo, under one directional light',
         'the real track visual keeps every source draw index range and samples the static g_tAlbedo texture with the real UV0 stream on 297 of 394 draws; the 2 runtime-only albedo draws and the 95 block88/node283 draws with no P45/P47 binding row keep the diagnostic albedo',
+        'the car body samples the P52 static g_MeshTexture image with the car mesh UV0 stream on 224 of 491 draws; the 267 runtime-only draws (45 paint lookup, 66 light off/on blend, 156 _NO_ALBEDO) keep the diagnostic albedo and the committed P52 reason',
         'texture sampling is rgba8unorm mip0 with repeat/linear: no sRGB-to-linear conversion, mip chain, anisotropy or material colour is applied, so it is not retail sampling fidelity',
         'no shadow, post-process, particle or effect pass exists in this consumer',
         'face normals come from screen-space derivatives of the world position, not from original vertex normals',
@@ -685,6 +746,7 @@ export function createSession(geometry, tick0, options = {}) {
         'retail texture sampler state (wrap mode, filter, anisotropy, mip selection, sRGB interpretation)',
         'original level and vehicle lighting rigs',
         'vehicle paint lookup texture and runtime light blends',
+        'vehicle material colour, blend state and shader stages (only the P52 decoded albedo pixels are bound)',
         'runtime per-wheel matrices (suspension, steer, camber), higher LODs and damage states',
         'engine asset streaming, culling and draw-list production (this slice drives one car on one loaded block)',
         'level blocks 26, 32 and 31 instances'
@@ -694,7 +756,9 @@ export function createSession(geometry, tick0, options = {}) {
           ? 'one car at a time, selected from the RP_CarDynamics roster at runtime: not a race, a game loop or a full level'
           : 'one car, one loaded River track visual, one camera: not a race, a game loop or a full level',
         'no audio, no HUD beyond diagnostics, no multiplayer, no race rules',
-        'the car body is the selected roster car\'s own real mesh; its paint, materials and shader parameters are not decoded',
+        'the car body is the selected roster car\'s own real mesh; 224 of its 491 draws sample their P52 ' +
+          'static albedo image, the 267 runtime-only draws keep a diagnostic colour, and paint, light blend, ' +
+          'material colour, blend state, mips and sRGB are not decoded',
         'packet v1.1 is JSON with inline geometry; it is not an engine draw-list integration',
         'the real track visual covers the committed direct-draw sections only (block88/node283 and block56/node289); ' +
           'block88/node283 lies outside the drive box, and block56/node289 ends around x = -55, so the last ~12 m of ' +

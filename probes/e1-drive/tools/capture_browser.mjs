@@ -112,6 +112,9 @@ function expectedFor(car) {
     meshCount: packet.meshes.length,
     body,
     uploadBytes: meshBytes(levelMesh) + meshBytes(body.mesh) + meshBytes(trackMesh),
+    uvUploadBytes: (levelMesh.uv ? levelMesh.uv.bytes : levelMesh.vertexCount * 8) +
+      (body.mesh.uv ? body.mesh.uv.bytes : body.mesh.vertexCount * 8) +
+      (trackMesh.uv ? trackMesh.uv.bytes : trackMesh.vertexCount * 8),
     parts: body.carParts.length,
     draws: 22 + geometry.trackVisual.drawCount + body.carDraws.length,
     trackDraws: geometry.trackVisual.drawCount,
@@ -120,6 +123,14 @@ function expectedFor(car) {
     texturedDraws: geometry.trackVisual.texturedDrawCount,
     textureCount: geometry.textures.length,
     textureBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    carTexturedDraws: body.carDraws.filter((draw) => draw.textureId != null).length,
+    carTextures: body.textures.length,
+    carTextureBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    carUvVertices: body.mesh.uv.vertexCount,
+    totalTextureCount: geometry.textures.length + body.textures.length,
+    totalTextureBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) +
+      body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    carDrawClasses: body.texturePack.coverage,
     uvVertices: trackMesh.uv.vertexCount,
     fallbackTriangles: geometry.collisionSurface.coverage?.fallbackTriangles ?? 0,
     coveredTriangles: geometry.collisionSurface.coverage?.coveredTriangles ?? 0,
@@ -266,6 +277,9 @@ async function capture(car, label, tick, options = {}) {
       textureUploads: p.textureUploads, textureUploadBytes: p.textureUploadBytes, uvUploadBytes: p.uvUploadBytes,
       trackTexturedDraws: p.trackTexturedDraws, trackTextures: p.trackTextures,
       trackTextureBytes: p.trackTextureBytes, trackUvVertices: p.trackUvVertices,
+      carTexturedDraws: p.carTexturedDraws, carTextures: p.carTextures,
+      carTextureBytes: p.carTextureBytes, carUvVertices: p.carUvVertices,
+      carPaintDraws: p.carPaintDraws, carLightDraws: p.carLightDraws, carNoAlbedoDraws: p.carNoAlbedoDraws,
       uniformWrites: p.uniformWrites, uniformBytes: p.uniformBytes, drawsIssued: p.drawsIssued,
       draws: p.draws, parts: p.parts, carDraws: p.carDraws, packetNodes: p.packetNodes,
       wheelNodes: p.wheelNodes, wheelAngles: p.wheelAngles,
@@ -1072,14 +1086,26 @@ for (const car of cars) {
           entry.probe.geometryUploadBytes === expected.uploadBytes,
           entry.probe.geometryUploadBytes + ' vs ' + expected.uploadBytes);
     check(`${car.slug}/${entry.label}: the static albedo textures are uploaded for the textured track draws`,
-          entry.probe.textureUploads === expected.textureCount &&
-          entry.probe.textureUploadBytes === expected.textureBytes &&
+          entry.probe.textureUploads === expected.totalTextureCount &&
+          entry.probe.textureUploadBytes === expected.totalTextureBytes &&
           entry.probe.trackTextures === expected.textureCount &&
           entry.probe.trackTextureBytes === expected.textureBytes &&
           entry.probe.trackTexturedDraws === expected.texturedDraws &&
           entry.probe.trackUvVertices === expected.uvVertices,
           entry.probe.textureUploads + ' textures / ' + entry.probe.textureUploadBytes + ' B / ' +
           entry.probe.trackTexturedDraws + ' textured draws / ' + entry.probe.trackUvVertices + ' UV vertices');
+    check(`${car.slug}/${entry.label}: this car's own P52 albedo textures are uploaded and sampled`,
+          entry.probe.carTextures === expected.carTextures &&
+          entry.probe.carTextureBytes === expected.carTextureBytes &&
+          entry.probe.carTexturedDraws === expected.carTexturedDraws &&
+          entry.probe.carUvVertices === expected.carUvVertices &&
+          entry.probe.uvUploadBytes === expected.uvUploadBytes &&
+          entry.probe.carPaintDraws === expected.carDrawClasses.runtimePaintDraws &&
+          entry.probe.carLightDraws === expected.carDrawClasses.runtimeLightBlendDraws &&
+          entry.probe.carNoAlbedoDraws === expected.carDrawClasses.runtimeNoAlbedoDraws,
+          entry.probe.carTexturedDraws + '/' + entry.probe.carDraws + ' car draws textured, ' +
+          entry.probe.carTextures + ' tex / ' + entry.probe.carTextureBytes + ' B, ' +
+          entry.probe.carUvVertices + ' UV vertices, uv upload ' + entry.probe.uvUploadBytes + ' B');
     check(`${car.slug}/${entry.label}: the browser drew this car's own body mesh and manifest`,
           entry.probe.bodyMesh === expected.bodyMeshId &&
           entry.probe.bodyManifest?.sha256 === expected.bodyManifestSha256 &&
@@ -1267,6 +1293,16 @@ const browserBodyHashes = new Set(carResults.map((entry) =>
 check('the browser drew a distinct body mesh for every car',
       browserBodyHashes.size === carResults.length,
       `${browserBodyHashes.size} distinct of ${carResults.length}`);
+const browserCarTextureSets = new Set(carResults.map((entry) =>
+  entry.runs[0]?.probe.carTextures + ':' + entry.runs[0]?.probe.carTextureBytes + ':' +
+  entry.runs[0]?.probe.carTexturedDraws));
+check('every car uploaded its own P52 livery/tyre texture set',
+      browserCarTextureSets.size === carResults.length &&
+      carResults.every((entry) => entry.runs.every((runEntry) =>
+        runEntry.probe.carTextures === expectedBySlug.get(entry.slug).carTextures &&
+        runEntry.probe.carTextureBytes === expectedBySlug.get(entry.slug).carTextureBytes)),
+      carResults.map((entry) => `${entry.slug}:${entry.runs[0]?.probe.carTextures} tex/` +
+        `${entry.runs[0]?.probe.carTextureBytes} B`).join(', '));
 
 const allMessages = carResults.flatMap((entry) => entry.runs.flatMap((runEntry) => runEntry.messages));
 const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
@@ -1339,6 +1375,13 @@ console.log(JSON.stringify({
     trackVisual: entry.probe.trackVisual,
     trackDraws: entry.probe.trackDraws,
     trackTriangles: entry.probe.trackTriangles,
+    carTexturedDraws: entry.probe.carTexturedDraws,
+    carTextures: entry.probe.carTextures,
+    carTextureBytes: entry.probe.carTextureBytes,
+    carUvVertices: entry.probe.carUvVertices,
+    textureUploads: entry.probe.textureUploads,
+    textureUploadBytes: entry.probe.textureUploadBytes,
+    uvUploadBytes: entry.probe.uvUploadBytes,
     collisionVisible: entry.probe.collisionVisible,
     collisionFallbackTriangles: entry.probe.collisionFallbackTriangles,
     collisionCoveredTriangles: entry.probe.collisionCoveredTriangles,

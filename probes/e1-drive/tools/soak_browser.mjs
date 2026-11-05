@@ -372,6 +372,13 @@ if (runResults.length === 2) {
     runResults[0].report.buffers.packetLoads === runResults[1].report.buffers.packetLoads;
   comparisons.push({ label: 'two soak runs load the same packet/geometry count', ok: sameGeo,
     detail: `${runResults[0].report.buffers.packetLoads} vs ${runResults[1].report.buffers.packetLoads} loads` });
+  const sameTextures = runResults[0].report.buffers.texturesLive === runResults[1].report.buffers.texturesLive &&
+    runResults[0].report.buffers.textureUploads === runResults[1].report.buffers.textureUploads &&
+    runResults[0].report.buffers.texturesPerPacket === runResults[1].report.buffers.texturesPerPacket;
+  comparisons.push({ label: 'two soak runs keep the same live texture count and per-load texture uploads',
+    ok: sameTextures,
+    detail: `${runResults[0].report.buffers.texturesLive} / ${runResults[1].report.buffers.texturesLive} live, ` +
+      `${runResults[0].report.buffers.texturesPerPacket} per packet` });
   for (const comparison of comparisons.filter((entry) => !entry.ok)) {
     recordFailure(comparison.label, comparison.detail);
   }

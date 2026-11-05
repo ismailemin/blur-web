@@ -79,7 +79,8 @@ Dodge 4,633 → Focus 5,133 s.
   50 m collision duvarı). 29 m kısa parkur `?course=short`.
 - Kapalı tur yok (committed veriyle mümkün değil).
 - Pist görseli gerçek River draw set'i; 394 draw'dan **297**'si gerçek albedo +
-  UV0 ile dokulu, 95'i diagnostic. Mip/sRGB/anisotropy, boya, gölge ve post yok.
+  UV0 ile dokulu, 95'i diagnostic. Araçlarda 491 draw'dan **224**'ü dokulu,
+  267'si diagnostic. Mip/sRGB/anisotropy, boya, gölge ve post yok.
 - Teker konumu rest-pose; süspansiyon/steer/camber yok.
 - Box gravity proxy; XT `physicsParameters` açık.
 - Ses, rakip, multiplayer yok.

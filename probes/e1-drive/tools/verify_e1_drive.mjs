@@ -165,8 +165,8 @@ check('roster covers at least four real cars', roster.roster.cars.length >= 4,
 // ------------------------------------------------- per-car body-mesh gates
 const bodies = geometry.carBodies ?? {};
 const rosterSlugs = roster.roster.cars.map((car) => car.slug);
-check('geometry carries one real body per roster car (v5)',
-      geometry.version === 5 && rosterSlugs.every((slug) => bodies[slug]) &&
+check('geometry carries one real body per roster car (v6)',
+      geometry.version === 6 && rosterSlugs.every((slug) => bodies[slug]) &&
       Object.keys(bodies).length === rosterSlugs.length,
       `${Object.keys(bodies).length} bodies, geometry v${geometry.version}`);
 check('every body names its own model, manifest and mesh',
@@ -240,8 +240,8 @@ const corridorTotals = corridorSections.reduce((sum, section) => ({
   triangles: sum.triangles + (section?.triangleCount ?? 0),
   vertices: sum.vertices + (section?.vertexCount ?? 0)
 }), { draws: 0, triangles: 0, vertices: 0 });
-check('geometry carries the real track visual from committed direct draws (v5)',
-      geometry.version === 5 && trackVisual?.label === 'asset-reader-direct-draws' &&
+check('geometry carries the real track visual from committed direct draws (v6)',
+      geometry.version === 6 && trackVisual?.label === 'asset-reader-direct-draws' &&
       geometry.meshes.some((mesh) => mesh.id === trackVisual?.meshId) &&
       trackDraws.length === trackVisual?.drawCount && trackDraws.length > 0,
       `${trackVisual?.label ?? 'missing'} / ${trackDraws.length} draws`);
@@ -402,6 +402,178 @@ check('the two runtime-only draws are exactly g50-n265 primitives 241/242',
         draw.source.geometryBlock === 50 && draw.source.nodeBlock === 265 &&
         [241, 242].includes(draw.source.primitiveIndex)),
       runtimeDraws.map((draw) => draw.source.geometryBlock + '/' + draw.source.primitiveIndex).join(', '));
+
+// ------------------------------------------- per-car albedo textures + UV0
+// P52 resolved every draw of the five roster cars to its committed material row
+// and decoded the static `g_MeshTexture` images (224 of 491 draws). This pass
+// binds those images to the real car meshes. The checks below fail if a texture,
+// a UV0 stream or a runtime-only label is lost, or if a texture is attached to a
+// draw whose UVs did not produce its recorded UV0 hash.
+const CAR_TEXTURE_MANIFEST = path.join(OUT, 'car-textures.json');
+const carTextureManifest = JSON.parse(readFileSync(CAR_TEXTURE_MANIFEST, 'utf8'));
+const carTextureTotals = geometry.carTextures?.totals ?? {};
+const CAR_DRAW_CLASSES = {
+  staticAlbedoDraws: 224, runtimePaintDraws: 45, runtimeLightBlendDraws: 66, runtimeNoAlbedoDraws: 156
+};
+const carBodies = rosterSlugs.map((slug) => bodies[slug]);
+const carDrawsAll = carBodies.flatMap((body) => body.carDraws);
+const carTexturesAll = carBodies.flatMap((body) => body.textures);
+const carTextureIds = new Set(carTexturesAll.map((texture) => texture.id));
+const carTexturedDraws = carDrawsAll.filter((draw) => draw.textureId != null);
+
+/** FNV-1a 64 over the little-endian float32 UV pairs of a draw's index range. */
+function carDrawUvHash(body, draw) {
+  const uv = body.mesh.uv;
+  const bytes = Buffer.from(uv.data, 'base64');
+  const buffer = Buffer.alloc(draw.indexCount * 8);
+  let offset = 0;
+  for (let index = draw.indexOffset; index < draw.indexOffset + draw.indexCount; index++) {
+    const vertex = body.mesh.indices[index];
+    bytes.copy(buffer, offset, vertex * 8, vertex * 8 + 8);
+    offset += 8;
+  }
+  let value = 0xcbf29ce484222325n;
+  for (const byte of buffer) {
+    value ^= BigInt(byte);
+    value = (value * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return value.toString(16).padStart(16, '0');
+}
+
+check('the car texture manifest is pinned, complete and carries the P52 totals',
+      carTextureManifest.kind === 'e1-drive.car-textures' && carTextureManifest.version === 1 &&
+      carTextureManifest.pins?.p52RosterIndex ===
+        'sha256:77e73bfff8e324459d337f9ec1817f717e39aabfe0134433ca886c2a1774cd76' &&
+      carTextureManifest.pins?.carPartsIndex === geometry.source.cars?.indexSha256 &&
+      carTextureManifest.cars.length === rosterSlugs.length &&
+      carTextureManifest.cars.every((car, index) => car.slug === rosterSlugs[index]) &&
+      carTextureManifest.totals.draws === 491 && carTextureManifest.totals.textures === 40 &&
+      carTextureManifest.totals.rgbaBytes === 18178048 &&
+      geometry.carTextures?.manifestSha256 === 'sha256:' +
+        sha256(readFileSync(CAR_TEXTURE_MANIFEST)),
+      `${carTextureManifest.totals?.draws} draws / ${carTextureManifest.totals?.textures} textures`);
+
+check('every car mesh carries its real UV0 stream for every vertex',
+      carBodies.every((body) => {
+        const uv = body.mesh.uv;
+        if (!uv) return false;
+        const bytes = Buffer.from(uv.data, 'base64');
+        const values = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.length / 4);
+        return uv.storage === 'base64-float32le' && uv.components === 2 &&
+          uv.vertexCount === body.mesh.vertexCount && uv.values === body.mesh.vertexCount * 2 &&
+          bytes.length === uv.bytes && uv.bytes === body.mesh.vertexCount * 8 &&
+          values.every(Number.isFinite) &&
+          'sha256:' + sha256(bytes) === uv.sha256;
+      }),
+      carBodies.map((body) => body.slug + ':' + (body.mesh.uv?.vertexCount ?? 0)).join(', '));
+
+check('the car UV0 stream is the exported committed scene-report stream',
+      carBodies.every((body) => {
+        const record = carTextureManifest.cars.find((car) => car.slug === body.slug);
+        const file = path.join(ROOT, record.uvStream.path);
+        if (!existsSync(file)) return false;
+        const bytes = readFileSync(file);
+        return record.uvStream.sha256 === body.mesh.uv.sha256 &&
+          'sha256:' + sha256(bytes) === body.mesh.uv.sha256 &&
+          Buffer.from(body.mesh.uv.data, 'base64').equals(bytes) &&
+          record.mesh.positionsSha256 === body.manifest.meshValueHashes.positionsFloat32LESha256 &&
+          /signed zeros/.test(record.sceneReport.positionsNote ?? '');
+      }) &&
+      carTextureTotals.uvBytes === 1257960 && carTextureTotals.uvValues === 314490,
+      `${carTextureTotals.uvValues} UV values / ${carTextureTotals.uvBytes} B across 5 cars`);
+
+check('224 car draws sample a P52 static albedo image; 267 stay labelled diagnostic',
+      carDrawsAll.length === 491 && carTexturedDraws.length === 224 &&
+      carDrawsAll.filter((draw) => draw.textureBinding?.status === 'runtimePaintLookup').length === 45 &&
+      carDrawsAll.filter((draw) => draw.textureBinding?.status === 'runtimeLightBlend').length === 66 &&
+      carDrawsAll.filter((draw) => draw.textureBinding?.status === 'runtimeShaderNoAlbedo').length === 156 &&
+      carDrawsAll.every((draw) => ['boundStaticAlbedoImage', 'runtimePaintLookup', 'runtimeLightBlend',
+        'runtimeShaderNoAlbedo'].includes(draw.textureBinding?.status)) &&
+      carDrawsAll.filter((draw) => draw.textureId === null)
+        .every((draw) => typeof draw.textureBinding?.reason === 'string' && draw.textureBinding.reason.length > 20),
+      `${carTexturedDraws.length} textured / 45 paint / 66 light / 156 no-albedo`);
+
+check('the 40 car textures are unique, per-car and traced to their P52 source',
+      carTexturesAll.length === 40 && carTextureIds.size === 40 &&
+      carBodies.every((body) => {
+        const record = carTextureManifest.cars.find((car) => car.slug === body.slug);
+        return body.textures.length === record.coverage.textureCount &&
+          body.textures.every((texture) => {
+            const source = record.textures.find((entry) => entry.id === texture.id);
+            return source && texture.id.startsWith('car.' + body.slug + '.') &&
+              /^(block|shared)-/.test(texture.id.slice(('car.' + body.slug + '.').length)) &&
+              source.name === texture.name && source.textureHash === texture.textureHash &&
+              source.rgbaSha256 === texture.rgbaSha256 &&
+              texture.width === source.width && texture.height === source.height &&
+              texture.width * texture.height * 4 === texture.rgbaBytes &&
+              texture.drawCount > 0;
+          });
+      }),
+      carBodies.map((body) => body.slug + ':' + body.textures.length).join(', '));
+
+check('every embedded car RGBA payload re-hashes to the committed P52 image',
+      carTexturesAll.reduce((sum, texture) => sum + texture.rgbaBytes, 0) === 18178048 &&
+      carTexturesAll.every((texture) => {
+        const embedded = Buffer.from(texture.rgbaBase64, 'base64');
+        const file = path.join(ROOT, texture.rgbaPath);
+        if (!existsSync(file)) return false;
+        return embedded.length === texture.rgbaBytes &&
+          embedded.length === texture.width * texture.height * 4 &&
+          'sha256:' + sha256(embedded) === texture.rgbaSha256 &&
+          readFileSync(file).equals(embedded);
+      }),
+      `${carTexturesAll.reduce((sum, texture) => sum + texture.rgbaBytes, 0)} RGBA B in ` +
+      `${carTexturesAll.length} payloads`);
+
+check('every textured car draw binds the texture whose UV0 hash the mesh stream reproduces',
+      carTexturedDraws.length === 224 && carTexturedDraws.every((draw) => {
+        const body = carBodies.find((candidate) => candidate.carDraws.includes(draw));
+        const record = body && carTextureManifest.cars
+          .find((car) => car.slug === body.slug).draws[draw.source.drawIndex];
+        if (!record || !body) return false;
+        return record.textureId === draw.textureId &&
+          record.uvHash === draw.textureBinding.uvHash &&
+          '0x' + carDrawUvHash(body, draw) === draw.textureBinding.uvHash &&
+          carTextureIds.has(draw.textureId);
+      }),
+      '224/224 UV0 value hashes recomputed from the mesh stream');
+
+check('every textured car draw samples finite UV0 inside the exported stream',
+      carTexturedDraws.every((draw) => {
+        const body = carBodies.find((candidate) => candidate.carDraws.includes(draw));
+        const bounds = body?.mesh.uv?.bounds;
+        const range = draw.textureBinding.uvRange;
+        if (!bounds || !Array.isArray(range) || range.length !== 2) return false;
+        return range.every((axis, index) => Array.isArray(axis) && axis.length === 2 &&
+          axis.every(Number.isFinite) &&
+          axis[0] >= bounds.min[index] - 1e-6 && axis[1] <= bounds.max[index] + 1e-6);
+      }),
+      '224/224 draws inside the exported UV0 bounds (constant-UV decal draws included)');
+
+check('the car texture pack uses the same explicit repeat/linear mip0 sampler',
+      geometry.carTextures?.sampler?.addressModeU === 'repeat' &&
+      geometry.carTextures.sampler.addressModeV === 'repeat' &&
+      geometry.carTextures.sampler.magFilter === 'linear' &&
+      geometry.carTextures.sampler.minFilter === 'linear' &&
+      geometry.carTextures.sampler.mipLevelsUploaded === 1 &&
+      geometry.carTextures.sampler.textureFormat === 'rgba8unorm' &&
+      geometry.carTextures.sampler.colourSpace === 'raw-decoded-texels' &&
+      geometry.carTextures.scopeLabels?.materialsApplied === false &&
+      geometry.carTextures.scopeLabels?.samplerApplied === false &&
+      geometry.carTextures.scopeLabels?.paintLookupRecovered === false &&
+      geometry.carTextures.scopeLabels?.lightBlendRecovered === false &&
+      geometry.carTextures.scopeLabels?.srgbApplied === false,
+      geometry.carTextures?.sampler?.reason?.slice(0, 70) ?? 'missing');
+
+check('the car UV convention is declared and applied to exactly the textured car draws',
+      geometry.carTextures?.uvConvention?.sampleV === '1 - uv0.v' &&
+      /V-down/.test(geometry.carTextures.uvConvention.reason ?? '') &&
+      carTexturedDraws.every((draw) => draw.uvFlipV === true &&
+        draw.textureBinding?.uvConvention === 'sampled as (u, 1 - v)') &&
+      carDrawsAll.filter((draw) => draw.textureId == null).every((draw) => draw.uvFlipV === false) &&
+      trackDraws.every((draw) => draw.uvFlipV !== true) &&
+      carTextureManifest.uvConvention?.evidence?.length === 3,
+      `${carTexturedDraws.length} car draws sampled (u, 1-v), ${trackDraws.length} track draws unchanged`);
 
 // ------------------------------------------------------ camera occlusion
 // The chase camera resolves occlusion against the visible static geometry. The
@@ -1263,6 +1435,28 @@ for (const car of cars) {
   check(`${car.name}: materials are diagnostic and labelled`,
         packet.diagnostics.materialsApplied === false &&
         packet.draws.every((draw) => typeof draw.materialReason === 'string' && draw.materialReason.length > 0));
+  // The packet carries the static level/track albedo pack plus only this car's own
+  // P52 images: the upload is bounded by one car, never the whole roster, and no
+  // draw may name an image that the packet did not upload.
+  const packetCarTextures = body.textures;
+  const packetTextureIds = new Set(packet.textures.map((texture) => texture.id));
+  const packetCarDraws = packet.draws.filter((draw) => draw.meshId === body.meshId);
+  const packetCarTextured = packetCarDraws.filter((draw) => draw.textureId != null);
+  check(`${car.name}: the packet uploads the 136 track textures plus only this car's own images`,
+        packet.textures.length === 136 + packetCarTextures.length &&
+        packetTextureIds.size === packet.textures.length &&
+        packet.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) ===
+          439360 + packetCarTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) &&
+        packet.carTexturePack?.manifestSha256 === geometry.carTextures.manifestSha256,
+        `${packet.textures.length} textures / ` +
+        `${packet.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0)} B`);
+  check(`${car.name}: every car draw samples a texture the packet uploaded, and the UV0 mesh is real`,
+        packetCarDraws.length === body.carDraws.length &&
+        packetCarTextured.length === body.carDraws.filter((draw) => draw.textureId != null).length &&
+        packetCarTextured.every((draw) => packetTextureIds.has(draw.textureId)) &&
+        packet.draws.every((draw) => draw.textureId == null || packetTextureIds.has(draw.textureId)) &&
+        packet.meshes.find((mesh) => mesh.id === body.meshId)?.uv?.sha256 === body.mesh.uv.sha256,
+        `${packetCarTextured.length}/${packetCarDraws.length} car draws textured`);
   check(`${car.name}: the packet names the car it describes`,
         packet.diagnostics.extras.drive.car?.name === car.name &&
         packet.diagnostics.extras.drive.car?.recordId === car.record.id,
@@ -1559,7 +1753,17 @@ for (const car of cars) {
       wheelDraws: body.manifest.wheelDraws,
       ambiguousWheelDraws: body.manifest.ambiguousWheelDraws,
       tyreProofTier: body.manifest.tyreProofTier,
-      mapping: body.manifest.mapping
+      mapping: body.manifest.mapping,
+      texturedDraws: body.carDraws.filter((draw) => draw.textureId != null).length,
+      textures: body.textures.length,
+      textureBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+      uvVertices: body.mesh.uv?.vertexCount ?? null,
+      uvValues: body.mesh.uv?.values ?? null,
+      uvBytes: body.mesh.uv?.bytes ?? null,
+      uvSha256: body.mesh.uv?.sha256 ?? null,
+      textureManifest: body.texturePack?.manifest ?? null,
+      textureManifestSha256: body.texturePack?.manifestSha256 ?? null,
+      drawClasses: body.texturePack?.coverage ?? null
     }
   });
 }
@@ -2085,35 +2289,37 @@ async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
 //
 // The `packet` anchor is the whole-packet hash, so it moves whenever the static
 // packet body changes; P49 added the real UV0 and static albedo texture payloads
-// (geometry v5), so these values are the P49 geometry.
+// (geometry v5) and P55 added the P52 per-car albedo textures + car UV0 stream
+// (geometry v6), so these values are the P55 geometry. Physics did not move: the
+// drive/sprint state sequence anchors below are still P36/P37.
 const PHYSICS_ANCHORS = Object.freeze({
   'corvette-zr1-stock': {
     drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
-    packet: 'sha256:3f0bd5a12e2d3ec4ca44f30571e8d7a88d66aac1b476ede6eddf84757c62c20d',
+    packet: 'sha256:746853ba37601ce7879eb5f1cc7ce2e44cc6a7ad795f1dfc2c45d3b2f7fa57ff',
     sprint310: 'sha256:da7e14f16be2649f32902d18cc999cd39af09320d4e4b24ec40a37c086f9a553',
     sprintShort: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
   },
   'lotus-exige-cup260-stock': {
     drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
-    packet: 'sha256:9daf559a8c8f2ed8d3b623dbe1dc453002ad1187730ceb6607117d651c270387',
+    packet: 'sha256:8b9ef8d0eae6cf48b82110c8ca6b17845e8796802da259c78534edf295a35ab0',
     sprint310: 'sha256:83f05df48244c000889b4d1adcc83afe34a98f5b65370de3d87419448a92367e',
     sprintShort: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
   },
   'dodge-challenger-stock': {
     drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
-    packet: 'sha256:d4e9f0550bd83b3260a4a3c8e9926345d19bca62f7cd3d8da172eaaa937c7222',
+    packet: 'sha256:3b21364b00158226dabea4f43568f94a38c9b79d40295f42043e9153a32aeb16',
     sprint310: 'sha256:accf125a629dbf7f66e7dbed2d38990fb21c67ad26a65fbef288e3716ac8210a',
     sprintShort: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
   },
   'ford-focusrs-stock': {
     drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
-    packet: 'sha256:10a2e09274af1172e2690bfbd9e6c5a90e9d8a4e86d819276b1c5b4b361adb99',
+    packet: 'sha256:b92c105301ae00c37b01551cebe28412360ff30536953ecbbbe383e2e89ac9e7',
     sprint310: 'sha256:1094698d566bf3a6f335545ea37089113874c21d2f438a059d2c95e3d9f2063f',
     sprintShort: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
   },
   'audi-r8v10-stock': {
     drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
-    packet: 'sha256:5b96bc3d50f25bda3f6ab5ea2780427d9538e467e9d61a1641ba62efd0d82d05',
+    packet: 'sha256:fb23b0cc460acc6341b0a9bafdde6f293d7cb964b822360ebe2165bfbe701f01',
     sprint310: 'sha256:0b32413d797b23b0db957f2583ab221fe3e64388144d743b8d20e2b39f14b5ca',
     sprintShort: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
   }

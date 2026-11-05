@@ -333,6 +333,12 @@ vertex. Render-packet v1.1 şemasına karşı 8 ihlal / 4 not (timeline yok,
 topology strip, engine-buffer, null geometry) — producer hazır, tüketici için
 dönüşüm gerekli. Kanıt: `docs/work/verification/T-007-engine-packet.md`.
 
+**Araç dokuları (P55):** 5 araçta 491 draw'dan **224'ü** gerçek albedo + UV0
+ile dokulandı (50/48/42/37/47); 40 doku / 18.178.048 B RGBA; 267 draw
+diagnostic (45 paint, 66 light, 156 no-albedo). `verify_e1_drive` **570/570**;
+20 capture console 0; soak temiz. Kanıt:
+`docs/work/verification/T-007-textured-cars.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list
