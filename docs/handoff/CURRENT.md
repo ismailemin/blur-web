@@ -281,6 +281,13 @@ packet hash `8b3a40324410327f`; 2 runtime-only materyal `null` + neden; 56 nesne
 859.568 B, **88/88**, PC parity. Kanıt:
 `docs/work/verification/T-007-drawlist-track.md`.
 
+**Track UV/binding (P45):** 299/299 draw UV0 çözüldü (292 F16_4, 7 F16_2;
+aggregate `2ed1f4b0b3c9148e`); asset-reader `level_mesh` UV0 ile 299/299
+bit-birebir. Binding 297 statik / 2 runtime-only; 151 draw 40 P34 dokusunda,
+146 draw 96 çözülmemiş blokta (blok/öğe kayıtlı); aggregate `70237f9bb7f0a20c`;
+56 nesne, 870.155 B, **92/92**. Kanıt:
+`docs/work/verification/T-007-uv-binding.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

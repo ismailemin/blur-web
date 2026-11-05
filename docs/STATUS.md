@@ -573,6 +573,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - **299 draw / 47.790 üçgen / 78.712 vertex** — track-coverage referansıyla birebir; bounds 6/6 1e-5, primitive offset 299/299; packet hash `8b3a40324410327f`.
 - 2 `g50-n265` draw'ı runtime-only materyal: `materialId=null` + neden. 56 nesne, 859.568 B, **88/88**, PC parity. Kanıt: `docs/work/verification/T-007-drawlist-track.md`.
 
+## 5 Kasım 2026 — track UV0 ve doku binding
+
+- 299/299 draw için UV0 çözüldü (292 F16_4, 7 F16_2; offset 16, stream 0, 5 stride); aggregate `2ed1f4b0b3c9148e`; asset-reader `level_mesh` UV0 ile 299/299 bit-birebir (143.370 indeks).
+- Binding: **297 statik / 2 runtime-only**; 151 draw 40 P34 dokusunda, 146 draw 96 çözülmemiş blokta (blok/öğe kayıtlı); aggregate `70237f9bb7f0a20c`.
+- 56 nesne, 870.155 B, **92/92**, PC parity. Kalan: sampling/wrap/filter, 96 blok doku, UV1+. Kanıt: `docs/work/verification/T-007-uv-binding.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

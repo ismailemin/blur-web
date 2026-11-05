@@ -877,6 +877,52 @@ bool textureRefLess( const TextureRef& a, const TextureRef& b )
 	return a.index < b.index;
 }
 
+// --- P45: decoded static texture registry ----------------------------------
+//
+// The P34 texture phase registers every texture it decoded. The six track
+// sections bind each draw's static albedo source against this registry: the
+// identity below (archive name, texture hash, size, format, RGBA hash) is the
+// already verified P34 decode of the same `block:index`. A section source
+// outside the registry is reported with the engine chunk/item that holds it
+// and is *not* decoded here, so the P34 102-source set, its aggregate hash and
+// its checks stay unchanged. No sampler or GPU object is involved either way.
+const int kMaxDecodedTextures = 256;
+
+struct DecodedTextureRecord
+{
+	S32 block;
+	int index;
+	char name[ 256 ];
+	U32 textureHash;
+	U32 width;
+	U32 height;
+	U32 levels;
+	U32 format;
+	U64 rgbaHash;
+	S32 chunk;
+	int item;
+};
+
+DecodedTextureRecord g_decodedTextures[ kMaxDecodedTextures ];
+int g_decodedTextureCount = 0;
+int g_decodedTextureOverflow = 0;
+// The engine ChunkInfo table of the loaded Scene. Only the section pass reads
+// it through this pointer, to name the chunk/item of an undecoded texture
+// source; the P34 phase receives the table directly.
+const RenderingData::Target::StreamData* g_sectionStreamTable = 0;
+
+const DecodedTextureRecord* findDecodedTexture( S32 block, int index )
+{
+	for ( int i = 0; i < g_decodedTextureCount; i++ )
+	{
+		if ( g_decodedTextures[ i ].block == block &&
+			g_decodedTextures[ i ].index == index )
+			return &g_decodedTextures[ i ];
+	}
+
+	return 0;
+}
+
 // --- P30: constant material rows ------------------------------------------
 //
 // The target RenderListNode serialiser already reads the constant material
@@ -2053,6 +2099,562 @@ void printTextureHex( const U8* data, size_t bytes )
 	printf( "%s", &text[ 0 ] );
 }
 
+// --- P45: per-draw UV0 and static albedo binding ---------------------------
+//
+// UV0 is the declaration's TEXCOORD element (usage 5, index 0), read through
+// the declaration's own stream binding: the declaration names the stream, the
+// primitive's stream record names the vertex buffer and its byte offset, and
+// the imported buffer record supplies stride/count. The POSITION element and
+// the POSITION stream are only used to validate that the draw is bound; no UV
+// is derived from them.
+//
+// The web target deserialiser records stride/count for an imported buffer and
+// does not retain its per-element VertexFormat, so the declaration element is
+// the format authority here - the same element P44's section bounds already
+// use for POSITION. The committed asset-reader re-read (verify_stream.py)
+// independently parses the stored elements and requires them to repeat the
+// declaration for every draw, so the declaration is checked, not assumed.
+//
+// Only the first two components of the element are UV0 (F16_4 carries two
+// more). Halves are converted with the exact IEEE754 rule already used for
+// positions; a non-finite component is a named failure, never a zero pair.
+const char* g_sectionKey = 0;
+
+struct Uv0Binding
+{
+	bool valid;
+	const char* reason;
+	int stream;
+	int elementIndex;
+	int elementOffset;
+	int type;
+	int method;
+	int components;
+	int elementBytes;
+	int vertexBuffer;
+	S32 vbBlock;
+	S32 vbIndex;
+	int streamByteOffset;
+	int vertexShift;
+	int stride;
+	int vbVertexCount;
+	int firstVertex;
+	int vertexCount;
+	int arenaOffset;
+	int lastByte;
+};
+
+struct SectionUvTotals
+{
+	int records;
+	int present;
+	int absent;
+	int nonfinite;
+	int staticBindings;
+	int runtimeBindings;
+	int decodedBindings;
+	int notDecodedBindings;
+	int missingBlockBindings;
+	int aggregateOverflow;
+	uint64_t uvAggregate;
+	uint64_t bindAggregate;
+};
+
+SectionUvTotals g_sectionUv;
+
+void initSectionUvTotals( SectionUvTotals* totals )
+{
+	memset( totals, 0, sizeof( *totals ) );
+	totals->uvAggregate = fnv_begin();
+	totals->bindAggregate = fnv_begin();
+}
+
+// Resolve the UV0 element address for one bound draw. Returns false with a
+// reason token when the declaration does not prove a readable UV0; nothing is
+// filled in on failure except the fields that name what was refused.
+bool resolveUv0( const RenderingData::Target::RenderListNode& list,
+	const WebSpike::PrimitiveRecord& record, const GeometryView& geometry,
+	const WebSpike::LodRecord& lod, Uv0Binding* out )
+{
+	memset( out, 0, sizeof( *out ) );
+	out->reason = "none";
+	out->stream = -1;
+	out->elementIndex = -1;
+	out->elementOffset = -1;
+	out->type = -1;
+	out->method = -1;
+	out->vertexBuffer = -1;
+	out->vbBlock = -1;
+	out->vbIndex = -1;
+	out->streamByteOffset = -1;
+	out->vertexShift = -1;
+	out->vbVertexCount = -1;
+	out->firstVertex = -1;
+	out->vertexCount = -1;
+	out->arenaOffset = -1;
+	out->lastByte = -1;
+
+	const WebSpike::DrawListState& draws = WebSpike::Draws();
+
+	if ( record.declaration < 0 || record.declaration >= draws.declarations )
+	{
+		out->reason = "uv0DeclarationOutOfRange";
+		return false;
+	}
+
+	const WebSpike::DeclRecord& decl = draws.decl[ record.declaration ];
+	int found = 0;
+
+	for ( int e = 0; e < decl.count; e++ )
+	{
+		if ( decl.elements[ e ].usage == 5 && decl.elements[ e ].usageIndex == 0 )
+		{
+			out->elementIndex = e;
+			++found;
+		}
+	}
+
+	if ( found == 0 )
+	{
+		out->reason = "noUv0Declaration";
+		return false;
+	}
+
+	if ( found > 1 )
+	{
+		out->reason = "duplicateUv0Declaration";
+		return false;
+	}
+
+	const WebSpike::DeclElementRecord& element = decl.elements[ out->elementIndex ];
+	out->stream = element.stream;
+	out->elementOffset = element.offset;
+	out->type = element.type;
+	out->method = element.method;
+
+	if ( out->method != 0 )
+	{
+		out->reason = "uv0Method";
+		return false;
+	}
+
+	if ( out->type == 5 )
+	{
+		out->components = 2;
+		out->elementBytes = 8;
+	}
+	else if ( out->type == 8 )
+	{
+		out->components = 2;
+		out->elementBytes = 4;
+	}
+	else if ( out->type == 9 )
+	{
+		out->components = 4;
+		out->elementBytes = 8;
+	}
+	else
+	{
+		out->reason = "uv0Type";
+		return false;
+	}
+
+	int bindings = 0;
+
+	for ( int s = 0; s < record.streamCount; s++ )
+	{
+		if ( record.streams[ s ].streamIndex != out->stream )
+			continue;
+
+		++bindings;
+		out->streamByteOffset = record.streams[ s ].vertexOffset;
+		out->vertexBuffer = record.streams[ s ].vertexBuffer;
+
+		if ( record.streams[ s ].frequency != 0 )
+		{
+			out->reason = "uv0InstancedStream";
+			return false;
+		}
+	}
+
+	if ( bindings == 0 )
+	{
+		out->reason = "uv0StreamNotBound";
+		return false;
+	}
+
+	if ( bindings > 1 )
+	{
+		out->reason = "duplicateUv0Stream";
+		return false;
+	}
+
+	if ( out->streamByteOffset < 0 )
+	{
+		out->reason = "uv0StreamOffset";
+		return false;
+	}
+
+	if ( out->vertexBuffer < 0 ||
+		out->vertexBuffer >= list.GetNumVertexBuffers() )
+	{
+		out->reason = "uv0VertexSourceOutOfRange";
+		return false;
+	}
+
+	const RenderingData::ResourceIndex source =
+		list.GetVertexBufferSource( out->vertexBuffer );
+	out->vbBlock = source.GetBlock();
+	out->vbIndex = source.GetIndex();
+
+	if ( out->vbBlock != geometry.block )
+	{
+		out->reason = "uv0ExternalVertexBuffer";
+		return false;
+	}
+
+	if ( out->vbIndex < 0 || out->vbIndex >= geometry.vertexBufferCount )
+	{
+		out->reason = "uv0VertexBufferNotImported";
+		return false;
+	}
+
+	const WebSpike::BufferRecord& vb = geometry.vertexBuffers[ out->vbIndex ];
+	out->stride = vb.stride;
+	out->vbVertexCount = vb.count;
+
+	if ( vb.compression != 0 )
+	{
+		out->reason = "uv0CompressedBuffer";
+		return false;
+	}
+
+	if ( vb.endianSwap != 0 )
+	{
+		out->reason = "uv0EndianSwap";
+		return false;
+	}
+
+	if ( !vb.payloadRetained )
+	{
+		out->reason = "uv0PayloadNotRetained";
+		return false;
+	}
+
+	if ( vb.stride <= 0 || vb.count <= 0 )
+	{
+		out->reason = "uv0BufferShape";
+		return false;
+	}
+
+	if ( out->elementOffset < 0 ||
+		out->elementOffset > vb.stride - out->elementBytes )
+	{
+		out->reason = "uv0ElementOutOfStride";
+		return false;
+	}
+
+	if ( out->streamByteOffset % vb.stride != 0 )
+	{
+		out->reason = "uv0UnalignedStreamOffset";
+		return false;
+	}
+
+	out->vertexShift = out->streamByteOffset / vb.stride;
+
+	if ( lod.minIndex < 0 || lod.vertices <= 0 ||
+		lod.minIndex > vb.count - out->vertexShift ||
+		lod.vertices > vb.count - out->vertexShift - lod.minIndex )
+	{
+		out->reason = "uv0RangeOutOfBuffer";
+		return false;
+	}
+
+	out->firstVertex = lod.minIndex + out->vertexShift;
+	out->vertexCount = lod.vertices;
+	out->arenaOffset = vb.payloadOffset +
+		out->firstVertex * vb.stride + out->elementOffset;
+	out->lastByte = out->arenaOffset +
+		( out->vertexCount - 1 ) * vb.stride + out->elementBytes - 1;
+	out->valid = true;
+	return true;
+}
+
+void readUvPair( const U8* payload, const Uv0Binding& uv, int vertex, F32 out[ 2 ] )
+{
+	const U8* at = payload + (size_t)vertex * (size_t)uv.stride +
+		uv.elementOffset;
+
+	if ( uv.type == 5 )
+	{
+		memcpy( out, at, sizeof( F32 ) * 2 );
+		return;
+	}
+
+	U16 raw[ 2 ];
+	memcpy( raw, at, sizeof( raw ) );
+	out[ 0 ] = halfToFloat( raw[ 0 ] );
+	out[ 1 ] = halfToFloat( raw[ 1 ] );
+}
+
+// UV0 value range over the draw's declared vertex range (minIndex..+vertices),
+// the same vertex span the packet record publishes.
+bool uvRange( const U8* payload, const Uv0Binding& uv, F32 low[ 2 ], F32 high[ 2 ] )
+{
+	low[ 0 ] = low[ 1 ] = 0.0f;
+	high[ 0 ] = high[ 1 ] = 0.0f;
+
+	for ( int i = 0; i < uv.vertexCount; i++ )
+	{
+		F32 pair[ 2 ];
+		readUvPair( payload, uv, uv.firstVertex + i, pair );
+
+		if ( !isfinite( pair[ 0 ] ) || !isfinite( pair[ 1 ] ) )
+			return false;
+
+		if ( i == 0 )
+		{
+			low[ 0 ] = high[ 0 ] = pair[ 0 ];
+			low[ 1 ] = high[ 1 ] = pair[ 1 ];
+			continue;
+		}
+
+		for ( int k = 0; k < 2; k++ )
+		{
+			if ( pair[ k ] < low[ k ] )
+				low[ k ] = pair[ k ];
+			if ( pair[ k ] > high[ k ] )
+				high[ k ] = pair[ k ];
+		}
+	}
+
+	return true;
+}
+
+// UV0 hash over the draw's emitted triangle sequence: for every triangle the
+// harness counts (strip parity applied, degenerate triples skipped) the three
+// vertex indices address the UV element and their F32 bits are folded in order.
+// The committed asset reader emits the same triangle sequence, so its UV0
+// pairs can be hashed the same way from its own index list.
+bool uvSequenceHash( const U8* vbPayload, const Uv0Binding& uv,
+	const WebSpike::BufferRecord& ib, const WebSpike::LodRecord& lod,
+	int topology, uint64_t* hashOut )
+{
+	*hashOut = fnv_begin();
+	const U8* indices = (const U8*)WebSpike::Draws().arena + ib.payloadOffset;
+	const int count = lod.indices;
+	int triangles = 0;
+
+	for ( int j = 2; j < count; j++ )
+	{
+		if ( topology == 0 && ( j - 2 ) % 3 != 0 )
+			continue;
+
+		U32 raw[ 3 ];
+
+		for ( int k = 0; k < 3; k++ )
+		{
+			const int at = lod.offset + j - 2 + k;
+
+			if ( ib.stride == 2 )
+				raw[ k ] = (U32)( (const U16*)indices )[ at ];
+			else
+				raw[ k ] = ( (const U32*)indices )[ at ];
+		}
+
+		if ( topology == 1 && j % 2 )
+		{
+			const U32 swap = raw[ 0 ];
+			raw[ 0 ] = raw[ 1 ];
+			raw[ 1 ] = swap;
+		}
+
+		if ( raw[ 0 ] == raw[ 1 ] || raw[ 1 ] == raw[ 2 ] ||
+			raw[ 0 ] == raw[ 2 ] )
+			continue;
+
+		++triangles;
+
+		for ( int k = 0; k < 3; k++ )
+		{
+			const U32 vertex = raw[ k ] + (U32)uv.vertexShift;
+
+			if ( vertex >= (U32)uv.vbVertexCount )
+				return false;
+
+			F32 pair[ 2 ];
+			readUvPair( vbPayload, uv, (int)vertex, pair );
+
+			if ( !isfinite( pair[ 0 ] ) || !isfinite( pair[ 1 ] ) )
+				return false;
+
+			fnv_f32( *hashOut, pair[ 0 ] );
+			fnv_f32( *hashOut, pair[ 1 ] );
+		}
+	}
+
+	return triangles > 0;
+}
+
+// One line per drawable section draw: the resolved UV0 address/range/hash and
+// the static albedo source with its P34-decoded identity when that source is in
+// the registry. Missing identities keep the source `block:index` and name the
+// engine chunk/item that holds it.
+void emitSectionUv0( const RenderingData::Target::RenderListNode& list,
+	int drawIndex, int nodeIndex, const WebSpike::PrimitiveRecord& record,
+	int primitiveIndex, const GeometryView& geometry,
+	const WebSpike::BufferRecord& ib, const WebSpike::LodRecord& lod,
+	int topology, const PacketRecord& packetRecord, SectionUvTotals* totals )
+{
+	const WebSpike::DrawListState& draws = WebSpike::Draws();
+
+	Uv0Binding uv;
+	bool uvOk = resolveUv0( list, record, geometry, lod, &uv );
+	const char* uvReason = uvOk ? "none" : uv.reason;
+	uint64_t uvHash = 0;
+	F32 uvLow[ 2 ] = { 0.0f, 0.0f };
+	F32 uvHigh[ 2 ] = { 0.0f, 0.0f };
+
+	if ( uvOk )
+	{
+		const U8* payload = (const U8*)draws.arena +
+			geometry.vertexBuffers[ uv.vbIndex ].payloadOffset;
+
+		if ( !uvRange( payload, uv, uvLow, uvHigh ) )
+		{
+			uvOk = false;
+			uvReason = "uv0Nonfinite";
+			++totals->nonfinite;
+		}
+		else if ( !uvSequenceHash( payload, uv, ib, lod, topology, &uvHash ) )
+		{
+			uvOk = false;
+			uvReason = "uv0Sequence";
+		}
+	}
+
+	++totals->records;
+	if ( uvOk )
+		++totals->present;
+	else
+	{
+		++totals->absent;
+		uvHash = 0;
+		uvLow[ 0 ] = uvLow[ 1 ] = uvHigh[ 0 ] = uvHigh[ 1 ] = 0.0f;
+	}
+
+	const DecodedTextureRecord* decoded = 0;
+	const char* textureState = "runtimeOnly";
+	const char* bindReason = "runtimeOnlyAlbedoParameter";
+	S32 textureChunk = -1;
+	int textureItem = -1;
+
+	if ( packetRecord.albedoBlock >= 0 && packetRecord.albedoSourceIndex >= 0 )
+	{
+		decoded = findDecodedTexture( packetRecord.albedoBlock,
+			packetRecord.albedoSourceIndex );
+
+		if ( decoded != 0 )
+		{
+			textureState = "decoded";
+			bindReason = "none";
+			++totals->decodedBindings;
+		}
+		else
+		{
+			ChunkRange range;
+			memset( &range, 0, sizeof( range ) );
+
+			if ( g_sectionStreamTable != 0 &&
+				findChunkItem( *g_sectionStreamTable, packetRecord.albedoBlock, 0,
+					&range ) )
+			{
+				textureState = "notDecodedInP34Set";
+				bindReason = "textureNotDecodedInP34Set";
+				textureChunk = range.chunk;
+				textureItem = range.item;
+				++totals->notDecodedBindings;
+			}
+			else
+			{
+				textureState = "blockNotInStream";
+				bindReason = "textureBlockNotInStream";
+				++totals->missingBlockBindings;
+			}
+		}
+
+		++totals->staticBindings;
+	}
+	else
+		++totals->runtimeBindings;
+
+	if ( g_decodedTextureOverflow != 0 )
+	{
+		textureState = "registryOverflow";
+		bindReason = "decodedTextureRegistryOverflow";
+		++totals->aggregateOverflow;
+	}
+
+	printf( "webfiledraw section uv0 key=%s draw=%d node=%d primitive=%d "
+		"source=%d vtxoffset=%d vtxcount=%d declaration=%d "
+		"uvnull=%d uvreason=%s uvstream=%d uvelement=%d uvoffset=%d "
+		"uvtype=%d uvmeth=%d "
+		"uvcomponents=%d uvstride=%d uvstreambyte=%d uvshift=%d uvvb=%d:%d "
+		"uvvbcount=%d uvfirst=%d uvcount=%d uvarena=%d uvlastbyte=%d "
+		"uvmin=%.9g,%.9g uvmax=%.9g,%.9g uvhash=0x%016llx "
+		"albedo=%d:%d albedorow=%d albedoindex=%d material=%s "
+		"texstate=%s texture=%s texturehash=%u format=%u width=%u height=%u "
+		"levels=%u rgba=0x%016llx texturechunk=%d textureitem=%d bindreason=%s\n",
+		g_sectionKey, drawIndex, nodeIndex, primitiveIndex, record.streamOffset,
+		packetRecord.vertexOffset, packetRecord.vertexCount, record.declaration,
+		uvOk ? 0 : 1, uvReason, uv.stream, uv.elementIndex, uv.elementOffset,
+		uv.type, uv.method,
+		uv.components, uv.stride, uv.streamByteOffset, uv.vertexShift,
+		(int)uv.vbBlock, (int)uv.vbIndex, uv.vbVertexCount, uv.firstVertex,
+		uv.vertexCount, uv.arenaOffset, uv.lastByte,
+		uvLow[ 0 ], uvLow[ 1 ], uvHigh[ 0 ], uvHigh[ 1 ],
+		(unsigned long long)uvHash, (int)packetRecord.albedoBlock,
+		(int)packetRecord.albedoSourceIndex, packetRecord.materialRow,
+		packetRecord.albedoIndex,
+		packetRecord.materialId[ 0 ] ? packetRecord.materialId : "null",
+		textureState, decoded != 0 ? decoded->name : "null",
+		decoded != 0 ? decoded->textureHash : 0u,
+		decoded != 0 ? decoded->format : 0u,
+		decoded != 0 ? decoded->width : 0u,
+		decoded != 0 ? decoded->height : 0u,
+		decoded != 0 ? decoded->levels : 0u,
+		decoded != 0 ? decoded->rgbaHash : 0ull,
+		(int)textureChunk, textureItem, bindReason );
+
+	fnv_string( totals->uvAggregate, g_sectionKey );
+	fnv_u32( totals->uvAggregate, (U32)drawIndex );
+	fnv_u32( totals->uvAggregate, uvOk ? 1u : 0u );
+	fnv_u32( totals->uvAggregate, (U32)uv.stream );
+	fnv_u32( totals->uvAggregate, (U32)uv.type );
+	fnv_u32( totals->uvAggregate, (U32)uv.elementOffset );
+	fnv_u32( totals->uvAggregate, (U32)uv.stride );
+	fnv_u32( totals->uvAggregate, (U32)uv.vertexShift );
+	fnv_u32( totals->uvAggregate, (U32)uv.firstVertex );
+	fnv_u32( totals->uvAggregate, (U32)uv.vertexCount );
+	fnv_u64( totals->uvAggregate, uvHash );
+	fnv_string( totals->uvAggregate, uvReason );
+
+	fnv_string( totals->bindAggregate, g_sectionKey );
+	fnv_u32( totals->bindAggregate, (U32)drawIndex );
+	fnv_u32( totals->bindAggregate, (U32)packetRecord.albedoBlock );
+	fnv_u32( totals->bindAggregate, (U32)packetRecord.albedoSourceIndex );
+	fnv_u32( totals->bindAggregate, (U32)packetRecord.materialRow );
+	fnv_u32( totals->bindAggregate, (U32)packetRecord.albedoIndex );
+	fnv_u32( totals->bindAggregate, decoded != 0 ? decoded->textureHash : 0u );
+	fnv_u32( totals->bindAggregate, decoded != 0 ? decoded->format : 0u );
+	fnv_u32( totals->bindAggregate, decoded != 0 ? decoded->width : 0u );
+	fnv_u32( totals->bindAggregate, decoded != 0 ? decoded->height : 0u );
+	fnv_u32( totals->bindAggregate, decoded != 0 ? decoded->levels : 0u );
+	fnv_u64( totals->bindAggregate, decoded != 0 ? decoded->rgbaHash : 0ull );
+	fnv_string( totals->bindAggregate, textureState );
+	fnv_string( totals->bindAggregate, bindReason );
+}
+
 // Emit one draw record. Every field comes from the archive; a field that the
 // engine did not bind is printed as null with a reason token, never guessed.
 void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawIndex,
@@ -2179,6 +2781,7 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 	int triangleCount = 0;
 	int indexCount = 0;
 	int firstIndex = totals->triangleIndices;
+	const WebSpike::BufferRecord* boundIb = 0;
 	const WebSpike::LodRecord* lod =
 		record.lodCount > 0 ? &record.lods[ 0 ] : 0;
 
@@ -2186,6 +2789,7 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 	{
 		const WebSpike::BufferRecord& vb = geometry.vertexBuffers[ vbIndex ];
 		const WebSpike::BufferRecord& ib = geometry.indexBuffers[ ibIndex ];
+		boundIb = &ib;
 		int streamByteOffset = 0;
 
 		for ( int s = 0; s < record.streamCount; s++ )
@@ -2427,6 +3031,13 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 	}
 
 	resolveAlbedo( list, probe, &packetRecord );
+
+	// P45: only the six track sections emit the per-draw UV0 and static
+	// albedo-binding record. The two P34 lists keep their exact output.
+	if ( g_sectionKey != 0 && bound && boundIb != 0 && lod != 0 )
+		emitSectionUv0( list, drawIndex, nodeIndex, record, primitiveIndex,
+			geometry, *boundIb, *lod, record.topology, packetRecord,
+			&g_sectionUv );
 
 	++packet->records;
 	++packet->directRecords;
@@ -4206,6 +4817,31 @@ int main( int argc, char** argv )
 					(unsigned long long)rgbaHash, (int)chunk,
 					(int)( item - parsed ) );
 
+				// P45: register this decode for the section albedo binding.
+				// The identity is exactly what the P34 gate above compares, so
+				// a section binding that resolves here is the same verified
+				// texture, not a second decode of the same bytes.
+				if ( g_decodedTextureCount < kMaxDecodedTextures )
+				{
+					DecodedTextureRecord& entry =
+						g_decodedTextures[ g_decodedTextureCount++ ];
+					memset( &entry, 0, sizeof( entry ) );
+					entry.block = ref.block;
+					entry.index = ref.index;
+					snprintf( entry.name, sizeof( entry.name ), "%s",
+						texture.name );
+					entry.textureHash = texture.textureHash;
+					entry.width = texture.width;
+					entry.height = texture.height;
+					entry.levels = texture.levels;
+					entry.format = texture.format;
+					entry.rgbaHash = rgbaHash;
+					entry.chunk = chunk;
+					entry.item = (int)( item - parsed );
+				}
+				else
+					++g_decodedTextureOverflow;
+
 				printf( "webfiledraw texturebytes block=%d index=%d bytes=%d hex=",
 					(int)ref.block, ref.index, (int)blob.size() );
 				printTextureHex( &blob[ 0 ], blob.size() );
@@ -4314,6 +4950,11 @@ int main( int argc, char** argv )
 	// The texture-source set belongs to the two P34 lists. The sections resolve
 	// the same material ids but must not extend the 102-source set.
 	g_collectTextureRefs = false;
+
+	// P45: the section UV0/binding totals and the engine table used to name an
+	// undecoded texture source's chunk/item.
+	initSectionUvTotals( &g_sectionUv );
+	g_sectionStreamTable = &scene->GetStreamData();
 
 	for ( int s = 0; s < 6; s++ )
 	{
@@ -4455,8 +5096,12 @@ int main( int argc, char** argv )
 		totals.hash = fnv_begin();
 
 		if ( prerequisitesOk )
+		{
+			g_sectionKey = definition.key;
 			emitNodeDraws( nodeResources, nodeRange, sectionGeometry, &totals,
 				&sectionPacket, "webfiledraw section" );
+			g_sectionKey = 0;
+		}
 
 		GeometryBounds bounds;
 		memset( &bounds, 0, sizeof( bounds ) );
@@ -4537,6 +5182,40 @@ int main( int argc, char** argv )
 		sectionPacket.omitted == sectionPacket.records - sectionDraws &&
 		sectionPacket.directMaterials + sectionPacket.directMaterialNull ==
 			sectionPacket.records );
+
+	// --- P45: UV0 and static albedo binding ---------------------------------
+	// Per-drawable-draw records only: the 1,056 other-block primitives have no
+	// imported buffer in these sections, so their packet record already carries
+	// `geometryBlockNotImported` and no UV/binding row is invented for them.
+	printf( "webfiledraw section uv summary records=%d uvpresent=%d uvnull=%d "
+		"uvnonfinite=%d static=%d runtime=%d decoded=%d notdecoded=%d "
+		"missingblock=%d registryoverflow=%d uvhash=0x%016llx "
+		"bindhash=0x%016llx\n", g_sectionUv.records, g_sectionUv.present,
+		g_sectionUv.absent, g_sectionUv.nonfinite, g_sectionUv.staticBindings,
+		g_sectionUv.runtimeBindings, g_sectionUv.decodedBindings,
+		g_sectionUv.notDecodedBindings, g_sectionUv.missingBlockBindings,
+		g_sectionUv.aggregateOverflow,
+		(unsigned long long)g_sectionUv.uvAggregate,
+		(unsigned long long)g_sectionUv.bindAggregate );
+
+	check( "drawlist_section_uv0",
+		g_sectionUv.records == sectionDraws &&
+		g_sectionUv.present + g_sectionUv.absent == g_sectionUv.records &&
+		g_sectionUv.present == sectionDraws && g_sectionUv.absent == 0 &&
+		g_sectionUv.nonfinite == 0 );
+	check( "drawlist_section_uv0_hash", g_sectionUv.uvAggregate != 0 );
+	check( "drawlist_section_binding",
+		g_sectionUv.records == sectionDraws &&
+		g_sectionUv.staticBindings + g_sectionUv.runtimeBindings ==
+			g_sectionUv.records &&
+		g_sectionUv.decodedBindings + g_sectionUv.notDecodedBindings +
+			g_sectionUv.missingBlockBindings == g_sectionUv.staticBindings &&
+		g_sectionUv.runtimeBindings == 2 &&
+		g_sectionUv.missingBlockBindings == 0 &&
+		g_sectionUv.aggregateOverflow == 0 &&
+		g_decodedTextureOverflow == 0 &&
+		g_decodedTextureCount == 102 );
+	check( "drawlist_section_bind_hash", g_sectionUv.bindAggregate != 0 );
 
 	// --- explicit failures: a missing range is never zero filled -----------
 	{

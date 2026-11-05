@@ -42,6 +42,7 @@ sürüşü deneyebileceği PoC.
 | Reset/restart düzeltmesi | P40 | ✅ (10+ rebuild) |
 | Uzun pist koridoru | P41 | ✅ (539,81 m) |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
+| UV0 + doku binding | P45 | ✅ (299/299) |
 | Soak/performans | P42 | ✅ (18.000 tick) |
 | Engine CPU draw list | P27 + P30 + P32 | ✅ 56 instance; PoC'ye bağlama sırada |
 | Stage B pist instance'ları | P25 | ✅ |

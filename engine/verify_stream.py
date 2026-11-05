@@ -225,6 +225,9 @@ EXPECTED_CHECKS = [
     "drawlist_section_g50_n265", "drawlist_section_g71_n209",
     "drawlist_section_g64_n209", "drawlist_section_g59_n265",
     "drawlist_section_all", "drawlist_section_packet",
+    # P45 per-draw UV0 streams and static albedo bindings for the sections
+    "drawlist_section_uv0", "drawlist_section_uv0_hash",
+    "drawlist_section_binding", "drawlist_section_bind_hash",
 ]
 
 # The committed asset-reader reference for the same level. Both pairs are
@@ -256,6 +259,9 @@ TRACK_VISUAL = ROOT / "_work/track-coverage/visual.json"
 TRACK_CORRIDOR_HASH = ("sha256:10e197c119a5edc79d7c54d1f5f728c4"
                        "f1e2a8006a3e76d08caf0e0c8a349d0c")
 TRACK_SECTION_PACKET_HASH = "8b3a40324410327f"
+# P45: per-draw UV0 and static albedo binding aggregates over the 299 draws.
+TRACK_UV_HASH = "2ed1f4b0b3c9148e"
+TRACK_BIND_HASH = "70237f9bb7f0a20c"
 
 # The fourteen patched files and their required token counts. Nothing else may
 # be in the patch. Counts are exact: a web branch that grows without this table
@@ -860,6 +866,22 @@ def run_harness(js: Path, tag: str) -> dict:
         }
     section_packet_records = parse_packet_records(
         out, "webfiledraw section packet")
+    section_uv_records = parse_section_uv_records(out)
+    section_uv_summary = None
+    m = re.search(
+        r"webfiledraw section uv summary records=(\d+) uvpresent=(\d+) "
+        r"uvnull=(\d+) uvnonfinite=(\d+) static=(\d+) runtime=(\d+) "
+        r"decoded=(\d+) notdecoded=(\d+) missingblock=(\d+) "
+        r"registryoverflow=(\d+) uvhash=0x([0-9a-f]{16}) "
+        r"bindhash=0x([0-9a-f]{16})", out)
+    if m:
+        section_uv_summary = {
+            k: (m.group(11) if k == "uvhash" else
+                m.group(12) if k == "bindhash" else int(v))
+            for k, v in zip(
+                ("records", "uvpresent", "uvnull", "uvnonfinite", "static",
+                 "runtime", "decoded", "notdecoded", "missingblock",
+                 "registryoverflow", "uvhash", "bindhash"), m.groups())}
     texture_records = {}
     for m in re.finditer(
             r"webfiledraw texture block=(\d+) index=(\d+) name=(\S+) "
@@ -921,6 +943,8 @@ def run_harness(js: Path, tag: str) -> dict:
     if not (section_total and section_chunks and section_summaries and
             section_packet_records):
         raise Failed("the harness printed an incomplete P44 track-section report")
+    if not (section_uv_summary and section_uv_records):
+        raise Failed("the harness printed an incomplete P45 UV0 report")
     summary_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", summary.group(1))}
     counter_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", counters.group(1))}
     scene_fields = {k: int(v) for k, v in
@@ -1034,6 +1058,10 @@ def run_harness(js: Path, tag: str) -> dict:
             "total": section_total,
             "packet_records": section_packet_records,
         },
+        "track_uv": {
+            "records": section_uv_records,
+            "summary": section_uv_summary,
+        },
         "texture_bytes": texture_bytes,
         "texture_unsupported": texture_unsupported,
         "texture_summary": {
@@ -1069,6 +1097,111 @@ def parse_draw_records(out: str) -> list[dict]:
                     record[key] = value
         records.append(record)
     return records
+
+
+def parse_section_uv_records(out: str) -> list[dict]:
+    """The P45 per-drawable-draw UV0 + static albedo binding records.
+
+    Every field is printed by the harness from engine state: the declaration's
+    TEXCOORD element, the primitive's own stream binding, the imported buffer
+    record and the material probe. The parser only names the columns.
+    """
+    pattern = re.compile(
+        r"webfiledraw section uv0 key=(\S+) draw=(\d+) node=(\d+) "
+        r"primitive=(\d+) source=(\d+) vtxoffset=(-?\d+) vtxcount=(-?\d+) "
+        r"declaration=(-?\d+) uvnull=(\d) uvreason=(\S+) uvstream=(-?\d+) "
+        r"uvelement=(-?\d+) uvoffset=(-?\d+) uvtype=(-?\d+) uvmeth=(-?\d+) "
+        r"uvcomponents=(\d+) uvstride=(-?\d+) uvstreambyte=(-?\d+) "
+        r"uvshift=(-?\d+) uvvb=(-?\d+):(-?\d+) uvvbcount=(-?\d+) "
+        r"uvfirst=(-?\d+) uvcount=(-?\d+) uvarena=(-?\d+) uvlastbyte=(-?\d+) "
+        r"uvmin=([^,\s]+),([^,\s]+) uvmax=([^,\s]+),([^,\s]+) "
+        r"uvhash=0x([0-9a-f]{16}) albedo=(-?\d+):(-?\d+) albedorow=(-?\d+) "
+        r"albedoindex=(-?\d+) material=(\S+) texstate=(\S+) texture=(\S+) "
+        r"texturehash=(\d+) format=(\d+) width=(\d+) height=(\d+) levels=(\d+) "
+        r"rgba=0x([0-9a-f]{16}) texturechunk=(-?\d+) textureitem=(-?\d+) "
+        r"bindreason=(\S+)")
+    names = (
+        "key", "draw", "node", "primitive", "source", "vtxoffset",
+        "vtxcount", "declaration", "uvnull", "uvreason", "uvstream",
+        "uvelement", "uvoffset", "uvtype", "uvmeth", "uvcomponents",
+        "uvstride", "uvstreambyte", "uvshift", "vbblock", "vbindex",
+        "uvvbcount", "uvfirst", "uvcount", "uvarena", "uvlastbyte",
+        "uvminu", "uvminv", "uvmaxu", "uvmaxv", "uvhash", "albedoblock",
+        "albedoindex_source", "albedorow", "albedoindex", "material",
+        "texstate", "texture", "texturehash", "format", "width", "height",
+        "levels", "rgba", "texturechunk", "textureitem", "bindreason")
+    integer_fields = {
+        "draw", "node", "primitive", "source", "vtxoffset", "vtxcount",
+        "declaration", "uvnull", "uvstream", "uvelement", "uvoffset",
+        "uvtype", "uvmeth", "uvcomponents", "uvstride", "uvstreambyte",
+        "uvshift", "vbblock", "vbindex", "uvvbcount", "uvfirst", "uvcount",
+        "uvarena", "uvlastbyte", "albedoblock", "albedoindex_source",
+        "albedorow", "albedoindex", "texturehash", "format", "width",
+        "height", "levels", "texturechunk", "textureitem"}
+    float_fields = {"uvminu", "uvminv", "uvmaxu", "uvmaxv"}
+    records = []
+    for m in pattern.finditer(out):
+        record = {}
+        for name, value in zip(names, m.groups()):
+            if name in integer_fields:
+                record[name] = int(value)
+            elif name in float_fields:
+                record[name] = float(value)
+            else:
+                record[name] = value
+        record["albedo"] = (record.pop("albedoblock"), record.pop("albedoindex_source"))
+        record["vb"] = (record.pop("vbblock"), record.pop("vbindex"))
+        record["uvmin"] = [record.pop("uvminu"), record.pop("uvminv")]
+        record["uvmax"] = [record.pop("uvmaxu"), record.pop("uvmaxv")]
+        records.append(record)
+    return records
+
+
+def _mix_u64(h: int, value: int) -> int:
+    for b in struct.pack("<Q", value & 0xFFFFFFFFFFFFFFFF):
+        h ^= b
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def section_uv_hash(rows: list[dict]) -> str:
+    """Recompute the harness's UV0 aggregate from the printed rows."""
+    h = 0xCBF29CE484222325
+    for row in rows:
+        h = _packet_mix_string(h, row["key"])
+        h = _packet_mix_u32(h, row["draw"])
+        h = _packet_mix_u32(h, 1 if row["uvnull"] == 0 else 0)
+        h = _packet_mix_u32(h, row["uvstream"])
+        h = _packet_mix_u32(h, row["uvtype"])
+        h = _packet_mix_u32(h, row["uvoffset"])
+        h = _packet_mix_u32(h, row["uvstride"])
+        h = _packet_mix_u32(h, row["uvshift"])
+        h = _packet_mix_u32(h, row["uvfirst"])
+        h = _packet_mix_u32(h, row["uvcount"])
+        h = _mix_u64(h, int(row["uvhash"], 16))
+        h = _packet_mix_string(h, row["uvreason"])
+    return f"{h:016x}"
+
+
+def section_bind_hash(rows: list[dict]) -> str:
+    """Recompute the harness's static albedo-binding aggregate."""
+    h = 0xCBF29CE484222325
+    for row in rows:
+        h = _packet_mix_string(h, row["key"])
+        h = _packet_mix_u32(h, row["draw"])
+        h = _packet_mix_u32(h, row["albedo"][0])
+        h = _packet_mix_u32(h, row["albedo"][1])
+        h = _packet_mix_u32(h, row["albedorow"])
+        h = _packet_mix_u32(h, row["albedoindex"])
+        h = _packet_mix_u32(h, row["texturehash"])
+        h = _packet_mix_u32(h, row["format"])
+        h = _packet_mix_u32(h, row["width"])
+        h = _packet_mix_u32(h, row["height"])
+        h = _packet_mix_u32(h, row["levels"])
+        h = _mix_u64(h, int(row["rgba"], 16))
+        h = _packet_mix_string(h, row["texstate"])
+        h = _packet_mix_string(h, row["bindreason"])
+    return f"{h:016x}"
 
 
 def parse_packet_records(out: str, prefix: str = "webfiledraw packet") -> list[dict]:
@@ -1581,7 +1714,25 @@ def extract_chunk(index: dict, block: int, lod: int, name: str) -> Path:
     return out
 
 
-def reference_mesh(index: dict, pair: tuple) -> dict:
+def _float32(value: float) -> float:
+    """Quantise a parsed decimal to its float32 value (printf round-trip)."""
+    return struct.unpack("<f", struct.pack("<f", value))[0]
+
+
+def _load_signed_zero_json(text: str) -> dict:
+    """``json.loads`` that keeps a bare ``-0`` token as negative floating zero.
+
+    The committed level-mesh writer prints floats with ``max_digits10`` (9)
+    significant digits, so an exact ``-0.0f`` appears as the token ``-0``.
+    Python's default parser turns that into the integer ``0`` and silently
+    loses the sign, which changes the F32 bit pattern. Every other integer
+    token stays an ``int`` so indices and counters keep their type.
+    """
+    return json.loads(
+        text, parse_int=lambda token: float(token) if token == "-0" else int(token))
+
+
+def reference_mesh(index: dict, pair: tuple, signed_zero: bool = False) -> dict:
     """probes/asset-reader level_inspect for the same level and chunks."""
     geometry_block, node_block = pair
     geometry = extract_chunk(index, geometry_block, 0,
@@ -1593,7 +1744,7 @@ def reference_mesh(index: dict, pair: tuple) -> dict:
     if p.returncode != 0:
         raise Failed("level_inspect mesh reference failed: "
                      + ((p.stderr or p.stdout).strip())[-800:])
-    doc = json.loads(p.stdout)
+    doc = _load_signed_zero_json(p.stdout) if signed_zero else json.loads(p.stdout)
     if doc.get("status") != "ok":
         raise Failed(f"level_inspect mesh reference: {doc.get('status')}")
     (LOGS / f"reference-mesh-{geometry_block}-{node_block}.json").write_text(
@@ -2449,6 +2600,332 @@ def compare_track_sections(result: dict) -> dict:
     }
 
 
+def compare_track_uv(result: dict, index: dict) -> dict:
+    """P45: UV0 streams and static albedo bindings of the 299 section draws.
+
+    Two independent sides are compared:
+
+      1. the committed C++ asset reader (`level_inspect` ->
+         `level_mesh_inspect`), re-run on the same level, geometry chunk and
+         node chunk, for every section. It emits `uv0` (flat stored TEXCOORD0
+         of every used vertex buffer) and one `uv0Available` per draw, and only
+         when the declared UV0 stream is the POSITION stream it can address.
+         The verifier hashes the reader's UV0 pairs in the reader's own emitted
+         triangle order and requires the same F32 bits the harness folded;
+      2. the harness's own aggregate hashes, recomputed here from the printed
+         per-draw rows, so a mis-transcribed row cannot pass.
+
+    The texture side is bound against the P34 decode registry of this same run
+    (`result["textures"]`, 102 sources): a decoded `block:index` must carry the
+    same name, texture hash, size, format, level count and RGBA hash. A source
+    outside that set is reported with the engine ChunkInfo chunk/item that
+    holds it and must NOT appear in the registry; it is not decoded here.
+    """
+    uv = result["track_uv"]
+    rows_all = uv["records"]
+    summary = uv["summary"]
+
+    if summary is None or not rows_all:
+        raise Failed("the harness printed an incomplete P45 UV0 report")
+
+    expected = (TRACK_TOTAL["draws"], TRACK_TOTAL["draws"], 0, 0, 297, 2,
+                151, 146, 0, 0)
+    got = (summary["records"], summary["uvpresent"], summary["uvnull"],
+           summary["uvnonfinite"], summary["static"], summary["runtime"],
+           summary["decoded"], summary["notdecoded"], summary["missingblock"],
+           summary["registryoverflow"])
+    if got != expected:
+        raise Failed(f"track UV0 summary {got} != expected "
+                     f"(records, present, null, nonfinite, static, runtime, "
+                     f"decoded, notdecoded, missingblock, overflow) {expected}")
+
+    recomputed_uv = section_uv_hash(rows_all)
+    if recomputed_uv != summary["uvhash"]:
+        raise Failed(f"track UV0 aggregate {summary['uvhash']} != Python "
+                     f"recomputation {recomputed_uv}")
+    recomputed_bind = section_bind_hash(rows_all)
+    if recomputed_bind != summary["bindhash"]:
+        raise Failed(f"track binding aggregate {summary['bindhash']} != Python "
+                     f"recomputation {recomputed_bind}")
+    if recomputed_uv != TRACK_UV_HASH:
+        raise Failed(f"track UV0 aggregate {recomputed_uv} != pinned "
+                     f"{TRACK_UV_HASH}")
+    if recomputed_bind != TRACK_BIND_HASH:
+        raise Failed(f"track binding aggregate {recomputed_bind} != pinned "
+                     f"{TRACK_BIND_HASH}")
+
+    corridor = json.loads(TRACK_CORRIDOR.read_text(encoding="utf-8"))
+    reference_sections = corridor["sections"]
+    textures = result["textures"]
+    packets = result["track_sections"]["packet_records"]
+    packets_by_source = {}
+    for record in packets:
+        if record["drawable"] == 1:
+            packets_by_source[record["source"]] = record
+
+    rows_by_section = {}
+    for row in rows_all:
+        rows_by_section.setdefault(row["key"], []).append(row)
+
+    element_bytes = {5: 8, 8: 4, 9: 8}
+    sections = []
+    compared_draws = 0
+    decoded_draws = 0
+    notdecoded_draws = 0
+    runtime_draws = 0
+    decoded_sources = set()
+    notdecoded_blocks = set()
+    all_sources = set()
+    uv_types = {}
+    strides = set()
+    offsets = set()
+    element_indexes = set()
+    streams = set()
+
+    for key in TRACK_SECTIONS:
+        want = reference_sections[key]
+        geometry_block = want["geometryBlock"]
+        node_block = want["nodeBlock"]
+        rows = rows_by_section.get(key, [])
+
+        if len(rows) != want["drawCount"]:
+            raise Failed(f"section {key}: {len(rows)} UV0 rows != reference "
+                         f"drawCount {want['drawCount']}")
+
+        doc = reference_mesh(index, (geometry_block, node_block),
+                             signed_zero=True)
+        metadata = doc["metadata"]
+        ref_draws = doc["draws"]
+        where = (f"section {key} (geometry block {geometry_block} chunk "
+                 f"{metadata['geometryStreamOffset']} / node block "
+                 f"{node_block})")
+
+        if len(ref_draws) != len(rows):
+            raise Failed(f"{where}: asset reader emitted {len(ref_draws)} draws, "
+                         f"harness {len(rows)} UV0 rows")
+        if metadata["primitiveCount"] != len(ref_draws):
+            raise Failed(f"{where}: asset reader primitiveCount "
+                         f"{metadata['primitiveCount']} != {len(ref_draws)}")
+        if len(doc["uv0"]) != 2 * metadata["vertexCount"]:
+            raise Failed(f"{where}: asset reader uv0 length {len(doc['uv0'])} "
+                         f"!= 2 x vertexCount {metadata['vertexCount']}")
+
+        ref_uv = doc["uv0"]
+        ref_indices = doc["indices"]
+        section_compared = 0
+
+        for draw_index, (reference, row) in enumerate(zip(ref_draws, rows)):
+            if row["key"] != key:
+                raise Failed(f"{where}: UV0 row {draw_index} belongs to "
+                             f"{row['key']}")
+            if row["uvnull"] != 0:
+                raise Failed(f"{where}: draw {draw_index} has uv0:null "
+                             f"({row['uvreason']}) but the asset reader reports "
+                             f"uv0Available={reference['uv0Available']}")
+            if not reference["uv0Available"]:
+                raise Failed(f"{where}: draw {draw_index} has a resolved UV0 "
+                             "stream but the asset reader refuses it")
+            if row["uvtype"] not in element_bytes:
+                raise Failed(f"{where}: draw {draw_index} UV0 type "
+                             f"{row['uvtype']} is not F32_2/F16_2/F16_4")
+            if row["uvoffset"] < 0 or row["uvstride"] <= 0:
+                raise Failed(f"{where}: draw {draw_index} UV0 element offset "
+                             f"{row['uvoffset']} / stride {row['uvstride']}")
+            if row["uvoffset"] + element_bytes[row["uvtype"]] > row["uvstride"]:
+                raise Failed(f"{where}: draw {draw_index} UV0 element "
+                             "exceeds the vertex stride")
+            if row["uvcount"] != row["vtxcount"]:
+                raise Failed(f"{where}: draw {draw_index} UV0 vertex count "
+                             f"{row['uvcount']} != packet vertexCount "
+                             f"{row['vtxcount']}")
+            if row["uvfirst"] != row["vtxoffset"]:
+                raise Failed(f"{where}: draw {draw_index} UV0 first vertex "
+                             f"{row['uvfirst']} != packet vertexOffset "
+                             f"{row['vtxoffset']}; the resolved UV0 stream is "
+                             "not the POSITION stream")
+            span = (row["uvcount"] - 1) * row["uvstride"] + \
+                element_bytes[row["uvtype"]] - 1
+            if row["uvlastbyte"] - row["uvarena"] != span:
+                raise Failed(f"{where}: draw {draw_index} UV0 byte range "
+                             f"{row['uvarena']}..{row['uvlastbyte']} does not "
+                             f"equal stride/count span {span}")
+            if row["uvmin"][0] > row["uvmax"][0] or \
+                    row["uvmin"][1] > row["uvmax"][1]:
+                raise Failed(f"{where}: draw {draw_index} UV0 range "
+                             f"{row['uvmin']}..{row['uvmax']}")
+
+            if reference["indexCount"] <= 0:
+                raise Failed(f"{where}: draw {draw_index} has an empty "
+                             "asset-reader index span")
+            digest = 0xCBF29CE484222325
+            first = reference["firstIndex"]
+            ref_low = [None, None]
+            ref_high = [None, None]
+            for vertex in ref_indices[first:first + reference["indexCount"]]:
+                pair = (ref_uv[2 * vertex], ref_uv[2 * vertex + 1])
+                for axis in range(2):
+                    digest = _packet_mix_f32(digest, pair[axis])
+                    if ref_low[axis] is None or pair[axis] < ref_low[axis]:
+                        ref_low[axis] = pair[axis]
+                    if ref_high[axis] is None or pair[axis] > ref_high[axis]:
+                        ref_high[axis] = pair[axis]
+            if f"{digest:016x}" != row["uvhash"]:
+                raise Failed(
+                    f"{where}: draw {draw_index} UV0 hash {row['uvhash']} != "
+                    f"asset-reader {digest:016x} over {reference['indexCount']} "
+                    f"indices; engine stream {row['uvstream']} element "
+                    f"{row['uvelement']} byte offset {row['uvoffset']} stride "
+                    f"{row['uvstride']} vertices {row['uvfirst']}+"
+                    f"{row['uvcount']} byte range {row['uvarena']}.."
+                    f"{row['uvlastbyte']}")
+
+            for axis in range(2):
+                low = _float32(row["uvmin"][axis])
+                high = _float32(row["uvmax"][axis])
+                if not (low <= _float32(ref_low[axis]) and
+                        _float32(ref_high[axis]) <= high):
+                    raise Failed(
+                        f"{where}: draw {draw_index} UV0 range "
+                        f"{row['uvmin']}..{row['uvmax']} does not contain the "
+                        f"asset-reader referenced range axis {axis} "
+                        f"{ref_low[axis]}..{ref_high[axis]}")
+
+            packet = packets_by_source.get(row["source"])
+            if packet is None:
+                raise Failed(f"{where}: draw {draw_index} source "
+                             f"{row['source']} has no drawable packet record")
+            if packet["albedo"] != row["albedo"] or \
+                    packet["materialRow"] != row["albedorow"] or \
+                    packet["materialId"] != row["material"]:
+                raise Failed(f"{where}: draw {draw_index} binding row "
+                             f"{row['albedo']} row {row['albedorow']} "
+                             f"{row['material']} disagrees with packet "
+                             f"{packet['albedo']} row {packet['materialRow']} "
+                             f"{packet['materialId']}")
+
+            if row["texstate"] == "decoded":
+                texture = textures.get(row["albedo"])
+                if texture is None:
+                    raise Failed(f"{where}: draw {draw_index} binds decoded "
+                                 f"{row['albedo']} absent from the P34 set")
+                if (texture["name"], texture["textureHash"], texture["width"],
+                        texture["height"], texture["levels"], texture["format"],
+                        texture["rgbaHash"]) != (
+                        row["texture"], row["texturehash"], row["width"],
+                        row["height"], row["levels"], row["format"],
+                        row["rgba"]):
+                    raise Failed(
+                        f"{where}: draw {draw_index} decoded texture "
+                        f"{row['albedo']} identity differs from the P34 record: "
+                        f"harness {row['texture']}/{row['texturehash']}/"
+                        f"{row['width']}x{row['height']}/{row['levels']}/"
+                        f"{row['format']}/{row['rgba']} vs P34 "
+                        f"{texture['name']}/{texture['textureHash']}/"
+                        f"{texture['width']}x{texture['height']}/"
+                        f"{texture['levels']}/{texture['format']}/"
+                        f"{texture['rgbaHash']}")
+                if row["bindreason"] != "none":
+                    raise Failed(f"{where}: draw {draw_index} decoded binding "
+                                 f"reason {row['bindreason']}")
+                decoded_draws += 1
+                decoded_sources.add(row["albedo"])
+            elif row["texstate"] == "notDecodedInP34Set":
+                if row["albedo"] in textures:
+                    raise Failed(f"{where}: draw {draw_index} reports "
+                                 f"{row['albedo']} undecoded but it is in the "
+                                 "P34 set")
+                chunk = chunk_range(index, row["albedo"][0], 0)
+                if (chunk[0], chunk[1]) != (row["texturechunk"],
+                                            row["textureitem"]):
+                    raise Failed(
+                        f"{where}: draw {draw_index} texture chunk/item "
+                        f"{row['texturechunk']}/{row['textureitem']} != engine "
+                        f"ChunkInfo {chunk[0]}/{chunk[1]} for block "
+                        f"{row['albedo'][0]}")
+                if row["bindreason"] != "textureNotDecodedInP34Set":
+                    raise Failed(f"{where}: draw {draw_index} undecoded binding "
+                                 f"reason {row['bindreason']}")
+                notdecoded_draws += 1
+                notdecoded_blocks.add(row["albedo"][0])
+            elif row["texstate"] == "runtimeOnly":
+                if row["albedo"] != (-1, -1) or row["material"] != "null" or \
+                        row["texture"] != "null":
+                    raise Failed(f"{where}: draw {draw_index} runtime-only row "
+                                 f"claims {row['albedo']} / {row['material']}")
+                if row["bindreason"] != "runtimeOnlyAlbedoParameter":
+                    raise Failed(f"{where}: draw {draw_index} runtime-only "
+                                 f"reason {row['bindreason']}")
+                runtime_draws += 1
+            else:
+                raise Failed(f"{where}: draw {draw_index} texture state "
+                             f"{row['texstate']}")
+
+            all_sources.add(row["albedo"])
+            uv_types[str(row["uvtype"])] = uv_types.get(str(row["uvtype"]), 0) + 1
+            strides.add(row["uvstride"])
+            offsets.add(row["uvoffset"])
+            element_indexes.add(row["uvelement"])
+            streams.add(row["uvstream"])
+            compared_draws += 1
+            section_compared += 1
+
+        sections.append({
+            "key": key,
+            "geometryBlock": geometry_block,
+            "nodeBlock": node_block,
+            "uv0Rows": len(rows),
+            "drawsComparedToAssetReader": section_compared,
+            "assetReaderTriangles": metadata["triangleCount"],
+            "firstMismatch": None,
+        })
+
+    if (decoded_draws, notdecoded_draws, runtime_draws) != (151, 146, 2):
+        raise Failed(f"binding coverage {decoded_draws} decoded / "
+                     f"{notdecoded_draws} undecoded / {runtime_draws} "
+                     "runtime-only != 151/146/2")
+    if len(decoded_sources) != 40 or len(notdecoded_blocks) != 96:
+        raise Failed(f"{len(decoded_sources)} decoded sources / "
+                     f"{len(notdecoded_blocks)} undecoded blocks != 40/96")
+    if len(all_sources) != 137:
+        raise Failed(f"{len(all_sources)} distinct albedo sources != 137")
+    if sorted(uv_types.items()) != [("8", 7), ("9", 292)]:
+        raise Failed(f"UV0 declaration types {uv_types} != 292 F16_4 / 7 F16_2")
+    if offsets != {16} or element_indexes != {2} or streams != {0}:
+        raise Failed(f"UV0 declaration shape offsets={sorted(offsets)} "
+                     f"element={sorted(element_indexes)} "
+                     f"streams={sorted(streams)} != 16 / 2 / 0")
+
+    return {
+        "uvRecords": len(rows_all),
+        "uvPresent": summary["uvpresent"],
+        "uvNull": summary["uvnull"],
+        "uvNonfinite": summary["uvnonfinite"],
+        "uvTypes": uv_types,
+        "uvElementOffsets": sorted(offsets),
+        "uvElementIndex": sorted(element_indexes)[0],
+        "uvStreams": sorted(streams),
+        "uvStrides": sorted(strides),
+        "uvAggregate": recomputed_uv,
+        "bindingAggregate": recomputed_bind,
+        "drawsComparedToAssetReader": compared_draws,
+        "assetReader": "probes/asset-reader level_inspect (level_mesh_inspect "
+                       "uv0 + per-draw uv0Available)",
+        "firstMismatch": None,
+        "staticBindings": summary["static"],
+        "runtimeBindings": summary["runtime"],
+        "decodedBindings": decoded_draws,
+        "notDecodedBindings": notdecoded_draws,
+        "decodedSources": len(decoded_sources),
+        "notDecodedBlocks": len(notdecoded_blocks),
+        "distinctSources": len(all_sources),
+        "bindingsFrom": "P34 decode registry of this run (102 sources)",
+        "sections": sections,
+        "scope": "UV0 address/range/hash from the engine declaration and stream "
+                 "binding; albedo identity is the P34 decoded set. No sampler, "
+                 "wrap/filter, texture transform, runtime material or GPU object.",
+    }
+
+
 def whole_files(result: dict) -> dict:
     report = {}
     for label, path in (("levelrender", LEVEL_RENDER), ("levelphysics", LEVEL_PHYSICS)):
@@ -2653,7 +3130,8 @@ def main() -> int:
     report["harness"] = {k: v for k, v in result.items()
                          if k not in ("chunks", "chunkinfo", "textures",
                                       "texture_bytes", "texture_unsupported",
-                                      "texture_summary", "track_sections")}
+                                      "texture_summary", "track_sections",
+                                      "track_uv")}
     report["reference"] = {
         "chunks": len(index["streamChunks"]),
         "resourceBlockCount": index["resourceBlockCount"],
@@ -2668,6 +3146,7 @@ def main() -> int:
     report["draw_list"] = compare_draw_list(result, index)
     report["track_sections"] = compare_track_sections(result)
     report["textures"] = compare_engine_textures(result)
+    report["track_uv"] = compare_track_uv(result, index)
     report["whole_files"] = whole_files(result)
     report["levelrender_sha256"] = sha256_file(LEVEL_RENDER)
     report["levelphysics_sha256"] = sha256_file(LEVEL_PHYSICS)
@@ -2765,6 +3244,16 @@ def main() -> int:
     print(f"track sections  {trk['sectionCount']} sections, {trk['draws']} draws / "
           f"{trk['triangles']} triangles / {trk['vertices']} vertices, "
           f"bounds at 1e-5 == {trk['reference']}, packet={trk['packetHash']}")
+    tuv = report["track_uv"]
+    print(f"track UV0       {tuv['uvPresent']}/{tuv['uvRecords']} draws with a "
+          f"resolved UV0 stream (types {tuv['uvTypes']}), "
+          f"{tuv['drawsComparedToAssetReader']} values equal to "
+          f"level_mesh UV0, aggregate={tuv['uvAggregate']}")
+    print(f"track bindings  {tuv['staticBindings']} static / "
+          f"{tuv['runtimeBindings']} runtime-only, {tuv['decodedBindings']} draws "
+          f"on {tuv['decodedSources']} P34-decoded sources, "
+          f"{tuv['notDecodedBindings']} on {tuv['notDecodedBlocks']} undecoded "
+          f"blocks, aggregate={tuv['bindingAggregate']}")
     print(f"levelrender     {report['whole_files']['levelrender']['bytes']} B "
           f"fnv=0x{report['whole_files']['levelrender']['fnv1a64']}")
     print(f"levelphysics    {report['whole_files']['levelphysics']['bytes']} B "

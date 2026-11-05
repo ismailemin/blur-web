@@ -1480,3 +1480,141 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py engine/verify_stream.py
 & $py tools/verify_asset_probe.py --skip-build
 ```
+
+## 18. P45 — per-draw UV0 streams and static albedo bindings (299 draws)
+
+This section adds the UV0 stream and the static albedo binding of every
+drawable draw of the six P44 track sections. It remains a CPU data-extraction
+record: no texture, sampler or GPU object is created, no pixel is sampled and no
+UV is synthesised. P27/P30/P32/P34/P38/P44 results are unchanged, the patch is
+untouched and `StreamData::ProcessLoadChunk` is still not driven.
+
+### 18.1 What changed
+
+`stream_harness.cpp` gained a per-draw pass that runs only while a track section
+is emitting (`g_sectionKey != 0`):
+
+1. **UV0 resolution.** The primitive's declaration must contain exactly one
+   `usage == 5` (`VERTEX_ELEMENT_USAGE_TEXCOORD`) / `usageIndex == 0` element.
+   Its own stream (`element.stream`, not the POSITION stream) must be bound by
+   exactly one primitive stream record with `frequency == 0`; that record names
+   the vertex buffer and the byte offset. The buffer source must resolve to the
+   section geometry block and be imported, uncompressed, non-endian-swapped and
+   payload-retained. `offset % stride` gives the vertex shift, the element must
+   fit the stride, the LOD range must fit the buffer, and the per-draw byte
+   range is
+   `payload + (minIndex+shift)*stride + elementOffset .. + (vertices-1)*stride +
+   elementSize - 1`. Types 5 (F32_2), 8 (F16_2) and 9 (F16_4, first two
+   components) are supported; halves use the same exact IEEE754 conversion as
+   P44's POSITION bounds and a non-finite component is a named failure. A draw
+   without a provable UV0 prints `uv0:null` with the reason token and no hash.
+2. **Value range and hash.** The printed range covers the draw's LOD vertex
+   range; the hash folds the F32 bits of `(u,v)` for every index of the draw's
+   emitted triangle sequence (strip parity applied, degenerate triples skipped)
+   so the committed reader can reproduce it from its own index list.
+3. **Static albedo binding.** The P34 texture phase now registers each texture
+   it decoded (block, index, archive name, texture hash, width, height, levels,
+   format, RGBA hash, chunk, item) in a bounded 256-entry registry. The section
+   pass looks a draw's `block:index` up there and prints that identity. A source
+   outside the registry keeps its `block:index`, prints `texture=null` and the
+   engine `ChunkInfo` chunk/item that holds it; the P34 102-source set is not
+   extended and its aggregate hash and checks are untouched.
+
+The engine's web `BufferRecord` stores stride/count but not the per-element
+`VertexFormat`, so the declaration element is the format authority — the same
+element P44's section bounds already use for POSITION. The committed reader
+rejects a stored/declaration mismatch, so the 299/299 `uv0Available` result
+below also proves the stored elements repeat the declaration.
+
+### 18.2 Measured result (`verify_stream.py --fresh`, exit 0, 125.7 s)
+
+| Check | Result |
+| --- | --- |
+| patch | unchanged, 16 modified, 77,284 B, sha256 `5fa2b1b743c388030d1a0bc8b73fe951acfea92406a29cf7b71b2dbb75019b71` |
+| build | 56 TUs, wasm **870,155 B**, sha256 `d76f77f74f75b6ab6026ee3846a58afb029b51c3e8cec0ab2d957d9f24d2409f`, two builds byte-identical |
+| harness | **92/92** checks (4 new); two runs print identical stdout |
+| UV0 rows | **299** (one per drawable draw), **299 resolved**, 0 null, 0 non-finite |
+| UV0 element | index 2, byte offset **16**, stream **0**, stream byte offset 0, shift 0 for all 299 |
+| UV0 types | **292 F16_4/type 9**, **7 F16_2/type 8** |
+| UV0 strides | 24 ×221, 28 ×35, 44 ×39, 36 ×3, 32 ×1 |
+| UV0 ranges | 3 … 3,527 vertices per draw, 95,324 vertex references, 2,731,480 addressed bytes |
+| UV0 value range | u −37.96875 … 53.28125, v −43.25 … 28.84375 (outside [0,1]) |
+| UV0 aggregate | **`2ed1f4b0b3c9148e`** |
+| asset reader | **299/299** per-draw `uv0Available`; **299/299** F32-bit value hashes equal over 143,370 index references / 286,740 components; range containment 299/299 |
+| first mismatch | **none** |
+| static bindings | **297** static + **2** runtime-only (g50 primitives 241/242, `runtimeOnlyAlbedoParameter`) |
+| distinct sources | **137** (136 static + the runtime pair) |
+| decoded via P34 registry | **151** draws on **40** distinct sources |
+| not decoded | **146** draws on **96** distinct blocks, all located in the engine ChunkInfo table (chunk/item printed) |
+| binding aggregate | **`70237f9bb7f0a20c`** |
+| P44/P34 | section packet `8b3a40324410327f`, 299 drawable, 1,355 records; textures 102/102, `9c5686eed9334ca4` — unchanged |
+| GPU | 0 objects created |
+
+### 18.3 Asset-reader comparison and signed zero
+
+`level_inspect` (`level_mesh_inspect`) is re-run per section. It emits flat
+stored TEXCOORD0 and a per-draw `uv0Available`, and it only accepts a draw whose
+declared UV0 element is on the POSITION stream — all 299 qualify and no
+placeholder pair is written. The verifier hashes the reader's UV0 pairs in the
+reader's emitted triangle order and requires exactly the engine's hash.
+
+37 `uv0` components of the reader output are negative zero (`g58-n265` 14,
+`g59-n265` 23). The reader prints them as the bare JSON token `-0`, which a
+default `json.loads` turns into integer `0`; with that parser the first mismatch
+is the 17th row of `g58-n265` (engine draw 131, vertex offset 3090, count 9,
+bytes 74,176..74,375, engine `0e734590c6211238` vs collapsed
+`6ea1bdc38555d9b8`). The verifier now parses with a signed-zero-preserving
+integer hook and every hash matches bit-exactly. This is the parser trap
+`probes/asset-reader/FORMAT-scene.md` documents, not a data difference.
+
+### 18.4 Determinism and PC parity
+
+- Two wasm builds per run are byte-identical; `a__run1.log` == `a__run2.log`
+  (2,269,143 B each); both full runs reproduce every hash and total.
+- The UV and binding aggregates are recomputed in Python from the printed rows
+  before the pinned constants are compared.
+- The patch is unchanged, so the four patched engine TUs preprocess identically:
+  108,025 / 111,514 / 111,399 / 108,104 lines.
+- Modified files are wasm-harness/gate code only; the portable suite is 29/29
+  PASS.
+
+### 18.5 Remaining blockers
+
+1. **146 of 297 static bindings have no pixels here.** The 96 blocks are all in
+   the engine ChunkInfo table (chunk/item printed per draw) and can be decoded
+   by the same P34 path; this pass deliberately does not extend P34's 102-set.
+2. **No sampling.** Wrap mode, filter, anisotropy, mip selection and texture
+   matrices are unresolved; UVs leave `[0,1]`, so the address mode must be
+   proven before a faithful binding.
+3. **Two runtime-only albedo values stay null** (`DATA_INDEX`/`TEXTURE_PTR`).
+4. **Only TEXCOORD0** (`usage 5`, `usageIndex 0`) is extracted; UV1 and the
+   tangent/lightmap streams are outside this pass.
+5. **The stored per-buffer VertexFormat is not retained** by the web
+   `BufferRecord`; the declaration is the engine-side authority and the
+   committed reader's stored-element check backs it for these draws.
+6. **No renderer, GPU, browser, vehicle or game claim.** `C_OverlayFs` remains
+   one read-only layer and `ProcessLoadChunk` is still not driven.
+
+### 18.6 Evidence (P45)
+
+| Path | Content |
+| --- | --- |
+| `_work/logs/engine-stream-spike/p45-verify-fresh.json`* | every number above |
+| `_work/logs/engine-stream-spike/p45-verify-fresh.log` | fresh PASS transcript, 125.7 s |
+| `_work/logs/engine-stream-spike/p45-verify-reuse.json` / `.log` | second full run, identical, 115.3 s |
+| `_work/logs/engine-stream-spike/a__run1.log` / `a__run2.log`* | identical harness stdout, all 299 UV rows |
+| `_work/logs/engine-stream-spike/p45-asset-suite.log` | 29/29 portable suite |
+| `_work/logs/engine-stream-spike/reference-mesh-<g>-<n>.json`* | six committed `level_mesh` outputs |
+| `_work/engine-stream-spike/out/stream_harness_a.wasm`* | module, 870,155 B |
+| `docs/work/verification/T-007-uv-binding.md` | verification record |
+
+`*` = regenerated by `engine/verify_stream.py`.
+
+### 18.7 Commands
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py engine/verify_stream.py --fresh
+& $py engine/verify_stream.py
+& $py tools/verify_asset_probe.py --skip-build
+```
