@@ -1,10 +1,10 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 5 Kasım 2026
-**Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, 5 araç, tarayıcıda test edilebilir.
+**Güncelleme:** 6 Kasım 2026
+**Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, 5 dokulu araç, ghost, tarayıcıda test edilebilir.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
-**Son commit'ler:** `e6f99ed` wire encoder, `2b8af8c` 310 m sprint, `ad7043d` PoC checker, `145fac1` engine packet.
-**KAPANMA/RESUME:** [`RESUME_2026-11-05.md`](RESUME_2026-11-05.md) — tarihsel kapanış kaydı; P55 sonradan commit edildi (`ee8cd0c`).
+**Son commit'ler:** `39bd1b6` free-roam, `ff8a336` prop colliders, `8ac0109` ghost, `c63d4a4` audio, `777748c` steering.
+**KAPANMA/RESUME:** [`RESUME_2026-11-06.md`](RESUME_2026-11-06.md) — **P67 lap+collision commit edilmedi ve kırmızı; önce buradan devam.**
 
 ## Şu an neredeyiz?
 
@@ -43,6 +43,14 @@
 - Doğrulama: `verify_asset_probe.py --skip-build` **28/28**, CTest **14/14**.
 
 ## Sıradaki iş
+
+**P67 — loop-01 3 tur + prop collision (YARIM, KIRMIZI, COMMIT YOK):**
+`?course=lap` için loop-01 (222,04 m) üzerinde spawn/lap sayacı/bitiş ve
+prop collision entegrasyonu `probes/e1-drive/` içinde yazıldı ama doğrulama
+geçmiyor: Audi `lap times undefined`, `best null`, `no finish`, 1 respawn;
+verifier `TypeError: reading '310m'`. Ayrıntı ve kurtarma:
+[`RESUME_2026-11-06.md`](RESUME_2026-11-06.md). Bilinen yeşil durum:
+`39bd1b6` (310 m sprint, 678/678, checker 19/19).
 
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
