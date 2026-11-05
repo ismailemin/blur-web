@@ -19,14 +19,18 @@ bitirecek. AMAX online auth ilk kapsam değil.
 - B1: iki makineli LAN lobisi + pcap/CSV; 10s `Racing` B1b (T-004 çökmesi ayrı).
 - Kanıt: `docs/work/analysis/t006-native-lan.md`.
 
-### T-006b — Wire format / golden packets  ✅ (tasarım)
+### T-006b — Wire format / golden packets  ✅ (layout probe)
 - Wire format = `memcpy(sizeof(struct))`; açık serializer yok.
-- En büyük risk: `SysProfile::BaseProfile` içindeki `wchar_t` (MSVC 2, wasm32 4)
-  Join/StartRace alanlarını kaydırır.
-- İlk test: native/WASM `sizeof`/`alignof`/`offsetof` layout probe; sonra golden
-  byte fixtures. P0 paketler: KeepAlive, ACK, JoinRequest/Reply/Data, InitialData,
-  PlayerStates, VehicleData, StartRace, BasicVehicleData, VehicleFinished.
-- Kanıt: `docs/work/analysis/t006-wire-format.md`.
+- **P56 layout probe:** native MSVC x64 vs wasm32 ölçüldü. `BaseProfile`
+  56 → 80 B, `StartRace` 2104 → 2584 B (`wchar_t` 2→4; +480 B).
+- **`-fshort-wchar` çözüm değil:** isim 34 B'ye insede `BaseProfile` 48 B
+  (MSVC base-size 16 vs Itanium dsize 10 kuralı); Join 125→117, StartRace
+  2104→1944 — yani yanlış yöne kayıyor.
+- Öneri: `BaseProfile`, `NetStartRacePacketPlayer`, `NetStartRacePacket` için
+  **açık encoder**; golden layout native sayıları (56 B, isim @16, 17 UTF-16LE;
+  StartRace 2104 B, 20 slot). `#pragma pack(1)` reddedildi.
+- Kanıt: `docs/work/analysis/net-layout.md`, `probes/net-layout/`; ana suite
+  **30/30**.
 
 ### T-006c — WebRTC transport  ✅ (tasarım)
 - Öneri: engine association başına bir `RTCPeerConnection`; `bdEndpoint` =

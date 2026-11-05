@@ -42,6 +42,7 @@ def main():
         ('level-http-bounds',[sys.executable,'probes/asset-reader/tests/verify_level_http.py']),
         ('scheduler-probe',[sys.executable,'probes/scheduler-probe/tests/run_scheduler_probe.py']+(['--skip-build'] if args.skip_build else [])),
         ('collision-oracle',[sys.executable,'probes/collision-oracle/tests/run_collision_oracle.py']+(['--skip-build'] if args.skip_build else [])),
+        ('net-layout',[sys.executable,'probes/net-layout/tests/run_net_layout.py']+(['--skip-build'] if args.skip_build else [])),
     ])
     results=[]
     for name,command in steps:

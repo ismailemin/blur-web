@@ -629,6 +629,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Render-packet v1.1 şemasına karşı **8 ihlal / 4 not**: timeline yok, topology strip (346 range 3'ün katı değil), `engine-buffer` enum dışı, geometry alanları null. Producer kanıtı; tüketici dönüşümü gerekli.
 - 56 nesne, 872.869 B, **99/99**, PC parity. Kanıt: `docs/work/verification/T-007-engine-packet.md`.
 
+## 5 Kasım 2026 — wire layout probe (T-006b)
+
+- Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).
+- **`-fshort-wchar` mitigation değil:** `BaseProfile` 48 B (MSVC base-size vs Itanium dsize), Join 125→117, StartRace 2104→1944 — yanlış yöne. `#pragma pack(1)` reddedildi.
+- Öneri: `BaseProfile`/`NetStartRacePacketPlayer`/`StartRace` için açık encoder; golden layout native (56 B, isim @16 17 UTF-16LE; 2104 B / 20 slot).
+- Probe ana suite'e eklendi: **30/30**. Kanıt: `docs/work/analysis/net-layout.md`, `probes/net-layout/`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

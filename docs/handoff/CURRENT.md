@@ -348,6 +348,12 @@ T-006e/f gerçek yarış T-005g ve T-004 kapılarına bağlı. Kanıt:
 `docs/work/analysis/t006-native-lan.md`, `t006-wire-format.md`,
 `t006-transport.md`.
 
+**Wire layout (P56):** native MSVC x64 vs wasm32 ölçüldü: `BaseProfile`
+56 → 80 B, `StartRace` 2104 → 2584 B; `-fshort-wchar` çözüm değil (Itanium
+dsize kuralı; 48 B / 1944 B). Öneri: `BaseProfile`/`StartRace` için açık
+encoder, golden layout native sayıları (56 B, isim @16, 17 UTF-16LE; 2104 B,
+20 slot). Kanıt: `docs/work/analysis/net-layout.md`.
+
 ## Bilinen engeller / riskler
 
 - **56 instance** destekli (Stage A+B); blok31 (1 instance) prerequisite
