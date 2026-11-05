@@ -443,4 +443,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Kullanıcı testi için PoC tanımı: tek URL, River, **≥4 gerçek araç**, seçilebilir, WASD + chase camera, sabit adım, console 0. Kart: `docs/work/tasks/T-008-browser-poc.md`.
 - Paralel agent'lar: P23 çoklu araç roster'ı, P22 `levelrender` engine parse, P25 Stage B pist geometrisi. Sırada teker/kompozit ve PoC paketleme.
 
+## 5 Kasım 2026 — P22 engine levelrender parse
+
+- `StreamData`/`Target::Scene` yolu wasm'da derlendi: 54 TU, **664.137 B** wasm, iki build aynı, 30/30 kontrol, PC parity (`streammanager`/`streamdata`/`archive` önişlenmiş satırlar aynı).
+- `Level.levelrender` engine serialiser'ıyla parse edildi: **359 ChunkInfo / 10.784 item / 603 prerequisite**, 359/359 alan `range_probe` ve `level_inspect` ile aynı; cursor 2.464.509 B = probe `parsedUntilOffset`; tablo hash `aae98142…d36`; GPU çağrısı **0**.
+- `OpenStreamFile` buffer hint sentinel (16 KiB) olarak düzeltildi; prerequisite'lı chunk okunmadan reddediliyor.
+- Kalan: resource block/render list importu, `ProcessLoadChunk`, doku/decompression. Kanıt: `docs/work/verification/T-007-streaming.md`.
+
 

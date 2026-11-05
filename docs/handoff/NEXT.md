@@ -123,8 +123,9 @@ render packet tüketir. E1b (packet v1.1), E1c (araç fiziği) ve E1d (fixed-ste
 girdi + chase camera) tamam. E1 connector: 300 tick scripted sürüş, 45,378 m,
 temas 301/301, console 0; packet 301 tick/103 draw. E1e kısmi: `draws[]` hâlâ
 committed packet'ten, materyaller diagnostic, teker çizimi yok. E1a streamer
-359/359; `levelrender` Scene parse'ı bloklu. Sıradaki: engine draw-list +
-kamera + teker; sonra E1f tam tur. E2 yalnız karar kapısı düşerse.
+359/359 ve **engine `levelrender` parse'ı tamam (P22)**; kalan resource
+block/render list importu. Sıradaki: engine draw-list + kamera + teker; sonra
+E1f tam tur. E2 yalnız karar kapısı düşerse.
 
 ## 6. T-008 — Tarayıcı PoC
 

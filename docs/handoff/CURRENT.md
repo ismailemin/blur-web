@@ -138,12 +138,13 @@ kapısı düşerse devreye girer. Ayrıntı:
 headless Edge/WebGPU console **boş**; materyaller kimlik, tahmini renk yok.
 Kanıt: `docs/work/verification/T-007-render-packet.md`.
 
-**E1a streamer (4 Kasım):** `StreamManager` wasm'da 359/359 chunk ve
-244.682.752 B aktardı; 359/359 FNV bağımsız Python ile aynı; `levelrender`/
-`levelphysics` hash'leri aynı; 246.726 B, 20/20, PC parity.
-`Level.levelrender` Scene parse'ı DX11 `Display2` yüzünden bloklu (456 hata);
-chunk tablosu şimdilik probe'lardan. Kanıt:
-`docs/work/verification/T-007-streaming.md`.
+**E1a streamer (4–5 Kasım):** `StreamManager` 359/359 chunk, 244.682.752 B,
+359/359 FNV bağımsız Python ile aynı. **P22:** `Level.levelrender` artık engine
+serialiser'ıyla parse ediliyor — 359 ChunkInfo / 10.784 item / 603 prerequisite,
+359/359 alan eşit, cursor 2.464.509 B, tablo hash `aae98142…d36`; 54 TU,
+664.137 B, 30/30, PC parity. Kalan: resource block/render list importu
+(`Create*Buffer`, render states), `ProcessLoadChunk`, doku/decompression.
+Kanıt: `docs/work/verification/T-007-streaming.md`.
 
 **E1c araç fiziği (5 Kasım):** 186 nesne, **1.024.869 B** wasm; gerçek XT
 `Corvette_ZR1_Stock` (1600 kg, 2.652 m aks, 0.356 m teker). 480 tick: temas

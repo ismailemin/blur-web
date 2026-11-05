@@ -38,20 +38,38 @@ Real `Level.levelstream` through `C_OverlayFs` → `C_WebFile` → node range so
 - EOF-crossing, past-EOF and oversize requests fail loudly; exactly the two
   deliberate read failures are counted; no zero-fill
 
+## P22 — engine-parsed levelrender (5 November 2026)
+
+`verify_stream.py --fresh` → **PASS** (121.4 s), **30/30** checks.
+
+- 54 TUs, wasm **664,137 B**, two builds identical.
+- `Sys::C_FileBlock` → `Arch::BinaryInputArchive` → `Deserialise(Target::Scene)`
+  now runs on wasm; **0 GPU calls**.
+- Engine table: **359 ChunkInfo records**, **10,784 items**, **603
+  prerequisites**, 603 dependants, 0 disabled; stored 244,682,752 B / logical
+  238,442,906 B.
+- Field-by-field **359/359 equal** to `range_probe level` and
+  `level_inspect --index`, including every item and prerequisite.
+- Cursor **2,464,509 B** equals the probe `parsedUntilOffset`; table hash
+  `aae9814242df9d36` identical in C++ and Python.
+- Scene data: 16 declarations / 67 elements, 43 effects, 10 shared textures
+  (2,196,056 B), data-only.
+- `OpenStreamFile` now passes `kBufferSizeHintDefault` (sentinel → 16 KiB)
+  instead of 0; `bufferHintRefused=0`.
+- `CacheChunk(0)` = 4,096 B FNV `6902d748913089e9`; a chunk with a prerequisite
+  is refused before reading.
+- PC parity: `streammanager.cpp` 108,025, `streamdata.cpp` 111,514,
+  `archive.cpp` 111,399 preprocessed lines identical with/without the patch.
+
 ## Blockers (measured, not guessed)
 
-1. **`Level.levelrender` is not parsed in-engine.** The target `Scene` archive
-   stores DX11 `Display2` types by value: `archive.cpp` `Deserialise(Scene)`
-   produces **456 errors**; `streamdata.cpp` 33 errors
-   (`Display::Device()->AllocMemory/FreeMemory`, `PERF_EVENT`);
-   `RenderLevel.cpp` 71 errors. The chunk table currently comes from the two
-   committed probes, which agree.
-2. `StreamData::OpenStreamFile` requests buffer hint **0**; the web file system
-   accepts 1–1 MiB. The harness opens with 16 KiB. A real wiring must resolve
-   this in the file layer or call site.
-3. `StreamData` prerequisite/queue logic (`CacheChunk`, `ProcessLoadChunk`) is
-   not compiled or exercised — same renderer dependency.
-4. No chunk decompression, browser, renderer, vehicle or game claim.
+1. **Resource blocks and render lists are not imported**
+   (`CreateIndexBuffer/VertexBuffer/VertexDeclaration`, render states); parsing
+   stops at the loaded-block count, exactly the probe boundary.
+   `ProcessLoadChunk` compiles but is not run.
+2. `StreamData::BeginTasks` aborts if reached (never reached here).
+3. No texture creation, chunk decompression, browser/GPU renderer, vehicle or
+   game claim; `C_OverlayFs` still one read-only layer.
 
 ## Next
 

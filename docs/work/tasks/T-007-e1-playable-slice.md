@@ -14,14 +14,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 
 ## Alt görevler
 
-### E1a — Level streaming (P18)  ◐ (streamer çalışıyor; levelrender parse bloklu)
+### E1a — Level streaming (P18 + P22)  ◐
 - `StreamManager` wasm'da: 359/359 chunk, 244.682.752 B, 359/359 FNV bağımsız
-  Python ile aynı; `levelrender`/`levelphysics` hash'leri de aynı.
-- `Level.levelrender` Scene parse'ı DX11 `Display2` bağımlılığı yüzünden bloklu
-  (`archive.cpp` 456 hata); chunk tablosu şimdilik probe'lardan geliyor.
-- `StreamData` prerequisite/queue mantığı derlenmedi; `OpenStreamFile` buffer
-  hint 0 uyuşmazlığı var.
-- Kanıt: `docs/work/analysis/engine-level-stream.md`, `engine/verify_stream.py`,
+  Python ile aynı.
+- **`Level.levelrender` artık engine serialiser'ıyla parse ediliyor (P22):**
+  359 ChunkInfo / 10.784 item / 603 prerequisite, 359/359 alan eşit; cursor
+  2.464.509 B = probe `parsedUntilOffset`; tablo hash `aae98142…d36`; 54 TU,
+  664.137 B wasm, 30/30, PC parity.
+- Kalan: resource block/render list importu (`Create*Buffer`, render states),
+  `ProcessLoadChunk`, doku/chunk decompression. GPU çağrısı 0.
+- Kanıt: `docs/work/analysis/engine-level-stream.md`,
   `docs/work/verification/T-007-streaming.md`.
 
 ### E1b — Render packet v1 (P20)  ✅

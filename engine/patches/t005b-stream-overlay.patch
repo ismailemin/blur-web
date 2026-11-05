@@ -137,6 +137,20 @@
  	Validate();
  }
  
+@@ -454,7 +473,13 @@
+ 					pp = &(*pp)->pSecond;
+ 				else
+ 				{
++#if defined(PLATFORM_WEB)
++					// clang: EraseNode is a member of the dependent base
++					// (TreeBuilder); the unqualified call needs qualification.
++					this->EraseNode(pp);
++#else
+ 					EraseNode(pp);
++#endif
+ 					Validate();
+ 					return 1;
+ 				}
 --- a/code/mercury/library/common/core/include/btl/containers/skiplist.inl
 +++ b/code/mercury/library/common/core/include/btl/containers/skiplist.inl
 @@ -95,10 +95,20 @@
@@ -393,3 +407,1375 @@
  	if (!m_memCopyWorker.m_cpuCopyList.Empty())
  	{
  		m_memCopyWorker.m_pItems = &m_memCopyWorker.m_cpuCopyList[0];
+--- a/code/mercury/library/common/core/include/btl/containers/set.h
++++ b/code/mercury/library/common/core/include/btl/containers/set.h
+@@ -36,7 +36,12 @@
+ 	typedef TreeBuilder<Key, SetItem<Key, Allocator>, Allocator, UniqueElements> Base;
+ 	using Base::Initialise;
+ 	using Base::Clear;
++#if defined(PLATFORM_WEB)
++	// clang: the base is dependent, so the inherited type needs `typename`.
++	using typename Base::InsertionReturnType;
++#else
+ 	using Base::InsertionReturnType;
++#endif
+ 
+ 	Set() {}
+ 	Set(const Set& other) 
+--- a/code/mercury/library/common/system/source/memory/VirtualMemory.cpp
++++ b/code/mercury/library/common/system/source/memory/VirtualMemory.cpp
+@@ -168,6 +168,47 @@
+ 	return (attr.access_right & SYS_MEMORY_ACCESS_RIGHT_PPU_THR);
+ }
+ 
++#elif defined(PLATFORM_WEB)
++// wasm32 (Emscripten) implementation.
++//
++// sys/memory/BlockAllocator.h requires real 64 KiB aligned pages: GetPage()
++// masks an address with 0xffff0000 (BlockAllocator.cpp:100) and stores the page
++// object at the end of the page. memalign() provides that alignment out of the
++// wasm heap; free() returns it. The contract is the one the PC branch gets from
++// VirtualAlloc/MEM_COMMIT.
++#include <stdlib.h>
++
++void *AllocVirtual(U64 cSize)
++{
++	void* p = memalign( 0x10000, (size_t)cSize );
++	if ( p )
++		memset( p, 0, (size_t)cSize );
++	return p;
++}
++
++void FreeVirtual(void *pAddress)
++{
++	free( pAddress );
++}
++
++void* AllocPhysical(void *pAddress, U64)
++{
++	// The page is already committed by AllocVirtual; there is no separate
++	// video/physical heap on this target.
++	return pAddress;
++}
++
++void FreePhysical(void*)
++{
++}
++
++bool AddressReadAccess(void*)
++{
++	// Same answer the PC branch gives (VirtualMemory.cpp:48-55): wasm32 has no
++	// safe pointer probe, so the function is a debug aid, not validation.
++	return true;
++}
++
+ #else
+ // Linux implementation
+ // this implementation simply commits a chunk of 500MB physical memory.
+--- a/code/mercury/library/graphics/renderingdata/include/renderingdata/noninterface/archive.inl
++++ b/code/mercury/library/graphics/renderingdata/include/renderingdata/noninterface/archive.inl
+@@ -1,9 +1,20 @@
+ ////////////////////////////////////////////////////////////////////
+ // RenderingData archive functions shared between converter and game.
+ 
++// The engine build this spike uses passes -fdelayed-template-parsing. When a
++// template in this header is instantiated from inside namespace RenderingData,
++// clang resolves the bare RD_ARCH_NS:: below against a non-existent
++// RenderingData::Arch instead of the global namespace that declares it. The
++// web build therefore spells the namespace explicitly; the PC build keeps the
++// upstream token, so its preprocessed translation unit is unchanged.
++#if defined(PLATFORM_WEB)
++#define RD_ARCH_NS ::Arch
++#else
++#define RD_ARCH_NS Arch
++#endif
++
+ namespace RenderingData
+ {
+-
+ ////////////////////////////////////////////////////////////////////////
+ // Scene
+ ////////////////////////////////////////////////////////////////////////
+@@ -17,7 +28,7 @@
+ AUTO_DESERIALISE_FREE(PlatformType)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, PlatformType& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, PlatformType& t)
+ {
+ 	switch (t)
+ 	{
+@@ -35,8 +46,8 @@
+ {
+ 	ActivateHandlers();
+ 
+-	ar & Arch::MakeNvp("Name", t.m_name);
+-	ar & Arch::MakeNvp("RootNode", t.m_rootNode);
++	ar & RD_ARCH_NS::MakeNvp("Name", t.m_name);
++	ar & RD_ARCH_NS::MakeNvp("RootNode", t.m_rootNode);
+ }
+ 
+ AUTO_DESERIALISE_FREE(Scene)
+@@ -48,10 +59,10 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, Bounds& t)
+ {
+-	ar & Arch::MakeNvp("AabbMin", t.aabbMin);
+-	ar & Arch::MakeNvp("AabbMax", t.aabbMax);
+-	ar & Arch::MakeNvp("DistanceMin", t.distanceMin);
+-	ar & Arch::MakeNvp("DistanceMax", t.distanceMax);
++	ar & RD_ARCH_NS::MakeNvp("AabbMin", t.aabbMin);
++	ar & RD_ARCH_NS::MakeNvp("AabbMax", t.aabbMax);
++	ar & RD_ARCH_NS::MakeNvp("DistanceMin", t.distanceMin);
++	ar & RD_ARCH_NS::MakeNvp("DistanceMax", t.distanceMax);
+ }
+ 
+ AUTO_DESERIALISE_FREE(Bounds)	
+@@ -59,10 +70,10 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, Node& t)
+ {
+-	ar & Arch::MakeNvp("Name", t.m_name);
+-	ar & Arch::MakeNvp("SubNodes", t.m_subNodes);
+-	ar & Arch::MakeNvp("Parent", t.m_parent);
+-	ar & Arch::MakeNvp("Location", t.m_location);
++	ar & RD_ARCH_NS::MakeNvp("Name", t.m_name);
++	ar & RD_ARCH_NS::MakeNvp("SubNodes", t.m_subNodes);
++	ar & RD_ARCH_NS::MakeNvp("Parent", t.m_parent);
++	ar & RD_ARCH_NS::MakeNvp("Location", t.m_location);
+ }
+ 
+ AUTO_DESERIALISE_FREE(Node)
+@@ -71,16 +82,16 @@
+ inline void Serialise(Archive& ar, CullNode& t)
+ {
+ 	SERIALISE_BASE_FREE(Node, ar, t);
+-	ar & Arch::MakeNvp("Bounds", t.m_bounds);
+-	ar & Arch::MakeNvp("PvsBits", t.m_pvsBits);
++	ar & RD_ARCH_NS::MakeNvp("Bounds", t.m_bounds);
++	ar & RD_ARCH_NS::MakeNvp("PvsBits", t.m_pvsBits);
+ 
+ 	if (ar.GetVersion() > 0)
+-		ar & Arch::MakeNvp("GroupIndex", t.m_groupIndex);
++		ar & RD_ARCH_NS::MakeNvp("GroupIndex", t.m_groupIndex);
+ 	else
+ 		t.m_groupIndex = -1;
+ 
+ 	if (ar.GetVersion() > 1)
+-		ar & Arch::MakeNvp("PortalBits", t.m_portalBits);
++		ar & RD_ARCH_NS::MakeNvp("PortalBits", t.m_portalBits);
+ }
+ 
+ AUTO_DESERIALISE_FREE(CullNode)
+@@ -97,7 +108,7 @@
+ inline void Serialise(Archive& ar, GroupNode& t)
+ {
+ 	SERIALISE_BASE_FREE(CullNode, ar, t);
+-	ar & Arch::MakeNvp("GroupName", t.m_groupName);
++	ar & RD_ARCH_NS::MakeNvp("GroupName", t.m_groupName);
+ }
+ 
+ AUTO_DESERIALISE_FREE(GroupNode)
+@@ -106,7 +117,7 @@
+ inline void Serialise(Archive& ar, LodNode& t)
+ {
+ 	SERIALISE_BASE_FREE(CullNode, ar, t);
+-	ar & Arch::MakeNvp("LodThresholds", t.m_lodThresholds);
++	ar & RD_ARCH_NS::MakeNvp("LodThresholds", t.m_lodThresholds);
+ }
+ 
+ AUTO_DESERIALISE_FREE(LodNode)
+@@ -118,8 +129,8 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, ResourceIndex& t)
+ {
+-	ar & Arch::MakeNvp("Block", t.m_block);
+-	ar & Arch::MakeNvp("Index", t.m_index);
++	ar & RD_ARCH_NS::MakeNvp("Block", t.m_block);
++	ar & RD_ARCH_NS::MakeNvp("Index", t.m_index);
+ }
+ 
+ AUTO_DESERIALISE_FREE(ResourceIndex)
+@@ -137,7 +148,7 @@
+ AUTO_DESERIALISE_FREE(IndexType)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, IndexType& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, IndexType& t)
+ {
+ 	switch (t)
+ 	{
+@@ -158,7 +169,7 @@
+ AUTO_DESERIALISE_FREE(VertexElementType)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, VertexElementType& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, VertexElementType& t)
+ {
+ 	switch (t)
+ 	{
+@@ -191,7 +202,7 @@
+ AUTO_DESERIALISE_FREE(VertexElementMethod)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, VertexElementMethod& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, VertexElementMethod& t)
+ {
+ 	switch (t)
+ 	{
+@@ -211,7 +222,7 @@
+ AUTO_DESERIALISE_FREE(VertexElementUsage)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, VertexElementUsage& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, VertexElementUsage& t)
+ {
+ 	switch (t)
+ 	{
+@@ -235,10 +246,10 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, VertexFormat::VertexElement& t)
+ {
+-	ar & Arch::MakeNvp("Type", t.type);
+-	ar & Arch::MakeNvp("Method", t.method);
+-	ar & Arch::MakeNvp("Usage", t.usage);
+-	ar & Arch::MakeNvp("UsageIndex", t.usageIndex);
++	ar & RD_ARCH_NS::MakeNvp("Type", t.type);
++	ar & RD_ARCH_NS::MakeNvp("Method", t.method);
++	ar & RD_ARCH_NS::MakeNvp("Usage", t.usage);
++	ar & RD_ARCH_NS::MakeNvp("UsageIndex", t.usageIndex);
+ }
+ 
+ AUTO_DESERIALISE_FREE(VertexFormat::VertexElement)
+@@ -246,9 +257,9 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, VertexFormat& t)
+ {
+-	ar & Arch::MakeNvp("DataSize", t.m_dataSize);
+-	ar & Arch::MakeNvp("Elements", t.m_elements);
+-	ar & Arch::MakeNvp("Offsets", t.m_offsets);
++	ar & RD_ARCH_NS::MakeNvp("DataSize", t.m_dataSize);
++	ar & RD_ARCH_NS::MakeNvp("Elements", t.m_elements);
++	ar & RD_ARCH_NS::MakeNvp("Offsets", t.m_offsets);
+ }
+ 
+ AUTO_DESERIALISE_FREE(VertexFormat)
+@@ -256,12 +267,12 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, VertexDeclaration::VertexElement& t)
+ {
+-	ar & Arch::MakeNvp("Stream", t.stream);
+-	ar & Arch::MakeNvp("Offset", t.offset);
+-	ar & Arch::MakeNvp("Type", t.type);
+-	ar & Arch::MakeNvp("Method", t.method);
+-	ar & Arch::MakeNvp("Usage", t.usage);
+-	ar & Arch::MakeNvp("UsageIndex", t.usageIndex);
++	ar & RD_ARCH_NS::MakeNvp("Stream", t.stream);
++	ar & RD_ARCH_NS::MakeNvp("Offset", t.offset);
++	ar & RD_ARCH_NS::MakeNvp("Type", t.type);
++	ar & RD_ARCH_NS::MakeNvp("Method", t.method);
++	ar & RD_ARCH_NS::MakeNvp("Usage", t.usage);
++	ar & RD_ARCH_NS::MakeNvp("UsageIndex", t.usageIndex);
+ };
+ 
+ AUTO_DESERIALISE_FREE(VertexDeclaration::VertexElement)
+@@ -270,7 +281,7 @@
+ inline void Serialise(Archive& ar, VertexDeclaration& t)
+ {
+ 	S32 nElements = t.GetNumVertexElements();
+-	ar & Arch::MakeNvp("Size", nElements);
++	ar & RD_ARCH_NS::MakeNvp("Size", nElements);
+ 
+ 	for (int i = 0; i < nElements; i++)
+ 		ar & t.m_elements[i];
+@@ -283,7 +294,7 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, Effect& t)
+ {
+-	ar & Arch::MakeNvp("Name", t.m_name);
++	ar & RD_ARCH_NS::MakeNvp("Name", t.m_name);
+ }
+ 
+ AUTO_DESERIALISE_FREE(Effect)
+@@ -298,8 +309,8 @@
+ 	S32 index = t.index;
+ 	S32 listIndex = t.listIndex;
+ 
+-	ar & Arch::MakeNvp("Index", index);
+-	ar & Arch::MakeNvp("ProcessType", listIndex);
++	ar & RD_ARCH_NS::MakeNvp("Index", index);
++	ar & RD_ARCH_NS::MakeNvp("ProcessType", listIndex);
+ }
+ 
+ template <typename Archive>
+@@ -318,13 +329,13 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, MaterialType& t)
+ {
+-	ar & Arch::MakeNvp("Name", t.m_name);
+-	ar & Arch::MakeNvp("MaterialElements", t.m_elements);
+-	ar & Arch::MakeNvp("DataSize", t.m_dataSize);
+-	ar & Arch::MakeNvp("MaxAlign", t.m_maxAlign);
+-	ar & Arch::MakeNvp("Offsets", t.m_offsets);
+-	ar & Arch::MakeNvp("Effect", t.m_effect);
+-	ar & Arch::MakeNvp("ListIndex", t.m_listIndex);
++	ar & RD_ARCH_NS::MakeNvp("Name", t.m_name);
++	ar & RD_ARCH_NS::MakeNvp("MaterialElements", t.m_elements);
++	ar & RD_ARCH_NS::MakeNvp("DataSize", t.m_dataSize);
++	ar & RD_ARCH_NS::MakeNvp("MaxAlign", t.m_maxAlign);
++	ar & RD_ARCH_NS::MakeNvp("Offsets", t.m_offsets);
++	ar & RD_ARCH_NS::MakeNvp("Effect", t.m_effect);
++	ar & RD_ARCH_NS::MakeNvp("ListIndex", t.m_listIndex);
+ }
+ 
+ AUTO_DESERIALISE_FREE(MaterialType)
+@@ -332,9 +343,9 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, MaterialElement& t)
+ {
+-	ar & Arch::MakeNvp("Name", t.name);
+-	ar & Arch::MakeNvp("Type", t.type);
+-	ar & Arch::MakeNvp("Count", t.count);
++	ar & RD_ARCH_NS::MakeNvp("Name", t.name);
++	ar & RD_ARCH_NS::MakeNvp("Type", t.type);
++	ar & RD_ARCH_NS::MakeNvp("Count", t.count);
+ }
+ 
+ AUTO_DESERIALISE_FREE(MaterialElement)
+@@ -348,7 +359,7 @@
+ AUTO_DESERIALISE_FREE(MaterialElementType)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, MaterialElementType& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, MaterialElementType& t)
+ {
+ 	switch (t)
+ 	{
+@@ -420,7 +431,7 @@
+ void SerialiseMaterialData(Archive& ar, const MaterialListData& data, const MaterialList& types)
+ {
+ 	S32 numMaterials = data.GetNumMaterials();
+-	ar & Arch::MakeNvp("NumMaterials", numMaterials);
++	ar & RD_ARCH_NS::MakeNvp("NumMaterials", numMaterials);
+ 
+ 	S32 dataSize = data.GetDataSize();
+ 	ar & dataSize;
+@@ -428,9 +439,9 @@
+ 	for (int i = 0; i < data.GetNumMaterials(); i++)
+ 	{
+ 		S32 typeIndex = data.GetMaterial(i).GetTypeIndex();
+-		ar & Arch::MakeNvp("TypeIndex", typeIndex);
+-
+-		if (!Btl::SameType<Archive, Arch::XmlOutputArchive>::result)
++		ar & RD_ARCH_NS::MakeNvp("TypeIndex", typeIndex);
++
++		if (!Btl::SameType<Archive, RD_ARCH_NS::XmlOutputArchive>::result)
+ 		{
+ 			SerialiseMaterial(ar, data.GetMaterial(i), types.GetMaterialType(typeIndex));
+ 		}
+@@ -440,7 +451,7 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, MaterialList& t)
+ {
+-	ar & Arch::MakeNvp("MaterialTypes", t.m_materialTypes);
++	ar & RD_ARCH_NS::MakeNvp("MaterialTypes", t.m_materialTypes);
+ 
+ 	SerialiseMaterialData(ar, t, t);
+ }
+@@ -449,9 +460,9 @@
+ inline void Serialise(Archive& ar, MaterialNode& t)
+ {
+ 	SERIALISE_BASE_FREE(CullNode, ar, t);
+-	ar & Arch::MakeNvp("MaterialType", t.m_materialType);
++	ar & RD_ARCH_NS::MakeNvp("MaterialType", t.m_materialType);
+ 	SerialiseMaterial(ar, t.m_material, t.m_materialType);
+-	ar & Arch::MakeNvp("TextureSource", t.m_textureSource);
++	ar & RD_ARCH_NS::MakeNvp("TextureSource", t.m_textureSource);
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////
+@@ -467,7 +478,7 @@
+ AUTO_DESERIALISE_FREE(BlendFactor)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, BlendFactor& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, BlendFactor& t)
+ {
+ 	switch (t)
+ 	{
+@@ -494,7 +505,7 @@
+ AUTO_DESERIALISE_FREE(BlendOp)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, BlendOp& t) 
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, BlendOp& t) 
+ {
+ 	switch (t)
+ 	{
+@@ -516,7 +527,7 @@
+ AUTO_DESERIALISE_FREE(CullMode)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, CullMode& t) 
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, CullMode& t) 
+ {
+ 	switch (t)
+ 	{
+@@ -540,15 +551,15 @@
+ 	CullMode cullMode = t.GetCullMode();
+ 	S32 zBias = t.GetZBias();
+ 
+-	ar & Arch::MakeNvp("SrcBlend", srcBlend);
+-	ar & Arch::MakeNvp("DestBlend", destBlend);
+-	ar & Arch::MakeNvp("BlendOp", blendOp);
+-	ar & Arch::MakeNvp("AlphaBlendEnable", alphaBlendEnable);
+-	ar & Arch::MakeNvp("AlphaTestEnable", alphaTestEnable);
+-	ar & Arch::MakeNvp("AlphaRef", alphaRef);
+-	ar & Arch::MakeNvp("AlphaToMaskEnable", alphaToMaskEnable);
+-	ar & Arch::MakeNvp("CullMode", cullMode);
+-	ar & Arch::MakeNvp("ZBias", zBias);
++	ar & RD_ARCH_NS::MakeNvp("SrcBlend", srcBlend);
++	ar & RD_ARCH_NS::MakeNvp("DestBlend", destBlend);
++	ar & RD_ARCH_NS::MakeNvp("BlendOp", blendOp);
++	ar & RD_ARCH_NS::MakeNvp("AlphaBlendEnable", alphaBlendEnable);
++	ar & RD_ARCH_NS::MakeNvp("AlphaTestEnable", alphaTestEnable);
++	ar & RD_ARCH_NS::MakeNvp("AlphaRef", alphaRef);
++	ar & RD_ARCH_NS::MakeNvp("AlphaToMaskEnable", alphaToMaskEnable);
++	ar & RD_ARCH_NS::MakeNvp("CullMode", cullMode);
++	ar & RD_ARCH_NS::MakeNvp("ZBias", zBias);
+ }
+ 
+ 
+@@ -595,7 +606,7 @@
+ AUTO_DESERIALISE_FREE(TextureAddress)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, TextureAddress& t) 
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, TextureAddress& t) 
+ {
+ 	switch (t)
+ 	{
+@@ -616,7 +627,7 @@
+ AUTO_DESERIALISE_FREE(TextureFilter)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, TextureFilter& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, TextureFilter& t)
+ {
+ 	switch (t)
+ 	{
+@@ -641,16 +652,16 @@
+ 	S32 mipMapLodBias = t.GetMipMapLodBias();
+ 	U32 sRGB = t.GetSRGB();
+ 
+-	ar & Arch::MakeNvp("AddressU", addressU);
+-	ar & Arch::MakeNvp("AddressV", addressV);
+-	ar & Arch::MakeNvp("AddressW", addressW);
+-	ar & Arch::MakeNvp("MagFilter", magFilter);
+-	ar & Arch::MakeNvp("MinFilter", minFilter);
+-	ar & Arch::MakeNvp("MipFilter", mipFilter);
+-	ar & Arch::MakeNvp("MaxAnisotropy", maxAnisotropy);
+-	ar & Arch::MakeNvp("MaxMipLevel", maxMipLevel);
+-	ar & Arch::MakeNvp("MipMapLodBias", mipMapLodBias);
+-	ar & Arch::MakeNvp("SRGB", sRGB);
++	ar & RD_ARCH_NS::MakeNvp("AddressU", addressU);
++	ar & RD_ARCH_NS::MakeNvp("AddressV", addressV);
++	ar & RD_ARCH_NS::MakeNvp("AddressW", addressW);
++	ar & RD_ARCH_NS::MakeNvp("MagFilter", magFilter);
++	ar & RD_ARCH_NS::MakeNvp("MinFilter", minFilter);
++	ar & RD_ARCH_NS::MakeNvp("MipFilter", mipFilter);
++	ar & RD_ARCH_NS::MakeNvp("MaxAnisotropy", maxAnisotropy);
++	ar & RD_ARCH_NS::MakeNvp("MaxMipLevel", maxMipLevel);
++	ar & RD_ARCH_NS::MakeNvp("MipMapLodBias", mipMapLodBias);
++	ar & RD_ARCH_NS::MakeNvp("SRGB", sRGB);
+ }
+ 
+ template <typename Archive>
+@@ -705,7 +716,7 @@
+ AUTO_DESERIALISE_FREE(SortType)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, SortType& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, SortType& t)
+ {	switch (t)
+ 	{
+ 		case SORT_TYPE_KEY: ar << "KEY"; return;
+@@ -723,7 +734,7 @@
+ AUTO_DESERIALISE_FREE(RenderPass)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, RenderPass& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, RenderPass& t)
+ {	switch (t)
+ 	{
+ 		case RENDER_PASS_OPAQUE: ar << "OPAQUE"; return;
+@@ -744,7 +755,7 @@
+ AUTO_DESERIALISE_FREE(PrimitiveType)
+ 
+ template <>
+-inline void Serialise(Arch::XmlOutputArchive& ar, PrimitiveType& t)
++inline void Serialise(RD_ARCH_NS::XmlOutputArchive& ar, PrimitiveType& t)
+ {
+ 	switch (t)
+ 	{
+@@ -760,7 +771,7 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderNode& t)
+ {
+-	ar & Arch::MakeNvp("Object", t.m_object);
++	ar & RD_ARCH_NS::MakeNvp("Object", t.m_object);
+ }
+ 
+ AUTO_DESERIALISE_FREE(RenderNode)
+@@ -783,11 +794,11 @@
+ 	S32 vertexBuffer = t.vertexBuffer;
+ 	S32 streamIndex = t.streamIndex;
+ 
+-	ar & Arch::MakeNvp("VertexBuffer", vertexBuffer);
+-	ar & Arch::MakeNvp("StreamIndex", streamIndex);
+-	ar & Arch::MakeNvp("VertexOffset", t.vertexOffset);
+-	ar & Arch::MakeNvp("Frequency", t.frequency);
+-	ar & Arch::MakeNvp("Material", t.material);
++	ar & RD_ARCH_NS::MakeNvp("VertexBuffer", vertexBuffer);
++	ar & RD_ARCH_NS::MakeNvp("StreamIndex", streamIndex);
++	ar & RD_ARCH_NS::MakeNvp("VertexOffset", t.vertexOffset);
++	ar & RD_ARCH_NS::MakeNvp("Frequency", t.frequency);
++	ar & RD_ARCH_NS::MakeNvp("Material", t.material);
+ }
+ 
+ template <typename Archive>
+@@ -795,11 +806,11 @@
+ {
+ 	S32 vertexBuffer, streamIndex;
+ 
+-	ar & Arch::MakeNvp("VertexBuffer", vertexBuffer);
+-	ar & Arch::MakeNvp("StreamIndex", streamIndex);
+-	ar & Arch::MakeNvp("VertexOffset", t.vertexOffset);
+-	ar & Arch::MakeNvp("Frequency", t.frequency);
+-	ar & Arch::MakeNvp("Material", t.material);
++	ar & RD_ARCH_NS::MakeNvp("VertexBuffer", vertexBuffer);
++	ar & RD_ARCH_NS::MakeNvp("StreamIndex", streamIndex);
++	ar & RD_ARCH_NS::MakeNvp("VertexOffset", t.vertexOffset);
++	ar & RD_ARCH_NS::MakeNvp("Frequency", t.frequency);
++	ar & RD_ARCH_NS::MakeNvp("Material", t.material);
+ 
+ 	t.vertexBuffer = vertexBuffer;
+ 	t.streamIndex = streamIndex;
+@@ -808,10 +819,10 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderListNode::Primitive::Lod& t)
+ {
+-	ar & Arch::MakeNvp("Offset", t.offset);
+-	ar & Arch::MakeNvp("NIndices", t.nIndices);
+-	ar & Arch::MakeNvp("MinIndex", t.minIndex);
+-	ar & Arch::MakeNvp("NVertices", t.nVertices);
++	ar & RD_ARCH_NS::MakeNvp("Offset", t.offset);
++	ar & RD_ARCH_NS::MakeNvp("NIndices", t.nIndices);
++	ar & RD_ARCH_NS::MakeNvp("MinIndex", t.minIndex);
++	ar & RD_ARCH_NS::MakeNvp("NVertices", t.nVertices);
+ }
+ 
+ AUTO_DESERIALISE_FREE(RenderListNode::Primitive::Lod)
+@@ -819,16 +830,16 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderListNode::Primitive& t)
+ {
+-	ar & Arch::MakeNvp("Effect", t.effect);
+-	ar & Arch::MakeNvp("VertexDeclaration", t.vertexDeclaration);
+-	ar & Arch::MakeNvp("PrimitiveType", (PrimitiveType&) t.primitiveType);
+-	ar & Arch::MakeNvp("IndexBufferIndex", t.indexBufferIndex);
+-	ar & Arch::MakeNvp("Flags", t.flags);
+-	ar & Arch::MakeNvp("BaseMaterial", t.baseMaterial);
+-	ar & Arch::MakeNvp("InstanceMaterial", t.instanceMaterial);
+-	ar & Arch::MakeNvp("BlendState", t.blendState);
+-	ar & Arch::MakeNvp("Lods", t.lods);
+-	ar & Arch::MakeNvp("PrimitiveStreams", t.primitiveStreams);
++	ar & RD_ARCH_NS::MakeNvp("Effect", t.effect);
++	ar & RD_ARCH_NS::MakeNvp("VertexDeclaration", t.vertexDeclaration);
++	ar & RD_ARCH_NS::MakeNvp("PrimitiveType", (PrimitiveType&) t.primitiveType);
++	ar & RD_ARCH_NS::MakeNvp("IndexBufferIndex", t.indexBufferIndex);
++	ar & RD_ARCH_NS::MakeNvp("Flags", t.flags);
++	ar & RD_ARCH_NS::MakeNvp("BaseMaterial", t.baseMaterial);
++	ar & RD_ARCH_NS::MakeNvp("InstanceMaterial", t.instanceMaterial);
++	ar & RD_ARCH_NS::MakeNvp("BlendState", t.blendState);
++	ar & RD_ARCH_NS::MakeNvp("Lods", t.lods);
++	ar & RD_ARCH_NS::MakeNvp("PrimitiveStreams", t.primitiveStreams);
+ }
+ 
+ template <typename Archive>
+@@ -837,10 +848,10 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderListNode::Instance& t)
+ {
+-	ar & Arch::MakeNvp("PrimitiveIndex", t.primitiveIndex);
+-	ar & Arch::MakeNvp("Material", t.material);
+-	ar & Arch::MakeNvp("PrimitiveStreams", t.primitiveStreams);
+-	ar & Arch::MakeNvp("Flags", t.flags);
++	ar & RD_ARCH_NS::MakeNvp("PrimitiveIndex", t.primitiveIndex);
++	ar & RD_ARCH_NS::MakeNvp("Material", t.material);
++	ar & RD_ARCH_NS::MakeNvp("PrimitiveStreams", t.primitiveStreams);
++	ar & RD_ARCH_NS::MakeNvp("Flags", t.flags);
+ }
+ 
+ AUTO_DESERIALISE_FREE(RenderListNode::Instance)
+@@ -848,8 +859,8 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderListNode::InstanceBatch& t)
+ {
+-	ar & Arch::MakeNvp("Instance", t.instance);
+-	ar & Arch::MakeNvp("Stream", t.stream);
++	ar & RD_ARCH_NS::MakeNvp("Instance", t.instance);
++	ar & RD_ARCH_NS::MakeNvp("Stream", t.stream);
+ }
+ 
+ AUTO_DESERIALISE_FREE(RenderListNode::InstanceBatch)
+@@ -857,12 +868,12 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderListNode::RenderPassInfo& t)
+ {
+-	ar & Arch::MakeNvp("Primitives", t.nPrimitives);
+-	ar & Arch::MakeNvp("PrimitiveOffset", t.primitiveOffset);
+-	ar & Arch::MakeNvp("NInstances", t.nInstances);
+-	ar & Arch::MakeNvp("InstanceOffset", t.instanceOffset);
+-	ar & Arch::MakeNvp("NInstanceBatches", t.nInstanceBatches);
+-	ar & Arch::MakeNvp("InstanceBatchOffset", t.instanceBatchOffset);
++	ar & RD_ARCH_NS::MakeNvp("Primitives", t.nPrimitives);
++	ar & RD_ARCH_NS::MakeNvp("PrimitiveOffset", t.primitiveOffset);
++	ar & RD_ARCH_NS::MakeNvp("NInstances", t.nInstances);
++	ar & RD_ARCH_NS::MakeNvp("InstanceOffset", t.instanceOffset);
++	ar & RD_ARCH_NS::MakeNvp("NInstanceBatches", t.nInstanceBatches);
++	ar & RD_ARCH_NS::MakeNvp("InstanceBatchOffset", t.instanceBatchOffset);
+ }
+ 
+ AUTO_DESERIALISE_FREE(RenderListNode::RenderPassInfo)
+@@ -870,8 +881,8 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderListNode::ChunkData::ResourceInfo& t)
+ {
+-	ar & Arch::MakeNvp("ResourceIndex", t.resourceIndex);
+-	ar & Arch::MakeNvp("IndexInList", t.indexInList);
++	ar & RD_ARCH_NS::MakeNvp("ResourceIndex", t.resourceIndex);
++	ar & RD_ARCH_NS::MakeNvp("IndexInList", t.indexInList);
+ }
+ 
+ AUTO_DESERIALISE_FREE(RenderListNode::ChunkData::ResourceInfo)
+@@ -879,10 +890,10 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderListNode::ChunkData& t)
+ {
+-	ar & Arch::MakeNvp("ChunkIndex", t.chunkIndex);
+-	ar & Arch::MakeNvp("IndexBuffers", t.indexBuffers);
+-	ar & Arch::MakeNvp("VertexBuffers", t.vertexBuffers);
+-	ar & Arch::MakeNvp("Textures", t.textures);
++	ar & RD_ARCH_NS::MakeNvp("ChunkIndex", t.chunkIndex);
++	ar & RD_ARCH_NS::MakeNvp("IndexBuffers", t.indexBuffers);
++	ar & RD_ARCH_NS::MakeNvp("VertexBuffers", t.vertexBuffers);
++	ar & RD_ARCH_NS::MakeNvp("Textures", t.textures);
+ }
+ 
+ AUTO_DESERIALISE_FREE(RenderListNode::ChunkData)
+@@ -890,8 +901,8 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, RenderListNode::RoomObjectMapper& t)
+ {
+-	ar & Arch::MakeNvp("PrimitiveBits", t.m_vPrimitives);
+-	ar & Arch::MakeNvp("InstanceBits", t.m_vInstances);
++	ar & RD_ARCH_NS::MakeNvp("PrimitiveBits", t.m_vPrimitives);
++	ar & RD_ARCH_NS::MakeNvp("InstanceBits", t.m_vInstances);
+ }
+ 
+ AUTO_DESERIALISE_FREE(RenderListNode::RoomObjectMapper)
+@@ -919,30 +930,30 @@
+ {
+ 	SERIALISE_BASE_FREE(CullNode, ar, t);
+ 
+-	ar & Arch::MakeNvp("ConstantMaterialTypes", t.m_constantMaterialTypes);
+-
+-	ar & Arch::MakeNvp("Primitives", t.m_renderData.primitives);
+-	ar & Arch::MakeNvp("Instances", t.m_renderData.instances);
+-	ar & Arch::MakeNvp("InstanceBatches", t.m_renderData.instanceBatches);
+-	ar & Arch::MakeNvp("BasePrimitives", t.m_renderData.basePrimitives);
++	ar & RD_ARCH_NS::MakeNvp("ConstantMaterialTypes", t.m_constantMaterialTypes);
++
++	ar & RD_ARCH_NS::MakeNvp("Primitives", t.m_renderData.primitives);
++	ar & RD_ARCH_NS::MakeNvp("Instances", t.m_renderData.instances);
++	ar & RD_ARCH_NS::MakeNvp("InstanceBatches", t.m_renderData.instanceBatches);
++	ar & RD_ARCH_NS::MakeNvp("BasePrimitives", t.m_renderData.basePrimitives);
+ 
+ 	SerialiseMaterialData(ar, t.m_constantMaterialData, t.m_constantMaterialTypes);
+ 
+-	ar & Arch::MakeNvp("RenderPass", t.m_sceneGraphData.renderPassInfo);
+-	ar & Arch::MakeNvp("PrimitiveBounds", t.m_sceneGraphData.primitiveBounds);
+-	ar & Arch::MakeNvp("InstanceBounds", t.m_sceneGraphData.instanceBounds);
+-	ar & Arch::MakeNvp("InstanceBatchBounds", t.m_sceneGraphData.instanceBatchBounds);
+-	ar & Arch::MakeNvp("PrimitivePvs", t.m_sceneGraphData.primitivePvs);
+-	ar & Arch::MakeNvp("InstancePvs", t.m_sceneGraphData.instancePvs);
+-	ar & Arch::MakeNvp("InstanceBatchPvs", t.m_sceneGraphData.instanceBatchPvs);
+-	ar & Arch::MakeNvp("PortalRooms", t.m_sceneGraphData.vRoomIndices);
+-	ar & Arch::MakeNvp("PortalMap", t.m_sceneGraphData.vMap);
+-	ar & Arch::MakeNvp("DynamicMaterials", t.m_sceneGraphData.dynamicMaterialLists);
+-
+-	ar & Arch::MakeNvp("IndexBufferSource", t.m_streamerData.indexBufferSource);
+-	ar & Arch::MakeNvp("VertexBufferSource", t.m_streamerData.vertexBufferSource);
+-	ar & Arch::MakeNvp("TextureSource", t.m_streamerData.textureSource);
+-	ar & Arch::MakeNvp("ChunkData", t.m_streamerData.chunkData);
++	ar & RD_ARCH_NS::MakeNvp("RenderPass", t.m_sceneGraphData.renderPassInfo);
++	ar & RD_ARCH_NS::MakeNvp("PrimitiveBounds", t.m_sceneGraphData.primitiveBounds);
++	ar & RD_ARCH_NS::MakeNvp("InstanceBounds", t.m_sceneGraphData.instanceBounds);
++	ar & RD_ARCH_NS::MakeNvp("InstanceBatchBounds", t.m_sceneGraphData.instanceBatchBounds);
++	ar & RD_ARCH_NS::MakeNvp("PrimitivePvs", t.m_sceneGraphData.primitivePvs);
++	ar & RD_ARCH_NS::MakeNvp("InstancePvs", t.m_sceneGraphData.instancePvs);
++	ar & RD_ARCH_NS::MakeNvp("InstanceBatchPvs", t.m_sceneGraphData.instanceBatchPvs);
++	ar & RD_ARCH_NS::MakeNvp("PortalRooms", t.m_sceneGraphData.vRoomIndices);
++	ar & RD_ARCH_NS::MakeNvp("PortalMap", t.m_sceneGraphData.vMap);
++	ar & RD_ARCH_NS::MakeNvp("DynamicMaterials", t.m_sceneGraphData.dynamicMaterialLists);
++
++	ar & RD_ARCH_NS::MakeNvp("IndexBufferSource", t.m_streamerData.indexBufferSource);
++	ar & RD_ARCH_NS::MakeNvp("VertexBufferSource", t.m_streamerData.vertexBufferSource);
++	ar & RD_ARCH_NS::MakeNvp("TextureSource", t.m_streamerData.textureSource);
++	ar & RD_ARCH_NS::MakeNvp("ChunkData", t.m_streamerData.chunkData);
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////////
+@@ -952,9 +963,9 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, ChunkInfo::Item& t)
+ {
+-	ar & Arch::MakeNvp("Block", t.block);
+-	ar & Arch::MakeNvp("Lod", t.lod); 
+-	//ar & Arch::MakeNvp("Size", t.size);
++	ar & RD_ARCH_NS::MakeNvp("Block", t.block);
++	ar & RD_ARCH_NS::MakeNvp("Lod", t.lod); 
++	//ar & RD_ARCH_NS::MakeNvp("Size", t.size);
+ }
+ 
+ AUTO_DESERIALISE_FREE(ChunkInfo::Item)
+@@ -962,16 +973,16 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, ChunkInfo& t)
+ {
+-	ar & Arch::MakeNvp("Bounds", t.m_bounds);
+-	ar & Arch::MakeNvp("Items", t.m_items);
+-	ar & Arch::MakeNvp("Blocks", t.m_blocks); 
+-	ar & Arch::MakeNvp("Prerequisites", t.m_prerequisites); 
+-	ar & Arch::MakeNvp("Dependants", t.m_dependants); 
+-	ar & Arch::MakeNvp("Offset", t.m_offset);
+-	ar & Arch::MakeNvp("CompressedSize", t.m_compressedSize);
++	ar & RD_ARCH_NS::MakeNvp("Bounds", t.m_bounds);
++	ar & RD_ARCH_NS::MakeNvp("Items", t.m_items);
++	ar & RD_ARCH_NS::MakeNvp("Blocks", t.m_blocks); 
++	ar & RD_ARCH_NS::MakeNvp("Prerequisites", t.m_prerequisites); 
++	ar & RD_ARCH_NS::MakeNvp("Dependants", t.m_dependants); 
++	ar & RD_ARCH_NS::MakeNvp("Offset", t.m_offset);
++	ar & RD_ARCH_NS::MakeNvp("CompressedSize", t.m_compressedSize);
+ 
+ 	if (ar.GetVersion() > 0)
+-		ar & Arch::MakeNvp("OriginalSize", t.m_originalSize);
++		ar & RD_ARCH_NS::MakeNvp("OriginalSize", t.m_originalSize);
+ 	else
+ 		t.m_originalSize = t.m_compressedSize;
+ }
+@@ -981,17 +992,17 @@
+ template <typename Archive>
+ inline void Serialise(Archive& ar, StreamData& t)
+ {
+-	ar & Arch::MakeNvp("Chunks", t.m_chunks);
+-	ar & Arch::MakeNvp("ChunkPvs", t.m_chunkPvs);
++	ar & RD_ARCH_NS::MakeNvp("Chunks", t.m_chunks);
++	ar & RD_ARCH_NS::MakeNvp("ChunkPvs", t.m_chunkPvs);
+ 
+ 	if (ar.GetVersion() > 0)
+ 	{
+-		ar & Arch::MakeNvp("ChunkBounds", t.m_chunkBounds);
+-		ar & Arch::MakeNvp("Groups", t.m_groups);
++		ar & RD_ARCH_NS::MakeNvp("ChunkBounds", t.m_chunkBounds);
++		ar & RD_ARCH_NS::MakeNvp("Groups", t.m_groups);
+ 	}
+ 
+ 	if (ar.GetVersion() > 1)
+-		ar & Arch::MakeNvp("ChunkRooms", t.m_chunkRooms);
++		ar & RD_ARCH_NS::MakeNvp("ChunkRooms", t.m_chunkRooms);
+ 
+ 	if (ar.GetVersion() > 2)
+ 		ar & t.m_chunkVersion;
+--- a/code/mercury/library/graphics/renderingdata/include/renderingdata/noninterface/streamdata.inl
++++ b/code/mercury/library/graphics/renderingdata/include/renderingdata/noninterface/streamdata.inl
+@@ -43,6 +43,18 @@
+ 	return m_bounds;
+ }
+ 
++#if defined(PLATFORM_WEB)
++inline S32 ChunkInfo::GetNumPrerequisites() const
++{
++	return m_prerequisites.Size();
++}
++
++inline S32 ChunkInfo::GetPrerequisite(S32 index) const
++{
++	return m_prerequisites[index];
++}
++#endif
++
+ ////////////////////////////////////////////////////////
+ 
+ inline bool operator < (const ChunkInfo::Item& a, const ChunkInfo::Item& b)
+--- a/code/mercury/library/graphics/renderingdata/include/renderingdata/streamdata.h
++++ b/code/mercury/library/graphics/renderingdata/include/renderingdata/streamdata.h
+@@ -47,6 +47,15 @@
+ 
+ 		const Bounds& GetBounds() const;
+ 
++#if defined(PLATFORM_WEB)
++		// Read-only accessors for the T-005e web verification gate. The
++		// dependency lists are the ones Target::StreamData already walks
++		// (streamdata.cpp CacheChunk/SetLoadChunk). PC keeps the private layout
++		// and the upstream header text.
++		S32 GetNumPrerequisites() const;
++		S32 GetPrerequisite(S32 index) const;
++#endif
++
+ 		FRIEND_SERIALISE(ChunkInfo)
+ 		friend class Build::StreamData;
+ 		friend class Target::StreamData;
+--- a/code/mercury/library/graphics/renderingdata/include/renderingdata/streaming.h
++++ b/code/mercury/library/graphics/renderingdata/include/renderingdata/streaming.h
+@@ -238,6 +238,14 @@
+ 
+ 		void SetScenePtr(Scene* pScene);
+ 
++#if defined(PLATFORM_WEB)
++		// T-005e verification gate: let the harness drive the private cache
++		// path without a renderer. It performs exactly the call
++		// UpdateChunkActivity makes at streamdata.cpp:813; no new behaviour.
++		// PC keeps the header unchanged.
++		bool CacheChunkForWebGate(S32 chunk) { return CacheChunk(chunk); }
++#endif
++
+ 		friend class Scene;
+ 		friend class StreamerRequestWorker;
+ 
+--- a/code/mercury/library/graphics/renderingdata/source/noninterface/target/archive.cpp
++++ b/code/mercury/library/graphics/renderingdata/source/noninterface/target/archive.cpp
+@@ -7,15 +7,19 @@
+ #include <System/Serialise/I_FileSystem.h>
+ #include <core/containers/containerserialisation.h>
+ #include <fx/fx.h>
++#if !defined(PLATFORM_WEB)
+ #include <fx/RenderStates.h>
+ #include "fx/SamplerStates.h"
++#endif
+ #include <system/serialise/C_MemoryStream.h>
+ #include "btl/containers/openhashmap.h"
+ #include "misc_shared/archive/serialiser.h"
+ #include "system\memory\blockallocator.h"
+ 
+ #include "renderingdata/noninterface/archive.inl"
++#if !defined(PLATFORM_WEB)
+ #include <fx/RenderMutex.h>
++#endif
+ 
+ //#pragma optimize ("", off)
+ 
+@@ -301,6 +305,9 @@
+ template <typename Archive>
+ inline void Deserialise(Archive& ar, StreamData& t)
+ {
++#if defined(PLATFORM_WEB)
++	WebSpike::Report().streamVersion = (int)ar.GetVersion();
++#endif
+ 	Btl::DynamicStackAllocator* p = Btl::StackAllocatorSystem::Instance().Begin();
+ 	t.m_autoStackAllocator.Set(p);
+ 	DESERIALISE_BASE_FREE(RenderingData::StreamData, ar, t)
+@@ -318,7 +325,15 @@
+ template <typename Archive>
+ inline void Deserialise(Archive& ar, Scene& t)
+ {	
++#if defined(PLATFORM_WEB)
++	// The FX serialise mutex guards FX::g_Manager state during deserialisation.
++	// There is no FX system on this target, so there is nothing to guard; the
++	// shader/effect objects that the mutex protects are never created here
++	// (Effect::OnLoad is a renderer entry point and is not compiled on web).
++	// See docs/work/analysis/engine-level-stream.md (P22 section).
++#else
+ 	FX::LockSerialiseMutex();
++#endif
+ 
+ 	ActivateHandlers2();
+ 
+@@ -330,6 +345,10 @@
+ 	ar & t.m_vertexDeclarations;
+ 	ar & t.m_effects;
+ 
++#if defined(PLATFORM_WEB)
++	WebSpike::Report().effects = t.m_effects.Size();
++#endif
++
+ 	S32 n; ar & n;
+ 	t.m_resourceBlocks.Resize(n);
+ 
+@@ -344,10 +363,13 @@
+ 	if (ar.GetVersion() > 0)
+ 		ar & t.m_dynamicMaterialLists;
+ 
++#if !defined(PLATFORM_WEB)
+ 	FX::ReleaseSerialiseMutex();
+-
+-}
+-
++#endif
++
++}
++
++#if !defined(PLATFORM_WEB)
+ void Scene::OnLoad(EffectVariationCallbackFunc pCallback)
+ {
+ 	for (int i = 0; i < m_effects.Size(); i++)
+@@ -357,10 +379,12 @@
+ 
+ 	UpdateResourcePointers();
+ }
++#endif // !PLATFORM_WEB (effect loading and GPU resource pointers)
+ 
+ template <typename Archive>
+ void Deserialise(Archive& ar, LodReader<ResourceBlock::Resources>& t);
+ 
++#if !defined(PLATFORM_WEB)
+ // Non-streamed resource block loading.
+ template <typename Archive>
+ inline void Deserialise(Archive& ar, ResourceBlock& t)
+@@ -401,8 +425,10 @@
+ 
+ 	g_resourceAllocatorMutex.Release();
+ }
++#endif // !PLATFORM_WEB (non-streamed resource block import needs a device)
+ 
+ // get a pointer to the Effect that corresponds to the name of the effect
++#if !defined(PLATFORM_WEB)
+ void Effect::OnLoad(EffectVariationCallbackFunc pCallback)
+ {
+ 	Btl::String name;
+@@ -428,7 +454,9 @@
+ 	else
+ 		LOGDEBUG( g_Log, "Loaded %s\n", name.Chars());
+ }
+-
++#endif // !PLATFORM_WEB (FX effect loading)
++
++#if !defined(PLATFORM_WEB)
+ template <typename Archive>
+ void Deserialise(Archive& ar, IndexBuffer& t)
+ {
+@@ -618,6 +646,7 @@
+ 		t.m_vertexSize = vertexFormat.GetDataSize();
+ 	}
+ }
++#endif // !PLATFORM_WEB (vertex/index buffer creation)
+ 
+ Display2::E_VertexElementType GetDisplayVertexElementType(VertexElementType type)
+ {
+@@ -665,6 +694,35 @@
+ template <typename Archive>
+ void Deserialise(Archive& ar, VertexDeclaration& t)
+ {
++#if defined(PLATFORM_WEB)
++	// Data-only read: the archive bytes are consumed exactly as the DX11 path
++	// consumes them (count, then one 17-byte element record each, through the
++	// engine's own RenderingData::VertexDeclaration::VertexElement serialiser),
++	// but no vertex declaration is created because there is no device. m_pData
++	// stays null, which is the same state a failed CreateVertexDeclaration
++	// produces. The count is recorded so the harness can show the bytes were
++	// really walked.
++	S32 nElements;
++	ar & nElements;
++
++	if ( nElements < 0 || nElements > 64 )
++		WebSpike::Unsupported( "VertexDeclaration element count out of range",
++			__FILE__, __LINE__ );
++
++	int elementSlots = 0;
++
++	for ( int i = 0; i < nElements; i++ )
++	{
++		RenderingData::VertexDeclaration::VertexElement element;
++		ar & element;
++		++elementSlots;
++	}
++
++	t.m_pData = 0;
++
++	WebSpike::Report().vertexDeclarations++;
++	WebSpike::Report().vertexDeclarationElements += elementSlots;
++#else
+ 	Btl::Vector<Display2::C_VertexElement> elements;
+ 
+ 	S32 nElements;
+@@ -687,8 +745,10 @@
+ 	elements[nElements] = GPU_VERTEX_ELEMENT_END();
+ 
+ 	t.m_pData = Display2::Device()->CreateVertexDeclaration(&elements[0]);
+-}
+-
++#endif
++}
++
++#if !defined(PLATFORM_WEB)
+ template <typename Archive>
+ void Deserialise(Archive& ar, LodReader<ResourceBlock::Resources>& t)
+ {
+@@ -1010,10 +1070,61 @@
+ 		}
+ 	}
+ }
++#endif // !PLATFORM_WEB (resource LOD and texture LOD GPU creation)
+ 
+ template <typename Archive>
+ void Deserialise(Archive& ar, Texture& t)
+ {
++#if defined(PLATFORM_WEB)
++	// Data-only read, PC archive layout: the same fields and the same byte
++	// count the PC branch below consumes (platform tag, name, sampler state,
++	// hash, then a S32 blob length and that many bytes). No texture is
++	// created: there is no device, so the texture is explicitly discarded
++	// (m_discard = 1) exactly as archive.cpp:907-908 does after a failed
++	// CreateTexture2D. The blob is skipped in 4 KiB reads so a 9 MiB
++	// levelrender never becomes one allocation.
++	PlatformType platformType; ar & platformType;
++	assert(platformType == GetPlatformType());
++
++	ar & t.m_name;
++
++	SamplerState samplerState;
++	ar & samplerState;
++	// No FX sampler-state cache exists on this target; -1 records that no
++	// sampler state was created (it is never used by the archive path).
++	t.m_samplerStateIndex = -1;
++
++	ar & t.m_hashValue;
++
++	S32 size;
++	ar & size;
++
++	if ( size < 0 )
++		WebSpike::Unsupported( "Texture blob size is negative", __FILE__, __LINE__ );
++
++	if ( size > 0 )
++	{
++		U8 buffer[ 4096 ];
++		S32 remaining = size;
++
++		while ( remaining > 0 )
++		{
++			const S32 chunk = remaining < (S32)sizeof( buffer )
++				? remaining : (S32)sizeof( buffer );
++			const U64 before = ar.Stream().GetPosition();
++			ar.Read( buffer, (U32)chunk );
++			const U64 consumed = ar.Stream().GetPosition() - before;
++
++			if ( consumed != (U64)chunk )
++				WebSpike::ArchiveUnderflow( __FILE__, __LINE__, (U64)chunk, consumed );
++
++			remaining -= chunk;
++		}
++
++		t.m_discard = 1;
++		WebSpike::Report().sharedTextureBytes += (unsigned long long)size;
++	}
++#else
+ 	PlatformType platformType; ar & platformType;
+ 	assert(platformType == GetPlatformType());
+ 
+@@ -1054,6 +1165,7 @@
+ 			LOGWARN(g_Log, "Texture was not created (%s, %i bytes).", t.GetName(), size);
+ 		}
+ 	}
++#endif
+ }
+ 
+ template <typename Archive>
+@@ -1068,6 +1180,10 @@
+ 	ar & nTextures;
+ 
+ 	t.m_textures.Resize(nTextures);
++
++#if defined(PLATFORM_WEB)
++	WebSpike::Report().sharedTextures = nTextures;
++#endif
+ 
+ 	for (int i = 0; i < nTextures; i++)
+ 	{
+@@ -1092,6 +1208,7 @@
+ 	g_resourceAllocatorMutex.Release();
+ }
+ 
++#if !defined(PLATFORM_WEB)
+ Display::E_PrimitiveType GetDisplayPrimitiveType(PrimitiveType type)
+ {
+ 	switch (type)
+@@ -1152,9 +1269,11 @@
+ 	if (b) return Display::E_Bool_True;
+ 	else return Display::E_Bool_False;
+ }
++#endif // !PLATFORM_WEB (display render-state mapping)
+ 
+ } // Target ///////////////////////////////////////////////////////////////////////////////////
+ 
++#if !defined(PLATFORM_WEB)
+ template <typename Archive>
+ inline void Deserialise(Archive& ar, RenderListNode::Primitive& t)
+ {
+@@ -1202,6 +1321,7 @@
+ 
+ 	t.blendState = FX::g_RenderStateMgr.InsertRenderState(displayStates);
+ }
++#endif // !PLATFORM_WEB (render-state and primitive-tail GPU import)
+ 
+ } // RenderingData //////////////////////////////////////////////////////////////////
+ 
+@@ -1215,11 +1335,19 @@
+ namespace RenderingData
+ {
+ 
++#if !defined(PLATFORM_WEB)
+ template void Deserialise(Arch::BinaryInputArchive_t<Ut::NoEndianSwap>& ar, RenderListNode::Primitive& t);
+ template void Deserialise(Arch::BinaryInputArchive_t<Ut::DoEndianSwap>& ar, RenderListNode::Primitive& t);
+ 
+ template void Deserialise(Arch::BinaryInputArchive_t<Ut::NoEndianSwap>& ar, MaterialNode& t);
+ template void Deserialise(Arch::BinaryInputArchive_t<Ut::DoEndianSwap>& ar, MaterialNode& t);
++#else
++// ActivateHandlers() (noninterface/archive.cpp) registers a streamer for
++// MaterialNode; its Stream() calls this deserialiser, so the instantiation must
++// exist even though no material node is parsed by this slice.
++template void Deserialise(::Arch::BinaryInputArchive_t<Ut::NoEndianSwap>& ar, MaterialNode& t);
++template void Deserialise(::Arch::BinaryInputArchive_t<Ut::DoEndianSwap>& ar, MaterialNode& t);
++#endif
+ 
+ namespace Target
+ {
+@@ -1254,15 +1382,55 @@
+ 
+ 	g_resourceAllocatorMutex.Release();
+ 
++#if defined(PLATFORM_WEB)
++	// The target RenderListNode factory/streamer registration exists for
++	// polymorphic render-list nodes inside resource blocks. This slice does
++	// not deserialise resource blocks or render lists at all (they need GPU
++	// buffers), so the handler is not registered. Recorded, not silent:
++	// Report().renderListHandlerRegistered stays 0 and the harness prints it.
++	WebSpike::Report().renderListHandlerRegistered = 0;
++#else
+ 	SERIALISATION_HANDLER(RenderingData::Target::RenderListNode)
+-}
+-
++#endif
++}
++
++#if defined(PLATFORM_WEB)
++::Arch::SerialisationKey RenderListNode::GetSerialisationKey()
++{
++	::Arch::SerialisationKey key = ::Arch::FindKey<::RenderingData::Target::RenderListNode>();
++	assert(!key.IsNull() && "No GUID for type");
++	return key;
++}
++#else
+ SERIALISATION_KEY(RenderListNode)
+-
++#endif
++
++#if defined(PLATFORM_WEB)
++} // namespace Target
++#else
+ template void Deserialise(Arch::BinaryInputArchive_t<Ut::NoEndianSwap>& ar, Scene& t);
+ template void Deserialise(Arch::BinaryInputArchive_t<Ut::DoEndianSwap>& ar, Scene& t);
+ template void Deserialise(Arch::BinaryInputArchive_t<Ut::NoEndianSwap>& ar, ResourceBlock& t);
+ template void Deserialise(Arch::BinaryInputArchive_t<Ut::DoEndianSwap>& ar, ResourceBlock& t);
+-}
+-
+-}
++} // namespace Target
++#endif
++}
++
++#if defined(PLATFORM_WEB)
++// Deserialise(Target::Scene) entry point used by the T-005e harness.
++//
++// The Scene deserialiser is a function template defined in this file. The
++// harness cannot instantiate it (it does not include the implementation), and
++// an implicit instantiation here can be inlined away, so this non-template
++// function is the stable symbol the harness calls. It performs exactly the
++// `ar >> scene` call the PC build's explicit instantiation serves.
++namespace WebSpike
++{
++void ParseSceneArchive( ::Arch::BinaryInputArchive& ar,
++	::RenderingData::Target::Scene& scene )
++{
++	ar >> scene;
++}
++}
++#endif
++
+--- a/code/mercury/library/graphics/renderingdata/source/noninterface/target/streamdata.cpp
++++ b/code/mercury/library/graphics/renderingdata/source/noninterface/target/streamdata.cpp
+@@ -3,7 +3,11 @@
+ #include "renderingdata/streaming.h"
+ #include "renderingdata/archive.h"
+ #include "renderingdata/noninterface/archive.inl"
++#if !defined(PLATFORM_WEB)
++// CoreSystems.h is the PC application's HRESULT-typed service table. The
++// streamer does not use it; on web there is no application object model.
+ #include <Framework/application/CoreSystems.h>
++#endif
+ #include <System/Serialise/I_FileSystem.h>
+ #include "system/serialise/C_MemoryStream.h"
+ #include "System/Debug/I_DebugRender.h"
+@@ -70,7 +74,7 @@
+ 		CloseStreamFile();
+ 	}
+ 
+-#if !PLATFORM_PC
++#if !PLATFORM_PC && !defined(PLATFORM_WEB)
+ 	while (!m_stepDownBuffers.Empty())
+ 	{
+ 		U8* p = m_stepDownBuffers.Front();
+@@ -128,6 +132,23 @@
+ 	m_updateBlocked = false;
+ 
+ 	m_lastChunkProcessType = 0;
++
++#if defined(PLATFORM_WEB)
++	// Engine-side summary of the table the engine just deserialised. This is
++	// read by the harness; it is not a parser.
++	WebSpike::SceneReport& report = WebSpike::Report();
++	report.streamChunks = m_chunks.Size();
++	for ( int i = 0; i < m_chunks.Size(); i++ )
++	{
++		report.streamItems += m_chunks[ i ].GetNumItems();
++		report.streamPrerequisites += m_chunks[ i ].m_prerequisites.Size();
++		report.streamDependants += m_chunks[ i ].m_dependants.Size();
++		report.streamStoredBytes += m_chunks[ i ].GetCompressedSize();
++		report.streamOriginalBytes += m_chunks[ i ].GetOriginalSize();
++		if ( m_chunkState[ i ].disable )
++			report.chunksDisabledOverChunkAllocator++;
++	}
++#endif
+ }
+ 
+ void StreamData::OpenStreamFile(const Btl::String& filename)
+@@ -141,7 +162,26 @@
+ 	}
+ 
+ 	Sys::C_OpenParams prms;
++#if defined(PLATFORM_WEB)
++	// Buffer-hint contract, resolved at the call site.
++	//
++	// Upstream asks for hint 0 here: "unbuffered". The T-005b web file layer
++	// accepts 1..1 MiB and refuses 0 (C_WebFile.cpp:413-422), because a zero
++	// buffer would make every I_BinaryStream skip read a failing range read.
++	// The two contracts cannot both hold, so the web build passes the layer's
++	// documented default sentinel (kBufferSizeHintDefault -> 16 KiB). This is
++	// the same hint the T-005e harness uses for the non-streamed level files.
++	//
++	// It does not change how chunks are read: StreamManager::LoadChunk passes
++	// the destination pointer straight to I_File::Read, and C_WebFile routes
++	// any request at least as large as its buffer to the range source directly
++	// (C_WebFile.cpp:241-267). The largest River chunk is 2,045,952 B, so every
++	// chunk load takes that direct path; the hint only sizes the small header
++	// reads. Recorded in docs/work/analysis/engine-level-stream.md.
++	prms.m_BufferSizeHint = Sys::C_OpenParams::kBufferSizeHintDefault;
++#else
+ 	prms.m_BufferSizeHint = 0;
++#endif
+ 
+ 	Sys::I_FileSystem& fs = *Sys::GetDefaultFileSystem();
+ 	m_pFile = fs.Open(filename.Chars(), Sys::E_FileAccess_Read, prms);
+@@ -151,6 +191,11 @@
+ 		LOGERROR(g_LogDebug, "Could not open file: '%s'\n", filename.Chars());
+ 		assert(m_pFile && "Could not open file.");
+ 	}
++
++#if defined(PLATFORM_WEB)
++	WebSpike::Report().streamFileOpened = ( m_pFile != 0 ) ? 1 : 0;
++	WebSpike::Report().streamFileBufferHint = (int)prms.m_BufferSizeHint;
++#endif
+ }
+ 
+ void StreamData::CloseStreamFile()
+@@ -321,11 +366,19 @@
+ 
+ void StreamData::BeginTasks()
+ {
++#if defined(PLATFORM_WEB)
++	// The request worker narrows the chunk list from a view (streamrequest.cpp)
++	// and is SPU/scheduler specific; it has no wasm port in this slice. If a
++	// caller reaches Request() on web, refusing loudly is the only honest
++	// answer: a silent no-op would look like "nothing to stream".
++	WEBSPIKE_UNSUPPORTED( "StreamData::BeginTasks (streaming request worker)" );
++#else
+ 	if (m_streamRequestWorker.m_requests.Size())
+ 	{
+ 		void* p = &m_streamRequestWorker;
+ 		Scheduler::AddTask(StreamerRequestModule, 0, 0, StreamManager::Instance().GetRequestGroup(), StreamManager::Instance().GetPolicy(), &p, sizeof(p));	// [Blur2PC][x64] the whole pointer (4 on x86)
+ 	}
++#endif
+ }
+ 
+ void StreamData::FlushTasks()
+@@ -435,11 +488,22 @@
+ 
+ bool StreamData::CacheChunk(S32 chunk)
+ {
++#if defined(PLATFORM_WEB)
++	WebSpike::Report().cacheChunkRequests++;
++#endif
++
+ 	for (int i = 0; i < m_chunks[chunk].m_prerequisites.Size(); i++)
+ 	{
+ 		S32 p = m_chunks[chunk].m_prerequisites[i];
+ 		if (!m_chunkState[p].loaded && !m_chunkState[p].cached)
++#if defined(PLATFORM_WEB)
++		{
++			WebSpike::Report().cacheChunkPrerequisiteBlocked++;
+ 			return false;
++		}
++#else
++			return false;
++#endif
+ 	}
+ 
+ 	if (StreamManager::Instance().LoadChunk(chunk, m_pFile, 
+@@ -454,6 +518,9 @@
+ 	else
+ 	{
+ 		LOGDEBUG(g_LogActivityLoad, "Could not allocate chunk %i", chunk);
++#if defined(PLATFORM_WEB)
++		WebSpike::Report().cacheChunkRefused++;
++#endif
+ 		return false;
+ 	}
+ }
+@@ -635,7 +702,7 @@
+ 
+ void StreamData::AllocateStepDownBuffer()
+ {
+-#if !PLATFORM_PC
++#if !PLATFORM_PC && !defined(PLATFORM_WEB)
+ 	//PERF_EVENT("StreamData.AllocateStepDownBuffer");
+ 
+ 	while (m_stepDownBuffers.Size() < g_debugStreamerStepDownBufferCount)
+@@ -1006,7 +1073,7 @@
+ 
+ void StreamData::ProcessLoadChunk(S32 chunk)
+ {
+-#if !PLATFORM_PC
++#if !PLATFORM_PC && !defined(PLATFORM_WEB)
+ 	AllocateStepDownBuffer();
+ 
+ 	if (m_stepDownBuffers.Size() < g_debugStreamerStepDownBufferCount)
+@@ -1137,7 +1204,7 @@
+ 	m_chunkDebug[chunk].framesSinceUnload = 0;
+ #endif
+ 
+-	#if !PLATFORM_PC
++	#if !PLATFORM_PC && !defined(PLATFORM_WEB)
+ 	for (int i = 0; i < 2; i++)
+ 	{
+ 		if (!m_stepDownBuffers.Empty())

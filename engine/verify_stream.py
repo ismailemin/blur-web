@@ -7,23 +7,29 @@
 Gates, in order:
   1. copy upstream/BlurRebuilt, apply engine/apply_file_overlay.py (T-005c +
      T-005b), then apply engine/patches/t005b-stream-overlay.patch;
-  2. the stream patch touches exactly six named files, all inside
+  2. the stream patch touches exactly fourteen named files, all inside
      PLATFORM_WEB guards (structural check);
   3. build the wasm32 module twice; the two wasm hashes must be identical;
   4. run the harness twice; stdout must be identical, exit 0, every check pass;
   5. run probes/range-file's `range_probe level` and probes/asset-reader's
      `level_inspect --index`: the 359 ChunkInfo records, resourceBlockCount,
      initiallyLoadedBlocks and metadata must agree field by field;
-  6. write the chunk manifest from that reference and load every chunk through
-     RenderingData::Target::StreamManager::LoadChunk / GetChunkData over
-     C_OverlayFs; every chunk hash must equal an independent Python FNV-1a 64 of
-     the same range in Level.levelstream;
-  7. the engine-loaded chunk 157 bytes must hash to the documented geometry
+  6. the engine's own Scene archive parse (Target::Scene through
+     Arch::BinaryInputArchive) must produce the same 359 ChunkInfo records:
+     offset, storedBytes, logicalBytes, every item and every prerequisite, with
+     the same table hash, and the Scene cursor must equal the probe's
+     parsedUntilOffset. Zero GPU entry points may run;
+  7. the engine streamer must load every chunk range from that engine table
+     through StreamManager::LoadChunk / GetChunkData over C_OverlayFs; every
+     chunk hash must equal an independent Python FNV-1a 64 of the same range;
+     StreamData::OpenStreamFile and CacheChunk are exercised, and a chunk with
+     prerequisites is refused;
+  8. the engine-loaded chunk 157 bytes must hash to the documented geometry
      chunk (SHA-256 b07b386c...), and the whole Level.levelrender and
      Level.levelphysics FNV hashes must equal Python's;
-  8. (unless --skip-native) PC parity: streammanager.cpp preprocesses
-     identically with and without the patch, using the committed display stub
-     (the real header needs the absent DXSDK; see the analysis).
+  9. (unless --skip-native) PC parity: streammanager.cpp, streamdata.cpp and
+     archive.cpp preprocess identically with and without the patch, using the
+     committed display/FX facade (the real headers need the absent DXSDK).
 
 Exit status: 0 pass, 1 fail, 2 blocked (missing input, nothing claimed).
 Stdlib only. Reads upstream and the level files; writes only under
@@ -90,15 +96,15 @@ FLAGS = [
     "-fexceptions",
     "-include", str(ROOT / "engine/harness/t005b/msvc_crt_web.h"),
     "-include", str(SHIMS / "web_platform.h"),
+    "-include", str(HARNESS / "engine_stream_prelude.h"),
 ]
 
 LINK_FLAGS = [
     "-sENVIRONMENT=node", "-sALLOW_MEMORY_GROWTH=1",
     "-sINITIAL_MEMORY=16777216", "-sMAXIMUM_MEMORY=268435456",
     "-sEXIT_RUNTIME=1",
-    # The harness reads the chunk manifest with fopen(); NODERAWFS lets libc see
-    # the host file. The level bytes still come through the JS range source.
-    "-sNODERAWFS=1",
+    # The level bytes come through the JS range source. libc file access is not
+    # used by this harness (no manifest, no fopen).
     "-sDISABLE_EXCEPTION_CATCHING=0",
     "--pre-js", str(HARNESS / "pre.js"),
     "--js-library", str(ROOT / "engine/harness/t005b/web_file_source.js"),
@@ -130,6 +136,9 @@ TUS = [
     (f"{COMMON}/system/source/debug/Debug.cpp", "system"),
     (f"{COMMON}/system/source/debug/Variables.cpp", "system"),
     (f"{COMMON}/system/source/memory/MemoryBuffer.cpp", "system"),
+    (f"{COMMON}/system/source/memory/BlockAllocator.cpp", "system"),
+    (f"{COMMON}/system/source/memory/VirtualMemory.cpp", "system"),
+    (f"{COMMON}/misc_shared/source/misc_shared/archive/handler.cpp", "system"),
     (f"{COMMON}/system/source/scheduler/jobqueue.cpp", "system"),
     (f"{COMMON}/system/source/scheduler/jobqueue_kernel.cpp", "system"),
     (f"{COMMON}/system/source/scheduler/jobqueue_task_queue_lf.cpp", "system"),
@@ -137,10 +146,25 @@ TUS = [
     (f"{COMMON}/system/source/scheduler/jobqueue_web.cpp", "system"),
     (f"{LOGICALFS}/source/overlayfs/OverlayFs.cpp", "logicalfs"),
     (f"{LOGICALFS}/source/overlayfs/OverlayLayer.cpp", "logicalfs"),
+    (f"{COMMON}/system/source/serialise/C_FileBlock.cpp", "system"),
+    (f"{COMMON}/system/source/serialise/C_MemoryStream.cpp", "system"),
     (f"{RD}/source/noninterface/target/streammanager.cpp", "rd"),
     (f"{RD}/source/noninterface/target/streamingstatistics.cpp", "rd"),
+    # P22: the engine's target Scene archive and StreamData.
+    (f"{RD}/source/noninterface/target/archive.cpp", "rd"),
+    (f"{RD}/source/noninterface/target/streamdata.cpp", "rd"),
+    (f"{RD}/source/noninterface/target/resources.cpp", "rd"),
+    (f"{RD}/source/noninterface/archive.cpp", "rd"),
+    (f"{RD}/source/noninterface/scene.cpp", "rd"),
+    (f"{RD}/source/noninterface/node.cpp", "rd"),
+    (f"{RD}/source/noninterface/renderstates.cpp", "rd"),
+    (f"{RD}/source/noninterface/material.cpp", "rd"),
+    (f"{RD}/source/noninterface/effect.cpp", "rd"),
     ("engine/harness/t005c/platform_net_web.cpp", "system"),
     ("engine/harness/t005c/web_runtime.cpp", "core"),
+    ("engine/harness/t005e/scene_target_web.cpp", "rd"),
+    ("engine/harness/t005e/display_fail_loud.cpp", "rd"),
+    ("engine/harness/t005e/web_scene_report.cpp", "core"),
     ("engine/harness/t005e/stream_harness.cpp", "harness"),
 ]
 
@@ -150,14 +174,18 @@ EXTRA_FLAGS = {
 
 EXPECTED_CHECKS = [
     "abi_version", "mount", "overlay_mount", "exists_render", "exists_stream",
-    "exists_physics", "render_read", "physics_read", "stream_open", "manifest",
-    "stream_policy", "chunk_allocator", "stream_chunk_count", "stream_all_read",
-    "stream_bytes", "stream_largest", "stream_no_requests", "eof_read_fails",
-    "past_eof_read_fails", "oversize_chunk_refused",
+    "exists_physics", "render_read", "physics_read", "render_open", "level_magic",
+    "scene_parse", "scene_bounds", "scene_declarations", "scene_no_gpu",
+    "scene_chunk_count",
+    "scene_stream_table", "stream_open", "stream_policy", "chunk_allocator",
+    "stream_chunk_count", "stream_all_read", "stream_bytes", "stream_largest",
+    "stream_no_requests", "streamdata_open", "cachechunk", "cachechunk_prereq",
+    "eof_read_fails", "past_eof_read_fails", "oversize_chunk_refused",
 ]
 
-# The six patched files and their required token counts. Nothing else may be in
-# the patch.
+# The fourteen patched files and their required token counts. Nothing else may
+# be in the patch. Counts are exact: a web branch that grows without this table
+# being updated fails the gate.
 PATCH_EXPECTATIONS = {
     f"{COMMON}/core/include/core/threads/threadlocalstorage.h": {
         "added": 9, "removed": 0,
@@ -168,17 +196,51 @@ PATCH_EXPECTATIONS = {
         "tokens": ["p1.template At<I>()", "#if defined(PLATFORM_WEB)"],
     },
     f"{COMMON}/core/include/btl/containers/sortedbinarytree.inl": {
-        "added": 19, "removed": 0,
-        "tokens": ["i.m_pNode", "#if defined(PLATFORM_WEB)"],
+        "added": 25, "removed": 0,
+        "tokens": ["i.m_pNode", "this->EraseNode(pp);", "#if defined(PLATFORM_WEB)"],
     },
     f"{COMMON}/core/include/btl/containers/skiplist.inl": {
         "added": 10, "removed": 0,
         "tokens": ["Base::Min", "Base::Max"],
     },
+    f"{COMMON}/core/include/btl/containers/set.h": {
+        "added": 5, "removed": 0,
+        "tokens": ["using typename Base::InsertionReturnType;"],
+    },
+    f"{COMMON}/system/source/memory/VirtualMemory.cpp": {
+        "added": 41, "removed": 0,
+        "tokens": ["#elif defined(PLATFORM_WEB)", "memalign( 0x10000"],
+    },
     f"{RD}/include/renderingdata/datatypes.h": {
         "added": 20, "removed": 0,
         "tokens": ["SHHD_3N(float x_, float y_, float z_) : data(0)",
                    "SDDD_3N(float x_, float y_, float z_) : data(0)"],
+    },
+    f"{RD}/include/renderingdata/noninterface/archive.inl": {
+        "added": 179, "removed": 168,
+        "tokens": ["#define RD_ARCH_NS ::Arch", "RD_ARCH_NS::"],
+    },
+    f"{RD}/include/renderingdata/noninterface/streamdata.inl": {
+        "added": 12, "removed": 0,
+        "tokens": ["ChunkInfo::GetNumPrerequisites", "ChunkInfo::GetPrerequisite"],
+    },
+    f"{RD}/include/renderingdata/streamdata.h": {
+        "added": 9, "removed": 0,
+        "tokens": ["GetNumPrerequisites() const;", "GetPrerequisite(S32 index) const;"],
+    },
+    f"{RD}/include/renderingdata/streaming.h": {
+        "added": 8, "removed": 0,
+        "tokens": ["CacheChunkForWebGate"],
+    },
+    f"{RD}/source/noninterface/target/archive.cpp": {
+        "added": 180, "removed": 12,
+        "tokens": ["ParseSceneArchive", "Data-only read",
+                   "renderListHandlerRegistered"],
+    },
+    f"{RD}/source/noninterface/target/streamdata.cpp": {
+        "added": 71, "removed": 4,
+        "tokens": ["streamFileBufferHint", "kBufferSizeHintDefault",
+                   "WEBSPIKE_UNSUPPORTED", "cacheChunkRequests"],
     },
     f"{RD}/source/noninterface/target/streammanager.cpp": {
         "added": 129, "removed": 8,
@@ -281,10 +343,18 @@ def copy_upstream(tree: Path) -> None:
 APPLIED_MARKERS = {
     f"{COMMON}/core/include/core/threads/threadlocalstorage.h": "#elif defined (PLATFORM_WEB)",
     f"{COMMON}/core/include/core/maths/utmaths/operator.h": "p1.template At<I>()",
-    f"{COMMON}/core/include/btl/containers/sortedbinarytree.inl": "Base::SentinelPointer()",
+    f"{COMMON}/core/include/btl/containers/sortedbinarytree.inl": "this->EraseNode(pp);",
     f"{COMMON}/core/include/btl/containers/skiplist.inl": "S32 newLevel = Base::Min(",
     f"{RD}/include/renderingdata/datatypes.h": "// clang rejects initialising several members",
     f"{RD}/source/noninterface/target/streammanager.cpp": "void Drain()",
+    f"{COMMON}/core/include/btl/containers/set.h": "using typename Base::InsertionReturnType;",
+    f"{COMMON}/system/source/memory/VirtualMemory.cpp": "memalign( 0x10000",
+    f"{RD}/include/renderingdata/noninterface/archive.inl": "#define RD_ARCH_NS ::Arch",
+    f"{RD}/include/renderingdata/noninterface/streamdata.inl": "ChunkInfo::GetNumPrerequisites",
+    f"{RD}/include/renderingdata/streamdata.h": "GetNumPrerequisites() const;",
+    f"{RD}/include/renderingdata/streaming.h": "CacheChunkForWebGate",
+    f"{RD}/source/noninterface/target/archive.cpp": "ParseSceneArchive",
+    f"{RD}/source/noninterface/target/streamdata.cpp": "streamFileBufferHint",
 }
 
 
@@ -393,14 +463,23 @@ def build(tag: str) -> Path:
     objs = []
     for rel, kind in TUS:
         src = (ROOT / rel) if rel.startswith("engine/") else (TREE / rel)
-        obj = objdir / f"{src.stem}.o"
+        # Two engine TUs are both named archive.cpp (renderingdata and
+        # renderingdata/target). Derive the object name from the relative path
+        # so neither can overwrite the other.
+        tag_name = rel.replace("/", "__").replace("\\", "__")
+        obj = objdir / f"{tag_name}.o"
         p = run([sys.executable, EM, *FLAGS, *EXTRA_FLAGS.get(rel, []),
                  *includes(kind), "-c", src, "-o", obj],
-                log=LOGS / f"{tag}__{src.stem}.log")
+                log=LOGS / f"{tag}__{tag_name}.log")
         if p.returncode:
             raise Failed(f"compile failed: {rel}\n"
                          + ((p.stdout or "") + (p.stderr or ""))[-2500:])
         objs.append(obj)
+    # Deterministic link order. Object order also fixes the wasm __wasm_call_ctors
+    # order; the sorted order puts the logging closure (common/system/...log)
+    # before the renderingdata TUs that resolve Debug::GetLogger references at
+    # static-init time. TUS order alone left that hazard to the linker.
+    objs.sort()
     js = OUT / f"stream_harness_{tag}.js"
     p = run([sys.executable, EM, *map(str, objs), *LINK_FLAGS, "-o", js],
             log=LOGS / f"{tag}__link.log")
@@ -453,24 +532,15 @@ def reference_index() -> dict:
     return a
 
 
-def write_manifest(index: dict) -> Path:
-    path = OUT / "stream_chunks.tsv"
-    with path.open("w", encoding="ascii", newline="\n") as f:
-        f.write("# index offset storedBytes logicalBytes\n")
-        for i, c in enumerate(index["streamChunks"]):
-            f.write(f"{i} {c['offset']} {c['storedBytes']} {c['logicalBytes']}\n")
-    return path
-
-
-def run_harness(js: Path, manifest: Path, tag: str) -> dict:
-    args = [NODE, js, LEVEL_RENDER, LEVEL_STREAM, LEVEL_PHYSICS, manifest]
+def run_harness(js: Path, tag: str) -> dict:
+    args = [NODE, js, LEVEL_RENDER, LEVEL_STREAM, LEVEL_PHYSICS]
     runs = [run(args, log=LOGS / f"{tag}__run{i + 1}.log") for i in range(2)]
     out = runs[0].stdout or ""
     if runs[0].stdout != runs[1].stdout:
         raise Failed("the two harness runs differ")
     if runs[0].returncode or runs[1].returncode:
         raise Failed(f"harness exited {runs[0].returncode}/{runs[1].returncode}\n"
-                     + (runs[0].stderr or "")[-2000:])
+                     + (runs[0].stderr or "")[-3000:])
 
     checks = {m.group(1): int(m.group(2))
               for m in re.finditer(r"webfile check (\w+) pass=(\d)", out)}
@@ -486,8 +556,39 @@ def run_harness(js: Path, manifest: Path, tag: str) -> dict:
             "offset": int(m.group(2)), "bytes": int(m.group(3)),
             "fnv1a64": m.group(4),
         }
+
+    # The engine's own ChunkInfo table (archive.inl serialiser), printed one
+    # record per line by the harness.
+    chunkinfo = {}
+    for m in re.finditer(
+            r"webfile chunkinfo (\d+) offset=(\d+) stored=(\d+) logical=(\d+) "
+            r"items=([0-9:,]*) prereqs=([0-9,]*) blocks=(\d+)", out):
+        index = int(m.group(1))
+        items = []
+        if m.group(5):
+            for pair in m.group(5).split(","):
+                block, lod = pair.split(":")
+                items.append((int(block), int(lod)))
+        prereqs = [int(x) for x in m.group(6).split(",")] if m.group(6) else []
+        chunkinfo[index] = {
+            "offset": int(m.group(2)), "storedBytes": int(m.group(3)),
+            "logicalBytes": int(m.group(4)), "items": items,
+            "prerequisites": prereqs, "blocks": int(m.group(7)),
+        }
+
     summary = re.search(r"webfile stream summary (.*)", out)
     counters = re.search(r"webfile counters (.*)", out)
+    scene = re.search(r"webfile scene declarations=(.*)", out)
+    scene_cursor = re.search(r"webfile scene_cursor absolute=(\d+) payload=(\d+) "
+                             r"tablehash=0x([0-9a-f]{16})", out)
+    openstream = re.search(r"webfile openstream opened=(\d+) hint=(-?\d+)", out)
+    cachechunk = re.search(r"webfile cachechunk returned=(\d+) index=(-?\d+) "
+                           r"failed=(\d+) offset=(\d+) bytes=(\d+) "
+                           r"hash=0x([0-9a-f]{16})", out)
+    prereq = re.search(r"webfile cachechunk_prereq index=(-?\d+) refused=(\d+)", out)
+    scene_report = re.search(r"webfile scene report tablehash=0x([0-9a-f]{16}) "
+                             r"gpu=(\d+) refused=(\d+) perf=(\d+) unsupported=(\d+)",
+                             out)
     file_hashes = {}
     for m in re.finditer(r"webfile file (\S+) bytes=(\d+) hash=0x([0-9a-f]{16}) "
                          r"reads=(\d+) ok=(\d)", out):
@@ -495,10 +596,13 @@ def run_harness(js: Path, manifest: Path, tag: str) -> dict:
             "bytes": int(m.group(2)), "fnv1a64": m.group(3),
             "reads": int(m.group(4)), "ok": int(m.group(5)),
         }
-    if not summary or not counters:
-        raise Failed("the harness printed no stream summary or counters")
+    if not (summary and counters and scene and scene_cursor and openstream
+            and cachechunk and prereq and scene_report):
+        raise Failed("the harness printed an incomplete engine/scene report")
     summary_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", summary.group(1))}
     counter_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", counters.group(1))}
+    scene_fields = {k: int(v) for k, v in
+                    re.findall(r"(\w+)=(\d+)", "declarations=" + scene.group(1))}
 
     if summary_fields.get("chunks") != EXPECTED_STREAM_CHUNKS:
         raise Failed(f"engine streamed {summary_fields.get('chunks')} chunks")
@@ -511,6 +615,26 @@ def run_harness(js: Path, manifest: Path, tag: str) -> dict:
                      "(the two deliberate end-of-file requests)")
     if counter_fields.get("abiMismatch") or counter_fields.get("bufferHintRefused"):
         raise Failed(f"unexpected engine-layer refusals: {counter_fields}")
+
+    report = {
+        "scene": scene_fields,
+        "scene_cursor_absolute": int(scene_cursor.group(1)),
+        "scene_payload_absolute": int(scene_cursor.group(2)),
+        "table_hash": scene_cursor.group(3),
+        "openstream": {"opened": int(openstream.group(1)),
+                       "hint": int(openstream.group(2))},
+        "cachechunk": {"returned": int(cachechunk.group(1)),
+                       "index": int(cachechunk.group(2)),
+                       "failed": int(cachechunk.group(3)),
+                       "offset": int(cachechunk.group(4)),
+                       "bytes": int(cachechunk.group(5)),
+                       "fnv1a64": cachechunk.group(6)},
+        "cachechunk_prereq": {"index": int(prereq.group(1)),
+                              "refused": int(prereq.group(2))},
+        "gpu_calls": int(scene_report.group(2)),
+        "gpu_refused": int(scene_report.group(3)),
+        "unsupported_calls": int(scene_report.group(5)),
+    }
 
     stderr = runs[0].stderr or ""
     summary = re.search(r"\[platform/file\] summary (.*)", stderr)
@@ -525,9 +649,132 @@ def run_harness(js: Path, manifest: Path, tag: str) -> dict:
         raise Failed("the harness leaked a platform handle")
 
     return {
-        "checks": checks, "chunks": chunks, "summary": summary_fields,
-        "counters": counter_fields, "provider": provider, "file_hashes": file_hashes,
+        "checks": checks, "chunks": chunks, "chunkinfo": chunkinfo,
+        "summary": summary_fields, "counters": counter_fields, "provider": provider,
+        "file_hashes": file_hashes, "scene": report,
         "stdout_bytes": len(out), "stderr_bytes": len(stderr),
+    }
+
+
+def engine_table_fnv(chunkinfo: dict) -> str:
+    """The harness's table hash, recomputed in Python from printed records."""
+    h = 0xCBF29CE484222325
+
+    def mix(data: bytes) -> None:
+        nonlocal h
+        for b in data:
+            h ^= b
+            h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+
+    mix(struct.pack("<I", len(chunkinfo)))
+    for i in range(len(chunkinfo)):
+        c = chunkinfo[i]
+        mix(struct.pack("<I", i))
+        mix(struct.pack("<Q", c["offset"]))
+        mix(struct.pack("<Q", c["storedBytes"]))
+        mix(struct.pack("<Q", c["logicalBytes"]))
+        mix(struct.pack("<I", len(c["items"])))
+        for block, lod in c["items"]:
+            mix(struct.pack("<I", block & 0xFFFFFFFF))
+            mix(struct.pack("<I", lod & 0xFFFFFFFF))
+        mix(struct.pack("<I", len(c["prerequisites"])))
+        for p in c["prerequisites"]:
+            mix(struct.pack("<I", p & 0xFFFFFFFF))
+    return f"{h:016x}"
+
+
+def compare_engine_table(result: dict, index: dict) -> dict:
+    """Every engine ChunkInfo record against both committed readers."""
+    reference = index["streamChunks"]
+    got = result["chunkinfo"]
+    if len(got) != len(reference):
+        raise Failed(f"engine printed {len(got)} ChunkInfo records, reference "
+                     f"{len(reference)}")
+    for i, want in enumerate(reference):
+        have = got.get(i)
+        if have is None:
+            raise Failed(f"engine printed no ChunkInfo record {i}")
+        if have["offset"] != want["offset"]:
+            raise Failed(f"chunk {i} offset {have['offset']} != {want['offset']}")
+        if have["storedBytes"] != want["storedBytes"]:
+            raise Failed(f"chunk {i} storedBytes {have['storedBytes']} != "
+                         f"{want['storedBytes']}")
+        if have["logicalBytes"] != want["logicalBytes"]:
+            raise Failed(f"chunk {i} logicalBytes {have['logicalBytes']} != "
+                         f"{want['logicalBytes']}")
+        want_items = [(it["block"], it["lod"]) for it in want["items"]]
+        if have["items"] != want_items:
+            raise Failed(f"chunk {i} items {have['items']} != {want_items}")
+        if have["prerequisites"] != want["prerequisites"]:
+            raise Failed(f"chunk {i} prerequisites {have['prerequisites']} != "
+                         f"{want['prerequisites']}")
+
+    parsed_until = index.get("metadata", {}).get("parsedUntilOffset")
+    if parsed_until != result["scene"]["scene_cursor_absolute"]:
+        raise Failed(f"engine Scene cursor {result['scene']['scene_cursor_absolute']} "
+                     f"!= probe parsedUntilOffset {parsed_until}")
+    if result["scene"]["scene_payload_absolute"] != 62:
+        raise Failed("the Scene block payload offset moved (expected 62)")
+
+    expected_hash = engine_table_fnv(got)
+    if expected_hash != result["scene"]["table_hash"]:
+        raise Failed(f"engine table hash {result['scene']['table_hash']} != "
+                     f"Python recomputation {expected_hash}")
+
+    if result["scene"]["gpu_calls"] or result["scene"]["gpu_refused"]:
+        raise Failed("a GPU entry point was called while parsing the Scene")
+    if result["scene"]["unsupported_calls"]:
+        raise Failed("an unsupported engine path was reached")
+
+    # The two engine-side counters must agree with the table they summarise.
+    totals = {
+        "chunks": len(got),
+        "items": sum(len(c["items"]) for c in got.values()),
+        "prereqs": sum(len(c["prerequisites"]) for c in got.values()),
+        "stored": sum(c["storedBytes"] for c in got.values()),
+        "logical": sum(c["logicalBytes"] for c in got.values()),
+    }
+    scene = result["scene"]["scene"]
+    for key, printed in (("chunks", "chunks"), ("items", "items"),
+                         ("prereqs", "prereqs"), ("logical", "original")):
+        if scene[printed] != totals[key]:
+            raise Failed(f"engine report {printed}={scene[printed]} != table {totals[key]}")
+    if scene["stored"] != totals["stored"]:
+        raise Failed("engine report stored != table")
+    if scene["effects"] <= 0 or scene["sharedTextures"] <= 0:
+        raise Failed(f"scene declarations look empty: {scene}")
+
+    # OpenStreamFile must have used the layer default sentinel, never 0.
+    if result["scene"]["openstream"]["opened"] != 1:
+        raise Failed("StreamData::OpenStreamFile did not open the stream")
+    if result["scene"]["openstream"]["hint"] == 0:
+        raise Failed("StreamData::OpenStreamFile still passes buffer hint 0")
+
+    # CacheChunk must have read engine ChunkInfo 0 and refused a dependent one.
+    want0 = reference[0]
+    cc = result["scene"]["cachechunk"]
+    if not cc["returned"] or cc["index"] != 0 or cc["failed"]:
+        raise Failed(f"CacheChunk(0) failed: {cc}")
+    if cc["offset"] != want0["offset"] or cc["bytes"] != want0["storedBytes"]:
+        raise Failed("CacheChunk(0) used a different range than ChunkInfo 0")
+    if cc["fnv1a64"] != fnv1a64_range(LEVEL_STREAM, want0["offset"], want0["storedBytes"]):
+        raise Failed("CacheChunk(0) hash differs from the independent read")
+    first_dep = next((i for i, c in enumerate(reference) if c["prerequisites"]), None)
+    if result["scene"]["cachechunk_prereq"] != {"index": first_dep, "refused": 1}:
+        raise Failed(f"prerequisite refusal mismatch: "
+                     f"{result['scene']['cachechunk_prereq']} vs {first_dep}")
+
+    return {
+        "records_compared": len(got),
+        "table_hash": expected_hash,
+        "parsed_until_offset": parsed_until,
+        "scene_payload_offset": result["scene"]["scene_payload_absolute"],
+        "items": totals["items"],
+        "prerequisites": totals["prereqs"],
+        "stored_bytes": totals["stored"],
+        "logical_bytes": totals["logical"],
+        "cachechunk_fnv1a64": cc["fnv1a64"],
+        "openstream_hint": result["scene"]["openstream"]["hint"],
     }
 
 
@@ -618,76 +865,101 @@ def preprocess(vcvars: Path, src: Path, out: Path, root: Path, name: str) -> str
 
 def code_lines(text: str) -> list[str]:
     out = []
+    in_block_comment = False
     for line in text.splitlines():
         if line.lstrip().startswith("#"):
             continue
         s = line.strip()
         if not s:
             continue
+        # Comments are not code. The web branches carry explanatory comments
+        # that must not count as a PC translation-unit change.
+        if in_block_comment:
+            if "*/" in s:
+                in_block_comment = False
+                s = s.split("*/", 1)[1].strip()
+                if not s:
+                    continue
+            else:
+                continue
+        if s.startswith("/*"):
+            if "*/" not in s:
+                in_block_comment = True
+                continue
+            s = s.split("*/", 1)[1].strip()
+            if not s:
+                continue
+        if s.startswith("//"):
+            continue
         s = s.replace("\\\\", "\\")
-        s = re.sub(r"_work\\engine-stream-spike\\(tree|base)", "<SRC>", s)
+        s = re.sub(r"_work\\engine-stream-spike\\(tree|basefull|base|pc-base)", "<SRC>", s)
+        # Trailing comments are not code either; a comment moved by a web
+        # branch (e.g. "} // namespace Target" vs "}") is not a statement delta.
+        s = re.sub(r'\s+//[^"\']*$', "", s).strip()
+        if not s:
+            continue
+        # A web branch that preprocesses away still shifts the line numbers
+        # below it. Like engine/native_parity.py for jobqueue.cpp, treat the
+        # __LINE__ argument of a log location as non-code: no statement differs.
+        s = re.sub(r"StaticLocationInfoClass\(\d+,", "StaticLocationInfoClass(<LINE>,", s)
         out.append(s)
     return out
 
 
-def native_parity() -> dict:
-    """With/without the stream patch, streammanager.cpp preprocesses identically.
+PARITY_SOURCES = [
+    f"{RD}/source/noninterface/target/streammanager.cpp",
+    f"{RD}/source/noninterface/target/streamdata.cpp",
+    f"{RD}/source/noninterface/target/archive.cpp",
+]
 
-    The real Display/Core/Includes.h needs the absent DXSDK, so both sides use
-    engine/harness/t005e/stub (a declarations-only display facade). The A/B is
-    otherwise the exact same include set and defines.
+
+def native_parity() -> dict:
+    """With/without the stream patch, each TU preprocesses identically.
+
+    The real Display/Core/Includes.h and the FX headers need the absent DXSDK,
+    so both sides use engine/harness/t005e/stub (declarations-only display and
+    FX facades). The "without" root is a throwaway T-005c + T-005b overlay tree,
+    so every source is preprocessed with the same include set and defines but
+    before this patch. Only the web PLATFORM_WEB branches may disappear; a PC
+    statement change fails the gate.
     """
     vcvars = find_vcvars()
     work = OUT / "native"
     work.mkdir(parents=True, exist_ok=True)
-    src = TREE / RD / "source/noninterface/target/streammanager.cpp"
-    with_text = preprocess(vcvars, src, work / "with.i", TREE, "pp_with")
 
-    base_sources = {
-        f"{COMMON}/core/include/core/threads/threadlocalstorage.h": UP,
-        f"{COMMON}/core/include/core/maths/utmaths/operator.h": UP,
-        f"{RD}/include/renderingdata/datatypes.h": UP,
-        f"{RD}/source/noninterface/target/streammanager.cpp": UP,
-        f"{COMMON}/core/include/btl/containers/skiplist.inl": UP,
-        # sortedbinarytree.inl is already changed by the scheduler patch; take
-        # the version this stream patch was written against from the second
-        # apply on a throwaway tree.
-    }
-    backup = {}
-    try:
-        for rel, src_root in base_sources.items():
-            dst = TREE / rel
-            backup[rel] = dst.read_bytes()
-            dst.write_bytes((src_root / rel).read_bytes())
-        # sortedbinarytree.inl is already changed by the scheduler patch; build a
-        # scheduler-only overlay to get the file this patch was written against.
-        sched_tree = SPIKE / "pc-base"
-        p = run([sys.executable, ROOT / "engine/apply_file_overlay.py",
-                 "--tree", sched_tree], log=LOGS / "apply-pc-base.log")
-        if p.returncode != 0:
-            raise Failed("could not build the scheduler-only PC baseline")
-        rel = f"{COMMON}/core/include/btl/containers/sortedbinarytree.inl"
-        dst = TREE / rel
-        backup[rel] = dst.read_bytes()
-        dst.write_bytes((sched_tree / rel).read_bytes())
-        without_text = preprocess(vcvars, src, work / "without.i", TREE, "pp_without")
-    finally:
-        try:
-            applied = apply_stream_patch(TREE)
-        except Exception as exc:  # noqa: BLE001 - re-raise as Failed
-            raise Failed("could not restore the tree after PC parity: " + str(exc))
-        if applied == 0:
-            raise Failed("could not restore the tree after PC parity")
-    a = code_lines(with_text)
-    b = code_lines(without_text)
-    if a != b:
-        n = sum(1 for x, y in zip(a, b) if x != y)
-        raise Failed(f"the stream patch changes the PC preprocessed "
-                     f"streammanager.cpp ({len(a)} vs {len(b)} lines, {n} diffs)")
-    return {"streammanager_preprocessed_lines": len(a),
-            "identical": True,
-            "display_facade": "engine/harness/t005e/stub (DXSDK absent)",
-            "vcvars": str(vcvars)}
+    # The "without this patch" root: a full upstream copy with only the
+    # T-005c + T-005b overlays applied. _work/engine-stream-spike/basefull is
+    # that copy (created from upstream once; apply_file_overlay patches its
+    # files in place and leaves the rest pristine).
+    baseline = SPIKE / "basefull"
+    if not (baseline / PARITY_SOURCES[0]).is_file():
+        copy_upstream(baseline)
+    p = run([sys.executable, ROOT / "engine/apply_file_overlay.py",
+             "--tree", baseline], log=LOGS / "apply-pc-base.log")
+    if p.returncode != 0:
+        raise Failed("could not apply the T-005c/T-005b baseline")
+
+    report = {"identical": True,
+              "display_facade": "engine/harness/t005e/stub (DXSDK absent)",
+              "vcvars": str(vcvars),
+              "tus": {}}
+    for rel in PARITY_SOURCES:
+        stem = Path(rel).stem
+        with_text = preprocess(vcvars, TREE / rel, work / f"{stem}_with.i",
+                               TREE, f"pp_{stem}_with")
+        without_text = preprocess(vcvars, baseline / rel,
+                                  work / f"{stem}_without.i", baseline,
+                                  f"pp_{stem}_without")
+        a = code_lines(with_text)
+        b = code_lines(without_text)
+        if a != b:
+            diffs = [(x, y) for x, y in zip(a, b) if x != y]
+            first = diffs[0] if diffs else ("<none>", "<none>")
+            raise Failed(f"the stream patch changes the PC preprocessed {rel} "
+                         f"({len(a)} vs {len(b)} lines, {len(diffs)} diffs; "
+                         f"first {first})")
+        report["tus"][rel] = len(a)
+    return report
 
 
 def main() -> int:
@@ -729,9 +1001,9 @@ def main() -> int:
     }
 
     index = reference_index()
-    manifest = write_manifest(index)
-    result = run_harness(first, manifest, "a")
-    report["harness"] = {k: v for k, v in result.items() if k != "chunks"}
+    result = run_harness(first, "a")
+    report["harness"] = {k: v for k, v in result.items()
+                         if k not in ("chunks", "chunkinfo")}
     report["reference"] = {
         "chunks": len(index["streamChunks"]),
         "resourceBlockCount": index["resourceBlockCount"],
@@ -741,6 +1013,7 @@ def main() -> int:
         "readers": ["probes/range-file range_probe level",
                     "probes/asset-reader level_inspect --index"],
     }
+    report["engine_table"] = compare_engine_table(result, index)
     report["chunks"] = compare_chunks(result, index)
     report["whole_files"] = whole_files(result)
     report["levelrender_sha256"] = sha256_file(LEVEL_RENDER)
@@ -766,6 +1039,17 @@ def main() -> int:
     print(f"index           {report['reference']['chunks']} chunks, "
           f"blocks={report['reference']['resourceBlockCount']}, "
           f"initial={report['reference']['initiallyLoadedBlocks']}")
+    print(f"engine index    {report['engine_table']['records_compared']} ChunkInfo "
+          f"records == range_probe + level_inspect")
+    print(f"scene cursor    {report['engine_table']['parsed_until_offset']} B "
+          f"(== probe parsedUntilOffset), tablehash="
+          f"{report['engine_table']['table_hash'][:16]}")
+    print(f"scene facts     {result['scene']['scene']['declarations']} decl / "
+          f"{result['scene']['scene']['sharedTextures']} shared textures, "
+          f"{result['scene']['scene']['items']} items, "
+          f"{result['scene']['scene']['prereqs']} prereqs, "
+          f"gpu={result['scene']['gpu_calls']}, "
+          f"openstream hint={report['engine_table']['openstream_hint']}")
     print(f"stream          {result['summary']['bytes']} B, "
           f"largest={result['summary']['largest']} B, "
           f"chunks={result['summary']['chunks']}")
@@ -781,8 +1065,9 @@ def main() -> int:
     if report["pc_parity"].get("skipped"):
         print("pc parity       SKIPPED (recorded)")
     else:
-        print(f"pc parity       streammanager.cpp preprocessed identical "
-              f"({report['pc_parity']['streammanager_preprocessed_lines']} lines)")
+        tus = report["pc_parity"]["tus"]
+        print(f"pc parity       {len(tus)} TUs preprocessed identical "
+              f"({', '.join(f'{Path(k).name}:{v}' for k, v in tus.items())} lines)")
     print(f"report          {args.report}")
     print(f"verdict         PASS  ({report['elapsed_seconds']} s)")
     return 0
