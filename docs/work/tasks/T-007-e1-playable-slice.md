@@ -58,11 +58,14 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-e1-drive.md`.
 
 ### E1e — WebGPU entegrasyonu  ◐
-- Gerçek araç durumu → packet v1.1 → WebGPU; 103 draw, geometri 3 upload,
-  742 frame/299 tick, console **0 mesaj**; tick 0/150/300 ekran görüntüleri.
-- Eksik: `draws[]` hâlâ committed packet'ten; materyaller diagnostic; yol
-  collision geometrisi; teker çizimi yok.
-- Kanıt: `docs/work/verification/T-007-e1-drive.md`.
+- Gerçek araç durumu → packet v1.1 → WebGPU; **29 parça/80 draw**, 4 teker
+  grubu fizik açısıyla dönüyor, kaliper sabit; 103 draw, geometri 3 upload,
+  console **0**.
+- Eksik: `draws[]` hâlâ producer'dan (asset-viewer geometrisi + manifest);
+  engine draw-list değil. Materyaller diagnostic, yol collision geometrisi,
+  süspansiyon/steer/camber yok.
+- Kanıt: `docs/work/verification/T-007-e1-drive.md`,
+  `docs/work/verification/T-007-car-parts-integration.md`.
 
 ### E1f — İlk sürülebilir tur (kabul)
 - Start → tur → finish; çarpışma, checkpoint, respawn.
@@ -93,7 +96,11 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   farkı; ekran görüntüsü var.
 - Kalan: manifest’i E1 drive packet’ine bağlamak; süspansiyon/steer/camber
   matrisleri yok.
+- **Entegre (P28):** drive packet’i 29 parça/80 draw ve 9 node (1 gövde + 4 spin
+  + 4 statik kaliper) kullanıyor; teker açısı fizikten entegre ediliyor (tick
+  300'de 148,6 rad); `verify_e1_drive` **202/202**; console 0.
 - Kanıt: `docs/work/verification/T-007-car-parts.md`,
+  `docs/work/verification/T-007-car-parts-integration.md`,
   `docs/work/analysis/e1-car-parts.md`.
 
 ## Pipeline (bağımlılık sırası)

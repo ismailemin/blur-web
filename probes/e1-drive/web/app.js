@@ -61,6 +61,11 @@ const state = {
   contacts: '0000',
   suspension: [0, 0, 0, 0],
   wheelAngular: [0, 0, 0, 0],
+  wheelAngles: { frontleft: 0, frontright: 0, backleft: 0, backright: 0 },
+  parts: 0,
+  carDraws: 0,
+  packetNodes: 0,
+  wheelNodes: 0,
   input: [0, 0, 0, 0],
   frames: 0,
   ticksExecuted: 0,
@@ -95,6 +100,8 @@ function publish() {
     ['susp mm', state.suspension.map((value) => (value * 1000).toFixed(1)).join(' ')],
     ['input', 'thr ' + state.input[0].toFixed(2) + ' brk ' + state.input[1].toFixed(2) +
       ' str ' + state.input[2].toFixed(2) + ' hb ' + state.input[3].toFixed(2)],
+    ['parts', state.parts + ' parts · ' + state.carDraws + ' draws · ' + state.packetNodes + ' nodes (' + state.wheelNodes + ' wheel)'],
+    ['wheel spin', Object.entries(state.wheelAngles).map(([corner, angle]) => corner + ' ' + angle.toFixed(2)).join(' ')],
     ['frames', String(state.frames) + ' · ticks ' + state.ticksExecuted],
     ['uploads', state.geometryUploads + ' geometry · ' + state.uniformWrites + ' uniform'],
     ['draws', state.draws + ' · ' + state.drawsIssued + ' issued'],
@@ -238,6 +245,13 @@ async function startTimeline(tick0, { reload = false } = {}) {
     spawn: { ...spawn, source: spawn.source ?? 'probes/e1-drive/tools/spawn.mjs' },
     car: state.car
   });
+  const partsInfo = session.packet.diagnostics.extras.parts;
+  state.parts = partsInfo?.partCount ?? 0;
+  state.carDraws = partsInfo?.drawCount ?? 0;
+  state.packetNodes = session.packet.nodes.length;
+  state.wheelNodes = session.packet.diagnostics.extras.wheels.wheelNodes.length;
+  state.wheelAngles = session.wheelSpin.angle;
+  state.wheelAnglesByTick = session.wheelAnglesByTick;
   // Expose the live timeline so the capture tool can compare the exact update the
   // consumer rendered with the node producer's packet (no extra packet copy).
   state.updates = session.packet.updates;
@@ -331,6 +345,8 @@ function frame(nowMs) {
   } else if (INTERPOLATE) cursor = Math.max(0, state.engineTick - 1 + driver.currentAlpha());
   else cursor = state.engineTick;
   state.displayTick = Math.floor(cursor);
+  const anglesAtDisplay = state.wheelAnglesByTick?.[state.displayTick];
+  if (anglesAtDisplay && anglesAtDisplay.tick === state.displayTick) state.wheelAngles = anglesAtDisplay.angles;
 
   consumer.syncTimeline();
   const rendered = consumer.renderFrame({ cursor });

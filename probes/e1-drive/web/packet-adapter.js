@@ -1,6 +1,9 @@
 // Render-packet v1.1 adapter for the E1 drive slice.
 //
-// Input:  one wasm state snapshot per fixed tick (position, body axes, wheels).
+// Input:  one wasm state snapshot per fixed tick (position, body axes, wheels)
+//         and the static geometry produced by tools/build_geometry.mjs, which
+//         embeds the committed Corvette part manifest (29 parts / 80 draws /
+//         four wheel groups).
 // Output: a v1.1 packet whose static half is the committed River block27 +
 //         Corvette geometry and whose timeline is one `updates[]` entry per
 //         engine tick, plus a deterministic chase camera.
@@ -8,20 +11,52 @@
 // The engine owns all motion. This module converts units and frames only:
 //   * the car's local->world matrix is the three body axes the engine reports
 //     (columns) and the chassis position;
+//   * each wheel group gets the MdlDat rest-pose translation from the manifest;
+//     tyre/rim/brake disc rotate about element-local +X by an angle integrated
+//     from the physics wheel angular velocity (`e1_get_state().wheels[].angular`)
+//     at the fixed 1/60 s step. The caliper is deliberately not rotated
+//     (VehicleActor.cpp:5198);
+//   * no suspension travel, steer or camber is applied: the manifest matrices
+//     are rest poses and the state does not carry those per-wheel rotations;
 //   * the camera is an orbit camera behind the car, so the packet validator can
 //     rebuild view/projection from yaw/pitch/distance and check them;
 //   * every tick is hashed with the committed canonical form.
 //
-// Used by the browser page (live stepping) and by tools/run_scripted.mjs (node),
-// so the packet the browser renders is byte-for-byte the packet the verifier
-// validates, given the same tick states.
+// Used by the browser page (live stepping) and by tools/verify_e1_drive.mjs
+// (node), so the packet the browser renders is byte-for-byte the packet the
+// verifier validates, given the same tick states.
 
 import { MATRIX_CONVENTION, cameraFromOrbit, transformPoint } from './packet-camera.mjs';
 import { PACKET_KIND, PACKET_VERSION, hashOf, packetHash } from './packet-hash.js';
 import { TICK_HZ } from './drive-script.js';
 
 export const CAR_NODE_ID = 'e1.car.body';
-export const WHEELS_RENDERED = false;
+export const WHEELS_RENDERED = true;
+export const WHEEL_CORNERS = Object.freeze(['frontleft', 'frontright', 'backleft', 'backright']);
+
+/** Column-major 16-float multiply, matching WGSL mat4x4f * vec4f. */
+function multiplyMat4(a, b) {
+  const out = new Array(16);
+  for (let column = 0; column < 4; column++) {
+    for (let row = 0; row < 4; row++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += a[k * 4 + row] * b[column * 4 + k];
+      out[column * 4 + row] = sum;
+    }
+  }
+  return out;
+}
+
+/** Rotation about element-local +X (the proven wheel axle). */
+function rotationXMatrix(angle) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return [1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1];
+}
+
+export function wheelNodeId(corner, spinning) {
+  return `e1.car.wheel.${corner}.${spinning ? 'spin' : 'static'}`;
+}
 
 /** Column-major rigid matrix from the engine's three body axes + position. */
 export function carMatrix(state) {
@@ -140,15 +175,58 @@ export function createSession(geometry, tick0, options = {}) {
     worldKind: 'baked-into-mesh'
   }));
 
+  if (geometry.version !== 2 || !Array.isArray(geometry.carNodes) ||
+      !Array.isArray(geometry.wheelGroups) || geometry.wheelGroups.length !== 4) {
+    throw new Error('geometry does not carry the committed car-part manifest; rebuild it with ' +
+      '`node probes/e1-drive/tools/build_geometry.mjs`');
+  }
+  const wheelByCorner = new Map(geometry.wheelGroups.map((group) => [group.corner, group]));
+  for (const corner of WHEEL_CORNERS) {
+    if (!wheelByCorner.has(corner)) throw new Error('geometry has no wheel group for ' + corner);
+  }
+  const carMeshId = geometry.carDraws[0]?.meshId;
+  if (!carMeshId) throw new Error('geometry has no car draws');
+
+  // Draws keep their packet ranges and gain the manifest identity and the node
+  // that moves them. Wheel draws sit on their group's rest-pose translation so
+  // their static (tick-0) world matrix is already correct before any update.
   const carDraws = geometry.carDraws.map((draw) => {
     const { localBounds, ...rest } = draw;
+    const corner = typeof draw.renderPartId === 'string' && draw.renderPartId.startsWith('wheel.')
+      ? draw.renderPartId.slice('wheel.'.length) : null;
+    const world = corner ? multiplyMat4(reference, wheelByCorner.get(corner).matrixColumnMajor) : reference;
     return {
       ...rest,
-      world: reference,
+      world,
       worldKind: 'packet-transform',
-      bounds: boundsUnderMatrix(localBounds, reference)
+      bounds: boundsUnderMatrix(localBounds, world)
     };
   });
+
+  const carNodes = geometry.carNodes.map((node) => ({ ...node, drawIds: node.drawIds.slice() }));
+  const carDrawIds = new Set(carDraws.map((draw) => draw.id));
+  const owned = new Set();
+  for (const node of carNodes) {
+    if (node.meshId !== carMeshId) throw new Error('node ' + node.id + ' names mesh ' + node.meshId + ', expected ' + carMeshId);
+    for (const drawId of node.drawIds) {
+      if (!carDrawIds.has(drawId)) throw new Error('node ' + node.id + ' references unknown car draw ' + drawId);
+      if (owned.has(drawId)) throw new Error('car draw ' + drawId + ' is moved by more than one node');
+      owned.add(drawId);
+    }
+  }
+  if (owned.size !== carDraws.length) {
+    throw new Error('nodes cover ' + owned.size + ' of ' + carDraws.length + ' car draws');
+  }
+
+  // Per-tick wheel spin. The state carries angular velocity, not an angle, so the
+  // adapter integrates it at the fixed tick duration. Starting from zero and
+  // advancing only when the tick increases makes the angle a pure function of
+  // the state sequence (two runs produce the same matrices).
+  const wheelSpin = {
+    angle: Object.fromEntries(WHEEL_CORNERS.map((corner) => [corner, 0])),
+    cornerByWheelIndex: null,
+    lastTick: null
+  };
 
   const meshes = geometry.meshes.map((mesh) => ({
     id: mesh.id,
@@ -201,10 +279,17 @@ export function createSession(geometry, tick0, options = {}) {
           outputSha256: geometry.source.packetSha256
         },
         {
+          id: 'parts',
+          tool: 'probes/e1-drive/tools/build_geometry.mjs',
+          source: geometry.manifest?.path ?? null,
+          sourceSha256: geometry.manifest?.sha256 ?? null,
+          note: 'part ids, draw ranges, wheel groups and rest-pose translations copied from the committed Corvette part manifest'
+        },
+        {
           id: 'simulation',
           tool: 'probes/e1-drive/module/e1_drive.wasm',
           api: 'create/reset/set_input/step/get_state',
-          note: 'one C_Scene::Simulate(1/60) per packet tick'
+          note: 'one C_Scene::Simulate(1/60) per packet tick; wheel spin angle integrated from the state angular velocity'
         }
       ]
     },
@@ -224,12 +309,7 @@ export function createSession(geometry, tick0, options = {}) {
         'tick 0 is the pose the engine reports after its 180-tick settle at the ground-probed ' +
         'spawn point; the translation and the three body axes come from the simulation, not from a chosen anchor'
     }],
-    nodes: [{
-      id: CAR_NODE_ID,
-      meshId: 'corvette.c3.race.body',
-      drawIds: carDraws.map((draw) => draw.id),
-      reason: 'single rigid vehicle body: all 80 car draws share the engineered chassis transform'
-    }],
+    nodes: carNodes,
     updates: [],
     diagnostics: {
       drawCount: levelDraws.length + carDraws.length,
@@ -242,8 +322,9 @@ export function createSession(geometry, tick0, options = {}) {
       materialsApplied: false,
       lighting: 'diagnostic-directional',
       scope:
-        'River block27/node253 supported instances plus the Corvette C3 race body; the body pose comes from the ' +
-        'wasm RacingPhysics/Gravity step, materials and lighting are diagnostic',
+        'River block27/node253 supported instances plus the Corvette C3 race body drawn as 29 manifest parts / ' +
+        '80 draws with four spinning wheel groups; the body and wheel poses come from the wasm ' +
+        'RacingPhysics/Gravity step, materials and lighting are diagnostic',
       sequence: {
         tickCount: 0,
         tickHz: TICK_HZ,
@@ -252,7 +333,7 @@ export function createSession(geometry, tick0, options = {}) {
           'each tick is one C_Scene::Simulate(1/60) of the real RacingPhysics vehicle on the River collision mesh ' +
           '(usa_la_river/Level.levelphysics); no parametric path, no keyframes, no synthetic motion',
         alphaSource: 'per-tick alpha is 0 (tick-exact); the consumer supplies its own fixed-step alpha',
-        nodeIds: [CAR_NODE_ID],
+        nodeIds: carNodes.map((node) => node.id),
         staticDrawCount: levelDraws.length,
         movedDrawCount: carDraws.length,
         firstTickHash: null,
@@ -268,11 +349,39 @@ export function createSession(geometry, tick0, options = {}) {
           stateFields: ['position', 'axisX', 'axisY', 'axisZ', 'speed', 'contacts', 'wheels'],
           ...(car ? { car } : {})
         },
+        parts: {
+          manifest: geometry.manifest ?? null,
+          partCount: geometry.carParts?.length ?? 0,
+          drawCount: carDraws.length,
+          nodeCount: carNodes.length,
+          nodes: carNodes.map((node) => ({ id: node.id, drawCount: node.drawIds.length })),
+          bodyDrawCount: carDraws.filter((draw) => draw.nodeId === CAR_NODE_ID).length,
+          wheelDrawCount: carDraws.filter((draw) => draw.nodeId !== CAR_NODE_ID).length,
+          colours:
+            'diagnostic per-part colours for visual debugging only (materialsApplied:false); ' +
+            'they are not game materials, paint or texture pixels'
+        },
         wheels: {
           rendered: WHEELS_RENDERED,
+          wheelGroupCount: geometry.wheelGroups.length,
+          wheelNodes: carNodes.filter((node) => node.id !== CAR_NODE_ID).map((node) => node.id),
+          spinAxis: 'element-local +X',
+          spinAxisSource: 'wheel/rim local bounds are thin on X; VehicleActor.cpp:5158-5197 spins about wheelMatrix.AX()',
+          spinMembers: geometry.wheelGroups[0]?.spinMembers ?? ['tyre', 'rim', 'brakeDisc'],
+          staticMembers: geometry.wheelGroups[0]?.staticMembers ?? ['brakeCaliper'],
+          angleSource:
+            'integrated at 1/60 s from e1_get_state().wheels[].angular (physics wheel angular velocity), ' +
+            'starting at 0 on the settled tick; each wheel is assigned to the nearest manifest wheel translation ' +
+            'in body-local space',
+          restPose:
+            'wheel group placement is the MdlDat rest-pose translation from the part manifest; no suspension travel, ' +
+            'steer or camber is applied because the state does not carry those per-wheel rotations',
+          caliper:
+            'brake calipers share the wheel rest-pose translation but are not rotated (VehicleActor.cpp:5198, ' +
+            '"Brake calipers mustn\'t rotate")',
           reason:
-            'no Corvette wheel mesh is recovered by the scene reader (the committed packet has body draws only); ' +
-            'wheel contact, suspension, spin and position are carried in the state/HUD, not drawn'
+            'the committed scene reader returns one 80-draw car mesh that contains the wheel geometry; the manifest ' +
+            'proves which draws are tyre/rim/disc/caliper and where each wheel group sits'
         },
         surfaces: {
           surfaceMappingsApplied: false,
@@ -293,18 +402,20 @@ export function createSession(geometry, tick0, options = {}) {
           '(the model import is out of scope), so the body may be rotated/offset relative to the chassis'
       },
       approximations: [
-        'level and vehicle materials are not applied; every draw is shaded with a neutral albedo under one directional light',
+        'level and vehicle materials are not applied; car parts use a diagnostic per-part colour, all other draws use a neutral albedo, under one directional light',
         'no shadow, post-process, particle or effect pass exists in this consumer',
         'face normals come from screen-space derivatives of the world position, not from original vertex normals',
         'the car mesh is aligned to the engine body frame directly; the retail mesh import and its offset are not recovered',
-        'wheels are not drawn: no wheel mesh is in scope (state-only)',
+        'wheel placement uses the manifest rest-pose translation; the spin angle is integrated from the physics wheel angular velocity, not read as an angle',
+        'the tyre/rim/disc spin marker is a diagnostic band, not a material or a texture',
         'grip, rolling friction and MI scales are the engine neutral values because no surface mapping list is installed'
       ],
       notRecovered: [
         'level material list to shader binding',
         'original level and vehicle lighting rigs',
         'vehicle paint lookup texture and runtime light blends',
-        'wheel meshes, higher LODs and damage states',
+        'per-car body meshes (every roster car is drawn with the Corvette C3 manifest)',
+        'runtime per-wheel matrices (suspension, steer, camber), higher LODs and damage states',
         'engine asset streaming, culling and draw-list production (this slice drives one car on one loaded block)',
         'level blocks 26, 32 and 31 instances'
       ],
@@ -313,6 +424,7 @@ export function createSession(geometry, tick0, options = {}) {
           ? 'one car at a time, selected from the RP_CarDynamics roster at runtime: not a race, a game loop or a full level'
           : 'one car, one loaded River collision mesh, one camera: not a race, a game loop or a full level',
         'no audio, no HUD beyond diagnostics, no multiplayer, no race rules',
+        'the 29 parts are the Corvette C3 manifest for every roster car; no per-car body or wheel mesh is imported',
         'packet v1.1 is JSON with inline geometry; it is not an engine draw-list integration',
         'the geometry is a spike fixture (block27/node253) while the simulation runs on the whole level physics mesh, ' +
           'so the car can leave the drawn area if it drives far enough',
@@ -321,21 +433,101 @@ export function createSession(geometry, tick0, options = {}) {
     }
   };
 
+  // Wheel nodes in a fixed order so the per-tick matrix list is deterministic.
+  const wheelNodesInOrder = [];
+  for (const corner of WHEEL_CORNERS) {
+    for (const spinning of [true, false]) {
+      const id = wheelNodeId(corner, spinning);
+      if (carNodes.some((node) => node.id === id)) wheelNodesInOrder.push({ id, corner, spinning });
+    }
+  }
+
+  /**
+   * Assign each physics wheel to a manifest wheel corner by the nearest rest
+   * translation in body-local space. The state does not name its wheel order, so
+   * this uses the position the engine reports instead of assuming an order.
+   */
+  function mapWheelsToCorners(state) {
+    if (!Array.isArray(state.wheels) || state.wheels.length !== 4) {
+      throw new Error('state has no four wheel records; the manifest wheels cannot be placed');
+    }
+    const [px, py, pz] = state.position;
+    const ax = state.axisX;
+    const ay = state.axisY;
+    const az = state.axisZ;
+    return state.wheels.map((wheel) => {
+      if (!Array.isArray(wheel.position)) throw new Error('wheel record has no position');
+      const dx = wheel.position[0] - px;
+      const dy = wheel.position[1] - py;
+      const dz = wheel.position[2] - pz;
+      const localX = ax[0] * dx + ax[1] * dy + ax[2] * dz;
+      const localZ = az[0] * dx + az[1] * dy + az[2] * dz;
+      let best = null;
+      let bestDistance = Infinity;
+      for (const corner of WHEEL_CORNERS) {
+        const translation = wheelByCorner.get(corner).translation;
+        const distance = (localX - translation[0]) ** 2 + (localZ - translation[2]) ** 2;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = corner;
+        }
+      }
+      return best;
+    });
+  }
+
+  /** Integrate the physics wheel angular velocity into a per-corner spin angle. */
+  function advanceWheelSpin(state) {
+    if (!wheelSpin.cornerByWheelIndex) wheelSpin.cornerByWheelIndex = mapWheelsToCorners(state);
+    if (wheelSpin.lastTick === null) {
+      wheelSpin.lastTick = state.tick;
+      return;
+    }
+    const deltaTicks = state.tick - wheelSpin.lastTick;
+    if (deltaTicks <= 0) return;
+    const seconds = deltaTicks / TICK_HZ;
+    state.wheels.forEach((wheel, index) => {
+      const corner = wheelSpin.cornerByWheelIndex[index];
+      if (!corner) throw new Error('no manifest wheel corner for physics wheel ' + index);
+      if (!Number.isFinite(wheel.angular)) {
+        throw new Error('non-finite wheel angular velocity at tick ' + state.tick + ' wheel ' + index);
+      }
+      wheelSpin.angle[corner] += wheel.angular * seconds;
+    });
+    wheelSpin.lastTick = state.tick;
+  }
+
   const session = {
     packet,
     camera,
     tick0,
     lastState: tick0,
+    wheelSpin,
+    // Per-tick copy of the integrated angles, indexed by tick, so the page can
+    // publish the angle of the tick it actually renders (the live loop appends
+    // one tick ahead of the displayed frame).
+    wheelAnglesByTick: [],
 
     appendState(state) {
+      advanceWheelSpin(state);
+      const body = carMatrix(state);
+      const matrices = [{ nodeId: CAR_NODE_ID, world: body }];
+      for (const node of wheelNodesInOrder) {
+        const rest = wheelByCorner.get(node.corner).matrixColumnMajor;
+        let world = multiplyMat4(body, rest);
+        // Only tyre/rim/brake disc rotate; the caliper stays at the rest pose.
+        if (node.spinning) world = multiplyMat4(world, rotationXMatrix(wheelSpin.angle[node.corner]));
+        matrices.push({ nodeId: node.id, world });
+      }
       const update = {
         tick: state.tick,
         alpha: 0,
         camera: state.tick === 0 ? cameraTick0 : this.camera.update(state),
-        matrices: [{ nodeId: CAR_NODE_ID, world: carMatrix(state) }]
+        matrices
       };
       update.hash = hashOf(update);
       packet.updates.push(update);
+      this.wheelAnglesByTick.push({ tick: state.tick, angles: { ...wheelSpin.angle } });
       this.lastState = state;
       return update;
     },

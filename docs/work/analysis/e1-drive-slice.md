@@ -29,6 +29,7 @@ deterministic state sequence.**
 | browser | headless Edge/WebGPU, 1600×900, adapter `nvidia / blackwell`, **0 console messages**, 3 geometry uploads (1,088,544 B) on every run |
 | screenshots | `_work/e1-drive/browser-{start,mid,end}.png` (+ `-car` crops) |
 | multi-car (P23) | **5 cars** of 62 `RP_CarDynamics` records, selectable at runtime, 164/164 checks, 20 browser captures, 0 console messages — see **§10** (this section's numbers are the original single-car run; §10 records what the roster changed) |
+| car parts + wheels (P28) | **29 parts / 80 draws**, **4 wheel groups** (8 wheel nodes), 202/202 checks, 20 browser captures, 0 console messages — see **§11** |
 
 ---
 
@@ -304,8 +305,10 @@ Artifacts:
   `diagnostics.extras.track`). Nearly edge-on slabs speckle because derivative
   normals are unstable at grazing angles — visible as the noisy band in the mid
   screenshot.
-- **Wheels are not drawn.** The committed car draw set has body draws only; wheel
-  contact, suspension, spin and position are in the state and the HUD.
+- **Wheels are not drawn.** ~~The committed car draw set has body draws only;
+  wheel contact, suspension, spin and position are in the state and the HUD.~~
+  **Superseded by §11**: the manifest exposes 20 wheel draws, four wheel groups
+  are drawn and tyre/rim/disc spin from the physics angular velocity.
 - **Box gravity proxy, neutral surface scalars, unresolved XT physics handle** —
   the T-005d labels, unchanged (`carBodyShape: box-from-XT-geometry`,
   `surfaceMappingsApplied: false`, `physicsParametersResolved: false`).
@@ -338,7 +341,8 @@ spike geometry and the hand-rolled camera with engine output, one at a time:
    render camera into `updates[].camera` so the chase camera stops being a
    presentation choice.
 3. **Wheel meshes** — recover the wheel draws (or the composite body import) so
-   the wheels can be drawn instead of only sampled.
+   the wheels can be drawn instead of only sampled. *Corvette part integration is
+   done in §11; per-car meshes are still open.*
 4. Then the acceptance gates of `e1-renderer-strategy.md` §"Decision gate": a
    finishable lap, unambiguous boundaries, 60 Hz with a clean console.
 
@@ -507,3 +511,150 @@ Corvette's *state* sequence hash is the proof that the physics did not move.
 | `_work/e1-drive/browser-evidence.json` | 20 captures, console log, packet-hash agreement, per-capture comparison |
 | `_work/e1-drive/browser-<slug>-*.png` | per-car screenshots (+ 2× car crops) |
 | `docs/work/verification/T-007-multi-car.md` | the gate record |
+
+---
+
+## 11. Corvette parts + spinning wheels in the drive slice (T-007/E1i, P28)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**` and `_work/e1-drive/**` only. The committed
+`_work/car-parts/manifest.json` is read (never rebuilt or edited). Physics is
+unchanged: the Corvette state sequence hash is still
+`sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f`.
+
+### 11.1 What changed
+
+`tools/build_geometry.mjs` now reads the committed Corvette part manifest
+(`sha256:24aa45f37cce2738b2f6b90bcd043aee736be6db8d7e2e855eb86048f7dbf602`,
+29 parts / 80 draws / 4 wheel groups) and **refuses any other file**: that SHA-256
+is pinned in the tool. It validates the manifest mesh counts and
+mesh-value hashes against the packet's car mesh, matches every one of the 80
+car draws by its exact index range, and embeds into `_work/e1-drive/geometry.json`:
+
+- the 29 part records, 4 wheel groups, 9 car nodes and the manifest provenance;
+- on each car draw: `partId`, `renderPartId`, `partKind`, `partName`,
+  `wheelPart`, `spins`, `nodeId` and a labelled `diagnosticColour`.
+
+`web/packet-adapter.js` keeps the same car transform and replaces the single
+`e1.car.body` node with **nine** nodes:
+
+| node | draws | per-tick transform |
+| --- | ---: | --- |
+| `e1.car.body` | 60 | `body` (engine position + three body axes) |
+| `e1.car.wheel.<corner>.spin` ×4 | 16 | `body × wheelRest × Rx(angle)` |
+| `e1.car.wheel.<corner>.static` ×4 | 4 | `body × wheelRest` (caliper) |
+
+`wheelRest` is the `MdlDat` element translation from the manifest
+(`e1_wheel_frontleft` etc.). The spin axis is element-local `+X`; the source is
+`VehicleActor.cpp:5158-5197` (`wheelMatrix.AX()`), and the caliper is static per
+line 5198 ("Brake calipers mustn't rotate").
+
+`e1_get_state()` reports `wheels[].angular` (rad/s), not an angle. The adapter
+integrates it at the fixed 1/60 s step, starting at 0 on the settled tick, and
+assigns each physics wheel to the nearest manifest wheel translation in
+body-local space. The angle is therefore a pure function of the state sequence;
+two runs produce identical wheel matrices. No suspension, steer or camber is
+applied.
+
+The consumer (`web/packet-consumer.js`) uses `draw.diagnosticColour` when present
+and a local-angle marker band when `draw.spins` is true. Both are labelled debug
+aids; `materialsApplied` stays `false`.
+
+### 11.2 Verification gate
+
+```powershell
+$node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
+$py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py   probes/car-parts/tools/build_manifest.py     # committed manifest input
+& $node probes/e1-drive/tools/build_geometry.mjs
+& $node probes/e1-drive/tools/verify_e1_drive.mjs
+& $node probes/e1-drive/tools/capture_browser.mjs    # --port 8811 if 8801 is busy
+```
+
+- `_work/e1-drive/geometry.json` — **2,495,306 B**,
+  SHA-256 `f25c9cd36dc8bc21ef5620749ad84862d05d77e02be560336bc49900ab233fd1`;
+  `carParts:29`, `wheelGroups:4`, `carNodes:9`, body draws 60, wheel spin draws
+  16, wheel caliper draws 4.
+- `_work/e1-drive/run.json` — **PASS, 202/202 checks, 0 failures**. The 164
+  pre-existing checks are unchanged; the 38 new checks cover the manifest
+  provenance, draw coverage, nine nodes, nine matrices per tick, wheel-angle
+  advance (>60% of tick steps > 0.001 rad), a wheel matrix that differs from
+  tick 0 to 300, caliper angle ≈ 0, and a labelled diagnostic colour per car
+  draw.
+- All five cars: **301/301 wheel-contact ticks, 0 NaN**, distinct state
+  sequences, run A = run B packet hash, and every per-tick matrix still rigid.
+  The Corvette state sequence hash is the T-007 anchor `83f76590…`.
+
+| car | packet B | packet hash | nodes | draws |
+| --- | ---: | --- | ---: | ---: |
+| Corvette ZR1 | 4,288,582 | `4e8eb90f…d63d2b74` | 9 | 103 |
+| Lotus Exige Cup260 | 4,297,042 | `c97b1a6a…4b7eae97` | 9 | 103 |
+| Dodge Challenger | 4,289,142 | `5c732e9e…28178e51` | 9 | 103 |
+| Ford Focus RS | 4,287,489 | `81600e06…88013987` | 9 | 103 |
+| Audi R8 V10 | 4,287,529 | `ec0c9abf…7bcbf614` | 9 | 103 |
+
+The packet grew from ~3.4 MB to ~4.3 MB because each tick now carries nine
+matrices instead of one. The packet hash necessarily changed from the P23 value;
+the state hashes did not.
+
+### 11.3 Browser evidence
+
+`capture_browser.mjs` ran 20 captures (5 cars × ticks 0/150/240/300) at
+1600×900, adapter `nvidia / blackwell`:
+
+- **0 console messages** in every capture;
+- **3 geometry uploads / 1,090,380 B** in every run, independent of frame count;
+- every capture: `parts:29`, `carDraws:80`, `packetNodes:9`, `wheelNodes:8`,
+  `render.matrices:9`, `drawsIssued = frames × 103`;
+- wheel angles are 0 on the settled tick and grow with the script; Corvette
+  front-left: **0 → 84.637 → 138.223 → 148.603 rad** at ticks 0/150/240/300
+  (unwrapped); the other cars reach 69–218 rad by tick 300;
+- per-tick car matrix is bit-identical to the node producer; the camera matches
+  within 1e-6. **Packet hashes are byte-exact for 17/20 captures**; the other
+  three differ only in the last `Math.atan2` bit (the documented Node-24 vs
+  Edge-156 camera ulp caveat from §6), not in any physics value or matrix.
+
+Screenshots (full list in `_work/e1-drive/browser-evidence.json`):
+
+| file | what it shows |
+| --- | --- |
+| `_work/e1-drive/browser-corvette-zr1-stock-start.png` | tick 0, settled Corvette: 29-part body, cyan glass, yellow lights, rear tyre corner colours |
+| `...-mid.png` | tick 150, 52 km/h: parts and rear wheels visible from the chase camera, HUD `29 parts · 80 draws · 9 nodes (8 wheel)` |
+| `...-coast.png`, `...-end.png` | tick 240/300: wheel angles 138.2 / 148.6 rad |
+| `browser-<slug>-*.png` | the same four ticks for all five roster cars |
+
+![Corvette parts and wheels, mid-drive](../../../_work/e1-drive/browser-corvette-zr1-stock-mid.png)
+
+*`_work/e1-drive/browser-corvette-zr1-stock-mid.png`: the real 29-part Corvette
+with the rear wheel groups drawn; the chase camera is behind the car, so the rear
+tyres are the visible wheels.*
+
+### 11.4 Limits
+
+- **Rest-pose wheel placement.** Wheel groups use their `MdlDat` element
+  translations. No suspension travel, steering angle or camber is applied because
+  the state does not carry those per-wheel rotations.
+- **Corvette-only parts.** The manifest is Corvette-specific; the other four
+  physics cars are still drawn with the Corvette body and wheels
+  (`bodyMeshReason`). Per-car meshes are the next step.
+- **Diagnostic materials and colours.** Per-part colours and the spin marker are
+  debug aids, not game materials/textures; `materialsApplied:false`.
+- **Spin is integrated, not read.** `wheels[].angular` is a rate; the adapter
+  integrates it. A wheel with contact loss still uses the reported rate.
+- **Four side-ambiguous wheel draws.** Front disc/caliper draws have identical
+  left/right element bounds; their corner is the manifest's preview-only pairing,
+  not a proof. The caliper is still kept static.
+- **The chase camera hides the front wheels.** The rear wheel groups are visible;
+  the front wheels are occluded by the body from behind. Wheel rotation is proven
+  by the per-tick matrices and the HUD angles, and the marker band makes it
+  visible where a tyre is not occluded.
+- **32 shell draws remain group-proven** (`body.shell` 26, `interior.shell` 6),
+  not leaf-panel named.
+
+### 11.5 Next step
+
+The smallest remaining visual step is **per-car meshes**: decode each roster
+car's own model with the same reader/manifest path and swap the manifest per
+`?car=`. Until then this slice proves the *pipeline* (manifest → per-part nodes →
+physics-driven wheel matrices → WebGPU) on the Corvette only.

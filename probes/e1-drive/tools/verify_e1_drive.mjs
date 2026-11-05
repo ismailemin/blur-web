@@ -73,6 +73,27 @@ const check = (label, ok, detail = '') => {
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
 
+const wrapAngle = (value) => {
+  let angle = value;
+  while (angle > Math.PI) angle -= Math.PI * 2;
+  while (angle < -Math.PI) angle += Math.PI * 2;
+  return angle;
+};
+
+/**
+ * Rotation of a wheel node relative to the body, about the proven element-local
+ * +X axis. The rest transform is translation-only, so R_body^T * R_wheel is
+ * exactly Rx(angle) and the angle can be read from its second column.
+ */
+function wheelRelativeAngle(body, wheel) {
+  const c1 = [body[4], body[5], body[6]];
+  const c2 = [body[8], body[9], body[10]];
+  const w1 = [wheel[4], wheel[5], wheel[6]];
+  const cosine = c1[0] * w1[0] + c1[1] * w1[1] + c1[2] * w1[2];
+  const sine = c2[0] * w1[0] + c2[1] * w1[1] + c2[2] * w1[2];
+  return Math.atan2(sine, cosine);
+}
+
 if (!existsSync(MODULE) || !existsSync(BUILD)) {
   throw new Error('wasm module missing — run `node probes/e1-drive/tools/build_module.mjs`');
 }
@@ -120,6 +141,27 @@ check('roster passes its decode gate', roster.status === 'PASS' &&
       `${roster.counts.gatePass}/${roster.counts.records} records pass, ${roster.counts.selected} selected`);
 check('roster covers at least four real cars', roster.roster.cars.length >= 4,
       String(roster.roster.cars.length));
+
+// ------------------------------------------------------- part-manifest gates
+const manifest = geometry.manifest;
+check('geometry embeds the committed Corvette part manifest (29 parts / 80 draws / 4 wheel groups)',
+      manifest?.kind === 'blur.car-part-manifest' && manifest.version === 1 &&
+      manifest.parts === 29 && manifest.draws === 80 && manifest.wheelGroups === 4 &&
+      /^sha256:[0-9a-f]{64}$/.test(manifest.sha256 ?? ''),
+      manifest ? `${manifest.parts} parts, ${manifest.draws} draws, ${manifest.wheelGroups} groups, ${manifest.sha256}` : 'missing');
+check('the manifest draw ranges cover the packet car draws exactly once',
+      geometry.carDraws.length === 80 &&
+      new Set(geometry.carDraws.map((draw) => draw.indexOffset + ':' + draw.indexCount)).size === 80 &&
+      geometry.carDraws.every((draw) => typeof draw.partId === 'string' || draw.partKind === 'unclassified') &&
+      geometry.carDraws.every((draw) => typeof draw.nodeId === 'string' && Array.isArray(draw.diagnosticColour) &&
+        draw.diagnosticColour.length === 3 && draw.diagnosticColour.every(Number.isFinite)),
+      `${geometry.carDraws.length} car draws`);
+check('the car is split into one body node and eight wheel nodes (spin + static per corner)',
+      geometry.carNodes.length === 9 &&
+      geometry.carNodes.filter((node) => node.id === 'e1.car.body').length === 1 &&
+      geometry.carNodes.filter((node) => node.id.endsWith('.spin')).length === 4 &&
+      geometry.carNodes.filter((node) => node.id.endsWith('.static')).length === 4,
+      `${geometry.carNodes.length} nodes`);
 
 /** One full scripted run of one car in a fresh wasm module instance. */
 async function runOnce(car, fieldBytes) {
@@ -301,6 +343,46 @@ for (const car of cars) {
         packet.diagnostics.extras.drive.car?.recordId === car.record.id,
         JSON.stringify(packet.diagnostics.extras.drive.car?.name));
 
+  // ------------------------------------------------------- part + wheel gates
+  const BODY_NODE = 'e1.car.body';
+  const spinNodeIds = packet.nodes.filter((node) => node.id.endsWith('.spin')).map((node) => node.id);
+  const staticNodeIds = packet.nodes.filter((node) => node.id.endsWith('.static')).map((node) => node.id);
+  check(`${car.name}: the packet carries the Corvette parts (29 parts / 80 draws)`,
+        packet.diagnostics.extras.parts?.partCount === 29 &&
+        packet.diagnostics.extras.parts?.drawCount === 80 &&
+        packet.draws.filter((draw) => draw.meshId === 'corvette.c3.race.body').length === 80,
+        JSON.stringify(packet.diagnostics.extras.parts?.partCount));
+  check(`${car.name}: one body node and eight wheel nodes move every car draw exactly once`,
+        packet.nodes.length === 9 &&
+        packet.nodes.filter((node) => node.id === BODY_NODE).length === 1 &&
+        spinNodeIds.length === 4 && staticNodeIds.length === 4 &&
+        new Set(packet.nodes.flatMap((node) => node.drawIds)).size === 80,
+        `${packet.nodes.length} nodes, ${spinNodeIds.length} spin, ${staticNodeIds.length} static`);
+  check(`${car.name}: every tick carries the body plus eight wheel matrices`,
+        packet.updates.every((update) => update.matrices.length === 9 &&
+          update.matrices[0].nodeId === BODY_NODE),
+        String(packet.updates[0]?.matrices.length));
+  const bodyWorldAt = (tick) => packet.updates[tick].matrices[0].world;
+  const nodeWorldAt = (tick, nodeId) => packet.updates[tick].matrices.find((entry) => entry.nodeId === nodeId)?.world;
+  const spinNode = spinNodeIds[0];
+  const spinAngles = packet.updates.map((update, tick) => wheelRelativeAngle(bodyWorldAt(tick), nodeWorldAt(tick, spinNode)));
+  const spinDeltas = spinAngles.slice(1).map((angle, index) => Math.abs(wrapAngle(angle - spinAngles[index])));
+  const spinAdvancingTicks = spinDeltas.filter((delta) => delta > 1e-3).length;
+  check(`${car.name}: wheel spin angle advances from the physics wheel angular velocity`,
+        spinAdvancingTicks > SCRIPT_TICKS * 0.6,
+        `${spinAdvancingTicks} of ${SCRIPT_TICKS} tick steps > 1e-3 rad, max ${Math.max(...spinDeltas).toFixed(4)} rad`);
+  check(`${car.name}: the spinning wheel matrix differs between the first and last tick`,
+        nodeWorldAt(0, spinNode).some((value, index) => value !== nodeWorldAt(SCRIPT_TICKS, spinNode)[index]));
+  const caliperAngles = packet.updates.map((update, tick) =>
+    Math.abs(wheelRelativeAngle(bodyWorldAt(tick), nodeWorldAt(tick, staticNodeIds[0]))));
+  check(`${car.name}: brake calipers stay static (no spin applied)`,
+        Math.max(...caliperAngles) < 1e-4, `max |angle| ${Math.max(...caliperAngles).toExponential(2)} rad`);
+  check(`${car.name}: every car draw carries a labelled diagnostic colour`,
+        packet.draws.filter((draw) => draw.meshId === 'corvette.c3.race.body')
+          .every((draw) => Array.isArray(draw.diagnosticColour) && draw.diagnosticColour.length === 3 &&
+            draw.diagnosticColour.every(Number.isFinite) && typeof draw.colourReason === 'string' &&
+            draw.colourReason.includes('not a game material')));
+
   const nonRigid = packet.updates.flatMap((update) => update.matrices).filter((entry) => !isRigid(entry.world));
   check(`${car.name}: every per-tick matrix is rigid`, nonRigid.length === 0, String(nonRigid.length));
 
@@ -397,6 +479,9 @@ for (const car of cars) {
       version: packet.version,
       hash: packet.hash,
       draws: packet.draws.length,
+      nodes: packet.nodes.length,
+      carParts: packet.diagnostics.extras.parts?.partCount ?? null,
+      wheelNodes: packet.diagnostics.extras.wheels?.wheelNodes ?? null,
       vertices: packet.diagnostics.vertexTotal,
       triangles: packet.diagnostics.triangleTotal,
       updates: packet.updates.length,
@@ -473,6 +558,10 @@ const report = {
     trackTriangles: (geometry.meshes[2]?.indexCount ?? 0) / 3,
     carVertices: geometry.meshes[1].vertexCount,
     carTriangles: geometry.meshes[1].indexCount / 3,
+    carParts: geometry.carParts.length,
+    wheelGroups: geometry.wheelGroups.length,
+    carNodes: geometry.carNodes.length,
+    manifest: geometry.manifest,
     source: geometry.source.packet,
     sourcePacketHash: geometry.source.packetHash,
     trackSource: geometry.source.track

@@ -473,6 +473,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Headless Edge: console 0, 2 geometri upload, 0→0.9 rad arası **7.149 piksel** farkı; ekran görüntüsü `_work/car-parts/browser-parts-angle090.png`.
 - Sınır: ilk RenderList LOD0, çeviri-only rest poz, süspansiyon/steer/camber yok; henüz drive packet'ine bağlanmadı. Kanıt: `docs/work/verification/T-007-car-parts.md`.
 
+## 5 Kasım 2026 — parça/teker entegrasyonu
+
+- E1 drive packet'i **29 parça / 80 draw**, **9 node** (1 gövde + 4 spin + 4 statik kaliper) kullanıyor; teker açısı `e1_get_state().wheels[].angular` integraliyle (tick 0/150/240/300: 0/84,637/138,223/148,603 rad).
+- `verify_e1_drive.mjs` **202/202** (164 + 38 yeni); 5 araçta 301/301 temas, 0 NaN; Corvette anchor `83f76590…008e1f` değişmedi.
+- Browser 20 capture, console **0**, geometri 3 upload/1.090.380 B; 17/20 packet hash birebir, 3'ü kamera `atan2` bir-ulp (state/matris birebir). Packet 103 draw.
+- Sınır: parçalar Corvette-only (5 araç aynı gövde), rest-pose teker konumu, diagnostic renkler. Kanıt: `docs/work/verification/T-007-car-parts-integration.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

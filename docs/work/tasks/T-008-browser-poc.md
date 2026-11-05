@@ -36,7 +36,7 @@ sürüşü deneyebileceği PoC.
 | Çoklu araç roster'ı | P23 | ✅ |
 | `levelrender` engine parse (draw list) | P22 | ✅ |
 | Stage B pist instance'ları | P25 | ✅ |
-| Teker/kompozit görsel | P26 | ✅ (manifest) |
+| Teker/kompozit görsel | P26 + P28 | ✅ (entegre) |
 | PoC paketleme + kullanıcı kılavuzu | ana ajan | sırada |
 
 ## Çalıştırma (mevcut tek araç)

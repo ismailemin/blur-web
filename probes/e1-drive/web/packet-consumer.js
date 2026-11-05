@@ -2,10 +2,13 @@
 //
 // COPIED FROM probes/render-packet/web/packet-consumer.js (committed at
 // 5 November 2026). The E1 drive slice must not edit the committed probe, so the
-// copy lives here. Exactly one method was added — `syncTimeline()` — because the
-// drive slice produces its timeline live, one engine tick at a time, instead of
-// pre-building the whole sequence. Everything else (shader, pipeline, upload
-// counting, interpolation, camera handling) is unchanged.
+// copy lives here. E1 drive-slice deltas, both additive:
+//   * `syncTimeline()` accepts ticks appended after `load()`, because the drive
+//     slice produces its timeline live instead of pre-building the sequence;
+//   * a draw may carry `diagnosticColour` + `spins`, which set a debug albedo and
+//     a local-angle spin marker. Materials are still not applied.
+// Everything else (pipeline, upload counting, interpolation, camera handling) is
+// unchanged from the committed consumer.
 //
 // It only reads the packet contract: camera, lights, meshes, draws, and (for
 // v1.1) nodes + updates. It never reaches into a reader or an engine.
@@ -16,7 +19,11 @@
 //
 // Materials are not applied, so every draw is shaded with a neutral albedo under
 // the packet's directional light — a declared diagnostic fallback, not a guessed
-// material colour.
+// material colour. E1 drive-slice delta: a draw may carry `diagnosticColour` and
+// `spins` (the car parts do). Those are debug colours, still with
+// materialsApplied:false, and `spins` only enables a local-angle marker band so
+// the wheel rotation is visible on rotationally symmetric tyre/rim/disc
+// geometry. Neither is a game material or a texture sample.
 
 import { interpolateRigid, isRigid, matrixChecksum } from './interpolate.js';
 
@@ -37,12 +44,14 @@ struct Scene {
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) world: vec3f,
+  @location(1) local: vec3f,
 };
 
 @vertex fn vertexMain(@location(0) position: vec3f) -> VertexOut {
   var result: VertexOut;
   let worldPosition = draw.world * vec4f(position, 1.0);
   result.world = worldPosition.xyz;
+  result.local = position;
   result.position = draw.viewProjection * worldPosition;
   return result;
 }
@@ -54,7 +63,13 @@ struct VertexOut {
   let lambert = abs(dot(face, normalize(scene.lightDirection.xyz)));
   let brightness = scene.ambient.x + (1.0 - scene.ambient.x) * lambert;
   let radiance = scene.lightColour.rgb * scene.lightColour.a * draw.albedo.rgb * brightness;
-  return vec4f(pow(clamp(radiance, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), 1.0);
+  // Diagnostic spin marker: a band fixed in element-local space. It is not a
+  // material; it makes the wheel rotation visible on rotationally symmetric
+  // geometry. draw.albedo.a is 0 for every non-spinning draw.
+  let angle = atan2(input.local.z, input.local.y);
+  let band = smoothstep(0.86, 0.98, cos(angle)) * draw.albedo.a;
+  let marked = mix(radiance, vec3f(1.0, 0.94, 0.72), band * 0.72);
+  return vec4f(pow(clamp(marked, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), 1.0);
 }
 `;
 
@@ -529,10 +544,16 @@ export class PacketConsumer {
     const viewProjection = multiply(frame.projection, frame.view);
     const bytes = new Float32Array(this.draws.length * (DRAW_UNIFORM_STRIDE / 4));
     for (let index = 0; index < this.draws.length; index++) {
+      const draw = this.draws[index];
       const base = index * (DRAW_UNIFORM_STRIDE / 4);
       bytes.set(viewProjection, base);
       bytes.set(frame.worlds[index], base + 16);
-      bytes.set([NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, 1], base + 32);
+      const colour = Array.isArray(draw.diagnosticColour) && draw.diagnosticColour.length >= 3
+        ? draw.diagnosticColour
+        : [NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, NEUTRAL_ALBEDO];
+      // w = diagnostic spin-marker strength, not opacity. Zero for every draw
+      // that does not spin (body, caliper, level, collision surface).
+      bytes.set([colour[0], colour[1], colour[2], draw.spins ? 0.85 : 0], base + 32);
     }
     this.device.queue.writeBuffer(this.uniformBuffer, 0, bytes);
 

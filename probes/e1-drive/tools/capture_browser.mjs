@@ -210,7 +210,9 @@ async function capture(car, label, tick) {
       pauseDrops: p.pauseDrops, zeroTickFrames: p.zeroTickFrames,
       geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
       uniformWrites: p.uniformWrites, uniformBytes: p.uniformBytes, drawsIssued: p.drawsIssued,
-      draws: p.draws, tickHash: p.tickHash, tick0Hash: p.tick0Hash, packetHash: p.packetHash,
+      draws: p.draws, parts: p.parts, carDraws: p.carDraws, packetNodes: p.packetNodes,
+      wheelNodes: p.wheelNodes, wheelAngles: p.wheelAngles,
+      tickHash: p.tickHash, tick0Hash: p.tick0Hash, packetHash: p.packetHash,
       matrixChecksum: p.matrixChecksum, movedScreen: p.movedScreen, camera: p.camera,
       gpu: p.adapter, spawn: p.spawn, info: p.engineInfo,
       tickHashes: p.tickHashes,
@@ -218,6 +220,7 @@ async function capture(car, label, tick) {
         tick: update.tick,
         hash: update.hash,
         matrix: update.matrices[0].world,
+        matrices: update.matrices,
         camera: { position: update.camera.position, view: update.camera.view, orbit: update.camera.orbit }
       } : null,
       canvas: { width: canvas.width, height: canvas.height }
@@ -338,6 +341,20 @@ for (const car of cars) {
           entry.probe.movedScreen.x > 0 && entry.probe.movedScreen.x < VIEWPORT.width &&
           entry.probe.movedScreen.y > 0 && entry.probe.movedScreen.y < VIEWPORT.height,
           JSON.stringify(entry.probe.movedScreen));
+    check(`${car.slug}/${entry.label}: the car is drawn as 29 manifest parts / 80 draws`,
+          entry.probe.parts === 29 && entry.probe.carDraws === 80,
+          entry.probe.parts + ' parts / ' + entry.probe.carDraws + ' draws');
+    check(`${car.slug}/${entry.label}: the packet carries one body and eight wheel nodes`,
+          entry.probe.packetNodes === 9 && entry.probe.wheelNodes === 8 &&
+          entry.probe.render?.matrices?.length === 9,
+          entry.probe.packetNodes + ' nodes / ' + entry.probe.wheelNodes + ' wheel / ' +
+          (entry.probe.render?.matrices?.length ?? 0) + ' matrices');
+    const wheelAngleValues = Object.values(entry.probe.wheelAngles ?? {});
+    const wheelAngleMax = wheelAngleValues.length ? Math.max(...wheelAngleValues.map((value) => Math.abs(value))) : NaN;
+    check(`${car.slug}/${entry.label}: the browser wheel spin angle comes from the physics state`,
+          wheelAngleValues.length === 4 && wheelAngleValues.every(Number.isFinite) &&
+          (tick === 0 ? wheelAngleMax < 1e-6 : wheelAngleMax > 1),
+          'max |angle| ' + wheelAngleMax.toFixed(3) + ' rad at tick ' + tick);
 
     entry.comparison = {
       packetHashExact: render?.hash === tickHash,
@@ -369,6 +386,11 @@ for (const car of cars) {
   check(`${car.slug}: geometry uploads do not grow between ticks`,
         new Set(carRuns.map((entry) => entry.probe.geometryUploads)).size === 1,
         carRuns.map((entry) => entry.probe.geometryUploads).join(','));
+  const wheelAngleMax = (entry) => Math.max(...Object.values(entry.probe.wheelAngles ?? { frontleft: 0 })
+    .map((value) => Math.abs(value)));
+  check(`${car.slug}: the wheel spin angle grows with the scripted drive`,
+        wheelAngleMax(carRuns[carRuns.length - 1]) > wheelAngleMax(carRuns[0]) + 1,
+        wheelAngleMax(carRuns[0]).toFixed(2) + ' -> ' + wheelAngleMax(carRuns[carRuns.length - 1]).toFixed(2) + ' rad');
 
   // The default car's captures keep their historical file names.
   if (car.slug === defaultSlug) {
@@ -479,6 +501,11 @@ console.log(JSON.stringify({
     stateHash: entry.probe.tickHashes[entry.tick]?.stateHash ?? null,
     packetHashExact: hashExactByKey.get(car.name + '|' + entry.label),
     matrixChecksum: entry.probe.matrixChecksum,
+    parts: entry.probe.parts,
+    carDraws: entry.probe.carDraws,
+    packetNodes: entry.probe.packetNodes,
+    wheelNodes: entry.probe.wheelNodes,
+    wheelAngleMax: Math.max(...Object.values(entry.probe.wheelAngles ?? { frontleft: 0 }).map((value) => Math.abs(value))),
     frames: entry.probe.frames,
     ticksExecuted: entry.probe.ticksExecuted,
     geometryUploads: entry.probe.geometryUploads,
