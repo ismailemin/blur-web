@@ -611,6 +611,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Tek section: **g56-n289** (chunk 121/71); 8 draw / 2.817 index / 939 üçgen; genişlik 16,1–24,2 m; visual–collision −0,000921…+0,000929 m.
 - 8.715 istasyon testi: 0 eksik collision, 0 eksik draw, 0 tolerans dışı; bağımsız native reader ile 24/24 PASS. Yeni upload gerekmiyor. Kanıt: `_work/drivable-path/visual-coverage.png`, `docs/work/analysis/drivable-path.md` §9.
 
+## 5 Kasım 2026 — araç materyalleri
+
+- 5 araç için 491 draw'dan **224'ü** statik albedo + UV0 ile eşleşti; 40 doku decode edildi (18.178.048 B RGBA); 267 runtime-only (45 paint, 66 light blend, 156 no-albedo).
+- 40/40 doku `texture_inspect --raw` ile birebir; 491/491 draw C++ parser ile uyumlu; 3 build × 126 dosya byte-identical.
+- Gövde henüz diagnostic renkli; doku entegrasyonu sıradaki. Kanıt: `docs/work/analysis/car-materials.md`, `_work/car-materials/roster/`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

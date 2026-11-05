@@ -313,6 +313,12 @@ olmadığı için diagnostic, 2 runtime-only. `verify_e1_drive` **522/522**;
 genişlik). Yeni section/upload gerekmiyor. Sıradaki: 310 m sprint entegrasyonu.
 Kanıt: `docs/work/analysis/drivable-path.md` §9.
 
+**Araç materyalleri (P52):** 5 araç için 491 draw'dan **224'ü** statik albedo +
+UV0 ile eşleşti; **40 doku** decode edildi (18.178.048 B RGBA); 40/40
+asset-reader ile birebir; 267 draw runtime-only (45 paint, 66 light blend,
+156 no-albedo). Henüz sürüş packet'ine bağlanmadı (gövde diagnostic).
+Kanıt: `docs/work/analysis/car-materials.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

@@ -134,20 +134,19 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-drawlist-57.md`,
   `T-007-drawlist-56.md`, `T-007-engine-textures.md`.
 
-### E1i — Teker/kompozit görsel (P26)  ✅ (manifest)
-- Corvette modelinden 29 parça / 80 draw: 76 kanıtlı, 4 yan-belirsiz.
-- 4 teker grubu, `+X` dönüş ekseni; lastik köşe kanıtı tread+sidewall
-  birleşimi (0.000343–0.000648 m); kaliper sabit (`VehicleActor.cpp:5198`).
-- Headless Edge: console 0, 2 geometri upload, 0→0.9 rad arası 7.149 piksel
-  farkı; ekran görüntüsü var.
-- Kalan: manifest’i E1 drive packet’ine bağlamak; süspansiyon/steer/camber
-  matrisleri yok.
-- **Entegre (P28):** drive packet’i 29 parça/80 draw ve 9 node (1 gövde + 4 spin
-  + 4 statik kaliper) kullanıyor; teker açısı fizikten entegre ediliyor (tick
-  300'de 148,6 rad); `verify_e1_drive` **202/202**; console 0.
+### E1i — Araç parçaları/görselleri (P26/P28/P29/P52)  ✅
+- Gövde/teker manifoldları 5 araç için kanıtlı; P28/P29 ile gerçek gövde ve
+  dönen tekerler çiziliyor (9 node: 1 gövde + 4 spin + 4 statik kaliper).
+- Corvette parça manifesti: 29 parça / 80 draw, 76 kanıtlı, 4 yan-belirsiz;
+  4 teker grubu `+X` ekseni, kaliper sabit (`VehicleActor.cpp:5198`).
+- **Araç materyalleri (P52):** 491 draw'dan 224'ü statik albedo + UV0 ile
+  eşleşti; 40 doku decode edildi (18,2 MB RGBA); 40/40 asset-reader ile
+  birebir. 267 draw runtime-only (45 paint, 66 light blend, 156 no-albedo) —
+  açıkça etiketli.
+- Gövde henüz diagnostic renkli; doku entegrasyonu sıradaki.
 - Kanıt: `docs/work/verification/T-007-car-parts.md`,
-  `docs/work/verification/T-007-car-parts-integration.md`,
-  `docs/work/analysis/e1-car-parts.md`.
+  `T-007-car-parts-integration.md`, `T-007-per-car-meshes.md`,
+  `docs/work/analysis/car-materials.md`.
 
 ## Pipeline (bağımlılık sırası)
 

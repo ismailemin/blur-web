@@ -44,6 +44,7 @@ sürüşü deneyebileceği PoC.
 | 540 m sprint | P43/P46 | ⚠️ parkur değil; 29 m oynanabilir, 540 m `?survey=1` |
 | Gerçek sürülebilir yol | P48 | ✅ 310,395 m (entegrasyon sırada) |
 | 310 m görsel kapsama | P51 | ✅ %100 (g56-n289, 8 draw) |
+| Araç materyalleri | P52 | ✅ 224/491 statik (40 doku) |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |
 | Track dokuları | P47 | ✅ (297/297 statik) |
