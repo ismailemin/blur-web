@@ -877,6 +877,48 @@ bool textureRefLess( const TextureRef& a, const TextureRef& b )
 	return a.index < b.index;
 }
 
+// --- P47: track-section static texture sources -----------------------------
+//
+// The six P44 sections name their own static albedo sources. A cheap prepass
+// over the same six node/geometry pairs collects those `block:index` pairs
+// before the real section pass, so the P34 decode path can be run once more for
+// the sources the 102-source River set did not cover. The prepass emits no
+// packet/UV/binding row and updates no counter; it only walks the already
+// parsed material probes. The track set is bounded like the P34 set.
+TextureRef g_trackTextureRefs[ kMaxTextureRefs ];
+int g_trackTextureRefCount = 0;
+int g_trackTextureRefOverflow = 0;
+bool g_sectionPrepass = false;
+
+void resetTrackTextureRefs()
+{
+	g_trackTextureRefCount = 0;
+	g_trackTextureRefOverflow = 0;
+}
+
+void addTrackTextureRef( S32 block, int index )
+{
+	if ( block < 0 || index < 0 )
+		return;
+
+	for ( int i = 0; i < g_trackTextureRefCount; i++ )
+	{
+		if ( g_trackTextureRefs[ i ].block == block &&
+			g_trackTextureRefs[ i ].index == index )
+			return;
+	}
+
+	if ( g_trackTextureRefCount >= kMaxTextureRefs )
+	{
+		++g_trackTextureRefOverflow;
+		return;
+	}
+
+	g_trackTextureRefs[ g_trackTextureRefCount ].block = block;
+	g_trackTextureRefs[ g_trackTextureRefCount ].index = index;
+	++g_trackTextureRefCount;
+}
+
 // --- P45: decoded static texture registry ----------------------------------
 //
 // The P34 texture phase registers every texture it decoded. The six track
@@ -887,6 +929,15 @@ bool textureRefLess( const TextureRef& a, const TextureRef& b )
 // and is *not* decoded here, so the P34 102-source set, its aggregate hash and
 // its checks stay unchanged. No sampler or GPU object is involved either way.
 const int kMaxDecodedTextures = 256;
+
+// Which decode set registered the record: the P34 River draw-list set or the
+// P47 track-section extension. The binding row prints it so the two groups stay
+// distinguishable even though both are verified by the same comparison.
+enum
+{
+	kDecodedTextureP34 = 1,
+	kDecodedTextureTrack = 2
+};
 
 struct DecodedTextureRecord
 {
@@ -901,7 +952,17 @@ struct DecodedTextureRecord
 	U64 rgbaHash;
 	S32 chunk;
 	int item;
+	int sourceSet;
 };
+
+const char* decodedTextureSetName( const DecodedTextureRecord& record )
+{
+	if ( record.sourceSet == kDecodedTextureP34 )
+		return "p34";
+	if ( record.sourceSet == kDecodedTextureTrack )
+		return "track";
+	return "none";
+}
 
 DecodedTextureRecord g_decodedTextures[ kMaxDecodedTextures ];
 int g_decodedTextureCount = 0;
@@ -2099,6 +2160,304 @@ void printTextureHex( const U8* data, size_t bytes )
 	printf( "%s", &text[ 0 ] );
 }
 
+// --- P34/P47: descriptor + texel decode of one texture-ref set --------------
+//
+// Resolve every ref through the engine ChunkInfo table, walk the owning chunk
+// with the engine LodReader path to the item's own stream start/end, read the
+// committed PC resource-texture layout from those exact bytes, enforce the
+// exact declared mip chain, and decode BC1/BC2/BC3 mip0 to CPU RGBA. Every
+// successful decode is registered with its verified identity. `skipRegistered`
+// lets the P47 track pass reuse the P34 records without decoding the same
+// `block:index` twice; those refs are counted as `alreadyRegistered`.
+struct TextureDecodeTotals
+{
+	int refs;
+	int decoded;
+	int alreadyRegistered;
+	int unsupported;
+	int overflow;
+	unsigned long long payloadBytes;
+	unsigned long long rgbaBytes;
+	uint64_t aggregate;
+};
+
+void decodeTextureRefSet( const TextureRef* refs, int refCount, int refOverflow,
+	const RenderingData::Target::StreamData& table,
+	RenderingData::Target::StreamManager& manager, Sys::I_File* file,
+	RenderingData::Target::Scene* scene, const char* recordTag,
+	const char* bytesTag, const char* unsupportedTag, int sourceSet,
+	bool skipRegistered, TextureDecodeTotals* totals )
+{
+	memset( totals, 0, sizeof( *totals ) );
+	totals->refs = refCount;
+	totals->overflow = refOverflow;
+	totals->aggregate = fnv_begin();
+
+	struct TexturePlan
+	{
+		int refIndex;
+		ChunkRange range;
+		bool located;
+		bool processed;
+	};
+
+	static TexturePlan plans[ kMaxTextureRefs ];
+
+	struct TextureMixRow
+	{
+		S32 block;
+		int index;
+		U32 textureHash;
+		U32 width;
+		U32 height;
+		U32 levels;
+		U32 format;
+		int blobSize;
+		U64 rgbaHash;
+	};
+
+	static TextureMixRow mixRows[ kMaxTextureRefs ];
+	int mixCount = 0;
+
+	for ( int i = 0; i < refCount; i++ )
+	{
+		plans[ i ].refIndex = i;
+		plans[ i ].processed = false;
+		plans[ i ].located = false;
+		memset( &plans[ i ].range, 0, sizeof( plans[ i ].range ) );
+
+		if ( skipRegistered && findDecodedTexture( refs[ i ].block,
+				refs[ i ].index ) != 0 )
+		{
+			++totals->alreadyRegistered;
+			plans[ i ].processed = true;
+			continue;
+		}
+
+		plans[ i ].located = findChunkItem( table, refs[ i ].block, 0,
+			&plans[ i ].range );
+
+		if ( !plans[ i ].located )
+		{
+			printf( "%s block=%d index=%d "
+				"reason=textureBlockNotInStream\n", unsupportedTag,
+				(int)refs[ i ].block, refs[ i ].index );
+			++totals->unsupported;
+			plans[ i ].processed = true;
+		}
+	}
+
+	for ( int i = 0; i < refCount; i++ )
+	{
+		if ( plans[ i ].processed )
+			continue;
+
+		const S32 chunk = plans[ i ].range.chunk;
+		int maxItem = plans[ i ].range.item;
+
+		for ( int j = i + 1; j < refCount; j++ )
+		{
+			if ( !plans[ j ].processed && plans[ j ].located &&
+				plans[ j ].range.chunk == chunk )
+				maxItem = std::max( maxItem, (int)plans[ j ].range.item );
+		}
+
+		ChunkRange range = plans[ i ].range;
+		std::vector<U8> bytes;
+		ItemBuffers parsed[ 128 ];
+		int parsedCount = 0;
+
+		WebSpike::ResetChunkRecords();
+
+		if ( !loadChunkCopy( manager, file, range, bytes ) ||
+			!parseChunkUpToItem( bytes, scene, range, maxItem, parsed,
+				&parsedCount ) )
+		{
+			for ( int j = i; j < refCount; j++ )
+			{
+				if ( plans[ j ].processed || !plans[ j ].located ||
+					plans[ j ].range.chunk != chunk )
+					continue;
+
+				const TextureRef& ref = refs[ plans[ j ].refIndex ];
+				printf( "%s block=%d index=%d chunk=%d "
+					"reason=textureChunkWalkFailed\n", unsupportedTag,
+					(int)ref.block, ref.index, (int)chunk );
+				++totals->unsupported;
+				plans[ j ].processed = true;
+			}
+			continue;
+		}
+
+		for ( int j = i; j < refCount; j++ )
+		{
+			if ( plans[ j ].processed || !plans[ j ].located ||
+				plans[ j ].range.chunk != chunk )
+				continue;
+
+			plans[ j ].processed = true;
+
+			const TextureRef& ref = refs[ plans[ j ].refIndex ];
+			const ItemBuffers* item = 0;
+
+			for ( int k = 0; k < parsedCount; k++ )
+			{
+				if ( parsed[ k ].block == ref.block )
+				{
+					item = &parsed[ k ];
+					break;
+				}
+			}
+
+			if ( item == 0 || item->streamStart >= item->streamEnd )
+			{
+				printf( "%s block=%d index=%d chunk=%d "
+					"reason=textureItemNotRecorded\n", unsupportedTag,
+					(int)ref.block, ref.index, (int)chunk );
+				++totals->unsupported;
+				continue;
+			}
+
+			std::vector<RawTexture> textures;
+			const char* parseReason = "none";
+
+			if ( !parseTextureItem( bytes, item->streamStart, item->streamEnd,
+					&textures, &parseReason ) )
+			{
+				printf( "%s block=%d index=%d chunk=%d item=%d reason=%s\n",
+					unsupportedTag, (int)ref.block, ref.index, (int)chunk,
+					(int)( item - parsed ), parseReason );
+				++totals->unsupported;
+				continue;
+			}
+
+			if ( ref.index < 0 || ref.index >= (int)textures.size() )
+			{
+				printf( "%s block=%d index=%d chunk=%d "
+					"reason=textureIndexOutOfRange count=%d\n",
+					unsupportedTag, (int)ref.block, ref.index, (int)chunk,
+					(int)textures.size() );
+				++totals->unsupported;
+				continue;
+			}
+
+			const RawTexture& texture = textures[ ref.index ];
+			std::vector<U8> rgba;
+			const char* decodeReason = "none";
+
+			if ( !decodeTextureMip0( texture, rgba, &decodeReason ) )
+			{
+				printf( "%s block=%d index=%d chunk=%d reason=%s\n",
+					unsupportedTag, (int)ref.block, ref.index, (int)chunk,
+					decodeReason );
+				++totals->unsupported;
+				continue;
+			}
+
+			std::vector<U8> blob;
+			blob.reserve( texture.descriptor.size() + texture.texels.size() );
+			blob.insert( blob.end(), texture.descriptor.begin(),
+				texture.descriptor.end() );
+			blob.insert( blob.end(), texture.texels.begin(),
+				texture.texels.end() );
+
+			uint64_t blobHash = fnv_begin();
+			fnv_bytes( blobHash, &blob[ 0 ], blob.size() );
+			uint64_t rgbaHash = fnv_begin();
+			fnv_bytes( rgbaHash, &rgba[ 0 ], rgba.size() );
+
+			printf( "%s block=%d index=%d name=%s "
+				"textureHash=%u width=%u height=%u depth=%u levels=%u "
+				"format=%u usage=%u type=%u descriptorBytes=%d "
+				"payloadBytes=%d rgbaBytes=%d blobHash=0x%016llx "
+				"rgbaHash=0x%016llx chunk=%d item=%d\n",
+				recordTag, (int)ref.block, ref.index, texture.name,
+				(unsigned)texture.textureHash, (unsigned)texture.width,
+				(unsigned)texture.height, (unsigned)texture.depth,
+				(unsigned)texture.levels, (unsigned)texture.format,
+				(unsigned)texture.usage, (unsigned)texture.type,
+				(int)texture.descriptor.size(), (int)texture.texels.size(),
+				(int)rgba.size(), (unsigned long long)blobHash,
+				(unsigned long long)rgbaHash, (int)chunk,
+				(int)( item - parsed ) );
+
+			if ( g_decodedTextureCount < kMaxDecodedTextures )
+			{
+				DecodedTextureRecord& entry =
+					g_decodedTextures[ g_decodedTextureCount++ ];
+				memset( &entry, 0, sizeof( entry ) );
+				entry.block = ref.block;
+				entry.index = ref.index;
+				snprintf( entry.name, sizeof( entry.name ), "%s",
+					texture.name );
+				entry.textureHash = texture.textureHash;
+				entry.width = texture.width;
+				entry.height = texture.height;
+				entry.levels = texture.levels;
+				entry.format = texture.format;
+				entry.rgbaHash = rgbaHash;
+				entry.chunk = chunk;
+				entry.item = (int)( item - parsed );
+				entry.sourceSet = sourceSet;
+			}
+			else
+				++g_decodedTextureOverflow;
+
+			printf( "%s block=%d index=%d bytes=%d hex=", bytesTag,
+				(int)ref.block, ref.index, (int)blob.size() );
+			printTextureHex( &blob[ 0 ], blob.size() );
+			printf( "\n" );
+
+			TextureMixRow& row = mixRows[ mixCount++ ];
+			row.block = ref.block;
+			row.index = ref.index;
+			row.textureHash = texture.textureHash;
+			row.width = texture.width;
+			row.height = texture.height;
+			row.levels = texture.levels;
+			row.format = texture.format;
+			row.blobSize = (int)blob.size();
+			row.rgbaHash = rgbaHash;
+
+			totals->payloadBytes += blob.size();
+			totals->rgbaBytes += rgba.size();
+			++totals->decoded;
+		}
+	}
+
+	// Aggregate in the same canonical (block,index) order both sides use.
+	for ( int i = 0; i < mixCount; i++ )
+	{
+		int best = i;
+
+		for ( int j = i + 1; j < mixCount; j++ )
+		{
+			if ( mixRows[ j ].block < mixRows[ best ].block ||
+				( mixRows[ j ].block == mixRows[ best ].block &&
+					mixRows[ j ].index < mixRows[ best ].index ) )
+				best = j;
+		}
+
+		if ( best != i )
+		{
+			TextureMixRow swap = mixRows[ i ];
+			mixRows[ i ] = mixRows[ best ];
+			mixRows[ best ] = swap;
+		}
+
+		fnv_u32( totals->aggregate, (U32)mixRows[ i ].block );
+		fnv_u32( totals->aggregate, (U32)mixRows[ i ].index );
+		fnv_u32( totals->aggregate, mixRows[ i ].textureHash );
+		fnv_u32( totals->aggregate, mixRows[ i ].width );
+		fnv_u32( totals->aggregate, mixRows[ i ].height );
+		fnv_u32( totals->aggregate, mixRows[ i ].levels );
+		fnv_u32( totals->aggregate, mixRows[ i ].format );
+		fnv_u32( totals->aggregate, (U32)mixRows[ i ].blobSize );
+		fnv_u32( totals->aggregate, (U32)mixRows[ i ].rgbaHash );
+		fnv_u32( totals->aggregate, (U32)( mixRows[ i ].rgbaHash >> 32 ) );
+	}
+}
+
 // --- P45: per-draw UV0 and static albedo binding ---------------------------
 //
 // UV0 is the declaration's TEXCOORD element (usage 5, index 0), read through
@@ -2545,6 +2904,7 @@ void emitSectionUv0( const RenderingData::Target::RenderListNode& list,
 
 	const DecodedTextureRecord* decoded = 0;
 	const char* textureState = "runtimeOnly";
+	const char* textureSet = "none";
 	const char* bindReason = "runtimeOnlyAlbedoParameter";
 	S32 textureChunk = -1;
 	int textureItem = -1;
@@ -2557,6 +2917,7 @@ void emitSectionUv0( const RenderingData::Target::RenderListNode& list,
 		if ( decoded != 0 )
 		{
 			textureState = "decoded";
+			textureSet = decodedTextureSetName( *decoded );
 			bindReason = "none";
 			++totals->decodedBindings;
 		}
@@ -2603,8 +2964,9 @@ void emitSectionUv0( const RenderingData::Target::RenderListNode& list,
 		"uvvbcount=%d uvfirst=%d uvcount=%d uvarena=%d uvlastbyte=%d "
 		"uvmin=%.9g,%.9g uvmax=%.9g,%.9g uvhash=0x%016llx "
 		"albedo=%d:%d albedorow=%d albedoindex=%d material=%s "
-		"texstate=%s texture=%s texturehash=%u format=%u width=%u height=%u "
-		"levels=%u rgba=0x%016llx texturechunk=%d textureitem=%d bindreason=%s\n",
+		"texstate=%s texset=%s texture=%s texturehash=%u format=%u width=%u "
+		"height=%u levels=%u rgba=0x%016llx texturechunk=%d textureitem=%d "
+		"bindreason=%s\n",
 		g_sectionKey, drawIndex, nodeIndex, primitiveIndex, record.streamOffset,
 		packetRecord.vertexOffset, packetRecord.vertexCount, record.declaration,
 		uvOk ? 0 : 1, uvReason, uv.stream, uv.elementIndex, uv.elementOffset,
@@ -2617,7 +2979,8 @@ void emitSectionUv0( const RenderingData::Target::RenderListNode& list,
 		(int)packetRecord.albedoSourceIndex, packetRecord.materialRow,
 		packetRecord.albedoIndex,
 		packetRecord.materialId[ 0 ] ? packetRecord.materialId : "null",
-		textureState, decoded != 0 ? decoded->name : "null",
+		textureState, textureSet,
+		decoded != 0 ? decoded->name : "null",
 		decoded != 0 ? decoded->textureHash : 0u,
 		decoded != 0 ? decoded->format : 0u,
 		decoded != 0 ? decoded->width : 0u,
@@ -2935,34 +3298,43 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 		}
 	}
 
-	printf( "%s draw %d chunk=%d nodeIndex=%d primitive=%d source=%d "
-		"bound=%d reason=%s declaration=%d topology=%d lod=0 lodCount=%d "
-		"effect=%d vb=%d:%d ib=%d:%d "
-		"vbSource=%d ibSource=%d "
-		"firstIndex=%d indexCount=%d triangles=%d lodOffset=%d lodIndices=%d "
-		"minIndex=%d nVertices=%d baseMaterial=%d:%d instanceMaterial=%d:%d "
-		"flags=0x%08x blend=%d,%d,%d,%d,%d,%d,%d blendEnable=%d ",
-		prefix, drawIndex, (int)chunkIndex, nodeIndex, primitiveIndex, record.streamOffset,
-		bound ? 1 : 0, reason ? reason : "none", record.declaration,
-		record.topology, record.lodCount, record.effect, (int)vbBlock,
-		(int)vbIndex, (int)ibBlock,
-		(int)ibIndex, vertexSource, record.indexBuffer,
-		firstIndex, indexCount, triangleCount,
-		lod ? lod->offset : -1, lod ? lod->indices : -1, lod ? lod->minIndex : -1,
-		lod ? lod->vertices : -1, record.baseMaterialIndex, record.baseMaterialList,
-		record.instanceMaterialIndex, record.instanceMaterialList,
-		(unsigned)record.flags, record.blendSrc, record.blendDest, record.blendOp,
-		record.alphaRef, record.alphaToMask, record.alphaTest, record.blendEnable,
-		record.cullMode );
+	if ( !g_sectionPrepass )
+	{
+		printf( "%s draw %d chunk=%d nodeIndex=%d primitive=%d source=%d "
+			"bound=%d reason=%s declaration=%d topology=%d lod=0 lodCount=%d "
+			"effect=%d vb=%d:%d ib=%d:%d "
+			"vbSource=%d ibSource=%d "
+			"firstIndex=%d indexCount=%d triangles=%d lodOffset=%d lodIndices=%d "
+			"minIndex=%d nVertices=%d baseMaterial=%d:%d instanceMaterial=%d:%d "
+			"flags=0x%08x blend=%d,%d,%d,%d,%d,%d,%d blendEnable=%d ",
+			prefix, drawIndex, (int)chunkIndex, nodeIndex, primitiveIndex,
+			record.streamOffset,
+			bound ? 1 : 0, reason ? reason : "none", record.declaration,
+			record.topology, record.lodCount, record.effect, (int)vbBlock,
+			(int)vbIndex, (int)ibBlock,
+			(int)ibIndex, vertexSource, record.indexBuffer,
+			firstIndex, indexCount, triangleCount,
+			lod ? lod->offset : -1, lod ? lod->indices : -1,
+			lod ? lod->minIndex : -1,
+			lod ? lod->vertices : -1, record.baseMaterialIndex,
+			record.baseMaterialList,
+			record.instanceMaterialIndex, record.instanceMaterialList,
+			(unsigned)record.flags, record.blendSrc, record.blendDest,
+			record.blendOp,
+			record.alphaRef, record.alphaToMask, record.alphaTest,
+			record.blendEnable,
+			record.cullMode );
 
-	if ( pBounds != 0 )
-		printf( "bounds=ok boundsMin=%.9g,%.9g,%.9g boundsMax=%.9g,%.9g,%.9g ",
-			pBounds->aabbMin.x, pBounds->aabbMin.y, pBounds->aabbMin.z,
-			pBounds->aabbMax.x, pBounds->aabbMax.y, pBounds->aabbMax.z );
-	else
-		printf( "bounds=none " );
+		if ( pBounds != 0 )
+			printf( "bounds=ok boundsMin=%.9g,%.9g,%.9g "
+				"boundsMax=%.9g,%.9g,%.9g ",
+				pBounds->aabbMin.x, pBounds->aabbMin.y, pBounds->aabbMin.z,
+				pBounds->aabbMax.x, pBounds->aabbMax.y, pBounds->aabbMax.z );
+		else
+			printf( "bounds=none " );
 
-	printf( "world=null worldReason=instanceTransformNotImported\n" );
+		printf( "world=null worldReason=instanceTransformNotImported\n" );
+	}
 
 	// Deterministic draw-list hash over the printed numeric fields.
 	fnv_u32( totals->hash, (U32)drawIndex );
@@ -3032,6 +3404,21 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 
 	resolveAlbedo( list, probe, &packetRecord );
 
+	// P47: the section prepass collects every static albedo source of the six
+	// track sections before they are emitted for real. It computes no UV, emits
+	// no packet/UV/binding row and updates no counter; the material probe above
+	// is the same one the real pass uses, so the collected set is not a second
+	// opinion.
+	if ( g_sectionKey != 0 && g_sectionPrepass )
+	{
+		if ( bound && boundIb != 0 && lod != 0 &&
+			packetRecord.albedoBlock >= 0 &&
+			packetRecord.albedoSourceIndex >= 0 )
+			addTrackTextureRef( packetRecord.albedoBlock,
+				packetRecord.albedoSourceIndex );
+		return;
+	}
+
 	// P45: only the six track sections emit the per-draw UV0 and static
 	// albedo-binding record. The two P34 lists keep their exact output.
 	if ( g_sectionKey != 0 && bound && boundIb != 0 && lod != 0 )
@@ -3095,8 +3482,9 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 		// same test GetPointer performs.
 		if ( !node->IsNode( RenderingData::NODE_TYPE_RENDER_LIST_PLATFORM ) )
 		{
-			printf( "webfiledraw node %d type=%d renderlist=0\n", n,
-				(int)node->GetNodeType() );
+			if ( !g_sectionPrepass )
+				printf( "webfiledraw node %d type=%d renderlist=0\n", n,
+					(int)node->GetNodeType() );
 			continue;
 		}
 
@@ -3112,10 +3500,12 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 		totals->instances += numInstances;
 		totals->basePrimitives += numBasePrimitives;
 
-		printf( "%s list node=%d primitives=%d instances=%d "
-			"baseprimitives=%d instancebatches=%d dynamiclists=%d\n", prefix, n,
-			numPrimitives, numInstances, numBasePrimitives,
-			list->GetNumInstanceBatches(), list->GetNumDynamicMaterialLists() );
+		if ( !g_sectionPrepass )
+			printf( "%s list node=%d primitives=%d instances=%d "
+				"baseprimitives=%d instancebatches=%d dynamiclists=%d\n",
+				prefix, n, numPrimitives, numInstances, numBasePrimitives,
+				list->GetNumInstanceBatches(),
+				list->GetNumDynamicMaterialLists() );
 
 		MaterialInventory inventory;
 		inventoryMaterials( *list, &inventory );
@@ -3124,11 +3514,13 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 		packet->materialAlbedoRows += inventory.albedoRows;
 		packet->materialWorldRows += inventory.worldRows;
 		packet->materialType8Rows += inventory.type8Rows;
-		printf( "%s material node=%d chunk=%d types=%d rows=%d "
-			"worldRows=%d albedoRows=%d type8Rows=%d runtimeRows=%d externalRows=%d\n",
-			prefix, n, (int)range.chunk, inventory.types, inventory.rows,
-			inventory.worldRows, inventory.albedoRows, inventory.type8Rows,
-			inventory.runtimeRows, inventory.externalRows );
+		if ( !g_sectionPrepass )
+			printf( "%s material node=%d chunk=%d types=%d rows=%d "
+				"worldRows=%d albedoRows=%d type8Rows=%d runtimeRows=%d "
+				"externalRows=%d\n",
+				prefix, n, (int)range.chunk, inventory.types, inventory.rows,
+				inventory.worldRows, inventory.albedoRows, inventory.type8Rows,
+				inventory.runtimeRows, inventory.externalRows );
 
 		for ( int i = 0; i < numPrimitives; i++ )
 		{
@@ -3137,15 +3529,16 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 			if ( recordIndex >= draws.primitives )
 			{
 				++totals->unbound;
-				printf( "%s draw %d chunk=%d nodeIndex=%d primitive=%d "
-					"source=-1 bound=0 reason=primitiveRecordMissing "
-					"declaration=-1 topology=-1 effect=-1 vb=-1:-1 ib=-1:-1 "
-					"firstIndex=0 indexCount=0 triangles=0 lodOffset=-1 "
-					"lodIndices=-1 minIndex=-1 nVertices=-1 baseMaterial=-1:-1 "
-					"instanceMaterial=-1:-1 flags=0x00000000 "
-					"blend=-1,-1,-1,-1,-1,-1,-1 bounds=none world=null "
-					"worldReason=instanceTransformNotImported\n",
-					drawIndex, (int)range.chunk, n, i );
+				if ( !g_sectionPrepass )
+					printf( "%s draw %d chunk=%d nodeIndex=%d primitive=%d "
+						"source=-1 bound=0 reason=primitiveRecordMissing "
+						"declaration=-1 topology=-1 effect=-1 vb=-1:-1 ib=-1:-1 "
+						"firstIndex=0 indexCount=0 triangles=0 lodOffset=-1 "
+						"lodIndices=-1 minIndex=-1 nVertices=-1 baseMaterial=-1:-1 "
+						"instanceMaterial=-1:-1 flags=0x00000000 "
+						"blend=-1,-1,-1,-1,-1,-1,-1 bounds=none world=null "
+						"worldReason=instanceTransformNotImported\n",
+						drawIndex, (int)range.chunk, n, i );
 				++drawIndex;
 				continue;
 			}
@@ -4635,283 +5028,32 @@ int main( int argc, char** argv )
 
 		WebSpike::ResetChunkRecords();
 
-		struct TexturePlan
-		{
-			int refIndex;
-			ChunkRange range;
-			bool located;
-			bool processed;
-		};
-
-		static TexturePlan texturePlans[ kMaxTextureRefs ];
-		struct TextureMixRow
-		{
-			S32 block;
-			int index;
-			U32 textureHash;
-			U32 width;
-			U32 height;
-			U32 levels;
-			U32 format;
-			int blobSize;
-			U64 rgbaHash;
-		};
-		static TextureMixRow mixRows[ kMaxTextureRefs ];
-		int mixCount = 0;
-		int unsupportedTextures = 0;
-		int decodedTextures = 0;
-		unsigned long long texturePayloadBytes = 0;
-		unsigned long long textureRgbaBytes = 0;
-		uint64_t textureAggregate = fnv_begin();
-
-		for ( int i = 0; i < g_textureRefCount; i++ )
-		{
-			texturePlans[ i ].refIndex = i;
-			texturePlans[ i ].processed = false;
-			memset( &texturePlans[ i ].range, 0, sizeof( texturePlans[ i ].range ) );
-			texturePlans[ i ].located = findChunkItem( scene->GetStreamData(),
-				g_textureRefs[ i ].block, 0, &texturePlans[ i ].range );
-
-			if ( !texturePlans[ i ].located )
-			{
-				printf( "webfiledraw texture_unsupported block=%d index=%d "
-					"reason=textureBlockNotInStream\n",
-					(int)g_textureRefs[ i ].block, g_textureRefs[ i ].index );
-				++unsupportedTextures;
-				texturePlans[ i ].processed = true;
-			}
-		}
-
-		for ( int i = 0; i < g_textureRefCount; i++ )
-		{
-			if ( texturePlans[ i ].processed )
-				continue;
-
-			const S32 chunk = texturePlans[ i ].range.chunk;
-			int maxItem = texturePlans[ i ].range.item;
-
-			for ( int j = i + 1; j < g_textureRefCount; j++ )
-			{
-				if ( !texturePlans[ j ].processed && texturePlans[ j ].located &&
-					texturePlans[ j ].range.chunk == chunk )
-					maxItem = std::max( maxItem, (int)texturePlans[ j ].range.item );
-			}
-
-			ChunkRange range = texturePlans[ i ].range;
-			std::vector<U8> bytes;
-			ItemBuffers parsed[ 128 ];
-			int parsedCount = 0;
-
-			WebSpike::ResetChunkRecords();
-
-			if ( !loadChunkCopy( manager, stream, range, bytes ) ||
-				!parseChunkUpToItem( bytes, scene, range, maxItem, parsed,
-					&parsedCount ) )
-			{
-				for ( int j = i; j < g_textureRefCount; j++ )
-				{
-					if ( texturePlans[ j ].processed || !texturePlans[ j ].located ||
-						texturePlans[ j ].range.chunk != chunk )
-						continue;
-
-					const TextureRef& ref = g_textureRefs[ texturePlans[ j ].refIndex ];
-					printf( "webfiledraw texture_unsupported block=%d index=%d "
-						"chunk=%d reason=textureChunkWalkFailed\n",
-						(int)ref.block, ref.index, (int)chunk );
-					++unsupportedTextures;
-					texturePlans[ j ].processed = true;
-				}
-				continue;
-			}
-
-			for ( int j = i; j < g_textureRefCount; j++ )
-			{
-				if ( texturePlans[ j ].processed || !texturePlans[ j ].located ||
-					texturePlans[ j ].range.chunk != chunk )
-					continue;
-
-				texturePlans[ j ].processed = true;
-
-				const TextureRef& ref = g_textureRefs[ texturePlans[ j ].refIndex ];
-				const ItemBuffers* item = 0;
-
-				for ( int k = 0; k < parsedCount; k++ )
-				{
-					if ( parsed[ k ].block == ref.block )
-					{
-						item = &parsed[ k ];
-						break;
-					}
-				}
-
-				if ( item == 0 || item->streamStart >= item->streamEnd )
-				{
-					printf( "webfiledraw texture_unsupported block=%d index=%d "
-						"chunk=%d reason=textureItemNotRecorded\n",
-						(int)ref.block, ref.index, (int)chunk );
-					++unsupportedTextures;
-					continue;
-				}
-
-				std::vector<RawTexture> textures;
-				const char* parseReason = "none";
-
-				if ( !parseTextureItem( bytes, item->streamStart, item->streamEnd,
-						&textures, &parseReason ) )
-				{
-					printf( "webfiledraw texture_unsupported block=%d index=%d "
-						"chunk=%d item=%d reason=%s\n",
-						(int)ref.block, ref.index, (int)chunk,
-						(int)( item - parsed ), parseReason );
-					++unsupportedTextures;
-					continue;
-				}
-
-				if ( ref.index < 0 || ref.index >= (int)textures.size() )
-				{
-					printf( "webfiledraw texture_unsupported block=%d index=%d "
-						"chunk=%d reason=textureIndexOutOfRange count=%d\n",
-						(int)ref.block, ref.index, (int)chunk,
-						(int)textures.size() );
-					++unsupportedTextures;
-					continue;
-				}
-
-				const RawTexture& texture = textures[ ref.index ];
-				std::vector<U8> rgba;
-				const char* decodeReason = "none";
-
-				if ( !decodeTextureMip0( texture, rgba, &decodeReason ) )
-				{
-					printf( "webfiledraw texture_unsupported block=%d index=%d "
-						"chunk=%d reason=%s\n",
-						(int)ref.block, ref.index, (int)chunk, decodeReason );
-					++unsupportedTextures;
-					continue;
-				}
-
-				std::vector<U8> blob;
-				blob.reserve( texture.descriptor.size() + texture.texels.size() );
-				blob.insert( blob.end(), texture.descriptor.begin(),
-					texture.descriptor.end() );
-				blob.insert( blob.end(), texture.texels.begin(),
-					texture.texels.end() );
-
-				uint64_t blobHash = fnv_begin();
-				fnv_bytes( blobHash, &blob[ 0 ], blob.size() );
-				uint64_t rgbaHash = fnv_begin();
-				fnv_bytes( rgbaHash, &rgba[ 0 ], rgba.size() );
-
-				printf( "webfiledraw texture block=%d index=%d name=%s "
-					"textureHash=%u width=%u height=%u depth=%u levels=%u "
-					"format=%u usage=%u type=%u descriptorBytes=%d "
-					"payloadBytes=%d rgbaBytes=%d blobHash=0x%016llx "
-					"rgbaHash=0x%016llx chunk=%d item=%d\n",
-					(int)ref.block, ref.index, texture.name,
-					(unsigned)texture.textureHash, (unsigned)texture.width,
-					(unsigned)texture.height, (unsigned)texture.depth,
-					(unsigned)texture.levels, (unsigned)texture.format,
-					(unsigned)texture.usage, (unsigned)texture.type,
-					(int)texture.descriptor.size(), (int)texture.texels.size(),
-					(int)rgba.size(), (unsigned long long)blobHash,
-					(unsigned long long)rgbaHash, (int)chunk,
-					(int)( item - parsed ) );
-
-				// P45: register this decode for the section albedo binding.
-				// The identity is exactly what the P34 gate above compares, so
-				// a section binding that resolves here is the same verified
-				// texture, not a second decode of the same bytes.
-				if ( g_decodedTextureCount < kMaxDecodedTextures )
-				{
-					DecodedTextureRecord& entry =
-						g_decodedTextures[ g_decodedTextureCount++ ];
-					memset( &entry, 0, sizeof( entry ) );
-					entry.block = ref.block;
-					entry.index = ref.index;
-					snprintf( entry.name, sizeof( entry.name ), "%s",
-						texture.name );
-					entry.textureHash = texture.textureHash;
-					entry.width = texture.width;
-					entry.height = texture.height;
-					entry.levels = texture.levels;
-					entry.format = texture.format;
-					entry.rgbaHash = rgbaHash;
-					entry.chunk = chunk;
-					entry.item = (int)( item - parsed );
-				}
-				else
-					++g_decodedTextureOverflow;
-
-				printf( "webfiledraw texturebytes block=%d index=%d bytes=%d hex=",
-					(int)ref.block, ref.index, (int)blob.size() );
-				printTextureHex( &blob[ 0 ], blob.size() );
-				printf( "\n" );
-
-				TextureMixRow& row = mixRows[ mixCount++ ];
-				row.block = ref.block;
-				row.index = ref.index;
-				row.textureHash = texture.textureHash;
-				row.width = texture.width;
-				row.height = texture.height;
-				row.levels = texture.levels;
-				row.format = texture.format;
-				row.blobSize = (int)blob.size();
-				row.rgbaHash = rgbaHash;
-
-				texturePayloadBytes += blob.size();
-				textureRgbaBytes += rgba.size();
-				++decodedTextures;
-			}
-		}
-
-		// Aggregate in the same canonical (block,index) order both sides use.
-		for ( int i = 0; i < mixCount; i++ )
-		{
-			int best = i;
-
-			for ( int j = i + 1; j < mixCount; j++ )
-			{
-				if ( mixRows[ j ].block < mixRows[ best ].block ||
-					( mixRows[ j ].block == mixRows[ best ].block &&
-						mixRows[ j ].index < mixRows[ best ].index ) )
-					best = j;
-			}
-
-			if ( best != i )
-			{
-				TextureMixRow swap = mixRows[ i ];
-				mixRows[ i ] = mixRows[ best ];
-				mixRows[ best ] = swap;
-			}
-
-			fnv_u32( textureAggregate, (U32)mixRows[ i ].block );
-			fnv_u32( textureAggregate, (U32)mixRows[ i ].index );
-			fnv_u32( textureAggregate, mixRows[ i ].textureHash );
-			fnv_u32( textureAggregate, mixRows[ i ].width );
-			fnv_u32( textureAggregate, mixRows[ i ].height );
-			fnv_u32( textureAggregate, mixRows[ i ].levels );
-			fnv_u32( textureAggregate, mixRows[ i ].format );
-			fnv_u32( textureAggregate, (U32)mixRows[ i ].blobSize );
-			fnv_u32( textureAggregate, (U32)mixRows[ i ].rgbaHash );
-			fnv_u32( textureAggregate, (U32)( mixRows[ i ].rgbaHash >> 32 ) );
-		}
+		TextureDecodeTotals p34Textures;
+		decodeTextureRefSet( g_textureRefs, g_textureRefCount,
+			g_textureRefOverflow, scene->GetStreamData(), manager, stream,
+			scene, "webfiledraw texture", "webfiledraw texturebytes",
+			"webfiledraw texture_unsupported", kDecodedTextureP34, false,
+			&p34Textures );
 
 		printf( "webfiledraw texture summary refs=%d decoded=%d unsupported=%d "
 			"overflow=%d payloadBytes=%llu rgbaBytes=%llu "
 			"aggregateHash=0x%016llx gpu=%d\n",
-			g_textureRefCount, decodedTextures, unsupportedTextures,
-			g_textureRefOverflow, texturePayloadBytes, textureRgbaBytes,
-			(unsigned long long)textureAggregate,
+			p34Textures.refs, p34Textures.decoded, p34Textures.unsupported,
+			p34Textures.overflow, p34Textures.payloadBytes,
+			p34Textures.rgbaBytes,
+			(unsigned long long)p34Textures.aggregate,
 			WebSpike::Draws().gpuObjectsCreated );
 
 		check( "texture_refs",
-			g_textureRefCount == 102 && g_textureRefOverflow == 0 );
-		check( "texture_decoded", decodedTextures == g_textureRefCount );
-		check( "texture_unsupported", unsupportedTextures == 0 );
-		check( "texture_payload", texturePayloadBytes > 0 &&
-			textureRgbaBytes > 0 );
+			p34Textures.refs == 102 && p34Textures.overflow == 0 );
+		check( "texture_decoded", p34Textures.decoded == p34Textures.refs );
+		check( "texture_unsupported", p34Textures.unsupported == 0 );
+		check( "texture_payload", p34Textures.payloadBytes > 0 &&
+			p34Textures.rgbaBytes > 0 );
 		check( "texture_no_gpu", WebSpike::Draws().gpuObjectsCreated == 0 );
-		check( "texture_hash", textureAggregate != 0 );
+		check( "texture_hash", p34Textures.aggregate != 0 );
+		check( "texture_registry_p34",
+			g_decodedTextureCount == 102 && g_decodedTextureOverflow == 0 );
 	}
 
 	// --- P44: six River track sections ------------------------------------
@@ -4956,6 +5098,20 @@ int main( int argc, char** argv )
 	initSectionUvTotals( &g_sectionUv );
 	g_sectionStreamTable = &scene->GetStreamData();
 
+	// P47: stage 0 is a quiet prepass over the same six section pairs that
+	// records their static albedo sources; the new sources are then decoded
+	// through the exact P34 path, and stage 1 emits the real section rows with
+	// the complete registry. The prepass prints nothing and updates no packet,
+	// UV or binding total.
+	TextureDecodeTotals trackTextures;
+	memset( &trackTextures, 0, sizeof( trackTextures ) );
+	resetTrackTextureRefs();
+
+	for ( int stage = 0; stage < 2; stage++ )
+	{
+	const bool prepass = stage == 0;
+	g_sectionPrepass = prepass;
+
 	for ( int s = 0; s < 6; s++ )
 	{
 		const TrackSectionDef& definition = kTrackSections[ s ];
@@ -4976,23 +5132,24 @@ int main( int argc, char** argv )
 			definition.geometryBlock, 0 );
 		const int nodeMatches = countChunkItems( table, definition.nodeBlock, 0 );
 
-		printf( "webfiledraw section chunk key=%s geometryBlock=%d "
-			"geometryChunk=%d geometryItem=%d geometryLocated=%d "
-			"geometryMatches=%d nodeBlock=%d nodeChunk=%d nodeItem=%d "
-			"nodeLocated=%d nodeMatches=%d\n", definition.key,
-			(int)definition.geometryBlock,
-			geometryLocated ? (int)geometryRange.chunk : -1,
-			geometryLocated ? (int)geometryRange.item : -1,
-			geometryLocated ? 1 : 0, geometryMatches,
-			(int)definition.nodeBlock,
-			nodeLocated ? (int)nodeRange.chunk : -1,
-			nodeLocated ? (int)nodeRange.item : -1, nodeLocated ? 1 : 0,
-			nodeMatches );
+		if ( !prepass )
+			printf( "webfiledraw section chunk key=%s geometryBlock=%d "
+				"geometryChunk=%d geometryItem=%d geometryLocated=%d "
+				"geometryMatches=%d nodeBlock=%d nodeChunk=%d nodeItem=%d "
+				"nodeLocated=%d nodeMatches=%d\n", definition.key,
+				(int)definition.geometryBlock,
+				geometryLocated ? (int)geometryRange.chunk : -1,
+				geometryLocated ? (int)geometryRange.item : -1,
+				geometryLocated ? 1 : 0, geometryMatches,
+				(int)definition.nodeBlock,
+				nodeLocated ? (int)nodeRange.chunk : -1,
+				nodeLocated ? (int)nodeRange.item : -1, nodeLocated ? 1 : 0,
+				nodeMatches );
 
 		// A section is one concrete (block, lod=0) item. Missing or ambiguous
 		// is reported with that item and the reason, then stops the section;
 		// there is no empty/identity fallback.
-		if ( geometryMatches != 1 )
+		if ( geometryMatches != 1 && !prepass )
 		{
 			printf( "webfiledraw section unsupported key=%s item=geometryBlock "
 				"block=%d lod=0 matches=%d reason=%s\n", definition.key,
@@ -5001,7 +5158,7 @@ int main( int argc, char** argv )
 					: "sectionGeometryBlockAmbiguous" );
 		}
 
-		if ( nodeMatches != 1 )
+		if ( nodeMatches != 1 && !prepass )
 		{
 			printf( "webfiledraw section unsupported key=%s item=nodeBlock "
 				"block=%d lod=0 matches=%d reason=%s\n", definition.key,
@@ -5103,6 +5260,13 @@ int main( int argc, char** argv )
 			g_sectionKey = 0;
 		}
 
+		if ( prepass )
+		{
+			delete geometryResources;
+			delete nodeResources;
+			continue;
+		}
+
 		GeometryBounds bounds;
 		memset( &bounds, 0, sizeof( bounds ) );
 		bounds.reason = "notComputed";
@@ -5166,6 +5330,54 @@ int main( int argc, char** argv )
 		delete nodeResources;
 	}
 
+	// Stage 0 ends here: decode the track sources that the P34 102-source set
+	// did not cover, then reset the packet/UV/binding totals and emit the same
+	// six sections for real. The decode is the P34 path (`decodeTextureRefSet`)
+	// with `skipRegistered`, so no source is decoded or registered twice.
+	g_sectionPrepass = false;
+
+	if ( prepass )
+	{
+		std::sort( g_trackTextureRefs,
+			g_trackTextureRefs + g_trackTextureRefCount, textureRefLess );
+
+		decodeTextureRefSet( g_trackTextureRefs, g_trackTextureRefCount,
+			g_trackTextureRefOverflow, scene->GetStreamData(), manager, stream,
+			scene, "webfiledraw tracktexture",
+			"webfiledraw tracktexturebytes",
+			"webfiledraw tracktexture_unsupported", kDecodedTextureTrack, true,
+			&trackTextures );
+
+		printf( "webfiledraw tracktexture summary refs=%d decoded=%d "
+			"already=%d unsupported=%d overflow=%d payloadBytes=%llu "
+			"rgbaBytes=%llu aggregateHash=0x%016llx registry=%d gpu=%d\n",
+			trackTextures.refs, trackTextures.decoded,
+			trackTextures.alreadyRegistered, trackTextures.unsupported,
+			trackTextures.overflow, trackTextures.payloadBytes,
+			trackTextures.rgbaBytes,
+			(unsigned long long)trackTextures.aggregate,
+			g_decodedTextureCount, WebSpike::Draws().gpuObjectsCreated );
+
+		check( "track_texture_sources",
+			trackTextures.refs == 136 && trackTextures.overflow == 0 &&
+			trackTextures.alreadyRegistered == 40 );
+		check( "track_texture_decoded",
+			trackTextures.decoded == 96 && trackTextures.unsupported == 0 );
+		check( "track_texture_unsupported", trackTextures.unsupported == 0 );
+		check( "track_texture_hash", trackTextures.aggregate != 0 );
+		check( "track_texture_registry",
+			g_decodedTextureCount == 198 && g_decodedTextureOverflow == 0 );
+		check( "track_texture_no_gpu",
+			WebSpike::Draws().gpuObjectsCreated == 0 );
+
+		memset( &sectionPacket, 0, sizeof( sectionPacket ) );
+		sectionPacket.hash = fnv_begin();
+		initSectionUvTotals( &g_sectionUv );
+	}
+	else
+		break;
+	}
+
 	printf( "webfiledraw section total sections=%d draws=%d triangles=%d "
 		"vertices=%d records=%d drawable=%d omitted=%d packetHash=0x%016llx "
 		"gpu=%d\n", sectionCount, sectionDraws, sectionTriangles,
@@ -5210,11 +5422,13 @@ int main( int argc, char** argv )
 			g_sectionUv.records &&
 		g_sectionUv.decodedBindings + g_sectionUv.notDecodedBindings +
 			g_sectionUv.missingBlockBindings == g_sectionUv.staticBindings &&
+		g_sectionUv.decodedBindings == g_sectionUv.staticBindings &&
+		g_sectionUv.notDecodedBindings == 0 &&
 		g_sectionUv.runtimeBindings == 2 &&
 		g_sectionUv.missingBlockBindings == 0 &&
 		g_sectionUv.aggregateOverflow == 0 &&
 		g_decodedTextureOverflow == 0 &&
-		g_decodedTextureCount == 102 );
+		g_decodedTextureCount == 198 );
 	check( "drawlist_section_bind_hash", g_sectionUv.bindAggregate != 0 );
 
 	// --- explicit failures: a missing range is never zero filled -----------

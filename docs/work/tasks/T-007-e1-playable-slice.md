@@ -113,12 +113,14 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   üçgen / 78.712 vertex**; bounds 6/6 1e-5, 299/299 primitive offset eşit;
   packet hash `8b3a40324410327f`; 2 runtime-only materyal `null` + neden.
 - **Track UV/binding (P45):** 299/299 draw UV0 çözüldü (292 F16_4, 7 F16_2;
-  offset 16, stream 0, 5 stride); aggregate `2ed1f4b0b3c9148e`; asset-reader
-  `level_mesh` UV0 ile 299/299 bit-birebir. Binding: 297 statik / 2 runtime-only;
-  151 draw 40 P34 dokusunda, 146 draw 96 çözülmemiş blokta (konum kayıtlı);
-  aggregate `70237f9bb7f0a20c`.
-- Kalan: sampling/UV/wrap/filter, 96 blok doku, visibility/culling/LOD,
-  `ProcessLoadChunk`; PoC producer'ına bağlama.
+  aggregate `2ed1f4b0b3c9148e`); asset-reader `level_mesh` UV0 ile 299/299
+  bit-birebir.
+- **Track dokuları (P47):** 96 yeni blok decode edildi; registry **198**
+  (102 P34 + 96 track); **297/297 statik binding** çözüldü (2 runtime-only);
+  track aggregate `8d91645d4ee00831`, binding `9cc08756505dd497`; 96/96
+  asset-reader ile birebir.
+- Kalan: sampling/UV/wrap/filter, visibility/culling/LOD, `ProcessLoadChunk`;
+  PoC producer'ına bağlama.
 - Kanıt: `docs/work/verification/T-007-drawlist-57.md`,
   `T-007-drawlist-56.md`, `T-007-engine-textures.md`.
 

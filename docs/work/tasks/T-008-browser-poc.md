@@ -44,6 +44,7 @@ sürüşü deneyebileceği PoC.
 | 540 m sprint | P43/P46 | ⚠️ parkur değil; 29 m oynanabilir, 540 m `?survey=1` |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |
+| Track dokuları | P47 | ✅ (297/297 statik) |
 | Soak/performans | P42 | ✅ (18.000 tick) |
 | Engine CPU draw list | P27 + P30 + P32 | ✅ 56 instance; PoC'ye bağlama sırada |
 | Stage B pist instance'ları | P25 | ✅ |

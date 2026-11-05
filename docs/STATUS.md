@@ -586,6 +586,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Binding: **297 statik / 2 runtime-only**; 151 draw 40 P34 dokusunda, 146 draw 96 çözülmemiş blokta (blok/öğe kayıtlı); aggregate `70237f9bb7f0a20c`.
 - 56 nesne, 870.155 B, **92/92**, PC parity. Kalan: sampling/wrap/filter, 96 blok doku, UV1+. Kanıt: `docs/work/verification/T-007-uv-binding.md`.
 
+## 5 Kasım 2026 — track dokularının tamamı
+
+- Kalan 96 blok decode edildi (96/96 DXT1); registry **198** (102 P34 + 96 track), 51.536 B descriptor+texel, 281.600 B RGBA; track aggregate `8d91645d4ee00831`.
+- **297/297 statik binding** çözüldü (151 P34 + 146 track), 2 runtime-only `null` + neden; binding aggregate `9cc08756505dd497`; UV0 değişmedi.
+- 96/96 asset-reader ile isim/hash/boyut/format/RGBA birebir; 56 nesne, 872.798 B, **99/99**, PC parity. Kalan: sampling/wrap/filter/mip, shared -1, `ProcessLoadChunk`. Kanıt: `docs/work/verification/T-007-track-textures.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

@@ -289,6 +289,12 @@ bit-birebir. Binding 297 statik / 2 runtime-only; 151 draw 40 P34 dokusunda,
 56 nesne, 870.155 B, **92/92**. Kanıt:
 `docs/work/verification/T-007-uv-binding.md`.
 
+**Track dokuları (P47):** kalan 96 blok decode edildi; registry **198**
+(102 P34 + 96 track); **297/297 statik binding** çözüldü, 2 runtime-only;
+track aggregate `8d91645d4ee00831`, binding `9cc08756505dd497`; 96/96
+asset-reader ile birebir; 56 nesne, 872.798 B, **99/99**. Kanıt:
+`docs/work/verification/T-007-track-textures.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

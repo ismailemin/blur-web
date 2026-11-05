@@ -220,6 +220,11 @@ EXPECTED_CHECKS = [
     # P34 static texture decode from the River draw-list material sources
     "texture_refs", "texture_decoded", "texture_unsupported",
     "texture_payload", "texture_no_gpu", "texture_hash",
+    "texture_registry_p34",
+    # P47 static texture decode for the remaining track-section sources
+    "track_texture_sources", "track_texture_decoded",
+    "track_texture_unsupported", "track_texture_hash",
+    "track_texture_registry", "track_texture_no_gpu",
     # P44 six track sections
     "drawlist_section_g56_n289", "drawlist_section_g58_n265",
     "drawlist_section_g50_n265", "drawlist_section_g71_n209",
@@ -259,9 +264,12 @@ TRACK_VISUAL = ROOT / "_work/track-coverage/visual.json"
 TRACK_CORRIDOR_HASH = ("sha256:10e197c119a5edc79d7c54d1f5f728c4"
                        "f1e2a8006a3e76d08caf0e0c8a349d0c")
 TRACK_SECTION_PACKET_HASH = "8b3a40324410327f"
-# P45: per-draw UV0 and static albedo binding aggregates over the 299 draws.
+# P45/P47: per-draw UV0 and static albedo binding aggregates over the 299
+# draws, after the P47 track-texture registry extension.
 TRACK_UV_HASH = "2ed1f4b0b3c9148e"
-TRACK_BIND_HASH = "70237f9bb7f0a20c"
+TRACK_BIND_HASH = "9cc08756505dd497"
+# P47: the 96 track-section sources decoded outside the P34 102-source set.
+TRACK_TEXTURE_HASH = "8d91645d4ee00831"
 
 # The fourteen patched files and their required token counts. Nothing else may
 # be in the patch. Counts are exact: a web branch that grows without this table
@@ -915,6 +923,41 @@ def run_harness(js: Path, tag: str) -> dict:
         r"webfiledraw texture summary refs=(\d+) decoded=(\d+) "
         r"unsupported=(\d+) overflow=(\d+) payloadBytes=(\d+) "
         r"rgbaBytes=(\d+) aggregateHash=0x([0-9a-f]{16}) gpu=(\d+)", out)
+    track_texture_records = {}
+    for m in re.finditer(
+            r"webfiledraw tracktexture block=(\d+) index=(\d+) name=(\S+) "
+            r"textureHash=(\d+) width=(\d+) height=(\d+) depth=(\d+) "
+            r"levels=(\d+) format=(\d+) usage=(\d+) type=(\d+) "
+            r"descriptorBytes=(\d+) payloadBytes=(\d+) rgbaBytes=(\d+) "
+            r"blobHash=0x([0-9a-f]{16}) rgbaHash=0x([0-9a-f]{16}) "
+            r"chunk=(\d+) item=(\d+)", out):
+        key = (int(m.group(1)), int(m.group(2)))
+        track_texture_records[key] = {
+            "block": key[0], "index": key[1], "name": m.group(3),
+            "textureHash": int(m.group(4)), "width": int(m.group(5)),
+            "height": int(m.group(6)), "depth": int(m.group(7)),
+            "levels": int(m.group(8)), "format": int(m.group(9)),
+            "usage": int(m.group(10)), "type": int(m.group(11)),
+            "descriptorBytes": int(m.group(12)),
+            "payloadBytes": int(m.group(13)),
+            "rgbaBytes": int(m.group(14)), "blobHash": m.group(15),
+            "rgbaHash": m.group(16), "chunk": int(m.group(17)),
+            "item": int(m.group(18)),
+        }
+    track_texture_bytes = {}
+    for m in re.finditer(
+            r"webfiledraw tracktexturebytes block=(\d+) index=(\d+) "
+            r"bytes=(\d+) hex=([0-9a-f]*)", out):
+        track_texture_bytes[(int(m.group(1)), int(m.group(2)))] = \
+            bytes.fromhex(m.group(4))
+    track_texture_unsupported = []
+    for m in re.finditer(r"webfiledraw tracktexture_unsupported (.*)", out):
+        track_texture_unsupported.append(m.group(1))
+    track_texture_summary = re.search(
+        r"webfiledraw tracktexture summary refs=(\d+) decoded=(\d+) "
+        r"already=(\d+) unsupported=(\d+) overflow=(\d+) payloadBytes=(\d+) "
+        r"rgbaBytes=(\d+) aggregateHash=0x([0-9a-f]{16}) registry=(\d+) "
+        r"gpu=(\d+)", out)
     draw_counters = {}
     m = re.search(r"webfiledraw counters (.*)", out)
     if m:
@@ -940,6 +983,9 @@ def run_harness(js: Path, tag: str) -> dict:
         raise Failed("the harness printed an incomplete P38 prerequisite report")
     if not (texture_summary and texture_records and texture_bytes):
         raise Failed("the harness printed an incomplete P34 texture report")
+    if not (track_texture_summary and track_texture_records and
+            track_texture_bytes):
+        raise Failed("the harness printed an incomplete P47 track texture report")
     if not (section_total and section_chunks and section_summaries and
             section_packet_records):
         raise Failed("the harness printed an incomplete P44 track-section report")
@@ -1070,6 +1116,16 @@ def run_harness(js: Path, tag: str) -> dict:
                 ("refs", "decoded", "unsupported", "overflow", "payloadBytes",
                  "rgbaBytes", "aggregateHash", "gpu"),
                 texture_summary.groups())},
+        "track_textures": track_texture_records,
+        "track_texture_bytes": track_texture_bytes,
+        "track_texture_unsupported": track_texture_unsupported,
+        "track_texture_summary": {
+            k: (track_texture_summary.group(8) if k == "aggregateHash"
+                else int(v))
+            for k, v in zip(
+                ("refs", "decoded", "already", "unsupported", "overflow",
+                 "payloadBytes", "rgbaBytes", "aggregateHash", "registry",
+                 "gpu"), track_texture_summary.groups())},
         "stdout_bytes": len(out), "stderr_bytes": len(stderr),
     }
 
@@ -1116,7 +1172,8 @@ def parse_section_uv_records(out: str) -> list[dict]:
         r"uvfirst=(-?\d+) uvcount=(-?\d+) uvarena=(-?\d+) uvlastbyte=(-?\d+) "
         r"uvmin=([^,\s]+),([^,\s]+) uvmax=([^,\s]+),([^,\s]+) "
         r"uvhash=0x([0-9a-f]{16}) albedo=(-?\d+):(-?\d+) albedorow=(-?\d+) "
-        r"albedoindex=(-?\d+) material=(\S+) texstate=(\S+) texture=(\S+) "
+        r"albedoindex=(-?\d+) material=(\S+) texstate=(\S+) texset=(\S+) "
+        r"texture=(\S+) "
         r"texturehash=(\d+) format=(\d+) width=(\d+) height=(\d+) levels=(\d+) "
         r"rgba=0x([0-9a-f]{16}) texturechunk=(-?\d+) textureitem=(-?\d+) "
         r"bindreason=(\S+)")
@@ -1128,8 +1185,8 @@ def parse_section_uv_records(out: str) -> list[dict]:
         "uvvbcount", "uvfirst", "uvcount", "uvarena", "uvlastbyte",
         "uvminu", "uvminv", "uvmaxu", "uvmaxv", "uvhash", "albedoblock",
         "albedoindex_source", "albedorow", "albedoindex", "material",
-        "texstate", "texture", "texturehash", "format", "width", "height",
-        "levels", "rgba", "texturechunk", "textureitem", "bindreason")
+        "texstate", "texset", "texture", "texturehash", "format", "width",
+        "height", "levels", "rgba", "texturechunk", "textureitem", "bindreason")
     integer_fields = {
         "draw", "node", "primitive", "source", "vtxoffset", "vtxcount",
         "declaration", "uvnull", "uvstream", "uvelement", "uvoffset",
@@ -1322,8 +1379,11 @@ def engine_table_fnv(chunkinfo: dict) -> str:
     return f"{h:016x}"
 
 
-def compare_engine_textures(result: dict) -> dict:
-    """Decode every River draw-list texture again from the engine chunk table.
+def _compare_texture_set(result: dict, records_key: str, bytes_key: str,
+                         unsupported_key: str, summary_key: str,
+                         expected_count: int, label: str,
+                         report_path: Path) -> dict:
+    """Compare one decoded texture set against the committed readers.
 
     The harness already decoded the descriptor+texel bytes it captured through
     the engine item walk. This function independently re-reads the same LOD0
@@ -1340,18 +1400,18 @@ def compare_engine_textures(result: dict) -> dict:
     from inspect_car_materials import texture_lod  # noqa: E402
     from inspect_level_instances import InstanceReader, read_lists  # noqa: E402
 
-    records = result["textures"]
-    blob_by_key = result["texture_bytes"]
+    records = result[records_key]
+    blob_by_key = result[bytes_key]
     chunkinfo = result["chunkinfo"]
-    summary = result["texture_summary"]
+    summary = result[summary_key]
 
-    if result["texture_unsupported"]:
-        raise Failed("harness reported unsupported textures: "
-                     + "; ".join(result["texture_unsupported"]))
+    if result[unsupported_key]:
+        raise Failed(f"harness reported unsupported {label} textures: "
+                     + "; ".join(result[unsupported_key]))
     if summary["overflow"] or summary["unsupported"]:
-        raise Failed(f"harness texture counters: {summary}")
-    if len(records) != summary["refs"] or len(blob_by_key) != len(records):
-        raise Failed("harness texture record/blob count mismatch")
+        raise Failed(f"harness {label} texture counters: {summary}")
+    if len(records) != summary["decoded"] or len(blob_by_key) != len(records):
+        raise Failed(f"harness {label} texture record/blob count mismatch")
 
     # First LOD0 occurrence of each block in the engine table. The engine
     # refuses ambiguous locations, so a duplicate here is a real failure.
@@ -1540,13 +1600,14 @@ def compare_engine_textures(result: dict) -> dict:
 
     aggregate = f"{h:016x}"
     if aggregate != summary["aggregateHash"]:
-        raise Failed(f"texture aggregate hash {aggregate} != "
+        raise Failed(f"{label} texture aggregate hash {aggregate} != "
                      f"{summary['aggregateHash']}")
     if total_payload != summary["payloadBytes"] or \
             total_rgba != summary["rgbaBytes"]:
         raise Failed("texture byte totals differ from the harness summary")
-    if len(compact) != 102:
-        raise Failed(f"decoded {len(compact)} textures, expected 102")
+    if len(compact) != expected_count:
+        raise Failed(f"decoded {len(compact)} {label} textures, expected "
+                     f"{expected_count}")
 
     report = {
         "decoded": len(compact),
@@ -1565,8 +1626,28 @@ def compare_engine_textures(result: dict) -> dict:
         },
         "textures": compact,
     }
-    (LOGS / "engine-textures.json").write_text(
+    report_path.write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return report
+
+
+def compare_engine_textures(result: dict) -> dict:
+    """P34: the 102 static textures of the two River draw-list references."""
+    return _compare_texture_set(
+        result, "textures", "texture_bytes", "texture_unsupported",
+        "texture_summary", 102, "P34 River",
+        LOGS / "engine-textures.json")
+
+
+def compare_track_textures(result: dict) -> dict:
+    """P47: the 96 track-section static sources outside the P34 set."""
+    report = _compare_texture_set(
+        result, "track_textures", "track_texture_bytes",
+        "track_texture_unsupported", "track_texture_summary", 96, "P47 track",
+        LOGS / "track-textures.json")
+    if report["aggregateHash"] != TRACK_TEXTURE_HASH:
+        raise Failed(f"track texture aggregate {report['aggregateHash']} != "
+                     f"pinned {TRACK_TEXTURE_HASH}")
     return report
 
 
@@ -2629,7 +2710,7 @@ def compare_track_uv(result: dict, index: dict) -> dict:
         raise Failed("the harness printed an incomplete P45 UV0 report")
 
     expected = (TRACK_TOTAL["draws"], TRACK_TOTAL["draws"], 0, 0, 297, 2,
-                151, 146, 0, 0)
+                297, 0, 0, 0)
     got = (summary["records"], summary["uvpresent"], summary["uvnull"],
            summary["uvnonfinite"], summary["static"], summary["runtime"],
            summary["decoded"], summary["notdecoded"], summary["missingblock"],
@@ -2656,7 +2737,8 @@ def compare_track_uv(result: dict, index: dict) -> dict:
 
     corridor = json.loads(TRACK_CORRIDOR.read_text(encoding="utf-8"))
     reference_sections = corridor["sections"]
-    textures = result["textures"]
+    textures = dict(result["textures"])
+    textures.update(result["track_textures"])
     packets = result["track_sections"]["packet_records"]
     packets_by_source = {}
     for record in packets:
@@ -2676,6 +2758,10 @@ def compare_track_uv(result: dict, index: dict) -> dict:
     decoded_sources = set()
     notdecoded_blocks = set()
     all_sources = set()
+    decoded_p34_draws = 0
+    decoded_track_draws = 0
+    decoded_p34_sources = set()
+    decoded_track_sources = set()
     uv_types = {}
     strides = set()
     offsets = set()
@@ -2827,6 +2913,15 @@ def compare_track_uv(result: dict, index: dict) -> dict:
                 if row["bindreason"] != "none":
                     raise Failed(f"{where}: draw {draw_index} decoded binding "
                                  f"reason {row['bindreason']}")
+                if row["texset"] == "p34":
+                    decoded_p34_draws += 1
+                    decoded_p34_sources.add(row["albedo"])
+                elif row["texset"] == "track":
+                    decoded_track_draws += 1
+                    decoded_track_sources.add(row["albedo"])
+                else:
+                    raise Failed(f"{where}: draw {draw_index} decoded binding "
+                                 f"has texture set {row['texset']}")
                 decoded_draws += 1
                 decoded_sources.add(row["albedo"])
             elif row["texstate"] == "notDecodedInP34Set":
@@ -2879,13 +2974,19 @@ def compare_track_uv(result: dict, index: dict) -> dict:
             "firstMismatch": None,
         })
 
-    if (decoded_draws, notdecoded_draws, runtime_draws) != (151, 146, 2):
+    if (decoded_draws, notdecoded_draws, runtime_draws) != (297, 0, 2):
         raise Failed(f"binding coverage {decoded_draws} decoded / "
                      f"{notdecoded_draws} undecoded / {runtime_draws} "
-                     "runtime-only != 151/146/2")
-    if len(decoded_sources) != 40 or len(notdecoded_blocks) != 96:
+                     "runtime-only != 297/0/2")
+    if (decoded_p34_draws, decoded_track_draws) != (151, 146):
+        raise Failed(f"decoded draws by set {decoded_p34_draws} P34 / "
+                     f"{decoded_track_draws} track != 151/146")
+    if len(decoded_sources) != 136 or len(notdecoded_blocks) != 0:
         raise Failed(f"{len(decoded_sources)} decoded sources / "
-                     f"{len(notdecoded_blocks)} undecoded blocks != 40/96")
+                     f"{len(notdecoded_blocks)} undecoded blocks != 136/0")
+    if (len(decoded_p34_sources), len(decoded_track_sources)) != (40, 96):
+        raise Failed(f"decoded sources by set {len(decoded_p34_sources)} P34 / "
+                     f"{len(decoded_track_sources)} track != 40/96")
     if len(all_sources) != 137:
         raise Failed(f"{len(all_sources)} distinct albedo sources != 137")
     if sorted(uv_types.items()) != [("8", 7), ("9", 292)]:
@@ -2917,12 +3018,18 @@ def compare_track_uv(result: dict, index: dict) -> dict:
         "notDecodedBindings": notdecoded_draws,
         "decodedSources": len(decoded_sources),
         "notDecodedBlocks": len(notdecoded_blocks),
+        "decodedP34Draws": decoded_p34_draws,
+        "decodedTrackDraws": decoded_track_draws,
+        "decodedP34Sources": len(decoded_p34_sources),
+        "decodedTrackSources": len(decoded_track_sources),
         "distinctSources": len(all_sources),
-        "bindingsFrom": "P34 decode registry of this run (102 sources)",
+        "bindingsFrom": "P34 (102) + P47 track (96) decode registry of this "
+                        "run (198 sources)",
         "sections": sections,
         "scope": "UV0 address/range/hash from the engine declaration and stream "
-                 "binding; albedo identity is the P34 decoded set. No sampler, "
-                 "wrap/filter, texture transform, runtime material or GPU object.",
+                 "binding; albedo identity is the P34 + P47 decoded registry. "
+                 "No sampler, wrap/filter, texture transform, runtime material "
+                 "or GPU object.",
     }
 
 
@@ -3130,8 +3237,11 @@ def main() -> int:
     report["harness"] = {k: v for k, v in result.items()
                          if k not in ("chunks", "chunkinfo", "textures",
                                       "texture_bytes", "texture_unsupported",
-                                      "texture_summary", "track_sections",
-                                      "track_uv")}
+                                      "texture_summary", "track_textures",
+                                      "track_texture_bytes",
+                                      "track_texture_unsupported",
+                                      "track_texture_summary",
+                                      "track_sections", "track_uv")}
     report["reference"] = {
         "chunks": len(index["streamChunks"]),
         "resourceBlockCount": index["resourceBlockCount"],
@@ -3146,6 +3256,7 @@ def main() -> int:
     report["draw_list"] = compare_draw_list(result, index)
     report["track_sections"] = compare_track_sections(result)
     report["textures"] = compare_engine_textures(result)
+    report["track_textures"] = compare_track_textures(result)
     report["track_uv"] = compare_track_uv(result, index)
     report["whole_files"] = whole_files(result)
     report["levelrender_sha256"] = sha256_file(LEVEL_RENDER)
@@ -3226,6 +3337,13 @@ def main() -> int:
           f"{tx['totalRgbaBytes']} RGBA B, aggregate={tx['aggregateHash']}")
     print(f"texture compare {len(tx['textures'])}/102 name+hash+size+format+"
           f"RGBA equal to {tx['committedDecoder']}")
+    ttx = report["track_textures"]
+    print(f"track textures  {ttx['decoded']}/96 static textures decoded, "
+          f"{len(ttx['unsupported'])} unsupported, "
+          f"{ttx['totalBlobBytes']} descriptor+texel B, "
+          f"{ttx['totalRgbaBytes']} RGBA B, aggregate={ttx['aggregateHash']}")
+    print(f"track tex cmp   {len(ttx['textures'])}/96 name+hash+size+format+"
+          f"RGBA equal to {ttx['committedDecoder']}")
     sb = dl["stage_b_reference"]
     if sb["present"]:
         b = dl["stage_b_bundle"]
@@ -3251,9 +3369,11 @@ def main() -> int:
           f"level_mesh UV0, aggregate={tuv['uvAggregate']}")
     print(f"track bindings  {tuv['staticBindings']} static / "
           f"{tuv['runtimeBindings']} runtime-only, {tuv['decodedBindings']} draws "
-          f"on {tuv['decodedSources']} P34-decoded sources, "
-          f"{tuv['notDecodedBindings']} on {tuv['notDecodedBlocks']} undecoded "
-          f"blocks, aggregate={tuv['bindingAggregate']}")
+          f"on {tuv['decodedSources']} decoded sources "
+          f"({tuv['decodedP34Draws']} draws on {tuv['decodedP34Sources']} P34 + "
+          f"{tuv['decodedTrackDraws']} draws on {tuv['decodedTrackSources']} "
+          f"track), {tuv['notDecodedBindings']} undecoded, "
+          f"aggregate={tuv['bindingAggregate']}")
     print(f"levelrender     {report['whole_files']['levelrender']['bytes']} B "
           f"fnv=0x{report['whole_files']['levelrender']['fnv1a64']}")
     print(f"levelphysics    {report['whole_files']['levelphysics']['bytes']} B "
