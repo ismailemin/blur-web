@@ -554,6 +554,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Tek instance'ta **10+ rebuild** (5 araç × 10 = 50) aynı 30-tick hash; heap sabit 268.435.456 B; pool head 5, queued 2. Telemetri tek instance; `R` yerinde restart (sprint süreleri aynı).
 - `verify_e1_drive` **488/488**; 5/5 restart capture console 0. Kanıt: `docs/work/verification/T-007-reset-fix.md`.
 
+## 5 Kasım 2026 — uzun pist koridoru
+
+- Spawn (-88, 1050) → (268, 1301): **539,81 m** kesintisiz sürülebilir koridor; 2.257 örnek, %99,73 kapsama, 3 boşluk toplam 1,413 m, max basamak 0,078 m (4,47°).
+- 6 section kullanıldı: g56-n289, g58-n265, g50-n265, g71-n209, g64-n209, g59-n265; 299 draw / 47.790 üçgen / 78.712 vertex.
+- Daha uzun 748,05 m rota var ama g64→g59 dikişinde 1,406 m dikey basamak. Kapalı tur committed veriyle yok (en yakın bileşen 109 m uzakta). Kanıt: `docs/work/analysis/track-coverage.md`, `probes/track-coverage/`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

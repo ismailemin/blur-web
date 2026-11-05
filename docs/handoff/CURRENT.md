@@ -263,6 +263,13 @@ sabit 268.435.456 B; telemetri tek instance; `R` yerinde restart.
 `verify_e1_drive` **488/488**; console 0. Kanıt:
 `docs/work/verification/T-007-reset-fix.md`.
 
+**Pist koridoru (P41):** spawn'dan **539,81 m** kesintisiz sürülebilir koridor
+(6 section: g56-n289, g58-n265, g50-n265, g71-n209, g64-n209, g59-n265;
+299 draw / 47.790 üçgen). 2.257 örnek, %99,73 kapsama, 3 boşluk toplam
+1,413 m, max basamak 0,078 m. Kapalı tur committed veriyle yok; en yakın
+bileşen 109 m uzakta. Sıradaki: sprint'i 539,81 m'ye uzatmak. Kanıt:
+`docs/work/analysis/track-coverage.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

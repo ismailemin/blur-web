@@ -78,7 +78,12 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - **P40 reset fix:** `C_Scene` group handle'ları oluşturuluyor/yok ediliyor;
   tek instance'ta **10+ rebuild**, telemetri tek instance, `R` yerinde restart
   (sayfa yenilemesi yok); 50 rebuild aynı hash, heap sabit.
-- Kalan: tam tur (kapalı pist track kapsamı gerekiyor), finish sonrası akış.
+- **P41 koridor:** spawn'dan **539,81 m** kesintisiz sürülebilir koridor
+  (6 section, 47.790 üçgen, %99,73 kapsama, 3 toplam 1,413 m kaynak birleşim
+  boşluğu, max 0,078 m basamak). Kapalı tur committed veriyle **yok**; en yakın
+  bileşen 109 m uzakta. Sıradaki: sprint'i 539,81 m'ye uzatmak.
+- Kalan: 539,81 m sprint entegrasyonu, finish sonrası akış, tam tur (yeni
+  geometri gerekir).
 - Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
 
 ### E1g — Çoklu araç (P23)  ✅
