@@ -52,11 +52,16 @@ Dodge 4,633 → Focus 5,133 s.
 |---|---|
 | `W` / `↑` | gaz |
 | `S` / `↓` | fren |
-| `A` / `D` / `←` / `→` | direksiyon |
+| `A` / `D` / `←` / `→` | direksiyon (varsayılan kullanıcı yönü; `I` ile ters) |
+| `I` | direksiyon yönünü çevir (kalıcı değil, o sayfa oturumu) |
 | `Space` | el freni |
 | `R` | yerinde restart (sayfa yenilemez) |
 | Fare sürükle | kamera orbit |
 | Tekerlek | zoom |
+
+Direksiyon varsayılanı kullanıcı testine göre ayarlandı (`D`/`→` sağa).
+Ham eşleme için `?invertSteer=0`; sayfa içinde `I` ile anlık geçiş.
+Scripted sprint controller bu eşlemeden geçmez.
 
 ## Sprint
 

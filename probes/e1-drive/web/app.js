@@ -276,6 +276,7 @@ function publish() {
     ['susp mm', state.suspension.map((value) => (value * 1000).toFixed(1)).join(' ')],
     ['input', 'thr ' + state.input[0].toFixed(2) + ' brk ' + state.input[1].toFixed(2) +
       ' str ' + state.input[2].toFixed(2) + ' hb ' + state.input[3].toFixed(2)],
+    ['steer', (steerSign < 0 ? 'inverted' : 'normal') + ' (I) · ?invertSteer=' + (steerSign < 0 ? '1' : '0')],
     ['parts', state.parts + ' parts · ' + state.carDraws + ' draws · ' + state.packetNodes + ' nodes (' + state.wheelNodes + ' wheel)'],
     ['car tex', state.carTexturedDraws + ' textured (' + state.carTextures + ' tex, ' +
       state.carTextureBytes + ' B) · diag ' + (state.carPaintDraws + state.carLightDraws + state.carNoAlbedoDraws) +
@@ -382,8 +383,19 @@ window.addEventListener('unhandledrejection', (event) => fail('unhandled rejecti
 // ------------------------------------------------------------------ input
 
 const keys = new Set();
+// User-facing steering convention. The user's physical test reported D/right
+// turning the car left on screen, so the keyboard mapping is inverted by default;
+// `?invertSteer=0` restores the raw mapping and `I` toggles at runtime. The
+// scripted sprint controller never passes through this mapping.
+let steerSign = params.get('invertSteer') === '0' ? 1 : -1;
 window.addEventListener('keydown', (event) => {
   if (SOAK) return; // the soak plan owns the session; no keyboard/restart input
+  if ((event.key === 'i' || event.key === 'I') && !event.repeat) {
+    steerSign = -steerSign;
+    state.steerSign = steerSign;
+    publish();
+    return;
+  }
   if (event.key === 'r' || event.key === 'R') {
     // Both modes rebuild the world in place: the scene's scheduler groups are
     // created and destroyed with the scene, so one wasm instance can be rebuilt
@@ -411,7 +423,8 @@ window.addEventListener('blur', () => keys.clear());
 function keyboardInput() {
   const throttle = keys.has('w') || keys.has('arrowup') ? 1 : 0;
   const brake = keys.has('s') || keys.has('arrowdown') ? 1 : 0;
-  const steer = (keys.has('a') || keys.has('arrowleft') ? -1 : 0) + (keys.has('d') || keys.has('arrowright') ? 1 : 0);
+  const rawSteer = (keys.has('a') || keys.has('arrowleft') ? -1 : 0) + (keys.has('d') || keys.has('arrowright') ? 1 : 0);
+  const steer = rawSteer * steerSign;
   const handbrake = keys.has(' ') ? 1 : 0;
   return [throttle, brake, steer, handbrake];
 }

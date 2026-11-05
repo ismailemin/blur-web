@@ -647,6 +647,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Doğru kural: **224 statik-albedo car draw** için **`(1−u, v)`**; track ham UV. UV/piksel/sayı değişmedi.
 - `verify_e1_drive` **570/570**; 20 capture console 0; fizik hash'leri aynı. Kanıt: `docs/work/verification/T-007-car-uv-orientation.md`.
 
+## 6 Kasım 2026 — direksiyon yönü
+
+- Kullanıcı testi: `D`/sağ ok araçta sola dönüyor. UI eşlemesi kullanıcı yönüne göre ters çevrildi (`steerSign = -1` varsayılan); ham eşleme `?invertSteer=0`, anlık geçiş `I`.
+- Scripted sprint controller etkilenmez. CDP: D artık `str=-1` gönderiyor; `verify_e1_drive` **570/570**.
+
 ## 6 Kasım 2026 — araç dokuları entegre
 
 - 5 araçta 491 draw'dan **224'ü** gerçek albedo + UV0 ile dokulandı: Corvette 50, Lotus 48, Dodge 42, Focus 37, Audi 47; 40 doku / 18.178.048 B RGBA.
