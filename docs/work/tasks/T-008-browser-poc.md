@@ -42,6 +42,7 @@ sürüşü deneyebileceği PoC.
 | Reset/restart düzeltmesi | P40 | ✅ (10+ rebuild) |
 | Uzun pist koridoru | P41 | ✅ (539,81 m ölçüm) |
 | 540 m sprint | P43/P46 | ⚠️ parkur değil; 29 m oynanabilir, 540 m `?survey=1` |
+| Gerçek sürülebilir yol | P48 | ✅ 310,395 m (entegrasyon sırada) |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |
 | Track dokuları | P47 | ✅ (297/297 statik) |

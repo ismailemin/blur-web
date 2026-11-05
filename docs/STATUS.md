@@ -592,6 +592,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - **297/297 statik binding** çözüldü (151 P34 + 146 track), 2 runtime-only `null` + neden; binding aggregate `9cc08756505dd497`; UV0 değişmedi.
 - 96/96 asset-reader ile isim/hash/boyut/format/RGBA birebir; 56 nesne, 872.798 B, **99/99**, PC parity. Kalan: sampling/wrap/filter/mip, shared -1, `ProcessLoadChunk`. Kanıt: `docs/work/verification/T-007-track-textures.md`.
 
+## 5 Kasım 2026 — gerçek sürülebilir yol (310 m)
+
+- Collision mesh üzerinde A*: **310,395 m** kesintisiz parkur, spawn (-88,1050) → (103.5,1292.5); 1.245 örnek.
+- Max basamak **1,55 cm**, max 2 m eğim **%3,09**, duvara min **7,78 m**; 621 engine trace **0 ihlal**; bağımsız oracle 8/8 PASS.
+- Bitişten 4 m sonra yüzey 2,0 m'ye daralıyor (2,276 m araç zarfı); engel duvar değil, daralma. 539,81 m draw koridoru ve 555 m height route reddedildi (50 m fink).
+- Sıradaki: 310 m sprint entegrasyonu; 29 m regression control. Kanıt: `docs/work/analysis/drivable-path.md`, `_work/drivable-path/path-map.png`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

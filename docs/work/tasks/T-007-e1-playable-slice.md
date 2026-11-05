@@ -83,8 +83,12 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   duruyor. Proxy lift (0,10 m) denenip ölçüldü, varsayılan yapılmadı.
   Oynanabilir sprint **29 m** olarak kaldı; 540 m görsel `?survey=1` ile
   etiketli sunuluyor (394 draw / 57.133 tri).
-- Kanıt: `docs/work/verification/T-007-ledge-fix.md`,
-  `T-007-extended-sprint.md`, `T-007-sprint-rules.md`.
+- **P48 gerçek sürülebilir yol:** collision mesh üzerinde **310,395 m**
+  kesintisiz parkur bulundu (spawn → (103.5,1292.5)); max basamak 1,55 cm,
+  max 2 m eğim %3,09, duvara min 7,78 m. 621 engine trace, 0 ihlal; 8/8
+  bağımsız doğrulama. Bitişte yüzey 4 m sonra 2,0 m'ye daralıyor.
+  **Sıradaki: 310 m sprint entegrasyonu.**
+- 29 m sprint regression control olarak kalacak.
 - Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
 
 ### E1g — Çoklu araç (P23)  ✅
