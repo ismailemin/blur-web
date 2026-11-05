@@ -87,8 +87,10 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   kesintisiz parkur bulundu (spawn → (103.5,1292.5)); max basamak 1,55 cm,
   max 2 m eğim %3,09, duvara min 7,78 m. 621 engine trace, 0 ihlal; 8/8
   bağımsız doğrulama. Bitişte yüzey 4 m sonra 2,0 m'ye daralıyor.
-  **Sıradaki: 310 m sprint entegrasyonu.**
-- 29 m sprint regression control olarak kalacak.
+- **P51 görsel kapsama:** parkurun **%100**'ü `g56-n289` ile çizili
+  (1.245/1.245; 8 draw / 939 üçgen; visual–collision −0,92…+0,93 mm; 16,1–24,2 m
+  genişlik). Yeni section gerekmiyor.
+- **Sıradaki: 310 m sprint entegrasyonu**; 29 m regression control kalacak.
 - Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
 
 ### E1g — Çoklu araç (P23)  ✅

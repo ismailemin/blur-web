@@ -287,3 +287,208 @@ written.
 | `probes/drivable-path/tools/explore_surface.py`, `explore_layers.py` | exploratory measurements |
 | `probes/drivable-path/tools/inspect_path.py`, `inspect_junction.py` | endpoint/junction diagnostics |
 | `probes/drivable-path/tools/make_engine_blocks.py` | engine-hit → blocker iteration |
+
+## 9. Visual coverage of the course (P51)
+
+**Date:** 5 November 2026
+**Owner:** P51 (sub-agent)
+**Scope:** `probes/drivable-path/**`, `_work/drivable-path/**`,
+`_work/logs/drivable-path/**` and this section. No change to `probes/e1-drive`,
+`probes/track-coverage`, `probes/asset-reader`, `probes/collision-oracle`, the
+engine, `tools/`, `upstream/` or `game-data/`. The 46-section draw map is
+consumed read-only from `_work/track-coverage/visual.json`; the native level
+reader is called read-only to re-extract the same geometry. No renderer, GPU,
+browser or game claim is made.
+
+### 9.1 Result
+
+Section **`g56-n289`** — the same section the E1 slice already draws — covers
+the **entire 310.395 m course**. At 1,245 samples (0.25 m) the coverage is
+**100.000 %** at the centre line, at the 1.676 m car envelope and at the envelope
+plus the 0.30 m margin. There are **0 gap runs** and **0.000 m of gaps**. The
+drawn surface sits on the collision surface: `visual − collision` ranges
+**−0.000921 … +0.000929 m**, and all 1,245 samples are inside ±1 cm.
+
+Only **6 of the 49 draws** of the section contain the centre line
+(`d29, d40, d42, d41, d37, d36`); **8 draws** are needed for the full car-width
+band (`d21` and `d43` add a handful of seam samples). Those 8 ranges hold
+**2,817 indices / 939 triangles**; **70 distinct triangles** contain the centre
+line and **84** touch the ±1.138 m band. The drawn surface is **16.1–24.2 m
+wide** across the course (median 23.3 m; the scan caps at 24 m).
+
+The result is falsifiable and was falsified in both directions: removing the
+8 attributed draws drops centre coverage to **14/1,245 (1.12 %)**, and removing
+the section drops it to **0/1,245**.
+
+### 9.2 Method
+
+Inputs (all read-only, pinned by hash in the manifest):
+
+| input | record |
+| --- | --- |
+| `_work/drivable-path/path.json` (P48 course) | canonical `sha256:4b725b10…318605b`, file `81eac0ce…230e7f` |
+| `_work/track-coverage/visual.json` (46-section draw map) | `877b4dc7e1f5ece197f0776239b33d23b0350f8cf77ef462c0c7a266a6abcb67` |
+| `game-data/Blur/levels/usa_la_river/Level.levelphysics` | `1e678b2d…fe4e28` |
+| `probes/collision-oracle/tests/reference_oracle.py` | `2d7e5aec…75f438a` |
+
+1. Load the 1,245 committed path samples (0.25 m) and the 46-section draw map.
+2. Flatten every `ok` section into triangles, but **only triangles inside a
+   declared draw range** (`firstIndex … firstIndex + indexCount`). A triangle
+   outside every draw range is a hard error, never silently dropped: a vertex
+   array is not a draw.
+3. Collision height = highest up-facing `Level.levelphysics` triangle
+   (`normal.y > 0.5`) containing the point. Visual height = the draw triangle
+   (`normal.y > 0.1`) containing the point whose height is **nearest** the
+   collision height.
+4. `covered` = a draw triangle exists and `|visual − collision| ≤ 0.5 m` (the
+   track-coverage surface rule). The car-width test uses seven lateral stations
+   in the car frame: `0, ±0.419, ±0.838` (envelope 1.676 m) and `±1.138`
+   (envelope + 0.30 m margin). A continuous width profile is scanned at 0.10 m
+   steps, capped at 12 m per side.
+5. Every covered sample is attributed to its section, draw index, primitive
+   index and index offset. Consecutive samples with the same attribution form a
+   draw span; consecutive samples with the same car-width flag form a segment.
+
+### 9.3 Sections and draws used
+
+| section | geometry block | node block | geometry chunk | node chunk | draws | triangles | vertices |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `g56-n289` | 56 | 289 | 121 | 71 | 49 | 9,824 | 14,508 |
+
+| draw | primitive | index range | tris in range | arc span (m) | centre samples | band samples |
+| ---: | ---: | --- | ---: | --- | ---: | ---: |
+| 29 | 205 | 20,988…21,288 | 100 | 0.00–50.18 | 202 | 1,415 |
+| 40 | 220 | 25,257…25,551 | 98 | 50.43–76.89 | 107 | 740 |
+| 42 | 222 | 25,854…26,256 | 134 | 77.14–168.64 | 368 | 2,579 |
+| 41 | 221 | 25,551…25,854 | 101 | 168.89–222.78 | 217 | 1,516 |
+| 37 | 217 | 24,123…24,495 | 124 | 223.03–242.00 | 77 | 539 |
+| 36 | 216 | 23,823…24,123 | 100 | 242.24–310.40 | 274 | 1,920 |
+| 21 | 174 | 15,003…15,399 | 132 | band only | 0 | 1 |
+| 43 | 223 | 26,256…26,706 | 150 | band only | 0 | 5 |
+
+The six centre draws are not in index order along the road: the section is a
+patchwork of segments and the course crosses it in the order
+`29 → 40 → 42 → 41 → 37 → 36`. `d21`/`d43` are needed only for one and five
+band stations at the 49.93–50.68 m and 185.85 m seams. Sum of the six centre
+spans is 309.147 m; the remaining 1.248 m is the five 0.25 m sample transitions
+between adjacent draws, not a hole (§9.4).
+
+Section totals: **1 section, 8 draws, 2,817 indices, 939 triangles in the used
+ranges, 84 triangles over the car-width band, 70 over the centre line.**
+
+### 9.4 Gaps
+
+**None.** `coverage.gapRuns = 0`, `gapTotalMetres = 0.000`, `firstGap = null`.
+Across 1,245 samples × 7 stations = **8,715 station tests**, the failure
+reasons are all zero: 0 stations without a collision triangle below, 0 without
+a draw triangle above, 0 outside the 0.5 m tolerance.
+
+The only discontinuities are the five draw-to-draw transitions. Because the
+nearest triangle can change between two 0.25 m samples, those transitions were
+re-tested by interpolating the 0.25 m segment at **0.02 m** (14 sub-samples
+each): **0 uncovered sub-samples**. Recorded seams:
+
+| seam (m) | sub-samples | uncovered | covered left / right (m) |
+| --- | ---: | ---: | --- |
+| 50.1787 → 50.4283 | 14 | 0 | 12.1 / 12.1 |
+| 76.8907 → 77.1404 | 14 | 0 | 12.1 / 12.1 |
+| 168.6360 → 168.8855 | 14 | 0 | 12.1 / 10.5 |
+| 222.7806 → 223.0301 | 14 | 0 | 4.8 / 12.1 |
+| 241.9950 → 242.2446 | 14 | 0 | 8.3 / 12.1 |
+
+The narrowest single-side drawn run outside a seam is **4.0 m left / 8.8 m
+right**; the narrowest total drawn width on the course is **16.1 m**.
+
+### 9.5 Verification
+
+The verifier shares no coverage, index or attribution code with the builder. It
+re-extracts `g56-n289` with the **native C++ reader**
+(`_work/build/asset-reader-native/Release/level_inspect.exe`, `level_mesh`),
+not with the Python draw map the builder consumed, and re-parses the collision
+mesh independently. It recomputes every sample's collision height, nearest draw
+height, delta, covering draw, triangle offset, station flags and continuous
+width, plus the coverage fractions, gaps, draw spans, totals and canonical
+manifest hash.
+
+Recorded: **PASS, 24 checks, 0 errors, 0 warnings**, including
+`native-geometry-equals-manifest` (positions/indices hashes and all 49 draw
+ranges identical) and `draw-seam-refinement`.
+
+Additional collision cross-check: the oracle collision height at the 621 engine
+trace coordinates agrees with the engine's own `_e1_ground_probe` to
+**0.388 mm maximum** (0 samples over 1 cm). That validates the reference plane
+only; the draw question is answered by the native reader.
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/drivable-path/tools/build_visual_coverage.py   # manifest + samples
+& $py probes/drivable-path/tools/verify_visual_coverage.py  # native reader re-measure
+& $py probes/drivable-path/tools/build_visual_map.py --png  # SVG + HTML + PNG
+```
+
+Determinism: two consecutive runs of all three tools produced byte-identical
+`visual-coverage.json`, `visual-coverage-samples.json`,
+`visual-coverage-verify.json`, `visual-coverage.svg`, `visual-coverage.html`
+and `visual-coverage.png`.
+
+| artifact | canonical / SHA-256 |
+| --- | --- |
+| `visual-coverage.json` canonical | `sha256:094abf3210d45841bd88784b7d35efdb13377c4f4bb08497cf559f9dbd44f2b0` |
+| `visual-coverage.json` file | `39d93da4c82774b432ef3d2ed3bebf0977fd01ca9669d7866572da9ace48c273` |
+| `visual-coverage-samples.json` | `3c282672c66f364c577bf19799d53f51e9ab35b772dbb0f7e04bbd7ac3bc9be7` |
+| `visual-coverage-verify.json` | `919b5eb37ea1675d642748e59015e62596a51642ad7783bb91196b46b1070acf` |
+| `visual-coverage.svg` | `64e0f1422e6f00908d987a4d68f315d436ead8fa5df765357f15eda1dda5a8ad` |
+| `visual-coverage.html` | `35d09dbcf52a25c858d7f189ee50e6a17415c328befad3ec3d4cec695fb1a57b` |
+| `visual-coverage.png` | `a55cd0bfee66ea540072c175851b7c925f2f1cf9066f6dad956aae3bf33e6b70` |
+
+Native reader used: `_work/build/asset-reader-native/Release/level_inspect.exe`,
+SHA-256 `ec5e25178c9d256d88ff8c1aad59e0379b43d04509d784610a4daba4735c2b04`;
+geometry chunk `5bc6e0bb…53e2e431`, node chunk `a0523540…9acb8a07`.
+
+### 9.6 How to render the 310 m course
+
+1. **Load section `g56-n289` only.** It is already the section the E1 slice
+   draws for the 29 m sprint (`probes/e1-drive/tools/build_geometry.mjs`), so
+   the 310 m extension needs **no new section and no new upload**. The whole
+   section is 49 draws / 9,824 triangles / 14,508 vertices.
+2. **If the renderer wants to submit only course geometry**, the 8 draws in
+   §9.3 are sufficient (2,817 indices / 939 triangles), and the 6 centre draws
+   suffice if only the centre line is needed. Keep all 8 for the full
+   2.276 m band; `d21`/`d43` are tiny and only matter at two seams.
+3. **No visual gap needs a labelled fallback on the course.** The drawn surface
+   is 16 m or wider everywhere and matches the collision plane within 1 mm, so
+   the road can be drawn strictly from the committed draws.
+4. **Label the parts that were not measured.** Coverage stops at arc 310.395
+   (`(103.5, 1292.5)`). The final sample lies inside a draw triangle that
+   extends past it, but coverage beyond the finish was **not measured**, and
+   the collision surface narrows to 2.0 m at +4 m (P48 §4.1). If the renderer
+   extends the road past the finish, mark that extension as unmeasured.
+5. **Arc table for culling or streaming**: `0–50.18`, `50.43–76.89`,
+   `77.14–168.64`, `168.89–222.78`, `223.03–242.00`, `242.24–310.40` on the
+   six centre draws. A one-draw-call submission of the whole section is
+   simpler and costs 9,824 triangles instead of 939.
+
+### 9.7 Limits
+
+- **Symmetric 0.5 m tolerance.** The recorded deltas are millimetres, so the
+  result does not depend on the tolerance; a stricter ±1 cm rule would give the
+  same 1,245/1,245. The rule is still the one stated, not a hidden tightening.
+- **Nearest-height rule.** Where more than one `g56-n289` triangle covers the
+  same XZ point, the others lie within −0.324 … +0.408 m of the collision plane
+  (verge/bank geometry; `_work/logs/drivable-path/explore2.log`). The claim is
+  about the triangle nearest the collision surface, not about every triangle in
+  the section. A renderer that uploads the whole section draws those triangles
+  too, which is expected for a river bed.
+- **First RenderList direct draws only.** `instancesApplied:false`; the 46
+  sections are the committed correlated pairs, not a full level import.
+  Instance-only geometry could add surfaces; it cannot remove the ones
+  measured here.
+- **The course only.** Coverage is measured on the committed 310.395 m path at
+  its 0.25 m samples and at seven lateral stations; it is not a statement about
+  the whole section, the whole river bed, or visibility from a camera.
+- **Width is a height-matched covered run**, not a legal racing width, and the
+  scan caps at 24 m total.
+- **No materials, textures, culling, LOD selection or GPU state** are involved.
+- **No renderer/game claim.** No frame was rendered and no engine frame was
+  produced; the engine is used only as an independent ground-probe reference.

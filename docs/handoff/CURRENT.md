@@ -308,6 +308,11 @@ olmadığı için diagnostic, 2 runtime-only. `verify_e1_drive` **522/522**;
 20 capture console 0; soak'ta texture leak yok. Kanıt:
 `docs/work/verification/T-007-textured-track.md`.
 
+**310 m görsel kapsama (P51):** parkurun **%100**'ü `g56-n289` ile çizili
+(1.245/1.245; 8 draw / 939 üçgen; visual–collision −0,92…+0,93 mm; 16,1–24,2 m
+genişlik). Yeni section/upload gerekmiyor. Sıradaki: 310 m sprint entegrasyonu.
+Kanıt: `docs/work/analysis/drivable-path.md` §9.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

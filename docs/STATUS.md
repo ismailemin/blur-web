@@ -605,6 +605,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - block88 95 draw binding row olmadığı için diagnostic (`noBindingRowForSection`); 2 runtime-only. Textured coverage: block56 49/49, altı koridor section 297/299.
 - `verify_e1_drive` **522/522**; 20 capture console 0; 1 dk soak texture leak yok (136 live). geometry v5 18.791.525 B. Kanıt: `docs/work/verification/T-007-textured-track.md`.
 
+## 5 Kasım 2026 — 310 m parkurun görsel kapsaması
+
+- Collision-only 310,395 m parkurun **%100**'ü gerçek draw ile kaplı: 1.245/1.245 merkez, 1.676 m zarf ve +0,30 m marj.
+- Tek section: **g56-n289** (chunk 121/71); 8 draw / 2.817 index / 939 üçgen; genişlik 16,1–24,2 m; visual–collision −0,000921…+0,000929 m.
+- 8.715 istasyon testi: 0 eksik collision, 0 eksik draw, 0 tolerans dışı; bağımsız native reader ile 24/24 PASS. Yeni upload gerekmiyor. Kanıt: `_work/drivable-path/visual-coverage.png`, `docs/work/analysis/drivable-path.md` §9.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

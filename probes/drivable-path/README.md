@@ -181,3 +181,61 @@ _work/logs/drivable-path/*.log          every build, verify and probe run
 ```
 
 Analysis: `docs/work/analysis/drivable-path.md`.
+
+## 9. Visual coverage of the 310.395 m course (P51)
+
+A second question on the same course: is it *drawn*? `build_visual_coverage.py`
+loads the committed path and the 46-section draw map
+(`_work/track-coverage/visual.json`, pinned), keeps only triangles inside a
+declared draw range, and tests every sample at seven lateral stations in the car
+frame (0, ±0.419, ±0.838 envelope, ±1.138 envelope + 0.30 m margin). A sample is
+covered when a draw triangle exists and `|visual − collision| ≤ 0.5 m`; a
+collision triangle must exist below every station.
+
+| field | value |
+| --- | --- |
+| coverage | **1,245 / 1,245 = 100.000 %** at centre, envelope and car width |
+| gaps | **0 runs, 0.000 m** (8,715 station tests, 0 failures) |
+| section | **`g56-n289`** only — the section the E1 drive slice already draws |
+| draws | 6 cover the centre line, 8 cover the full car-width band |
+| index ranges | 2,817 indices / 939 triangles in the 8 used ranges |
+| triangles over the course | 70 contain the centre line, 84 touch the ±1.138 m band |
+| `visual − collision` | −0.000921 … +0.000929 m (all samples inside ±1 cm) |
+| drawn width | 16.1–24.2 m (median 23.3 m; 24 m scan cap) |
+| control, 8 draws removed | 14 / 1,245 covered |
+| control, section removed | 0 / 1,245 covered |
+
+Draw spans on the six centre draws: `d29 0–50.18`, `d40 50.43–76.89`,
+`d42 77.14–168.64`, `d41 168.89–222.78`, `d37 223.03–242.00`,
+`d36 242.24–310.40` m. The five transitions were re-tested at 0.02 m
+interpolation: 0 uncovered sub-samples.
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/drivable-path/tools/build_visual_coverage.py   # manifest + per-sample rows
+& $py probes/drivable-path/tools/verify_visual_coverage.py  # native C++ reader re-measure
+& $py probes/drivable-path/tools/build_visual_map.py --png  # SVG + HTML + PNG
+```
+
+`verify_visual_coverage.py` does not use the builder's geometry: it re-extracts
+the section with `_work/build/asset-reader-native/Release/level_inspect.exe`
+(`level_mesh`) and re-parses the collision mesh. Recorded **PASS, 24 checks, 0
+errors, 0 warnings**; the engine ground probe agrees with the reference
+collision plane to 0.388 mm over 621 samples. All outputs are byte-identical on
+repeat runs.
+
+| output | content |
+| --- | --- |
+| `_work/drivable-path/visual-coverage.json` | manifest: coverage, segments, gaps, draw spans, per-draw arc ranges, totals, hash |
+| `_work/drivable-path/visual-coverage-samples.json` | 1,245 rows: arc, x/z, collision, delta, section, draw, primitive, triangle offset, widths, flags |
+| `_work/drivable-path/visual-coverage-verify.json` | independent native-reader result, PASS |
+| `_work/drivable-path/visual-coverage.svg` | top-down map + Δ strip + width strip |
+| `_work/drivable-path/visual-coverage.html` | the map with the result and draw tables |
+| `_work/drivable-path/visual-coverage.png` | headless-Edge screenshot of the map |
+
+Recommendation: load `g56-n289` (already loaded) for the 310 m extension; no new
+section or upload is needed, and no visual gap needs a labelled fallback on the
+course. Beyond arc 310.395 nothing is measured — label it unmeasured if the road
+is extended over the 2.0 m narrowing. This is a data measurement: no renderer,
+GPU, browser or game claim is made.
