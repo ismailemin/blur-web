@@ -16,6 +16,12 @@ segment, **not a lap**; the rules are presentation/bookkeeping only and do not
 change the physics (the verifier replays every scripted sprint's input sequence
 into a fresh module and gets identical state hashes).
 
+`?telemetry=1&car=<slug>` runs a deterministic **telemetry mode** instead: three
+scripted manoeuvres (standing start, 80 km/h brake, steering sweep), a metric
+table and three 60 Hz traces in a panel, and a JSON report
+(`_work/e1-drive/telemetry-<slug>.json`). It is a diagnostic validation, not a
+retail-fidelity claim.
+
 The car is drawn from each car's own committed part manifest
 (`probes/car-parts/`): the Corvette ZR1 has **34 parts / 100 draws**, the Lotus
 Exige Cup260 **23 / 88**, the Dodge Challenger **31 / 104**, the Ford Focus RS
@@ -39,7 +45,7 @@ reuses. The engine still runs the car; the packet still describes the frame; the
 WebGPU backend still renders the packet.
 
 ```
-keyboard / scripted input / ?car=<slug>
+keyboard / scripted input / sprint / telemetry / ?car=<slug>
         │  set_input(tick)
         ▼
 wasm  e1_*  ── one C_Scene::Simulate(1/60) per tick ──►  JSON state
@@ -117,17 +123,20 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/build_sprint.mjs
 
 # 6. scripted drive of every roster car twice, sprint runs + respawn + layout
-#    checks, in fresh module instances and packet validation (348 checks)
+#    checks, telemetry series twice + input replay, in fresh module instances
+#    and packet validation (423 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 
 # 7. headless Edge/WebGPU screenshots + console gate
 & $node probes/e1-drive/tools/capture_browser.mjs                  # drive captures
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint    # start/cp/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
+& $node probes/e1-drive/tools/capture_browser.mjs --mode telemetry # metric panel per car
 
 # interactive
 & $node probes/e1-drive/tools/serve.mjs            # http://127.0.0.1:8801/ (keyboard sprint)
 & $node probes/e1-drive/tools/serve.mjs --port 8801  # /?script=sprint&car=audi-r8v10-stock
+                                                     # /?telemetry=1&car=audi-r8v10-stock
 ```
 
 Outputs go to `_work/e1-drive/` (module, geometry, track, roster, per-car packets
@@ -280,6 +289,39 @@ the FWD Focus slowest, as the drivetrain and the unchanged physics predict. A
 real off-course run (steer off the corridor) respawns once at checkpoint 1 with
 the timer still running (2.45 s → 4.45 s) and the checkpoint kept.
 
+## Telemetry (`?telemetry=1`)
+
+Three deterministic manoeuvres per car, measured from the engine state and shown
+as a metric table plus three 60 Hz traces. Inputs are functions of the tick only
+(the brake step tick is measured in the accel run of the same series); each
+manoeuvre runs in a fresh wasm instance because this build cannot rebuild one
+instance more than about three times (recorded in `T-007-telemetry.md`).
+
+| manoeuvre | input | measured |
+| --- | --- | --- |
+| `accel` | throttle on every tick, fixed 86 m window | 0–50 / 0–80 / 0–100 km/h, top speed, speed at 86 m |
+| `brake` | throttle, then brake from the measured 80 km/h tick | entry speed, distance, peak/mean deceleration |
+| `lateral` | 120 throttle ticks, then 4 square half-periods of 36 ticks at ±0.6 | peak lateral g, peak yaw rate, yaw lag per reversal |
+
+Measured (`_work/e1-drive/telemetry.json`; one strip, diagnostic only):
+
+| car | 0–50 | 0–100 | speed at 86 m | brake 80–0 | peak / mean decel | lateral peak | yaw peak | yaw response |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Audi R8 V10 (AWD) | 1.133 s | **2.650 s** | **135.2 km/h** | **13.34 m** | 24.77 / 15.46 m/s² | **1.52 g** | 22.7 °/s | 12.7 ticks |
+| Corvette ZR1 | 1.817 s | 3.650 s | 126.5 km/h | 14.83 m | 20.80 / 15.13 m/s² | 0.86 g | 22.2 °/s | 15.3 ticks |
+| Lotus Exige | 1.900 s | 3.833 s | 119.1 km/h | 17.00 m | 18.40 / 12.65 m/s² | 0.99 g | 22.7 °/s | 12.3 ticks |
+| Dodge Challenger | 2.100 s | 4.633 s | 108.2 km/h | 17.07 m | 18.47 / 13.34 m/s² | 0.84 g | 19.0 °/s | 14.7 ticks |
+| Ford Focus RS (FWD) | 2.400 s | 5.133 s | 107.1 km/h | 18.73 m | 16.59 / 11.76 m/s² | 1.32 g | 26.3 °/s | 13.3 ticks |
+
+The 0–100 order (Audi < Corvette < Lotus < Dodge < Focus) is exactly the XT
+`torqueScaleNm / mass` order; the AWD car is quickest and the FWD car slowest.
+Stopping distances follow the same order, but the Lotus is an anomaly: highest XT
+brake-to-mass ratio, third-shortest stop. Full comparison in
+`docs/work/verification/T-007-telemetry.md`. Physics is unchanged: the verifier
+pins all five drive and sprint state sequence hashes and all five drive packet
+hashes, and the page recomputes the series itself and matches the node metrics
+and per-tick state hashes exactly.
+
 ## What the browser adds
 
 `web/app.js` owns the loop: character-key input (WASD/arrows/space, R to restart),
@@ -328,12 +370,17 @@ sequence hash, and the Corvette's sequence hash is exactly the T-007 value
 blocked/near-field counts), `state-<slug>.json`, `packet-<slug>.json`,
 `sprint.json` (the derived layout), `sprint-<slug>.json` (per-car sprint ticks,
 events, inputs and the start/checkpoint/finish capture updates),
+`telemetry.json` (all cars' measured metrics, hashes and rank comparison),
+`telemetry-<slug>.json` (full 60 Hz traces, metrics, hash aggregates and unit
+definitions),
 `geometry.json` (level packet + real track visual + one real body per car + hidden
 collision), `cars.json` (the 62-record roster + gate), `browser-evidence.json`,
 `browser-evidence-sprint.json`, `browser-evidence-respawn.json`,
+`browser-evidence-telemetry.json`,
 `browser-<slug>-{start,mid,coast,end}.png`,
 `browser-<slug>-sprint-{start,checkpoint,finish}.png`,
 `browser-<slug>-sprint-respawn.png`,
+`browser-<slug>-telemetry.png` (+ `-car.png`),
 `browser-<slug>-wheels-240.png` (side view, wheel geometry),
 `browser-evidence-wheels.json`; `packet.json`/`state_a.json` are the default
 car's aliases. The track visual, its two source sections and the coverage limit
@@ -343,8 +390,10 @@ body/wheel integration is recorded in
 rule, the before/after frames and the near-field limit are recorded in
 `docs/work/verification/T-007-camera-collision.md`; the sprint rules, gate
 derivation and respawn are recorded in
-`docs/work/verification/T-007-sprint-rules.md`; details and numbers:
-`docs/work/analysis/e1-drive-slice.md` §10–15 and
+`docs/work/verification/T-007-sprint-rules.md`; the telemetry manoeuvres,
+per-car metrics and plausibility comparison are recorded in
+`docs/work/verification/T-007-telemetry.md`; details and numbers:
+`docs/work/analysis/e1-drive-slice.md` §10–16 and
 `docs/work/verification/T-007-multi-car.md`.
 
 ## Limits (also carried in the packet's own diagnostics)
@@ -416,6 +465,16 @@ derivation and respawn are recorded in
   drive a lap on drawn ground. Gates are **rules geometry only**: no gate mesh is
   added to the render packet, so the gates appear in the HUD/banner, not as 3D
   objects. The checkpoints are 1/3 and 2/3 of the measured span.
+- **Telemetry is a diagnostic validation on that same strip.** The standing start
+  is 86 m, braking is from 80 km/h, and the lateral figure is a fixed-steer
+  response, not a grip limit; "top speed" is the maximum inside the 86 m window.
+  No Vmax run, 100–0 km/h stop, lap time or retail handling claim. All numbers
+  come from the unchanged engine and are traceable to `telemetry-<slug>.json`.
+- **The module build cannot rebuild one instance more than about three times.**
+  Measured: the third `e1_reset()` after `e1_create` aborts out-of-bounds and the
+  fourth `e1_create` aborts; every existing path stays below that. Telemetry uses
+  one fresh instance per manoeuvre and `R` reloads the page in telemetry mode.
+  Recorded in `T-007-telemetry.md`; not fixed here.
 - **Respawn rebuilds the world at the last checkpoint.** That is the module's
   `e1_create` path (180-tick settle), so a respawn costs a one-frame hitch and the
   car restarts from rest at the gate; the attempt timer keeps running and the

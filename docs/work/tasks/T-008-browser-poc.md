@@ -38,6 +38,7 @@ sürüşü deneyebileceği PoC.
 | Gerçek yol görseli | P31 | ✅ (144 draw / 19.167 tri) |
 | Chase camera occlusion | P36 | ✅ (BVH; 268/268) |
 | Sprint + checkpoint + finish | P37 | ✅ (348/348) |
+| Dinamik telemetrisi | P39 | ✅ (423/423) |
 | Engine CPU draw list | P27 + P30 + P32 | ✅ 56 instance; PoC'ye bağlama sırada |
 | Stage B pist instance'ları | P25 | ✅ |
 | Araç başına gerçek gövde | P29 | ✅ |

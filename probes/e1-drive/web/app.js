@@ -25,6 +25,9 @@
 //   ?script=drive       the original 300-tick drive (2 s throttle, 2 s coast,
 //                       1 s brake) with no race rules, kept for the P23/P31/P36
 //                       evidence and for `?hold=` captures
+//   ?telemetry=1        three deterministic telemetry manoeuvres (standing start,
+//                       80 km/h brake, steering sweep), metric table + 60 Hz
+//                       traces in a panel; diagnostics only, physics unchanged
 //
 // URL parameters:
 //   ?car=<slug>     roster car to drive (default: the roster's recorded default)
@@ -42,14 +45,26 @@ import { validateSprintLayout } from './sprint-layout.js';
 import { SPRINT_EVENT, createSprintRules } from './sprint-rules.js';
 import { createBestTimes } from './sprint-best.js';
 import { respawnScriptInput, sprintScriptInput, SPRINT_PACKET_SCRIPT } from './sprint-script.js';
+import {
+  createWasmTelemetryEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
+  TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_PACKET_SCRIPT, TELEMETRY_SPEC
+} from './telemetry.js';
 const params = new URLSearchParams(location.search);
 const SCRIPT_PARAM = params.get('script');
+const TELEMETRY = params.get('telemetry') === '1';
+if (TELEMETRY) document.documentElement.dataset.telemetry = 'running';
 if (SCRIPT_PARAM && SCRIPT_PARAM !== 'drive' && SCRIPT_PARAM !== 'sprint') {
   throw new Error('unknown script ' + JSON.stringify(SCRIPT_PARAM) + ' (use drive or sprint)');
 }
-const LEGACY_DRIVE = SCRIPT_PARAM === 'drive' && params.get('manual') !== '1';
-const SCRIPTED_SPRINT = SCRIPT_PARAM === 'sprint';
-const SPRINT_MODE = !LEGACY_DRIVE;
+if (TELEMETRY && SCRIPT_PARAM) {
+  throw new Error('?telemetry=1 is its own mode; drop the script parameter');
+}
+if (TELEMETRY && params.has('hold')) {
+  throw new Error('?telemetry=1 holds its own presentation tick; drop the hold parameter');
+}
+const LEGACY_DRIVE = !TELEMETRY && SCRIPT_PARAM === 'drive' && params.get('manual') !== '1';
+const SCRIPTED_SPRINT = !TELEMETRY && SCRIPT_PARAM === 'sprint';
+const SPRINT_MODE = !TELEMETRY && !LEGACY_DRIVE;
 const SPRINT_FALL = params.get('sprintfall') === '1';
 if (SPRINT_FALL && !SCRIPTED_SPRINT) throw new Error('?sprintfall=1 needs ?script=sprint');
 const HOLD = params.has('hold') ? Number(params.get('hold')) : null;
@@ -80,7 +95,8 @@ const state = {
   consumer: 'idle',
   error: null,
   adapter: null,
-  mode: LEGACY_DRIVE ? 'script:drive' : SCRIPTED_SPRINT ? (SPRINT_FALL ? 'script:sprint-fall' : 'script:sprint') : 'keyboard-sprint',
+  mode: LEGACY_DRIVE ? 'script:drive' : SCRIPTED_SPRINT ? (SPRINT_FALL ? 'script:sprint-fall' : 'script:sprint')
+    : TELEMETRY ? 'telemetry' : 'keyboard-sprint',
   hold: HOLD,
   holdReached: HOLD === null ? false : HOLD === 0,
   car: null,
@@ -136,18 +152,35 @@ const state = {
   sprintBest: null,
   sprintResult: null,
   sprintBanner: null,
-  respawning: false
+  respawning: false,
+  // Telemetry (`?telemetry=1` only).
+  telemetry: null
 };
 
 function publish() {
   document.documentElement.dataset.driveState = state.consumer;
   document.documentElement.dataset.holdReached = String(state.holdReached);
   if (state.sprint) document.documentElement.dataset.sprint = state.sprint.phase;
+  if (state.telemetry) document.documentElement.dataset.telemetry = state.telemetry.ready ? 'ready' : 'running';
   window.e1DriveProbe = state;
   const rows = [
     ['mode', state.mode + (state.hold === null ? '' : ' · hold ' + state.hold + (state.holdReached ? ' reached' : ''))],
     ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—']
   ];
+  if (state.telemetry?.ready) {
+    const metrics = state.telemetry.metrics;
+    const seconds = (value) => (Number.isFinite(value) ? value.toFixed(3) : '—');
+    rows.push(['telemetry', '3 manoeuvres · ' + state.telemetry.sampleHz + ' Hz · presented at accel tick ' +
+      state.telemetry.presentation.tick + ' (0–100 km/h)']);
+    rows.push(['0–100', seconds(metrics.accel.zeroToSpeedKph['100'].seconds) + ' s · ' +
+      metrics.accel.topSpeedKph.toFixed(1) + ' km/h at 86 m']);
+    rows.push(['brake', metrics.brake.distanceMetres.toFixed(2) + ' m from ' +
+      metrics.brake.entrySpeedKph.toFixed(1) + ' km/h · ' + metrics.brake.peakDecelG.toFixed(2) + ' g peak']);
+    rows.push(['lateral', metrics.lateral.peakLateralAbsG.toFixed(2) + ' g · yaw ' +
+      metrics.lateral.peakYawRateAbsDegPerSec.toFixed(1) + ' °/s · ' +
+      metrics.lateral.yawResponseTicks.toFixed(1) + ' tick response']);
+    rows.push(['inputs', 'tick-only step scripts · plan brake tick ' + state.telemetry.plan.brakeTick]);
+  }
   if (state.sprint) {
     const sprint = state.sprint;
     const timer = sprint.finished ? sprint.finishTimeSeconds : sprint.elapsedSeconds;
@@ -252,7 +285,14 @@ window.addEventListener('unhandledrejection', (event) => fail('unhandled rejecti
 
 const keys = new Set();
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'r' || event.key === 'R') { doReset(Math.round(performance.now() * 1000)); return; }
+  if (event.key === 'r' || event.key === 'R') {
+    // The telemetry mode runs three fresh wasm instances; the module build cannot
+    // rebuild one instance more than about three times (recorded in
+    // T-007-telemetry.md), so R reloads the page instead of calling e1_reset.
+    if (TELEMETRY) { location.reload(); return; }
+    doReset(Math.round(performance.now() * 1000));
+    return;
+  }
   keys.add(event.key.toLowerCase());
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(event.key.toLowerCase())) event.preventDefault();
 });
@@ -271,6 +311,7 @@ function keyboardInput() {
 // ------------------------------------------------------------------ engine
 
 let module = null;
+let engineFactory = null;
 let engine = null;      // { info, readState, setInput, step, reset }
 let session = null;
 let geometry = null;
@@ -324,6 +365,7 @@ function createWorld(x, z, heading) {
 
 async function loadEngine() {
   const factory = (await import(ENGINE_MODULE)).default;
+  engineFactory = factory;
   module = await factory();
   const roster = await loadRoster();
   car = resolveCar(roster, REQUESTED_CAR);
@@ -524,11 +566,196 @@ function applyState(snapshot) {
   state.suspension = snapshot.wheels.map((wheel) => wheel.suspension);
   state.wheelAngular = snapshot.wheels.map((wheel) => wheel.angular);
   state.input = snapshot.input;
-  state.phase = LEGACY_DRIVE ? phaseAt(snapshot.tick) : (sprintRules ? sprintRules.phase : 'keyboard');
+  state.phase = TELEMETRY ? 'telemetry' : LEGACY_DRIVE ? phaseAt(snapshot.tick) : (sprintRules ? sprintRules.phase : 'keyboard');
   if (sprintRules) state.sprint = sprintRules.snapshot(snapshot);
 }
 
 let holdReached = HOLD === null ? false : HOLD === 0;
+
+// ------------------------------------------------------------------ telemetry
+// `?telemetry=1`: three deterministic manoeuvres, each in its own fresh wasm
+// instance, measured from the engine state. The accel run becomes the rendered
+// timeline (presented at the 0-100 km/h tick, on the drawn road); the metric
+// table and the 60 Hz traces are the validation report.
+
+/** Small labelled line chart; one polyline over the manoeuvre's own sample axis. */
+function telemetryChart(rows, key, options = {}) {
+  const width = 450;
+  const height = 62;
+  const padLeft = 40;
+  const padRight = 6;
+  const padTop = 8;
+  const padBottom = 12;
+  const values = rows.map((row) => row[key]);
+  let lo = options.min !== undefined ? options.min : Math.min(...values);
+  let hi = options.max !== undefined ? options.max : Math.max(...values);
+  if (!(hi > lo)) hi = lo + 1;
+  const span = hi - lo;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+  const xAt = (index) => padLeft + plotW * (index / Math.max(1, rows.length - 1));
+  const yAt = (value) => padTop + plotH * (1 - (value - lo) / span);
+  const points = rows.map((row, index) =>
+    xAt(index).toFixed(1) + ',' + yAt(row[key]).toFixed(1)).join(' ');
+  const duration = rows.length > 1 ? rows[rows.length - 1].timeSeconds : 0;
+  const digits = options.digits ?? 1;
+  return '<svg width="' + width + '" height="' + height + '" role="img" aria-label="' +
+    (options.label ?? key) + '">' +
+    '<rect x="' + padLeft + '" y="' + padTop + '" width="' + plotW + '" height="' + plotH +
+      '" fill="none" stroke="rgba(111,195,232,0.22)"/>' +
+    '<polyline fill="none" stroke="' + (options.colour ?? '#6fc3e8') + '" stroke-width="1.4" points="' +
+      points + '"/>' +
+    '<text x="2" y="' + (padTop + 8) + '" fill="#7d95a8" font-size="9">' + hi.toFixed(digits) + '</text>' +
+    '<text x="2" y="' + (padTop + plotH) + '" fill="#7d95a8" font-size="9">' + lo.toFixed(digits) + '</text>' +
+    '<text x="' + padLeft + '" y="' + (height - 2) + '" fill="#7d95a8" font-size="9">0 s</text>' +
+    '<text x="' + (width - padRight) + '" y="' + (height - 2) +
+      '" fill="#7d95a8" font-size="9" text-anchor="end">' + duration.toFixed(2) + ' s · ' +
+      rows.length + ' samples</text>' +
+    '</svg>';
+}
+
+/** Fill the telemetry panel from the measured metrics and traces. */
+function renderTelemetryPanel() {
+  const panel = document.getElementById('telemetry');
+  if (!panel || !state.telemetry?.ready) return;
+  const telemetry = state.telemetry;
+  const metrics = telemetry.metrics;
+  const accel = metrics.accel;
+  const brake = metrics.brake;
+  const lateral = metrics.lateral;
+  const zero = accel.zeroToSpeedKph;
+  const number = (value, digits = 2) => (Number.isFinite(value) ? value.toFixed(digits) : '—');
+  const row = (key, value) => '<tr><td class="t-key">' + key + '</td><td class="t-value">' + value + '</td></tr>';
+  panel.innerHTML =
+    '<div class="t-head">telemetry · ' + state.car.name + ' · ' + state.car.drivetrain + ' · ' +
+      Math.round(state.car.mass) + ' kg</div>' +
+    '<div class="t-sub">' + telemetry.sampleHz + ' Hz · one sample per engine tick · measured from ' +
+      'e1_get_state · input is a tick-only script · diagnostic, not retail fidelity</div>' +
+    '<table>' +
+    row('accel 86 m', '<span class="t-metric">0–50 ' + number(zero['50'].seconds, 3) + ' s</span> · ' +
+      '0–80 ' + number(zero['80'].seconds, 3) + ' s · ' +
+      '<span class="t-metric">0–100 ' + number(zero['100'].seconds, 3) + ' s</span>') +
+    row('speed at 86 m', number(accel.endSpeedKph, 1) + ' km/h · ' + accel.nanTicks + ' NaN · ' +
+      telemetry.instances + ' wasm instances') +
+    row('brake from 80', 'entry ' + number(brake.entrySpeedKph, 2) + ' km/h → ' +
+      number(brake.distanceMetres, 2) + ' m in ' + number(brake.brakingTimeSeconds, 3) + ' s') +
+    row('deceleration', 'peak ' + number(brake.peakDecelMps2, 2) + ' m/s² (' + number(brake.peakDecelG, 2) +
+      ' g) · mean ' + number(brake.meanDecelMps2, 2) + ' m/s²') +
+    row('lateral sweep', 'peak ' + number(lateral.peakLateralAbsG, 2) + ' g at tick ' + lateral.peakLateralTick +
+      ' · yaw ' + number(lateral.peakYawRateAbsDegPerSec, 1) + ' °/s') +
+    row('yaw response', number(lateral.yawResponseTicks, 1) + ' ticks · ' + lateral.yawSignChanges + '/' +
+      lateral.steerReversals + ' reversals · entry ' + number(lateral.entrySpeedKph, 1) + ' km/h') +
+    row('contact a·b·l', accel.contactTicks + '/' + accel.ticks + ' · ' + brake.contactTicks + '/' +
+      brake.ticks + ' · ' + lateral.contactTicks + '/' + lateral.ticks) +
+    '</table>' +
+    '<div class="t-chart"><div class="t-label">accel · speed km/h (0 → ' + number(accel.distanceMetres, 1) +
+      ' m)</div>' + telemetryChart(telemetry.traces.accel, 'speedKph', { label: 'accel speed km/h', digits: 0 }) + '</div>' +
+    '<div class="t-chart"><div class="t-label">brake · speed km/h (brake step at tick ' + brake.brakeTick +
+      ')</div>' + telemetryChart(telemetry.traces.brake, 'speedKph', { label: 'brake speed km/h', digits: 0, colour: '#e8c46f' }) +
+      '</div>' +
+    '<div class="t-chart"><div class="t-label">lateral · g (square steer ±' + lateral.sweepAmplitude + ' every ' +
+      lateral.sweepHalfPeriodTicks + ' ticks)</div>' +
+      telemetryChart(telemetry.traces.lateral, 'lateralG', { label: 'lateral g', digits: 2, colour: '#8fe3b0' }) + '</div>' +
+    '<div class="t-foot">plan derived from the accel run: brake tick ' + telemetry.plan.brakeTick +
+      ' is the first measured 80 km/h tick · 5 cars · see docs/work/verification/T-007-telemetry.md</div>';
+  panel.hidden = false;
+}
+
+/** Run the series and build the presented timeline from the accel run. */
+async function runTelemetryMode() {
+  const engineSet = await createWasmTelemetryEngineSet({
+    factory: engineFactory,
+    levelBytes,
+    fieldBytes,
+    spawn: { x: spawn.x, z: spawn.z, heading: spawn.heading },
+    count: TELEMETRY_MANOEUVRE_ORDER.length,
+    label: car.slug
+  });
+  const started = performance.now();
+  const series = runTelemetrySeries(engineSet);
+  const seriesMs = Math.round(performance.now() - started);
+  const metrics = series.metrics;
+  const hashes = {};
+  for (const manoeuvre of TELEMETRY_MANOEUVRE_ORDER) {
+    const perTick = series.states[manoeuvre].map((state) => hashOf(state));
+    hashes[manoeuvre] = { ticks: perTick.length, traceHash: hashOf(perTick) };
+  }
+
+  const accelStates = series.states.accel;
+  const presentTick = metrics.accel.zeroToSpeedKph['100'].tick ?? accelStates.length - 1;
+  const tick0 = accelStates[0];
+  session = createSession(geometry, tick0, {
+    spawn: { ...spawn, source: spawn.source ?? 'probes/e1-drive/tools/spawn.mjs' },
+    car: state.car,
+    script: TELEMETRY_PACKET_SCRIPT,
+    camera: Object.keys(CAMERA_OVERRIDE).length ? CAMERA_OVERRIDE : undefined
+  });
+  const tickHashes = [];
+  for (let index = 0; index < accelStates.length; index++) {
+    const update = session.appendState(accelStates[index]);
+    tickHashes.push({
+      tick: accelStates[index].tick,
+      stateHash: hashOf(accelStates[index]),
+      packetHash: update?.hash ?? null
+    });
+  }
+  session.finalise();
+
+  const partsInfo = session.packet.diagnostics.extras.parts;
+  state.parts = partsInfo?.partCount ?? 0;
+  state.carDraws = partsInfo?.drawCount ?? 0;
+  state.packetNodes = session.packet.nodes.length;
+  state.wheelNodes = session.packet.diagnostics.extras.wheels.wheelNodes.length;
+  const trackInfo = session.packet.diagnostics.extras.track;
+  state.trackVisual = trackInfo?.trackVisual ?? null;
+  state.trackDraws = trackInfo?.drawCount ?? 0;
+  state.trackTriangles = trackInfo?.triangleCount ?? 0;
+  state.collisionFallbackTriangles = trackInfo?.coverage?.fallbackTriangles ?? 0;
+  state.collisionCoveredTriangles = trackInfo?.coverage?.coveredTriangles ?? 0;
+  state.collisionVisible = session.packet.diagnostics.extras.collisionSurface?.visible ?? null;
+  state.bodyMesh = session.packet.diagnostics.extras.drive.car?.bodyMesh ?? null;
+  state.bodyManifest = partsInfo?.manifest ?? null;
+  state.updates = session.packet.updates;
+  state.wheelAnglesByTick = session.wheelAnglesByTick;
+  state.wheelAngles = session.wheelAnglesByTick?.[presentTick]?.angles ?? session.wheelSpin.angle;
+  state.tickHashes = tickHashes;
+  state.tick0Hash = tickHashes[0]?.packetHash ?? null;
+  state.tick0State = tick0;
+  state.tick0Update = session.packet.updates[0] ?? null;
+  state.packetHash = session.packet.hash;
+  state.tickHash = session.packet.updates[presentTick]?.hash ?? null;
+  state.draws = session.packet.draws.length;
+  state.telemetry = {
+    ready: true,
+    car: state.car,
+    sampleHz: TELEMETRY_SPEC.tickHz,
+    spec: TELEMETRY_SPEC,
+    plan: series.plan,
+    metrics: summariseTelemetryMetrics(metrics),
+    traces: {
+      accel: metrics.accel.trace,
+      brake: metrics.brake.trace,
+      lateral: metrics.lateral.trace
+    },
+    inputModel: 'accel: throttle on every tick; brake: a step at the tick the accel run first measured ' +
+      '80 km/h; lateral: throttle then a square steering sweep derived from the tick',
+    hashes,
+    seriesMs,
+    instances: TELEMETRY_MANOEUVRE_ORDER.length,
+    presentation: { manoeuvre: 'accel', tick: presentTick, reason: '0–100 km/h crossing, on the drawn road' },
+    packetHash: session.packet.hash,
+    ticks: Object.fromEntries(TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) =>
+      [manoeuvre, series.states[manoeuvre].length]))
+  };
+  await consumer.load(session.packet);
+  state.engineTick = presentTick;
+  state.displayTick = presentTick;
+  state.holdReached = true;
+  holdReached = true;
+  applyState(accelStates[presentTick]);
+  renderTelemetryPanel();
+  publish();
+}
 
 async function doReset(nowUs) {
   if (pendingRespawn) return;
@@ -647,6 +874,24 @@ async function main() {
   state.consumer = 'loading';
   publish();
   const tick0 = await loadEngine();
+
+  if (TELEMETRY) {
+    await runTelemetryMode();
+    state.adapter = consumer.adapterInfo
+      ? [consumer.adapterInfo.vendor, consumer.adapterInfo.architecture, consumer.adapterInfo.device].filter(Boolean).join(' / ') || 'unnamed adapter'
+      : 'unnamed adapter';
+    const telemetryAspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+    if (Math.abs(telemetryAspect - session.packet.camera.aspect) > 0.01) {
+      throw new Error('canvas aspect ' + telemetryAspect.toFixed(4) + ' does not match the packet camera aspect ' +
+                      session.packet.camera.aspect.toFixed(4));
+    }
+    state.consumer = 'running';
+    publish();
+    if (consumer.device) await consumer.device.queue.onSubmittedWorkDone();
+    requestAnimationFrame(frame);
+    return;
+  }
+
   state.adapter = consumer.adapterInfo
     ? [consumer.adapterInfo.vendor, consumer.adapterInfo.architecture, consumer.adapterInfo.device].filter(Boolean).join(' / ') || 'unnamed adapter'
     : 'unnamed adapter';

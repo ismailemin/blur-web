@@ -249,6 +249,12 @@ vertex / 26.077 üçgen** tam node referansıyla birebir. 57/57 bounds-253 ve VB
 eşit; packet 312 kayıt / 152 drawable, hash `7c29fb2ec7769709`; 56 nesne,
 849.609 B, 80/80. Kanıt: `docs/work/verification/T-007-drawlist-57.md`.
 
+**Telemetri (P39):** 5 araç için 0–50/0–100, fren mesafesi, yanal grip ve yaw
+ölçüldü. 0–100 sırası XT `torqueScale/mass` sırasıyla birebir: Audi 2,650 s →
+Corvette 3,650 → Lotus 3,833 → Dodge 4,633 → Focus 5,133. `verify_e1_drive`
+**423/423**; 5 telemetri capture, console 0. Sınır: 86 m bant, Vmax değil.
+Kanıt: `docs/work/verification/T-007-telemetry.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

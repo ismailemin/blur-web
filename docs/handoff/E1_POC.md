@@ -58,6 +58,18 @@ http://127.0.0.1:8801/?script=drive
 http://127.0.0.1:8801/?script=drive&car=audi-r8v10-stock
 ```
 
+Sprint:
+
+```text
+http://127.0.0.1:8801/?script=sprint
+```
+
+Telemetri (0–50/0–100, fren, yanal grip + grafikler):
+
+```text
+http://127.0.0.1:8801/?telemetry=1&car=audi-r8v10-stock
+```
+
 HUD'da araç, tick, hız, temas, packet/tick hash ve state hash görünür. Node
 doğrulayıcısıyla aynı hash'i vermelidir.
 
@@ -77,6 +89,10 @@ doğrulayıcısıyla aynı hash'i vermelidir.
 - Materyaller diagnostic; doku/boya/gölge/post yok.
 - Pist yüzeyi collision geometrisi; gerçek yol draw set’i değil.
 - Box gravity proxy, nötr yüzey skalarları, XT `physicsParameters` açık.
+- Telemetri: 0–100 sırası Audi → Corvette → Lotus → Dodge → Focus; ölçüm
+  86 m’lik bantta, “top speed” Vmax değil.
+- `R` restart sayfayı yeniler (kütüphane 3. resetten sonra abort ediyor;
+  bilinen sınır).
 - Yarış kuralları/checkpoint/finish, ses, multiplayer yok.
 
 ## Sorun giderme

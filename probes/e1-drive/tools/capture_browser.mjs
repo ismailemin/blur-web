@@ -60,8 +60,8 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'respawn'].includes(MODE)) {
-  throw new Error('unknown --mode ' + JSON.stringify(MODE) + ' (drive, sprint or respawn)');
+if (!['drive', 'sprint', 'respawn', 'telemetry'].includes(MODE)) {
+  throw new Error('unknown --mode ' + JSON.stringify(MODE) + ' (drive, sprint, respawn or telemetry)');
 }
 const DIAGNOSTIC_CAMERA = /(^|&)cam(dist|height)=/.test(EXTRA_QUERY);
 const MID_TICK = 150;
@@ -350,7 +350,9 @@ function cameraMaxDelta(a, b) {
 }
 
 if (MODE !== 'drive') {
-  const result = MODE === 'sprint' ? await sprintCapturePass() : await respawnCapturePass();
+  const result = MODE === 'sprint' ? await sprintCapturePass()
+    : MODE === 'respawn' ? await respawnCapturePass()
+      : await telemetryCapturePass();
   await shutdown();
   await sleep(400);
   console.log(JSON.stringify(result.summary, null, 2));
@@ -648,6 +650,251 @@ async function respawnCapturePass() {
       screenshot: evidence.screenshot,
       consoleMessages: messages.length,
       failures: passFailures
+    }
+  };
+}
+
+/** Largest numeric difference between two JSON-shaped values (numbers only). */
+function maxNumericDelta(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b);
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return Infinity;
+    return a.reduce((worst, value, index) => Math.max(worst, maxNumericDelta(value, b[index])), 0);
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    let worst = 0;
+    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      worst = Math.max(worst, maxNumericDelta(a[key], b[key]));
+    }
+    return worst;
+  }
+  return a === b ? 0 : Infinity;
+}
+
+/**
+ * Telemetry capture (`?telemetry=1`): one frame per car with the metric table and
+ * the three 60 Hz charts. The page recomputes the whole series from its own
+ * wasm instances, so the metric object and the per-tick state hash sequence must
+ * equal the node verifier's values exactly.
+ */
+async function telemetryCapturePass() {
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  if (!runDocument.telemetry?.cars) {
+    throw new Error('run.json has no telemetry block — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const telemetryRun = runDocument.telemetry;
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const rows = [];
+
+  for (const car of cars) {
+    const entry = telemetryRun.cars.find((candidate) => candidate.slug === car.slug);
+    if (!entry) throw new Error('run.json has no telemetry result for ' + car.slug);
+    const body = geometry.carBodies[car.slug];
+    if (!body) throw new Error('geometry has no body for ' + car.slug);
+    const uploadBytes = meshBytes(levelMesh) + meshBytes(body.mesh) + meshBytes(trackMesh);
+    const draws = 22 + geometry.trackVisual.drawCount + body.carDraws.length;
+
+    messages.length = 0;
+    const url = origin + '/?telemetry=1&car=' + encodeURIComponent(car.slug);
+    await send('Page.navigate', { url });
+    let live = null;
+    for (let attempt = 0; attempt < 500; attempt++) {
+      live = await evaluate(`(()=>{const p=window.e1DriveProbe;return p?{state:p.consumer,error:p.error,frames:p.frames,holdReached:p.holdReached,ready:p.telemetry?.ready===true,tick:p.telemetry?.presentation?.tick??null,engineTick:p.engineTick}:null})()`).catch(() => null);
+      if (live && live.state === 'error') break;
+      if (live && live.state === 'running' && live.ready && live.holdReached && live.frames >= 12) break;
+      await sleep(200);
+    }
+    if (!live) throw new Error('telemetry capture: page never published state');
+    if (live.state === 'error') throw new Error('telemetry capture: page error: ' + live.error);
+
+    const full = await evaluate(`(()=>{
+      const p = window.e1DriveProbe;
+      const canvas = document.getElementById('scene');
+      const panel = document.getElementById('telemetry');
+      const select = document.getElementById('car-select');
+      const tick = p.telemetry?.presentation?.tick ?? 0;
+      const update = p.updates ? p.updates[tick] : null;
+      return {
+        mode: p.mode, car: p.car, holdReached: p.holdReached, engineTick: p.engineTick, displayTick: p.displayTick,
+        phase: p.phase, frames: p.frames, draws: p.draws, drawsIssued: p.drawsIssued,
+        geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
+        packetNodes: p.packetNodes, wheelNodes: p.wheelNodes, parts: p.parts, carDraws: p.carDraws,
+        packetHash: p.packetHash, tickHash: p.tickHash, wheelAngles: p.wheelAngles,
+        movedScreen: p.movedScreen, gpu: p.adapter,
+        telemetry: p.telemetry ? {
+          ready: p.telemetry.ready,
+          sampleHz: p.telemetry.sampleHz,
+          plan: p.telemetry.plan,
+          metrics: p.telemetry.metrics,
+          hashes: p.telemetry.hashes,
+          presentation: p.telemetry.presentation,
+          ticks: p.telemetry.ticks,
+          instances: p.telemetry.instances,
+          seriesMs: p.telemetry.seriesMs
+        } : null,
+        selector: select ? { options: select.options.length, value: select.value } : null,
+        panel: panel ? {
+          hidden: panel.hidden,
+          text: panel.textContent,
+          svgs: panel.querySelectorAll('svg').length,
+          tables: panel.querySelectorAll('table').length,
+          height: panel.getBoundingClientRect().height,
+          width: panel.getBoundingClientRect().width
+        } : null,
+        canvas: { width: canvas.width, height: canvas.height },
+        render: update ? { tick: update.tick, hash: update.hash, matrices: update.matrices } : null
+      };
+    })()`);
+
+    const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const shotMessages = messages.splice(0);
+    const file = path.join(OUT, `browser-${car.slug}-telemetry.png`);
+    writeFileSync(file, Buffer.from(shot.data, 'base64'));
+
+    let crop = null;
+    const moved = full.movedScreen;
+    if (moved) {
+      const width = Math.min(VIEWPORT.width, Math.max(220, Math.round((moved.width || 60) * 2.2)));
+      const height = Math.min(VIEWPORT.height, Math.max(160, Math.round((moved.height || 40) * 2.2)));
+      const x = Math.max(0, Math.min(VIEWPORT.width - width, Math.round(moved.x - width / 2)));
+      const y = Math.max(0, Math.min(VIEWPORT.height - height, Math.round(moved.y - height / 2)));
+      const clipped = await send('Page.captureScreenshot', {
+        format: 'png', captureBeyondViewport: false, clip: { x, y, width, height, scale: 2 }
+      });
+      crop = path.join(OUT, `browser-${car.slug}-telemetry-car.png`);
+      writeFileSync(crop, Buffer.from(clipped.data, 'base64'));
+    }
+
+    const metrics = full.telemetry?.metrics ?? null;
+    const nodeMetrics = entry.metrics;
+    const delta = metrics ? maxNumericDelta(metrics, nodeMetrics) : Infinity;
+    const manoeuvres = Object.keys(entry.hashes);
+    const panelText = full.panel?.text ?? '';
+    const zeroTo100 = nodeMetrics.accel.zeroToSpeedKph['100'].seconds;
+    const traceMatch = manoeuvres.map((manoeuvre) => ({
+      manoeuvre,
+      page: full.telemetry?.hashes?.[manoeuvre]?.traceHash ?? null,
+      node: entry.hashes[manoeuvre].traceHash,
+      pageTicks: full.telemetry?.hashes?.[manoeuvre]?.ticks ?? null,
+      nodeTicks: entry.hashes[manoeuvre].ticks
+    }));
+
+    passCheck(`${car.slug}: the page recomputes the node telemetry metrics exactly`,
+      delta === 0, 'max |delta| ' + (Number.isFinite(delta) ? delta.toExponential(3) : 'structure differs'));
+    passCheck(`${car.slug}: the brake step is the node's measured 80 km/h tick`,
+      full.telemetry?.plan?.brakeTick === nodeMetrics.brake.brakeTick &&
+      nodeMetrics.brake.brakeTick === entry.metrics.brake.brakeTick,
+      String(full.telemetry?.plan?.brakeTick));
+    passCheck(`${car.slug}: every per-tick telemetry state hash sequence matches the node run`,
+      traceMatch.every((row) => row.page === row.node && row.pageTicks === row.nodeTicks),
+      traceMatch.map((row) => row.manoeuvre + ':' + (row.page === row.node ? 'match' : 'DIFF') +
+        '(' + row.pageTicks + ')').join(' '));
+    passCheck(`${car.slug}: the presented accel tick is the node 0-100 km/h tick`,
+      full.telemetry?.presentation?.tick === nodeMetrics.accel.zeroToSpeedKph['100'].tick &&
+      full.displayTick === full.telemetry?.presentation?.tick &&
+      full.render?.tick === full.displayTick,
+      `present ${full.telemetry?.presentation?.tick}, display ${full.displayTick}, render ${full.render?.tick}`);
+    passCheck(`${car.slug}: the telemetry panel is visible with a metric table and three charts`,
+      full.panel && full.panel.hidden === false && full.panel.tables === 1 && full.panel.svgs === 3 &&
+      full.panel.height > 300 && full.panel.width > 400,
+      JSON.stringify({ hidden: full.panel?.hidden, tables: full.panel?.tables, svgs: full.panel?.svgs,
+        height: full.panel?.height, width: full.panel?.width }));
+    passCheck(`${car.slug}: the panel labels the car, the units, the sampling and the measured 0-100 time`,
+      panelText.includes(car.name) &&
+      panelText.includes('0–100 ' + zeroTo100.toFixed(3) + ' s') &&
+      panelText.includes('60 Hz') && panelText.includes('km/h') && panelText.includes('m/s²') &&
+      panelText.includes('°/s') && panelText.includes('samples') && panelText.includes('NaN'),
+      panelText.slice(0, 120));
+    passCheck(`${car.slug}: the telemetry page still renders the packet (3 uploads, one draw per draw per frame, 9 matrices)`,
+      full.geometryUploads === MESH_COUNT && full.geometryUploadBytes === uploadBytes &&
+      full.draws === draws && full.drawsIssued === full.frames * full.draws &&
+      full.render?.matrices?.length === 9,
+      `${full.geometryUploads} uploads / ${full.geometryUploadBytes} B / ${full.drawsIssued} draws in ` +
+      `${full.frames} frames / ${full.render?.matrices?.length} matrices`);
+    passCheck(`${car.slug}: the page drove the requested car and lists the roster`,
+      full.car?.name === car.name && full.selector?.value === car.slug &&
+      full.selector?.options === run.roster.counts.selected,
+      JSON.stringify(full.selector));
+    const blocking = shotMessages.filter((entry) => entry.source !== 'console.log');
+    passCheck(`${car.slug}: console is clean in the telemetry capture`, blocking.length === 0,
+      blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+
+    rows.push({
+      car: car.name,
+      slug: car.slug,
+      url: url.replace(origin, ''),
+      screenshot: path.relative(ROOT, file).split(path.sep).join('/'),
+      carCrop: crop ? path.relative(ROOT, crop).split(path.sep).join('/') : null,
+      mode: full.mode,
+      presentationTick: full.telemetry?.presentation?.tick ?? null,
+      metrics,
+      nodeMetrics,
+      metricMaxDelta: delta,
+      metricsExact: delta === 0,
+      planBrakeTick: full.telemetry?.plan?.brakeTick ?? null,
+      traceHashes: traceMatch,
+      panel: full.panel ? { hidden: full.panel.hidden, svgs: full.panel.svgs, tables: full.panel.tables,
+        height: full.panel.height, width: full.panel.width } : null,
+      packetHash: full.packetHash,
+      tickHash: full.tickHash,
+      renderTick: full.render?.tick ?? null,
+      frames: full.frames,
+      draws: full.draws,
+      drawsIssued: full.drawsIssued,
+      geometryUploads: full.geometryUploads,
+      geometryUploadBytes: full.geometryUploadBytes,
+      matrices: full.render?.matrices?.length ?? null,
+      gpu: full.gpu,
+      canvas: full.canvas,
+      messages: shotMessages
+    });
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages);
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  passCheck('console is clean in every telemetry capture', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  passCheck('telemetry: every car recomputed the node metrics exactly',
+    rows.every((row) => row.metricsExact === true),
+    rows.map((row) => `${row.slug}:${row.metricMaxDelta}`).join(', '));
+
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'telemetry',
+    sampleHz: telemetryRun.sampleHz,
+    spec: telemetryRun.spec,
+    limits: telemetryRun.limits,
+    ordering: telemetryRun.ordering,
+    cars: rows,
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-telemetry.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-telemetry.log'), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-gates',
+    summary: {
+      verdict: evidence.verdict,
+      consoleMessages: evidence.console.totalMessages,
+      errorsAndWarnings: evidence.console.errorsAndWarnings,
+      failures: passFailures,
+      cars: rows.map((row) => ({
+        car: row.car,
+        slug: row.slug,
+        zeroTo100: row.metrics.accel.zeroToSpeedKph['100'].seconds,
+        speedAt86m: row.metrics.accel.endSpeedKph,
+        brakeDistance: row.metrics.brake.distanceMetres,
+        lateralG: row.metrics.lateral.peakLateralAbsG,
+        presentationTick: row.presentationTick,
+        metricsExact: row.metricsExact,
+        traceHashesMatch: row.traceHashes.every((trace) => trace.page === trace.node),
+        screenshot: row.screenshot,
+        carCrop: row.carCrop,
+        svgs: row.panel?.svgs ?? null,
+        messages: row.messages.length
+      }))
     }
   };
 }

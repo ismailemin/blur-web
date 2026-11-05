@@ -1075,3 +1075,121 @@ per-car `sprint-<slug>.json`.
   rules-off replay; penalties, collisions and wrong-way logic are out of scope.
 - Native-vs-wasm parity remains blocked by the DirectX SDK
   (`T-007-vehicle-physics.md` §7).
+
+---
+
+## 16. Per-car telemetry and a small validation report (T-007/telemetry, P39)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-telemetry.md`. No change to the
+engine, the wasm module, `probes/render-packet/`, `probes/car-parts/`, tools,
+`upstream/` or `game-data/`. Physics is unchanged: all five drive state sequence
+hashes and drive packet hashes and all five sprint sequence hashes are the
+P36/P37 anchors, and the verifier now pins them for every car, not only the
+Corvette.
+
+### 16.1 Why
+
+The sprint answers "who is faster over 29 m"; it does not answer "does this car
+accelerate, stop and turn like its XT record says". The telemetry mode adds three
+deterministic manoeuvres per car and reports the measured numbers in units, with
+a 60 Hz trace. Nothing about the physics changes: the page and the verifier feed
+the same `e1_set_input` calls to the same wasm build, and the manoeuvres are
+separate from the drive/sprint paths.
+
+### 16.2 The three manoeuvres (tick-only inputs)
+
+`web/telemetry.js` holds the scripts and the analysis; both the page and the node
+verifier import it.
+
+| manoeuvre | input | what is reported |
+| --- | --- | --- |
+| `accel` | throttle on every tick, fixed 86 m window | 0–50 / 0–80 / 0–100 km/h ticks, top speed, speed and distance at the end of the window |
+| `brake` | throttle, then brake from the tick the accel run first measured 80 km/h | entry speed, stop tick, distance, peak and mean deceleration |
+| `lateral` | 120 throttle ticks, then 4 square half-periods of 36 ticks at ±0.6 steer | peak lateral acceleration, peak yaw rate, yaw lag behind each steering reversal |
+
+Each manoeuvre runs in its own fresh wasm instance (`e1_create` at the committed
+spawn). The brake step tick is measured in the same series (`plan.brakeTick`), so
+the executed input is a constant step function of the tick; the steer sweep is a
+square wave built with `Math.floor`, not `sin`/`cos`, so Node and Edge agree
+exactly. Speed comes from `state.speed`, acceleration from the per-tick finite
+difference of `state.velocity` projected on the body axes, yaw from
+`state.angular` projected on the body up axis. Nothing is fitted and no engine
+parameter is read back into the report.
+
+### 16.3 Measured (`_work/e1-drive/telemetry.json`)
+
+| car | 0–50 | 0–100 | speed at 86 m | brake 80–0 | peak / mean decel | lateral peak | yaw peak | yaw response |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Audi R8 V10 (AWD) | 1.133 s | **2.650 s** | **135.2 km/h** | **13.34 m** | 24.77 / 15.46 m/s² | **1.52 g** | 22.7 °/s | 12.7 ticks |
+| Corvette ZR1 (RWD) | 1.817 s | 3.650 s | 126.5 km/h | 14.83 m | 20.80 / 15.13 m/s² | 0.86 g | 22.2 °/s | 15.3 ticks |
+| Lotus Exige (RWD) | 1.900 s | 3.833 s | 119.1 km/h | 17.00 m | 18.40 / 12.65 m/s² | 0.99 g | 22.7 °/s | 12.3 ticks |
+| Dodge Challenger (RWD) | 2.100 s | 4.633 s | 108.2 km/h | 17.07 m | 18.47 / 13.34 m/s² | 0.84 g | 19.0 °/s | 14.7 ticks |
+| Ford Focus RS (FWD) | 2.400 s | 5.133 s | 107.1 km/h | 18.73 m | 16.59 / 11.76 m/s² | 1.32 g | 26.3 °/s | 13.3 ticks |
+
+Every manoeuvre: wheel contact on every tick, 0 non-finite states, distinct state
+hashes per tick, and the recorded inputs replayed into a fresh instance set give
+identical hashes.
+
+### 16.4 Plausibility against the XT records (not a fidelity claim)
+
+- 0–100 order (Audi < Corvette < Lotus < Dodge < Focus) is **exactly** the order
+  of `torqueScaleNm / mass` (905/1600, 780/1600, 370/890, 675/1700, 455/1400).
+  `accelRankDistance = 0` in `run.json`. The AWD car is quickest, the FWD car
+  slowest, the 1700 kg Dodge slower than the 1600 kg Corvette with less torque.
+  The 86 m terminal-speed order is the same.
+- Braking order is the same but the **Lotus is an anomaly**: it has the highest
+  XT brake-to-mass ratio (1.985/890) and only the third-shortest stop (17.00 m).
+  Brake scalars alone do not order the stop (tyre grip, balance and entry speed
+  also contribute), so the measured anomaly is recorded and not explained.
+  `brakeRankDistance = 2` is the verifier's coarse plausibility bound.
+- Lateral output separates cars that share the same XT grip points, so the sweep
+  orders the *response* at a fixed steer, not a grip limit: the Audi (1.52 g at
+  64.6 km/h entry) and Focus (1.32 g at 29.8 km/h) are highest, the long,
+  heavy Dodge lowest (0.84 g).
+- Peak deceleration is a one-tick finite difference including the brake
+  application transient (1.69–2.53 g); the mean over the stop (1.20–1.58 g) is
+  the robust figure. Both are reported and labelled.
+
+### 16.5 Verification
+
+`_work/e1-drive/run.json` — **PASS, 423/423 checks** (348 P37 + 75 telemetry).
+The 75 new checks cover the three-manoeuvre structure, monotonic timers,
+independent re-derivation of every timer from the recorded states, the fixed 86 m
+window on the ground, top speed = max measured speed, brake entry/stop/distance/
+deceleration sanity, lateral peak and yaw-response consistency, 60 Hz contiguous
+traces, tick-only input shape, tick-0 identity with the drive, **two independent
+instance sets**, **input replay**, distinct per-tick hashes, the unchanged physics
+anchors, and five cross-car ordering/plausibility gates.
+
+`tools/verify_asset_probe.py --skip-build` — **Passed 29 checks** (no regression).
+
+### 16.6 Browser evidence
+
+Five headless Edge/WebGPU captures at the 0–100 km/h tick (219 / 230 / 278 / 308 /
+159), **0 console messages**, panel visible with one table and three charts,
+`maxNumericDelta = 0` against the node metrics, the brake plan tick equal, and
+the three per-tick state hash traces **SHA-256 equal** to node. The legacy paths
+were re-run: the 15-capture sprint pass is clean (12/15 exact packet hashes, the
+same three documented last-bit differences) and the Corvette drive regression is
+clean (4/4 exact, P36 positions/speeds). Screenshots:
+`browser-<slug>-telemetry.png` and `-car.png`.
+
+### 16.7 Limits
+
+- **One strip, not a lap.** 0–100 km/h fits for all five cars; a Vmax run, a
+  100–0 km/h stop and a full lap do not fit on the measured data. Braking is from
+  80 km/h (entry measured per car) and "top speed" is the maximum inside the
+  86 m window.
+- **Lateral is a response at a fixed steer**, not a grip limit; entry speed
+  differs per car (29.8–64.6 km/h) and is reported.
+- **Peak deceleration includes a one-tick transient**; the mean is reported too.
+- **Module rebuild limit, measured and not fixed here:** this wasm build aborts on
+  a third `e1_reset()` or fourth `e1_create()` in one instance. Every existing
+  path stays below that, but telemetry needs three rebuilds, so it uses one fresh
+  instance per manoeuvre; `R` reloads the page. Recorded in
+  `T-007-telemetry.md`.
+- **No retail-fidelity claim.** Diagnostic visuals, unchanged physics, one
+  measured strip, five XT cars, no opponents/audio/multiplayer/streaming.
+- Native-vs-wasm parity remains blocked by the DirectX SDK.

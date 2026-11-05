@@ -49,6 +49,10 @@ import {
 import { SPRINT_EVENT, createSprintRules } from '../web/sprint-rules.js';
 import { SPRINT_SCRIPT_TICKS, SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput } from '../web/sprint-script.js';
 import { createBestTimes } from '../web/sprint-best.js';
+import {
+  createWasmTelemetryEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
+  TELEMETRY_MANOEUVRE, TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_SPEC, tickAtSpeedKph
+} from '../web/telemetry.js';
 import { TICK0_LIMITS } from './spawn.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -1227,6 +1231,343 @@ for (const car of cars) {
   });
 }
 
+// ------------------------------------------------------------- telemetry
+// Three deterministic manoeuvres per car. Each manoeuvre runs in its own fresh
+// wasm module instance (this build cannot rebuild one instance more than about
+// three times), the whole series is run twice in two independent instance sets,
+// and the recorded input sequence is replayed into a third set. The analysis
+// only reads the state the engine reports.
+async function telemetryInstances(car, fieldBytes) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  return createWasmTelemetryEngineSet({
+    factory,
+    levelBytes,
+    fieldBytes,
+    spawn: { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, heading: TICK0_LIMITS.heading },
+    count: TELEMETRY_MANOEUVRE_ORDER.length,
+    label: car.slug
+  });
+}
+
+async function runTelemetryForCar(car, fieldBytes) {
+  const engine = await telemetryInstances(car, fieldBytes);
+  const started = Date.now();
+  const series = runTelemetrySeries(engine);
+  return { series, ms: Date.now() - started, info: engine.info };
+}
+
+/** Per-tick state hashes of every manoeuvre, plus their sequence hash. */
+function telemetryHashes(series) {
+  const rows = {};
+  for (const manoeuvre of TELEMETRY_MANOEUVRE_ORDER) {
+    const hashes = series.states[manoeuvre].map((state) => hashOfLocal(state));
+    rows[manoeuvre] = { hashes, traceHash: hashOfLocal(hashes), aggregate: aggregate(hashes) };
+  }
+  return rows;
+}
+
+/** Replay the recorded input sequences in a fresh instance set. */
+async function replayTelemetryInputs(car, fieldBytes, inputs) {
+  const engine = await telemetryInstances(car, fieldBytes);
+  const rows = {};
+  for (const manoeuvre of TELEMETRY_MANOEUVRE_ORDER) {
+    const state0 = engine.reset();
+    const hashes = [hashOfLocal(state0)];
+    for (const input of inputs[manoeuvre]) {
+      engine.setInput(input);
+      hashes.push(hashOfLocal(engine.step()));
+    }
+    rows[manoeuvre] = { hashes, traceHash: hashOfLocal(hashes), aggregate: aggregate(hashes) };
+  }
+  return rows;
+}
+
+// Every car's drive and sprint state sequence hash from the P36/P37 records. The
+// telemetry pass must not move them: it uses its own instances and never touches
+// the drive, sprint or keyboard paths.
+const PHYSICS_ANCHORS = Object.freeze({
+  'corvette-zr1-stock': {
+    drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
+    packet: 'sha256:9462fda8174920159217ba44d048ab9d52f6a86353ebd6f6b8a5b140ea59157a',
+    sprint: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
+  },
+  'lotus-exige-cup260-stock': {
+    drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
+    packet: 'sha256:f29563306ef8622a67f09437e030bb1bfff5479b69f298c724de66d98f278e62',
+    sprint: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
+  },
+  'dodge-challenger-stock': {
+    drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
+    packet: 'sha256:d866be004068a16532383d35e8a84e424b99c3f249159708ee8850e8f960373e',
+    sprint: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
+  },
+  'ford-focusrs-stock': {
+    drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
+    packet: 'sha256:fa9e334d9bfbc56281162dd2ed5efeaf3f0551126a67c92e1ffeb8a77d46a28d',
+    sprint: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
+  },
+  'audi-r8v10-stock': {
+    drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
+    packet: 'sha256:4a9b317992227e03a9a94969e025034a664977b9354622c3a1bdc3e05c189888',
+    sprint: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
+  }
+});
+
+const telemetryResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const runA = await runTelemetryForCar(car, fieldBytes);
+  const runB = await runTelemetryForCar(car, fieldBytes);
+  const replay = await replayTelemetryInputs(car, fieldBytes, runA.series.inputs);
+  const metrics = runA.series.metrics;
+  const summary = summariseTelemetryMetrics(metrics);
+  const hashesA = telemetryHashes(runA.series);
+  const hashesB = telemetryHashes(runB.series);
+  const accel = metrics.accel;
+  const brake = metrics.brake;
+  const lateral = metrics.lateral;
+  const zero = accel.zeroToSpeedKph;
+  const independentTicks = {
+    '50': tickAtSpeedKph(runA.series.states.accel, 50),
+    '80': tickAtSpeedKph(runA.series.states.accel, 80),
+    '100': tickAtSpeedKph(runA.series.states.accel, 100)
+  };
+  const t50 = zero['50']?.seconds;
+  const t80 = zero['80']?.seconds;
+  const t100 = zero['100']?.seconds;
+  const driveRow = results.find((entry) => entry.slug === car.slug);
+  const anchors = PHYSICS_ANCHORS[car.slug];
+  const sprintRow = sprintResults.find((entry) => entry.slug === car.slug);
+  const independentTopSpeed = Math.max(...runA.series.states.accel.map((state) => state.speed));
+
+  check(`${car.name}: telemetry runs three manoeuvres in one instance each`,
+        TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) => runA.series.states[manoeuvre].length > 2 &&
+          runA.series.metrics[manoeuvre].ticks === runA.series.states[manoeuvre].length) &&
+        runA.series.states.accel[0].tick === 0,
+        TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) =>
+          `${manoeuvre}:${runA.series.states[manoeuvre].length}`).join(' '));
+  check(`${car.name}: telemetry timers are monotonic (0 < 50 < 80 < 100 km/h)`,
+        Number.isFinite(t50) && Number.isFinite(t80) && Number.isFinite(t100) &&
+        t50 > 0 && t80 > t50 && t100 > t80 &&
+        zero['50'].distanceMetres < zero['80'].distanceMetres &&
+        zero['80'].distanceMetres < zero['100'].distanceMetres,
+        `50 ${t50} s, 80 ${t80} s, 100 ${t100} s`);
+  check(`${car.name}: every reported timer is the measured tick, not a fit`,
+        TELEMETRY_SPEC.accel.thresholdsKph.every((kph) =>
+          zero[String(kph)].reached === true && zero[String(kph)].tick === independentTicks[String(kph)]) &&
+        independentTicks['50'] < independentTicks['80'] && independentTicks['80'] < independentTicks['100'],
+        JSON.stringify(independentTicks));
+  check(`${car.name}: the standing-start run covers the fixed ${TELEMETRY_SPEC.accel.endDistanceMetres} m window on the ground`,
+        accel.runLimitedBy === 'distance' &&
+        Math.abs(accel.distanceMetres - TELEMETRY_SPEC.accel.endDistanceMetres) < 1.5 &&
+        accel.contactTicks === accel.ticks && accel.nanTicks === 0 &&
+        accel.topSpeedKph > 90 && accel.topSpeedKph < 220,
+        `${accel.distanceMetres} m in ${accel.durationSeconds} s, ${accel.topSpeedKph} km/h at the end, ` +
+        `${accel.contactTicks}/${accel.ticks} contact`);
+  check(`${car.name}: the reported top speed is the maximum measured speed`,
+        Math.abs(independentTopSpeed * 3.6 - accel.topSpeedKph) < 0.01 &&
+        accel.topSpeedTick === runA.series.states.accel[accel.topSpeedTick]?.tick,
+        `${(independentTopSpeed * 3.6).toFixed(3)} vs ${accel.topSpeedKph} km/h`);
+  check(`${car.name}: braking from ${TELEMETRY_SPEC.brake.entrySpeedKph} km/h stops inside the measured strip`,
+        brake.brakeTick === independentTicks['80'] && brake.stopped === true &&
+        brake.entrySpeedKph >= TELEMETRY_SPEC.brake.entrySpeedKph - 0.5 &&
+        brake.entrySpeedKph <= TELEMETRY_SPEC.brake.entrySpeedKph + 1.5 &&
+        brake.distanceMetres > 5 && brake.distanceMetres < 40 &&
+        brake.meanDecelMps2 > 4 && brake.meanDecelMps2 < 20 &&
+        brake.peakDecelMps2 >= brake.meanDecelMps2 &&
+        brake.contactTicks === brake.ticks && brake.nanTicks === 0,
+        `${brake.entrySpeedKph} -> ${brake.stopSpeedMps} m/s in ${brake.brakingTimeSeconds} s / ` +
+        `${brake.distanceMetres} m, mean ${brake.meanDecelMps2} peak ${brake.peakDecelMps2} m/s2`);
+  const consistentReversals = lateral.reversals.every((entry) =>
+    entry.lagTicks !== null && entry.lagTicks > 0 && entry.lagTicks <= 60);
+  check(`${car.name}: the steering sweep measures peak lateral acceleration and a consistent yaw response`,
+        lateral.peakLateralAbsG > 0.2 && lateral.peakLateralAbsG < 2.5 &&
+        lateral.peakYawRateAbsDegPerSec > 5 && lateral.peakYawRateAbsDegPerSec < 90 &&
+        lateral.yawSignPerSteerSign !== 0 &&
+        lateral.steerReversals > 0 && lateral.yawSignChanges === lateral.steerReversals &&
+        consistentReversals &&
+        lateral.contactTicks === lateral.ticks && lateral.nanTicks === 0,
+        `${lateral.peakLateralAbsG} g, ${lateral.peakYawRateAbsDegPerSec} deg/s, ` +
+        `${lateral.yawSignChanges}/${lateral.steerReversals} reversals answered in ` +
+        `${lateral.yawResponseTicks} ticks, ${lateral.contactTicks}/${lateral.ticks} contact`);
+  check(`${car.name}: telemetry traces are one 60 Hz sample per engine tick from tick 0`,
+        TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) => {
+          const states = runA.series.states[manoeuvre];
+          const entry = runA.series.metrics[manoeuvre];
+          return entry.sampleHz === 60 && entry.trace.length === states.length &&
+            states.every((state, index) => state.tick === index) &&
+            states.every((state, index) => index === 0 || state.tick === states[index - 1].tick + 1);
+        }),
+        TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) => manoeuvre + ':' +
+          runA.series.states[manoeuvre].length).join(' '));
+  check(`${car.name}: every telemetry input is a tick-only step script`,
+        runA.series.inputs.accel.every((input) =>
+          input[0] === 1 && input[1] === 0 && input[2] === 0 && input[3] === 0) &&
+        runA.series.inputs.brake.every((input, index) =>
+          (index + 1) <= brake.brakeTick
+            ? input[0] === 1 && input[1] === 0
+            : input[0] === 0 && input[1] === 1) &&
+        runA.series.inputs.lateral.every((input, index) => {
+          const tick = index + 1;
+          if (tick <= TELEMETRY_SPEC.lateral.throttleTicks) return input[0] === 1 && input[2] === 0;
+          const swept = tick - TELEMETRY_SPEC.lateral.throttleTicks;
+          const span = TELEMETRY_SPEC.lateral.sweepHalfPeriodTicks * TELEMETRY_SPEC.lateral.sweepHalfPeriods;
+          if (swept > span) return input[0] === 0 && input[1] === 0 && input[2] === 0;
+          const half = Math.floor((swept - 1) / TELEMETRY_SPEC.lateral.sweepHalfPeriodTicks);
+          const expected = (half % 2 === 0 ? 1 : -1) * TELEMETRY_SPEC.lateral.sweepAmplitude;
+          return input[0] === 1 && input[1] === 0 && Math.abs(input[2] - expected) < 1e-6;
+        }),
+        `brake step at tick ${brake.brakeTick}, sweep ${TELEMETRY_SPEC.lateral.sweepHalfPeriods} x ` +
+        `${TELEMETRY_SPEC.lateral.sweepHalfPeriodTicks} ticks at ${TELEMETRY_SPEC.lateral.sweepAmplitude}`);
+  check(`${car.name}: every telemetry manoeuvre starts on the drive's settled tick-0 state`,
+        driveRow !== undefined &&
+        TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) =>
+          hashOfLocal(runA.series.states[manoeuvre][0]) === driveRow.determinism.firstStateHash),
+        driveRow?.determinism.firstStateHash ?? 'no drive row');
+  check(`${car.name}: two independent wasm instance sets produce identical telemetry state hashes`,
+        TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) =>
+          hashesA[manoeuvre].hashes.length === hashesB[manoeuvre].hashes.length &&
+          hashesA[manoeuvre].hashes.every((hash, index) => hash === hashesB[manoeuvre].hashes[index])),
+        TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) =>
+          `${manoeuvre}:${hashesA[manoeuvre].aggregate.slice(7, 15)}`).join(' '));
+  check(`${car.name}: replaying the recorded telemetry inputs reproduces every state hash`,
+        TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) =>
+          replay[manoeuvre].hashes.length === hashesA[manoeuvre].hashes.length &&
+          replay[manoeuvre].hashes.every((hash, index) => hash === hashesA[manoeuvre].hashes[index])),
+        TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) => manoeuvre + ':' +
+          (replay[manoeuvre].aggregate === hashesA[manoeuvre].aggregate ? 'match' : 'DIFF')).join(' '));
+  check(`${car.name}: every telemetry tick has a distinct state hash inside its manoeuvre`,
+        TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) =>
+          new Set(hashesA[manoeuvre].hashes).size === hashesA[manoeuvre].hashes.length),
+        TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) =>
+          `${new Set(hashesA[manoeuvre].hashes).size}/${hashesA[manoeuvre].hashes.length}`).join(' '));
+  check(`${car.name}: the telemetry pass leaves the drive and sprint physics anchors unchanged`,
+        anchors !== undefined &&
+        driveRow?.determinism.stateSequenceHash === anchors.drive &&
+        driveRow?.packet.hash === anchors.packet &&
+        sprintRow?.stateSequenceHash === anchors.sprint,
+        `${driveRow?.determinism.stateSequenceHash.slice(7, 15)} / ` +
+        `${sprintRow?.stateSequenceHash.slice(7, 15)}`);
+
+  const telemetryPath = path.join(OUT, `telemetry-${car.slug}.json`);
+  writeFileSync(telemetryPath, JSON.stringify({
+    kind: 'e1-drive.telemetry-run',
+    version: 1,
+    car: { slug: car.slug, name: car.name, drivetrain: car.drivetrain, record: car.record, values: car.values },
+    spawn: { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, heading: TICK0_LIMITS.heading, source: TICK0_LIMITS.source },
+    spec: TELEMETRY_SPEC,
+    plan: runA.series.plan,
+    sampleHz: TELEMETRY_SPEC.tickHz,
+    units: {
+      speed: 'km/h (state.speed m/s * 3.6)',
+      time: 's (engine ticks / 60)',
+      distance: 'm (XZ distance of the engine position)',
+      accel: 'm/s2 from the per-tick finite difference of state.velocity, projected on the body axis',
+      lateralG: 'lateral acceleration / 9.80665',
+      yaw: 'deg/s from state.angular projected on the body up axis'
+    },
+    metrics: summary,
+    metricDefinition: {
+      accel: 'full throttle from the settled spawn for a fixed 86 m window; 0-50/0-80/0-100 are the first ticks at or above the speed',
+      brake: 'full throttle from the same spawn, brake input starts on the tick after the accel run first measured 80 km/h',
+      lateral: `${TELEMETRY_SPEC.lateral.sweepHalfPeriods} square steering half-periods of ` +
+        `${TELEMETRY_SPEC.lateral.sweepHalfPeriodTicks} ticks at ${TELEMETRY_SPEC.lateral.sweepAmplitude} steer after ` +
+        `${TELEMETRY_SPEC.lateral.throttleTicks} throttle ticks`
+    },
+    hashes: Object.fromEntries(TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) => [manoeuvre, {
+      ticks: hashesA[manoeuvre].hashes.length,
+      aggregate: hashesA[manoeuvre].aggregate,
+      traceHash: hashesA[manoeuvre].traceHash,
+      replayAggregate: replay[manoeuvre].aggregate,
+      replayTraceHash: replay[manoeuvre].traceHash,
+      secondInstanceAggregate: hashesB[manoeuvre].aggregate,
+      secondInstanceTraceHash: hashesB[manoeuvre].traceHash
+    }])),
+    timings: { seriesMs: runA.ms, secondSeriesMs: runB.ms, instances: TELEMETRY_MANOEUVRE_ORDER.length },
+    traces: Object.fromEntries(TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) =>
+      [manoeuvre, runA.series.metrics[manoeuvre].trace]))
+  }, null, 2) + '\n', 'utf8');
+
+  telemetryResults.push({
+    slug: car.slug,
+    name: car.name,
+    drivetrain: car.drivetrain,
+    mass: car.values.mass,
+    torqueScaleNm: car.values.torqueScaleNm,
+    brakesFront: car.values.brakesFront,
+    brakesRear: car.values.brakesRear,
+    wheelBase: car.values.wheelBase,
+    trackWidthFront: car.values.trackWidthFront,
+    trackWidthRear: car.values.trackWidthRear,
+    gearbox: { gears: car.values.gears, finalRatio: car.values.finalRatio, limiterRPM: car.values.limiterRPM },
+    metrics: summary,
+    hashes: Object.fromEntries(TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) => [manoeuvre, {
+      ticks: hashesA[manoeuvre].hashes.length,
+      aggregate: hashesA[manoeuvre].aggregate,
+      traceHash: hashesA[manoeuvre].traceHash,
+      replayMatches: replay[manoeuvre].aggregate === hashesA[manoeuvre].aggregate,
+      secondInstanceMatches: hashesB[manoeuvre].aggregate === hashesA[manoeuvre].aggregate
+    }])),
+    path: path.relative(ROOT, telemetryPath).split(path.sep).join('/'),
+    timings: { seriesMs: runA.ms, secondSeriesMs: runB.ms },
+    physicsAnchors: {
+      drive: driveRow?.determinism.stateSequenceHash ?? null,
+      packet: driveRow?.packet.hash ?? null,
+      sprint: sprintRow?.stateSequenceHash ?? null,
+      unchanged: driveRow?.determinism.stateSequenceHash === anchors?.drive &&
+        driveRow?.packet.hash === anchors?.packet &&
+        sprintRow?.stateSequenceHash === anchors?.sprint
+    }
+  });
+  log.push(`${car.slug}: telemetry ${runA.ms}+${runB.ms} ms, ` +
+           `${TELEMETRY_MANOEUVRE_ORDER.map((manoeuvre) => manoeuvre + ' ' +
+             runA.series.states[manoeuvre].length).join(', ')} ticks`);
+}
+
+// ------------------------------------------------------- telemetry cross-car
+const telemetryBySlug = new Map(telemetryResults.map((entry) => [entry.slug, entry]));
+const telemetryOrder = (selector) => [...telemetryResults]
+  .sort((a, b) => selector(a) - selector(b))
+  .map((entry) => entry.slug);
+const accelOrder = telemetryOrder((entry) => entry.metrics.accel.zeroToSpeedKph['100'].seconds);
+const brakeOrder = telemetryOrder((entry) => entry.metrics.brake.distanceMetres);
+const torqueToMassOrder = [...telemetryResults]
+  .sort((a, b) => (b.torqueScaleNm / b.mass) - (a.torqueScaleNm / a.mass))
+  .map((entry) => entry.slug);
+const brakeToMassOrder = [...telemetryResults]
+  .sort((a, b) => ((b.brakesFront + b.brakesRear) / b.mass) - ((a.brakesFront + a.brakesRear) / a.mass))
+  .map((entry) => entry.slug);
+const rankDistance = (order, reference) => order.reduce((worst, slug) =>
+  Math.max(worst, Math.abs(order.indexOf(slug) - reference.indexOf(slug))), 0);
+
+check('telemetry: every car produces a distinct state sequence in every manoeuvre',
+      new Set(telemetryResults.map((entry) => TELEMETRY_MANOEUVRE_ORDER
+        .map((manoeuvre) => entry.hashes[manoeuvre].aggregate).join('|'))).size === telemetryResults.length &&
+      TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) =>
+        new Set(telemetryResults.map((entry) => entry.hashes[manoeuvre].aggregate)).size === telemetryResults.length),
+      telemetryResults.map((entry) => entry.slug).join(', '));
+if (telemetryResults.some((entry) => entry.drivetrain === 'AWD') &&
+    telemetryResults.some((entry) => entry.drivetrain === 'FWD')) {
+  const awd = telemetryResults.find((entry) => entry.drivetrain === 'AWD');
+  const fwd = telemetryResults.find((entry) => entry.drivetrain === 'FWD');
+  check('telemetry: the AWD car is quickest to 100 km/h and the FWD car is slowest, as the drivetrain predicts',
+        accelOrder[0] === awd.slug && accelOrder[accelOrder.length - 1] === fwd.slug,
+        accelOrder.map((slug) => `${slug}:${telemetryBySlug.get(slug).metrics.accel.zeroToSpeedKph['100'].seconds}s`).join(', '));
+}
+check('telemetry: the 0-100 km/h order matches the XT torque-scale-to-mass order',
+      rankDistance(accelOrder, torqueToMassOrder) <= 1,
+      `measured ${accelOrder.join(' < ')} | torque/mass ${torqueToMassOrder.join(' < ')}`);
+check('telemetry: the measured stopping order is within two places of the XT brake-to-mass order (a coarse plausibility gate)',
+      rankDistance(brakeOrder, brakeToMassOrder) <= 2,
+      `measured ${brakeOrder.map((slug) => `${slug}:${telemetryBySlug.get(slug).metrics.brake.distanceMetres}m`).join(', ')} | ` +
+      `brake/mass ${brakeToMassOrder.join(' < ')}`);
+check('telemetry: every car completes the sweep on the ground with the same steer-to-yaw sign convention',
+      telemetryResults.every((entry) => entry.metrics.lateral.airborneTicks === 0 &&
+        entry.metrics.lateral.yawSignPerSteerSign ===
+          telemetryResults[0].metrics.lateral.yawSignPerSteerSign),
+      telemetryResults.map((entry) => `${entry.slug}:${entry.metrics.lateral.yawSignPerSteerSign}`).join(', '));
+
+
 // ------------------------------------------------------------- sprint rules tests
 // Synthetic states exercise the order and respawn decisions without an engine;
 // the real-engine respawn below proves the same path end to end.
@@ -1592,6 +1933,43 @@ const report = {
       layout: car.layout, fields: car.fields, values: car.values
     }))
   },
+  telemetry: {
+    kind: 'e1-drive.telemetry',
+    version: 1,
+    sampleHz: TELEMETRY_SPEC.tickHz,
+    spec: TELEMETRY_SPEC,
+    units: {
+      speed: 'km/h (state.speed m/s * 3.6)',
+      time: 's (engine ticks / 60)',
+      distance: 'm (XZ distance of the engine position)',
+      accel: 'm/s2 from the per-tick finite difference of state.velocity, projected on the body axis',
+      lateralG: 'lateral acceleration / 9.80665',
+      yaw: 'deg/s from state.angular projected on the body up axis'
+    },
+    inputModel: 'accel: throttle on every tick; brake: a step at the tick the accel run first measured ' +
+      '80 km/h; lateral: throttle then a square steering sweep derived from the tick with integer arithmetic',
+    limits: {
+      course: 'the measured sprint strip (spawn to x ~ -2); 0-100 km/h and 80-0 km/h braking fit on it, ' +
+        'a full lap or a true Vmax run does not',
+      topSpeed: 'the speed reached at the end of the fixed 86 m window, not a Vmax',
+      lateral: 'peak lateral acceleration in a fixed 0.4 s square-steer sweep, not a grip limit',
+      fidelity: 'diagnostic validation metrics from the unchanged physics; not retail handling fidelity'
+    },
+    ordering: {
+      accel100: accelOrder,
+      brakeDistance: brakeOrder,
+      torqueScaleToMass: torqueToMassOrder,
+      brakeToMass: brakeToMassOrder,
+      accelRankDistance: rankDistance(accelOrder, torqueToMassOrder),
+      brakeRankDistance: rankDistance(brakeOrder, brakeToMassOrder)
+    },
+    cars: telemetryResults,
+    anomalies: [
+      'the Lotus Exige has the highest XT brake-to-mass ratio but only the third-shortest measured ' +
+      'stopping distance (17.0 m); the brake scalars alone do not order the stop, so the measurement ' +
+      'is recorded rather than explained'
+    ]
+  },
   cars: results,
   defaultCar: defaultForAliases.slug,
   // Backward-compatible views of the default car (the single-car document shape).
@@ -1603,6 +1981,18 @@ const report = {
 };
 
 writeFileSync(path.join(OUT, 'run.json'), JSON.stringify(report, null, 2) + '\n', 'utf8');
+writeFileSync(path.join(OUT, 'telemetry.json'), JSON.stringify({
+  kind: 'e1-drive.telemetry',
+  version: 1,
+  sampleHz: TELEMETRY_SPEC.tickHz,
+  spec: TELEMETRY_SPEC,
+  inputModel: report.telemetry.inputModel,
+  units: report.telemetry.units,
+  limits: report.telemetry.limits,
+  ordering: report.telemetry.ordering,
+  anomalies: report.telemetry.anomalies,
+  cars: telemetryResults
+}, null, 2) + '\n', 'utf8');
 writeFileSync(path.join(LOGS, 'verify.log'), log.join('\n') + '\n' +
   checks.map((entry) => (entry.ok ? 'PASS ' : 'FAIL ') + entry.label +
                         (entry.detail ? '  [' + entry.detail + ']' : '')).join('\n') + '\n', 'utf8');
@@ -1668,6 +2058,24 @@ console.log(JSON.stringify({
     stateSequenceHash: entry.determinism.stateSequenceHash,
     packetHash: entry.packet.hash
   })),
+  telemetry: {
+    sampleHz: TELEMETRY_SPEC.tickHz,
+    ordering: report.telemetry.ordering,
+    cars: telemetryResults.map((entry) => ({
+      car: entry.name,
+      slug: entry.slug,
+      drivetrain: entry.drivetrain,
+      zeroTo50: entry.metrics.accel.zeroToSpeedKph['50'].seconds,
+      zeroTo100: entry.metrics.accel.zeroToSpeedKph['100'].seconds,
+      speedAt86m: entry.metrics.accel.endSpeedKph,
+      brakeEntryKph: entry.metrics.brake.entrySpeedKph,
+      brakeDistanceMetres: entry.metrics.brake.distanceMetres,
+      brakeMeanDecelMps2: entry.metrics.brake.meanDecelMps2,
+      lateralG: entry.metrics.lateral.peakLateralAbsG,
+      yawDegPerSec: entry.metrics.lateral.peakYawRateAbsDegPerSec,
+      yawResponseTicks: entry.metrics.lateral.yawResponseTicks
+    }))
+  },
   checks: `${checks.filter((entry) => entry.ok).length}/${checks.length}`,
   failures
 }, null, 2));

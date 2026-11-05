@@ -540,6 +540,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - **57/57 instance**, **35.386 vertex / 26.077 üçgen**; blok31 katkısı 754 vertex / 556 üçgen; 57/57 bounds-253 ve VB/IB eşit; 56/56 Stage B matrisi 1e-5.
 - Packet 312 kayıt / **152 drawable** / 160 omitted, hash `7c29fb2ec7769709`; 56 nesne, 849.609 B, **80/80**, PC parity, patch değişmedi. Kanıt: `docs/work/verification/T-007-drawlist-57.md`.
 
+## 5 Kasım 2026 — araç dinamiği telemetrisi
+
+- 5 araç, 3 manevra (0–100, 80–0 fren, yanal sweep), 60 Hz, tick-only input; 0–100 sırası XT `torqueScale/mass` ile birebir (Audi 2,650 / Corvette 3,650 / Lotus 3,833 / Dodge 4,633 / Focus 5,133 s).
+- Fren: Audi 13,34 m; Lotus en yüksek brake-to-mass olmasına rağmen 17,00 m (anomali kayıtlı). Yanal tepe: Audi 1,52 g, Focus 1,32 g.
+- `verify_e1_drive` **423/423**; browser serisi node ile birebir; 5 capture, console 0; fizik state hash'leri P36/P37 anchor'larıyla aynı.
+- Bilinen sınır: bu build 3. `e1_reset`/4. `e1_create` sonrası abort ediyor; telemetri her manevra için yeni instance kullanıyor, `R` sayfayı yeniliyor. Kanıt: `docs/work/verification/T-007-telemetry.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.
