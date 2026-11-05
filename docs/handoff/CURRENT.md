@@ -166,6 +166,14 @@ frame/299 tick, geometri 3 upload, console **0 mesaj**. Sınır: materyaller
 diagnostic, yol collision geometrisi, teker çizimi yok. Kanıt:
 `docs/work/verification/T-007-e1-drive.md`.
 
+**Çoklu araç (P23):** 5 gerçek araç seçildi (Corvette ZR1, Lotus Exige Cup260,
+Dodge Challenger, Focus RS FWD, Audi R8 V10 AWD); 62 XT kaydı 62/62 gate'ten
+geçti. Aynı 120/120/60 scriptte 5 ayrı deterministik state hash'i; Corvette
+`83f76590…008e1f` T-007 anchor'ıyla birebir. 20 browser capture, console **0**,
+geometri 3 upload; 18/20 packet hash birebir, 2'si kamera `atan2` bir-ulp farkı
+(state/matris birebir). Sınır: her araç Corvette C3 gövdesiyle çiziliyor, teker
+yok. Kanıt: `docs/work/verification/T-007-multi-car.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

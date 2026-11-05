@@ -15,7 +15,7 @@ hangi kanıtla kapattığını kaybetmemek.
 | T-005 — Tek oyunculu dikey dilim | in-progress (T-005b file + T-005c sched + T-005d collision/Gravity wasm tamam; T-005e/f/g sırada) | P1 | T-003/T-004 | `tasks/T-005-single-player-vertical-slice.md` |
 | T-006 — Tarayıcı multiplayer | analiz tamam (a/b/c); uygulama T-005g/T-004'e bağlı | P2 | T-005g/T-004 | `tasks/T-006-multiplayer.md` |
 | T-007 — E1 oynanabilir dikey dilim | in-progress (E1b/E1c/E1d tamam; E1e kısmi; E1a parse bloklu; E1f sırada) | P0 | T-005b/c/d | `tasks/T-007-e1-playable-slice.md` |
-| T-008 — Tarayıcı PoC (kullanıcı testi) | in-progress (çoklu araç + pist agent'ları) | P0 | T-007 | `tasks/T-008-browser-poc.md` |
+| T-008 — Tarayıcı PoC (kullanıcı testi) | in-progress (5 araç + 56 instance hazır; paketleme/kılavuz sırada) | P0 | T-007 | `tasks/T-008-browser-poc.md` |
 
 Durumlar: `planned`, `in-progress`, `blocked`, `done`, `superseded`.
 

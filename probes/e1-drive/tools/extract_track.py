@@ -37,11 +37,13 @@ LEVEL = ROOT / "game-data/Blur/levels/usa_la_river/Level.levelphysics"
 DEFAULT_OUT = ROOT / "_work/e1-drive/track.json"
 PARSER = ROOT / "probes/collision-oracle/tests/reference_oracle.py"
 
-# The box that contains the scripted run (spawn -104,1050 -> ~-59,1050) plus the
-# visible props around it. Chosen from the run, not from a guess: the drive in
-# _work/e1-drive/run.json stays inside it.
+# The box that contains the whole 300-tick script for every roster car (the
+# slowest car leaves the spawn by 30.7 m, the fastest AWD car by 69.4 m: spawn
+# x = -88, so the run reaches x ~ -18.6) plus the visible props around it and the
+# chase camera's working area behind the car. Chosen from the measured runs in
+# _work/e1-drive/run.json, not from a guess.
 BOX_MIN = (-120.0, 0.0, 1010.0)
-BOX_MAX = (-30.0, 20.0, 1090.0)
+BOX_MAX = (-10.0, 20.0, 1090.0)
 
 
 def inside(p):

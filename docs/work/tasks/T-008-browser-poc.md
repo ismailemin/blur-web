@@ -1,6 +1,6 @@
 # T-008 — Tarayıcı PoC (kullanıcı testi)
 
-**Durum:** in-progress (çoklu araç ve pist geometrisi agent'ları çalışıyor)
+**Durum:** in-progress (çoklu araç ✅, pist 56 instance ✅; paketleme/kılavuz sırada)
 **Sahip:** ana ajan
 **Başlangıç:** 5 Kasım 2026
 **Hedef:** kullanıcının tarayıcıda açıp **tek haritada birden çok gerçek araçla**
@@ -18,13 +18,12 @@ sürüşü deneyebileceği PoC.
 
 ## Kabul kriterleri
 
-- [ ] Sunucu tek komutla açılıyor; URL kullanıcıya veriliyor.
-- [ ] Araç listesinde ≥4 gerçek araç; her biri seçilip sürülebiliyor.
-- [ ] Her araçta settle + gaz/fren sürüşü çalışıyor; NaN yok, temas var.
-- [ ] Her araç için ayrı deterministik state hash'i; iki koşu aynı.
-- [ ] Headless Edge/WebGPU: ekran görüntüsü + console 0.
-- [ ] Ana suite/CTest/engine verifier'ları regresyonsuz.
-- [ ] Kullanıcı test adımları `docs/handoff/E1_POC.md` içinde.
+- [x] Araç listesinde ≥4 gerçek araç; her biri seçilip sürülebiliyor (5 araç).
+- [x] Her araçta settle + gaz/fren sürüşü çalışıyor; NaN yok, temas var.
+- [x] Her araç için ayrı deterministik state hash'i; iki koşu aynı.
+- [x] Headless Edge/WebGPU: 20 capture, console 0.
+- [ ] Tek URL/paketleme + kullanıcı kılavuzu (`docs/handoff/E1_POC.md`).
+- [x] Ana suite/CTest/engine verifier'ları regresyonsuz.
 
 ## Alt görevler / agent eşlemesi
 
@@ -33,9 +32,9 @@ sürüşü deneyebileceği PoC.
 | Gerçek araç fiziği | P19 | ✅ |
 | Packet v1.1 + WebGPU tüketici | P20 | ✅ |
 | Connector (WASD, chase camera, fixed step) | P21 | ✅ |
-| Çoklu araç roster'ı | P23 | 🔄 |
-| `levelrender` engine parse (draw list) | P22 | 🔄 |
-| Stage B pist instance'ları | P25 | 🔄 |
+| Çoklu araç roster'ı | P23 | ✅ |
+| `levelrender` engine parse (draw list) | P22 | ✅ |
+| Stage B pist instance'ları | P25 | ✅ |
 | Teker/kompozit görsel | P26 | sırada |
 | PoC paketleme + kullanıcı kılavuzu | ana ajan | sırada |
 

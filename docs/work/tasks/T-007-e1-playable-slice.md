@@ -68,11 +68,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Start → tur → finish; çarpışma, checkpoint, respawn.
 - Tam tur + finish ekranı; performans ve bellek ölçümü.
 
-### E1g — Çoklu araç (P23)
-- `RP_CarDynamics` kayıtlarından en az 4 gerçek araç; seçilebilir.
-- Her araç için aynı scripted sürüş; ayrı deterministik state hash'i.
-- Eksik alanlı araç uydurulmaz; açıkça dışlanır.
-- Kanıt: `docs/work/verification/T-007-multi-car.md`.
+### E1g — Çoklu araç (P23)  ✅
+- `RP_CarDynamics` 62 kayıt, 62/62 completeness gate; 5 araç seçildi:
+  Corvette ZR1, Lotus Exige Cup260, Dodge Challenger, Focus RS (FWD),
+  Audi R8 V10 (AWD).
+- Aynı 120/120/60 script: 5 ayrı deterministik state hash'i; Corvette
+  `83f76590…008e1f` T-007 anchor'ıyla birebir.
+- 20 browser capture, console **0**, geometri 3 upload; 18/20 packet hash
+  birebir, 2'si kamera `atan2` bir-ulp farkı (state/matris birebir).
+- **Sınır:** her araç Corvette C3 gövdesiyle çiziliyor (per-car mesh yok);
+  teker çizimi yok.
+- Kanıt: `docs/work/verification/T-007-multi-car.md`,
+  `probes/e1-drive/cars/roster.json`.
 
 ### E1h — Engine draw list (P22 sonrası)
 - `draws[]` committed packet yerine engine sahne/çizim listesinden.

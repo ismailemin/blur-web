@@ -166,6 +166,26 @@ export function createSession(geometry, tick0, options = {}) {
   const vertexTotal = meshes.reduce((sum, mesh) => sum + mesh.vertexCount, 0);
   const triangleTotal = meshes.reduce((sum, mesh) => sum + mesh.indexCount / 3, 0);
 
+  // The car identity the engine actually decoded. Optional, so a caller that
+  // does not pass it produces exactly the single-car packet this slice shipped
+  // before the roster existed.
+  const car = options.car
+    ? {
+        name: options.car.name,
+        slug: options.car.slug ?? null,
+        recordIndex: options.car.recordIndex ?? null,
+        recordId: options.car.recordId ?? null,
+        drivetrain: options.car.drivetrain ?? null,
+        mass: options.car.mass ?? null,
+        fieldsSha256: options.car.fieldsSha256 ?? null,
+        bodyMesh: 'corvette.c3.race.body',
+        bodyMeshReason:
+          'the committed render packet carries one vehicle body (the Corvette C3 race body); every roster car is ' +
+          'drawn with it because no per-car body mesh is imported in this slice. The physics is the record named above',
+        source: 'RP_CarDynamics record decoded by engine/harness/t005d-vehicle/car_xt.py'
+      }
+    : null;
+
   const packet = {
     kind: PACKET_KIND,
     version: PACKET_VERSION,
@@ -245,7 +265,8 @@ export function createSession(geometry, tick0, options = {}) {
           spawn: options.spawn ?? null,
           script: '2 s throttle, 2 s coast, 1 s brake (probes/e1-drive/web/drive-script.js)',
           camera: 'chase orbit behind the car, yaw follows with a fixed per-tick lag',
-          stateFields: ['position', 'axisX', 'axisY', 'axisZ', 'speed', 'contacts', 'wheels']
+          stateFields: ['position', 'axisX', 'axisY', 'axisZ', 'speed', 'contacts', 'wheels'],
+          ...(car ? { car } : {})
         },
         wheels: {
           rendered: WHEELS_RENDERED,
@@ -288,7 +309,9 @@ export function createSession(geometry, tick0, options = {}) {
         'level blocks 26, 32 and 31 instances'
       ],
       limits: [
-        'one car, one loaded River collision mesh, one camera: not a race, a game loop or a full level',
+        car
+          ? 'one car at a time, selected from the RP_CarDynamics roster at runtime: not a race, a game loop or a full level'
+          : 'one car, one loaded River collision mesh, one camera: not a race, a game loop or a full level',
         'no audio, no HUD beyond diagnostics, no multiplayer, no race rules',
         'packet v1.1 is JSON with inline geometry; it is not an engine draw-list integration',
         'the geometry is a spike fixture (block27/node253) while the simulation runs on the whole level physics mesh, ' +

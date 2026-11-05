@@ -11,9 +11,15 @@
 <canvas id="scene"></canvas>
 <div id="hud" aria-label="drive summary"></div>
 <div id="error" hidden></div>
+<div id="cars">
+  <label for="car-select">car</label>
+  <select id="car-select" aria-label="physics car">
+    <option value="">loading roster…</option>
+  </select>
+</div>
 <div id="legend">
   <strong>E1 drive slice</strong> — wasm RacingPhysics on the River collision mesh → render packet v1.1 → WebGPU<br>
-  diagnostic shading · materials not applied · wheels not drawn (no wheel mesh in scope)
+  physics car from <code>RP_CarDynamics</code> · diagnostic shading · materials not applied · wheels not drawn · body mesh is the Corvette C3 for every car
 </div>
 <div id="keys">
   <strong>W</strong>/<strong>↑</strong> throttle · <strong>S</strong>/<strong>↓</strong> brake ·

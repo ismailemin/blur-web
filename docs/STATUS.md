@@ -459,4 +459,11 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Negatif testler: duplicate/truncated/swapped chunk, bozuk ARCH, bilinmeyen blok, tek-ULP kayıt değişimi → grup bölünüp 3 üye reddediliyor; kısmi blok26 bundle 10 instance'ı 6 incomplete grupta tutuyor.
 - Headless Edge: 20/8.220, 56/34.632/25.521 ve 22/13.162/10.308 presetleri console temiz. Kanıt: `docs/work/verification/T-003-stageB.md`.
 
+## 5 Kasım 2026 — çoklu araç roster'ı
+
+- `RP_CarDynamics` 62 kayıt, 62/62 completeness gate; 5 araç seçildi: Corvette ZR1 (RWD), Lotus Exige Cup260 (RWD), Dodge Challenger (RWD), Focus RS (FWD), Audi R8 V10 (AWD).
+- Aynı 120/120/60 script: 5 ayrı deterministik state sequence; Corvette `83f76590…008e1f` T-007 anchor'ıyla birebir; `verify_e1_drive.mjs` **164/164**.
+- Browser: 20 capture (4 tick × 5 araç), console **0**, geometri 3 upload/1.090.380 B. 18/20 packet hash birebir; 2'si kamera `atan2` bir-ulp (state/matris birebir). Araç seçici + `?car=` + `--car` çalışıyor.
+- Sınır: her araç Corvette C3 gövdesiyle çiziliyor (per-car mesh yok), teker yok. Kanıt: `docs/work/verification/T-007-multi-car.md`.
+
 

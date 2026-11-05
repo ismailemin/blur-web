@@ -133,6 +133,6 @@ E1f tam tur. E2 yalnız karar kapısı düşerse.
 **Kart:** `docs/work/tasks/T-008-browser-poc.md`
 
 Hedef: tek URL, River haritası, ≥4 gerçek araç seçimi, WASD + chase camera,
-sabit adım, console temiz. Çalışan agent'lar: P23 (çoklu araç), P22 (engine
-draw-list), P25 (Stage B pist). Sırada: teker/kompozit görsel, PoC paketleme ve
-`docs/handoff/E1_POC.md` kullanıcı kılavuzu.
+sabit adım, console temiz. Çoklu araç tamam (5 araç) ve Stage B pist tamam
+(56 instance). Sırada: PoC paketleme, `docs/handoff/E1_POC.md` kullanıcı
+kılavuzu ve son tam test.

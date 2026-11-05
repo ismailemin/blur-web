@@ -28,6 +28,7 @@ deterministic state sequence.**
 | packet | 301 ticks, 103 draws, **3,396,616 B**, hash `sha256:fa7e660b…d769c1`, 0 validation errors |
 | browser | headless Edge/WebGPU, 1600×900, adapter `nvidia / blackwell`, **0 console messages**, 3 geometry uploads (1,088,544 B) on every run |
 | screenshots | `_work/e1-drive/browser-{start,mid,end}.png` (+ `-car` crops) |
+| multi-car (P23) | **5 cars** of 62 `RP_CarDynamics` records, selectable at runtime, 164/164 checks, 20 browser captures, 0 console messages — see **§10** (this section's numbers are the original single-car run; §10 records what the roster changed) |
 
 ---
 
@@ -213,10 +214,11 @@ All 301 rows are in `_work/e1-drive/state_a.json` (state hash) and
 
 The browser uses a **synchronous SHA-256 + canonical JSON** copy
 (`web/sha256.js`, `web/packet-hash.js`) because `crypto.subtle` is async and this
-is a per-tick operation. The verifier's 30 checks include "every tick hash the
+is a per-tick operation. The verifier's checks include "every tick hash the
 browser-side implementation computes equals the committed Node definition", so
 the two implementations are proven to agree on all 301 real payloads, not on a
-toy vector.
+toy vector. (The check set was 30 for the single car; it is 164 with the roster,
+§10.)
 
 ---
 
@@ -271,8 +273,9 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/build_module.mjs --force-objects
 & $py   probes/e1-drive/tools/extract_track.py
 & $node probes/e1-drive/tools/build_geometry.mjs
-& $node probes/e1-drive/tools/verify_e1_drive.mjs          # 30/30 checks
-& $node probes/e1-drive/tools/capture_browser.mjs          # 3 screenshots, console gate
+& $py   probes/e1-drive/tools/car_roster.py                 # 62 records -> 5 car field lists
+& $node probes/e1-drive/tools/verify_e1_drive.mjs          # 164/164 checks (--car <slug> for one)
+& $node probes/e1-drive/tools/capture_browser.mjs          # 20 screenshots, console gate
 ```
 
 Artifacts:
@@ -281,11 +284,12 @@ Artifacts:
 | --- | --- |
 | `_work/e1-drive/module/{e1_drive.mjs,e1_drive.wasm,build.json}` | module + build evidence (hashes, flags, object counts) |
 | `_work/e1-drive/geometry.json` | 3 meshes, 23 static draws, 80 car draw ranges, materials, light, provenance |
-| `_work/e1-drive/track.json` | 282 collision triangles + selection record |
-| `_work/e1-drive/packet.json`, `packet.validation.json` | the validated 301-tick packet |
-| `_work/e1-drive/state_a.json` | all 301 per-tick states, positions, speeds, contacts, hashes |
-| `_work/e1-drive/run.json` | the evidence document (module, drive, determinism, packet, 30 checks) |
-| `_work/e1-drive/browser-evidence.json`, `browser-*.png` | browser runs, console log, screenshots |
+| `_work/e1-drive/track.json` | 381 collision triangles + selection record (282 before §10) |
+| `_work/e1-drive/cars.json`, `cars/<slug>.fields` | the 62-record roster, gate and per-car field lists |
+| `_work/e1-drive/packet-<slug>.json`, `packet-validation-<slug>.json` | the validated 301-tick packet per car |
+| `_work/e1-drive/state-<slug>.json` | all 301 per-tick states, positions, speeds, contacts, hashes (per car) |
+| `_work/e1-drive/run.json` | the evidence document (module, roster, per-car drive, determinism, packets, 164 checks) |
+| `_work/e1-drive/browser-evidence.json`, `browser-<slug>-*.png` | browser runs, console log, per-car screenshots |
 | `_work/logs/e1-drive/` | build, verify and Edge logs |
 
 ---
@@ -308,11 +312,12 @@ Artifacts:
 - **Car mesh frame alignment is not recovered.** The body is drawn in the engine
   body frame; the retail mesh import that defines the offset is out of scope, so
   the body can be rotated/offset relative to the chassis.
-- **The drawn surface is a box, not the track.** 282 triangles around the run;
-  driving far enough leaves the drawn surface even though the physics still has
-  collision geometry.
-- **One car, one camera, no game.** No audio, opponents, race rules, HUD beyond
-  diagnostics, culling or engine streaming. One manual reset re-uploads geometry
+- **The drawn surface is a box, not the track.** 381 triangles around the script
+  for every car (§10 widened it from 282); driving far enough still leaves the
+  drawn surface even though the physics has collision geometry.
+- **One car at a time, no game.** No audio, opponents, race rules, HUD beyond
+  diagnostics, culling or engine streaming, and no per-car body mesh (every car is
+  drawn with the committed Corvette body). One manual reset re-uploads geometry
   (the consumer's `load()` is re-run); the evidence path never resets.
 - **Headless Edge is a proxy** for the user's physical browser.
 - **Native-vs-wasm numeric parity remains blocked** by the DirectX SDK
@@ -336,3 +341,169 @@ spike geometry and the hand-rolled camera with engine output, one at a time:
    the wheels can be drawn instead of only sampled.
 4. Then the acceptance gates of `e1-renderer-strategy.md` §"Decision gate": a
    finishable lap, unambiguous boundaries, 60 Hz with a clean console.
+
+---
+
+## 10. Multi-car roster — five real cars, selectable at runtime (T-007/E1g, P23)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**` and `_work/e1-drive/**` only. No C++ change, no
+engine patch, no renderer change, no new physics, no race rules/audio/multiplayer.
+
+### 10.1 The data: 62 records, one decoder, one gate
+
+`gamedata\xt\racingphysics.bin` (73,420 B, SHA-256 `048ef93a4dc94351…`, decoded
+from `gamedata.pak`) holds **62 `RP_CarDynamics` records** (type size 632 B). They
+are decoded by the *same* extractor that produced the verified T-005d
+`car.fields` (`engine/harness/t005d-vehicle/car_xt.py`, SHA-256 `9f216c72…`); no
+layout is re-derived. `probes/e1-drive/tools/car_roster.py` enumerates every
+record and applies one **completeness gate** to the decoded values:
+
+| gate | rule |
+| --- | --- |
+| positive scalars | `mass.mass`, `geometry.wheelBase`, `trackWidthFront/Rear`, both tyre radii, `engine.limiterRPM`, torque `x1`/`yScale`, `gears.gearRatios[0]`, `gears.finalRatio`, `brakes.frontBrakeForce`, `brakes.rearBrakeForce` must be finite and `> 0` |
+| array length | `gears.gearRatios ≥ 2`, `engineTorque_Rpm.dataPoints ≥ 2`, front/rear `grip.data ≥ 2` |
+| consistency | `1 ≤ gears.topGear ≤ len(gearRatios)`; `transmission.driveType ∈ {0,1,2}` (RWD/FWD/AWD) |
+| finite | every decoded `f32` must be finite |
+
+**Result: 62 of 62 records pass.** No record in this file is structurally
+incomplete, so nothing had to be excluded — the roster is a *scenario* selection,
+not a salvage operation. Two fields are `0.0` in **all 62** records
+(`gears.reverseGearRatio`, tyre `loadDependence`); they are carried unchanged from
+the data (the verified Corvette has the same values) and the scripted drive never
+selects reverse, so this slice makes no claim about them. Full per-record table:
+`_work/e1-drive/cars.json` (`records[]`, with `problems: []` for every row).
+
+The committed selection (`probes/e1-drive/cars/roster.json`) is checked against
+the decoded data by name, record id **and** record index; a mismatch fails the
+tool. Five cars, chosen for one baseline plus one car per drivetrain:
+
+| slug | record | id | layout | mass | wheelbase | track F/R | tyre | gears | limiter |
+| --- | ---: | ---: | --- | ---: | ---: | --- | ---: | ---: | ---: |
+| `corvette-zr1-stock` *(default)* | 37 | 1554942492 | RWD | 1600 kg | 2.652 m | 1.656/1.637 | 0.356 | 6 | 7250 |
+| `lotus-exige-cup260-stock` | 15 | 805568925 | RWD | 890 kg | 2.323 m | 1.424/1.540 | 0.326 | 6 | 8000 |
+| `dodge-challenger-stock` | 9 | 528964602 | RWD | 1700 kg | 2.981 m | 1.482/1.589 | 0.370 | 6 | 6000 |
+| `ford-focusrs-stock` | 50 | 2563977008 | FWD | 1400 kg | 2.787 m | 1.608/1.618 | 0.326 | 6 | 7000 |
+| `audi-r8v10-stock` | 55 | 2936683857 | AWD | 1600 kg | 2.635 m | 1.627/1.676 | 0.326 | 6 | 8200 |
+
+Each car's field file (`_work/e1-drive/cars/<slug>.fields`, 181–185 lines) is the
+record's own values; their SHA-256 is in `cars.json` and in `run.json`. The
+default car's file is byte-identical to `_work/engine-vehicle-spike/car.fields`
+(the T-005d artifact), which the tool asserts.
+
+### 10.2 Where the selection lives
+
+- **Module API:** unchanged. `e1_create` already took a field list, and every
+  per-car decision (ride height, box extents, body mass, drivetrain) is read from
+  `CarDynamicsXt`. The wasm is the **same 1,003,249 B module**, SHA-256
+  `7b977ea7…9dabc`, 186 objects — no rebuild, no new object.
+- **Page:** `?car=<slug>`, plus a `<select>` fed from the roster
+  (`web/cars.js`). `?car` defaults to the roster default, so the old
+  `/?script=drive` links still drive the Corvette.
+- **Node:** `verify_e1_drive.mjs --car <slug>` and
+  `capture_browser.mjs --car <slug>`; `--list` prints the roster.
+- **Packet:** `diagnostics.extras.drive.car` names the car a timeline describes.
+
+### 10.3 Same script, five different cars
+
+Spawn `(-88, 1050)`, heading +X, same River collision mesh, same 300-tick script
+(120 throttle / 120 coast / 60 brake). `verify_e1_drive.mjs`: **164/164 checks**.
+
+| car | travel | peak | t=120 | t=240 | t=300 | contacts | NaN | state sequence hash | packet |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| Corvette ZR1 | 45.38 m | 15.44 | 14.99 | 11.04 | 0.45 | 301/301 | 0 | `83f76590…008e1f` | `b30b7e2b…f86c0f` |
+| Lotus Exige Cup260 | 40.64 m | 15.08 | 14.65 | 8.40 | 0.27 | 301/301 | 0 | `8d6cd4d4…dac66c2` | `a1e25161…463fd3` |
+| Dodge Challenger | 41.04 m | 13.85 | 13.35 | 10.06 | 0.22 | 301/301 | 0 | `b1c63d20…7220a7e2` | `5ac3d5c2…ab5c3c` |
+| Ford Focus RS (FWD) | 30.66 m | 12.36 | 11.66 | 5.87 | 1.34 | 301/301 | 0 | `fb3909b6…c9bdb6` | `002fc2a2…e6f845` |
+| Audi R8 V10 (AWD) | 69.45 m | 21.54 | 21.22 | 16.91 | 0.93 | 301/301 | 0 | `5b4ae49d…4fd4067` | `61063b60…a14732a` |
+
+Every car: `e1_info().car` equals the roster name, tick 0 has all four wheels on
+the ground at rest, no non-finite state in any tick, wheel contact on all 301
+ticks, two independent module instances produce identical per-tick hash sequences,
+reset+replay reproduces the first 30 ticks, and all 301 per-tick state hashes are
+distinct.
+
+**The Corvette did not change.** Its state sequence hash is exactly the T-007
+value `sha256:83f76590…008e1f`, pinned as an anchor check in the verifier. The
+roster adds cars around the existing one; it does not tune it.
+
+The differences are the car, not the scenario, and they read the way the data
+says they should:
+
+- **AWD (Audi, 69.45 m, 21.5 m/s)** puts the torque of a 1600 kg car through four
+  tyres: its peak is 6 m/s above every other car and its coast phase still exceeds
+  16 m/s. (Every car peaks a few ticks after the throttle ends, 124–128, so the
+  peak is not a throttle-phase endpoint.)
+- **FWD (Focus RS, 30.66 m, 12.4 m/s)** is the slowest: 1400 kg on the front axle
+  only, so it is traction-limited from the first tick and loses speed fastest in
+  coast (5.87 m/s at t=240).
+- **RWD:** the light Lotus and the heavy Challenger land either side of the
+  Corvette. The 890 kg Lotus reaches nearly the Corvette's speed by t=120 (14.65
+  vs 14.99 m/s) with less torque and then sheds it fastest off throttle (8.40),
+  while the 1700 kg Challenger is slower to accelerate (13.35) and holds speed
+  better (10.06). The FWD car is also the only one still moving at 1.34 m/s after
+  the brake second; the rear-drive cars stop below 0.5 m/s.
+
+### 10.4 Browser evidence (headless Edge + WebGPU)
+
+20 captures (`0,150,240,300` for each of the five cars), 1600×900, adapter
+`nvidia / blackwell`, **0 console messages of any kind**, **3 geometry uploads /
+1,090,380 B in every capture** (geometry does not grow with frames), one uniform
+write and one `drawIndexed` per draw per frame.
+
+| car | tick 150 speed / position | tick 240 | tick 300 | screenshots |
+| --- | --- | --- | --- | --- |
+| Corvette | 14.53 m/s (−66.25, 1049.38) | 11.04 | 0.45 | `browser-corvette-zr1-stock-{start,mid,coast,end}.png` |
+| Lotus | 13.72 m/s (−67.11, 1049.94) | 8.40 | 0.27 | `browser-lotus-exige-cup260-stock-*.png` |
+| Dodge | 13.18 m/s (−68.50, 1049.33) | 10.06 | 0.22 | `browser-dodge-challenger-stock-*.png` |
+| Focus RS | 11.04 m/s (−71.84, 1048.93) | 5.87 | 1.34 | `browser-ford-focusrs-stock-*.png` |
+| Audi | 20.56 m/s (−54.86, 1048.65) | 16.91 | 0.93 | `browser-audi-r8v10-stock-*.png` |
+
+Every capture's **state hash** equals the node producer's for the same car and
+tick, every **car matrix is bit-identical** to the node producer's, and the page
+reports and selects the requested car (`car` block + selector value).
+
+**One honest, measured discrepancy.** For 18 of 20 captures the browser's
+canonical *packet* hash equals node's; for two (Dodge tick 0, Focus RS tick 240)
+it differs by one ulp in the camera, with camera max |Δ| = 2.3e-13 while the car
+matrix is bit-identical. Cause, measured in both engines:
+`Math.atan2(-0.999985695, -6.21325853e-8)` returns `-1.5707963889283709236` in
+Node 24's V8 and `-1.570796388928370…7` in Edge 156's V8. The chase camera's yaw
+comes from `atan2` of the car's forward axis, so an engine-level transcendental
+difference shows up in the camera and therefore in the update hash. This is why
+the capture gate checks the **state hash exactly, the car matrix exactly, and the
+camera within 1e-6** instead of pretending the packet hash must always match; the
+exact-match count is recorded in `browser-evidence.json`
+(`packetHashAgreement`). It is a JS-engine difference, not a simulation one.
+
+**Camera occlusion (pre-existing camera, not a physics result).** The chase camera
+has no occlusion avoidance. At tick 150 the Focus RS, Dodge and Lotus are still in
+the start-area props/berm, so their `-mid.png` frames show terrain rather than the
+car (the HUD still shows car, speed and position). Their `-coast.png` (tick 240)
+and `-end.png` frames show the car on the surface with 3 uploads and matching
+hashes, so the extra tick exists to make the per-car visual evidence usable.
+
+### 10.5 What the roster changed in the artifacts (and what it did not)
+
+| artifact | before | now | why |
+| --- | --- | --- | --- |
+| wasm module | 1,003,249 B `7b977ea7…` | unchanged | no C++ change; the field list was already the car input |
+| physics state hashes | Corvette `83f76590…` | unchanged | same data, same spawn, same script |
+| packet hash (Corvette) | `fa7e660b…` | `b30b7e2b…` | the packet now records `extras.drive.car` (name, record, drivetrain, mass, field hash) |
+| collision surface | 282 triangles, box `x −120…−30` | 381 triangles, box `x −120…−10` | the AWD car travels 69.45 m (to x = −18.6); the old box stopped at x = −31.9 and the car drove off the drawn surface at the end of the script |
+| geometry mesh bytes | 1,088,544 B uploaded (282 surface triangles) | 1,090,380 B uploaded (381) | +99 triangles of the same collision mesh (same parser, same selection rule, bigger box) |
+
+Both changes are additive and labelled; neither touches the simulation. The
+Corvette's *state* sequence hash is the proof that the physics did not move.
+
+### 10.6 Evidence
+
+| path | content |
+| --- | --- |
+| `_work/e1-drive/cars.json` | 62 decoded records, gate result per record, the 5-car selection, per-car values + field hashes |
+| `_work/e1-drive/cars/<slug>.fields` | one decoded `name<TAB>value` list per car |
+| `_work/e1-drive/run.json` | 164 checks, per-car drive, determinism, packet (all five) |
+| `_work/e1-drive/{state,packet,packet-validation}-<slug>.json` | per-car per-tick states and validated packets |
+| `_work/e1-drive/browser-evidence.json` | 20 captures, console log, packet-hash agreement, per-capture comparison |
+| `_work/e1-drive/browser-<slug>-*.png` | per-car screenshots (+ 2× car crops) |
+| `docs/work/verification/T-007-multi-car.md` | the gate record |

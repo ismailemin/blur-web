@@ -14,6 +14,7 @@
 // builds its timeline live instead of loading a finished one.
 //
 // URL parameters:
+//   ?car=<slug>     roster car to drive (default: the roster's recorded default)
 //   ?script=drive   tick-scripted input (2 s throttle, 2 s coast, 1 s brake)
 //   ?hold=<tick>    stop stepping at that engine tick and hold it (screenshots)
 //   ?manual=1       keyboard input even when script=drive is present
@@ -23,6 +24,7 @@ import { PacketConsumer } from './packet-consumer.js';
 import { FixedStepDriver, FLAG } from './fixed-step.js';
 import { createSession } from './packet-adapter.js';
 import { hashOf } from './packet-hash.js';
+import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
 
 const params = new URLSearchParams(location.search);
@@ -30,11 +32,11 @@ const SCRIPTED = params.get('script') === 'drive' && params.get('manual') !== '1
 const HOLD = params.has('hold') ? Number(params.get('hold')) : null;
 if (HOLD !== null && (!Number.isInteger(HOLD) || HOLD < 0)) throw new Error('hold must be a non-negative integer tick');
 const INTERPOLATE = params.get('interpolate') !== '0';
+const REQUESTED_CAR = params.get('car');
 
 const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
 const GEOMETRY_URL = '/_work/e1-drive/geometry.json';
 const LEVEL_URL = '/_work/e1-drive/Level.levelphysics';
-const FIELDS_URL = '/_work/e1-drive/car.fields';
 const SPAWN_URL = '/_work/e1-drive/spawn.json';
 
 const canvas = document.getElementById('scene');
@@ -47,6 +49,8 @@ const state = {
   mode: SCRIPTED ? 'script:drive' : 'keyboard',
   hold: HOLD,
   holdReached: HOLD === null ? false : HOLD === 0,
+  car: null,
+  roster: null,
   engineTick: 0,
   displayTick: 0,
   tick0Hash: null,
@@ -83,6 +87,7 @@ function publish() {
   window.e1DriveProbe = state;
   const rows = [
     ['mode', state.mode + (state.hold === null ? '' : ' · hold ' + state.hold + (state.holdReached ? ' reached' : ''))],
+    ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—'],
     ['tick', String(state.displayTick) + ' (engine ' + state.engineTick + ') · ' + state.phase],
     ['speed', state.speed.toFixed(2) + ' m/s · ' + state.speedKph.toFixed(0) + ' km/h'],
     ['position', state.position.map((value) => value.toFixed(2)).join(', ')],
@@ -144,22 +149,51 @@ let engine = null;      // { info, readState, setInput, step, reset }
 let session = null;
 let geometry = null;
 let spawn = null;
+let car = null;
 
 function readState() {
   return JSON.parse(module.UTF8ToString(module._e1_get_state()));
 }
 
+/** Fill the selector from the roster and keep it in sync with ?car=. */
+function populateSelector(roster, selected) {
+  const select = document.getElementById('car-select');
+  if (!select) return;
+  select.textContent = '';
+  for (const entry of roster.roster.cars) {
+    const option = document.createElement('option');
+    option.value = entry.slug;
+    option.textContent = carLabel(entry);
+    option.selected = entry.slug === selected.slug;
+    select.append(option);
+  }
+  select.addEventListener('change', () => {
+    const next = new URLSearchParams(location.search);
+    if (select.value === roster.roster.default) next.delete('car');
+    else next.set('car', select.value);
+    next.delete('hold');
+    const query = next.toString();
+    location.href = location.pathname + (query ? '?' + query : '');
+  });
+}
+
 async function loadEngine() {
   const factory = (await import(ENGINE_MODULE)).default;
   module = await factory();
+  const roster = await loadRoster();
+  car = resolveCar(roster, REQUESTED_CAR);
+  state.roster = roster;
+  state.car = carIdentity(car);
+  populateSelector(roster, car);
+
   const [geometryResponse, levelResponse, fieldsResponse, spawnResponse] = await Promise.all([
     fetch(GEOMETRY_URL, { cache: 'no-store' }),
     fetch(LEVEL_URL, { cache: 'no-store' }),
-    fetch(FIELDS_URL, { cache: 'no-store' }),
+    fetch(fieldsUrl(car), { cache: 'no-store' }),
     fetch(SPAWN_URL, { cache: 'no-store' })
   ]);
   for (const [label, response] of [['geometry', geometryResponse], ['level', levelResponse],
-                                    ['car fields', fieldsResponse], ['spawn', spawnResponse]]) {
+                                    ['car fields (' + car.slug + ')', fieldsResponse], ['spawn', spawnResponse]]) {
     if (!response.ok) throw new Error(label + ' fetch failed: HTTP ' + response.status);
   }
   geometry = await geometryResponse.json();
@@ -192,14 +226,26 @@ async function loadEngine() {
   };
   state.engineInfo = engine.info;
   state.spawn = spawn;
+  if (engine.info.car !== car.name) {
+    throw new Error('engine decoded ' + JSON.stringify(engine.info.car) +
+      ' but the roster asked for ' + JSON.stringify(car.name));
+  }
 }
 
 /** Rebuild the world and restart the packet timeline from the settled tick. */
 async function startTimeline(tick0, { reload = false } = {}) {
-  session = createSession(geometry, tick0, { spawn: { ...spawn, source: spawn.source ?? 'probes/e1-drive/tools/spawn.mjs' } });
+  session = createSession(geometry, tick0, {
+    spawn: { ...spawn, source: spawn.source ?? 'probes/e1-drive/tools/spawn.mjs' },
+    car: state.car
+  });
+  // Expose the live timeline so the capture tool can compare the exact update the
+  // consumer rendered with the node producer's packet (no extra packet copy).
+  state.updates = session.packet.updates;
   const update0 = session.appendState(tick0);
   state.tickHashes = [{ tick: 0, stateHash: hashOf(tick0), packetHash: update0.hash }];
   state.tick0Hash = update0.hash;
+  state.tick0Update = update0;
+  state.tick0State = tick0;
   // One more tick so the v1.1 consumer has a two-tick timeline to load.
   const input = SCRIPTED ? scriptedInput(1) : [0, 0, 0, 0];
   engine.setInput(input);

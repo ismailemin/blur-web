@@ -1,0 +1,60 @@
+{
+  "kind": "e1-drive.car-roster",
+  "version": 1,
+  "source": {
+    "file": "gamedata\\xt\\racingphysics.bin",
+    "container": "game-data/Blur/cache/gamedata.pak",
+    "recordType": "RP_CarDynamics",
+    "decoder": "engine/harness/t005d-vehicle/car_xt.py",
+    "format": "probes/asset-reader/FORMAT-xt.md"
+  },
+  "selection": [
+    "Every record is decoded and gated by tools/car_roster.py; the five below are the ones",
+    "this slice drives. The selection keeps the T-007 baseline (regression anchor) and adds one",
+    "car per drivetrain (RWD light / RWD heavy / FWD / AWD) so the same scripted drive produces",
+    "different, explainable physics on the same spawn, script and collision mesh."
+  ],
+  "default": "corvette-zr1-stock",
+  "cars": [
+    {
+      "slug": "corvette-zr1-stock",
+      "name": "Corvette_ZR1_Stock",
+      "recordId": 1554942492,
+      "recordIndex": 37,
+      "layout": "RWD, 1600 kg, 6-speed",
+      "why": "the T-005d/T-007 baseline car; kept first so the existing single-car slice stays a regression anchor"
+    },
+    {
+      "slug": "lotus-exige-cup260-stock",
+      "name": "Lotus_ExigeCup260_Stock",
+      "recordId": 805568925,
+      "recordIndex": 15,
+      "layout": "RWD, 890 kg, 6-speed",
+      "why": "lightest car in the roster: 890 kg on the same tyres should out-accelerate and out-brake the Corvette"
+    },
+    {
+      "slug": "dodge-challenger-stock",
+      "name": "Dodge_Challenger_Stock",
+      "recordId": 528964602,
+      "recordIndex": 9,
+      "layout": "RWD, 1700 kg, 6-speed",
+      "why": "heaviest road car with a long wheelbase (2.981 m): inertially the opposite end from the Lotus"
+    },
+    {
+      "slug": "ford-focusrs-stock",
+      "name": "Ford_FocusRS_Stock",
+      "recordId": 2563977008,
+      "recordIndex": 50,
+      "layout": "FWD, 1400 kg, 6-speed",
+      "why": "driveType 1 (front wheel) exercises the transmission path the RWD baseline never touches"
+    },
+    {
+      "slug": "audi-r8v10-stock",
+      "name": "Audi_R8V10_Stock",
+      "recordId": 2936683857,
+      "recordIndex": 55,
+      "layout": "AWD, 1600 kg, 6-speed",
+      "why": "driveType 2 (four wheel) with the front differential torques populated: the third drivetrain branch"
+    }
+  ]
+}
