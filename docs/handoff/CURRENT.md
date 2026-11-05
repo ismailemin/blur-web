@@ -230,6 +230,12 @@ push-out 0,08/tick). Focus/Dodge/Lotus mid karelerinde araç artık görünür;
 geçişi etiketli, çözülmüyor. Kanıt:
 `docs/work/verification/T-007-camera-collision.md`.
 
+**Engine dokuları (P34):** 102/102 statik doku kaynağı decode edildi
+(101 BC1 + 1 BC3); 109.808 B descriptor+texel, 628.800 B RGBA; aggregate FNV
+`9c5686eed9334ca4`. Asset-reader `texture_inspect --raw` ile **102/102**
+isim/hash/boyut/format/RGBA birebir; 56 nesne, 844.802 B, 76/76. Sampling/UV/
+mip seçimi yok. Kanıt: `docs/work/verification/T-007-engine-textures.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

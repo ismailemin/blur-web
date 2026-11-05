@@ -521,6 +521,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Focus/Dodge/Lotus mid karelerinde araç görünür; `verify_e1_drive` **268/268**; 301/301 temas, 0 NaN; 20 capture console 0.
 - Kamera aralıkları 3.02–9.31 m; sınır: tek cast, continuous collision yok. Kanıt: `docs/work/verification/T-007-camera-collision.md`.
 
+## 5 Kasım 2026 — engine statik dokular
+
+- Packet materyallerinden **102 farklı statik doku** kaynağı; **102/102 decode** (101 BC1 + 1 BC3), 0 unsupported; 109.808 B descriptor+texel, 628.800 B RGBA; aggregate FNV `9c5686eed9334ca4`.
+- Asset-reader `texture_inspect --raw` ile **102/102** isim/hash/boyut/seviye/format/RGBA birebir; ilk byte farkı yok.
+- 56 nesne, **844.802 B**, **76/76**, PC parity, 0 GPU objesi. Kalan: sampling/UV/wrap/filter/anisotropy, mip seçimi, sRGB, shared (-1) dokular. Kanıt: `docs/work/verification/T-007-engine-textures.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

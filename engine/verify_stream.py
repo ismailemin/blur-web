@@ -7,7 +7,7 @@
 Gates, in order:
   1. copy upstream/BlurRebuilt, apply engine/apply_file_overlay.py (T-005c +
      T-005b), then apply engine/patches/t005b-stream-overlay.patch;
-  2. the stream patch touches exactly fourteen named files, all inside
+  2. the stream patch touches exactly sixteen named files, all inside
      PLATFORM_WEB guards (structural check);
   3. build the wasm32 module twice; the two wasm hashes must be identical;
   4. run the harness twice; stdout must be identical, exit 0, every check pass;
@@ -27,13 +27,19 @@ Gates, in order:
   8. the engine-loaded chunk 157 bytes must hash to the documented geometry
      chunk (SHA-256 b07b386c...), and the whole Level.levelrender and
      Level.levelphysics FNV hashes must equal Python's;
-  9. (unless --skip-native) PC parity: streammanager.cpp, streamdata.cpp and
-     archive.cpp preprocess identically with and without the patch, using the
-     committed display/FX facade (the real headers need the absent DXSDK).
+  9. (unless --skip-native) PC parity: streammanager.cpp, streamdata.cpp,
+     archive.cpp and resources.cpp preprocess identically with and without the
+     patch, using the committed display/FX facade (the real headers need the
+     absent DXSDK);
+ 10. P34: every distinct static texture source recorded from the two River draw
+     lists is located through the engine ChunkInfo table, decoded to CPU RGBA
+     from the committed PC descriptor/mip rules, and compared byte for byte and
+     by RGBA hash with probes/asset-reader `texture_inspect --raw`.
 
 Exit status: 0 pass, 1 fail, 2 blocked (missing input, nothing claimed).
-Stdlib only. Reads upstream and the level files; writes only under
-_work/engine-stream-spike/ and _work/logs/engine-stream-spike/.
+Python standard library plus the committed `tools/` reference readers. Reads
+upstream and the level files; writes only under _work/engine-stream-spike/ and
+_work/logs/engine-stream-spike/.
 """
 from __future__ import annotations
 
@@ -68,6 +74,7 @@ RD = "code/mercury/library/graphics/renderingdata"
 PATCH = ROOT / "engine/patches/t005b-stream-overlay.patch"
 RANGE_PROBE = ROOT / "_work/range-file-probe/build/range_probe.exe"
 LEVEL_INSPECT = ROOT / "_work/build/asset-reader-native/Release/level_inspect.exe"
+TEXTURE_INSPECT = ROOT / "_work/build/asset-reader-native/Release/texture_inspect.exe"
 LEVEL_DIR = ROOT / "game-data/Blur/levels/usa_la_river"
 LEVEL_RENDER = LEVEL_DIR / "Level.levelrender"
 LEVEL_STREAM = LEVEL_DIR / "Level.levelstream"
@@ -207,6 +214,9 @@ EXPECTED_CHECKS = [
     "packet_instance_records", "packet_records_total", "packet_drawable",
     "packet_instance_other_block",
     "packet_direct_world_null", "packet_hash",
+    # P34 static texture decode from the River draw-list material sources
+    "texture_refs", "texture_decoded", "texture_unsupported",
+    "texture_payload", "texture_no_gpu", "texture_hash",
 ]
 
 # The committed asset-reader reference for the same level. Both pairs are
@@ -366,7 +376,7 @@ def require_inputs() -> None:
     for path in (EM, NODE, LEVEL_RENDER, LEVEL_STREAM, LEVEL_PHYSICS):
         if not path.is_file():
             missing.append(str(path))
-    for path in (RANGE_PROBE, LEVEL_INSPECT):
+    for path in (RANGE_PROBE, LEVEL_INSPECT, TEXTURE_INSPECT):
         if not path.is_file():
             missing.append(f"{path} (run probes/range-file and probes/asset-reader builds)")
     if not (STUB / "Display.h").is_file() or not (STUB / "fx/fx.h").is_file():
@@ -715,6 +725,39 @@ def run_harness(js: Path, tag: str) -> dict:
         r"materialWorldRows=(\d+) materialType8Rows=(\d+) hash=0x([0-9a-f]{16})",
         out)
     packet_records = parse_packet_records(out)
+    texture_records = {}
+    for m in re.finditer(
+            r"webfiledraw texture block=(\d+) index=(\d+) name=(\S+) "
+            r"textureHash=(\d+) width=(\d+) height=(\d+) depth=(\d+) "
+            r"levels=(\d+) format=(\d+) usage=(\d+) type=(\d+) "
+            r"descriptorBytes=(\d+) payloadBytes=(\d+) rgbaBytes=(\d+) "
+            r"blobHash=0x([0-9a-f]{16}) rgbaHash=0x([0-9a-f]{16}) "
+            r"chunk=(\d+) item=(\d+)", out):
+        key = (int(m.group(1)), int(m.group(2)))
+        texture_records[key] = {
+            "block": key[0], "index": key[1], "name": m.group(3),
+            "textureHash": int(m.group(4)), "width": int(m.group(5)),
+            "height": int(m.group(6)), "depth": int(m.group(7)),
+            "levels": int(m.group(8)), "format": int(m.group(9)),
+            "usage": int(m.group(10)), "type": int(m.group(11)),
+            "descriptorBytes": int(m.group(12)),
+            "payloadBytes": int(m.group(13)),
+            "rgbaBytes": int(m.group(14)), "blobHash": m.group(15),
+            "rgbaHash": m.group(16), "chunk": int(m.group(17)),
+            "item": int(m.group(18)),
+        }
+    texture_bytes = {}
+    for m in re.finditer(r"webfiledraw texturebytes block=(\d+) index=(\d+) "
+                         r"bytes=(\d+) hex=([0-9a-f]*)", out):
+        texture_bytes[(int(m.group(1)), int(m.group(2)))] = bytes.fromhex(
+            m.group(4))
+    texture_unsupported = []
+    for m in re.finditer(r"webfiledraw texture_unsupported (.*)", out):
+        texture_unsupported.append(m.group(1))
+    texture_summary = re.search(
+        r"webfiledraw texture summary refs=(\d+) decoded=(\d+) "
+        r"unsupported=(\d+) overflow=(\d+) payloadBytes=(\d+) "
+        r"rgbaBytes=(\d+) aggregateHash=0x([0-9a-f]{16}) gpu=(\d+)", out)
     draw_counters = {}
     m = re.search(r"webfiledraw counters (.*)", out)
     if m:
@@ -735,6 +778,8 @@ def run_harness(js: Path, tag: str) -> dict:
         raise Failed("the harness printed an incomplete draw-list report")
     if not (draw_instance_geometry and packet_summary and packet_records):
         raise Failed("the harness printed an incomplete P30 packet report")
+    if not (texture_summary and texture_records and texture_bytes):
+        raise Failed("the harness printed an incomplete P34 texture report")
     summary_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", summary.group(1))}
     counter_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", counters.group(1))}
     scene_fields = {k: int(v) for k, v in
@@ -820,6 +865,15 @@ def run_harness(js: Path, tag: str) -> dict:
             "counters": draw_counters,
             "records": draw_records,
         },
+        "textures": texture_records,
+        "texture_bytes": texture_bytes,
+        "texture_unsupported": texture_unsupported,
+        "texture_summary": {
+            k: (texture_summary.group(7) if k == "aggregateHash" else int(v))
+            for k, v in zip(
+                ("refs", "decoded", "unsupported", "overflow", "payloadBytes",
+                 "rgbaBytes", "aggregateHash", "gpu"),
+                texture_summary.groups())},
         "stdout_bytes": len(out), "stderr_bytes": len(stderr),
     }
 
@@ -965,6 +1019,254 @@ def engine_table_fnv(chunkinfo: dict) -> str:
         for p in c["prerequisites"]:
             mix(struct.pack("<I", p & 0xFFFFFFFF))
     return f"{h:016x}"
+
+
+def compare_engine_textures(result: dict) -> dict:
+    """Decode every River draw-list texture again from the engine chunk table.
+
+    The harness already decoded the descriptor+texel bytes it captured through
+    the engine item walk. This function independently re-reads the same LOD0
+    chunks (offsets from the harness ChunkInfo table), builds the same embedded
+    descriptor+texel blob, and runs the committed ``texture_inspect --raw``
+    decoder on it. Every name, texture hash, size, format and RGBA hash must
+    agree. The first differing byte offset is reported, never a substituted
+    pixel.
+    """
+    # Committed Python reference readers (tools/), the same ones used by the
+    # level-instance and material diagnostics.
+    sys.path.insert(0, str(ROOT / "tools"))
+    from inspect_car_level_assets import resource_prefix, stream_prefix  # noqa: E402
+    from inspect_car_materials import texture_lod  # noqa: E402
+    from inspect_level_instances import InstanceReader, read_lists  # noqa: E402
+
+    records = result["textures"]
+    blob_by_key = result["texture_bytes"]
+    chunkinfo = result["chunkinfo"]
+    summary = result["texture_summary"]
+
+    if result["texture_unsupported"]:
+        raise Failed("harness reported unsupported textures: "
+                     + "; ".join(result["texture_unsupported"]))
+    if summary["overflow"] or summary["unsupported"]:
+        raise Failed(f"harness texture counters: {summary}")
+    if len(records) != summary["refs"] or len(blob_by_key) != len(records):
+        raise Failed("harness texture record/blob count mismatch")
+
+    # First LOD0 occurrence of each block in the engine table. The engine
+    # refuses ambiguous locations, so a duplicate here is a real failure.
+    lod0 = {}
+    for chunk_index, info in chunkinfo.items():
+        for item_index, (block, lod) in enumerate(info["items"]):
+            if lod != 0:
+                continue
+            if block in lod0:
+                raise Failed(f"ambiguous LOD0 texture block {block}")
+            lod0[block] = (chunk_index, item_index)
+
+    groups = {}
+    for key, record in records.items():
+        block = key[0]
+        if block not in lod0:
+            raise Failed(f"texture block {block} not in engine chunk table")
+        expected = lod0[block]
+        if expected != (record["chunk"], record["item"]):
+            raise Failed(f"texture block {block}: harness chunk/item "
+                         f"{record['chunk']}/{record['item']} != engine table "
+                         f"{expected[0]}/{expected[1]}")
+        groups.setdefault(expected[0], []).append(key)
+
+    textures_dir = LOGS / "textures"
+    textures_dir.mkdir(parents=True, exist_ok=True)
+
+    def read_chunk(chunk_index: int) -> bytes:
+        info = chunkinfo[chunk_index]
+        with LEVEL_STREAM.open("rb") as stream:
+            stream.seek(info["offset"])
+            return stream.read(info["storedBytes"])
+
+    def parse_chunk(chunk_index: int, max_item: int) -> tuple[bytes, list]:
+        data = read_chunk(chunk_index)
+        info = chunkinfo[chunk_index]
+        record = {"items": [{"block": b, "lod": l} for b, l in info["items"]]}
+        stream_prefix(data, record)
+        cursor = 24
+        parsed = []
+        for item_index in range(max_item + 1):
+            item_block, item_lod = info["items"][item_index]
+            if item_lod != 0:
+                raise Failed(f"chunk {chunk_index} item {item_index} is not LOD0")
+            resources = resource_prefix(
+                data, {"resourcePayloadOffset": cursor, "scenePayloadOffset": 0},
+                streamed=True)
+            read_lists(data, resources)
+            reader = InstanceReader(data, resources["parsedNodesEnd"])
+            textures = [texture_lod(reader, 0, 0)
+                        for _ in range(reader.count(16))]
+            cursor = reader.p
+            parsed.append((item_block, textures))
+        return data, parsed
+
+    compact = []
+    total_payload = 0
+    total_rgba = 0
+    h = 0xCBF29CE484222325
+    mix_rows = {}
+
+    def mix32(value: int) -> None:
+        nonlocal h
+        for b in struct.pack("<I", value & 0xFFFFFFFF):
+            h ^= b
+            h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+
+    for chunk_index in sorted(groups):
+        keys = groups[chunk_index]
+        max_item = max(records[key]["item"] for key in keys)
+        data, parsed_items = parse_chunk(chunk_index, max_item)
+
+        for key in sorted(keys):
+            record = records[key]
+            block, index = key
+            item_block, item_textures = parsed_items[record["item"]]
+            if item_block != block:
+                raise Failed(f"texture block {block}: parsed item is "
+                             f"block {item_block}")
+            if index >= len(item_textures):
+                raise Failed(f"texture {block}:{index} index out of range "
+                             f"({len(item_textures)} textures)")
+            texture = item_textures[index]
+            header_bytes = texture.get("headerBytes")
+            descriptor = texture.get("descriptor")
+            if header_bytes != 28 or descriptor is None:
+                raise Failed(f"texture {block}:{index} has no 28-byte PC "
+                             "descriptor")
+            header_offset = texture["headerOffset"]
+            data_offset = texture["dataOffset"]
+            data_bytes = texture["dataBytes"]
+            blob = (data[header_offset:header_offset + header_bytes]
+                    + data[data_offset:data_offset + data_bytes])
+
+            harness_blob = blob_by_key[key]
+            if harness_blob != blob:
+                limit = min(len(harness_blob), len(blob))
+                offset = next((i for i in range(limit)
+                               if harness_blob[i] != blob[i]), limit)
+                raise Failed(
+                    f"texture {block}:{index} blob mismatch at byte {offset}: "
+                    f"harness="
+                    f"{harness_blob[offset:offset + 4].hex()} python="
+                    f"{blob[offset:offset + 4].hex()} "
+                    f"(sizes {len(harness_blob)}/{len(blob)})")
+            blob_hash = fnv1a64_bytes(blob)
+            if record["blobHash"] != blob_hash:
+                raise Failed(f"texture {block}:{index} blob hash "
+                             f"{record['blobHash']} != {blob_hash}")
+            if record["name"] != texture["name"]:
+                raise Failed(f"texture {block}:{index} name "
+                             f"{record['name']!r} != {texture['name']!r}")
+            if record["textureHash"] != texture["hash"]:
+                raise Failed(f"texture {block}:{index} texture hash "
+                             f"{record['textureHash']} != {texture['hash']}")
+            if record["format"] != descriptor["format"]:
+                raise Failed(f"texture {block}:{index} format "
+                             f"{record['format']} != {descriptor['format']}")
+            if record["payloadBytes"] != data_bytes:
+                raise Failed(f"texture {block}:{index} payload size "
+                             f"{record['payloadBytes']} != {data_bytes}")
+            if record["levels"] != descriptor["levels"]:
+                raise Failed(f"texture {block}:{index} mip levels "
+                             f"{record['levels']} != {descriptor['levels']}")
+
+            raw_path = textures_dir / f"tex-{block}-{index}.raw"
+            raw_path.write_bytes(blob)
+            process = run([TEXTURE_INSPECT, raw_path, "--raw"])
+            if process.returncode:
+                raise Failed(f"texture_inspect {block}:{index} exited "
+                             f"{process.returncode}: "
+                             f"{(process.stdout or process.stderr).strip()}")
+            decoded = json.loads(process.stdout)
+            if decoded.get("status") != "ok":
+                raise Failed(f"texture_inspect {block}:{index}: "
+                             f"{decoded.get('error')}")
+            metadata = decoded["metadata"]
+            rgba = bytes(decoded["rgba"])
+            if decoded["width"] != record["width"] or \
+                    decoded["height"] != record["height"]:
+                raise Failed(f"texture {block}:{index} committed decoder "
+                             f"size {decoded['width']}x{decoded['height']} != "
+                             f"{record['width']}x{record['height']}")
+            if metadata["formatCode"] != record["format"] or \
+                    metadata["mipLevels"] != record["levels"] or \
+                    metadata["encodedMipChainBytes"] != record["payloadBytes"]:
+                raise Failed(f"texture {block}:{index} committed metadata "
+                             f"{metadata}")
+            if len(rgba) != record["rgbaBytes"]:
+                raise Failed(f"texture {block}:{index} RGBA bytes "
+                             f"{len(rgba)} != {record['rgbaBytes']}")
+            rgba_hash = fnv1a64_bytes(rgba)
+            if rgba_hash != record["rgbaHash"]:
+                raise Failed(f"texture {block}:{index} RGBA hash "
+                             f"{rgba_hash} != {record['rgbaHash']} "
+                             "(blobs are byte-identical; decoder divergence)")
+
+            total_payload += len(blob)
+            total_rgba += len(rgba)
+            mix_rows[key] = (record, len(blob), rgba_hash)
+            compact.append({
+                "block": block, "index": index, "name": record["name"],
+                "textureHash": record["textureHash"],
+                "width": record["width"], "height": record["height"],
+                "levels": record["levels"], "format": record["format"],
+                "descriptorBytes": record["descriptorBytes"],
+                "payloadBytes": record["payloadBytes"],
+                "rgbaBytes": record["rgbaBytes"],
+                "blobHash": record["blobHash"],
+                "rgbaHash": record["rgbaHash"],
+            })
+
+    for key in sorted(mix_rows):
+        record, blob_size, rgba_hash = mix_rows[key]
+        mix32(key[0])
+        mix32(key[1])
+        mix32(record["textureHash"])
+        mix32(record["width"])
+        mix32(record["height"])
+        mix32(record["levels"])
+        mix32(record["format"])
+        mix32(blob_size)
+        digest = int(rgba_hash, 16)
+        mix32(digest & 0xFFFFFFFF)
+        mix32(digest >> 32)
+
+    aggregate = f"{h:016x}"
+    if aggregate != summary["aggregateHash"]:
+        raise Failed(f"texture aggregate hash {aggregate} != "
+                     f"{summary['aggregateHash']}")
+    if total_payload != summary["payloadBytes"] or \
+            total_rgba != summary["rgbaBytes"]:
+        raise Failed("texture byte totals differ from the harness summary")
+    if len(compact) != 102:
+        raise Failed(f"decoded {len(compact)} textures, expected 102")
+
+    report = {
+        "decoded": len(compact),
+        "unsupported": [],
+        "totalBlobBytes": total_payload,
+        "totalRgbaBytes": total_rgba,
+        "aggregateHash": aggregate,
+        "committedDecoder": "probes/asset-reader texture_inspect --raw",
+        "comparison": {
+            "name": "all equal",
+            "textureHash": "all equal",
+            "size": "all equal",
+            "format": "all equal",
+            "rgbaHash": "all equal",
+            "firstMismatch": None,
+        },
+        "textures": compact,
+    }
+    (LOGS / "engine-textures.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return report
 
 
 def compare_engine_table(result: dict, index: dict) -> dict:
@@ -1681,7 +1983,9 @@ def main() -> int:
     index = reference_index()
     result = run_harness(first, "a")
     report["harness"] = {k: v for k, v in result.items()
-                         if k not in ("chunks", "chunkinfo")}
+                         if k not in ("chunks", "chunkinfo", "textures",
+                                      "texture_bytes", "texture_unsupported",
+                                      "texture_summary")}
     report["reference"] = {
         "chunks": len(index["streamChunks"]),
         "resourceBlockCount": index["resourceBlockCount"],
@@ -1694,6 +1998,7 @@ def main() -> int:
     report["engine_table"] = compare_engine_table(result, index)
     report["chunks"] = compare_chunks(result, index)
     report["draw_list"] = compare_draw_list(result, index)
+    report["textures"] = compare_engine_textures(result)
     report["whole_files"] = whole_files(result)
     report["levelrender_sha256"] = sha256_file(LEVEL_RENDER)
     report["levelphysics_sha256"] = sha256_file(LEVEL_PHYSICS)
@@ -1759,6 +2064,13 @@ def main() -> int:
           f"{dl['instance_matrices_compared']} equal to the Stage B reader at "
           f"1e-5 ({dl['instance_matrices_compared_p30']} of them to the P30 "
           f"block-27 reader); {dl['instance_sources_compared']} VB/IB bindings equal")
+    tx = report["textures"]
+    print(f"textures        {tx['decoded']}/102 static textures decoded, "
+          f"{tx['unsupported'] and len(tx['unsupported']) or 0} unsupported, "
+          f"{tx['totalBlobBytes']} descriptor+texel B, "
+          f"{tx['totalRgbaBytes']} RGBA B, aggregate={tx['aggregateHash']}")
+    print(f"texture compare {len(tx['textures'])}/102 name+hash+size+format+"
+          f"RGBA equal to {tx['committedDecoder']}")
     sb = dl["stage_b_reference"]
     if sb["present"]:
         b = dl["stage_b_bundle"]

@@ -95,6 +95,9 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - **Packet:** 312 kayıt (255 direct + 57 instance), **151 drawable**;
   hash `96b24f076495aea5`; 56 nesne, 823.931 B, 70/70, PC parity.
 - Materyaller: 243 satır / 26 tip; 121 albedo; type-8 yolu hazır.
+- **Dokular (P34):** 102/102 statik doku decode edildi (101 BC1 + 1 BC3);
+  628.800 B RGBA, aggregate FNV `9c5686eed9334ca4`; asset-reader ile
+  102/102 isim/hash/boyut/format/RGBA birebir; 0 unsupported.
 - Kalan: dokular (indeks), visibility/culling/LOD, `ProcessLoadChunk`, blok31;
   PoC producer'ına bağlama.
 - Kanıt: `docs/work/verification/T-007-drawlist-56.md`,

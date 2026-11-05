@@ -351,6 +351,59 @@ void fnv_string( uint64_t& hash, const char* text )
 	fnv_bytes( hash, (const U8*)text, bytes );
 }
 
+// --- P34: distinct static texture references ------------------------------
+//
+// resolveAlbedo records every non-null texture source the two River draw lists
+// name. The list is bounded; an overflow is reported, never truncated. The
+// texture phase below resolves each block through the engine ChunkInfo table.
+const int kMaxTextureRefs = 256;
+
+struct TextureRef
+{
+	S32 block;
+	int index;
+};
+
+TextureRef g_textureRefs[ kMaxTextureRefs ];
+int g_textureRefCount = 0;
+int g_textureRefOverflow = 0;
+
+void resetTextureRefs()
+{
+	g_textureRefCount = 0;
+	g_textureRefOverflow = 0;
+}
+
+void addTextureRef( S32 block, int index )
+{
+	if ( block < 0 || index < 0 )
+		return;
+
+	for ( int i = 0; i < g_textureRefCount; i++ )
+	{
+		if ( g_textureRefs[ i ].block == block &&
+			g_textureRefs[ i ].index == index )
+			return;
+	}
+
+	if ( g_textureRefCount >= kMaxTextureRefs )
+	{
+		++g_textureRefOverflow;
+		return;
+	}
+
+	g_textureRefs[ g_textureRefCount ].block = block;
+	g_textureRefs[ g_textureRefCount ].index = index;
+	++g_textureRefCount;
+}
+
+bool textureRefLess( const TextureRef& a, const TextureRef& b )
+{
+	if ( a.block != b.block )
+		return a.block < b.block;
+	return a.index < b.index;
+}
+
 // --- P30: constant material rows ------------------------------------------
 //
 // The target RenderListNode serialiser already reads the constant material
@@ -855,6 +908,7 @@ void resolveAlbedo( const RenderingData::Target::RenderListNode& list,
 		const RenderingData::ResourceIndex source = list.GetTextureSource( index );
 		record->albedoBlock = source.GetBlock();
 		record->albedoSourceIndex = source.GetIndex();
+		addTextureRef( record->albedoBlock, record->albedoSourceIndex );
 	}
 }
 
@@ -920,6 +974,8 @@ struct ItemBuffers
 	int vertexCount;
 	int indexBase;
 	int indexCount;
+	U64 streamStart;
+	U64 streamEnd;
 };
 
 bool parseChunkUpToItem( const std::vector<U8>& bytes,
@@ -950,7 +1006,9 @@ bool parseChunkUpToItem( const std::vector<U8>& bytes,
 			new RenderingData::Target::ResourceBlock::Resources();
 		resources->pScene = scene;
 
+		items[ *itemCount ].streamStart = (U64)stream.GetPosition();
 		WebSpike::ParseResourceBlockLodArchive( ar, *resources, lod );
+		items[ *itemCount ].streamEnd = (U64)stream.GetPosition();
 
 		items[ *itemCount ].block = info.GetItem( i ).block;
 		items[ *itemCount ].vertexBase = vb0;
@@ -967,6 +1025,558 @@ bool parseChunkUpToItem( const std::vector<U8>& bytes,
 	}
 
 	return true;
+}
+
+// --- P34: static texture descriptor/texel decode ---------------------------
+//
+// The engine's LodReader<Texture> web branch is GPU-bound: it consumes the
+// descriptor and skips the texel payload because no device exists. The chunk
+// location, item order and item byte range still come from the engine's own
+// ChunkInfo table and LodReader walk (parseChunkUpToItem above). This section
+// therefore reads the committed PC resource-texture layout from that exact
+// item byte range and applies the committed texture format rules (mip-chain
+// byte count and BC1/BC2/BC3 pixel decoding). No GPU object, sampler or
+// texture is created; the output is CPU RGBA for comparison only.
+
+struct RawTexture
+{
+	char name[256];
+	U32 textureHash;
+	U32 width;
+	U32 height;
+	U32 depth;
+	U32 levels;
+	U32 format;
+	U32 usage;
+	U32 type;
+	std::vector<U8> descriptor;
+	std::vector<U8> texels;
+};
+
+struct TextureByteReader
+{
+	const U8* bytes;
+	U64 size;
+	U64 pos;
+
+	bool need( U64 count ) const
+	{
+		return pos <= size && count <= size - pos;
+	}
+
+	bool readBytes( void* out, U64 count )
+	{
+		if ( !need( count ) )
+			return false;
+		memcpy( out, bytes + pos, (size_t)count );
+		pos += count;
+		return true;
+	}
+
+	bool u8( U8* value )
+	{
+		if ( !need( 1 ) )
+			return false;
+		*value = bytes[ pos++ ];
+		return true;
+	}
+
+	bool u32( U32* value )
+	{
+		if ( !need( 4 ) )
+			return false;
+		*value = (U32)bytes[ pos ] | ( (U32)bytes[ pos + 1 ] << 8 ) |
+			( (U32)bytes[ pos + 2 ] << 16 ) | ( (U32)bytes[ pos + 3 ] << 24 );
+		pos += 4;
+		return true;
+	}
+
+	// Every object in this archive is introduced by "RA" plus a version. The
+	// version check is the same bound the engine archive uses.
+	bool marker( U16 maximumVersion, U16* version )
+	{
+		U32 value = 0;
+		if ( !u32( &value ) )
+			return false;
+		if ( ( value & 0xffffu ) != 0x4152u )
+			return false;
+		*version = (U16)( value >> 16 );
+		return *version <= maximumVersion;
+	}
+
+	bool vectorCount( U32* count )
+	{
+		U16 version = 0;
+		return marker( 0, &version ) && u32( count );
+	}
+};
+
+U64 textureMipBytes( U32 width, U32 height, U32 format )
+{
+	const U32 dxt1 = 0x31545844u, dxt3 = 0x33545844u, dxt5 = 0x35545844u;
+
+	if ( format == dxt1 || format == dxt3 || format == dxt5 )
+	{
+		const U64 blocksW = ( width + 3 ) / 4;
+		const U64 blocksH = ( height + 3 ) / 4;
+		return blocksW * blocksH * ( format == dxt1 ? 8u : 16u );
+	}
+
+	if ( format == 21 || format == 22 || format == 32 || format == 33 )
+		return (U64)width * height * 4;
+
+	if ( format == 28 || format == 50 )
+		return (U64)width * height;
+
+	return 0;
+}
+
+void textureRgb565( U16 value, unsigned char out[4] )
+{
+	const unsigned r = value >> 11, g = ( value >> 5 ) & 63, b = value & 31;
+	out[0] = (unsigned char)( ( r << 3 ) | ( r >> 2 ) );
+	out[1] = (unsigned char)( ( g << 2 ) | ( g >> 4 ) );
+	out[2] = (unsigned char)( ( b << 3 ) | ( b >> 2 ) );
+	out[3] = 255;
+}
+
+// Port of the committed asset-reader BC1/BC2/BC3 mip0 rule (FORMAT-texture.md).
+// DXT3/DXT5 alpha use the same nibble*17 and Microsoft rounded interpolation.
+bool decodeTextureMip0( const RawTexture& texture, std::vector<U8>& rgba,
+	const char** reason )
+{
+	const U32 dxt1 = 0x31545844u, dxt3 = 0x33545844u, dxt5 = 0x35545844u;
+
+	if ( texture.format != dxt1 && texture.format != dxt3 &&
+		texture.format != dxt5 )
+	{
+		*reason = "unsupportedTextureDecodeFormat";
+		return false;
+	}
+
+	rgba.assign( (size_t)texture.width * texture.height * 4, 0 );
+	const U8* texels = texture.texels.empty() ? 0 : &texture.texels[ 0 ];
+	const size_t step = texture.format == dxt1 ? 8 : 16;
+	size_t p = 0;
+
+	for ( U32 by = 0; by < ( texture.height + 3 ) / 4; ++by )
+	{
+		for ( U32 bx = 0; bx < ( texture.width + 3 ) / 4; ++bx, p += step )
+		{
+			if ( p + step > texture.texels.size() )
+			{
+				*reason = "textureDecodeBounds";
+				return false;
+			}
+
+			const size_t colour = p + ( texture.format == dxt1 ? 0 : 8 );
+			const U16 c0 = (U16)( texels[ colour ] | ( texels[ colour + 1 ] << 8 ) );
+			const U16 c1 = (U16)( texels[ colour + 2 ] | ( texels[ colour + 3 ] << 8 ) );
+			unsigned char palette[ 4 ][ 4 ];
+			textureRgb565( c0, palette[ 0 ] );
+			textureRgb565( c1, palette[ 1 ] );
+			memset( palette[ 2 ], 0, 4 );
+			memset( palette[ 3 ], 0, 4 );
+
+			if ( c0 > c1 || texture.format != dxt1 )
+			{
+				for ( int k = 0; k < 3; ++k )
+				{
+					palette[ 2 ][ k ] = (unsigned char)
+						( ( 2 * palette[ 0 ][ k ] + palette[ 1 ][ k ] ) / 3 );
+					palette[ 3 ][ k ] = (unsigned char)
+						( ( palette[ 0 ][ k ] + 2 * palette[ 1 ][ k ] ) / 3 );
+				}
+				palette[ 2 ][ 3 ] = palette[ 3 ][ 3 ] = 255;
+			}
+			else
+			{
+				for ( int k = 0; k < 3; ++k )
+					palette[ 2 ][ k ] = (unsigned char)
+						( ( palette[ 0 ][ k ] + palette[ 1 ][ k ] ) / 2 );
+				palette[ 2 ][ 3 ] = 255;
+				palette[ 3 ][ 0 ] = palette[ 3 ][ 1 ] = palette[ 3 ][ 2 ] = 0;
+				palette[ 3 ][ 3 ] = 0;
+			}
+
+			const U32 codes = (U32)texels[ colour + 4 ] |
+				( (U32)texels[ colour + 5 ] << 8 ) |
+				( (U32)texels[ colour + 6 ] << 16 ) |
+				( (U32)texels[ colour + 7 ] << 24 );
+			unsigned alpha[ 8 ];
+			memset( alpha, 0, sizeof( alpha ) );
+			U64 alphaCodes = 0;
+
+			if ( texture.format == dxt5 )
+			{
+				alpha[ 0 ] = texels[ p ];
+				alpha[ 1 ] = texels[ p + 1 ];
+
+				if ( alpha[ 0 ] > alpha[ 1 ] )
+				{
+					for ( unsigned i = 2; i < 8; ++i )
+						alpha[ i ] = ( ( 8 - i ) * alpha[ 0 ] +
+							( i - 1 ) * alpha[ 1 ] + 3 ) / 7;
+				}
+				else
+				{
+					for ( unsigned i = 2; i < 6; ++i )
+						alpha[ i ] = ( ( 6 - i ) * alpha[ 0 ] +
+							( i - 1 ) * alpha[ 1 ] + 2 ) / 5;
+					alpha[ 6 ] = 0;
+					alpha[ 7 ] = 255;
+				}
+
+				for ( unsigned i = 0; i < 6; ++i )
+					alphaCodes |= (U64)texels[ p + 2 + i ] << ( i * 8 );
+			}
+
+			for ( unsigned y = 0; y < 4; ++y )
+			{
+				for ( unsigned x = 0; x < 4; ++x )
+				{
+					const unsigned pixel = y * 4 + x;
+					unsigned char colourOut[ 4 ];
+					memcpy( colourOut, palette[ ( codes >> ( 2 * pixel ) ) & 3 ],
+						sizeof( colourOut ) );
+
+					if ( texture.format == dxt3 )
+						colourOut[ 3 ] = (unsigned char)
+							( ( ( texels[ p + pixel / 2 ] >> ( ( pixel % 2 ) * 4 ) ) & 15 ) * 17 );
+					if ( texture.format == dxt5 )
+						colourOut[ 3 ] = (unsigned char)
+							( alpha[ ( alphaCodes >> ( 3 * pixel ) ) & 7 ] );
+
+					const U32 px = bx * 4 + x, py = by * 4 + y;
+
+					if ( px < texture.width && py < texture.height )
+						memcpy( &rgba[ ( (size_t)py * texture.width + px ) * 4 ],
+							colourOut, 4 );
+				}
+			}
+		}
+	}
+
+	return true;
+}
+
+// Read one whole texture-bearing resource item. The item byte range is the
+// engine walk's start/end for that item; the field order is the committed PC
+// resource LOD0 layout. Geometry vectors must be empty: a texture block that
+// also carries geometry is reported unsupported rather than skipped.
+bool parseTextureItem( const std::vector<U8>& bytes, U64 start, U64 end,
+	std::vector<RawTexture>* textures, const char** reason )
+{
+	textures->clear();
+
+	if ( start >= end || end > (U64)bytes.size() )
+	{
+		*reason = "textureItemRange";
+		return false;
+	}
+
+	TextureByteReader reader;
+	reader.bytes = &bytes[ 0 ] + start;
+	reader.size = end - start;
+	reader.pos = 0;
+
+	U16 version = 0;
+
+	if ( !reader.marker( 0xffff, &version ) || !reader.marker( 0xffff, &version ) )
+	{
+		*reason = "textureItemMarker";
+		return false;
+	}
+
+	U32 platform = 0, lod = 0;
+
+	if ( !reader.u32( &platform ) || !reader.u32( &lod ) )
+	{
+		*reason = "textureItemHeader";
+		return false;
+	}
+
+	if ( platform != 2 || lod != 0 )
+	{
+		*reason = "textureItemPlatformOrLod";
+		return false;
+	}
+
+	for ( int vector = 0; vector < 3; ++vector )
+	{
+		U32 count = 0;
+
+		if ( !reader.vectorCount( &count ) )
+		{
+			*reason = "textureItemVector";
+			return false;
+		}
+
+		if ( count != 0 )
+		{
+			*reason = "textureBlockHasGeometry";
+			return false;
+		}
+	}
+
+	U32 textureCount = 0;
+
+	if ( !reader.u32( &textureCount ) )
+	{
+		*reason = "textureCount";
+		return false;
+	}
+
+	if ( textureCount == 0 || textureCount > 16 )
+	{
+		*reason = "textureCountRange";
+		return false;
+	}
+
+	for ( U32 i = 0; i < textureCount; ++i )
+	{
+		U16 textureVersion = 0;
+
+		if ( !reader.marker( 2, &textureVersion ) ||
+			!reader.marker( 0xffff, &version ) )
+		{
+			*reason = "textureLodMarker";
+			return false;
+		}
+
+		U32 texturePlatform = 0;
+
+		if ( !reader.u32( &texturePlatform ) )
+		{
+			*reason = "textureLodPlatform";
+			return false;
+		}
+
+		if ( texturePlatform != 2 )
+		{
+			*reason = "textureLodPlatformValue";
+			return false;
+		}
+
+		RawTexture texture;
+		memset( texture.name, 0, sizeof( texture.name ) );
+
+		U32 nameLength = 0;
+
+		if ( !reader.u32( &nameLength ) )
+		{
+			*reason = "textureNameLength";
+			return false;
+		}
+
+		if ( nameLength == 0 || nameLength > sizeof( texture.name ) - 1 )
+		{
+			*reason = "textureNameRange";
+			return false;
+		}
+
+		if ( !reader.readBytes( texture.name, nameLength ) )
+		{
+			*reason = "textureName";
+			return false;
+		}
+
+		texture.name[ nameLength ] = 0;
+
+		U16 samplerVersion = 0;
+
+		if ( !reader.marker( 1, &samplerVersion ) )
+		{
+			*reason = "textureSamplerMarker";
+			return false;
+		}
+
+		const U32 samplerValues = samplerVersion ? 10u : 9u;
+
+		for ( U32 s = 0; s < samplerValues; ++s )
+		{
+			U32 ignored = 0;
+
+			if ( !reader.u32( &ignored ) )
+			{
+				*reason = "textureSampler";
+				return false;
+			}
+		}
+
+		U32 present = 0;
+
+		if ( !reader.u32( &texture.textureHash ) || !reader.u32( &present ) )
+		{
+			*reason = "textureHashOrPresent";
+			return false;
+		}
+
+		if ( present == 0 )
+		{
+			*reason = "textureLodAbsent";
+			return false;
+		}
+
+		if ( present > 1 )
+		{
+			*reason = "pairedTextureSource";
+			return false;
+		}
+
+		U32 headerSize = 0;
+
+		if ( !reader.u32( &headerSize ) )
+		{
+			*reason = "textureHeaderSize";
+			return false;
+		}
+
+		if ( headerSize != 28 )
+		{
+			*reason = "textureDescriptorSize";
+			return false;
+		}
+
+		texture.descriptor.resize( headerSize );
+
+		if ( !reader.readBytes( &texture.descriptor[ 0 ], headerSize ) )
+		{
+			*reason = "textureDescriptor";
+			return false;
+		}
+
+		const U8* desc = &texture.descriptor[ 0 ];
+		texture.width = (U32)desc[ 0 ] | ( (U32)desc[ 1 ] << 8 ) |
+			( (U32)desc[ 2 ] << 16 ) | ( (U32)desc[ 3 ] << 24 );
+		texture.height = (U32)desc[ 4 ] | ( (U32)desc[ 5 ] << 8 ) |
+			( (U32)desc[ 6 ] << 16 ) | ( (U32)desc[ 7 ] << 24 );
+		texture.depth = (U32)desc[ 8 ] | ( (U32)desc[ 9 ] << 8 ) |
+			( (U32)desc[ 10 ] << 16 ) | ( (U32)desc[ 11 ] << 24 );
+		texture.levels = (U32)desc[ 12 ] | ( (U32)desc[ 13 ] << 8 ) |
+			( (U32)desc[ 14 ] << 16 ) | ( (U32)desc[ 15 ] << 24 );
+		texture.format = (U32)desc[ 16 ] | ( (U32)desc[ 17 ] << 8 ) |
+			( (U32)desc[ 18 ] << 16 ) | ( (U32)desc[ 19 ] << 24 );
+		texture.usage = (U32)desc[ 20 ] | ( (U32)desc[ 21 ] << 8 ) |
+			( (U32)desc[ 22 ] << 16 ) | ( (U32)desc[ 23 ] << 24 );
+		texture.type = (U32)desc[ 24 ] | ( (U32)desc[ 25 ] << 8 ) |
+			( (U32)desc[ 26 ] << 16 ) | ( (U32)desc[ 27 ] << 24 );
+
+		if ( texture.width == 0 || texture.height == 0 ||
+			texture.width > 512 || texture.height > 512 ||
+			texture.depth != 1 || texture.type != 3 ||
+			texture.levels == 0 || texture.levels > 10 )
+		{
+			*reason = "textureDescriptorShape";
+			return false;
+		}
+
+		U32 maximumLevels = 1;
+
+		for ( U32 side = std::max( texture.width, texture.height ); side > 1; side >>= 1 )
+			++maximumLevels;
+
+		if ( texture.levels > maximumLevels )
+		{
+			*reason = "textureMipLevelCount";
+			return false;
+		}
+
+		U32 payloadBytes = 0;
+
+		if ( textureVersion != 0 )
+		{
+			if ( !reader.marker( 0xffff, &version ) )
+			{
+				*reason = "textureBlobMarker";
+				return false;
+			}
+
+			U32 alignment = 0, compression = 0;
+			U8 endianSwap = 0;
+
+			if ( !reader.u32( &payloadBytes ) || !reader.u32( &alignment ) ||
+				!reader.u32( &compression ) || !reader.u8( &endianSwap ) )
+			{
+				*reason = "textureBlobHeader";
+				return false;
+			}
+
+			if ( compression != 0 || endianSwap != 0 ||
+				alignment == 0 || alignment > 4096 ||
+				( alignment & ( alignment - 1 ) ) != 0 )
+			{
+				*reason = "textureBlobLayout";
+				return false;
+			}
+
+			const U64 padding = ( alignment - ( ( start + reader.pos ) % alignment ) ) % alignment;
+
+			if ( !reader.need( padding ) )
+			{
+				*reason = "textureBlobPadding";
+				return false;
+			}
+
+			reader.pos += padding;
+		}
+		else if ( !reader.u32( &payloadBytes ) )
+		{
+			*reason = "texturePayloadSize";
+			return false;
+		}
+
+		texture.texels.resize( payloadBytes );
+
+		if ( payloadBytes == 0 ||
+			!reader.readBytes( &texture.texels[ 0 ], payloadBytes ) )
+		{
+			*reason = "texturePayload";
+			return false;
+		}
+
+		U64 expectedBytes = 0;
+
+		for ( U32 mip = 0; mip < texture.levels; ++mip )
+		{
+			const U64 mipBytes = textureMipBytes(
+				std::max( 1u, texture.width >> mip ),
+				std::max( 1u, texture.height >> mip ), texture.format );
+
+			if ( mipBytes == 0 )
+			{
+				*reason = "unsupportedTextureFormat";
+				return false;
+			}
+
+			expectedBytes += mipBytes;
+		}
+
+		if ( expectedBytes != payloadBytes )
+		{
+			*reason = "textureMipChainMismatch";
+			return false;
+		}
+
+		textures->push_back( std::move( texture ) );
+	}
+
+	return true;
+}
+
+void printTextureHex( const U8* data, size_t bytes )
+{
+	static const char* digits = "0123456789abcdef";
+	std::vector<char> text( bytes * 2 + 1 );
+
+	for ( size_t i = 0; i < bytes; ++i )
+	{
+		text[ i * 2 ] = digits[ data[ i ] >> 4 ];
+		text[ i * 2 + 1 ] = digits[ data[ i ] & 15 ];
+	}
+
+	text[ bytes * 2 ] = 0;
+	printf( "%s", &text[ 0 ] );
 }
 
 // Emit one draw record. Every field comes from the archive; a field that the
@@ -2526,6 +3136,10 @@ int main( int argc, char** argv )
 		geometry.indexBuffers = geoIb;
 		geometry.indexBufferCount = geoIbCount;
 
+		// P34: start the distinct static texture-source set before either River
+		// render list emits a packet record.
+		resetTextureRefs();
+
 		// Node block 283: the 95 direct draws.
 		{
 			WebSpike::ResetChunkRecords();
@@ -2851,6 +3465,271 @@ int main( int argc, char** argv )
 		check( "drawlist_no_gpu_objects", draws.gpuObjectsCreated == 0 );
 		check( "drawlist_renderlist_handler",
 			report.renderListHandlerRegistered == 1 );
+
+		// --- P34: decode every distinct static texture reference -----------
+		// The referenced block/indices were recorded while the two River
+		// render lists emitted packet records. Each block's LOD0 chunk is
+		// located from the engine ChunkInfo table; each item byte range is the
+		// engine LodReader walk's own start/end. The texture descriptor and
+		// texel chain are then read with the committed PC layout and decoded
+		// to CPU RGBA. No texture, sampler or GPU object is created.
+		std::sort( g_textureRefs, g_textureRefs + g_textureRefCount,
+			textureRefLess );
+
+		WebSpike::ResetChunkRecords();
+
+		struct TexturePlan
+		{
+			int refIndex;
+			ChunkRange range;
+			bool located;
+			bool processed;
+		};
+
+		static TexturePlan texturePlans[ kMaxTextureRefs ];
+		struct TextureMixRow
+		{
+			S32 block;
+			int index;
+			U32 textureHash;
+			U32 width;
+			U32 height;
+			U32 levels;
+			U32 format;
+			int blobSize;
+			U64 rgbaHash;
+		};
+		static TextureMixRow mixRows[ kMaxTextureRefs ];
+		int mixCount = 0;
+		int unsupportedTextures = 0;
+		int decodedTextures = 0;
+		unsigned long long texturePayloadBytes = 0;
+		unsigned long long textureRgbaBytes = 0;
+		uint64_t textureAggregate = fnv_begin();
+
+		for ( int i = 0; i < g_textureRefCount; i++ )
+		{
+			texturePlans[ i ].refIndex = i;
+			texturePlans[ i ].processed = false;
+			memset( &texturePlans[ i ].range, 0, sizeof( texturePlans[ i ].range ) );
+			texturePlans[ i ].located = findChunkItem( scene->GetStreamData(),
+				g_textureRefs[ i ].block, 0, &texturePlans[ i ].range );
+
+			if ( !texturePlans[ i ].located )
+			{
+				printf( "webfiledraw texture_unsupported block=%d index=%d "
+					"reason=textureBlockNotInStream\n",
+					(int)g_textureRefs[ i ].block, g_textureRefs[ i ].index );
+				++unsupportedTextures;
+				texturePlans[ i ].processed = true;
+			}
+		}
+
+		for ( int i = 0; i < g_textureRefCount; i++ )
+		{
+			if ( texturePlans[ i ].processed )
+				continue;
+
+			const S32 chunk = texturePlans[ i ].range.chunk;
+			int maxItem = texturePlans[ i ].range.item;
+
+			for ( int j = i + 1; j < g_textureRefCount; j++ )
+			{
+				if ( !texturePlans[ j ].processed && texturePlans[ j ].located &&
+					texturePlans[ j ].range.chunk == chunk )
+					maxItem = std::max( maxItem, (int)texturePlans[ j ].range.item );
+			}
+
+			ChunkRange range = texturePlans[ i ].range;
+			std::vector<U8> bytes;
+			ItemBuffers parsed[ 128 ];
+			int parsedCount = 0;
+
+			WebSpike::ResetChunkRecords();
+
+			if ( !loadChunkCopy( manager, stream, range, bytes ) ||
+				!parseChunkUpToItem( bytes, scene, range, maxItem, parsed,
+					&parsedCount ) )
+			{
+				for ( int j = i; j < g_textureRefCount; j++ )
+				{
+					if ( texturePlans[ j ].processed || !texturePlans[ j ].located ||
+						texturePlans[ j ].range.chunk != chunk )
+						continue;
+
+					const TextureRef& ref = g_textureRefs[ texturePlans[ j ].refIndex ];
+					printf( "webfiledraw texture_unsupported block=%d index=%d "
+						"chunk=%d reason=textureChunkWalkFailed\n",
+						(int)ref.block, ref.index, (int)chunk );
+					++unsupportedTextures;
+					texturePlans[ j ].processed = true;
+				}
+				continue;
+			}
+
+			for ( int j = i; j < g_textureRefCount; j++ )
+			{
+				if ( texturePlans[ j ].processed || !texturePlans[ j ].located ||
+					texturePlans[ j ].range.chunk != chunk )
+					continue;
+
+				texturePlans[ j ].processed = true;
+
+				const TextureRef& ref = g_textureRefs[ texturePlans[ j ].refIndex ];
+				const ItemBuffers* item = 0;
+
+				for ( int k = 0; k < parsedCount; k++ )
+				{
+					if ( parsed[ k ].block == ref.block )
+					{
+						item = &parsed[ k ];
+						break;
+					}
+				}
+
+				if ( item == 0 || item->streamStart >= item->streamEnd )
+				{
+					printf( "webfiledraw texture_unsupported block=%d index=%d "
+						"chunk=%d reason=textureItemNotRecorded\n",
+						(int)ref.block, ref.index, (int)chunk );
+					++unsupportedTextures;
+					continue;
+				}
+
+				std::vector<RawTexture> textures;
+				const char* parseReason = "none";
+
+				if ( !parseTextureItem( bytes, item->streamStart, item->streamEnd,
+						&textures, &parseReason ) )
+				{
+					printf( "webfiledraw texture_unsupported block=%d index=%d "
+						"chunk=%d item=%d reason=%s\n",
+						(int)ref.block, ref.index, (int)chunk,
+						(int)( item - parsed ), parseReason );
+					++unsupportedTextures;
+					continue;
+				}
+
+				if ( ref.index < 0 || ref.index >= (int)textures.size() )
+				{
+					printf( "webfiledraw texture_unsupported block=%d index=%d "
+						"chunk=%d reason=textureIndexOutOfRange count=%d\n",
+						(int)ref.block, ref.index, (int)chunk,
+						(int)textures.size() );
+					++unsupportedTextures;
+					continue;
+				}
+
+				const RawTexture& texture = textures[ ref.index ];
+				std::vector<U8> rgba;
+				const char* decodeReason = "none";
+
+				if ( !decodeTextureMip0( texture, rgba, &decodeReason ) )
+				{
+					printf( "webfiledraw texture_unsupported block=%d index=%d "
+						"chunk=%d reason=%s\n",
+						(int)ref.block, ref.index, (int)chunk, decodeReason );
+					++unsupportedTextures;
+					continue;
+				}
+
+				std::vector<U8> blob;
+				blob.reserve( texture.descriptor.size() + texture.texels.size() );
+				blob.insert( blob.end(), texture.descriptor.begin(),
+					texture.descriptor.end() );
+				blob.insert( blob.end(), texture.texels.begin(),
+					texture.texels.end() );
+
+				uint64_t blobHash = fnv_begin();
+				fnv_bytes( blobHash, &blob[ 0 ], blob.size() );
+				uint64_t rgbaHash = fnv_begin();
+				fnv_bytes( rgbaHash, &rgba[ 0 ], rgba.size() );
+
+				printf( "webfiledraw texture block=%d index=%d name=%s "
+					"textureHash=%u width=%u height=%u depth=%u levels=%u "
+					"format=%u usage=%u type=%u descriptorBytes=%d "
+					"payloadBytes=%d rgbaBytes=%d blobHash=0x%016llx "
+					"rgbaHash=0x%016llx chunk=%d item=%d\n",
+					(int)ref.block, ref.index, texture.name,
+					(unsigned)texture.textureHash, (unsigned)texture.width,
+					(unsigned)texture.height, (unsigned)texture.depth,
+					(unsigned)texture.levels, (unsigned)texture.format,
+					(unsigned)texture.usage, (unsigned)texture.type,
+					(int)texture.descriptor.size(), (int)texture.texels.size(),
+					(int)rgba.size(), (unsigned long long)blobHash,
+					(unsigned long long)rgbaHash, (int)chunk,
+					(int)( item - parsed ) );
+
+				printf( "webfiledraw texturebytes block=%d index=%d bytes=%d hex=",
+					(int)ref.block, ref.index, (int)blob.size() );
+				printTextureHex( &blob[ 0 ], blob.size() );
+				printf( "\n" );
+
+				TextureMixRow& row = mixRows[ mixCount++ ];
+				row.block = ref.block;
+				row.index = ref.index;
+				row.textureHash = texture.textureHash;
+				row.width = texture.width;
+				row.height = texture.height;
+				row.levels = texture.levels;
+				row.format = texture.format;
+				row.blobSize = (int)blob.size();
+				row.rgbaHash = rgbaHash;
+
+				texturePayloadBytes += blob.size();
+				textureRgbaBytes += rgba.size();
+				++decodedTextures;
+			}
+		}
+
+		// Aggregate in the same canonical (block,index) order both sides use.
+		for ( int i = 0; i < mixCount; i++ )
+		{
+			int best = i;
+
+			for ( int j = i + 1; j < mixCount; j++ )
+			{
+				if ( mixRows[ j ].block < mixRows[ best ].block ||
+					( mixRows[ j ].block == mixRows[ best ].block &&
+						mixRows[ j ].index < mixRows[ best ].index ) )
+					best = j;
+			}
+
+			if ( best != i )
+			{
+				TextureMixRow swap = mixRows[ i ];
+				mixRows[ i ] = mixRows[ best ];
+				mixRows[ best ] = swap;
+			}
+
+			fnv_u32( textureAggregate, (U32)mixRows[ i ].block );
+			fnv_u32( textureAggregate, (U32)mixRows[ i ].index );
+			fnv_u32( textureAggregate, mixRows[ i ].textureHash );
+			fnv_u32( textureAggregate, mixRows[ i ].width );
+			fnv_u32( textureAggregate, mixRows[ i ].height );
+			fnv_u32( textureAggregate, mixRows[ i ].levels );
+			fnv_u32( textureAggregate, mixRows[ i ].format );
+			fnv_u32( textureAggregate, (U32)mixRows[ i ].blobSize );
+			fnv_u32( textureAggregate, (U32)mixRows[ i ].rgbaHash );
+			fnv_u32( textureAggregate, (U32)( mixRows[ i ].rgbaHash >> 32 ) );
+		}
+
+		printf( "webfiledraw texture summary refs=%d decoded=%d unsupported=%d "
+			"overflow=%d payloadBytes=%llu rgbaBytes=%llu "
+			"aggregateHash=0x%016llx gpu=%d\n",
+			g_textureRefCount, decodedTextures, unsupportedTextures,
+			g_textureRefOverflow, texturePayloadBytes, textureRgbaBytes,
+			(unsigned long long)textureAggregate,
+			WebSpike::Draws().gpuObjectsCreated );
+
+		check( "texture_refs",
+			g_textureRefCount == 102 && g_textureRefOverflow == 0 );
+		check( "texture_decoded", decodedTextures == g_textureRefCount );
+		check( "texture_unsupported", unsupportedTextures == 0 );
+		check( "texture_payload", texturePayloadBytes > 0 &&
+			textureRgbaBytes > 0 );
+		check( "texture_no_gpu", WebSpike::Draws().gpuObjectsCreated == 0 );
+		check( "texture_hash", textureAggregate != 0 );
 	}
 
 	// --- explicit failures: a missing range is never zero filled -----------

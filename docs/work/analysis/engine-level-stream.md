@@ -1052,3 +1052,171 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py tools/verify_asset_probe.py --skip-build
 ```
 
+## 15. P34 — static textures of the River draw-list materials
+
+This section supersedes §13.6 item 1 and §14.4 item 1 for the two River
+render lists (node 283 / geometry block 88 and node 253 / geometry block 27).
+It remains a CPU data-extraction record: no texture, sampler, renderer or GPU
+object is created, and no pixel is sampled. The P27/P30/P32 geometry, material,
+transform, packet and draw-list results are unchanged.
+
+### 15.1 Enumeration
+
+`resolveAlbedo` already reads each draw's static `g_tAlbedo`/`g_MeshTexture`
+`TEXTURE_INDEX` and the render list's `GetTextureSource(index)` `block:index`.
+P34 records the non-null results before either River list emits a packet
+record, deduplicated by `block:index` and bounded to 256 with an overflow
+counter. The set is therefore derived from the same 312 packet records:
+
+| List | Material-row refs | Distinct `block:index` |
+| --- | ---: | ---: |
+| direct (node 283) | 103 | 89 |
+| instance (node 253) | 13 | 13 |
+| union | **116** | **102** |
+
+The 116 row refs collapse to 102 texture sources because several material rows
+reuse the same source. Separately, some blocks carry 2–3 textures while only
+index 0 or 1 is referenced. There is no overlap between the direct and instance
+sets. Every reference is a resource-block source (`block >= 0`); no shared
+(`block == -1`) or runtime-only reference occurs in these two lists.
+
+### 15.2 Decode path
+
+The engine's own data path locates and reads each item:
+
+1. `findChunkItem` resolves `block` with `lod == 0` from the engine's 359
+   `ChunkInfo` records; unique only, an ambiguous or missing block is refused.
+2. `StreamManager::LoadChunk` + `GetChunkData` read the chunk through
+   `C_OverlayFs`; the harness keeps a private copy.
+3. `parseChunkUpToItem` runs the engine's
+   `Deserialise(LodReader<ResourceBlock::Resources>)` to the highest needed
+   item and records each item's own archive start/end byte offsets.
+4. The target item's byte range is read with the committed PC resource-texture
+   layout: platform tag, LOD 0, the three empty geometry vectors, then the
+   texture array. The 28-byte `TextureDesc` and complete mip texel chain are
+   retained.
+5. Because the engine's `Deserialise(LodReader<Texture>)` is GPU-bound on this
+   target (it consumes the descriptor and skips payload bytes), the committed
+   format rules from `probes/asset-reader/FORMAT-texture.md` are applied to
+   those engine-located bytes: exact mip-chain byte count, then BC1/BC2/BC3
+   mip0 to CPU RGBA. No texture or sampler is created.
+
+All 102 referenced items have empty vertex/index/node vectors, so a geometry-
+bearing "texture block" would be reported `textureBlockHasGeometry` rather
+than skipped. Other explicit failure tokens include `textureBlockNotInStream`,
+`textureChunkWalkFailed`, `textureItemNotRecorded`, `textureLodMarker`,
+`texturePayload`, `textureDescriptorShape`, `textureMipChainMismatch`,
+`unsupportedTextureFormat`, `unsupportedTextureDecodeFormat` and
+`textureIndexOutOfRange`. The run exercises none of them; the counters and gate
+keep them honest.
+
+### 15.3 Measured result (`verify_stream.py --fresh`, exit 0, 122.8 s)
+
+| Check | Result |
+| --- | --- |
+| patch | unchanged, 16 modified, 77,284 B, sha256 `5fa2b1b743c388030d1a0bc8b73fe951acfea92406a29cf7b71b2dbb75019b71` |
+| build | 56 TUs, wasm **844,802 B**, sha256 `43e81c62a2ba8d4a31d84f94f672c05b709b9c1176b861313fccc9af2a9e7978`, two builds byte-identical |
+| harness | **76/76** checks; two runs print identical stdout |
+| texture refs | **102** distinct `block:index` from 116 material-row refs, 0 overflow |
+| decoded | **102 / 102**, **0 unsupported** |
+| descriptor+texel bytes | **109,808 B** (28-byte descriptor + full declared mip chain per texture) |
+| CPU RGBA | **628,800 B** (mip0, no vertical flip), aggregate FNV-1a 64 **`9c5686eed9334ca4`** |
+| formats | **101 DXT1/BC1**, **1 DXT5/BC3** (`cab01alphas_diff`, block 1205); all 2D type3, depth 1 |
+| mip chain | every payload equals `sum(ceil(w/4)*ceil(h/4)*8|16)` over the declared levels; 3..9 levels |
+| GPU | 0 objects created, 0 refused calls, 0 unsupported paths during texture decode |
+| P27/P30/P32 | draw list `fd525c1452869aee`, packet `96b24f076495aea5`, materials 243/26, 56 instances unchanged |
+
+Texture sizes are small: 38 are 16×16/5 mips, 27 are 32×16/6, 13 are 32×32/6,
+one is 256×256/9; the largest descriptor+texel blob is 43,732 B
+(`terrain01_diff`, block 1043). The full per-texture list is
+`_work/logs/engine-stream-spike/engine-textures.json`.
+
+### 15.4 Committed asset-reader comparison
+
+The same engine chunk table is re-read independently by the committed Python
+readers (`tools/inspect_car_level_assets.py`, `inspect_car_materials.texture_lod`,
+`inspect_level_instances.read_lists`). For every reference the harness bytes
+must equal the Python bytes exactly; then `texture_inspect --raw` (the committed
+BC1/BC2/BC3 decoder) decodes the embedded descriptor+texel blob.
+
+| Field | Result |
+| --- | --- |
+| descriptor+texel bytes | **102/102 byte-identical**; first mismatch: none |
+| name | **102/102** equal |
+| texture hash | **102/102** equal |
+| width × height, levels | **102/102** equal |
+| format / formatCode | **102/102** equal |
+| payload / encoded mip-chain bytes | **102/102** equal |
+| RGBA bytes and FNV-1a 64 | **102/102** equal; first pixel mismatch: none |
+
+The BC3 texture is the only one that could expose the known Pillow rounding
+difference (Pillow floors, the Microsoft/committed rule rounds). The harness and
+`texture_inspect` implement the committed rule, so its RGBA hash matches
+exactly; no Pillow comparison is claimed here.
+
+### 15.5 Determinism and PC parity
+
+- Two independent wasm builds are byte-identical; the two harness runs inside a
+  verify run print identical stdout, including all 102 texture records and
+  their 219,616 hex characters.
+- A second full `verify_stream.py` run reproduces the same wasm SHA-256,
+  texture aggregate hash, byte totals and comparison result.
+- The patch is unchanged, so the four patched engine TUs still preprocess
+  identically: `streammanager.cpp` 108,025, `streamdata.cpp` 111,514,
+  `archive.cpp` 111,399, `resources.cpp` 108,104 code lines.
+- The modified files are wasm-harness/gate code (`stream_harness.cpp`,
+  `verify_stream.py`), not engine source. The portable suite is 29/29 PASS.
+
+### 15.6 Remaining blockers
+
+1. **No sampling.** The textures are CPU RGBA/mip metadata; no sampler, UV
+   transform, wrap/filter, anisotropy or mip selection is applied.
+2. **Runtime-only textures are still not imported.** `DATA_INDEX` /
+   `TEXTURE_PTR` values remain null with a reason; these two River lists
+   contain none, so the runtime path is implemented but not exercised.
+3. **Mip selection and LOD texture reload are not driven.** Only the LOD0
+   descriptor and its full mip chain are decoded; the streamed higher-LOD
+   texture items and `StreamData::ProcessLoadChunk` state machine are not run.
+4. **No colour transform.** sRGB interpretation, material colour, alpha blend
+   and texture transforms are not applied; the decoder is structural.
+5. **Shared textures are not covered.** No `block == -1` source occurs here, so
+   the 10 scene shared-texture envelopes remain metadata only.
+6. **No renderer, GPU, browser, vehicle or game claim.** Nothing rasterises or
+   binds the decoded RGBA; `C_OverlayFs` is still one read-only layer.
+
+### 15.7 Evidence (P34)
+
+| Path | Content |
+| --- | --- |
+| `_work/logs/engine-stream-spike/verify-summary.json`* | every number above |
+| `_work/logs/engine-stream-spike/engine-textures.json`* | 102 per-texture records, hashes, comparison |
+| `_work/logs/engine-stream-spike/textures/*.raw`* | embedded descriptor+texel blobs fed to the committed decoder |
+| `_work/logs/engine-stream-spike/p34-verify-fresh-final.log` | fresh PASS transcript |
+| `_work/logs/engine-stream-spike/p34-verify-reuse-1.log` | second full run, identical |
+| `_work/logs/engine-stream-spike/p34-asset-suite.log` | 29/29 portable suite |
+| `_work/engine-stream-spike/out/stream_harness_a.wasm`* | 844,802 B |
+| `docs/work/verification/T-007-engine-textures.md` | verification record |
+
+`*` = regenerated by `engine/verify_stream.py`.
+
+### 15.8 Commands
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py engine/verify_stream.py --fresh
+& $py engine/verify_stream.py
+& $py tools/verify_asset_probe.py --skip-build
+```
+
+Recorded result (`--fresh`, exit 0, 122.8 s):
+
+```text
+patch           sha256=5fa2b1b743c38803
+files           16 modified, 0 added
+objects         56
+wasm            844802 B sha256=43e81c62a2ba8d4a deterministic=True
+harness         76/76 checks pass
+textures        102/102 static textures decoded, 0 unsupported, 109808 B, aggregate=9c5686eed9334ca4
+texture compare 102/102 name+hash+size+format+RGBA equal to probes/asset-reader texture_inspect --raw
+verdict         PASS
+```
