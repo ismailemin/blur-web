@@ -339,6 +339,11 @@ diagnostic (45 paint, 66 light, 156 no-albedo). `verify_e1_drive` **570/570**;
 20 capture console 0; soak temiz. Kanıt:
 `docs/work/verification/T-007-textured-cars.md`.
 
+**Paint/light refs (P60):** 267 runtime draw'da **424** statik `TEXTURE_INDEX`
+alanı çözüldü; 24/29 doku decode (5 shared 1024² sınır dışı). Paint lookup ve
+light blend runtime — renk uydurulmadı. 30/30 suite. Kanıt:
+`docs/work/analysis/car-materials.md` §9.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

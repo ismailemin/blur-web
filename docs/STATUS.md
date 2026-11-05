@@ -641,6 +641,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 267 draw diagnostic (45 paint, 66 light, 156 no-albedo); sampler repeat/linear/mip0; sRGB/paint/mip yok.
 - `verify_e1_drive` **570/570**; 20 capture console 0; 1 dk 2-run soak temiz; fizik hash'leri değişmedi. Geometry v6 45.180.725 B. Kanıt: `docs/work/verification/T-007-textured-cars.md`.
 
+## 6 Kasım 2026 — paint/light statik referansları
+
+- 267 runtime draw'da **424** `TEXTURE_INDEX` alanı statik dokuya çözüldü (0 unsupported): paint dent/scratch/bump 45, light off/on/damage 66, other no-albedo 50/156.
+- 24/29 doku decode; 5 shared 1024² `smashedglass_nrm` decoder sınırı dışında (uydurulmadı). Paint lookup ve light blend runtime; renk/light state iddiası yok.
+- `verify_runtime_textures.py` **PASS**, 24/24 texture_inspect eşleşmesi, 78 dosya deterministic; suite **30/30**. Kanıt: `docs/work/analysis/car-materials.md` §9.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

@@ -398,3 +398,318 @@ Audi `2e71aaa7…426120`. The part manifests are those recorded in
 Re-running the two commands above reproduces the same 126 files; the verifier
 requires the two comparison directories to be absent so it cannot reuse stale
 output.
+
+---
+
+## 9. P60 — static texture references on the 267 runtime-only draws
+
+**Date:** 6 November 2026
+**Owner:** P60 (sub-agent)
+**Scope:** new tools in `probes/car-materials/tools/`, output under
+`_work/car-materials/runtime/`, logs under `_work/logs/car-materials/`, and this
+appended section. No change to `probes/e1-drive`, `probes/car-parts`,
+`probes/drivable-path`, `probes/asset-reader`, the engine, `tools/`, `upstream/`
+or `game-data/`. Data extraction only; no renderer or game claim.
+
+**Result:** the **267** runtime-only draws of §4 were re-examined field by field
+and split exactly as before: **45** paint-lookup draws, **66** light off/on blend
+draws and **156** other `_NO_ALBEDO` draws. **161** of the 267 carry at least one
+serialized static `TEXTURE_INDEX` reference: all **45** paint draws (dent/scratch,
+plus one Ford bump), all **66** light draws (off/on/damage masks) and **50** of
+the 156 other `_NO_ALBEDO` draws (glass scratch/dent, bump and one default
+colour). The remaining **106** have no static texture reference at all. **29**
+per-car texture records were produced, **24 decoded** to mip0 RGBA8 and **5**
+recorded as undecoded with an exact reason (the same shared 1024×1024
+`smashedglass_nrm` in each car). The committed decoder re-decoded **24/24** with
+**0 mismatches** (`firstMismatch:null`), and two fresh builds of **78 files**
+each were byte-identical to the final tree.
+
+Crucially, the paint lookup and the light blend themselves are **not** recovered:
+`paintLookup.resolution` and `lightBlend.resolution` are `"unsupported"` on every
+paint and light draw, with the serialized field and source lines recorded. No
+paint colour is invented.
+
+### 9.1 Classification and per-draw evidence
+
+The classification is taken from the committed P52 roster
+(`_work/car-materials/roster/cars/<slug>/materials.json`, draw
+`albedoParameter:null`) and re-checked against the independent parser
+(`tools/inspect_car_materials.py`). A draw is:
+
+| class | rule | committed field / line |
+| --- | --- | --- |
+| paint | `shaderFamily in {paint, paintm}` and the effect token list contains `a` (`_NO_ALBEDO`) | `shaders.jam:29` (`<_a>` → `_NO_ALBEDO`); `vehicle_common.h:508,583,1250`; `tools/inspect_car_materials.py:314-315` |
+| light | `shaderFamily == light` | `vehicle_common.h:447-450,1212-1214`; `tools/inspect_car_materials.py:312` |
+| other `_NO_ALBEDO` | any other effect whose token list contains `a` | `shaders.jam:29`; `tools/inspect_car_materials.py:313-314` |
+
+The field sets actually present on each class, counted over all five cars:
+
+| class | `TEXTURE_INDEX` field | bindings | resolved to |
+| --- | --- | ---: | --- |
+| paint | `g_DentTexture` | 45 | shared `paintdent` |
+| paint | `g_ScratchTexture` | 45 | car paint-scratch texture |
+| paint | `g_BumpTexture` | 1 | Ford `bump` (block 1 / 0) |
+| light | `g_sOffTexture` | 66 | car light atlas |
+| light | `g_sOnTexture` | 66 | car light atlas |
+| light | `g_sOffTextureDamage` | 66 | car light atlas |
+| light | `g_sOnTextureDamage` | 66 | car light atlas |
+| other `_NO_ALBEDO` | `g_ScratchTexture` | 48 | glass `smashedglass` / car scratch |
+| other `_NO_ALBEDO` | `g_DentTexture` | 19 | shared `smashedglass_nrm` |
+| other `_NO_ALBEDO` | `g_BumpTexture` | 2 | car bump / `focusrs-text01` |
+
+`TEXTURE_INDEX` is `MATERIAL_ELEMENT_TYPE_TEXTURE_INDEX` (type 7) per
+`renderingdata/include/renderingdata/datatypes.h:54`; the value is the node
+texture-source index resolved by
+`renderingdata/source/noninterface/target/context.cpp:715-730`. Each per-draw
+manifest record stores the winning material stage, material index, serialized
+field offset, node texture index, texture id/name/hash and decoded status.
+
+Per-car classification:
+
+| car | runtime | paint | light | other `_NO_ALBEDO` | paint families | light families | no-albedo families |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| Audi R8 V10 | 37 | 9 | 9 | 19 | paint 9 | light 9 | alloy 4, default 4, glass 11 |
+| Corvette ZR1 | 50 | 10 | 17 | 23 | paint 10 | light 17 | alloy 4, default 11, glass 8 |
+| Dodge Challenger | 62 | 11 | 13 | 38 | paint 11 | light 13 | alloy 4, default 25, glass 9 |
+| Ford Focus RS | 78 | 15 | 13 | 50 | paint 15 | light 13 | alloy 4, default 42, glass 4 |
+| Lotus Exige Cup260 | 40 | 0 | 14 | 26 | — | light 14 | alloy 5, default 15, glass 6 |
+| **total** | **267** | **45** | **66** | **156** | | | |
+
+### 9.2 Paint draws — auxiliary textures resolved, lookup not
+
+Every one of the 45 paint draws resolves two static fields: `g_DentTexture` →
+shared `paintdent` and `g_ScratchTexture` → the car's paint-scratch image. Ford
+draw 0 additionally has `g_BumpTexture` → block 1 / 0 `bump`. These are the
+material's dent/scratch/bump inputs, **not paint colour**, and the manifests label
+them `paint-dent-texture`, `paint-scratch-texture` and `paint-bump-texture`.
+
+The paint lookup itself is genuinely runtime:
+
+- `g_sPaintMaterialTexture` is a shared `texture` in `vehicle_common.h:508`,
+  sampled as `tex2Dlod(PaintTextureSampler, (NdotV,0))` at line 1250.
+- It is exposed as `MATERIAL_ELEMENT_TYPE_TEXTURE_PTR` in
+  `VehicleModelManager.cpp:372`, supplied from the runtime paint job in
+  `VehicleModel.cpp:1759` / `customisation/PaintEditor.cpp`, not serialized in the
+  model.
+- A scan of every constant material row of all five cars found **no**
+  `g_sPaintMaterialTexture` field; the only paint-family texture fields are
+  dent/scratch/bump. The paint base material is list index 1, a dynamic recipe
+  rebuilt by `C_Model` at runtime. The parsed dynamic material lists (7 types and
+  48-67 rows per car) contain no type-7 `TEXTURE_INDEX` field and no paint-named
+  parameter either, so there is no static paint palette to decode.
+
+Per-draw record:
+`"paintLookup": {"field":"g_sPaintMaterialTexture","resolution":"unsupported",
+"resolved":false,"presentInSerializedMaterial":false,
+"paintColourRecovered":false,"paintTextureRecovered":false,"reason":...}`.
+The committed reader text is *“Vehicle `_NO_ALBEDO` paint uses a runtime paint
+lookup texture.”* No paint palette exists in the model, so none is decoded and no
+colour is invented.
+
+### 9.3 Light draws — masks resolved, blend not
+
+All 66 light draws resolve four static fields — `g_sOffTexture`,
+`g_sOnTexture`, `g_sOffTextureDamage`, `g_sOnTextureDamage` — and in every car all
+four point at the same light atlas node texture (for example ZR1 block 9 / 0
+`corvette_zr1_lights`). The committed source samples off with `UV0.xy` and on with
+`UV0.zw`, then blends with runtime `g_vRenderColour.w`
+(`vehicle_common.h:1212-1214`); `g_vRenderColour` is exposed as a runtime F32
+parameter (`VehicleModelManager.cpp:411,418,427,477`). The masks are therefore
+static images; the blend state is not.
+
+Per-draw record:
+`"lightBlend": {"field":"g_vRenderColour.w","resolution":"unsupported",
+"resolved":false,"blendWeightRecovered":false,
+"staticMaskTextureIds":[...],"uvInputs":["UV0.xy","UV0.zw"],"reason":...}`.
+The committed reader text is *“Vehicle light Off/On blend depends on runtime
+colour and UV0.xy/zw.”* No blended image is produced.
+
+### 9.4 The other 156 `_NO_ALBEDO` draws
+
+50 of the 156 have at least one static reference: 48 `g_ScratchTexture`
+(`smashedglass` or a car scratch image), 19 `g_DentTexture` (shared
+`smashedglass_nrm`) and 2 `g_BumpTexture` (`audir8_1`, `focusrs-text01`). A draw
+can have both dent and scratch, so the field counts exceed the draw count. The
+remaining 106 have no serialized `TEXTURE_INDEX` field at all (alloy/rim and
+plain default draws); they stay texture-less by evidence, not by guess.
+
+### 9.5 Per-car coverage
+
+`static + runtime = draws`; `paint + light + other = runtime`. “with refs” counts
+runtime draws with at least one resolved static `TEXTURE_INDEX`; “no-albedo
+with/without” splits the 156. Resolved/unsupported is stated separately because a
+static mask does not make the paint or light parameter static.
+
+| car | draws | static albedo | runtime | paint | light | other `_NO_ALBEDO` | with refs | without refs | no-albedo with | no-albedo without | textures | decoded | undecoded | RGBA bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Audi R8 V10 | 84 | 47 | 37 | 9 | 9 | 19 | 30 | 7 | 12 | 7 | 6 | 5 | 1 | 5,242,880 |
+| Corvette ZR1 | 100 | 50 | 50 | 10 | 17 | 23 | 35 | 15 | 8 | 15 | 5 | 4 | 1 | 4,194,304 |
+| Dodge Challenger | 104 | 42 | 62 | 11 | 13 | 38 | 33 | 29 | 9 | 29 | 6 | 5 | 1 | 4,194,368 |
+| Ford Focus RS | 115 | 37 | 78 | 15 | 13 | 50 | 34 | 44 | 6 | 44 | 8 | 7 | 1 | 5,570,560 |
+| Lotus Exige Cup260 | 88 | 48 | 40 | 0 | 14 | 26 | 29 | 11 | 15 | 11 | 4 | 3 | 1 | 3,145,728 |
+| **total** | **491** | **224** | **267** | **45** | **66** | **156** | **161** | **106** | **50** | **106** | **29** | **24** | **5** | **22,347,840** |
+
+Direct answer to the static/runtime question:
+
+| class | draws | resolved from static data | truly runtime |
+| --- | ---: | --- | --- |
+| paint | 45 | 45 auxiliary dent/scratch/bump textures | 45 paint lookups (`g_sPaintMaterialTexture`), 0 recovered |
+| light | 66 | 66 light off/on/damage masks | 66 blend weights (`g_vRenderColour.w`), 0 recovered |
+| other `_NO_ALBEDO` | 156 | 50 draws with static auxiliary textures | 106 draws with no static texture field |
+
+### 9.6 Decoded textures
+
+`hash` is the serialized `u32` texture hash from the committed reader. `role`
+comes from the material parameter that references the image; it is a reference
+label, not a claim about pixel semantics. Same name/hash does not imply same
+pixels: Audi has two `audir8_1` records (block 2 / 0 used as a bump input and
+block 8 / 0 used as the light atlas) with different decoded RGBA.
+
+**Audi R8 V10 (`audi-r8v10-stock`)**
+
+| texture | source | hash | roles | selected LOD | size | RGBA SHA-256 |
+| --- | --- | ---: | --- | ---: | --- | --- |
+| `audir8_1` | block 2 / 0 | 2513717467 | bump | 9 | 512×512 | `2373459fa552f05d1cd1557157616072ed09d693dc31b9a0e10c2fe3c31e811d` |
+| `audir8_scratch` | block 6 / 0 | 1893762288 | paint scratch | 6 | 512×512 | `66475d668bd59c06b1ccc835af1ccd1f5a19da416253a3ce2d5686b8dcd75db7` |
+| `smashedglass` | block 7 / 0 | 4227605626 | glass scratch | 9 | 512×512 | `02290446124e9a05d3f2dd38203d0616c699d4f1e8499682affa87915eb6c75e` |
+| `audir8_1` | block 8 / 0 | 2513717467 | light off/on/damage | 6 | 512×512 | `3575f11d152b04b376689ac69b932271456e8e265dc368bd24a199daf840d189` |
+| `paintdent` | shared 0 | 572709367 | paint dent | 0 | 512×512 | `6be75ff4212f1c6fd7089ee834b0e912870aec0a014de0961b139e181dfab59c` |
+| `smashedglass_nrm` | shared 6 | 959484646 | glass dent normal | — | 1024×1024 | undecoded (decoder bound) |
+
+**Corvette ZR1 (`corvette-zr1-stock`)**
+
+| texture | source | hash | roles | selected LOD | size | RGBA SHA-256 |
+| --- | --- | ---: | --- | ---: | --- | --- |
+| `smashedglass` | block 5 / 0 | 4227605626 | glass scratch | 7 | 512×512 | `02290446124e9a05d3f2dd38203d0616c699d4f1e8499682affa87915eb6c75e` |
+| `corvette_zr1_scratch` | block 7 / 0 | 1545607592 | paint scratch | 6 | 512×512 | `e7bc94c07c327635882159700a8233c36b5306c70c4544892dd17aba38758ea4` |
+| `corvette_zr1_lights` | block 9 / 0 | 1709224491 | light off/on/damage | 9 | 512×512 | `7b94de1063042841ab739dcf19893f4543cdcecc4f06cc10a92c401cb2dd2629` |
+| `paintdent` | shared 0 | 572709367 | paint dent | 0 | 512×512 | `6be75ff4212f1c6fd7089ee834b0e912870aec0a014de0961b139e181dfab59c` |
+| `smashedglass_nrm` | shared 1 | 959484646 | glass dent normal | — | 1024×1024 | undecoded (decoder bound) |
+
+**Dodge Challenger (`dodge-challenger-stock`)**
+
+| texture | source | hash | roles | selected LOD | size | RGBA SHA-256 |
+| --- | --- | ---: | --- | ---: | --- | --- |
+| `DefaultColour` | block 2 / 0 | 4294967295 | glass scratch | 0 | 4×4 | `8667e718294e9e0df1d30600ba3eeb201f764aad2dad72748643e4a285e1d1f7` |
+| `smashedglass` | block 5 / 0 | 4227605626 | glass scratch | 7 | 512×512 | `02290446124e9a05d3f2dd38203d0616c699d4f1e8499682affa87915eb6c75e` |
+| `dodge_scratch` | block 6 / 0 | 1185410477 | paint scratch | 6 | 512×512 | `7c69cb9da081470c72b76e6c561d422da7268c4ad373dce698bf2823f3a57222` |
+| `dodge_lights` | block 9 / 0 | 4288409057 | light off/on/damage | 8 | 512×512 | `34ac86e89e71eaa830e31dd0417a6e18d8077b39b7664f22bc0f0b9d129758ae` |
+| `paintdent` | shared 0 | 572709367 | paint dent | 0 | 512×512 | `6be75ff4212f1c6fd7089ee834b0e912870aec0a014de0961b139e181dfab59c` |
+| `smashedglass_nrm` | shared 1 | 959484646 | glass dent normal | — | 1024×1024 | undecoded (decoder bound) |
+
+**Ford Focus RS (`ford-focusrs-stock`)**
+
+| texture | source | hash | roles | selected LOD | size | RGBA SHA-256 |
+| --- | --- | ---: | --- | ---: | --- | --- |
+| `bump` | block 1 / 0 | 491315504 | paint bump | 9 | 256×256 | `3db10ba5a045fbe8590c58beb1653c21461b93c353c449fe1078578c1f6fb07d` |
+| `focusrs-text01` | block 2 / 0 | 1162449062 | bump | 8 | 512×512 | `4e960038bbe77691688cc7ba21a708ad1ff2baf54f4f4b1b27e812b15fc99a26` |
+| *(empty name)* | block 4 / 0 | 1935282598 | paint scratch | 6 | 128×128 | `963cb81674ff0fe5d9a51df3d284fb6889b85612ac58e2c861cd0f8ab73b6e72` |
+| `smashedglass` | block 6 / 0 | 4227605626 | glass scratch | 8 | 512×512 | `02290446124e9a05d3f2dd38203d0616c699d4f1e8499682affa87915eb6c75e` |
+| `focusrs_scratch` | block 7 / 0 | 2464477189 | paint/ordinary scratch | 6 | 512×512 | `34d7919e307112be5a88b6e5d171b8f070caa8198a0581855422161c6f771b81` |
+| `focusrs-text02` | block 8 / 0 | 3479685 | light off/on/damage | 8 | 512×512 | `e3cc5b6f66739f4785f2f2a25ec09f765c4052b51d1341b18291d4a878a31cb5` |
+| `paintdent` | shared 0 | 572709367 | paint dent | 0 | 512×512 | `6be75ff4212f1c6fd7089ee834b0e912870aec0a014de0961b139e181dfab59c` |
+| `smashedglass_nrm` | shared 5 | 959484646 | glass dent normal | — | 1024×1024 | undecoded (decoder bound) |
+
+The block 4 / 0 texture has an **empty serialized name** and is kept as
+`block:4:0:unnamed` with `nameEmpty:true`; its hash and bytes are the evidence.
+It is referenced by five Ford paint draws, so it is not dropped.
+
+**Lotus Exige Cup260 (`lotus-exige-cup260-stock`)**
+
+| texture | source | hash | roles | selected LOD | size | RGBA SHA-256 |
+| --- | --- | ---: | --- | ---: | --- | --- |
+| `smashedglass` | block 4 / 0 | 4227605626 | glass scratch | 8 | 512×512 | `02290446124e9a05d3f2dd38203d0616c699d4f1e8499682affa87915eb6c75e` |
+| `lotus_260_lights` | block 7 / 0 | 1902064106 | light off/on/damage | 9 | 512×512 | `092318cd2ffd8acca26c1657207fa5c846ed09e178cccb3cf441f87edf42fdc5` |
+| `lotus_260_scratch` | block 8 / 0 | 1636170828 | scratch | 8 | 512×512 | `9f37dd5dedc82063b13ec5aff1f1ae4a0daa42dec6853a478adadd7a9d13eda8` |
+| `smashedglass_nrm` | shared 1 | 959484646 | glass dent normal | — | 1024×1024 | undecoded (decoder bound) |
+
+`DefaultColour` is a 4×4 DXT1 image with serialized hash `0xFFFFFFFF`; it is
+reported as found, not interpreted as a sentinel or a colour.
+
+### 9.7 Undecoded source images
+
+The only undecoded static reference is shared `smashedglass_nrm` (hash
+959484646), mip0 **1024×1024 DXT1/BC1**, one occurrence per car. It is a shared
+texture with a single embedded descriptor, so no lower source LOD exists to fall
+back to. Under the committed decoder bound of 512×512 (`FORMAT-texture.md`) it is
+recorded with `undecodedReason`; it is not downscaled, re-labelled or replaced by
+the block `smashedglass` image. Every draw that references it also references a
+decodable `g_ScratchTexture`, so those draws still have a decoded static image.
+
+### 9.8 Verification and determinism
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/car-materials/tools/build_runtime_textures.py
+& $py probes/car-materials/tools/verify_runtime_textures.py
+& $py tools/verify_asset_probe.py --skip-build
+```
+
+| check | result |
+| --- | --- |
+| runtime split | 45 paint + 66 light + 156 other `_NO_ALBEDO` = 267; per-car counts equal the roster |
+| static-reference coverage | 161 with refs (45 paint + 66 light + 50 no-albedo), 106 without |
+| paint guard | 45/45 `paintLookup.resolved:false`, `resolution:"unsupported"`, `presentInSerializedMaterial:false`, no paint colour |
+| light guard | 66/66 `lightBlend.resolved:false`, `resolution:"unsupported"`, `blendWeightRecovered:false` |
+| C++ identity | every shared/block texture name, hash, data offset/bytes, descriptor, payload span and complete mip bytes agrees with `scene_inspect.exe` / `--resources` |
+| native re-decode | **24/24**, `firstMismatch:null`, 0 mismatches |
+| independent Pillow | 22 exact; 2 BC3 light atlases (ZR1, Lotus) differ only in alpha by ≤1/255 (23,223 channels) |
+| determinism | 2 fresh builds + final tree, **78 files** each, `treeEqual:true`, `finalEqual:true` |
+| portable suite | `verify_asset_probe.py --skip-build` — **30/30 PASS** |
+
+The P52 roster verifier was also re-run. Its 40 native re-decodes still report
+0 mismatches and its two fresh builds are byte-identical (`treeEqual:true`), but
+its `finalEqual` check now reports a difference in the recorded
+`independentPillow.pillowVersion` (`12.3.0` in the P52 output vs `13.0.0` in this
+environment). The decoded RGBA hashes are unchanged; the difference is the
+recorded Pillow version string only, so the P52 pixel evidence still stands.
+Re-running that gate rewrote `_work/car-materials/roster/verify.json` with the
+current environment's result, so the §6 hash of that scratch file no longer
+matches the re-run file; the roster manifests and textures themselves were not
+modified.
+
+`_work/car-materials/runtime/verify.json` — **PASS**, 0 failures,
+`firstMismatch:null`, `treeEqual:true`, `finalEqual:true`.
+
+### 9.9 Hashes
+
+| artifact | bytes | SHA-256 |
+| --- | ---: | --- |
+| `_work/car-materials/runtime/index.json` | 26,605 | `c5f964065d0f5fc33981f550deba7b449ba483b81a2594a495afcdc2c98405db` |
+| `_work/car-materials/runtime/verify.json` | 3,211 | `6d6372cc132ff340b5ba3d0f3c02960e2051afb0c5698dff38f28fa0d85d0a74` |
+| `cars/audi-r8v10-stock/materials.json` | 167,475 | `c20f4567ad3fd2bc57d89088b0489457e17503ab29685d7d3f19de7f7da16360` |
+| `cars/corvette-zr1-stock/materials.json` | 209,106 | `0b65fc3ea3b3c0c118131a4d0e3e1c2525800000cffed139b40c219661af6108` |
+| `cars/dodge-challenger-stock/materials.json` | 210,464 | `442c6ea3096e3d67f48400ae70fa28034804da515819a924b01729a223f27226` |
+| `cars/ford-focusrs-stock/materials.json` | 263,154 | `7d30c666e20a5ba2681ed9c5fc65caffada5e772d1e26a5747373e91307da80f` |
+| `cars/lotus-exige-cup260-stock/materials.json` | 157,015 | `cf4ed68a03f187f74ad7cee4a13410edaff84eaa66bc87e34e7fd999951dfb0d` |
+
+Per-texture raw-slice, `.rgba`, `.png` and native JSON hashes are in each
+`materials.json` (`textures[].decoded`).
+
+### 9.10 Limits
+
+- **Data only.** No renderer, shader, sampler, paint-lookup or light-blend
+  behaviour is executed or claimed; `materialsApplied`, `shaderExecuted`,
+  `samplerApplied`, `paintLookupRecovered`, `lightBlendRecovered` and
+  `rendererClaim` remain `false`.
+- **Paint colour is not recovered.** No `g_sPaintMaterialTexture` field is
+  serialized in these models; only dent/scratch/bump references are decoded.
+  Those images must not be read as paint colour.
+- **Light blend is not recovered.** Off/on/damage masks are decoded, but the
+  active state and weight (`g_vRenderColour.w`) and the UV0.xy/zw blend are
+  runtime.
+- **Static refs do not upgrade a draw.** A paint or light draw with decoded
+  auxiliary masks still has no static paint lookup or blend. The per-draw
+  `staticReferenceResolved` flag means only that its serialized `TEXTURE_INDEX`
+  fields were resolved.
+- **Same name/hash is not content identity.** Each occurrence is decoded and
+  hashed independently; Audi's two `audir8_1` records prove the point.
+- **Decoder bound 512×512.** Shared `smashedglass_nrm` (1024×1024) is recorded
+  undecoded; its exact descriptor and reason are preserved.
+- **Only the first RenderList LOD0.** Later render lists, higher LODs, damage
+  states, paint variants and runtime light states are not imported.
+- **Scope boundary.** This stage scans the **267 runtime-only draws**. The 224
+  static `g_MeshTexture` draws keep P52's albedo-only scope; their auxiliary
+  bump/dent/scratch fields are not re-scanned here, so no claim is made about
+  them.

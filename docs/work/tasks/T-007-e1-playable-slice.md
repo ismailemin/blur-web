@@ -136,6 +136,10 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   18.178.048 B RGBA. **267 draw** diagnostic ve etiketli: 45 paint, 66 light,
   156 no-albedo. Sampler repeat/linear/mip0; sRGB/mip/paint yok.
 - `verify_e1_drive` **570/570**; 20 capture console 0; 1 dk soak temiz.
+- **Paint/light static refs (P60):** 267 runtime draw'da **424** `TEXTURE_INDEX`
+  alanı çözüldü (0 unsupported); 24/29 doku decode (5 shared 1024²
+  `smashedglass_nrm` sınır dışı). Paint lookup ve light blend **runtime**,
+  renk uydurulmadı. Kanıt: `docs/work/analysis/car-materials.md` §9.
 - Kanıt: `docs/work/verification/T-007-textured-cars.md`,
   `docs/work/analysis/car-materials.md`.
 
