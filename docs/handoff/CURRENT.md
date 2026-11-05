@@ -201,6 +201,14 @@ Focus RS, Audi R8 V10). Araç başına 84–115 draw, 23–34 parça, 20 teker d
 kanıtı; simetrik setlerde 10–20 draw `unclassified` (uydurma yok). Kanıt:
 `docs/work/verification/T-007-per-car-meshes.md`.
 
+**Engine materyal + transform (P30):** 243 sabit materyal satırı / 26 tip
+(121 `g_tAlbedo`, 38 `g_mWorld`); 57/57 instance matrisi, 22/22 bounds
+`level_inspect` ile 1e-5 içinde, 57/57 VB/IB ve transform satırı eşleşiyor.
+**Packet draw list:** 312 kayıt (255 direct + 57 instance), 117 drawable,
+hash `4603a94e0871461c`; 56 nesne, 814.345 B, 65/65, PC parity. Kalan:
+blok15/17/26/32 importu, dokular, culling, PoC producer'ına bağlama. Kanıt:
+`docs/work/verification/T-007-drawlist-v2.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

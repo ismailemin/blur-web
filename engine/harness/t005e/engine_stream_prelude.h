@@ -173,6 +173,7 @@ struct PrimitiveRecord
 	int alphaRef;
 	int alphaToMask;
 	int alphaTest;
+	int blendEnable; /* serialised BlendState::AlphaBlendEnable, 0/1 */
 	int cullMode;
 	int streamCount;
 	StreamRecord streams[ kMaxStreams ];

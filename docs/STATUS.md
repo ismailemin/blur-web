@@ -494,6 +494,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_e1_drive` **214/214**; 301/301 temas, 0 NaN, iki koşu aynı; console 0; 3 geometri upload. Teker köşe kimliği AABB kanıtı; simetrik setlerde 10–20 draw `unclassified` (uydurma yok). Audi lastik eşleşmesi `containment` katmanı, preview-only.
 - Kanıt: `docs/work/verification/T-007-per-car-meshes.md`.
 
+## 5 Kasım 2026 — engine materyal + instance transform
+
+- 243 sabit materyal satırı / 26 tip: 121 `g_tAlbedo`, 38 `g_mWorld`; type-8 nested yol implement edildi (River'da 0); runtime-only değerler yok.
+- 57/57 instance sabit affine `g_mWorld`; 22/22 matris ve bounds `level_inspect` ile 1e-5 içinde; 57/57 VB/IB ve transform satırı Stage A+B referansıyla aynı.
+- Packet draw list: **312 kayıt** (255 direct + 57 instance), **117 drawable**, hash `4603a94e0871461c`; 56 nesne, 814.345 B, 65/65, PC parity.
+- Kalan: blok15/17/26/32 importu, dokular, culling/LOD, `ProcessLoadChunk`; PoC producer'ına bağlama. Kanıt: `docs/work/verification/T-007-drawlist-v2.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

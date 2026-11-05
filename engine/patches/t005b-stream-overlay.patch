@@ -1980,7 +1980,7 @@
  Display::E_PrimitiveType GetDisplayPrimitiveType(PrimitiveType type)
  {
  	switch (type)
-@@ -1158,6 +1727,95 @@
+@@ -1158,6 +1727,96 @@
  template <typename Archive>
  inline void Deserialise(Archive& ar, RenderListNode::Primitive& t)
  {
@@ -2035,6 +2035,7 @@
 +	pRecord->alphaRef = (int)blendState.GetAlphaRef();
 +	pRecord->alphaToMask = blendState.GetAlphaToMaskEnable() ? 1 : 0;
 +	pRecord->alphaTest = blendState.GetAlphaTestEnable() ? 1 : 0;
++	pRecord->blendEnable = blendState.GetAlphaBlendEnable() ? 1 : 0;
 +	pRecord->cullMode = (int)blendState.GetCullMode();
 +	pRecord->lodCount = 0;
 +	pRecord->streamCount = 0;
@@ -2076,7 +2077,7 @@
  	PrimitiveType primitiveType;
  	BlendState blendState;
  
-@@ -1201,6 +1859,7 @@
+@@ -1201,6 +1860,7 @@
  #endif
  
  	t.blendState = FX::g_RenderStateMgr.InsertRenderState(displayStates);
@@ -2084,7 +2085,7 @@
  }
  
  } // RenderingData //////////////////////////////////////////////////////////////////
-@@ -1212,14 +1871,45 @@
+@@ -1212,14 +1872,45 @@
  SERIALISATION_VERSION(RenderingData::Target::StreamData, 0, "RenderingData::Target::StreamData")
  SERIALISATION_POLYMORPHIC(RenderingData::Target::RenderListNode, 0, "RenderingData::RenderListNode_Common")
  
@@ -2130,7 +2131,7 @@
  
  namespace Target
  {
-@@ -1254,15 +1944,80 @@
+@@ -1254,15 +1945,80 @@
  
  	g_resourceAllocatorMutex.Release();
  

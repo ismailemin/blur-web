@@ -1,7 +1,9 @@
 # T-005e — level streaming through the engine on wasm32
 
-**Date:** 5 November 2026 (P27 section added; P22/P18 sections below kept as history)
-**Status:** bounded spike. P22 made the engine's own
+**Date:** 5 November 2026 (P30/P27 sections added; P22/P18 sections below kept as history)
+**Status:** bounded spike. P30 adds constant material rows, the 57 instance
+`g_mWorld` matrices and a 312-record packet-v1.1-compatible draw list (§13).
+P22 made the engine's own
 `RenderingData::Target::Scene` archive parse `Level.levelrender` on wasm32 and
 produce the 359 `ChunkInfo` records with no GPU object. **P27 adds the CPU-side
 resource and render-list import and a deterministic draw list for
@@ -760,6 +762,187 @@ draw list       95 bound / 160 other-block, 9343 triangles, 17782 vertices, hash
 draw compare    95 firstIndex/indexCount spans equal to level_inspect 88/283; instances=57, baseprimitives=36
 levelrender     9873988 B fnv=0x0ef5c027f0924307
 levelphysics    1945409 B fnv=0xb9594f7ce52caa2e
+pc parity       4 TUs preprocessed identical (streammanager.cpp:108025, streamdata.cpp:111514, archive.cpp:111399, resources.cpp:108104 lines)
+verdict         PASS
+```
+
+## 13. P30 — constant materials, instance transforms and packet draw list
+
+This section supersedes §12.6 items 1 and 2 and §12.7 for the packet seam.
+It is still a data-extraction record: no renderer, GPU, vehicle or game claim
+is made. The new public functions read values back from structures the P27
+archive walk already produced; nothing in this slice re-parses an archive
+independently.
+
+### 13.1 Constant material rows (read back, not reinterpreted)
+
+`RenderingData::Target::RenderListNode` already exposes
+`GetConstantMaterialListData()` and `GetConstantMaterialTypes()`, and the base
+`Deserialise(RenderListNode)` already calls `DeserialiseMaterialData` for the
+`ConstantMaterialTypes` / constant rows (§197-230 of the upstream
+`target/archive.cpp`, unchanged by the patch). P30 reads those rows back in the
+harness:
+
+- `g_mWorld` is accepted only as `MATERIAL_ELEMENT_TYPE_F32` with `count == 16`,
+  finite, and affine (`m[3] == m[7] == m[11] == 0`, `m[15] == 1`). The row that
+  supplied it is reported.
+- `g_tAlbedo` / `g_MeshTexture` are accepted only as
+  `MATERIAL_ELEMENT_TYPE_TEXTURE_INDEX` with `count >= 1`; the serialised value
+  is emitted as the original row plus texture index, and the render list's
+  `GetTextureSource(index)` is emitted as `block:index` when in range.
+- `MATERIAL_ELEMENT_TYPE_MATERIAL_INDEX` (serialised element type 8) children
+  are followed recursively with a 32-deep cycle guard, in the same order the
+  committed source-shaped reader uses (`instance.material`, instance streams,
+  primitive/base material, primitive streams). `DATA_INDEX` / `TEXTURE_PTR`
+  values are runtime-only: the field is reported null with
+  `runtimeOnlyAlbedoParameter`, never read as a static value.
+- No material is created, copied or written. No blend state is created.
+
+The only engine-side record added is `PrimitiveRecord::blendEnable`, filled from
+the serialised `BlendState::AlphaBlendEnable`. It is used only to label the
+packet's `layer` as `opaque`/`alpha`; the raw serialised blend tuple is still
+printed and remains the authoritative value.
+
+### 13.2 Instance transforms (block 27 / node 253)
+
+For the 57 instances of block 27 / node 253 the harness resolves the instance's
+base primitive from the P27 primitive-record stream (base primitives are the
+records after the list's own primitives), resolves the position stream from the
+instance streams overridden by the base-primitive streams, and applies the
+resolved `g_mWorld` to the packet record. The geometry block 27 item is imported
+with the same `LodReader<ResourceBlock::Resources>` deserialiser; it is the
+seventh item of chunk 88, so only that item's buffers (2 VBs / 1 IB) are
+snapshotted and addressed with the reference's 0-based source indices.
+
+Direct primitives of block 88 / node 283 have no instance placement. Their
+packet records keep `world: null` with `worldReason=noInstanceTransform`; an
+identity matrix is never substituted.
+
+### 13.3 Packet-v1.1-compatible draw list
+
+The harness emits one `webfiledraw packet` record per direct primitive (255,
+including the 160 other-block primitives) and per instance (57), in that order:
+
+```text
+mesh, vb=block:index, ib=block:index,
+vtxOffset, vtxCount, idxOffset, idxCount,
+world (16 floats or null) + worldRow + worldReason,
+materialId ("g_tAlbedo:row:texIndex" or null) + materialRow + albedoIndex +
+  albedo=block:index + materialReason,
+bounds min/max,
+layer, instance, primitive, source archive offset, drawable, reason
+```
+
+The packet hash is FNV-1a 64 over every printed field in a fixed order. It is
+recomputed independently in Python from the printed lines by
+`engine/verify_stream.py`.
+
+### 13.4 Measured result (`verify_stream.py --fresh`, exit 0, 121.8 s)
+
+| Check | Result |
+| --- | --- |
+| patch | 16 modified, 0 added, 77,284 B, sha256 `5fa2b1b743c388030d1a0bc8b73fe951acfea92406a29cf7b71b2dbb75019b71` |
+| build | 56 TUs, wasm **814,345 B**, sha256 `552e3407552f4356bbc6d2114a44aaa2674a99000a70c73b8cd88dd83415675b`, two builds identical |
+| harness | **65/65** checks, two runs identical |
+| constant rows | node 283: 187 rows / 18 types (1 world row, 103 albedo rows); node 253: 56 rows / 8 types (37 world rows, 18 albedo rows) |
+| constant rows total | **243 rows / 26 types**, 121 albedo rows, 38 world rows, **0 type-8 rows** (River has no nested `MATERIAL_INDEX` element; the resolver implements the rule, the data does not exercise it) |
+| direct draws | 95 bound / 160 other-block; 9,343 triangles; 17,782 vertices; P27 hash `fd525c1452869aee` (unchanged) |
+| instance draws | 57 instances / 36 base primitives; **22 drawable / 35 other-block**; **10,308 triangles / 13,162 vertices** |
+| world matrices | **57/57** constant affine `g_mWorld`, 0 invalid; **22/22** compared with `level_inspect --instances-all` at 1e-5; 22/22 archived instance bounds at 1e-5 |
+| VB/IB bindings | **57/57** equal to the committed reader's `instanceSources` |
+| Stage A+B rows | **57/57** transform rows equal to `_work/level-instances/stageB-python-reference.json` |
+| packet draw list | **312 records** (255 direct + 57 instance), **117 drawable**, 195 omitted (160 direct + 35 instance), hash `4603a94e0871461c` |
+| materials on draws | 255/255 direct and 57/57 instance records carry a static `g_tAlbedo` id; 0 null |
+| direct transforms | 255/255 direct records `world=null reason=noInstanceTransform` |
+| GPU | 0 objects created, 0 refused calls, 0 unsupported paths |
+| PC parity | `streammanager.cpp` 108,025, `streamdata.cpp` 111,514, `archive.cpp` 111,399, `resources.cpp` 108,104 preprocessed lines identical with/without the patch |
+
+The 56-stage grouping (`stageAB`: 56 instances, 34,632 vertices, 25,521
+triangles) is a bounds-group construct from the committed bundle reference. Its
+per-instance transform rows are compared (57/57); its geometry totals are not
+reproduced because blocks 15, 17, 26 and 32 are not imported by this slice. The
+22 in-scope instance matrices are the direct comparison against
+`level_inspect --instances-all`, the same reader that produced the P27 direct
+draws. The direct-draw reference does not expose material values, so `materialId`
+has no independent reference; it is a serialised `TEXTURE_INDEX` read with the
+original row and index, and the gate covers its determinism and non-null count,
+not a visual result.
+
+### 13.5 Determinism and PC parity
+
+- Two independent wasm builds are byte-identical; the two harness runs print
+  identical stdout, including all 312 packet records.
+- The packet hash is recomputed in Python from the printed records and compared
+  to the in-module hash on every run.
+- PC preprocessing of the four modified engine TUs is identical with and
+  without the patch (same normalisation as §11.5).
+- One TU was added to the link closure: `renderingdata/source/noninterface/
+  materialsizes.cpp` (the `materialDataTypeSizes`/`Alignment` arrays referenced
+  by the inline `MaterialType::GetOffset`). It is unmodified upstream source and
+  emits no web-specific code.
+
+### 13.6 Remaining blockers (unchanged in kind, narrower in scope)
+
+1. **Textures are indices, not images.** The packet carries the constant
+   `g_tAlbedo`/`g_MeshTexture` texture index and the render-list texture source
+   `block:index`; no texture is decoded, created or sampled.
+2. **`StreamData::ProcessLoadChunk` is still not driven.** The harness calls the
+   same `LodReader<ResourceBlock::Resources>` deserialiser, but the chunk state
+   machine (prerequisite refresh, pending swap-in, unload) is not run.
+3. **No visibility, culling, LOD selection, sorting or batching.** The list is
+   archive order, LOD0 only, and only two node/geometry pairs are imported
+   (88/283 and 27/253). The 56-stage geometry needs blocks 15, 17, 26 and 32.
+4. **Runtime-only material values are not imported.** `DATA_INDEX` and
+   `TEXTURE_PTR` elements would be reported null with a reason; River's two
+   lists contain none, so the `type8`/runtime reason paths are implemented but
+   not exercised by this level.
+5. **No blend state is created.** `layer` is a label derived from the serialised
+   `AlphaBlendEnable`; the raw descriptor remains the packet's authoritative
+   blend data.
+6. **No renderer, GPU, audio, vehicle, browser or game claim.** The module runs
+   under node; `C_OverlayFs` remains a single read-only layer.
+
+### 13.7 Evidence (P30)
+
+| Path | Size | SHA-256 |
+| --- | ---: | --- |
+| `engine/patches/t005b-stream-overlay.patch` | 77,284 | `5fa2b1b743c388030d1a0bc8b73fe951acfea92406a29cf7b71b2dbb75019b71` |
+| `engine/verify_stream.py` | 80,342 | `5ae830872f033710cb0e11b86519dbef3a54f93a9c75622e61a55ae2f395034e` |
+| `engine/harness/t005e/stream_harness.cpp` | 89,142 | `32a442e48d799dc794fcb02f77bd57641039117c4a8222b716dfae39fd6db8fb` |
+| `engine/harness/t005e/engine_stream_prelude.h` | 8,624 | `d5fd42dcb660bad106a558892aaca481d05e750326ec702cd0d3fe9f48305853` |
+| `_work/engine-stream-spike/out/stream_harness_a.wasm`* | 814,345 | `552e3407552f4356bbc6d2114a44aaa2674a99000a70c73b8cd88dd83415675b` |
+| `_work/engine-stream-spike/out/stream_harness_b.wasm`* | 814,345 | `552e3407552f4356bbc6d2114a44aaa2674a99000a70c73b8cd88dd83415675b` |
+| `_work/logs/engine-stream-spike/verify-summary.json`* | — | — |
+| `_work/logs/engine-stream-spike/reference-instances-27-253.json`* | — | — |
+| `_work/logs/engine-stream-spike/p30-verify-fresh-final.log` | — | — |
+
+`*` = regenerated by `engine/verify_stream.py`. The full hash table and all
+per-record values are in `verify-summary.json`; the separate verification
+record is `docs/work/verification/T-007-drawlist-v2.md`.
+
+### 13.8 Commands
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py engine/verify_stream.py --fresh
+& $py engine/verify_stream.py            # reuse the tree
+& $py engine/verify_stream.py --skip-native
+& $py tools/verify_asset_probe.py --skip-build
+```
+
+Recorded result (`--fresh`, exit 0, 121.8 s):
+
+```text
+patch           sha256=5fa2b1b743c38803
+files           16 modified, 0 added
+objects         56
+wasm            814345 B sha256=552e3407552f4356 deterministic=True
+harness         65/65 checks pass
+draw list       95 bound / 160 other-block, 9343 triangles, 17782 vertices, hash=fd525c1452869aee
+packet          312 records (255 direct / 57 instance), drawable=117, omitted=195, hash=4603a94e0871461c
+materials       243 constant rows / 26 types, albedoRows=121, worldRows=38, type8Rows=0
+transforms      57 instance world matrices (0 invalid), 22 equal to level_inspect at 1e-5; 57 VB/IB bindings equal
+stage A+B       57 transform rows equal to _work/level-instances/stageB-python-reference.json
 pc parity       4 TUs preprocessed identical (streammanager.cpp:108025, streamdata.cpp:111514, archive.cpp:111399, resources.cpp:108104 lines)
 verdict         PASS
 ```

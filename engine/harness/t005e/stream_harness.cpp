@@ -30,6 +30,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include <algorithm>
 #include <vector>
@@ -300,6 +301,520 @@ void fnv_f32( uint64_t& hash, F32 value )
 	fnv_u32( hash, bits );
 }
 
+void fnv_string( uint64_t& hash, const char* text )
+{
+	const U32 bytes = (U32)strlen( text );
+	fnv_u32( hash, bytes );
+	fnv_bytes( hash, (const U8*)text, bytes );
+}
+
+// --- P30: constant material rows ------------------------------------------
+//
+// The target RenderListNode serialiser already reads the constant material
+// table (m_constantMaterialData / m_constantMaterialTypes) through the
+// engine's own DeserialiseMaterialData path. This resolver only reads values
+// back: it follows MATERIAL_ELEMENT_TYPE_MATERIAL_INDEX children (serialised
+// value type 8) exactly as the committed Python reference does, and it never
+// writes a material or invents a blend value.
+struct MaterialRefView
+{
+	int index;
+	int list;
+};
+
+struct MaterialProbe
+{
+	bool worldFound;
+	bool worldFinite;
+	bool worldAffine;
+	int worldRow;
+	int worldAssignments;
+	F32 world[ 16 ];
+
+	bool albedoFound;
+	bool albedoConflict;
+	bool albedoDynamic;
+	bool fieldTypeUnsupported;
+	bool outOfRange;
+	bool recursive;
+	bool dynamicRef;
+	bool albedoType8;
+
+	int albedoRow;
+	int albedoTexIndex;
+	const char* albedoName;
+	int albedoAssignments;
+	int type8Elements;
+};
+
+void applyMaterialRef( const RenderingData::MaterialListData& data,
+	const RenderingData::MaterialList& types, const MaterialRefView& ref,
+	MaterialProbe* probe, int* stack, int stackSize )
+{
+	if ( probe->dynamicRef || probe->outOfRange || probe->recursive )
+		return;
+
+	if ( ref.list != 0 )
+	{
+		probe->dynamicRef = true;
+		return;
+	}
+
+	if ( ref.index < 0 || ref.index >= data.GetNumMaterials() )
+	{
+		probe->outOfRange = true;
+		return;
+	}
+
+	for ( int i = 0; i < stackSize; i++ )
+	{
+		if ( stack[ i ] == ref.index )
+		{
+			probe->recursive = true;
+			return;
+		}
+	}
+
+	if ( stackSize >= 32 )
+	{
+		probe->recursive = true;
+		return;
+	}
+
+	stack[ stackSize ] = ref.index;
+
+	const RenderingData::Material& material = data.GetMaterial( ref.index );
+	const int typeIndex = material.GetTypeIndex();
+
+	if ( typeIndex < 0 || typeIndex >= types.GetNumMaterialTypes() )
+	{
+		probe->outOfRange = true;
+		return;
+	}
+
+	const RenderingData::MaterialType& type = types.GetMaterialType( typeIndex );
+
+	for ( int e = 0; e < type.GetNumElements(); e++ )
+	{
+		const RenderingData::MaterialElement& element = type.GetElement( e );
+		const int elementType = (int)element.type;
+		const char* name = element.name.Chars();
+
+		if ( elementType == RenderingData::MATERIAL_ELEMENT_TYPE_MATERIAL_INDEX )
+		{
+			probe->albedoType8 = true;
+
+			for ( int c = 0; c < element.count; c++ )
+			{
+				S32 raw = 0;
+				memcpy( &raw, material.GetData( type.GetOffset( e, c ) ),
+					sizeof( raw ) );
+				MaterialRefView child;
+				child.index = raw & 0x0FFFFFFF;
+				child.list = raw >> 28;
+				++probe->type8Elements;
+				applyMaterialRef( data, types, child, probe, stack, stackSize + 1 );
+			}
+
+			continue;
+		}
+
+		if ( strcmp( name, "g_mWorld" ) == 0 )
+		{
+			if ( elementType == (int)RenderingData::MATERIAL_ELEMENT_TYPE_F32 &&
+				element.count == 16 )
+			{
+				F32 values[ 16 ];
+				bool finite = true;
+
+				for ( int k = 0; k < 16; k++ )
+				{
+					memcpy( &values[ k ],
+						material.GetData( type.GetOffset( e, k ) ), sizeof( F32 ) );
+
+					if ( !isfinite( values[ k ] ) )
+						finite = false;
+				}
+
+				probe->worldFound = true;
+				probe->worldRow = ref.index;
+				probe->worldFinite = finite;
+				probe->worldAffine = finite && values[ 3 ] == 0.0f &&
+					values[ 7 ] == 0.0f && values[ 11 ] == 0.0f &&
+					values[ 15 ] == 1.0f;
+				memcpy( probe->world, values, sizeof( probe->world ) );
+				++probe->worldAssignments;
+			}
+			else
+			{
+				probe->fieldTypeUnsupported = true;
+			}
+		}
+
+		if ( strcmp( name, "g_tAlbedo" ) == 0 ||
+			strcmp( name, "g_MeshTexture" ) == 0 )
+		{
+			if ( elementType == (int)RenderingData::MATERIAL_ELEMENT_TYPE_TEXTURE_INDEX &&
+				element.count >= 1 )
+			{
+				S32 value = 0;
+				memcpy( &value, material.GetData( type.GetOffset( e, 0 ) ),
+					sizeof( value ) );
+
+				if ( probe->albedoFound )
+				{
+					if ( probe->albedoRow != ref.index ||
+						probe->albedoTexIndex != value ||
+						strcmp( probe->albedoName, name ) != 0 )
+						probe->albedoConflict = true;
+				}
+				else
+				{
+					probe->albedoFound = true;
+					probe->albedoRow = ref.index;
+					probe->albedoTexIndex = value;
+					probe->albedoName = name;
+				}
+
+				++probe->albedoAssignments;
+			}
+			else if ( elementType ==
+					(int)RenderingData::MATERIAL_ELEMENT_TYPE_DATA_INDEX ||
+				elementType ==
+					(int)RenderingData::MATERIAL_ELEMENT_TYPE_TEXTURE_PTR )
+			{
+				probe->albedoDynamic = true;
+			}
+			else
+			{
+				probe->fieldTypeUnsupported = true;
+			}
+		}
+	}
+}
+
+void initMaterialProbe( MaterialProbe* probe )
+{
+	memset( probe, 0, sizeof( *probe ) );
+	probe->worldRow = -1;
+	probe->albedoRow = -1;
+	probe->albedoTexIndex = -1;
+}
+
+void applyMaterial( const RenderingData::Target::RenderListNode& list,
+	MaterialProbe* probe, int index, int listIndex )
+{
+	if ( index < 0 && listIndex == 0 )
+		return;
+
+	int stack[ 32 ];
+	MaterialRefView ref;
+	ref.index = index;
+	ref.list = listIndex;
+
+	applyMaterialRef( list.GetConstantMaterialListData(),
+		list.GetConstantMaterialTypes(), ref, probe, stack, 0 );
+}
+
+const char* worldReason( const MaterialProbe& probe )
+{
+	if ( probe.dynamicRef ) return "runtimeMaterialTransform";
+	if ( probe.outOfRange ) return "materialIndexOutOfBounds";
+	if ( probe.recursive ) return "recursiveMaterialReference";
+	if ( !probe.worldFound ) return "noConstantWorldMatrix";
+	if ( !probe.worldFinite ) return "nonFiniteWorldMatrix";
+	if ( !probe.worldAffine ) return "nonAffineWorldMatrix";
+	return "none";
+}
+
+const char* albedoReason( const MaterialProbe& probe, char* id, int idBytes,
+	int* row, int* index )
+{
+	*row = -1;
+	*index = -1;
+	id[ 0 ] = 0;
+
+	if ( probe.albedoFound && !probe.albedoConflict )
+	{
+		snprintf( id, (size_t)idBytes, "%s:%d:%d", probe.albedoName,
+			probe.albedoRow, probe.albedoTexIndex );
+		*row = probe.albedoRow;
+		*index = probe.albedoTexIndex;
+		return "none";
+	}
+
+	if ( probe.albedoConflict ) return "multipleAlbedoParameters";
+	if ( probe.albedoDynamic ) return "runtimeOnlyAlbedoParameter";
+	if ( probe.fieldTypeUnsupported ) return "unsupportedAlbedoFieldType";
+	if ( probe.outOfRange ) return "materialIndexOutOfBounds";
+	if ( probe.recursive ) return "recursiveMaterialReference";
+	if ( probe.dynamicRef ) return "runtimeMaterialList";
+	return "noAlbedoParameter";
+}
+
+struct MaterialInventory
+{
+	int rows;
+	int types;
+	int worldRows;
+	int albedoRows;
+	int type8Rows;
+	int runtimeRows;
+	int externalRows;
+};
+
+void inventoryMaterials( const RenderingData::Target::RenderListNode& list,
+	MaterialInventory* inventory )
+{
+	memset( inventory, 0, sizeof( *inventory ) );
+
+	const RenderingData::MaterialListData& data =
+		list.GetConstantMaterialListData();
+	const RenderingData::MaterialList& types = list.GetConstantMaterialTypes();
+
+	inventory->rows = data.GetNumMaterials();
+	inventory->types = types.GetNumMaterialTypes();
+
+	for ( int i = 0; i < inventory->rows; i++ )
+	{
+		const RenderingData::Material& material = data.GetMaterial( i );
+		const int typeIndex = material.GetTypeIndex();
+
+		if ( typeIndex < 0 || typeIndex >= inventory->types )
+		{
+			++inventory->externalRows;
+			continue;
+		}
+
+		const RenderingData::MaterialType& type = types.GetMaterialType( typeIndex );
+		bool world = false;
+		bool albedo = false;
+		bool type8 = false;
+		bool runtime = false;
+
+		for ( int e = 0; e < type.GetNumElements(); e++ )
+		{
+			const RenderingData::MaterialElement& element = type.GetElement( e );
+			const int elementType = (int)element.type;
+			const char* name = element.name.Chars();
+
+			if ( elementType ==
+				RenderingData::MATERIAL_ELEMENT_TYPE_MATERIAL_INDEX )
+				type8 = true;
+
+			if ( strcmp( name, "g_mWorld" ) == 0 &&
+				elementType == (int)RenderingData::MATERIAL_ELEMENT_TYPE_F32 &&
+				element.count == 16 )
+				world = true;
+
+			if ( strcmp( name, "g_tAlbedo" ) == 0 ||
+				strcmp( name, "g_MeshTexture" ) == 0 )
+			{
+				if ( elementType ==
+						(int)RenderingData::MATERIAL_ELEMENT_TYPE_TEXTURE_INDEX &&
+					element.count >= 1 )
+					albedo = true;
+				else if ( elementType ==
+						(int)RenderingData::MATERIAL_ELEMENT_TYPE_DATA_INDEX ||
+					elementType ==
+						(int)RenderingData::MATERIAL_ELEMENT_TYPE_TEXTURE_PTR )
+					runtime = true;
+			}
+		}
+
+		if ( world ) ++inventory->worldRows;
+		if ( albedo ) ++inventory->albedoRows;
+		if ( type8 ) ++inventory->type8Rows;
+		if ( runtime ) ++inventory->runtimeRows;
+	}
+}
+
+// --- P30: packet-v1.1-compatible draw records ----------------------------
+
+struct PacketState
+{
+	int records;
+	int drawable;
+	int omitted;
+	int directRecords;
+	int directDrawable;
+	int directOtherBlock;
+	int directMaterials;
+	int directMaterialNull;
+	int directWorldNull;
+	int instanceRecords;
+	int instanceDrawable;
+	int instanceOtherBlock;
+	int instanceWorlds;
+	int instanceWorldInvalid;
+	int instanceMaterials;
+	int instanceMaterialNull;
+	int instanceSources;
+	int materialRows;
+	int materialTypes;
+	int materialAlbedoRows;
+	int materialWorldRows;
+	int materialType8Rows;
+	uint64_t hash;
+};
+
+struct PacketRecord
+{
+	int index;
+	int kind; /* 0 direct primitive, 1 render-list instance */
+	char mesh[ 96 ];
+	S32 vbBlock;
+	S32 vbIndex;
+	S32 ibBlock;
+	S32 ibIndex;
+	int vertexOffset;
+	int vertexCount;
+	int indexOffset;
+	int indexCount;
+	bool worldValid;
+	int worldRow;
+	const char* worldReason;
+	F32 world[ 16 ];
+	char materialId[ 80 ];
+	int materialRow;
+	int albedoIndex;
+	S32 albedoBlock;
+	S32 albedoSourceIndex;
+	const char* materialReason;
+	const RenderingData::Bounds* bounds;
+	const char* layer;
+	int instanceIndex;
+	int primitiveIndex;
+	int sourceOffset;
+	bool drawable;
+	const char* reason;
+};
+
+void emitPacketRecord( PacketState* packet, const PacketRecord& record )
+{
+	printf( "webfiledraw packet %d kind=%s mesh=%s vb=%d:%d ib=%d:%d "
+		"vtxOffset=%d vtxCount=%d idxOffset=%d idxCount=%d ",
+		record.index, record.kind == 0 ? "direct" : "instance", record.mesh,
+		(int)record.vbBlock, (int)record.vbIndex, (int)record.ibBlock,
+		(int)record.ibIndex, record.vertexOffset, record.vertexCount,
+		record.indexOffset, record.indexCount );
+
+	if ( record.worldValid )
+	{
+		printf( "world=" );
+		for ( int k = 0; k < 16; k++ )
+			printf( "%s%.9g", k ? "," : "", record.world[ k ] );
+		printf( " " );
+	}
+	else
+	{
+		printf( "world=null " );
+	}
+
+	printf( "worldRow=%d worldReason=%s materialId=%s materialRow=%d "
+		"albedoIndex=%d albedo=%d:%d materialReason=%s layer=%s ",
+		record.worldRow, record.worldValid ? "none" : record.worldReason,
+		record.materialId[ 0 ] ? record.materialId : "null",
+		record.materialRow, record.albedoIndex, (int)record.albedoBlock,
+		(int)record.albedoSourceIndex, record.materialReason, record.layer );
+
+	if ( record.bounds != 0 )
+		printf( "bounds=ok boundsMin=%.9g,%.9g,%.9g boundsMax=%.9g,%.9g,%.9g ",
+			record.bounds->aabbMin.x, record.bounds->aabbMin.y,
+			record.bounds->aabbMin.z, record.bounds->aabbMax.x,
+			record.bounds->aabbMax.y, record.bounds->aabbMax.z );
+	else
+		printf( "bounds=none boundsMin=0,0,0 boundsMax=0,0,0 " );
+
+	printf( "instance=%d primitive=%d source=%d drawable=%d reason=%s\n",
+		record.instanceIndex, record.primitiveIndex, record.sourceOffset,
+		record.drawable ? 1 : 0, record.reason );
+
+	fnv_u32( packet->hash, (U32)record.index );
+	fnv_string( packet->hash, record.kind == 0 ? "direct" : "instance" );
+	fnv_string( packet->hash, record.mesh );
+	fnv_u32( packet->hash, (U32)record.vbBlock );
+	fnv_u32( packet->hash, (U32)record.vbIndex );
+	fnv_u32( packet->hash, (U32)record.ibBlock );
+	fnv_u32( packet->hash, (U32)record.ibIndex );
+	fnv_u32( packet->hash, (U32)record.vertexOffset );
+	fnv_u32( packet->hash, (U32)record.vertexCount );
+	fnv_u32( packet->hash, (U32)record.indexOffset );
+	fnv_u32( packet->hash, (U32)record.indexCount );
+	fnv_u32( packet->hash, record.worldValid ? 1u : 0u );
+	if ( record.worldValid )
+		for ( int k = 0; k < 16; k++ )
+			fnv_f32( packet->hash, record.world[ k ] );
+	fnv_u32( packet->hash, (U32)record.worldRow );
+	fnv_string( packet->hash, record.worldValid ? "none" : record.worldReason );
+	fnv_string( packet->hash, record.materialId[ 0 ] ? record.materialId : "null" );
+	fnv_u32( packet->hash, (U32)record.materialRow );
+	fnv_u32( packet->hash, (U32)record.albedoIndex );
+	fnv_u32( packet->hash, (U32)record.albedoBlock );
+	fnv_u32( packet->hash, (U32)record.albedoSourceIndex );
+	fnv_string( packet->hash, record.materialReason );
+	fnv_string( packet->hash, record.layer );
+	fnv_u32( packet->hash, record.bounds != 0 ? 1u : 0u );
+	if ( record.bounds != 0 )
+	{
+		fnv_f32( packet->hash, record.bounds->aabbMin.x );
+		fnv_f32( packet->hash, record.bounds->aabbMin.y );
+		fnv_f32( packet->hash, record.bounds->aabbMin.z );
+		fnv_f32( packet->hash, record.bounds->aabbMax.x );
+		fnv_f32( packet->hash, record.bounds->aabbMax.y );
+		fnv_f32( packet->hash, record.bounds->aabbMax.z );
+	}
+	fnv_u32( packet->hash, record.drawable ? 1u : 0u );
+	fnv_string( packet->hash, record.reason );
+	fnv_u32( packet->hash, (U32)record.instanceIndex );
+	fnv_u32( packet->hash, (U32)record.primitiveIndex );
+	fnv_u32( packet->hash, (U32)record.sourceOffset );
+}
+
+void initPacketRecord( PacketRecord* record, int kind, int index )
+{
+	memset( record, 0, sizeof( *record ) );
+	record->kind = kind;
+	record->index = index;
+	record->worldRow = -1;
+	record->materialRow = -1;
+	record->albedoIndex = -1;
+	record->albedoBlock = -1;
+	record->albedoSourceIndex = -1;
+	record->instanceIndex = -1;
+	record->primitiveIndex = -1;
+	record->sourceOffset = -1;
+	record->vertexOffset = -1;
+	record->vertexCount = -1;
+	record->indexOffset = -1;
+	record->indexCount = -1;
+	record->worldReason = "noConstantWorldMatrix";
+	record->materialReason = "none";
+	record->layer = "opaque";
+	record->reason = "none";
+}
+
+void resolveAlbedo( const RenderingData::Target::RenderListNode& list,
+	const MaterialProbe& probe, PacketRecord* record )
+{
+	char id[ 80 ];
+	int row = -1;
+	int index = -1;
+	record->materialReason = albedoReason( probe, id, sizeof( id ), &row, &index );
+	record->materialRow = row;
+	record->albedoIndex = index;
+
+	if ( row >= 0 && id[ 0 ] )
+		strcpy( record->materialId, id );
+
+	if ( index >= 0 && index < list.GetNumTextures() )
+	{
+		const RenderingData::ResourceIndex source = list.GetTextureSource( index );
+		record->albedoBlock = source.GetBlock();
+		record->albedoSourceIndex = source.GetIndex();
+	}
+}
+
 // Parse every resource item of one chunk up to and including `range.item`.
 // Returns the target item's Resources (owned by the caller) or 0.
 RenderingData::Target::ResourceBlock::Resources* parseChunkItem(
@@ -355,7 +870,7 @@ RenderingData::Target::ResourceBlock::Resources* parseChunkItem(
 void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawIndex,
 	int nodeIndex, const WebSpike::PrimitiveRecord& record, int primitiveIndex,
 	S32 chunkIndex, const GeometryView& geometry, const RenderingData::Bounds* pBounds,
-	unsigned char* usedVertexBuffer, DrawTotals* totals )
+	unsigned char* usedVertexBuffer, DrawTotals* totals, PacketState* packet )
 {
 	const WebSpike::DrawListState& draws = WebSpike::Draws();
 
@@ -627,7 +1142,7 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 		"vbSource=%d ibSource=%d "
 		"firstIndex=%d indexCount=%d triangles=%d lodOffset=%d lodIndices=%d "
 		"minIndex=%d nVertices=%d baseMaterial=%d:%d instanceMaterial=%d:%d "
-		"flags=0x%08x blend=%d,%d,%d,%d,%d,%d,%d ",
+		"flags=0x%08x blend=%d,%d,%d,%d,%d,%d,%d blendEnable=%d ",
 		drawIndex, (int)chunkIndex, nodeIndex, primitiveIndex, record.streamOffset,
 		bound ? 1 : 0, reason ? reason : "none", record.declaration,
 		record.topology, record.lodCount, record.effect, (int)vbBlock,
@@ -638,7 +1153,8 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 		lod ? lod->vertices : -1, record.baseMaterialIndex, record.baseMaterialList,
 		record.instanceMaterialIndex, record.instanceMaterialList,
 		(unsigned)record.flags, record.blendSrc, record.blendDest, record.blendOp,
-		record.alphaRef, record.alphaToMask, record.alphaTest, record.cullMode );
+		record.alphaRef, record.alphaToMask, record.alphaTest, record.blendEnable,
+		record.cullMode );
 
 	if ( pBounds != 0 )
 		printf( "bounds=ok boundsMin=%.9g,%.9g,%.9g boundsMax=%.9g,%.9g,%.9g ",
@@ -673,12 +1189,75 @@ void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawInd
 	fnv_u32( totals->hash, (U32)record.instanceMaterialIndex );
 	fnv_u32( totals->hash, (U32)record.instanceMaterialList );
 	fnv_u32( totals->hash, (U32)record.flags );
+
+	// P30 packet record for this direct primitive. The material table is read
+	// from the render list's constant rows; a transform is never applied to a
+	// direct primitive (there is no instance placement), so world stays null
+	// with an explicit reason.
+	PacketRecord packetRecord;
+	initPacketRecord( &packetRecord, 0, packet->records );
+	packetRecord.vbBlock = vbBlock;
+	packetRecord.vbIndex = vbIndex;
+	packetRecord.ibBlock = ibBlock;
+	packetRecord.ibIndex = ibIndex;
+	packetRecord.vertexOffset = lod ? lod->minIndex + vertexShift : -1;
+	packetRecord.vertexCount = lod ? lod->vertices : -1;
+	packetRecord.indexOffset = lod ? lod->offset : -1;
+	packetRecord.indexCount = lod ? lod->indices : -1;
+	packetRecord.worldValid = false;
+	packetRecord.worldReason = "noInstanceTransform";
+	packetRecord.bounds = pBounds;
+	packetRecord.layer = record.blendEnable ? "alpha" : "opaque";
+	packetRecord.primitiveIndex = primitiveIndex;
+	packetRecord.sourceOffset = record.streamOffset;
+	packetRecord.drawable = bound;
+	packetRecord.reason = bound ? "none" : ( reason ? reason : "unbound" );
+	snprintf( packetRecord.mesh, sizeof( packetRecord.mesh ),
+		"river.b%d.vb%d.b%d.ib%d", (int)vbBlock, (int)vbIndex, (int)ibBlock,
+		(int)ibIndex );
+
+	MaterialProbe probe;
+	initMaterialProbe( &probe );
+	applyMaterial( list, &probe, record.baseMaterialIndex,
+		record.baseMaterialList );
+	applyMaterial( list, &probe, record.instanceMaterialIndex,
+		record.instanceMaterialList );
+
+	for ( int s = 0; s < record.streamCount; s++ )
+	{
+		if ( record.streams[ s ].streamIndex == -1 )
+			continue;
+		applyMaterial( list, &probe, record.streams[ s ].materialIndex,
+			record.streams[ s ].materialList );
+	}
+
+	resolveAlbedo( list, probe, &packetRecord );
+
+	++packet->records;
+	++packet->directRecords;
+	if ( bound )
+	{
+		++packet->directDrawable;
+		++packet->drawable;
+	}
+	else
+	{
+		++packet->omitted;
+		if ( reason && strcmp( reason, "geometryBlockNotImported" ) == 0 )
+			++packet->directOtherBlock;
+	}
+	if ( packetRecord.materialId[ 0 ] ) ++packet->directMaterials;
+	else ++packet->directMaterialNull;
+	++packet->directWorldNull;
+
+	emitPacketRecord( packet, packetRecord );
 }
 
 // Walk every node of the parsed block, emit render-list draws and instances,
 // and fill the deterministic totals.
 void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
-	const ChunkRange& range, const GeometryView& geometry, DrawTotals* totals )
+	const ChunkRange& range, const GeometryView& geometry, DrawTotals* totals,
+	PacketState* packet )
 {
 	(void)range;
 
@@ -728,6 +1307,19 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 			numPrimitives, numInstances, numBasePrimitives,
 			list->GetNumInstanceBatches(), list->GetNumDynamicMaterialLists() );
 
+		MaterialInventory inventory;
+		inventoryMaterials( *list, &inventory );
+		packet->materialRows += inventory.rows;
+		packet->materialTypes += inventory.types;
+		packet->materialAlbedoRows += inventory.albedoRows;
+		packet->materialWorldRows += inventory.worldRows;
+		packet->materialType8Rows += inventory.type8Rows;
+		printf( "webfiledraw material node=%d chunk=%d types=%d rows=%d "
+			"worldRows=%d albedoRows=%d type8Rows=%d runtimeRows=%d externalRows=%d\n",
+			n, (int)range.chunk, inventory.types, inventory.rows,
+			inventory.worldRows, inventory.albedoRows, inventory.type8Rows,
+			inventory.runtimeRows, inventory.externalRows );
+
 		for ( int i = 0; i < numPrimitives; i++ )
 		{
 			const int recordIndex = primitiveCursor + i;
@@ -759,25 +1351,8 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 			}
 
 			emitOneDraw( *list, drawIndex, n, draws.primitive[ recordIndex ], i,
-				range.chunk, geometry, pBounds, usedVertexBuffer, totals );
+				range.chunk, geometry, pBounds, usedVertexBuffer, totals, packet );
 			++drawIndex;
-		}
-
-		// Instance rows: the serialised instance description, not a transform.
-		// Instance transforms live in runtime material rows, which this slice
-		// does not import; the draw list therefore prints world=null with a
-		// reason instead of a guessed matrix.
-		for ( int i = 0; i < numInstances && i < 256; i++ )
-		{
-			const RenderingData::RenderListNode::Instance& instance =
-				list->GetInstance( i );
-
-			printf( "webfiledraw instance %d chunk=%d nodeIndex=%d "
-				"primitiveIndex=%d material=%d:%d flags=0x%08x streams=%d "
-				"world=null worldReason=instanceTransformNotImported\n", i,
-				(int)range.chunk, n, (int)instance.primitiveIndex,
-				(int)instance.material.index, (int)instance.material.listIndex,
-				(unsigned)instance.flags, (int)instance.primitiveStreams.Size() );
 		}
 
 		// Archive order: primitives, instances, instance batches, base
@@ -797,6 +1372,569 @@ void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
 	}
 
 	totals->vertices = vertices;
+}
+
+// --- P30: instance draws with the constant affine g_mWorld ------------------
+
+struct StreamBinding
+{
+	int vertexBuffer;
+	int vertexOffset;
+	int frequency;
+	int materialIndex;
+	int materialList;
+};
+
+struct InstanceBinding
+{
+	bool valid;
+	const char* reason;
+	int vertexSource;
+	int indexSource;
+	S32 vbBlock;
+	S32 vbIndex;
+	S32 ibBlock;
+	S32 ibIndex;
+	int vertexShift;
+	const WebSpike::BufferRecord* vb;
+	const WebSpike::BufferRecord* ib;
+	const WebSpike::LodRecord* lod;
+};
+
+void bindInstanceGeometry( const RenderingData::Target::RenderListNode& list,
+	const WebSpike::PrimitiveRecord& base,
+	const RenderingData::RenderListNode::Instance& instance,
+	const GeometryView& geometry, InstanceBinding* out )
+{
+	memset( out, 0, sizeof( *out ) );
+	out->vbBlock = -1;
+	out->vbIndex = -1;
+	out->ibBlock = -1;
+	out->ibIndex = -1;
+	out->vertexSource = -1;
+	out->indexSource = -1;
+
+	const WebSpike::DrawListState& draws = WebSpike::Draws();
+
+	if ( base.declaration < 0 || base.declaration >= draws.declarations )
+	{
+		out->reason = "declarationOutOfRange";
+		return;
+	}
+
+	const WebSpike::DeclRecord& decl = draws.decl[ base.declaration ];
+	int positionStream = -1;
+	int found = 0;
+
+	for ( int e = 0; e < decl.count; e++ )
+	{
+		if ( decl.elements[ e ].usage == 0 && decl.elements[ e ].usageIndex == 0 )
+		{
+			if ( found )
+			{
+				out->reason = "duplicatePosition0";
+				return;
+			}
+
+			positionStream = decl.elements[ e ].stream;
+			++found;
+		}
+	}
+
+	if ( found == 0 )
+	{
+		out->reason = "noPosition0";
+		return;
+	}
+
+	if ( positionStream < 0 || positionStream >= 16 )
+	{
+		out->reason = "positionStreamOutOfRange";
+		return;
+	}
+
+	StreamBinding slots[ 16 ];
+	bool present[ 16 ];
+
+	for ( int i = 0; i < 16; i++ )
+		present[ i ] = false;
+
+	// The reference reader allows an instance stream to be overridden by the
+	// matching base-primitive stream. Same order, same result.
+	for ( int s = 0; s < instance.primitiveStreams.Size(); s++ )
+	{
+		const RenderingData::RenderListNode::PrimitiveStream& stream =
+			instance.primitiveStreams[ s ];
+
+		if ( stream.streamIndex < 0 || stream.streamIndex >= 16 )
+			continue;
+
+		slots[ stream.streamIndex ].vertexBuffer = stream.vertexBuffer;
+		slots[ stream.streamIndex ].vertexOffset = stream.vertexOffset;
+		slots[ stream.streamIndex ].frequency = stream.frequency;
+		slots[ stream.streamIndex ].materialIndex = stream.material.index;
+		slots[ stream.streamIndex ].materialList = stream.material.listIndex;
+		present[ stream.streamIndex ] = true;
+	}
+
+	for ( int s = 0; s < base.streamCount; s++ )
+	{
+		const WebSpike::StreamRecord& stream = base.streams[ s ];
+
+		if ( stream.streamIndex < 0 || stream.streamIndex >= 16 )
+			continue;
+
+		slots[ stream.streamIndex ].vertexBuffer = stream.vertexBuffer;
+		slots[ stream.streamIndex ].vertexOffset = stream.vertexOffset;
+		slots[ stream.streamIndex ].frequency = stream.frequency;
+		slots[ stream.streamIndex ].materialIndex = stream.materialIndex;
+		slots[ stream.streamIndex ].materialList = stream.materialList;
+		present[ stream.streamIndex ] = true;
+	}
+
+	if ( !present[ positionStream ] )
+	{
+		out->reason = "positionStreamNotBound";
+		return;
+	}
+
+	const StreamBinding& selected = slots[ positionStream ];
+	out->vertexSource = selected.vertexBuffer;
+
+	if ( selected.vertexBuffer < 0 ||
+		selected.vertexBuffer >= list.GetNumVertexBuffers() )
+	{
+		out->reason = "vertexSourceOutOfRange";
+		return;
+	}
+
+	if ( base.indexBuffer < 0 || base.indexBuffer >= list.GetNumIndexBuffers() )
+	{
+		out->reason = "indexSourceOutOfRange";
+		return;
+	}
+
+	const RenderingData::ResourceIndex vertexIndex =
+		list.GetVertexBufferSource( selected.vertexBuffer );
+	const RenderingData::ResourceIndex indexIndex =
+		list.GetIndexBufferSource( base.indexBuffer );
+
+	out->vbBlock = vertexIndex.GetBlock();
+	out->vbIndex = vertexIndex.GetIndex();
+	out->ibBlock = indexIndex.GetBlock();
+	out->ibIndex = indexIndex.GetIndex();
+	out->indexSource = base.indexBuffer;
+
+	if ( out->vbBlock != geometry.block || out->ibBlock != geometry.block )
+	{
+		out->reason = "geometryBlockNotImported";
+		return;
+	}
+
+	if ( !geometry.valid )
+	{
+		out->reason = "geometryResourcesMissing";
+		return;
+	}
+
+	if ( out->vbIndex < 0 || out->vbIndex >= geometry.vertexBufferCount )
+	{
+		out->reason = "vertexBufferNotImported";
+		return;
+	}
+
+	if ( out->ibIndex < 0 || out->ibIndex >= geometry.indexBufferCount )
+	{
+		out->reason = "indexBufferNotImported";
+		return;
+	}
+
+	if ( base.lodCount == 0 )
+	{
+		out->reason = "primitiveHasNoLod";
+		return;
+	}
+
+	const WebSpike::BufferRecord& vb = geometry.vertexBuffers[ out->vbIndex ];
+	const WebSpike::BufferRecord& ib = geometry.indexBuffers[ out->ibIndex ];
+	const WebSpike::LodRecord& lod = base.lods[ 0 ];
+	out->vb = &vb;
+	out->ib = &ib;
+	out->lod = &lod;
+
+	if ( selected.frequency != 0 )
+	{
+		out->reason = "unsupportedInstanceStreamFrequency";
+		return;
+	}
+
+	if ( selected.vertexOffset < 0 )
+	{
+		out->reason = "negativeInstanceStreamOffset";
+		return;
+	}
+
+	if ( vb.compression != 0 || ib.compression != 0 )
+	{
+		out->reason = "compressedBuffer";
+		return;
+	}
+
+	if ( !ib.payloadRetained )
+	{
+		out->reason = "indexPayloadNotRetained";
+		return;
+	}
+
+	if ( vb.stride <= 0 || ib.stride <= 0 )
+	{
+		out->reason = "zeroBufferStride";
+		return;
+	}
+
+	if ( lod.offset < 0 || lod.indices < 0 || lod.offset > ib.count ||
+		lod.indices > ib.count - lod.offset )
+	{
+		out->reason = "indexRangeOutOfBuffer";
+		return;
+	}
+
+	if ( lod.minIndex < 0 || lod.vertices < 0 || lod.minIndex > vb.count ||
+		lod.vertices > vb.count - lod.minIndex )
+	{
+		out->reason = "vertexRangeOutOfBuffer";
+		return;
+	}
+
+	if ( selected.vertexOffset % vb.stride != 0 )
+	{
+		out->reason = "unalignedVertexStreamOffset";
+		return;
+	}
+
+	out->vertexShift = selected.vertexOffset / vb.stride;
+
+	if ( out->vertexShift > vb.count )
+	{
+		out->reason = "vertexShiftOutOfBuffer";
+		return;
+	}
+
+	if ( base.topology != 0 && base.topology != 1 )
+	{
+		out->reason = "unsupportedTopology";
+		return;
+	}
+
+	if ( base.topology == 0 && ( lod.indices % 3 ) != 0 )
+	{
+		out->reason = "triangleListIndexCount";
+		return;
+	}
+
+	const U8* payload = (const U8*)draws.arena + ib.payloadOffset;
+
+	for ( int j = 0; j < lod.indices; j++ )
+	{
+		U32 value;
+
+		if ( ib.stride == 2 )
+			value = (U32)( (const U16*)payload )[ lod.offset + j ];
+		else
+			value = ( (const U32*)payload )[ lod.offset + j ];
+
+		if ( value < (U32)lod.minIndex ||
+			value >= (U32)( lod.minIndex + lod.vertices ) ||
+			value >= (U32)( vb.count - out->vertexShift ) )
+		{
+			out->reason = "indexOutsidePrimitiveRange";
+			return;
+		}
+	}
+
+	out->valid = true;
+	out->reason = "none";
+}
+
+int countInstanceTriangles( const InstanceBinding& binding, int topology )
+{
+	int triangles = 0;
+	const U8* payload = (const U8*)WebSpike::Draws().arena +
+		binding.ib->payloadOffset;
+
+	if ( topology == 0 )
+	{
+		for ( int j = 0; j + 2 < binding.lod->indices; j += 3 )
+		{
+			U32 i0, i1, i2;
+
+			if ( binding.ib->stride == 2 )
+			{
+				i0 = (U32)( (const U16*)payload )[ binding.lod->offset + j ];
+				i1 = (U32)( (const U16*)payload )[ binding.lod->offset + j + 1 ];
+				i2 = (U32)( (const U16*)payload )[ binding.lod->offset + j + 2 ];
+			}
+			else
+			{
+				i0 = ( (const U32*)payload )[ binding.lod->offset + j ];
+				i1 = ( (const U32*)payload )[ binding.lod->offset + j + 1 ];
+				i2 = ( (const U32*)payload )[ binding.lod->offset + j + 2 ];
+			}
+
+			if ( i0 == i1 || i1 == i2 || i0 == i2 )
+				continue;
+
+			++triangles;
+		}
+	}
+	else
+	{
+		for ( int j = 2; j < binding.lod->indices; j++ )
+		{
+			U32 i0, i1, i2;
+
+			if ( binding.ib->stride == 2 )
+			{
+				i0 = (U32)( (const U16*)payload )[ binding.lod->offset + j - 2 ];
+				i1 = (U32)( (const U16*)payload )[ binding.lod->offset + j - 1 ];
+				i2 = (U32)( (const U16*)payload )[ binding.lod->offset + j ];
+			}
+			else
+			{
+				i0 = ( (const U32*)payload )[ binding.lod->offset + j - 2 ];
+				i1 = ( (const U32*)payload )[ binding.lod->offset + j - 1 ];
+				i2 = ( (const U32*)payload )[ binding.lod->offset + j ];
+			}
+
+			if ( j % 2 )
+			{
+				const U32 swap = i0;
+				i0 = i1;
+				i1 = swap;
+			}
+
+			if ( i0 == i1 || i1 == i2 || i0 == i2 )
+				continue;
+
+			++triangles;
+		}
+	}
+
+	return triangles;
+}
+
+void emitInstanceNode( RenderingData::Target::ResourceBlock::Resources* resources,
+	const ChunkRange& range, const GeometryView& geometry, DrawTotals* totals,
+	PacketState* packet )
+{
+	const WebSpike::DrawListState& draws = WebSpike::Draws();
+	int primitiveCursor = 0;
+
+	for ( int n = 0; n < resources->nodes.Size(); n++ )
+	{
+		RenderingData::Node* node = Pointer( resources->nodes[ n ] );
+
+		if ( node == 0 )
+			continue;
+
+		++totals->nodes;
+
+		if ( !node->IsNode( RenderingData::NODE_TYPE_RENDER_LIST_PLATFORM ) )
+		{
+			printf( "webfiledraw node %d type=%d renderlist=0\n", n,
+				(int)node->GetNodeType() );
+			continue;
+		}
+
+		RenderingData::Target::RenderListNode* list =
+			static_cast<RenderingData::Target::RenderListNode*>( node );
+
+		const int numPrimitives = list->GetNumPrimitives();
+		const int numInstances = list->GetNumInstances();
+		const int numBasePrimitives = list->GetNumBasePrimitives();
+
+		++totals->renderLists;
+		totals->primitives += numPrimitives;
+		totals->instances += numInstances;
+		totals->basePrimitives += numBasePrimitives;
+
+		printf( "webfiledraw list node=%d primitives=%d instances=%d "
+			"baseprimitives=%d instancebatches=%d dynamiclists=%d\n", n,
+			numPrimitives, numInstances, numBasePrimitives,
+			list->GetNumInstanceBatches(), list->GetNumDynamicMaterialLists() );
+
+		MaterialInventory inventory;
+		inventoryMaterials( *list, &inventory );
+		packet->materialRows += inventory.rows;
+		packet->materialTypes += inventory.types;
+		packet->materialAlbedoRows += inventory.albedoRows;
+		packet->materialWorldRows += inventory.worldRows;
+		packet->materialType8Rows += inventory.type8Rows;
+		printf( "webfiledraw material node=%d chunk=%d types=%d rows=%d "
+			"worldRows=%d albedoRows=%d type8Rows=%d runtimeRows=%d externalRows=%d\n",
+			n, (int)range.chunk, inventory.types, inventory.rows,
+			inventory.worldRows, inventory.albedoRows, inventory.type8Rows,
+			inventory.runtimeRows, inventory.externalRows );
+
+		const int baseStart = primitiveCursor + numPrimitives;
+
+		for ( int i = 0; i < numInstances; i++ )
+		{
+			const RenderingData::RenderListNode::Instance& instance =
+				list->GetInstance( i );
+
+			PacketRecord packetRecord;
+			initPacketRecord( &packetRecord, 1, packet->records );
+			packetRecord.instanceIndex = i;
+			packetRecord.primitiveIndex = instance.primitiveIndex;
+
+			MaterialProbe probe;
+			initMaterialProbe( &probe );
+			applyMaterial( *list, &probe, instance.material.index,
+				instance.material.listIndex );
+
+			for ( int s = 0; s < instance.primitiveStreams.Size(); s++ )
+			{
+				const RenderingData::RenderListNode::PrimitiveStream& stream =
+					instance.primitiveStreams[ s ];
+
+				if ( stream.streamIndex == -1 )
+					continue;
+				applyMaterial( *list, &probe, stream.material.index,
+					stream.material.listIndex );
+			}
+
+			const int baseIndex = baseStart + instance.primitiveIndex;
+			const WebSpike::PrimitiveRecord* base =
+				( baseIndex >= 0 && baseIndex < draws.primitives )
+				? &draws.primitive[ baseIndex ] : 0;
+
+			if ( base != 0 )
+			{
+				applyMaterial( *list, &probe, base->baseMaterialIndex,
+					base->baseMaterialList );
+
+				for ( int s = 0; s < base->streamCount; s++ )
+				{
+					if ( base->streams[ s ].streamIndex == -1 )
+						continue;
+					applyMaterial( *list, &probe,
+						base->streams[ s ].materialIndex,
+						base->streams[ s ].materialList );
+				}
+			}
+
+			const char* wReason = worldReason( probe );
+			packetRecord.worldValid = strcmp( wReason, "none" ) == 0;
+			packetRecord.worldRow = probe.worldRow;
+
+			if ( packetRecord.worldValid )
+			{
+				memcpy( packetRecord.world, probe.world,
+					sizeof( packetRecord.world ) );
+				++packet->instanceWorlds;
+			}
+			else
+			{
+				packetRecord.worldReason = wReason;
+				++packet->instanceWorldInvalid;
+			}
+
+			resolveAlbedo( *list, probe, &packetRecord );
+
+			InstanceBinding binding;
+			memset( &binding, 0, sizeof( binding ) );
+			binding.vbBlock = -1;
+			binding.vbIndex = -1;
+			binding.ibBlock = -1;
+			binding.ibIndex = -1;
+			binding.reason = "primitiveRecordMissing";
+
+			int triangleCount = 0;
+
+			if ( base != 0 )
+			{
+				bindInstanceGeometry( *list, *base, instance, geometry,
+					&binding );
+				packetRecord.sourceOffset = base->streamOffset;
+				packetRecord.layer = base->blendEnable ? "alpha" : "opaque";
+
+				if ( binding.valid )
+				{
+					packetRecord.vertexOffset = binding.lod->minIndex +
+						binding.vertexShift;
+					packetRecord.vertexCount = binding.lod->vertices;
+					packetRecord.indexOffset = binding.lod->offset;
+					packetRecord.indexCount = binding.lod->indices;
+					triangleCount = countInstanceTriangles( binding,
+						base->topology );
+
+					totals->triangles += triangleCount;
+					totals->triangleIndices += triangleCount * 3;
+					// The committed instances-all reader reports the sum of the
+					// per-draw LOD vertex ranges, not the sum of used source
+					// vertex-buffer counts.
+					totals->vertices += binding.lod->vertices;
+				}
+			}
+
+			packetRecord.vbBlock = binding.vbBlock;
+			packetRecord.vbIndex = binding.vbIndex;
+			packetRecord.ibBlock = binding.ibBlock;
+			packetRecord.ibIndex = binding.ibIndex;
+			packetRecord.bounds = list->GetInstanceBounds() != 0
+				? &list->GetInstanceBounds( i ) : 0;
+			packetRecord.drawable = binding.valid;
+			packetRecord.reason = binding.valid ? "none" : binding.reason;
+			snprintf( packetRecord.mesh, sizeof( packetRecord.mesh ),
+				"river.b%d.vb%d.b%d.ib%d", (int)binding.vbBlock,
+				(int)binding.vbIndex, (int)binding.ibBlock, (int)binding.ibIndex );
+
+			++packet->records;
+			++packet->instanceRecords;
+
+			if ( binding.valid )
+			{
+				++packet->instanceDrawable;
+				++packet->drawable;
+			}
+			else
+			{
+				++packet->omitted;
+				if ( binding.reason &&
+					strcmp( binding.reason, "geometryBlockNotImported" ) == 0 )
+					++packet->instanceOtherBlock;
+			}
+
+			if ( packetRecord.materialId[ 0 ] ) ++packet->instanceMaterials;
+			else ++packet->instanceMaterialNull;
+
+			if ( binding.vbBlock >= 0 && binding.ibBlock >= 0 &&
+				binding.vbIndex >= 0 && binding.ibIndex >= 0 )
+				++packet->instanceSources;
+
+			printf( "webfiledraw instance %d chunk=%d nodeIndex=%d "
+				"primitiveIndex=%d base=%d material=%d:%d flags=0x%08x "
+				"streams=%d world=%s worldRow=%d materialId=%s "
+				"materialReason=%s vb=%d:%d ib=%d:%d vtxCount=%d idxCount=%d "
+				"triangles=%d drawable=%d reason=%s\n",
+				i, (int)range.chunk, n, (int)instance.primitiveIndex,
+				baseIndex, (int)instance.material.index,
+				(int)instance.material.listIndex, (unsigned)instance.flags,
+				(int)instance.primitiveStreams.Size(),
+				packetRecord.worldValid ? "ok" : "null", probe.worldRow,
+				packetRecord.materialId[ 0 ] ? packetRecord.materialId : "null",
+				packetRecord.materialReason, (int)binding.vbBlock,
+				(int)binding.vbIndex, (int)binding.ibBlock, (int)binding.ibIndex,
+				packetRecord.vertexCount, packetRecord.indexCount,
+				triangleCount, packetRecord.drawable ? 1 : 0,
+				packetRecord.reason );
+
+			emitPacketRecord( packet, packetRecord );
+		}
+
+		primitiveCursor += numPrimitives + numBasePrimitives;
+	}
 }
 
 } // namespace
@@ -1150,6 +2288,10 @@ int main( int argc, char** argv )
 		check( "drawlist_inline_block",
 			loadedOk && nLoadedBlocks == 1 && WebSpike::Draws().gpuObjectsCreated == 0 );
 
+		PacketState packet;
+		memset( &packet, 0, sizeof( packet ) );
+		packet.hash = fnv_begin();
+
 		// The two blocks compared with the asset-reader reference: River
 		// geometry block 88 and node block 283 (95 direct draws), and node
 		// block 253 (57 instances) whose geometry is block 27.
@@ -1189,15 +2331,18 @@ int main( int argc, char** argv )
 				geometryOk = resources != 0;
 
 				const WebSpike::DrawListState& draws = WebSpike::Draws();
-				geoVbCount = draws.vertexBuffers;
-				geoIbCount = draws.indexBuffers;
+				// A chunk can hold several resource items. The target item's
+				// buffers start at vbBase/ibBase; only those belong to this
+				// block and only they use the reference's 0-based indices.
+				geoVbCount = draws.vertexBuffers - vbBase;
+				geoIbCount = draws.indexBuffers - ibBase;
 				geoNodeCount = draws.resourceNodes;
 				geoTextureCount = draws.resourceTextures;
 
 				for ( int i = 0; i < geoVbCount && i < WebSpike::kMaxBuffers; i++ )
-					geoVb[ i ] = draws.vertexBuffer[ i ];
+					geoVb[ i ] = draws.vertexBuffer[ vbBase + i ];
 				for ( int i = 0; i < geoIbCount && i < WebSpike::kMaxBuffers; i++ )
-					geoIb[ i ] = draws.indexBuffer[ i ];
+					geoIb[ i ] = draws.indexBuffer[ ibBase + i ];
 
 				printf( "webfiledraw chunk name=geometry parsed=%d vbs=%d ibs=%d "
 					"nodes=%d textures=%d retained=%d compressed=%d\n",
@@ -1261,7 +2406,7 @@ int main( int argc, char** argv )
 				totals.hash = fnv_begin();
 
 				if ( parsed )
-					emitNodeDraws( resources, range, geometry, &totals );
+					emitNodeDraws( resources, range, geometry, &totals, &packet );
 
 				printf( "webfiledraw summary node=%d nodes=%d primitives=%d "
 					"renderlists=%d draws=%d otherblock=%d unbound=%d "
@@ -1280,8 +2425,75 @@ int main( int argc, char** argv )
 			}
 		}
 
-		// Node block 253: the render list whose instance count is compared with
-		// level_inspect --instances-all (57 instances / 36 base primitives).
+		// Geometry block 27: the instance list's own geometry. It is parsed
+		// after block 88 has been consumed, because both payloads use the same
+		// bounded arena; ResetChunkRecords rewinds the arena (it does not clear
+		// block 88's bytes), and this parse overwrites them. Nothing reads
+		// block 88 after this point.
+		static WebSpike::BufferRecord instVb[ WebSpike::kMaxBuffers ];
+		static WebSpike::BufferRecord instIb[ WebSpike::kMaxBuffers ];
+		int instVbCount = 0;
+		int instIbCount = 0;
+		bool instanceGeometryOk = false;
+		{
+			WebSpike::ResetChunkRecords();
+
+			ChunkRange range;
+			const S32 kInstanceGeometryBlock = 27;
+			const bool located = findChunkItem( scene->GetStreamData(),
+				kInstanceGeometryBlock, 0, &range );
+			printf( "webfiledraw chunk name=instancegeometry block=%d chunk=%d "
+				"item=%d lod=%d offset=%llu bytes=%llu located=%d\n",
+				(int)kInstanceGeometryBlock, (int)range.chunk, (int)range.item,
+				(int)range.lod, (unsigned long long)range.offset,
+				(unsigned long long)range.bytes, located ? 1 : 0 );
+			check( "drawlist_instance_geometry_located", located );
+
+			if ( located )
+			{
+				std::vector<U8> bytes;
+				int vbBase = 0;
+				int ibBase = 0;
+				RenderingData::Target::ResourceBlock::Resources* resources =
+					loadChunkCopy( manager, stream, range, bytes )
+					? parseChunkItem( bytes, scene, range, &vbBase, &ibBase, 0 ) : 0;
+				instanceGeometryOk = resources != 0;
+
+				const WebSpike::DrawListState& draws = WebSpike::Draws();
+				// The block-27 item is not the first item in its chunk, so its
+				// buffers begin at vbBase/ibBase. Snapshot exactly that item.
+				instVbCount = draws.vertexBuffers - vbBase;
+				instIbCount = draws.indexBuffers - ibBase;
+
+				for ( int i = 0; i < instVbCount && i < WebSpike::kMaxBuffers; i++ )
+					instVb[ i ] = draws.vertexBuffer[ vbBase + i ];
+				for ( int i = 0; i < instIbCount && i < WebSpike::kMaxBuffers; i++ )
+					instIb[ i ] = draws.indexBuffer[ ibBase + i ];
+
+				printf( "webfiledraw chunk name=instancegeometry parsed=%d vbs=%d "
+					"ibs=%d nodes=%d retained=%d compressed=%d\n",
+					instanceGeometryOk ? 1 : 0, instVbCount, instIbCount,
+					draws.resourceNodes, draws.arenaUsed, draws.compressedBuffers );
+
+				check( "drawlist_instance_geometry_import",
+					instanceGeometryOk && instVbCount > 0 && instIbCount > 0 &&
+					draws.compressedBuffers == 0 && draws.arenaExhausted == 0 );
+
+				delete resources;
+			}
+		}
+
+		GeometryView instanceGeometry;
+		instanceGeometry.block = 27;
+		instanceGeometry.valid = instanceGeometryOk;
+		instanceGeometry.vertexBuffers = instVb;
+		instanceGeometry.vertexBufferCount = instVbCount;
+		instanceGeometry.indexBuffers = instIb;
+		instanceGeometry.indexBufferCount = instIbCount;
+
+		// Node block 253: the render list whose 57 instances are compared with
+		// level_inspect --instances-all. Each instance's constant affine
+		// g_mWorld is read from the render list's constant material rows.
 		{
 			WebSpike::ResetChunkRecords();
 
@@ -1309,20 +2521,68 @@ int main( int argc, char** argv )
 				totals.hash = fnv_begin();
 
 				if ( parsed )
-					emitNodeDraws( resources, range, geometry, &totals );
+					emitInstanceNode( resources, range, instanceGeometry,
+						&totals, &packet );
 
 				printf( "webfiledraw instances node=%d renderlists=%d "
-					"instanceCount=%d basePrimitives=%d draws=%d\n",
+					"instanceCount=%d basePrimitives=%d draws=%d triangles=%d "
+					"vertices=%d\n",
 					(int)kInstanceNodeBlock, totals.renderLists, totals.instances,
-					totals.basePrimitives, totals.draws );
+					totals.basePrimitives, packet.instanceDrawable, totals.triangles,
+					totals.vertices );
 				check( "drawlist_instance_import", parsed && totals.renderLists > 0 );
 				check( "drawlist_instance_count", totals.instances == 57 );
 				check( "drawlist_base_primitive_count",
 					totals.basePrimitives == 36 );
+				check( "drawlist_instance_triangles",
+					totals.triangles == 10308 );
+				check( "drawlist_instance_vertices",
+					totals.vertices == 13162 );
 
 				delete resources;
 			}
 		}
+
+		printf( "webfiledraw packet summary records=%d drawable=%d omitted=%d "
+			"direct=%d directDrawable=%d directOtherBlock=%d instance=%d "
+			"instanceDrawable=%d instanceOtherBlock=%d worlds=%d worldInvalid=%d "
+			"directWorldNull=%d directMaterials=%d directMaterialNull=%d "
+			"instanceMaterials=%d instanceMaterialNull=%d instanceSources=%d "
+			"materialRows=%d materialTypes=%d materialAlbedoRows=%d "
+			"materialWorldRows=%d materialType8Rows=%d hash=0x%016llx\n",
+			packet.records, packet.drawable,
+			packet.records - packet.drawable, packet.directRecords,
+			packet.directDrawable, packet.directOtherBlock, packet.instanceRecords,
+			packet.instanceDrawable, packet.instanceOtherBlock,
+			packet.instanceWorlds, packet.instanceWorldInvalid,
+			packet.directWorldNull,
+			packet.directMaterials, packet.directMaterialNull,
+			packet.instanceMaterials, packet.instanceMaterialNull,
+			packet.instanceSources, packet.materialRows, packet.materialTypes,
+			packet.materialAlbedoRows, packet.materialWorldRows,
+			packet.materialType8Rows, (unsigned long long)packet.hash );
+
+		check( "packet_material_rows",
+			packet.materialRows == 243 && packet.materialTypes == 26 );
+		check( "packet_material_albedo", packet.materialAlbedoRows == 121 );
+		check( "packet_material_world", packet.materialWorldRows == 38 );
+		check( "packet_material_type8", packet.materialType8Rows == 0 );
+		check( "packet_direct_material_ids", packet.directMaterials == 255 &&
+			packet.directMaterialNull == 0 );
+		check( "packet_instance_material_ids", packet.instanceMaterials == 57 &&
+			packet.instanceMaterialNull == 0 );
+		check( "packet_instance_worlds", packet.instanceWorlds == 57 );
+		check( "packet_instance_world_affine", packet.instanceWorldInvalid == 0 );
+		check( "packet_instance_sources", packet.instanceSources == 57 );
+		check( "packet_direct_records", packet.directRecords == 255 );
+		check( "packet_instance_records", packet.instanceRecords == 57 );
+		check( "packet_records_total",
+			packet.records == packet.directRecords + packet.instanceRecords );
+		check( "packet_drawable", packet.directDrawable == 95 &&
+			packet.instanceDrawable == 22 );
+		check( "packet_direct_world_null",
+			packet.directWorldNull == packet.directRecords );
+		check( "packet_hash", packet.hash != 0 );
 
 		const WebSpike::DrawListState& draws = WebSpike::Draws();
 		printf( "webfiledraw counters declarations=%d vertexBuffers=%d "

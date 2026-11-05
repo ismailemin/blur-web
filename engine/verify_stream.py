@@ -159,6 +159,9 @@ TUS = [
     (f"{RD}/source/noninterface/node.cpp", "rd"),
     (f"{RD}/source/noninterface/renderstates.cpp", "rd"),
     (f"{RD}/source/noninterface/material.cpp", "rd"),
+    # P30: materialDataTypeSizes/Alignment, used by MaterialType::GetOffset
+    # when the harness reads constant material rows.
+    (f"{RD}/source/noninterface/materialsizes.cpp", "rd"),
     (f"{RD}/source/noninterface/effect.cpp", "rd"),
     ("engine/harness/t005c/platform_net_web.cpp", "system"),
     ("engine/harness/t005c/web_runtime.cpp", "core"),
@@ -190,6 +193,16 @@ EXPECTED_CHECKS = [
     "drawlist_instance_import", "drawlist_instance_count",
     "drawlist_base_primitive_count", "drawlist_record_bounds",
     "drawlist_no_gpu_objects", "drawlist_renderlist_handler",
+    # P30 constant materials, instance transforms and packet draw list
+    "drawlist_instance_geometry_located", "drawlist_instance_geometry_import",
+    "drawlist_instance_triangles", "drawlist_instance_vertices",
+    "packet_material_rows", "packet_material_albedo", "packet_material_world",
+    "packet_material_type8", "packet_direct_material_ids",
+    "packet_instance_material_ids",
+    "packet_instance_worlds", "packet_instance_world_affine",
+    "packet_instance_sources", "packet_direct_records",
+    "packet_instance_records", "packet_records_total", "packet_drawable",
+    "packet_direct_world_null", "packet_hash",
 ]
 
 # The committed asset-reader reference for the same level. Both pairs are
@@ -252,11 +265,11 @@ PATCH_EXPECTATIONS = {
         "tokens": ["virtual ~RenderListNode();", "Web link anchor"],
     },
     f"{RD}/source/noninterface/target/archive.cpp": {
-        "added": 767, "removed": 12,
+        "added": 768, "removed": 12,
         "tokens": ["ParseSceneArchive", "Data-only read",
                    "renderListHandlerRegistered", "ReadBlobHeader",
                    "ParseLoadedResourceBlockArchive", "ParseResourceBlockLodArchive",
-                   "RegisterRenderListHandlers"],
+                   "RegisterRenderListHandlers", "blendEnable"],
     },
     f"{RD}/source/noninterface/target/resources.cpp": {
         "added": 9, "removed": 0,
@@ -656,13 +669,41 @@ def run_harness(js: Path, tag: str) -> dict:
         }
     draw_instances = {}
     m = re.search(r"webfiledraw instances node=(\d+) renderlists=(\d+) "
-                  r"instanceCount=(\d+) basePrimitives=(\d+) draws=(\d+)", out)
+                  r"instanceCount=(\d+) basePrimitives=(\d+) draws=(\d+) "
+                  r"triangles=(\d+) vertices=(\d+)", out)
     if m:
         draw_instances = {
             "node": int(m.group(1)), "renderLists": int(m.group(2)),
             "instanceCount": int(m.group(3)), "basePrimitives": int(m.group(4)),
-            "draws": int(m.group(5)),
+            "draws": int(m.group(5)), "triangles": int(m.group(6)),
+            "vertices": int(m.group(7)),
         }
+    draw_materials = []
+    for m in re.finditer(r"webfiledraw material node=(\d+) chunk=(\d+) "
+                         r"types=(\d+) rows=(\d+) worldRows=(\d+) "
+                         r"albedoRows=(\d+) type8Rows=(\d+) runtimeRows=(\d+) "
+                         r"externalRows=(\d+)", out):
+        draw_materials.append({
+            "node": int(m.group(1)), "chunk": int(m.group(2)),
+            "types": int(m.group(3)), "rows": int(m.group(4)),
+            "worldRows": int(m.group(5)), "albedoRows": int(m.group(6)),
+            "type8Rows": int(m.group(7)), "runtimeRows": int(m.group(8)),
+            "externalRows": int(m.group(9)),
+        })
+    draw_instance_geometry = re.search(
+        r"webfiledraw chunk name=instancegeometry parsed=(\d+) vbs=(\d+) "
+        r"ibs=(\d+) nodes=(\d+) retained=(\d+) compressed=(\d+)", out)
+    packet_summary = re.search(
+        r"webfiledraw packet summary records=(\d+) drawable=(\d+) omitted=(\d+) "
+        r"direct=(\d+) directDrawable=(\d+) directOtherBlock=(\d+) instance=(\d+) "
+        r"instanceDrawable=(\d+) instanceOtherBlock=(\d+) worlds=(\d+) "
+        r"worldInvalid=(\d+) directWorldNull=(\d+) directMaterials=(\d+) "
+        r"directMaterialNull=(\d+) "
+        r"instanceMaterials=(\d+) instanceMaterialNull=(\d+) instanceSources=(\d+) "
+        r"materialRows=(\d+) materialTypes=(\d+) materialAlbedoRows=(\d+) "
+        r"materialWorldRows=(\d+) materialType8Rows=(\d+) hash=0x([0-9a-f]{16})",
+        out)
+    packet_records = parse_packet_records(out)
     draw_counters = {}
     m = re.search(r"webfiledraw counters (.*)", out)
     if m:
@@ -681,6 +722,8 @@ def run_harness(js: Path, tag: str) -> dict:
         raise Failed("the harness printed an incomplete engine/scene report")
     if not (draw_inline and draw_geometry and draw_summary and draw_instances):
         raise Failed("the harness printed an incomplete draw-list report")
+    if not (draw_instance_geometry and packet_summary and packet_records):
+        raise Failed("the harness printed an incomplete P30 packet report")
     summary_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", summary.group(1))}
     counter_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", counters.group(1))}
     scene_fields = {k: int(v) for k, v in
@@ -745,6 +788,23 @@ def run_harness(js: Path, tag: str) -> dict:
             "lists": draw_lists,
             "summary": draw_summary,
             "instances": draw_instances,
+            "materials": draw_materials,
+            "instance_geometry": {k: int(v) for k, v in zip(
+                ("parsed", "vbs", "ibs", "nodes", "retained", "compressed"),
+                draw_instance_geometry.groups())},
+            "packet_summary": {
+                k: (packet_summary.group(23) if k == "hash" else int(v))
+                for k, v in zip(
+                    ("records", "drawable", "omitted", "direct",
+                     "directDrawable", "directOtherBlock", "instance",
+                     "instanceDrawable", "instanceOtherBlock", "worlds",
+                     "worldInvalid", "directWorldNull", "directMaterials",
+                     "directMaterialNull", "instanceMaterials",
+                     "instanceMaterialNull", "instanceSources", "materialRows",
+                     "materialTypes", "materialAlbedoRows", "materialWorldRows",
+                     "materialType8Rows", "hash"),
+                    packet_summary.groups())},
+            "packet_records": packet_records,
             "counters": draw_counters,
             "records": draw_records,
         },
@@ -775,6 +835,97 @@ def parse_draw_records(out: str) -> list[dict]:
                     record[key] = value
         records.append(record)
     return records
+
+
+def parse_packet_records(out: str) -> list[dict]:
+    """The P30 packet-v1.1-compatible draw records as key=value dictionaries."""
+    records = []
+    for m in re.finditer(r"webfiledraw packet (\d+) (.*)", out):
+        record = {"index": int(m.group(1))}
+        for token in m.group(2).split():
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            if key == "world":
+                record[key] = None if value == "null" else [
+                    float(x) for x in value.split(",")]
+            elif key in ("boundsMin", "boundsMax"):
+                record[key] = [float(x) for x in value.split(",")]
+            elif key in ("vb", "ib", "albedo"):
+                a, b = value.split(":")
+                record[key] = (int(a), int(b))
+            elif key in ("kind", "mesh", "worldReason", "materialId",
+                         "materialReason", "layer", "bounds", "reason"):
+                record[key] = value
+            else:
+                record[key] = int(value, 0)
+        records.append(record)
+    return records
+
+
+def _packet_mix_u32(h: int, value: int) -> int:
+    for b in struct.pack("<I", value & 0xFFFFFFFF):
+        h ^= b
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def _packet_mix_string(h: int, text: str) -> int:
+    data = text.encode("utf-8")
+    h = _packet_mix_u32(h, len(data))
+    for b in data:
+        h ^= b
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def _packet_mix_f32(h: int, value: float) -> int:
+    for b in struct.pack("<f", value):
+        h ^= b
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def packet_fnv(records: list[dict]) -> str:
+    """Recompute the harness's packet hash from the printed packet lines."""
+    h = 0xCBF29CE484222325
+    for r in records:
+        h = _packet_mix_u32(h, r["index"])
+        h = _packet_mix_string(h, r["kind"])
+        h = _packet_mix_string(h, r["mesh"])
+        h = _packet_mix_u32(h, r["vb"][0])
+        h = _packet_mix_u32(h, r["vb"][1])
+        h = _packet_mix_u32(h, r["ib"][0])
+        h = _packet_mix_u32(h, r["ib"][1])
+        h = _packet_mix_u32(h, r["vtxOffset"])
+        h = _packet_mix_u32(h, r["vtxCount"])
+        h = _packet_mix_u32(h, r["idxOffset"])
+        h = _packet_mix_u32(h, r["idxCount"])
+        valid = r["world"] is not None
+        h = _packet_mix_u32(h, 1 if valid else 0)
+        if valid:
+            for value in r["world"]:
+                h = _packet_mix_f32(h, value)
+        h = _packet_mix_u32(h, r["worldRow"])
+        h = _packet_mix_string(h, r["worldReason"])
+        h = _packet_mix_string(h, r.get("materialId", "null"))
+        h = _packet_mix_u32(h, r["materialRow"])
+        h = _packet_mix_u32(h, r["albedoIndex"])
+        h = _packet_mix_u32(h, r["albedo"][0])
+        h = _packet_mix_u32(h, r["albedo"][1])
+        h = _packet_mix_string(h, r["materialReason"])
+        h = _packet_mix_string(h, r["layer"])
+        present = r.get("bounds") == "ok"
+        h = _packet_mix_u32(h, 1 if present else 0)
+        if present:
+            for value in r["boundsMin"] + r["boundsMax"]:
+                h = _packet_mix_f32(h, value)
+        h = _packet_mix_u32(h, r["drawable"])
+        h = _packet_mix_string(h, r["reason"])
+        h = _packet_mix_u32(h, r["instance"])
+        h = _packet_mix_u32(h, r["primitive"])
+        h = _packet_mix_u32(h, r["source"])
+    return f"{h:016x}"
 
 
 def engine_table_fnv(chunkinfo: dict) -> str:
@@ -1046,6 +1197,127 @@ def compare_draw_list(result: dict, index: dict) -> dict:
         raise Failed(f"engine base primitive count "
                      f"{engine_instances['basePrimitives']} != reference "
                      f"{imeta['basePrimitiveCount']}")
+    if engine_instances["triangles"] != imeta["triangleCount"]:
+        raise Failed(f"engine instance triangles {engine_instances['triangles']} "
+                     f"!= reference {imeta['triangleCount']}")
+    if engine_instances["vertices"] != imeta["vertexCount"]:
+        raise Failed(f"engine instance vertices {engine_instances['vertices']} "
+                     f"!= reference {imeta['vertexCount']}")
+
+    # --- P30: packet shape, constant materials and instance transforms -----
+    packet = draws["packet_summary"]
+    records = draws["packet_records"]
+    if len(records) != packet["records"]:
+        raise Failed(f"packet records {len(records)} != summary {packet['records']}")
+    if packet["hash"] != packet_fnv(records):
+        raise Failed(f"packet hash {packet['hash']} != Python recomputation "
+                     f"{packet_fnv(records)}")
+
+    instance_records = [r for r in records if r["kind"] == "instance"]
+    direct_records = [r for r in records if r["kind"] == "direct"]
+    if len(instance_records) != imeta["instanceCount"]:
+        raise Failed(f"packet has {len(instance_records)} instance records, "
+                     f"reference {imeta['instanceCount']}")
+    if len(direct_records) != meta["primitiveCount"] + \
+            meta["omittedOtherBlockPrimitives"]:
+        raise Failed("packet direct record count differs from the reference")
+
+    if packet["instanceDrawable"] != imeta["emittedInstanceCount"]:
+        raise Failed(f"engine emitted {packet['instanceDrawable']} instance "
+                     f"draws, reference {imeta['emittedInstanceCount']}")
+    if packet["instanceOtherBlock"] != imeta["omittedOtherBlockInstances"]:
+        raise Failed(f"engine omitted {packet['instanceOtherBlock']} other-block "
+                     f"instance draws, reference "
+                     f"{imeta['omittedOtherBlockInstances']}")
+    if packet["worldInvalid"] != 0:
+        raise Failed(f"{packet['worldInvalid']} instances have no provable "
+                     "constant affine g_mWorld")
+
+    # Every instance's resolved VB/IB source against the committed reader's
+    # instanceSources list (57 records).
+    sources = {row["instanceIndex"]: row for row in imeta["instanceSources"]}
+    for record in instance_records:
+        index = record["instance"]
+        want = sources.get(index)
+        if want is None:
+            raise Failed(f"reference has no instanceSources record {index}")
+        if record["vb"] != (want["vertexBlock"], want["vertexIndex"]):
+            raise Failed(f"instance {index} (source {record['source']}) VB "
+                         f"{record['vb']} != reference "
+                         f"{(want['vertexBlock'], want['vertexIndex'])}")
+        if record["ib"] != (want["indexBlock"], want["indexIndex"]):
+            raise Failed(f"instance {index} (source {record['source']}) IB "
+                         f"{record['ib']} != reference "
+                         f"{(want['indexBlock'], want['indexIndex'])}")
+
+    # Every emitted instance matrix against the committed reader, 1e-5.
+    reference_instances_by_index = {
+        row["instanceIndex"]: row for row in imeta["instances"]}
+    matrices_compared = 0
+    for record in instance_records:
+        want = reference_instances_by_index.get(record["instance"])
+        if want is None:
+            continue
+        if not record["world"] or len(record["world"]) != 16:
+            raise Failed(f"instance {record['instance']} has no world matrix")
+        for k, (have, expect) in enumerate(zip(record["world"], want["matrix"])):
+            if abs(have - expect) > 1e-5:
+                raise Failed(f"instance {record['instance']} "
+                             f"(source {record['source']}) world[{k}] "
+                             f"{have!r} != reference {expect!r} (1e-5)")
+        archived = want["archivedInstanceBounds"]
+        have_bounds = record["boundsMin"] + record["boundsMax"]
+        for k, (have, expect) in enumerate(zip(have_bounds, archived[:6])):
+            if abs(have - expect) > 1e-5:
+                raise Failed(f"instance {record['instance']} "
+                             f"(source {record['source']}) bounds[{k}] "
+                             f"{have!r} != reference {expect!r} (1e-5)")
+        matrices_compared += 1
+
+    if matrices_compared != imeta["emittedInstanceCount"]:
+        raise Failed(f"compared {matrices_compared} instance matrices, "
+                     f"reference {imeta['emittedInstanceCount']}")
+
+    # The committed Stage A+B reference carries the transform row for all 57
+    # instances (the direct reader emitted only the 22 in-scope matrices). It is
+    # read only when present; this gate never writes outside its log directory.
+    stage_b_report = {"present": False}
+    stage_b_path = ROOT / "_work/level-instances/stageB-python-reference.json"
+    if stage_b_path.is_file():
+        stage_b = json.loads(stage_b_path.read_text(encoding="utf-8"))
+        rows = {}
+        for group in stage_b["groups"]:
+            for k in range(group["firstInstance"],
+                           group["firstInstance"] + group["instanceCount"]):
+                rows[k] = group["transformRow"]
+        if len(rows) != stage_b["instanceCount"]:
+            raise Failed("the Stage A+B reference does not cover every instance")
+        for record in instance_records:
+            want = rows.get(record["instance"])
+            if want is None:
+                raise Failed(f"Stage A+B reference has no row for instance "
+                             f"{record['instance']}")
+            if record["worldRow"] != want:
+                raise Failed(f"instance {record['instance']} "
+                             f"(source {record['source']}) world row "
+                             f"{record['worldRow']} != Stage A+B reference {want}")
+        stage_b_report = {
+            "present": True, "path": str(stage_b_path.relative_to(ROOT)),
+            "rows_compared": len(rows),
+            "stageAB": stage_b["stageAB"],
+            "scope": "transform row per instance; the 56-stage geometry "
+                     "totals need blocks 15/17/26/32, which this slice does "
+                     "not import",
+        }
+
+    if packet["materialRows"] <= 0 or packet["materialTypes"] <= 0:
+        raise Failed(f"constant material table looks empty: {packet}")
+    if packet["materialAlbedoRows"] <= 0:
+        raise Failed("no constant row carries g_tAlbedo/g_MeshTexture")
+    if packet["materialWorldRows"] <= 0:
+        raise Failed("no constant row carries g_mWorld")
+    if packet["directWorldNull"] != packet["direct"]:
+        raise Failed("a direct primitive claimed an instance transform")
 
     return {
         "geometry_pair": list(DRAW_REFERENCE),
@@ -1058,12 +1330,26 @@ def compare_draw_list(result: dict, index: dict) -> dict:
         "draw_hash": summary["hash"],
         "instance_count": engine_instances["instanceCount"],
         "base_primitive_count": engine_instances["basePrimitives"],
+        "instance_triangles": engine_instances["triangles"],
+        "instance_vertices": engine_instances["vertices"],
+        "packet": packet,
+        "packet_records": len(records),
+        "packet_instance_records": len(instance_records),
+        "packet_direct_records": len(direct_records),
+        "packet_material_lists": draws["materials"],
+        "instance_geometry": draws["instance_geometry"],
+        "instance_matrices_compared": matrices_compared,
+        "instance_sources_compared": len(instance_records),
+        "stage_b_reference": stage_b_report,
         "reference_tools": ["probes/asset-reader level_inspect (direct draws)",
                             "probes/asset-reader level_inspect --instances-all"],
         "reference_scope": "firstIndex/indexCount spans and counts; primitive "
                            "offsets, declarations, topology and VB/IB source "
                            "indices are printed by the engine but the committed "
-                           "direct-draw API does not expose them",
+                           "direct-draw API does not expose them; P30 adds 22 "
+                           "instance world matrices, 57 VB/IB source bindings "
+                           "and the instance bounds, all against the same "
+                           "committed reader at 1e-5",
     }
 
 
@@ -1334,6 +1620,22 @@ def main() -> int:
           f"spans equal to level_inspect {DRAW_REFERENCE[0]}/{DRAW_REFERENCE[1]}; "
           f"instances={dl['instance_count']}, "
           f"baseprimitives={dl['base_primitive_count']}")
+    pk = dl["packet"]
+    print(f"packet          {pk['records']} records ({pk['direct']} direct / "
+          f"{pk['instance']} instance), drawable={pk['drawable']}, "
+          f"omitted={pk['omitted']}, hash={pk['hash']}")
+    print(f"materials       {pk['materialRows']} constant rows / "
+          f"{pk['materialTypes']} types, albedoRows={pk['materialAlbedoRows']}, "
+          f"worldRows={pk['materialWorldRows']}, type8Rows="
+          f"{pk['materialType8Rows']}")
+    print(f"transforms      {pk['worlds']} instance world matrices "
+          f"({pk['worldInvalid']} invalid), "
+          f"{dl['instance_matrices_compared']} equal to level_inspect at 1e-5; "
+          f"{dl['instance_sources_compared']} VB/IB bindings equal")
+    sb = dl["stage_b_reference"]
+    if sb["present"]:
+        print(f"stage A+B       {sb['rows_compared']} transform rows equal to "
+              f"{sb['path']}; 56-stage geometry totals not imported")
     print(f"levelrender     {report['whole_files']['levelrender']['bytes']} B "
           f"fnv=0x{report['whole_files']['levelrender']['fnv1a64']}")
     print(f"levelphysics    {report['whole_files']['levelphysics']['bytes']} B "
