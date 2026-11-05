@@ -428,12 +428,13 @@ export function createSession(geometry, tick0, options = {}) {
     if (draw.textureId != null && !textureIds.has(draw.textureId)) {
       throw new Error('car draw ' + draw.id + ' names unknown texture ' + draw.textureId);
     }
-    if (draw.textureId != null && draw.uvFlipV !== true) {
-      throw new Error('car draw ' + draw.id + ' binds a texture without the declared (u, 1-v) sampling');
+    if (draw.textureId != null && (draw.uvFlipU !== true || draw.uvFlipV === true)) {
+      throw new Error('car draw ' + draw.id +
+        ' binds a texture without the declared (1-u, v) sampling');
     }
   }
   for (const draw of trackDraws) {
-    if (draw.uvFlipV === true) {
+    if (draw.uvFlipU === true || draw.uvFlipV === true) {
       throw new Error('track draw ' + draw.id + ' would be sampled with the car UV convention');
     }
   }
@@ -611,7 +612,7 @@ export function createSession(geometry, tick0, options = {}) {
           textureBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
           uvVertices: body.mesh.uv.vertexCount,
           uvBytes: body.mesh.uv.bytes,
-          uvConvention: body.texturePack.uvConvention.sampleV,
+          uvConvention: body.texturePack.uvConvention.sampleUV,
           drawClasses: body.texturePack.coverage,
           materialScope: body.texturePack.materialScope,
           colours:

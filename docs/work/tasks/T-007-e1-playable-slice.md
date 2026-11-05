@@ -131,10 +131,10 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   dönen tekerler çiziliyor (9 node: 1 gövde + 4 spin + 4 statik kaliper).
 - Corvette parça manifesti: 29 parça / 80 draw, 76 kanıtlı, 4 yan-belirsiz;
   4 teker grubu `+X` ekseni, kaliper sabit (`VehicleActor.cpp:5198`).
-- **Araç materyalleri (P52/P55):** 491 draw'dan **224'ü** gerçek albedo + UV0
+- **Araç materyalleri (P52/P55/P59):** 491 draw'dan **224'ü** gerçek albedo + UV0
   ile dokulandı (50 Corvette, 48 Lotus, 42 Dodge, 37 Focus, 47 Audi); 40 doku /
-  18.178.048 B RGBA. **267 draw** diagnostic ve etiketli: 45 paint, 66 light,
-  156 no-albedo. Sampler repeat/linear/mip0; sRGB/mip/paint yok.
+  18.178.048 B RGBA. Sampling **`(1-u, v)`** (P59; plakalar/decal'lar düz).
+  **267 draw** diagnostic: 45 paint, 66 light, 156 no-albedo. sRGB/mip/paint yok.
 - `verify_e1_drive` **570/570**; 20 capture console 0; 1 dk soak temiz.
 - **Paint/light static refs (P60):** 267 runtime draw'da **424** `TEXTURE_INDEX`
   alanı çözüldü (0 unsupported); 24/29 doku decode (5 shared 1024²

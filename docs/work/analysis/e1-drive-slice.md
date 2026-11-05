@@ -1807,3 +1807,90 @@ claim.
 Full commands, counts, per-car tables, screenshots, soak evidence and hashes:
 `docs/work/verification/T-007-textured-cars.md`.
 
+## 24. The car UV correction is U, not V (T-007/car-uv, P59)
+
+**Date:** 6 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-car-uv-orientation.md`. No change
+to `probes/car-materials/`, `probes/car-parts/`, the engine, `probes/render-packet/`,
+`tools/`, `upstream/` or `game-data/`. Physics, sprint, camera, telemetry, restart
+and soak behaviour are untouched; only the per-draw car UV sampling direction
+changes. This section **supersedes §23.3 and §23.5** on the V claim.
+
+### 24.1 What was visibly wrong
+
+§23 chose `v' = 1 − v` for all 224 textured car draws. The plates were still
+wrong: the Audi rear plate read as a 180°-rotated `E 350L EMO`, the ZR1 rear
+plate read upside-down `DQF 9760`, and the country strip stayed on the wrong
+side. P55 saw the plate was still mirrored and recorded it as an unrecovered
+per-material U transform. The error was in the diagnosis, not in the model: the
+V flip was unnecessary and the remaining mirror was a U inversion. The two
+mistakes together produced the 180° rotation.
+
+### 24.2 Root cause from the committed data
+
+The committed `scene_inspect.exe` UV0 stream and the committed P52 RGBA decode
+are both unmodified. For a readable island they say:
+
+| island | data | result |
+| --- | --- | --- |
+| ZR1 rear plate (`nyc_10`, draw 14) | `x=+0.124 → u=0.935`, `x=-0.124 → u=0.072`; `y=+0.328 → v=0.077`, `y=+0.194 → v=0.917` | U increases toward world `+x` (screen-left when viewed from behind); V decreases as the plate rises, so the upper plate edge samples the image's top rows and V is already correct |
+| Audi rear plate (`spain10`, draws 51/52) | `x=+0.258 → u=0.981`, `x=-0.258 → u=0.018`; `y=0.338 → v=0.079`, `y=0.231 → v=0.939` | same U direction and same already-correct V |
+| ZR1 side badges (`corvette_zr1_decals`, draws 39/44) and front/rear emblems | U runs toward the screen-left on the outside of the body | same one U convention, both sides and both ends |
+
+The decoded images are stored row 0 = top, so raw V displays upright. Raw U
+displays the text in reverse glyph order with upright glyphs (a horizontal
+mirror), which is exactly what the P55 `p55-plate-asis.png` frame shows. Flipping
+V instead gives upright-order, upside-down glyphs (`p55-plate-vflip.png`); doing
+both axes gives a 180° rotation (`p55-plate-rot180.png`). Only `u' = 1 − u`
+gives the authored `DQF 9760` / `NEW YORK` / `E 350L EMO` (`p55-plate-uflip.png`).
+The front Dodge plate validates the same rule on a front-facing island: it reads
+`California 2SBI653` only with the U flip.
+
+The track pack remains on the raw stream: P49 had no readable text, and this task
+does not silently change accepted track evidence. Whether the track needs the
+same U inversion is still an open item.
+
+### 24.3 The fix
+
+- `tools/build_car_textures.py` exports the rule as
+  `sampleU:"1 - uv0.u"`, `sampleV:"uv0.v (unchanged)"`,
+  `sampleUV:"(1 - uv0.u, uv0.v)"`, and sets `uvFlipU:true` /
+  `uvFlipV:false` on the 224 textured car draws only.
+- `tools/build_geometry.mjs` carries both per-draw flags; the texture binding
+  records `sampled as (1 - u, v)`.
+- `web/packet-adapter.js` requires every textured car draw to have
+  `uvFlipU:true, uvFlipV:false` and every track draw to have neither.
+- `web/packet-consumer.js` applies each flag independently in the vertex stage:
+  `uv' = (select(u, 1-u, texParams.y), select(v, 1-v, texParams.z))`. The UV
+  values in the vertex buffer are never modified.
+- `tools/verify_e1_drive.mjs` asserts the new convention, the per-draw flags and
+  the separation from the track pack; the five `PHYSICS_ANCHORS.packet` values
+  are re-pinned because the packet's per-draw flags changed.
+
+### 24.4 Result
+
+- `verify_e1_drive.mjs` **570/570, 0 failures**.
+- All five drive **state sequence hashes are unchanged** (`83f76590…`,
+  `8d6cd4d4…`, `b1c63d20…`, `fb3909b6…`, `5b4ae49d…`); sprint, telemetry,
+  restart and reset checks are unchanged.
+- 20 headless Edge/WebGPU captures: **0 console messages**, 0 assertion
+  failures, the same 224 textured car draws (37–50 per car) and 143–145
+  uploaded textures per page.
+- Close-ups: the Audi plate reads `E 350L EMO` with the `E` strip on the left;
+  the ZR1 plate reads `NEW YORK` / `DQF 9760`; the Dodge plate reads
+  `California 2SBI653`. Rings, crossed-flags and other badge artwork is upright.
+- No textured draw count, texture count, RGBA byte count or UV stream changed;
+  only the sampling direction of the same 224 draws changed.
+
+### 24.5 Limits
+
+The fix is one declared global car U inversion, not a recovered per-material
+texture matrix. 267/491 car draws stay diagnostic. Mips, sRGB, anisotropy,
+material colour, blend state and shader stages remain unapplied. The track pack
+keeps its raw stream. The Focus glass still binds an alpha image and renders it
+opaque. No full-game claim.
+
+Full commands, before/after images, hashes and the exact rule:
+`docs/work/verification/T-007-car-uv-orientation.md`.
+

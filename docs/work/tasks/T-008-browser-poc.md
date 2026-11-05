@@ -47,6 +47,7 @@ sürüşü deneyebileceği PoC.
 | 310 m görsel kapsama | P51 | ✅ %100 (g56-n289, 8 draw) |
 | Araç materyalleri | P52 | ✅ 224/491 statik (40 doku) |
 | Araç dokuları entegre | P55 | ✅ 224/491, 570/570 |
+| Araç UV yönü | P59 | ✅ `(1-u,v)`, plakalar düz |
 | Paint/light static refs | P60 | ✅ 424 alan, 24/29 doku |
 | Engine packet export | P54 | ✅ 451 draw (8 schema gap) |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |

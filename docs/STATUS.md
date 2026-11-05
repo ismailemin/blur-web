@@ -641,6 +641,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Düzeltme: soak drive/telemetry fazları **legacy spawn heading** (1,5708), sprint fazı kurs tangent'i ile dünya kuruyor.
 - `soak_browser --minutes 1 --runs 2`: **PASS**, 0 failure, 145 canlı doku sabit. `verify_e1_drive` **570/570**.
 
+## 6 Kasım 2026 — araç UV yönü
+
+- P55'in `(u, 1−v)` yönü yanlıştı; plakalar 180° dönüktü. Kanıt: Audi `350L EMO`, ZR1 `DQF 9760`, Dodge `California 2SBI653`.
+- Doğru kural: **224 statik-albedo car draw** için **`(1−u, v)`**; track ham UV. UV/piksel/sayı değişmedi.
+- `verify_e1_drive` **570/570**; 20 capture console 0; fizik hash'leri aynı. Kanıt: `docs/work/verification/T-007-car-uv-orientation.md`.
+
 ## 6 Kasım 2026 — araç dokuları entegre
 
 - 5 araçta 491 draw'dan **224'ü** gerçek albedo + UV0 ile dokulandı: Corvette 50, Lotus 48, Dodge 42, Focus 37, Audi 47; 40 doku / 18.178.048 B RGBA.

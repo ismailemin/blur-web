@@ -566,14 +566,16 @@ check('the car texture pack uses the same explicit repeat/linear mip0 sampler',
       geometry.carTextures?.sampler?.reason?.slice(0, 70) ?? 'missing');
 
 check('the car UV convention is declared and applied to exactly the textured car draws',
-      geometry.carTextures?.uvConvention?.sampleV === '1 - uv0.v' &&
-      /V-down/.test(geometry.carTextures.uvConvention.reason ?? '') &&
-      carTexturedDraws.every((draw) => draw.uvFlipV === true &&
-        draw.textureBinding?.uvConvention === 'sampled as (u, 1 - v)') &&
-      carDrawsAll.filter((draw) => draw.textureId == null).every((draw) => draw.uvFlipV === false) &&
-      trackDraws.every((draw) => draw.uvFlipV !== true) &&
-      carTextureManifest.uvConvention?.evidence?.length === 3,
-      `${carTexturedDraws.length} car draws sampled (u, 1-v), ${trackDraws.length} track draws unchanged`);
+      geometry.carTextures?.uvConvention?.sampleU === '1 - uv0.u' &&
+      geometry.carTextures?.uvConvention?.sampleV === 'uv0.v (unchanged)' &&
+      /row 0 = top/.test(geometry.carTextures.uvConvention.reason ?? '') &&
+      carTexturedDraws.every((draw) => draw.uvFlipU === true && draw.uvFlipV === false &&
+        draw.textureBinding?.uvConvention === 'sampled as (1 - u, v)') &&
+      carDrawsAll.filter((draw) => draw.textureId == null).every((draw) =>
+        draw.uvFlipU === false && draw.uvFlipV === false) &&
+      trackDraws.every((draw) => draw.uvFlipU !== true && draw.uvFlipV !== true) &&
+      carTextureManifest.uvConvention?.evidence?.length === 4,
+      `${carTexturedDraws.length} car draws sampled (1-u, v), ${trackDraws.length} track draws unchanged`);
 
 // ------------------------------------------------------ camera occlusion
 // The chase camera resolves occlusion against the visible static geometry. The
@@ -2289,37 +2291,38 @@ async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
 //
 // The `packet` anchor is the whole-packet hash, so it moves whenever the static
 // packet body changes; P49 added the real UV0 and static albedo texture payloads
-// (geometry v5) and P55 added the P52 per-car albedo textures + car UV0 stream
-// (geometry v6), so these values are the P55 geometry. Physics did not move: the
+// (geometry v5), P55 added the P52 per-car albedo textures + car UV0 stream
+// (geometry v6), and P59 changed the per-draw car UV flags from uvFlipV to
+// uvFlipU, so these values are the P59 geometry. Physics did not move: the
 // drive/sprint state sequence anchors below are still P36/P37.
 const PHYSICS_ANCHORS = Object.freeze({
   'corvette-zr1-stock': {
     drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
-    packet: 'sha256:746853ba37601ce7879eb5f1cc7ce2e44cc6a7ad795f1dfc2c45d3b2f7fa57ff',
+    packet: 'sha256:4c82e8f8689d47b342ac5831684ed0fdbe7ce4d6760760eec3c16c534c9295ef',
     sprint310: 'sha256:da7e14f16be2649f32902d18cc999cd39af09320d4e4b24ec40a37c086f9a553',
     sprintShort: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
   },
   'lotus-exige-cup260-stock': {
     drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
-    packet: 'sha256:8b9ef8d0eae6cf48b82110c8ca6b17845e8796802da259c78534edf295a35ab0',
+    packet: 'sha256:77e70becdb8e65944495f033110d69a75c57259ddd986eba582cadf6cae063c5',
     sprint310: 'sha256:83f05df48244c000889b4d1adcc83afe34a98f5b65370de3d87419448a92367e',
     sprintShort: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
   },
   'dodge-challenger-stock': {
     drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
-    packet: 'sha256:3b21364b00158226dabea4f43568f94a38c9b79d40295f42043e9153a32aeb16',
+    packet: 'sha256:da25d019fb943a0acf4662e0d836c0a8ff4256f1af130cefcdb2be5c8ede1dfc',
     sprint310: 'sha256:accf125a629dbf7f66e7dbed2d38990fb21c67ad26a65fbef288e3716ac8210a',
     sprintShort: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
   },
   'ford-focusrs-stock': {
     drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
-    packet: 'sha256:b92c105301ae00c37b01551cebe28412360ff30536953ecbbbe383e2e89ac9e7',
+    packet: 'sha256:0590c3e8ccf95ccf40cfdc19786db8bcf6244cddf9af8b5c459f683dd33e8860',
     sprint310: 'sha256:1094698d566bf3a6f335545ea37089113874c21d2f438a059d2c95e3d9f2063f',
     sprintShort: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
   },
   'audi-r8v10-stock': {
     drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
-    packet: 'sha256:fb23b0cc460acc6341b0a9bafdde6f293d7cb964b822360ebe2165bfbe701f01',
+    packet: 'sha256:61e030bfc127c462358b01a4bd7aa36e7f530f503f9995c7877c96a099f6bf92',
     sprint310: 'sha256:0b32413d797b23b0db957f2583ab221fe3e64388144d743b8d20e2b39f14b5ca',
     sprintShort: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
   }

@@ -28,8 +28,12 @@ Exige Cup260 **23 / 88**, the Dodge Challenger **31 / 104**, the Ford Focus RS
 **31 / 115** and the Audi R8 V10 **29 / 84**, each with **four wheel groups**
 whose tyre/rim/brake-disc members spin about the proven element-local `+X` axis
 using that car's physics wheel angular velocity. Brake calipers stay static
-(`VehicleActor.cpp:5198`). Materials remain diagnostic; per-part colours and the
-wheel spin marker are debug aids, labelled in the packet diagnostics.
+(`VehicleActor.cpp:5198`). Each body now samples the **P52 static albedo image on
+its own committed UV0 stream** for **224 of its 491 draws** (40 images, 18.18 MB
+of RGBA); the other 267 draws (45 runtime paint lookups, 66 light off/on blends,
+156 other `_NO_ALBEDO` shaders) keep the diagnostic per-part colour and the
+committed P52 reason. The wheel spin marker remains a debug aid. See
+`docs/work/verification/T-007-textured-cars.md`.
 
 The car drives on the whole River collision mesh, but the **drawn** track is the
 real River render geometry: the committed `level_inspect` direct draws
@@ -138,13 +142,13 @@ is the mapping evidence; `build_geometry.mjs` pins every manifest SHA-256, so a
 regenerated or hand-edited manifest is a hard failure. The five models are
 distinct, and so are the five body mesh hashes.
 
-| slug | body model | parts | draws |
-| --- | --- | ---: | ---: |
-| `corvette-zr1-stock` | `corvette_zr1_stock.model` | 34 | 100 |
-| `lotus-exige-cup260-stock` | `lotus_exigecup260_stock.model` | 23 | 88 |
-| `dodge-challenger-stock` | `dodge_challenger_stock.model` | 31 | 104 |
-| `ford-focusrs-stock` | `ford_focusrs_stock.model` | 31 | 115 |
-| `audi-r8v10-stock` | `audi_r8v10_stock.model` | 29 | 84 |
+| slug | body model | parts | draws | textured | textures |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `corvette-zr1-stock` | `corvette_zr1_stock.model` | 34 | 100 | 50 | 9 |
+| `lotus-exige-cup260-stock` | `lotus_exigecup260_stock.model` | 23 | 88 | 48 | 9 |
+| `dodge-challenger-stock` | `dodge_challenger_stock.model` | 31 | 104 | 42 | 7 |
+| `ford-focusrs-stock` | `ford_focusrs_stock.model` | 31 | 115 | 37 | 7 |
+| `audi-r8v10-stock` | `audi_r8v10_stock.model` | 29 | 84 | 47 | 8 |
 
 ## Commands
 
@@ -166,6 +170,9 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 2b. real UV0 + static albedo texture export (P45/P47 rows + committed BC1 decode)
 & $py   probes/e1-drive/tools/build_track_textures.py
 
+# 2c. per-car material/texture resolution + car UV0 export (P52 record, read-only)
+& $py   probes/e1-drive/tools/build_car_textures.py
+
 # 3. static geometry (level packet + real level_inspect track visual + 5 car bodies + hidden collision)
 & $node probes/e1-drive/tools/build_geometry.mjs
 
@@ -184,7 +191,8 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 6. scripted drive of every roster car twice, both sprint courses + respawn +
 #    layout/band checks, telemetry series twice + input replay, 10 create/reset
 #    rebuilds per car in one instance, one-instance telemetry and sprint restart,
-#    packet validation and the extended-corridor survey/limit checks (550 checks)
+#    packet validation, the extended-corridor survey/limit checks and the per-car
+#    albedo/UV checks (570 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 
 # 7. headless Edge/WebGPU screenshots + console gate
@@ -255,16 +263,24 @@ packet the browser renders is produced by the same code the verifier validates.
   its own UV0 and, for 297 of them, a static `g_tAlbedo` texture id) + that car's
   own draw ranges (100 / 88 / 104 / 115 / 84).
   Every car draw carries its manifest `partId`/`partKind`, `wheelPart`, `spins`,
-  `nodeId` and a labelled `diagnosticColour`. Every track draw keeps its source
+  `nodeId`, a labelled `diagnosticColour` and — for the 50 / 48 / 42 / 37 / 47
+  draws P52 resolved to a static image — a `textureId`, a `textureBinding` record
+  and `uvFlipU:true` / `uvFlipV:false`. The other 267 car draws keep the committed
+  P52 reason.
+  Every track draw keeps its source
   index range and is labelled `trackVisual:"asset-reader-direct-draws"`.
 - `meshes[]`: exactly three — the level mesh, the real track visual (one merged
   mesh, 96,494 vertices / 57,133 triangles, 192,988 UV0 values) and the selected
-  car's own body mesh. One body per packet keeps the upload bounded (3 uploads,
+  car's own body mesh with its real UV0 stream (33,048 / 32,136 / 28,365 / 32,267
+  / 31,429 vertices). One body per packet keeps the upload bounded (3 uploads,
   ~3.95–4.08 MB with the UV buffers) instead of growing with the roster. The
   collision surface is **not** in `meshes`.
-- `textures[]` / `texturePack`: 136 decoded static albedo RGBA bitmaps
-  (439,360 B), their `block:index` identity and hashes, plus the explicit sampler
-  metadata (`repeat`, linear, mip0, `rgba8unorm`, no sRGB).
+- `textures[]` / `texturePack`: 136 decoded static track albedo RGBA bitmaps
+  (439,360 B) plus that car's own 7–9 P52 images (2.58–5.00 MB), their
+  `block:index` / `shared:index` identity and hashes, plus the explicit sampler
+  metadata (`repeat`, linear, mip0, `rgba8unorm`, no sRGB). The car pack also
+  carries `uvConvention` (`u' = 1 − u`, `v' = v`) with its pixel evidence; the
+  track pack keeps the raw stream.
 - `physicsSurfaces[]`: one hidden collision surface (`visible:false`,
   `physicsOnly:true`, 230 vertices / 381 triangles) carried for provenance only;
   it is not uploaded and not drawn.
@@ -294,7 +310,11 @@ packet the browser renders is produced by the same code the verifier validates.
   `bodyDrawCount`, `bodyPartCount`, plus the model pak path and SHA-256).
 - `diagnostics.extras.parts` / `.wheels`: part/draw/node counts, that car's
   manifest (path, SHA-256, model pak path, tyre proof tier, ambiguous wheel
-  draws), the rest-pose/spin source and the diagnostic-colour label.
+  draws), the textured-draw/texture/UV counts and draw classes, the rest-pose/spin
+  source and the diagnostic-colour label.
+- `diagnostics.extras.textures`: the uploaded level/track pack, this car's own
+  P52 pack (count, bytes, manifest, scene report, sampler, `uvConvention`, draw
+  classes) and the bounded total the packet actually uploads.
 - `diagnostics.extras.wheels`: the four wheel corners spin about element-local
   `+X`; physics wheel records are assigned to the nearest manifest wheel
   translation in body-local space.
@@ -479,7 +499,8 @@ plan twice in two fresh page instances, takes start/mid/end screenshots, and gat
 - wasm heap constant, scheduler pool head/group handles constant, GPU packet
   buffers bounded (created − destroyed = live = one packet's 11 buffers: three
   meshes × (positions, indices, UV) + uniform + scene) and textures bounded
-  (live = 136, one packet's textures);
+  (live = 136 track + 7–9 car = 143–145, exactly one packet's textures; a
+  1-minute run creates 580 = 4 loads × 145 and destroys 435, so live stays 145);
 - exactly three mesh uploads per timeline load and one uniform write/draw set
   per frame;
 - every complete drive/sprint segment reproduces the node verifier's state
@@ -487,6 +508,12 @@ plan twice in two fresh page instances, takes start/mid/end screenshots, and gat
   and per-tick trace hashes, and the two soak runs have identical checkpoint
   hashes. Browser packet hashes may differ from Node in the documented
   `Math.atan2`/`Math.sin` last bit; state sequences are the exact gate.
+  **Known issue (pre-existing, not texture related):** since the 310 m course
+  became the default the soak world boots on its measured start tangent
+  (0.767411 rad), so the soak's *drive* and *telemetry* segments are not the
+  node's π/2-spawn runs and those two tool comparisons fail; the sprint segment
+  still matches its node anchor and the page's own soak report is PASS.
+  `docs/work/verification/T-007-textured-cars.md` §Soak records the reproduction.
 
 The page's frame-time percentiles are measurements of this headless WebGPU loop.
 Headless Edge is not vsync-limited and this is not a claim about the user's GPU,
@@ -511,9 +538,12 @@ original single-car links still work.
 `syncTimeline()`, which accepts ticks appended after `load()`; a soak-only
 buffer lifecycle (`releaseGeometry()` + `stats.packetLoads/buffersCreated/
 buffersDestroyed`, invoked at every `load()`) so repeated timeline rebuilds cannot
-grow GPU memory; and the textured-track delta — a second vertex buffer with the
-mesh's UV0, one `rgba8unorm` mip0 texture + bind group per static albedo source, a
-1×1 white placeholder for untextured draws, and `texParams` in the draw uniform.
+grow GPU memory; and the textured delta — a second vertex buffer with the
+mesh's UV0 (track and car; level props keep an explicit zero buffer), one
+`rgba8unorm` mip0 texture + bind group per static albedo source, a 1×1 white
+placeholder for untextured draws, and `texParams` in the draw uniform
+(`x` = texture bound, `y`/`z` = the declared U/V flip flags; the car pack uses
+`u' = 1−u`, `v' = v`).
 No other render/pipeline logic changed.
 
 `web/fixed-step.js` and `web/interpolate.js` are verbatim copies of the committed
@@ -548,10 +578,13 @@ events, inputs and the start/mid/checkpoint/finish capture updates),
 `telemetry.json` (all cars' measured metrics, hashes and rank comparison),
 `telemetry-<slug>.json` (full 60 Hz traces, metrics, hash aggregates and unit
 definitions),
-`geometry.json` (level packet + real track visual + one real body per car + hidden
-collision), `track-textures.json` (UV0 stream, sampler, 136 texture records and
-394 per-draw bindings), `track-uv.bin` + `textures/*.rgba` (the exported UV and
-pixel bytes), `cars.json` (the 62-record roster + gate), `reset-cycles.json`
+`geometry.json` (level packet + real track visual + one real body per car with
+its own UV0 and albedo textures + hidden collision), `car-textures.json` (the
+P52 draw/material/texture resolution, the UV convention and per-car coverage),
+`car-uv-<slug>.bin` (the five committed UV0 streams), `track-textures.json` (UV0
+stream, sampler, 136 texture records and 394 per-draw bindings), `track-uv.bin` +
+`textures/*.rgba` (the exported UV and pixel bytes), `cars.json` (the 62-record
+roster + gate), `reset-cycles.json`
 (10 create/reset cycles per car in one instance with per-cycle hashes, heap and
 scheduler pool, plus the one-instance telemetry and sprint-restart comparison),
 `browser-evidence.json`,
@@ -581,7 +614,8 @@ recorded in `docs/work/verification/T-007-ledge-fix.md`; the static albedo
 texture export, the 297/97 coverage and the declared sampler are recorded in
 `docs/work/verification/T-007-textured-track.md`; the per-car
 body/wheel integration is recorded in
-`docs/work/verification/T-007-per-car-meshes.md`; the chase-camera occlusion
+`docs/work/verification/T-007-per-car-meshes.md`; the per-car albedo/UV pass is
+recorded in `docs/work/verification/T-007-textured-cars.md`; the chase-camera occlusion
 rule, the before/after frames and the near-field limit are recorded in
 `docs/work/verification/T-007-camera-collision.md`; the sprint rules, gate
 derivation and respawn are recorded in
@@ -596,13 +630,22 @@ per-car metrics and plausibility comparison are recorded in
 ## Limits (also carried in the packet's own diagnostics)
 
 - **Materials remain diagnostic, except the static albedo pixels.** The 297
-  textured track draws sample their own `g_tAlbedo` texture with the real UV0;
-  material colour, blend state, shader stages, mip chains and sRGB interpretation
-  are not applied, and the sampler (`repeat` + linear on mip0, `rgba8unorm`) is a
-  declared PoC choice, not recovered engine state. Cars, props and the 97 unbound
-  track draws keep diagnostic colours. One directional light, screen-space
-  derivative normals; no shadows, post or particles. Paint and material
-  parameters are not decoded.
+  textured track draws sample their own `g_tAlbedo` texture with the real UV0,
+  and the 224 textured car draws sample their own P52 `g_MeshTexture` image with
+  the car mesh's own UV0 (sampled as `(1−u, v)`: the decoded images are stored
+  row 0 = top and V already matches, while the model's U axis runs opposite to
+  the image reading direction on every readable island, so the raw stream renders
+  plates, badges and emblems horizontally mirrored). Material colour, blend
+  state, shader stages, mip chains, sRGB interpretation and per-material texture
+  matrices are not applied, and the sampler (`repeat` + linear on mip0,
+  `rgba8unorm`) is a declared PoC choice, not recovered engine state. The 267
+  runtime-only car draws (45 paint lookups, 66 light blends, 156 other
+  `_NO_ALBEDO`), props and the 97 unbound track draws keep diagnostic colours.
+  One directional light, screen-space derivative normals; no shadows, post or
+  particles. Paint and material parameters are not decoded. The track pack keeps
+  its raw UV stream unchanged; its road textures carry no readable text, so its
+  own U/V orientation is an open item rather than an assumption. The P55
+  `(u, 1−v)` claim is superseded by `docs/work/verification/T-007-car-uv-orientation.md`.
 - **One car at a time, selected at runtime.** No opponents, no traffic. Each
   physics car now draws **its own real body and wheels** from its own
   `root.pak` model (body mesh, parts, wheel groups per car; see the counts in
@@ -718,7 +761,9 @@ per-car metrics and plausibility comparison are recorded in
   the user's display cadence. GPU buffer count is bounded by destroying the
   previous packet's buffers on every reload; the soak gate requires
   created − destroyed = live = 11 (three meshes × positions/indices/UV + uniform +
-  scene), and texture objects are destroyed with the packet (live = 136). Five simulated minutes = 18,000 ticks; a one-tick-per-frame run
+  scene), and texture objects are destroyed with the packet (live = 136 track +
+  7–9 car = 143–145, exactly one packet; 580 created − 435 destroyed = 145 live in
+  the 1-minute run). Five simulated minutes = 18,000 ticks; a one-tick-per-frame run
   completed in ~70 s here because headless rAF is not throttled to 60 Hz.
 - **Native parity** is blocked by the DirectX SDK, as recorded in
   `T-007-vehicle-physics.md`.

@@ -104,25 +104,34 @@ SAMPLER = {
 }
 
 # UV0 sampling convention. The exported stream is the reader's raw value, byte
-# for byte; the sampler applies `v' = 1 - v` for car draws because the committed
-# plate/emblem pixels prove the images are authored with the opposite V direction.
-# Evidence: the ZR1 licence plate (`nyc_10`, shared 6) renders "NEW YORK" at the
-# bottom and mirrored with the raw stream, and upright with `v' = 1 - v`; the
-# same for the Audi plate (`spain10`, shared 7) and the ZR1 rear emblem
-# (`corvette_zr1_decals`, resource block 8). Both storage kinds behave the same,
-# so this is one convention, not a per-texture flag. No UV value is modified.
+# for byte; the sampler applies `u' = 1 - u` for car draws because the committed
+# plate/badge pixels prove the model's U direction is authored opposite to the
+# decoded image's left-to-right direction. Evidence (P59): the ZR1 rear plate
+# (`nyc_10`, shared 6) renders "DQF 9760" with the glyph order reversed but the
+# glyphs upright on the raw stream; `u' = 1 - u` makes it read normally. The Audi
+# rear plate (`spain10`, shared 7) behaves the same, and the Corvette side badges
+# ("ZR1 SUPERCHARGED", resource block 8) plus the front/rear emblems agree. V is
+# already correct: the upper plate edge samples the image's top rows. A V flip
+# produces the upside-down 180-degree result P55 recorded, so V is left raw.
+# Both texture storage kinds behave the same, so this is one convention, not a
+# per-texture flag. No UV value and no pixel is modified.
 UV_CONVENTION = {
     "uv0": "committed scene_inspect.exe stream, exported unchanged (signed zeros preserved)",
-    "sampleV": "1 - uv0.v",
+    "sampleU": "1 - uv0.u",
+    "sampleV": "uv0.v (unchanged)",
+    "sampleUV": "(1 - uv0.u, uv0.v)",
     "appliesTo": "the 224 car draws whose P52 static albedo image is bound",
     "reason": (
-        "the decoded images are stored V-down (image row 0 is the top row); the car UV0 stream addresses "
-        "them V-up, so sampling one-minus-v makes the authored artwork read correctly. The committed UV0 "
+        "the decoded images are stored row 0 = top and the committed car UV0 stream addresses them with "
+        "V already upright; the model's U axis however increases in the opposite direction from the image's "
+        "left-to-right reading direction on every readable island (rear plates, side badges, front/rear "
+        "emblems), so sampling one-minus-u makes the authored artwork read left-to-right. The committed UV0 "
         "values and the committed RGBA pixels are unmodified: only the sampling choice is declared"),
     "evidence": [
-        "ZR1 rear plate nyc_10 (shared 6): raw v shows 'NEW YORK' mirrored at the plate bottom; 1-v shows it upright at the top",
-        "Audi rear plate spain10 (shared 7): same behaviour",
-        "ZR1 rear emblem corvette_zr1_decals (resource block 8): same behaviour",
+        "ZR1 rear plate nyc_10 (shared 6): raw U shows 'DQF 9760' in reverse glyph order (glyphs upright) and 'NEW YORK' at the plate top; 1-u reads 'DQF 9760' / 'NEW YORK' normally",
+        "Audi rear plate spain10 (shared 7): raw U puts the 'E' country strip on the right and reverses '350L EMO'; 1-u puts it on the left and reads normally",
+        "ZR1 side badges (corvette_zr1_decals, resource block 8, draws 39/44) and front/rear emblems: U increases toward the screen-left on the outside of the body, so the same 1-u direction applies",
+        "V is raw: the upper plate edge (high y) samples v~0.08, the image's top rows; a V flip rotates the plate text 180 degrees (the P55 observation)",
     ],
     "notApplied": "no per-material texture matrix, UV transform, wrap state or mip state is recovered; this is one declared PoC convention",
 }
@@ -273,9 +282,7 @@ def build_car(entry: dict, car_index_entry: dict) -> dict:
         }
 
     draws = []
-    uv_values = []
     per_texture_draws: dict[str, int] = {}
-    uv_values_sha = None
 
     for index, (material_draw, part_draw) in enumerate(zip(materials["draws"], parts["draws"])):
         if material_draw["index"] != index:
@@ -315,6 +322,7 @@ def build_car(entry: dict, car_index_entry: dict) -> dict:
             "uv0Available": bool(material_draw["uv0Available"]),
             "uvHash": "0x" + f"{digest:016x}",
             "uvRange": [[low[0], high[0]], [low[1], high[1]]],
+            "uvFlipU": False,
             "uvFlipV": False,
         }
 
@@ -335,7 +343,8 @@ def build_car(entry: dict, car_index_entry: dict) -> dict:
                 "textureName": texture["name"],
                 "textureHash": texture["textureHash"],
                 "textureSource": texture["p52Id"],
-                "uvFlipV": True,
+                "uvFlipU": True,
+                "uvFlipV": False,
                 "material": {
                     "id": material_draw["material"]["id"],
                     "stage": material_draw["material"]["stage"],

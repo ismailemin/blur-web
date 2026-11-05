@@ -4,7 +4,7 @@
 **Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, 5 araç, tarayıcıda test edilebilir.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
 **Son commit'ler:** `e6f99ed` wire encoder, `2b8af8c` 310 m sprint, `ad7043d` PoC checker, `145fac1` engine packet.
-**KAPANMA/RESUME:** [`RESUME_2026-11-05.md`](RESUME_2026-11-05.md) — P55 araç dokuları commit edilmedi; sunucu shell ID'si ve kurtarma adımları orada.
+**KAPANMA/RESUME:** [`RESUME_2026-11-05.md`](RESUME_2026-11-05.md) — tarihsel kapanış kaydı; P55 sonradan commit edildi (`ee8cd0c`).
 
 ## Şu an neredeyiz?
 
@@ -333,11 +333,12 @@ vertex. Render-packet v1.1 şemasına karşı 8 ihlal / 4 not (timeline yok,
 topology strip, engine-buffer, null geometry) — producer hazır, tüketici için
 dönüşüm gerekli. Kanıt: `docs/work/verification/T-007-engine-packet.md`.
 
-**Araç dokuları (P55):** 5 araçta 491 draw'dan **224'ü** gerçek albedo + UV0
+**Araç dokuları (P55/P59):** 5 araçta 491 draw'dan **224'ü** gerçek albedo + UV0
 ile dokulandı (50/48/42/37/47); 40 doku / 18.178.048 B RGBA; 267 draw
-diagnostic (45 paint, 66 light, 156 no-albedo). `verify_e1_drive` **570/570**;
-20 capture console 0; soak temiz. Kanıt:
-`docs/work/verification/T-007-textured-cars.md`.
+diagnostic (45 paint, 66 light, 156 no-albedo). Sampling **`(1-u, v)`** (P59;
+plakalar/decal'lar düz okunuyor). `verify_e1_drive` **570/570**; 20 capture
+console 0; soak temiz. Kanıt:
+`docs/work/verification/T-007-car-uv-orientation.md`.
 
 **Paint/light refs (P60):** 267 runtime draw'da **424** statik `TEXTURE_INDEX`
 alanı çözüldü; 24/29 doku decode (5 shared 1024² sınır dışı). Paint lookup ve

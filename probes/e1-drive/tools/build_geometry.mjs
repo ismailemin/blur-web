@@ -80,7 +80,7 @@ const COMMITTED_CAR_INDEX =
 // consumer document is updated with it.
 const CAR_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/car-textures.json');
 const COMMITTED_CAR_TEXTURES =
-  'sha256:0342a3c6411f292de993e823fff2b400445037618c623961056590bd7f719d2b';
+  'sha256:7d885ecdd53b51878a7343d0ee3ebb266c94ff648b555517a4492bdaf3973169';
 
 const sourceBytes = readFileSync(SOURCE);
 const packet = JSON.parse(sourceBytes.toString('utf8'));
@@ -531,6 +531,7 @@ function buildBody(entry, options = {}) {
           (materialDraw?.reason ?? 'the P52 material record does not cover this draw') +
           '; it is rendered with a diagnostic per-part colour',
       textureId: texture ? texture.id : null,
+      uvFlipU: materialDraw?.uvFlipU === true,
       uvFlipV: materialDraw?.uvFlipV === true,
       textureBinding: {
         status: materialDraw?.bindingStatus ?? 'noMaterialRecord',
@@ -542,7 +543,7 @@ function buildBody(entry, options = {}) {
         uvProvenance: 'car-mesh-uv0 (committed scene-report stream)',
         uvHash: materialDraw?.uvHash ?? null,
         uvRange: materialDraw?.uvRange ?? null,
-        uvConvention: texture ? 'sampled as (u, 1 - v)' : null,
+        uvConvention: texture ? 'sampled as (1 - u, v)' : null,
       },
       layer: 'opaque',
       bounds: manifestDraw.bounds,
@@ -674,7 +675,8 @@ function buildBody(entry, options = {}) {
           coverage: carTexturePack.coverage,
           materialScope:
             'static g_MeshTexture pixels only: 224 of 491 draws sample a decoded static image with the ' +
-            'committed UV0 stream sampled as (u, 1-v); the 267 runtime-only draws keep the committed P52 ' +
+            'committed UV0 stream sampled as (1-u, v) because the model U axis and the image reading ' +
+            'direction are opposite; V stays raw. The 267 runtime-only draws keep the committed P52 ' +
             'reason and the diagnostic albedo. Material colour, blend state, shader stages, mip chain and ' +
             'sRGB interpretation are not applied',
         }
