@@ -534,6 +534,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Respawn: off-course → checkpoint-1, süre/checkpoint korunuyor; `R` restart. `verify_e1_drive` **348/348**; 15 sprint capture, console **0**.
 - Kalan: tam tur (kapalı pist), gate mesh'i yok (HUD/banner). Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
 
+## 5 Kasım 2026 — engine 57/57 tam node
+
+- Blok31 chunk96 prerequisite grafiği: doğrudan `[82,90,91,87,94,95]`, toplam **14 chunk**, 15.079.424 B, hash `116a3286acb5f6c0`; eksik/döngüsel/desteklenmeyen yok.
+- **57/57 instance**, **35.386 vertex / 26.077 üçgen**; blok31 katkısı 754 vertex / 556 üçgen; 57/57 bounds-253 ve VB/IB eşit; 56/56 Stage B matrisi 1e-5.
+- Packet 312 kayıt / **152 drawable** / 160 omitted, hash `7c29fb2ec7769709`; 56 nesne, 849.609 B, **80/80**, PC parity, patch değişmedi. Kanıt: `docs/work/verification/T-007-drawlist-57.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

@@ -23,7 +23,9 @@
 // Also exercised: StreamData::OpenStreamFile (buffer-hint rule) and
 // StreamData::CacheChunk on one prerequisite-free chunk. ProcessLoadChunk is
 // compiled (see the TUS list) but is not run: it deserialises streamed
-// resource blocks, which need GPU buffers.
+// resource blocks, which need GPU buffers. P38 resolves chunk 96's prerequisite
+// graph through the same ChunkInfo table and StreamManager, then imports block
+// 31 with the already-compiled LodReader path (still no GPU object).
 //
 // CLI:
 //   node stream_harness.js <levelrender> <levelstream> <levelphysics>
@@ -267,6 +269,215 @@ bool loadChunkCopy( RenderingData::Target::StreamManager& manager, Sys::I_File* 
 	return true;
 }
 
+// P38: chunk 96 (block 31) declares six prerequisites. The committed engine
+// semantics (streamdata.cpp CacheChunk/SetLoadChunk) is that a chunk may only
+// be read after every prerequisite in its ChunkInfo list is loaded or cached;
+// SetLoadChunk walks that list recursively. The harness does not drive the
+// GPU-bound cache state machine, so it resolves the same dependency graph
+// through the mounted web file and StreamManager: every prerequisite is read
+// once, in dependency order, before the dependent chunk is read. A missing
+// prerequisite, an empty chunk or one larger than the engine's chunk allocator
+// is reported with its exact index and stops the resolution.
+struct PrerequisiteResolution
+{
+	S32 targetChunk;
+	int directCount;
+	S32 direct[ 32 ];
+	int resolvedCount;
+	S32 order[ 64 ];
+	U64 bytes;
+	uint64_t hash;
+	bool ok;
+	char failure[ 160 ];
+};
+
+bool chunkRangeForIndex( const RenderingData::Target::StreamData& table, S32 chunk,
+	ChunkRange* out )
+{
+	if ( chunk < 0 || chunk >= table.GetNumChunks() )
+		return false;
+
+	const RenderingData::ChunkInfo& info = table.GetChunkInfo( chunk );
+
+	if ( info.GetNumItems() <= 0 || info.GetCompressedSize() == 0 )
+		return false;
+
+	out->chunk = chunk;
+	out->item = 0;
+	out->lod = info.GetItem( 0 ).lod;
+	out->offset = info.GetOffset();
+	out->bytes = info.GetCompressedSize();
+	return true;
+}
+
+bool resolvePrerequisiteChunk( const RenderingData::Target::StreamData& table,
+	RenderingData::Target::StreamManager& manager, Sys::I_File* file, S32 chunk,
+	int depth, PrerequisiteResolution* res, std::vector<U8>& state )
+{
+	if ( chunk >= 0 && chunk < (S32)state.size() && state[ chunk ] == 2 )
+		return true;
+
+	if ( chunk < 0 || chunk >= table.GetNumChunks() )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"prerequisiteOutOfRange index=%d target=%d", (int)chunk,
+			(int)res->targetChunk );
+		return false;
+	}
+
+	if ( state[ chunk ] == 1 )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"prerequisiteCycle index=%d target=%d", (int)chunk,
+			(int)res->targetChunk );
+		return false;
+	}
+
+	const RenderingData::ChunkInfo& info = table.GetChunkInfo( chunk );
+
+	if ( info.GetNumItems() <= 0 || info.GetCompressedSize() == 0 )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"prerequisiteChunkEmpty index=%d items=%d bytes=%llu", (int)chunk,
+			(int)info.GetNumItems(),
+			(unsigned long long)info.GetCompressedSize() );
+		return false;
+	}
+
+	if ( info.GetCompressedSize() > (U64)manager.MaxChunkSize() )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"prerequisiteChunkTooLarge index=%d bytes=%llu max=%llu",
+			(int)chunk, (unsigned long long)info.GetCompressedSize(),
+			(unsigned long long)manager.MaxChunkSize() );
+		return false;
+	}
+
+	state[ chunk ] = 1;
+
+	for ( int i = 0; i < info.GetNumPrerequisites(); i++ )
+	{
+		const S32 prerequisite = info.GetPrerequisite( i );
+
+		if ( prerequisite < 0 || prerequisite >= table.GetNumChunks() )
+		{
+			snprintf( res->failure, sizeof( res->failure ),
+				"prerequisiteOutOfRange index=%d target=%d parent=%d slot=%d",
+				(int)prerequisite, (int)res->targetChunk, (int)chunk, i );
+			return false;
+		}
+
+		if ( !resolvePrerequisiteChunk( table, manager, file, prerequisite,
+				depth + 1, res, state ) )
+			return false;
+	}
+
+	ChunkRange range;
+	memset( &range, 0, sizeof( range ) );
+
+	if ( !chunkRangeForIndex( table, chunk, &range ) )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"prerequisiteChunkEmpty index=%d", (int)chunk );
+		return false;
+	}
+
+	std::vector<U8> bytes;
+
+	if ( !loadChunkCopy( manager, file, range, bytes ) )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"prerequisiteLoadFailed index=%d offset=%llu bytes=%llu", (int)chunk,
+			(unsigned long long)range.offset,
+			(unsigned long long)range.bytes );
+		return false;
+	}
+
+	uint64_t hash = fnv_begin();
+	fnv_bytes( hash, &bytes[ 0 ], bytes.size() );
+
+	if ( res->resolvedCount >= (int)( sizeof( res->order ) / sizeof( res->order[ 0 ] ) ) )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"prerequisiteOverflow target=%d", (int)res->targetChunk );
+		return false;
+	}
+
+	res->order[ res->resolvedCount++ ] = chunk;
+	res->bytes += range.bytes;
+	fnv_bytes( res->hash, &bytes[ 0 ], bytes.size() );
+
+	printf( "webfiledraw prerequisite chunk=%d depth=%d offset=%llu "
+		"bytes=%llu items=%d prerequisites=%d hash=0x%016llx resolved=1\n",
+		(int)chunk, depth, (unsigned long long)range.offset,
+		(unsigned long long)range.bytes, (int)info.GetNumItems(),
+		(int)info.GetNumPrerequisites(), (unsigned long long)hash );
+
+	state[ chunk ] = 2;
+	return true;
+}
+
+bool resolveChunkPrerequisites( const RenderingData::Target::StreamData& table,
+	RenderingData::Target::StreamManager& manager, Sys::I_File* file, S32 chunk,
+	PrerequisiteResolution* res )
+{
+	memset( res, 0, sizeof( *res ) );
+	res->targetChunk = chunk;
+	res->hash = fnv_begin();
+
+	if ( chunk < 0 || chunk >= table.GetNumChunks() )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"targetChunkOutOfRange index=%d", (int)chunk );
+		return false;
+	}
+
+	const RenderingData::ChunkInfo& info = table.GetChunkInfo( chunk );
+	const int direct = info.GetNumPrerequisites();
+
+	if ( direct > (int)( sizeof( res->direct ) / sizeof( res->direct[ 0 ] ) ) )
+	{
+		snprintf( res->failure, sizeof( res->failure ),
+			"prerequisiteListOverflow target=%d count=%d", (int)chunk, direct );
+		return false;
+	}
+
+	res->directCount = direct;
+
+	for ( int i = 0; i < direct; i++ )
+		res->direct[ i ] = info.GetPrerequisite( i );
+
+	std::vector<U8> state( (size_t)table.GetNumChunks(), 0 );
+
+	for ( int i = 0; i < direct; i++ )
+	{
+		if ( !resolvePrerequisiteChunk( table, manager, file, res->direct[ i ], 1,
+				res, state ) )
+		{
+			printf( "webfiledraw prerequisite unsupported targetchunk=%d "
+				"reason=%s\n", (int)chunk, res->failure );
+			return false;
+		}
+	}
+
+	res->ok = true;
+	printf( "webfiledraw prerequisite summary targetchunk=%d direct=%d "
+		"chunks=%d bytes=%llu hash=0x%016llx directList=",
+		(int)chunk, direct, res->resolvedCount,
+		(unsigned long long)res->bytes, (unsigned long long)res->hash );
+
+	for ( int i = 0; i < direct; i++ )
+		printf( "%s%d", i ? "," : "", (int)res->direct[ i ] );
+
+	printf( " order=" );
+
+	for ( int i = 0; i < res->resolvedCount; i++ )
+		printf( "%s%d", i ? "," : "", (int)res->order[ i ] );
+
+	printf( " resolved=1\n" );
+	return true;
+}
+
 struct DrawTotals
 {
 	int nodes;
@@ -297,11 +508,12 @@ struct GeometryView
 	int indexBufferCount;
 };
 
-// P32: the instance list's geometry is spread over several stream chunks (15,
-// 17, 26, 27, 32). Each supplied block keeps its own buffer view into the same
-// per-chunk record tables; a block that is deliberately not imported (31, whose
-// chunk declares prerequisites) is listed with the reason to report, never
-// silently treated as empty.
+// P32/P38: the instance list's geometry is spread over several stream chunks
+// (15, 17, 26, 27, 31, 32). Each supplied block keeps its own buffer view into
+// the same per-chunk record tables. Chunk 96 (block 31) declares prerequisites;
+// they are resolved through the engine ChunkInfo graph before the chunk is
+// read, and a prerequisite that is missing or unreadable is reported with its
+// exact index, never silently treated as an empty geometry.
 struct GeometrySet
 {
 	int count;
@@ -3189,13 +3401,16 @@ int main( int argc, char** argv )
 			}
 		}
 
-		// --- P32: Stage A+B instance geometry (blocks 15/17/26/27/32) ------
-		// The five supplied geometry blocks live in three stream chunks. Each
-		// chunk is parsed once, up to the highest item the bundle needs, and
-		// every item's own buffer slice is recorded before the next chunk
-		// appends. Block 31 is deliberately not imported: its chunk declares
-		// prerequisites, which this slice does not traverse.
-		static const S32 kInstanceGeometryBlocks[ 5 ] = { 15, 17, 26, 27, 32 };
+		// --- P38: full node geometry (blocks 15/17/26/27/31/32) -------------
+		// The six blocks live in four stream chunks. Each chunk is parsed once,
+		// up to the highest item the bundle needs, and every item's own buffer
+		// slice is recorded before the next chunk appends. Chunk 96 (block 31)
+		// declares six prerequisites; they are resolved through the engine
+		// ChunkInfo table and read through the same StreamManager before the
+		// chunk itself is read.
+		static const int kInstanceGeometryBlockCount = 6;
+		static const S32 kInstanceGeometryBlocks[ kInstanceGeometryBlockCount ] =
+			{ 15, 17, 26, 27, 31, 32 };
 
 		GeometrySet instanceGeometries;
 		memset( &instanceGeometries, 0, sizeof( instanceGeometries ) );
@@ -3228,11 +3443,11 @@ int main( int argc, char** argv )
 			}
 		}
 
-		// 2. Locate all five blocks, grouping them by chunk.
-		ChunkRange geometryRanges[ 5 ];
+		// 2. Locate all six blocks, grouping them by chunk.
+		ChunkRange geometryRanges[ kInstanceGeometryBlockCount ];
 		bool allBlocksLocated = true;
 
-		for ( int k = 0; k < 5; k++ )
+		for ( int k = 0; k < kInstanceGeometryBlockCount; k++ )
 		{
 			memset( &geometryRanges[ k ], 0, sizeof( geometryRanges[ k ] ) );
 			const bool located = findChunkItem( scene->GetStreamData(),
@@ -3249,13 +3464,87 @@ int main( int argc, char** argv )
 		}
 		check( "drawlist_instance_geometry_located", allBlocksLocated );
 
-		// 3. Parse each distinct chunk once, up to its highest requested item.
+		// 3. Resolve the prerequisite graph of every distinct chunk before any
+		// of them is parsed. Block 31's chunk 96 is the only one among the six
+		// with prerequisites; its ChunkInfo list is the authority.
+		PrerequisiteResolution prerequisiteResolution;
+		memset( &prerequisiteResolution, 0, sizeof( prerequisiteResolution ) );
+		bool prerequisitesResolved = allBlocksLocated;
+		int prerequisiteChunks = 0;
+
+		for ( int k = 0; k < kInstanceGeometryBlockCount && prerequisitesResolved; k++ )
+		{
+			const S32 chunk = geometryRanges[ k ].chunk;
+			bool seen = false;
+
+			for ( int j = 0; j < k; j++ )
+				if ( geometryRanges[ j ].chunk == chunk )
+					seen = true;
+
+			if ( seen )
+				continue;
+
+			const RenderingData::ChunkInfo& info =
+				scene->GetStreamData().GetChunkInfo( chunk );
+
+			if ( info.GetNumPrerequisites() == 0 )
+				continue;
+
+			PrerequisiteResolution resolution;
+
+			if ( !resolveChunkPrerequisites( scene->GetStreamData(), manager,
+					stream, chunk, &resolution ) )
+			{
+				prerequisitesResolved = false;
+				break;
+			}
+
+			if ( prerequisiteChunks == 0 )
+				prerequisiteResolution = resolution;
+
+			++prerequisiteChunks;
+		}
+
+		// Chunk 96 is the only prerequisite-bearing chunk among the six blocks;
+		// the recorded resolution must therefore be that exact chunk.
+		{
+			const ChunkRange& block31 = geometryRanges[ 4 ];
+			const bool located = allBlocksLocated && block31.chunk == 96;
+			const RenderingData::ChunkInfo* info = located
+				? &scene->GetStreamData().GetChunkInfo( block31.chunk ) : 0;
+			const int prerequisites = info ? info->GetNumPrerequisites() : 0;
+			bool directMatch = info != 0 &&
+				prerequisites == prerequisiteResolution.directCount &&
+				prerequisites == 6;
+
+			for ( int i = 0; directMatch && i < prerequisites; i++ )
+				if ( prerequisiteResolution.direct[ i ] != info->GetPrerequisite( i ) )
+					directMatch = false;
+
+			printf( "webfiledraw instancegeometry prereq block=31 chunk=%d "
+				"declared=%d resolvedChunks=%d resolved=%d hash=0x%016llx\n",
+				located ? (int)block31.chunk : -1, prerequisites,
+				prerequisiteResolution.resolvedCount,
+				(prerequisitesResolved && prerequisiteResolution.ok) ? 1 : 0,
+				(unsigned long long)prerequisiteResolution.hash );
+			check( "drawlist_instance_geometry_prereq",
+				located && directMatch );
+			check( "drawlist_instance_geometry_prereq_resolved",
+				prerequisitesResolved && prerequisiteResolution.ok &&
+				prerequisiteResolution.resolvedCount > 0 &&
+				prerequisiteResolution.targetChunk == 96 );
+			check( "drawlist_instance_geometry_prereq_hash",
+				prerequisiteResolution.hash == 0x116a3286acb5f6c0ull &&
+				prerequisiteResolution.resolvedCount == 14 );
+		}
+
+		// 4. Parse each distinct chunk once, up to its highest requested item.
 		ItemBuffers parsedItems[ 64 ];
 		int parsedItemCount = 0;
 		int parsedChunks = 0;
-		bool geometryParsed = allBlocksLocated;
+		bool geometryParsed = allBlocksLocated && prerequisitesResolved;
 
-		for ( int k = 0; k < 5 && geometryParsed; k++ )
+		for ( int k = 0; k < kInstanceGeometryBlockCount && geometryParsed; k++ )
 		{
 			const S32 chunk = geometryRanges[ k ].chunk;
 			bool seen = false;
@@ -3269,7 +3558,7 @@ int main( int argc, char** argv )
 
 			int maxItem = geometryRanges[ k ].item;
 
-			for ( int j = k + 1; j < 5; j++ )
+			for ( int j = k + 1; j < kInstanceGeometryBlockCount; j++ )
 				if ( geometryRanges[ j ].chunk == chunk )
 					maxItem = std::max<int>( maxItem, geometryRanges[ j ].item );
 
@@ -3294,10 +3583,10 @@ int main( int argc, char** argv )
 			++parsedChunks;
 		}
 
-		// 4. One view per supplied block, pointing at that item's own slice.
+		// 5. One view per supplied block, pointing at that item's own slice.
 		int builtViews = 0;
 
-		for ( int k = 0; k < 5; k++ )
+		for ( int k = 0; k < kInstanceGeometryBlockCount; k++ )
 		{
 			const ItemBuffers* hit = 0;
 
@@ -3337,37 +3626,19 @@ int main( int argc, char** argv )
 				parsedChunks, parsedItemCount );
 
 			check( "drawlist_instance_geometry_import",
-				geometryParsed && builtViews == 5 &&
+				geometryParsed && builtViews == kInstanceGeometryBlockCount &&
 				instDraws.compressedBuffers == 0 &&
 				instDraws.arenaExhausted == 0 );
-		}
-
-		// 5. Block 31 stays out with its prerequisite reason, not as an
-		// unimported blank. Its chunk is reported but never loaded.
-		{
-			ChunkRange range;
-			memset( &range, 0, sizeof( range ) );
-			const bool located = findChunkItem( scene->GetStreamData(), 31, 0,
-				&range );
-			const RenderingData::ChunkInfo* info = located
-				? &scene->GetStreamData().GetChunkInfo( range.chunk ) : 0;
-			const int prerequisites = info ? info->GetNumPrerequisites() : 0;
-
-			printf( "webfiledraw instancegeometry unsupported block=31 chunk=%d "
-				"prerequisites=%d imported=0 reason=geometryBlockPrerequisite\n",
-				located ? (int)range.chunk : -1, prerequisites );
-			check( "drawlist_instance_geometry_prereq",
-				located && info != 0 && prerequisites > 0 );
-
-			instanceGeometries.unsupported[
-				instanceGeometries.unsupportedCount ].block = 31;
-			instanceGeometries.unsupported[
-				instanceGeometries.unsupportedCount ].reason =
-				"geometryBlockPrerequisite";
-			++instanceGeometries.unsupportedCount;
+			check( "drawlist_instance_geometry_chunks",
+				parsedChunks == 4 && parsedItemCount == 18 &&
+				builtViews == kInstanceGeometryBlockCount );
+			check( "drawlist_instance_geometry_block31",
+				findGeometry( instanceGeometries, 31 ) != 0 &&
+				findGeometry( instanceGeometries, 31 )->valid );
 		}
 
 		// 6. Node block 253: the render list whose 57 instances are compared
+
 		// with the committed Stage B reader. Each instance's constant affine
 		// g_mWorld is read from the render list's constant material rows.
 		if ( nodeResources != 0 )
@@ -3392,8 +3663,8 @@ int main( int argc, char** argv )
 			check( "drawlist_instance_count", totals.instances == 57 );
 			check( "drawlist_base_primitive_count",
 				totals.basePrimitives == 36 );
-			check( "drawlist_instance_triangles", totals.triangles == 25521 );
-			check( "drawlist_instance_vertices", totals.vertices == 34632 );
+			check( "drawlist_instance_triangles", totals.triangles == 26077 );
+			check( "drawlist_instance_vertices", totals.vertices == 35386 );
 			check( "drawlist_instance_block27_draws",
 				totals.instanceBlock27Draws == 22 );
 			check( "drawlist_instance_block27_triangles",
@@ -3441,12 +3712,12 @@ int main( int argc, char** argv )
 		check( "packet_records_total",
 			packet.records == packet.directRecords + packet.instanceRecords );
 		check( "packet_drawable", packet.directDrawable == 95 &&
-			packet.instanceDrawable == 56 );
+			packet.instanceDrawable == 57 );
 		check( "packet_instance_other_block",
-			packet.instanceOtherBlock == 1 );
+			packet.instanceOtherBlock == 0 );
 		check( "packet_direct_world_null",
 			packet.directWorldNull == packet.directRecords );
-		check( "packet_hash", packet.hash != 0 );
+		check( "packet_hash", packet.hash == 0x7c29fb2ec7769709ull );
 
 		const WebSpike::DrawListState& draws = WebSpike::Draws();
 		printf( "webfiledraw counters declarations=%d vertexBuffers=%d "

@@ -243,6 +243,12 @@ süresi **2,283–3,267 s** (Audi en hızlı, Focus en yavaş); best time
 `verify_e1_drive` **348/348**; 15 sprint capture, console 0. Kalan: tam tur
 (kapalı pist gerekir). Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
 
+**Engine 57/57 (P38):** blok31 chunk96 prerequisite grafiği çözüldü
+(14 chunk, 15.079.424 B, hash `116a3286acb5f6c0`); **57/57 instance / 35.386
+vertex / 26.077 üçgen** tam node referansıyla birebir. 57/57 bounds-253 ve VB/IB
+eşit; packet 312 kayıt / 152 drawable, hash `7c29fb2ec7769709`; 56 nesne,
+849.609 B, 80/80. Kanıt: `docs/work/verification/T-007-drawlist-57.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

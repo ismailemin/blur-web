@@ -203,6 +203,9 @@ EXPECTED_CHECKS = [
     # P30 constant materials, instance transforms and packet draw list
     "drawlist_instance_geometry_located", "drawlist_instance_geometry_import",
     "drawlist_instance_geometry_prereq",
+    "drawlist_instance_geometry_prereq_resolved",
+    "drawlist_instance_geometry_prereq_hash",
+    "drawlist_instance_geometry_chunks", "drawlist_instance_geometry_block31",
     "drawlist_instance_triangles", "drawlist_instance_vertices",
     "drawlist_instance_block27_draws", "drawlist_instance_block27_triangles",
     "drawlist_instance_block27_vertices",
@@ -225,8 +228,18 @@ EXPECTED_CHECKS = [
 DRAW_REFERENCE = (88, 283)
 INSTANCE_REFERENCE = (27, 253)
 # P32: the Stage A+B bundle, in the same order the committed bundle reader
-# records it. Block 31 is absent by design (its chunk declares prerequisites).
+# records it. The committed reader refuses a chunk with prerequisites, so block
+# 31 is absent from this bundle by design. P38 resolves chunk 96's prerequisite
+# graph separately and imports block 31 too; the full-node reference is 57 /
+# 35,386 / 26,077.
 STAGE_B_GEOMETRY_BLOCKS = (15, 17, 26, 27, 32)
+FULL_NODE_GEOMETRY_BLOCKS = (15, 17, 26, 27, 31, 32)
+FULL_NODE = {"instanceCount": 57, "vertexCount": 35386, "triangleCount": 26077}
+FULL_NODE_BLOCK31 = {"block": 31, "chunk": 96, "item": 2,
+                     "vbIndex": 1, "ibIndex": 0, "triangles": 556,
+                     "usedVertices": 754}
+PACKET_HASH = "7c29fb2ec7769709"
+PREREQUISITE_HASH = "116a3286acb5f6c0"
 
 # The fourteen patched files and their required token counts. Nothing else may
 # be in the patch. Counts are exact: a web branch that grows without this table
@@ -360,6 +373,24 @@ def fnv1a64_range(path: Path, offset: int, length: int) -> str:
                 h ^= b
                 h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
             remaining -= len(block)
+    return f"{h:016x}"
+
+
+def fnv1a64_ranges(path: Path, ranges) -> str:
+    """FNV-1a 64 over the concatenation of (offset, length) ranges in order."""
+    h = 0xCBF29CE484222325
+    with path.open("rb") as f:
+        for offset, length in ranges:
+            f.seek(offset)
+            remaining = length
+            while remaining:
+                block = f.read(min(remaining, 1 << 20))
+                if not block:
+                    raise Failed(f"short read at {offset}+{length} in {path}")
+                for b in block:
+                    h ^= b
+                    h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+                remaining -= len(block)
     return f"{h:016x}"
 
 
@@ -714,6 +745,27 @@ def run_harness(js: Path, tag: str) -> dict:
         r"webfiledraw chunk name=instancegeometry parsed=(\d+) vbs=(\d+) "
         r"ibs=(\d+) nodes=(\d+) retained=(\d+) compressed=(\d+) blocks=(\d+) "
         r"chunks=(\d+) items=(\d+)", out)
+    # P38: chunk 96's prerequisite graph, resolved through the engine ChunkInfo
+    # table and the StreamManager before the dependent chunk is read.
+    prerequisite_chunks = []
+    for m in re.finditer(
+            r"webfiledraw prerequisite chunk=(\d+) depth=(\d+) offset=(\d+) "
+            r"bytes=(\d+) items=(\d+) prerequisites=(\d+) hash=0x([0-9a-f]{16}) "
+            r"resolved=(\d+)", out):
+        prerequisite_chunks.append({
+            "chunk": int(m.group(1)), "depth": int(m.group(2)),
+            "offset": int(m.group(3)), "bytes": int(m.group(4)),
+            "items": int(m.group(5)), "prerequisites": int(m.group(6)),
+            "fnv1a64": m.group(7), "resolved": int(m.group(8)),
+        })
+    prerequisite_summary = re.search(
+        r"webfiledraw prerequisite summary targetchunk=(\d+) direct=(\d+) "
+        r"chunks=(\d+) bytes=(\d+) hash=0x([0-9a-f]{16}) "
+        r"directList=([0-9,]*) order=([0-9,]*) resolved=(\d+)", out)
+    prerequisite_result = re.search(
+        r"webfiledraw instancegeometry prereq block=31 chunk=(\d+) "
+        r"declared=(\d+) resolvedChunks=(\d+) resolved=(\d+) "
+        r"hash=0x([0-9a-f]{16})", out)
     packet_summary = re.search(
         r"webfiledraw packet summary records=(\d+) drawable=(\d+) omitted=(\d+) "
         r"direct=(\d+) directDrawable=(\d+) directOtherBlock=(\d+) instance=(\d+) "
@@ -778,6 +830,9 @@ def run_harness(js: Path, tag: str) -> dict:
         raise Failed("the harness printed an incomplete draw-list report")
     if not (draw_instance_geometry and packet_summary and packet_records):
         raise Failed("the harness printed an incomplete P30 packet report")
+    if not (prerequisite_summary and prerequisite_result and
+            prerequisite_chunks):
+        raise Failed("the harness printed an incomplete P38 prerequisite report")
     if not (texture_summary and texture_records and texture_bytes):
         raise Failed("the harness printed an incomplete P34 texture report")
     summary_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", summary.group(1))}
@@ -849,6 +904,26 @@ def run_harness(js: Path, tag: str) -> dict:
                 ("parsed", "vbs", "ibs", "nodes", "retained", "compressed",
                  "blocks", "chunks", "items"),
                 draw_instance_geometry.groups())},
+            "prerequisites": {
+                "targetChunk": int(prerequisite_summary.group(1)),
+                "directCount": int(prerequisite_summary.group(2)),
+                "resolvedChunks": int(prerequisite_summary.group(3)),
+                "bytes": int(prerequisite_summary.group(4)),
+                "hash": prerequisite_summary.group(5),
+                "direct": [int(x) for x in prerequisite_summary.group(6).split(",")
+                           if x],
+                "order": [int(x) for x in prerequisite_summary.group(7).split(",")
+                          if x],
+                "resolved": int(prerequisite_summary.group(8)),
+                "chunks": prerequisite_chunks,
+                "result": {
+                    "chunk": int(prerequisite_result.group(1)),
+                    "declared": int(prerequisite_result.group(2)),
+                    "resolvedChunks": int(prerequisite_result.group(3)),
+                    "resolved": int(prerequisite_result.group(4)),
+                    "hash": prerequisite_result.group(5),
+                },
+            },
             "packet_summary": {
                 k: (packet_summary.group(23) if k == "hash" else int(v))
                 for k, v in zip(
@@ -1530,27 +1605,125 @@ def compare_draw_list(result: dict, index: dict) -> dict:
 
     # P30 keeps its block-27-only reference (22 in-scope instances). P32 adds
     # the committed Stage B bundle reader, which emits 56 of the 57 instances
-    # with blocks 15/17/26/27/32; block 31 remains unsupplied because its chunk
-    # declares prerequisites.
+    # with blocks 15/17/26/27/32. P38 resolves chunk 96's prerequisite graph and
+    # imports block 31 as well, so the engine must now match the independent
+    # full-node reference (57 / 35,386 / 26,077) while the 56-instance bundle
+    # comparison stays at 1e-5.
     inst27 = reference_instances(index, INSTANCE_REFERENCE)
     imeta27 = inst27["metadata"]
     bundle = reference_instances_bundle(index, STAGE_B_GEOMETRY_BLOCKS)
     bmeta = bundle["metadata"]
 
+    # --- P38: chunk 96 prerequisite resolution --------------------------------
+    prereq = draws["prerequisites"]
+    table = result["chunkinfo"]
+    target = FULL_NODE_BLOCK31["chunk"]
+
+    if prereq["targetChunk"] != target:
+        raise Failed(f"prerequisite resolution target {prereq['targetChunk']} "
+                     f"!= block-31 chunk {target}")
+    declared = table.get(target, {}).get("prerequisites")
+    if declared != prereq["direct"]:
+        raise Failed(f"prerequisite summary list {prereq['direct']} != engine "
+                     f"ChunkInfo[{target}] {declared}")
+    expected_direct = [82, 90, 91, 87, 94, 95]
+    if prereq["direct"] != expected_direct:
+        raise Failed(f"chunk {target} prerequisites {prereq['direct']} != "
+                     f"recorded {expected_direct}")
+    if prereq["directCount"] != len(expected_direct) or prereq["resolved"] != 1:
+        raise Failed(f"chunk {target} prerequisite resolution incomplete: "
+                     f"{prereq}")
+    if (prereq["result"]["chunk"] != target or
+            prereq["result"]["declared"] != len(expected_direct) or
+            prereq["result"]["resolved"] != 1):
+        raise Failed(f"block-31 prerequisite result differs: {prereq['result']}")
+    if prereq["resolvedChunks"] != len(prereq["chunks"]):
+        raise Failed(f"resolved {prereq['resolvedChunks']} chunks but printed "
+                     f"{len(prereq['chunks'])} prerequisite records")
+
+    seen = set()
+    ranges = []
+    resolved_bytes = 0
+    for row in prereq["chunks"]:
+        chunk = row["chunk"]
+        if chunk == target:
+            raise Failed(f"prerequisite resolution read the target chunk {target}")
+        if chunk in seen:
+            raise Failed(f"prerequisite chunk {chunk} was resolved twice")
+        if row["resolved"] != 1:
+            raise Failed(f"prerequisite chunk {chunk} not resolved")
+        seen.add(chunk)
+        have = fnv1a64_range(LEVEL_STREAM, row["offset"], row["bytes"])
+        if have != row["fnv1a64"]:
+            raise Failed(f"prerequisite chunk {chunk} hash {row['fnv1a64']} != "
+                         f"independent {have} at offset {row['offset']} "
+                         f"length {row['bytes']}")
+        ranges.append((row["offset"], row["bytes"]))
+        resolved_bytes += row["bytes"]
+
+    if resolved_bytes != prereq["bytes"]:
+        raise Failed(f"prerequisite bytes {prereq['bytes']} != sum "
+                     f"{resolved_bytes}")
+    aggregate = fnv1a64_ranges(LEVEL_STREAM, ranges)
+    if aggregate != prereq["hash"]:
+        raise Failed(f"prerequisite aggregate hash {prereq['hash']} != "
+                     f"independent {aggregate}")
+    if prereq["hash"] != PREREQUISITE_HASH:
+        raise Failed(f"prerequisite aggregate hash {prereq['hash']} != pinned "
+                     f"{PREREQUISITE_HASH}")
+
+    if prereq["order"] != [row["chunk"] for row in prereq["chunks"]]:
+        raise Failed("prerequisite summary order differs from the chunk records")
+    position = {chunk: i for i, chunk in enumerate(prereq["order"])}
+    for chunk in prereq["order"]:
+        for dependency in table[chunk]["prerequisites"]:
+            if position.get(dependency, 1 << 30) >= position[chunk]:
+                raise Failed(f"prerequisite chunk {chunk} was read before its "
+                             f"dependency {dependency}")
+    for dependency in expected_direct:
+        if dependency not in seen:
+            raise Failed(f"direct prerequisite {dependency} of chunk {target} "
+                         "was not resolved")
+
     engine_instances = draws["instances"]
-    if engine_instances["instanceCount"] != bmeta["instanceCount"]:
+    instance_geometry = draws["instance_geometry"]
+    if (instance_geometry["blocks"], instance_geometry["chunks"],
+            instance_geometry["items"]) != (6, 4, 18):
+        raise Failed(f"instance geometry parsed {instance_geometry['blocks']} "
+                     f"blocks / {instance_geometry['chunks']} chunks / "
+                     f"{instance_geometry['items']} items, expected 6/4/18")
+    if engine_instances["instanceCount"] != FULL_NODE["instanceCount"]:
         raise Failed(f"engine instance count {engine_instances['instanceCount']} "
-                     f"!= Stage B reference {bmeta['instanceCount']}")
+                     f"!= full-node reference {FULL_NODE['instanceCount']}")
     if engine_instances["basePrimitives"] != bmeta["basePrimitiveCount"]:
         raise Failed(f"engine base primitive count "
                      f"{engine_instances['basePrimitives']} != Stage B reference "
                      f"{bmeta['basePrimitiveCount']}")
-    if engine_instances["triangles"] != bmeta["triangleCount"]:
+    if engine_instances["triangles"] != FULL_NODE["triangleCount"]:
         raise Failed(f"engine instance triangles {engine_instances['triangles']} "
-                     f"!= Stage B reference {bmeta['triangleCount']}")
-    if engine_instances["vertices"] != bmeta["vertexCount"]:
+                     f"!= full-node reference {FULL_NODE['triangleCount']}")
+    if engine_instances["vertices"] != FULL_NODE["vertexCount"]:
         raise Failed(f"engine instance vertices {engine_instances['vertices']} "
-                     f"!= Stage B reference {bmeta['vertexCount']}")
+                     f"!= full-node reference {FULL_NODE['vertexCount']}")
+
+    # The Stage B bundle keeps its 56-instance result; the extra block-31 draw
+    # must be exactly the difference to the full node.
+    if (bmeta["instanceCount"], bmeta["emittedInstanceCount"]) != (57, 56):
+        raise Failed(f"Stage B bundle reference shape changed: "
+                     f"{bmeta['instanceCount']}/{bmeta['emittedInstanceCount']}")
+    if (bmeta["vertexCount"], bmeta["triangleCount"]) != (34632, 25521):
+        raise Failed("Stage B bundle reference totals changed: "
+                     f"{bmeta['vertexCount']}/{bmeta['triangleCount']}")
+    if (engine_instances["triangles"] - bmeta["triangleCount"] !=
+            FULL_NODE_BLOCK31["triangles"]):
+        raise Failed(f"block-31 triangle contribution "
+                     f"{engine_instances['triangles'] - bmeta['triangleCount']} "
+                     f"!= {FULL_NODE_BLOCK31['triangles']}")
+    if (engine_instances["vertices"] - bmeta["vertexCount"] !=
+            FULL_NODE_BLOCK31["usedVertices"]):
+        raise Failed(f"block-31 vertex contribution "
+                     f"{engine_instances['vertices'] - bmeta['vertexCount']} "
+                     f"!= {FULL_NODE_BLOCK31['usedVertices']}")
 
     # P30 regression: block 27 alone must still produce its 22/10,308/13,162.
     if engine_instances["block27Draws"] != imeta27["emittedInstanceCount"]:
@@ -1573,6 +1746,8 @@ def compare_draw_list(result: dict, index: dict) -> dict:
     if packet["hash"] != packet_fnv(records):
         raise Failed(f"packet hash {packet['hash']} != Python recomputation "
                      f"{packet_fnv(records)}")
+    if packet["hash"] != PACKET_HASH:
+        raise Failed(f"packet hash {packet['hash']} != pinned {PACKET_HASH}")
 
     instance_records = [r for r in records if r["kind"] == "instance"]
     direct_records = [r for r in records if r["kind"] == "direct"]
@@ -1583,13 +1758,17 @@ def compare_draw_list(result: dict, index: dict) -> dict:
             meta["omittedOtherBlockPrimitives"]:
         raise Failed("packet direct record count differs from the reference")
 
-    if packet["instanceDrawable"] != bmeta["emittedInstanceCount"]:
+    if packet["instanceDrawable"] != FULL_NODE["instanceCount"]:
         raise Failed(f"engine emitted {packet['instanceDrawable']} instance "
-                     f"draws, Stage B reference {bmeta['emittedInstanceCount']}")
-    if packet["instanceOtherBlock"] != bmeta["omittedOtherBlockInstances"]:
+                     f"draws, full-node reference {FULL_NODE['instanceCount']}")
+    if packet["instanceOtherBlock"] != 0:
         raise Failed(f"engine omitted {packet['instanceOtherBlock']} other-block "
-                     f"instance draws, Stage B reference "
-                     f"{bmeta['omittedOtherBlockInstances']}")
+                     "instance draws, full node requires 0")
+    if packet["drawable"] != len(bound) + FULL_NODE["instanceCount"]:
+        raise Failed(f"packet drawable {packet['drawable']} != {len(bound)} "
+                     f"direct + {FULL_NODE['instanceCount']} instances")
+    if packet["omitted"] != packet["records"] - packet["drawable"]:
+        raise Failed("packet omitted count is not records - drawable")
     if packet["worldInvalid"] != 0:
         raise Failed(f"{packet['worldInvalid']} instances have no provable "
                      "constant affine g_mWorld")
@@ -1628,14 +1807,16 @@ def compare_draw_list(result: dict, index: dict) -> dict:
         for k, (have, expect) in enumerate(zip(record["world"], want["matrix"])):
             if abs(have - expect) > 1e-5:
                 raise Failed(f"instance {record['instance']} "
-                             f"(source {record['source']}) world[{k}] "
+                             f"(source {record['source']}, primitiveOffset "
+                             f"{record.get('sourceOffset')}) world[{k}] "
                              f"{have!r} != {label} {expect!r} (1e-5)")
         archived = want["archivedInstanceBounds"]
         have_bounds = record["boundsMin"] + record["boundsMax"]
         for k, (have, expect) in enumerate(zip(have_bounds, archived[:6])):
             if abs(have - expect) > 1e-5:
                 raise Failed(f"instance {record['instance']} "
-                             f"(source {record['source']}) bounds[{k}] "
+                             f"(source {record['source']}, primitiveOffset "
+                             f"{record.get('sourceOffset')}) bounds[{k}] "
                              f"{have!r} != {label} {expect!r} (1e-5)")
 
     # Every emitted instance matrix and archived bounds against the committed
@@ -1670,6 +1851,58 @@ def compare_draw_list(result: dict, index: dict) -> dict:
         raise Failed(f"compared {block27_compared} block-27 instance matrices, "
                      f"P30 reference {imeta27['emittedInstanceCount']}")
 
+    # P38: block 31 is not in the Stage B bundle. The independent Python
+    # bounds-253 artifact carries every instance's matrix and archived record,
+    # including instance 55 (block 31, chunk 96, item 2). Compare all rows that
+    # are present; this is the only per-instance matrix source for instance 55.
+    bounds253_report = {"present": False}
+    bounds253_path = ROOT / "_work/level-instances/bounds-253.json"
+    bounds253_compared = 0
+    if bounds253_path.is_file():
+        bounds253 = json.loads(bounds253_path.read_text(encoding="utf-8"))
+        rows253 = {row["instance"]: row for row in bounds253}
+        for record in instance_records:
+            row = rows253.get(record["instance"])
+            if row is None:
+                raise Failed(f"bounds-253 reference has no row for instance "
+                             f"{record['instance']}")
+            want = {
+                "matrix": row["matrix"],
+                "archivedInstanceBounds": row["archived"],
+            }
+            compare_matrix_bounds(record, want, "Python bounds-253 reference")
+            bounds253_compared += 1
+
+        block31_row = rows253.get(55)
+        if block31_row is None:
+            raise Failed("bounds-253 reference has no block-31 instance 55")
+        if (block31_row["block"], block31_row["chunk"],
+                block31_row["item"]) != (31, 96, 2):
+            raise Failed(f"bounds-253 instance 55 source "
+                         f"{block31_row['block']}/{block31_row['chunk']}/"
+                         f"{block31_row['item']} != 31/96/2")
+        instance55 = next(r for r in instance_records if r["instance"] == 55)
+        if instance55["vb"] != (31, block31_row["vbIndex"]):
+            raise Failed(f"instance 55 VB {instance55['vb']} != bounds-253 "
+                         f"{(31, block31_row['vbIndex'])}")
+        if instance55["ib"] != (31, block31_row["ibIndex"]):
+            raise Failed(f"instance 55 IB {instance55['ib']} != bounds-253 "
+                         f"{(31, block31_row['ibIndex'])}")
+        if (instance55["vtxCount"] != block31_row["usedVertices"] or
+                instance55["idxCount"] != block31_row["indexCount"]):
+            raise Failed(f"instance 55 span {instance55['vtxCount']}/"
+                         f"{instance55['idxCount']} != bounds-253 "
+                         f"{block31_row['usedVertices']}/"
+                         f"{block31_row['indexCount']}")
+
+        bounds253_report = {
+            "present": True, "path": str(bounds253_path.relative_to(ROOT)),
+            "rows_compared": bounds253_compared,
+            "block31": {"instance": 55, "block": 31, "chunk": 96, "item": 2,
+                        "triangles": block31_row["triangles"],
+                        "usedVertices": block31_row["usedVertices"]},
+        }
+
     # The committed Stage A+B reference carries the transform row for all 57
     # instances and the independent geometry totals. It is read only when
     # present; this gate never writes outside its log directory.
@@ -1702,17 +1935,31 @@ def compare_draw_list(result: dict, index: dict) -> dict:
                 raise Failed(f"Stage A+B reference {key}={stage_ab[key]} != "
                              f"Stage B bundle reader {have}")
 
+        full = stage_b.get("fullNodeWithBlock31Reference")
+        if not full:
+            raise Failed("the Stage A+B reference has no full-node block-31 row")
+        for key, want in FULL_NODE.items():
+            if full[key] != want:
+                raise Failed(f"full-node reference {key}={full[key]} != "
+                             f"recorded {want}")
+        if engine_instances["instanceCount"] != full["instanceCount"] or \
+                engine_instances["vertices"] != full["vertexCount"] or \
+                engine_instances["triangles"] != full["triangleCount"]:
+            raise Failed("engine full-node totals differ from the independent "
+                         f"reference {full}")
+
         stage_b_report = {
             "present": True, "path": str(stage_b_path.relative_to(ROOT)),
             "rows_compared": len(rows),
             "stageAB": stage_ab,
+            "fullNode": full,
             "bundleInstanceCount": bmeta["instanceCount"],
             "bundleEmittedInstanceCount": bmeta["emittedInstanceCount"],
             "bundleOmittedOtherBlockInstances":
                 bmeta["omittedOtherBlockInstances"],
-            "scope": "57 transform rows, Stage A+B totals and the 56 emitted "
-                     "matrices/bounds compared with the committed Stage B "
-                     "reader; block 31 stays out for its prerequisites",
+            "scope": "57 transform rows; the 56-instance Stage B bundle at 1e-5; "
+                     "block 31 resolved through chunk 96's prerequisite graph to "
+                     "the 57 / 35,386 / 26,077 full node",
         }
 
     if packet["materialRows"] <= 0 or packet["materialTypes"] <= 0:
@@ -1746,6 +1993,23 @@ def compare_draw_list(result: dict, index: dict) -> dict:
         "instance_matrices_compared": matrices_compared,
         "instance_matrices_compared_p30": block27_compared,
         "instance_sources_compared": len(instance_records),
+        "prerequisites": {
+            "targetChunk": prereq["targetChunk"],
+            "direct": prereq["direct"],
+            "resolvedChunks": prereq["resolvedChunks"],
+            "order": prereq["order"],
+            "bytes": prereq["bytes"],
+            "hash": prereq["hash"],
+            "chunks": prereq["chunks"],
+        },
+        "full_node": {
+            "blocks": list(FULL_NODE_GEOMETRY_BLOCKS),
+            "instanceCount": engine_instances["instanceCount"],
+            "vertexCount": engine_instances["vertices"],
+            "triangleCount": engine_instances["triangles"],
+            "block31": FULL_NODE_BLOCK31,
+        },
+        "bounds253_reference": bounds253_report,
         "stage_b_bundle": {
             "blocks": list(STAGE_B_GEOMETRY_BLOCKS),
             "instanceCount": bmeta["instanceCount"],
@@ -1777,7 +2041,11 @@ def compare_draw_list(result: dict, index: dict) -> dict:
                            "instance world matrices, 57 VB/IB source bindings "
                            "and the instance bounds; P32 adds the 56-instance "
                            "Stage A+B bundle (34,632 vertices / 25,521 "
-                           "triangles, all matrices/bounds at 1e-5, VB/IB equal)",
+                           "triangles, all matrices/bounds at 1e-5, VB/IB equal); "
+                           "P38 resolves chunk 96's prerequisite graph and "
+                           "matches the 57-instance full node (35,386 vertices / "
+                           "26,077 triangles), instance 55 against the "
+                           "independent bounds-253 reference",
     }
 
 
@@ -2063,7 +2331,14 @@ def main() -> int:
           f"({pk['worldInvalid']} invalid), "
           f"{dl['instance_matrices_compared']} equal to the Stage B reader at "
           f"1e-5 ({dl['instance_matrices_compared_p30']} of them to the P30 "
-          f"block-27 reader); {dl['instance_sources_compared']} VB/IB bindings equal")
+          f"block-27 reader), {dl['bounds253_reference'].get('rows_compared', 0)} "
+          f"also to the bounds-253 reference; {dl['instance_sources_compared']} "
+          f"VB/IB bindings equal")
+    pr = dl["prerequisites"]
+    print(f"prerequisites   chunk {pr['targetChunk']} direct "
+          f"{','.join(map(str, pr['direct']))} -> "
+          f"{pr['resolvedChunks']} chunks, {pr['bytes']} B, "
+          f"hash={pr['hash']} (independent Python recomputation equal)")
     tx = report["textures"]
     print(f"textures        {tx['decoded']}/102 static textures decoded, "
           f"{tx['unsupported'] and len(tx['unsupported']) or 0} unsupported, "
@@ -2074,11 +2349,17 @@ def main() -> int:
     sb = dl["stage_b_reference"]
     if sb["present"]:
         b = dl["stage_b_bundle"]
-        print(f"stage A+B       {b['emittedInstanceCount']}/{b['instanceCount']} "
+        fn = dl["full_node"]
+        print(f"stage A+B       bundle {b['emittedInstanceCount']}/{b['instanceCount']} "
               f"instances, {b['vertexCount']} vertices, {b['triangleCount']} "
               f"triangles (blocks {','.join(map(str, b['blocks']))}); "
-              f"{sb['rows_compared']} transform rows equal; block "
-              f"{','.join(map(str, b['unsuppliedGeometryBlocks']))} prerequisites")
+              f"{sb['rows_compared']} transform rows equal")
+        print(f"full node       {fn['instanceCount']} instances, "
+              f"{fn['vertexCount']} vertices, {fn['triangleCount']} triangles "
+              f"(blocks {','.join(map(str, fn['blocks']))}); block 31 = "
+              f"{fn['block31']['triangles']} triangles / "
+              f"{fn['block31']['usedVertices']} vertices; "
+              f"{sb['fullNode']['instanceCount']} == independent reference")
     print(f"levelrender     {report['whole_files']['levelrender']['bytes']} B "
           f"fnv=0x{report['whole_files']['levelrender']['fnv1a64']}")
     print(f"levelphysics    {report['whole_files']['levelphysics']['bytes']} B "

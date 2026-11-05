@@ -1208,6 +1208,111 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py tools/verify_asset_probe.py --skip-build
 ```
 
+## 16. P38 — full node including block 31 (57 instances)
+
+This section supersedes §14.1's "Block 31 is deliberately not imported" paragraph
+and §14.4 item 4. It remains a CPU data-extraction record: no renderer, GPU,
+vehicle or game claim is made, and `ProcessLoadChunk` is still not driven.
+
+### 16.1 Prerequisite resolution
+
+Chunk 96 (block 31, item 2) declares six **chunk-index** prerequisites,
+`[82,90,91,87,94,95]`. The committed engine rule is
+`StreamData::CacheChunk`: a chunk is refused while any direct prerequisite is
+neither loaded nor cached; `SetLoadChunk` walks the same list recursively.
+
+The harness does not run the GPU-bound cache state machine. It resolves the same
+`ChunkInfo` graph through the mounted web file and `StreamManager`: each
+prerequisite is read once in post-order, then chunk 96 is read. Missing, empty,
+oversized and cyclic prerequisites are reported with their exact index and stop
+the resolution; there is no empty or identity fallback.
+
+| Field | Result |
+| --- | --- |
+| direct prerequisites | **`[82,90,91,87,94,95]`** (matches `ChunkInfo[96]`) |
+| transitive chunks | **14**, each read once |
+| order | `82,87,85,81,83,86,90,89,91,88,84,94,92,95` |
+| bytes | **15,079,424 B** |
+| aggregate FNV-1a 64 | **`116a3286acb5f6c0`**, independently recomputed from the stream file |
+| unsupported / missing | none encountered |
+
+The six direct prerequisites total 5,513,216 B, more than the 4 MiB web chunk
+allocator, so the engine's concurrent residency cannot be reproduced in this
+CPU-only harness. The resolved property is the prerequisite graph and order,
+not the engine's loaded/cached state.
+
+### 16.2 Geometry and instances
+
+Block 31 is added to the supplied set; chunks 86/85/88/96 are parsed once each,
+with block 31 taken from chunk 96 item 2. Measured:
+
+| Check | Result |
+| --- | --- |
+| geometry import | **4 chunks / 18 items / 26 VBs / 18 IBs**, 3,031,070 B retained, 0 compressed, 0 arena/record overflow |
+| block 31 slice | chunk 96 item 2, VB 1, IB 0, 754 referenced vertices, 1,072 indices, 556 triangles |
+| instance records | **57**; **57 drawable**, **0 omitted** |
+| totals | **35,386 vertices / 26,077 triangles**; 36 base primitives |
+| P30 subset | block 27: **22 draws / 10,308 triangles / 13,162 vertices** (unchanged) |
+| matrices | 57/57 constant affine; 56/56 equal to the committed Stage B bundle at 1e-5; 57/57 equal to the independent `bounds-253` reference |
+| bounds | 57/57 archived records equal at 1e-5 |
+| VB/IB | 57/57 equal to the Stage B `instanceSources` |
+| materials | 57/57 instance records carry a static `g_tAlbedo`; 243 rows / 26 types unchanged |
+| packet | **312 records** (255 direct + 57 instance), **152 drawable**, 160 omitted, `instanceOtherBlock=0`, hash **`7c29fb2ec7769709`** |
+| P27 direct | unchanged: 95 bound, 9,343 triangles, 17,782 vertices, hash `fd525c1452869aee` |
+
+Instance 55 (block 31, transform row 53) is compared with the independent
+Python `bounds-253.json` row for block 31 / chunk 96 / item 2. No matrix, bounds,
+VB/IB or totals mismatch occurred, so there is no first mismatch or byte offset
+to report.
+
+### 16.3 Determinism and PC parity
+
+- Patch unchanged: 16 modified files, 77,284 B, SHA-256
+  `5fa2b1b743c388030d1a0bc8b73fe951acfea92406a29cf7b71b2dbb75019b71`.
+- Wasm **849,609 B**, SHA-256
+  `0931971d45fec171044d5bff29e8466f2201885c99da7bb5f1ba2a54088093ab`;
+  two builds per run identical, two full runs identical.
+- Harness **80/80** checks; two harness runs per verify run print identical
+  stdout.
+- The four patched TUs preprocess identically: 108,025 / 111,514 / 111,399 /
+  108,104 code lines.
+
+### 16.4 Remaining blockers
+
+1. Textures are indices plus CPU RGBA; nothing is sampled or bound. The P34
+   102/102 set is unchanged by block 31.
+2. `StreamData::ProcessLoadChunk` is not driven; prerequisite resolution is a
+   sequential graph walk, not the engine's concurrent cache residency.
+3. No visibility, culling, LOD selection, sorting or batching; one RenderList,
+   LOD0.
+4. Runtime-only `DATA_INDEX` / `TEXTURE_PTR` material values are not imported.
+5. No renderer, GPU, browser, vehicle or game claim; `C_OverlayFs` remains one
+   read-only layer.
+
+### 16.5 Evidence (P38)
+
+| Path | Content |
+| --- | --- |
+| `_work/logs/engine-stream-spike/verify-summary.json`* | every number above |
+| `_work/logs/engine-stream-spike/p38-verify-fresh-final-2.log` | fresh PASS transcript, 125.2 s |
+| `_work/logs/engine-stream-spike/p38-verify-reuse-final-2.log` | second full run, identical, 111.6 s |
+| `_work/logs/engine-stream-spike/a__run1.log` / `a__run2.log`* | identical harness stdout, every prerequisite record |
+| `_work/level-instances/stageB-python-reference.json` | 57-instance full-node reference |
+| `_work/level-instances/bounds-253.json` | 57 per-instance matrices/archived bounds |
+| `_work/engine-stream-spike/out/stream_harness_a.wasm`* | 849,609 B |
+| `docs/work/verification/T-007-drawlist-57.md` | verification record |
+
+`*` = regenerated by `engine/verify_stream.py`.
+
+### 16.6 Commands
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py engine/verify_stream.py --fresh
+& $py engine/verify_stream.py
+```
+
+
 Recorded result (`--fresh`, exit 0, 122.8 s):
 
 ```text
