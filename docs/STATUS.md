@@ -664,6 +664,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 24/29 doku decode; 5 shared 1024² `smashedglass_nrm` decoder sınırı dışında (uydurulmadı). Paint lookup ve light blend runtime; renk/light state iddiası yok.
 - `verify_runtime_textures.py` **PASS**, 24/24 texture_inspect eşleşmesi, 78 dosya deterministic; suite **30/30**. Kanıt: `docs/work/analysis/car-materials.md` §9.
 
+## 6 Kasım 2026 — kapalı tur bulundu
+
+- Collision mesh üzerinde üç kapalı loop: **loop-01 222,0 m** (önerilen), loop-02 224,2 m, loop-03 91,1 m.
+- loop-01: min duvar 2,06 m, bant 11,75 m, seam 0,5 m, max basamak 0,40 cm, max eğim %1,49; engine trace **PASS**, 0 ihlal.
+- Spawn bileşeninden **1,138 m** duvar boşluğu var; lap modu loop-01 üzerinde spawn etmeli. Kanıt: `docs/work/analysis/lap-search.md`, `_work/lap-search/loops.png`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

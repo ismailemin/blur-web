@@ -345,6 +345,12 @@ alanı çözüldü; 24/29 doku decode (5 shared 1024² sınır dışı). Paint l
 light blend runtime — renk uydurulmadı. 30/30 suite. Kanıt:
 `docs/work/analysis/car-materials.md` §9.
 
+**Kapalı tur (P61):** collision mesh üzerinde üç loop bulundu; önerilen
+**loop-01 222,0 m**, min duvar 2,06 m, bant 11,75 m, seam 0,5 m; engine trace
+PASS (0 ihlal). Spawn bileşeninden 1,138 m duvar boşluğu var; lap modu loop
+üzerinde spawn etmeli. Kanıt: `docs/work/analysis/lap-search.md`,
+`_work/lap-search/loops.png`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list
