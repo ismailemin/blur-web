@@ -1254,6 +1254,23 @@
  		friend class Scene;
  		friend class StreamerRequestWorker;
  
+--- a/code/mercury/library/graphics/renderingdata/include/renderingdata/target.h
++++ b/code/mercury/library/graphics/renderingdata/include/renderingdata/target.h
+@@ -287,6 +287,14 @@
+ 	{
+ 		friend class Context;
+ 	public:
++#if defined(PLATFORM_WEB)
++		// Web link anchor. Every virtual of this class is defined inline, so
++		// clang has no out-of-line virtual to pair with a single vtable and the
++		// WebAssembly link reports the vtable as undefined. Declaring the
++		// destructor here and defining it in target/archive.cpp gives the class
++		// one key function; the PC class is unchanged.
++		virtual ~RenderListNode();
++#endif
+ 		RenderListNode();
+ 
+ 		virtual NodeType GetNodeType() const;
 --- a/code/mercury/library/graphics/renderingdata/source/noninterface/target/archive.cpp
 +++ b/code/mercury/library/graphics/renderingdata/source/noninterface/target/archive.cpp
 @@ -7,15 +7,19 @@
@@ -1373,7 +1390,7 @@
  
  Display2::E_VertexElementType GetDisplayVertexElementType(VertexElementType type)
  {
-@@ -665,6 +694,35 @@
+@@ -665,6 +694,46 @@
  template <typename Archive>
  void Deserialise(Archive& ar, VertexDeclaration& t)
  {
@@ -1394,11 +1411,22 @@
 +
 +	int elementSlots = 0;
 +
++	WebSpike::DeclRecord* pRecord = WebSpike::AddDeclaration( nElements );
++	if ( pRecord == 0 )
++		WebSpike::Unsupported( "vertex declaration bound exceeded", __FILE__, __LINE__ );
++
 +	for ( int i = 0; i < nElements; i++ )
 +	{
 +		RenderingData::VertexDeclaration::VertexElement element;
 +		ar & element;
 +		++elementSlots;
++
++		pRecord->elements[ i ].stream = (int)element.stream;
++		pRecord->elements[ i ].offset = (int)element.offset;
++		pRecord->elements[ i ].type = (int)element.type;
++		pRecord->elements[ i ].method = (int)element.method;
++		pRecord->elements[ i ].usage = (int)element.usage;
++		pRecord->elements[ i ].usageIndex = (int)element.usageIndex;
 +	}
 +
 +	t.m_pData = 0;
@@ -1409,7 +1437,7 @@
  	Btl::Vector<Display2::C_VertexElement> elements;
  
  	S32 nElements;
-@@ -687,8 +745,10 @@
+@@ -687,8 +756,448 @@
  	elements[nElements] = GPU_VERTEX_ELEMENT_END();
  
  	t.m_pData = Display2::Device()->CreateVertexDeclaration(&elements[0]);
@@ -1418,11 +1446,449 @@
 +#endif
 +}
 +
++#if defined(PLATFORM_WEB)
++/* P27 data-only resource import.
++ *
++ * The next five functions are the web siblings of the PC deserialisers that
++ * follow (IndexBuffer, VertexBuffer, LodReader<Texture>,
++ * LodReader<ResourceBlock::Resources>, ResourceBlock). The serialised field
++ * order is copied from them exactly; the only difference is that a GPU object
++ * would be *created* by the PC branch, and here the descriptor is recorded and
++ * the payload bytes are skipped or retained. No device entry point is called.
++ * Reaching a case that genuinely needs a device is a fail-loud Unsupported().
++ */
++template <typename Archive>
++static void ReadObjectMarker( Archive& ar, const char* what )
++{
++	// BinaryInputArchive::operator>> writes a 'AR' tag and a U16 object version
++	// before every non-primitive object, including Arch::Deserialiser. The blob
++	// header therefore starts after them.
++	U16 marker = 0;
++	U16 version = 0;
++	ar & marker;
++	ar & version;
++
++	if ( marker != (U16)'AR' || version != 0 )
++		WebSpike::Unsupported( what, __FILE__, __LINE__ );
++}
++
++template <typename Archive>
++static void ReadBlobHeader( Archive& ar, U32 expectedBytes, WebSpike::BufferRecord* pRecord )
++{
++	ReadObjectMarker( ar, "buffer blob object marker/version invalid" );
++
++	U32 size = 0;
++	U32 alignment = 0;
++	U32 compression = 0;
++	bool endianSwap = false;
++
++	pRecord->streamOffset = (unsigned long long)ar.Stream().GetPosition();
++
++	ar & size;
++	ar & alignment;
++	ar & (U32&)compression;
++	ar & endianSwap;
++
++	pRecord->alignment = (int)alignment;
++	pRecord->compression = (int)compression;
++	pRecord->endianSwap = endianSwap ? 1 : 0;
++
++	if ( size != expectedBytes )
++	{
++		fprintf( stderr, "[t005e] buffer blob mismatch: record=%d count=%d stride=%d "
++			"expected=%u declared=%u offset=%llu compression=%u\n",
++			pRecord->kind, pRecord->count, pRecord->stride, expectedBytes, size,
++			pRecord->streamOffset, compression );
++		fflush( stderr );
++		WebSpike::Unsupported( "buffer blob size differs from its descriptor",
++			__FILE__, __LINE__ );
++	}
++
++	if ( alignment == 0 || alignment > 4096 || ( alignment & ( alignment - 1 ) ) != 0 )
++		WebSpike::Unsupported( "buffer blob alignment is not a power of two <= 4096",
++			__FILE__, __LINE__ );
++
++	if ( compression == Arch::NO_COMPRESSION )
++	{
++		ar.Align( alignment );
++
++		if ( expectedBytes == 0 )
++			return;
++
++		int arenaOffset = -1;
++		U8* pDest = WebSpike::RetainBytes( (int)expectedBytes, &arenaOffset );
++
++		if ( pDest == 0 )
++		{
++			// The descriptor is still valid; the payload is simply not kept.
++			// The record says so, so a caller cannot mistake absent bytes for
++			// zero-filled geometry.
++			++WebSpike::Draws().arenaExhausted;
++			ar.Read( 0, expectedBytes );
++			return;
++		}
++
++		const U64 before = ar.Stream().GetPosition();
++		ar.Read( pDest, expectedBytes );
++		const U64 consumed = ar.Stream().GetPosition() - before;
++
++		if ( consumed != (U64)expectedBytes )
++			WebSpike::ArchiveUnderflow( __FILE__, __LINE__, (U64)expectedBytes, consumed );
++
++		pRecord->payloadRetained = 1;
++		pRecord->payloadOffset = arenaOffset;
++		return;
++	}
++
++	// Compressed blob: consume the fragments exactly as Arch::Serialiser writes
++	// them. There is no decompressor on this target, so the bytes are dropped
++	// and the record keeps compression != 0; the draw list never treats such a
++	// buffer as if it had data.
++	++WebSpike::Draws().compressedBuffers;
++
++	S32 count = 0;
++	ar >> count;
++
++	for ( int i = 0; i < count; i++ )
++	{
++		U32 originalSize = 0;
++		U32 compressedSize = 0;
++
++		ar & originalSize;
++		ar & compressedSize;
++		ar.Align( alignment );
++		ar.Read( 0, compressedSize );
++	}
++}
++
++static WebSpike::BufferRecord* BeginBuffer( int kind, int count, int stride, int bytes )
++{
++	return WebSpike::AddBuffer( kind, count, stride, bytes );
++}
++
++template <typename Archive>
++void Deserialise( Archive& ar, IndexBuffer& t )
++{
++	S32 size;
++	IndexType indexType;
++	ar & size;
++	ar & indexType;
++
++	U32 bufferSize = 0;
++
++	if ( indexType == INDEX_TYPE_U16 )
++		bufferSize = (U32)size * 2;
++	else if ( indexType == INDEX_TYPE_U32 )
++		bufferSize = (U32)size * 4;
++	else
++		WebSpike::Unsupported( "Index type corrupt", __FILE__, __LINE__ );
++
++	WebSpike::BufferRecord* pRecord =
++		BeginBuffer( 1, (int)size, ( indexType == INDEX_TYPE_U16 ) ? 2 : 4,
++			(int)bufferSize );
++
++	if ( pRecord == 0 )
++	{
++		// Bound exceeded: consume the payload so the stream stays in step, but
++		// keep the counter that makes the gate fail.
++		if ( ar.GetVersion() > 0 )
++		{
++			ReadObjectMarker( ar, "index buffer blob object marker/version invalid" );
++			U32 blobSize = 0, alignment = 0, compression = 0;
++			bool endianSwap = false;
++			ar & blobSize;
++			ar & alignment;
++			ar & (U32&)compression;
++			ar & endianSwap;
++			ar.Align( alignment );
++			ar.Read( 0, blobSize );
++		}
++		else
++		{
++			ar.Read( 0, bufferSize );
++		}
++		return;
++	}
++
++	if ( ar.GetVersion() > 0 )
++	{
++		ReadBlobHeader( ar, bufferSize, pRecord );
++	}
++	else
++	{
++		pRecord->streamOffset = ar.Stream().GetPosition();
++		ar.Read( 0, bufferSize );
++	}
++}
++
++template <typename Archive>
++void Deserialise( Archive& ar, VertexBuffer& t )
++{
++	S32 size;
++	VertexFormat vertexFormat;
++	ar & vertexFormat;
++	ar & size;
++
++	const U32 bufferSize = (U32)size * vertexFormat.GetDataSize();
++
++	WebSpike::BufferRecord* pRecord =
++		BeginBuffer( 0, (int)size, (int)vertexFormat.GetDataSize(), (int)bufferSize );
++
++	if ( pRecord == 0 )
++	{
++		if ( ar.GetVersion() > 0 )
++		{
++			ReadObjectMarker( ar, "vertex buffer blob object marker/version invalid" );
++			U32 blobSize = 0, alignment = 0, compression = 0;
++			bool endianSwap = false;
++			ar & blobSize;
++			ar & alignment;
++			ar & (U32&)compression;
++			ar & endianSwap;
++			ar.Align( alignment );
++			ar.Read( 0, blobSize );
++		}
++		else
++		{
++			ar.Read( 0, bufferSize );
++		}
++		return;
++	}
++
++	if ( ar.GetVersion() > 0 )
++	{
++		ReadBlobHeader( ar, bufferSize, pRecord );
++	}
++	else
++	{
++		pRecord->streamOffset = ar.Stream().GetPosition();
++		ar.Read( 0, bufferSize );
++	}
++}
++
++template <typename Archive>
++void Deserialise( Archive& ar, LodReader<Texture>& t )
++{
++	PlatformType platformType;
++	ar & platformType;
++
++	if ( platformType != GetPlatformType() )
++		WebSpike::Unsupported( "texture LOD platform tag is not PC", __FILE__, __LINE__ );
++
++	if ( t.m_lod == 0 )
++	{
++		ar & t.m_next.m_name;
++
++		SamplerState samplerState;
++		ar & samplerState;
++		// No FX sampler-state cache exists on this target.
++		t.m_next.m_samplerStateIndex = -1;
++
++		ar & t.m_next.m_hashValue;
++	}
++
++	U32 present = 0;
++	ar >> present;
++
++	const bool paired = ( present > 1 );
++
++	if ( present != 0 )
++	{
++		S32 headerSize = 0;
++		ar & headerSize;
++
++		if ( headerSize < 0 || headerSize > 64 )
++			WebSpike::Unsupported( "texture header size out of range", __FILE__, __LINE__ );
++
++		if ( headerSize > 0 )
++		{
++			U8 headerData[ 64 ];
++			ar.Read( headerData, (U32)headerSize );
++		}
++
++		if ( !paired )
++		{
++			if ( ar.GetVersion() == 0 )
++			{
++				S32 dataSize = 0;
++				ar & dataSize;
++
++				if ( dataSize < 0 )
++					WebSpike::Unsupported( "texture data size is negative", __FILE__, __LINE__ );
++
++				if ( dataSize > 0 )
++				{
++					ar.Read( 0, (U32)dataSize );
++					WebSpike::Draws().texturePayloadBytes += (unsigned long long)dataSize;
++				}
++			}
++			else
++			{
++				ReadObjectMarker( ar, "texture blob object marker/version invalid" );
++				U32 size = 0, alignment = 0, compression = 0;
++				bool endianSwap = false;
++				ar & size;
++				ar & alignment;
++				ar & (U32&)compression;
++				ar & endianSwap;
++
++				if ( alignment == 0 || alignment > 4096 ||
++					( alignment & ( alignment - 1 ) ) != 0 )
++					WebSpike::Unsupported( "texture blob alignment invalid",
++						__FILE__, __LINE__ );
++
++				if ( compression == Arch::NO_COMPRESSION )
++				{
++					ar.Align( alignment );
++					ar.Read( 0, size );
++					WebSpike::Draws().texturePayloadBytes += (unsigned long long)size;
++				}
++				else
++				{
++					S32 count = 0;
++					ar >> count;
++					for ( int i = 0; i < count; i++ )
++					{
++						U32 originalSize = 0, compressedSize = 0;
++						ar & originalSize;
++						ar & compressedSize;
++						ar.Align( alignment );
++						ar.Read( 0, compressedSize );
++					}
++					++WebSpike::Draws().compressedBuffers;
++				}
++			}
++		}
++		else
++		{
++			ar & t.m_source;
++		}
++
++		// The texture itself is not created: m_discard says exactly that, the
++		// same state the PC path stores after a failed CreateTexture2D.
++		t.m_next.m_discard = 1;
++		++WebSpike::Draws().texturesDiscarded;
++	}
++
++	++WebSpike::Draws().textureLods;
++}
++
++template <typename Archive>
++void Deserialise( Archive& ar, LodReader<ResourceBlock::Resources>& t )
++{
++	PlatformType platformType;
++	ar & platformType;
++
++	if ( platformType != GetPlatformType() )
++		WebSpike::Unsupported( "resource block platform tag is not PC", __FILE__, __LINE__ );
++
++	ResourceBlock::Resources& next( t.m_next );
++	next.discard = false;
++
++	S32 lod = -1;
++	ar & lod;
++
++	if ( lod != t.m_lod )
++		WebSpike::Unsupported( "resource block LOD differs from its reader", __FILE__, __LINE__ );
++
++	if ( lod == 0 )
++	{
++		ar & next.vertexBuffers;
++		ar & next.indexBuffers;
++		ar & next.nodes;
++
++		for ( int i = 0; i < next.nodes.Size(); i++ )
++		{
++			Node* pNode = &*next.nodes[ i ];
++
++			if ( pNode )
++				pNode->SetScenePtr( next.pScene );
++		}
++
++		WebSpike::Draws().resourceNodes += next.nodes.Size();
++	}
++
++	{
++		S32 nTextures = 0;
++		ar & nTextures;
++
++		if ( nTextures < 0 || nTextures > 16 )
++			WebSpike::Unsupported( "resource texture count out of range", __FILE__, __LINE__ );
++
++		next.textures.Resize( nTextures );
++
++		for ( int i = 0; i < nTextures; i++ )
++		{
++			const Texture* pFront = 0;
++
++			if ( t.m_pBack && !t.m_pBack->Empty() && i < t.m_pBack->textures.Size()
++				&& t.m_pBack->textures[ i ] != 0 )
++				pFront = &*t.m_pBack->textures[ i ];
++
++			if ( t.m_pFront && ( pFront == 0 || !pFront->GetData().IsCreated() )
++				&& i < t.m_pFront->textures.Size()
++				&& t.m_pFront->textures[ i ] != 0 )
++				pFront = &*t.m_pFront->textures[ i ];
++
++			Allocate( next.textures[ i ] );
++
++			LodReader<Texture> textureLod( pFront, 0, *next.textures[ i ], t.m_lod );
++			ar & textureLod;
++
++			// Upstream marks the block discarded when a texture failed to
++			// create. Here no texture is meant to be created, so the flag is
++			// not a load failure; it is reported separately.
++		}
++
++		WebSpike::Draws().resourceTextures += nTextures;
++	}
++
++	next.lod = t.m_lod;
++	++WebSpike::Draws().resourceLods;
++}
++
++// Non-streamed resource block loading, data-only (see the PC #else body).
++template <typename Archive>
++void Deserialise( Archive& ar, ResourceBlock& t )
++{
++	g_resourceAllocatorMutex.Wait();
++
++	PlatformType platformType;
++	ar & platformType;
++
++	if ( platformType != GetPlatformType() )
++		WebSpike::Unsupported( "resource block platform tag is not PC", __FILE__, __LINE__ );
++
++	t.m_back.discard = false;
++
++	S32 numLods = 0;
++	ar & numLods;
++
++	if ( numLods < 0 || numLods > 64 )
++		WebSpike::Unsupported( "resource block LOD count out of range", __FILE__, __LINE__ );
++
++	for ( int i = 0; i < numLods; i++ )
++	{
++		ResourceBlock::Resources resources;
++		resources.pScene = t.m_resources.pScene;
++
++		LodReader<ResourceBlock::Resources> blockLod( 0, 0, resources, i );
++		ar & blockLod;
++
++		ResourceBlock::SwapNew( t.m_back, resources );
++	}
++
++	ResourceBlock::SwapNew( t.m_resources, t.m_back );
++
++	g_resourceAllocatorMutex.Release();
++}
++#endif // PLATFORM_WEB (data-only resource import)
++
 +#if !defined(PLATFORM_WEB)
  template <typename Archive>
  void Deserialise(Archive& ar, LodReader<ResourceBlock::Resources>& t)
  {
-@@ -1010,10 +1070,61 @@
+@@ -1010,10 +1519,61 @@
  		}
  	}
  }
@@ -1484,7 +1950,7 @@
  	PlatformType platformType; ar & platformType;
  	assert(platformType == GetPlatformType());
  
-@@ -1054,6 +1165,7 @@
+@@ -1054,6 +1614,7 @@
  			LOGWARN(g_Log, "Texture was not created (%s, %i bytes).", t.GetName(), size);
  		}
  	}
@@ -1492,7 +1958,7 @@
  }
  
  template <typename Archive>
-@@ -1068,6 +1180,10 @@
+@@ -1068,6 +1629,10 @@
  	ar & nTextures;
  
  	t.m_textures.Resize(nTextures);
@@ -1503,35 +1969,143 @@
  
  	for (int i = 0; i < nTextures; i++)
  	{
-@@ -1092,6 +1208,7 @@
+@@ -1092,6 +1657,10 @@
  	g_resourceAllocatorMutex.Release();
  }
  
-+#if !defined(PLATFORM_WEB)
++// P27: these four mappings only translate a serialised enum into the display
++// enum token that the target type stores. They call no device, so they are
++// compiled on web too; the data-only primitive deserialiser below needs them.
++// (The render-state *creation* path further down stays PC-only.)
  Display::E_PrimitiveType GetDisplayPrimitiveType(PrimitiveType type)
  {
  	switch (type)
-@@ -1152,9 +1269,11 @@
- 	if (b) return Display::E_Bool_True;
- 	else return Display::E_Bool_False;
- }
-+#endif // !PLATFORM_WEB (display render-state mapping)
- 
- } // Target ///////////////////////////////////////////////////////////////////////////////////
- 
-+#if !defined(PLATFORM_WEB)
+@@ -1158,6 +1727,95 @@
  template <typename Archive>
  inline void Deserialise(Archive& ar, RenderListNode::Primitive& t)
  {
-@@ -1202,6 +1321,7 @@
++#if defined(PLATFORM_WEB)
++	// P27 data-only primitive: the field order is byte for byte the PC order
++	// (see the #else body), but no render state is inserted and no device is
++	// touched. The raw blend descriptor and the archive byte position of the
++	// record are captured in WebSpike::Draws() so the draw list can print the
++	// source offset and every field without guessing.
++	WebSpike::PrimitiveRecord* pRecord = WebSpike::AddPrimitive();
++	if ( pRecord == 0 )
++		WebSpike::Unsupported( "primitive record bound exceeded", __FILE__, __LINE__ );
++
++	PrimitiveType primitiveType;
++	BlendState blendState;
++
++	pRecord->streamOffset = (int)ar.Stream().GetPosition();
++
++	ar & t.effect;
++	ar & t.vertexDeclaration;
++	ar & primitiveType;
++	ar & t.indexBufferIndex;
++	ar & t.flags;
++	ar & t.baseMaterial;
++
++	if (ar.GetVersion() > 0)
++		ar & t.instanceMaterial;
++	else
++		t.instanceMaterial.data = -1;
++
++	ar & blendState;
++	ar & t.lods;
++	ar & t.primitiveStreams;
++
++	t.primitiveType = Target::GetDisplayPrimitiveType(primitiveType);
++	// No FX::g_RenderStateMgr on this target: -1 means "no render-state index
++	// was created". The serialised descriptor is kept in the record instead.
++	t.blendState = -1;
++
++	pRecord->effect = (int)t.effect;
++	pRecord->declaration = (int)t.vertexDeclaration;
++	pRecord->topology = (int)primitiveType;
++	pRecord->indexBuffer = (int)t.indexBufferIndex;
++	pRecord->flags = (int)t.flags;
++	pRecord->baseMaterialIndex = (int)t.baseMaterial.index;
++	pRecord->baseMaterialList = (int)t.baseMaterial.listIndex;
++	pRecord->instanceMaterialIndex = (int)t.instanceMaterial.index;
++	pRecord->instanceMaterialList = (int)t.instanceMaterial.listIndex;
++	pRecord->blendSrc = (int)blendState.GetSrcBlend();
++	pRecord->blendDest = (int)blendState.GetDestBlend();
++	pRecord->blendOp = (int)blendState.GetBlendOp();
++	pRecord->alphaRef = (int)blendState.GetAlphaRef();
++	pRecord->alphaToMask = blendState.GetAlphaToMaskEnable() ? 1 : 0;
++	pRecord->alphaTest = blendState.GetAlphaTestEnable() ? 1 : 0;
++	pRecord->cullMode = (int)blendState.GetCullMode();
++	pRecord->lodCount = 0;
++	pRecord->streamCount = 0;
++
++	if ( t.lods.Size() > WebSpike::kMaxLods )
++	{
++		++WebSpike::Draws().lodOverflow;
++	}
++	else
++	{
++		pRecord->lodCount = (int)t.lods.Size();
++		for ( int i = 0; i < pRecord->lodCount; i++ )
++		{
++			pRecord->lods[ i ].offset = (int)t.lods[ i ].offset;
++			pRecord->lods[ i ].indices = (int)t.lods[ i ].nIndices;
++			pRecord->lods[ i ].minIndex = (int)t.lods[ i ].minIndex;
++			pRecord->lods[ i ].vertices = (int)t.lods[ i ].nVertices;
++		}
++	}
++
++	if ( t.primitiveStreams.Size() > WebSpike::kMaxStreams )
++	{
++		++WebSpike::Draws().streamOverflow;
++	}
++	else
++	{
++		pRecord->streamCount = (int)t.primitiveStreams.Size();
++		for ( int i = 0; i < pRecord->streamCount; i++ )
++		{
++			pRecord->streams[ i ].vertexBuffer = (int)t.primitiveStreams[ i ].vertexBuffer;
++			pRecord->streams[ i ].streamIndex = (int)t.primitiveStreams[ i ].streamIndex;
++			pRecord->streams[ i ].vertexOffset = (int)t.primitiveStreams[ i ].vertexOffset;
++			pRecord->streams[ i ].frequency = (int)t.primitiveStreams[ i ].frequency;
++			pRecord->streams[ i ].materialIndex = (int)t.primitiveStreams[ i ].material.index;
++			pRecord->streams[ i ].materialList = (int)t.primitiveStreams[ i ].material.listIndex;
++		}
++	}
++#else
+ 	PrimitiveType primitiveType;
+ 	BlendState blendState;
+ 
+@@ -1201,6 +1859,7 @@
+ #endif
  
  	t.blendState = FX::g_RenderStateMgr.InsertRenderState(displayStates);
- }
 +#endif // !PLATFORM_WEB (render-state and primitive-tail GPU import)
+ }
  
  } // RenderingData //////////////////////////////////////////////////////////////////
+@@ -1212,14 +1871,45 @@
+ SERIALISATION_VERSION(RenderingData::Target::StreamData, 0, "RenderingData::Target::StreamData")
+ SERIALISATION_POLYMORPHIC(RenderingData::Target::RenderListNode, 0, "RenderingData::RenderListNode_Common")
  
-@@ -1215,11 +1335,19 @@
++#if defined(PLATFORM_WEB)
++namespace WebSpike
++{
++// P27: register the target RenderListNode factory and archive streamers.
++// Compiled at global scope so SERIALISATION_HANDLER's `Arch::` is ::Arch; see
++// the call site in Target::ActivateHandlers2.
++void RegisterRenderListHandlers()
++{
++	static bool s_registered = false;
++	if ( s_registered )
++		return;
++
++	s_registered = true;
++	SERIALISATION_HANDLER(::RenderingData::Target::RenderListNode)
++}
++}
++#endif
++
  namespace RenderingData
  {
  
@@ -1547,21 +2121,28 @@
 +// exist even though no material node is parsed by this slice.
 +template void Deserialise(::Arch::BinaryInputArchive_t<Ut::NoEndianSwap>& ar, MaterialNode& t);
 +template void Deserialise(::Arch::BinaryInputArchive_t<Ut::DoEndianSwap>& ar, MaterialNode& t);
++
++// P27: the data-only Primitive deserialiser is used by the base RenderListNode
++// serialiser (archive.inl) when a resource block's node vector is read.
++template void Deserialise(::Arch::BinaryInputArchive_t<Ut::NoEndianSwap>& ar, RenderListNode::Primitive& t);
++template void Deserialise(::Arch::BinaryInputArchive_t<Ut::DoEndianSwap>& ar, RenderListNode::Primitive& t);
 +#endif
  
  namespace Target
  {
-@@ -1254,15 +1382,55 @@
+@@ -1254,15 +1944,80 @@
  
  	g_resourceAllocatorMutex.Release();
  
 +#if defined(PLATFORM_WEB)
-+	// The target RenderListNode factory/streamer registration exists for
-+	// polymorphic render-list nodes inside resource blocks. This slice does
-+	// not deserialise resource blocks or render lists at all (they need GPU
-+	// buffers), so the handler is not registered. Recorded, not silent:
-+	// Report().renderListHandlerRegistered stays 0 and the harness prints it.
-+	WebSpike::Report().renderListHandlerRegistered = 0;
++	// P27: see WebSpike::RegisterRenderListHandlers below. The macro cannot be
++	// used inside RenderingData::Target on clang: with -fdelayed-template-parsing
++	// the bare `Arch::` in SERIALISATION_HANDLER resolves against a
++	// non-existent RenderingData::Arch (the same reason archive.inl spells
++	// RD_ARCH_NS). The helper is a global-scope function, so `Arch` is ::Arch
++	// there and the expansion is identical to the PC path.
++	::WebSpike::RegisterRenderListHandlers();
++	WebSpike::Report().renderListHandlerRegistered = 1;
 +#else
  	SERIALISATION_HANDLER(RenderingData::Target::RenderListNode)
 -}
@@ -1570,6 +2151,13 @@
 +}
 +
 +#if defined(PLATFORM_WEB)
++// Key function: the out-of-line destructor declared in target.h. Clang emits
++// the class vtable in this TU because of it; without a key function the
++// WebAssembly link reported the vtable as undefined.
++RenderListNode::~RenderListNode()
++{
++}
++
 +::Arch::SerialisationKey RenderListNode::GetSerialisationKey()
 +{
 +	::Arch::SerialisationKey key = ::Arch::FindKey<::RenderingData::Target::RenderListNode>();
@@ -1610,9 +2198,48 @@
 +{
 +	ar >> scene;
 +}
++
++// P27: stable non-template entry points for the harness. The deserialiser
++// definitions live in this TU, so the harness cannot instantiate them.
++void ParseLoadedResourceBlockArchive( ::Arch::BinaryInputArchive& ar,
++	::RenderingData::Target::ResourceBlock& block )
++{
++	ar >> block;
++}
++
++void ParseResourceBlockLodArchive( ::Arch::BinaryInputArchive& ar,
++	::RenderingData::Target::ResourceBlock::Resources& next, S32 lod )
++{
++	::RenderingData::Target::LodReader< ::RenderingData::Target::ResourceBlock::Resources>
++		reader( 0, 0, next, lod );
++	ar >> reader;
++}
 +}
 +#endif
 +
+--- a/code/mercury/library/graphics/renderingdata/source/noninterface/target/resources.cpp
++++ b/code/mercury/library/graphics/renderingdata/source/noninterface/target/resources.cpp
+@@ -14,11 +14,20 @@
+ 
+ IndexBuffer::~IndexBuffer()
+ {
++	// P27: nothing was created on web, so there is nothing to destroy. The
++	// condition is the data-only sibling of the device call, not a substitute:
++	// an object that was created (PC) still goes through DestroyIndexBuffer.
++#if defined(PLATFORM_WEB)
++	if ( m_data.IsCreated() )
++#endif
+ 	Display2::Device()->DestroyIndexBuffer(&m_data);
+ }
+ 
+ VertexBuffer::~VertexBuffer()
+ {
++#if defined(PLATFORM_WEB)
++	if ( m_data.IsCreated() )
++#endif
+ 	Display2::Device()->DestroyVertexBuffer(&m_data);
+ }
+ 
 --- a/code/mercury/library/graphics/renderingdata/source/noninterface/target/streamdata.cpp
 +++ b/code/mercury/library/graphics/renderingdata/source/noninterface/target/streamdata.cpp
 @@ -3,7 +3,11 @@

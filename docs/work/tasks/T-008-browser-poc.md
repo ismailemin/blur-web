@@ -34,7 +34,8 @@ sürüşü deneyebileceği PoC.
 | Packet v1.1 + WebGPU tüketici | P20 | ✅ |
 | Connector (WASD, chase camera, fixed step) | P21 | ✅ |
 | Çoklu araç roster'ı | P23 | ✅ |
-| `levelrender` engine parse (draw list) | P22 | ✅ |
+| `levelrender` engine parse | P22 | ✅ |
+| Engine CPU draw list | P27 | ◐ (95 draw; world/materials açık) |
 | Stage B pist instance'ları | P25 | ✅ |
 | Teker/kompozit görsel | P26 + P28 | ✅ (entegre) |
 | PoC paketleme + kullanıcı kılavuzu | ana ajan | sırada |

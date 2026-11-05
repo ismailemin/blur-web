@@ -84,7 +84,7 @@ VCVARS_CANDIDATES = [
     r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat",
 ]
 
-HARNESS_FILES = ["stream_harness.cpp", "pre.js"]
+HARNESS_FILES = ["stream_harness.cpp", "pre.js", "web_drawlist.cpp"]
 SHIM_FILES = ["web_platform.h", "crt_compat.h", "web_runtime.cpp", "platform_net_web.cpp"]
 
 FLAGS = [
@@ -164,6 +164,7 @@ TUS = [
     ("engine/harness/t005c/web_runtime.cpp", "core"),
     ("engine/harness/t005e/scene_target_web.cpp", "rd"),
     ("engine/harness/t005e/display_fail_loud.cpp", "rd"),
+    ("engine/harness/t005e/web_drawlist.cpp", "core"),
     ("engine/harness/t005e/web_scene_report.cpp", "core"),
     ("engine/harness/t005e/stream_harness.cpp", "harness"),
 ]
@@ -181,7 +182,21 @@ EXPECTED_CHECKS = [
     "stream_chunk_count", "stream_all_read", "stream_bytes", "stream_largest",
     "stream_no_requests", "streamdata_open", "cachechunk", "cachechunk_prereq",
     "eof_read_fails", "past_eof_read_fails", "oversize_chunk_refused",
+    # P27 CPU-side draw list
+    "drawlist_inline_block", "drawlist_geometry_located",
+    "drawlist_geometry_import", "drawlist_node_located", "drawlist_node_import",
+    "drawlist_draws", "drawlist_triangles", "drawlist_vertices",
+    "drawlist_no_index_errors", "drawlist_instance_node_located",
+    "drawlist_instance_import", "drawlist_instance_count",
+    "drawlist_base_primitive_count", "drawlist_record_bounds",
+    "drawlist_no_gpu_objects", "drawlist_renderlist_handler",
 ]
+
+# The committed asset-reader reference for the same level. Both pairs are
+# (geometry block, node block); the verifier locates the stream chunks from the
+# engine ChunkInfo table itself, so no probe-supplied range enters the run.
+DRAW_REFERENCE = (88, 283)
+INSTANCE_REFERENCE = (27, 253)
 
 # The fourteen patched files and their required token counts. Nothing else may
 # be in the patch. Counts are exact: a web branch that grows without this table
@@ -232,10 +247,20 @@ PATCH_EXPECTATIONS = {
         "added": 8, "removed": 0,
         "tokens": ["CacheChunkForWebGate"],
     },
+    f"{RD}/include/renderingdata/target.h": {
+        "added": 8, "removed": 0,
+        "tokens": ["virtual ~RenderListNode();", "Web link anchor"],
+    },
     f"{RD}/source/noninterface/target/archive.cpp": {
-        "added": 180, "removed": 12,
+        "added": 767, "removed": 12,
         "tokens": ["ParseSceneArchive", "Data-only read",
-                   "renderListHandlerRegistered"],
+                   "renderListHandlerRegistered", "ReadBlobHeader",
+                   "ParseLoadedResourceBlockArchive", "ParseResourceBlockLodArchive",
+                   "RegisterRenderListHandlers"],
+    },
+    f"{RD}/source/noninterface/target/resources.cpp": {
+        "added": 9, "removed": 0,
+        "tokens": ["if ( m_data.IsCreated() )"],
     },
     f"{RD}/source/noninterface/target/streamdata.cpp": {
         "added": 71, "removed": 4,
@@ -353,8 +378,10 @@ APPLIED_MARKERS = {
     f"{RD}/include/renderingdata/noninterface/streamdata.inl": "ChunkInfo::GetNumPrerequisites",
     f"{RD}/include/renderingdata/streamdata.h": "GetNumPrerequisites() const;",
     f"{RD}/include/renderingdata/streaming.h": "CacheChunkForWebGate",
+    f"{RD}/include/renderingdata/target.h": "Web link anchor",
     f"{RD}/source/noninterface/target/archive.cpp": "ParseSceneArchive",
     f"{RD}/source/noninterface/target/streamdata.cpp": "streamFileBufferHint",
+    f"{RD}/source/noninterface/target/resources.cpp": "if ( m_data.IsCreated() )",
 }
 
 
@@ -589,6 +616,59 @@ def run_harness(js: Path, tag: str) -> dict:
     scene_report = re.search(r"webfile scene report tablehash=0x([0-9a-f]{16}) "
                              r"gpu=(\d+) refused=(\d+) perf=(\d+) unsupported=(\d+)",
                              out)
+    draw_inline = re.search(r"webfiledraw inline blocks=(\d+) lod=(-?\d+) vbs=(\d+) "
+                            r"ibs=(\d+) nodes=(\d+) textures=(\d+) gpu=(\d+)", out)
+    draw_chunks = {}
+    for m in re.finditer(r"webfiledraw chunk name=(\w+) block=(\d+) chunk=(\d+) "
+                         r"item=(\d+) lod=(\d+) offset=(\d+) bytes=(\d+) "
+                         r"located=(\d+)", out):
+        draw_chunks[m.group(1)] = {
+            "block": int(m.group(2)), "chunk": int(m.group(3)),
+            "item": int(m.group(4)), "lod": int(m.group(5)),
+            "offset": int(m.group(6)), "bytes": int(m.group(7)),
+            "located": int(m.group(8)),
+        }
+    draw_geometry = re.search(r"webfiledraw chunk name=geometry parsed=(\d+) "
+                              r"vbs=(\d+) ibs=(\d+) nodes=(\d+) textures=(\d+) "
+                              r"retained=(\d+) compressed=(\d+)", out)
+    draw_lists = []
+    for m in re.finditer(r"webfiledraw list node=(\d+) primitives=(\d+) "
+                         r"instances=(\d+) baseprimitives=(\d+) "
+                         r"instancebatches=(\d+) dynamiclists=(\d+)", out):
+        draw_lists.append({
+            "node": int(m.group(1)), "primitives": int(m.group(2)),
+            "instances": int(m.group(3)), "basePrimitives": int(m.group(4)),
+            "instanceBatches": int(m.group(5)), "dynamicLists": int(m.group(6)),
+        })
+    draw_summary = {}
+    for m in re.finditer(r"webfiledraw summary node=(\d+) nodes=(\d+) "
+                         r"primitives=(\d+) renderlists=(\d+) draws=(\d+) "
+                         r"otherblock=(\d+) unbound=(\d+) triangles=(\d+) "
+                         r"vertices=(\d+) indexerrors=(\d+) "
+                         r"drawhash=0x([0-9a-f]{16})", out):
+        draw_summary = {
+            "node": int(m.group(1)), "nodes": int(m.group(2)),
+            "primitives": int(m.group(3)), "renderLists": int(m.group(4)),
+            "draws": int(m.group(5)), "otherBlock": int(m.group(6)),
+            "unbound": int(m.group(7)), "triangles": int(m.group(8)),
+            "vertices": int(m.group(9)), "indexErrors": int(m.group(10)),
+            "hash": m.group(11),
+        }
+    draw_instances = {}
+    m = re.search(r"webfiledraw instances node=(\d+) renderlists=(\d+) "
+                  r"instanceCount=(\d+) basePrimitives=(\d+) draws=(\d+)", out)
+    if m:
+        draw_instances = {
+            "node": int(m.group(1)), "renderLists": int(m.group(2)),
+            "instanceCount": int(m.group(3)), "basePrimitives": int(m.group(4)),
+            "draws": int(m.group(5)),
+        }
+    draw_counters = {}
+    m = re.search(r"webfiledraw counters (.*)", out)
+    if m:
+        draw_counters = {k: int(v) for k, v in
+                         re.findall(r"(\w+)=(\d+)", m.group(1))}
+    draw_records = parse_draw_records(out)
     file_hashes = {}
     for m in re.finditer(r"webfile file (\S+) bytes=(\d+) hash=0x([0-9a-f]{16}) "
                          r"reads=(\d+) ok=(\d)", out):
@@ -599,6 +679,8 @@ def run_harness(js: Path, tag: str) -> dict:
     if not (summary and counters and scene and scene_cursor and openstream
             and cachechunk and prereq and scene_report):
         raise Failed("the harness printed an incomplete engine/scene report")
+    if not (draw_inline and draw_geometry and draw_summary and draw_instances):
+        raise Failed("the harness printed an incomplete draw-list report")
     summary_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", summary.group(1))}
     counter_fields = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", counters.group(1))}
     scene_fields = {k: int(v) for k, v in
@@ -652,8 +734,47 @@ def run_harness(js: Path, tag: str) -> dict:
         "checks": checks, "chunks": chunks, "chunkinfo": chunkinfo,
         "summary": summary_fields, "counters": counter_fields, "provider": provider,
         "file_hashes": file_hashes, "scene": report,
+        "draws": {
+            "inline": {k: int(v) for k, v in zip(
+                ("blocks", "lod", "vbs", "ibs", "nodes", "textures", "gpu"),
+                draw_inline.groups())},
+            "chunks": draw_chunks,
+            "geometry": {k: int(v) for k, v in zip(
+                ("parsed", "vbs", "ibs", "nodes", "textures", "retained",
+                 "compressed"), draw_geometry.groups())},
+            "lists": draw_lists,
+            "summary": draw_summary,
+            "instances": draw_instances,
+            "counters": draw_counters,
+            "records": draw_records,
+        },
         "stdout_bytes": len(out), "stderr_bytes": len(stderr),
     }
+
+
+def parse_draw_records(out: str) -> list[dict]:
+    """The harness's one-line-per-draw records as key=value dictionaries."""
+    records = []
+    for m in re.finditer(r"webfiledraw draw (\d+) (.*)", out):
+        record = {"draw": int(m.group(1))}
+        for token in m.group(2).split():
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            if key in ("bounds", "reason", "world", "worldReason"):
+                record[key] = value
+            elif ":" in value:
+                a, b = value.split(":")
+                record[key] = (int(a), int(b))
+            elif "," in value:
+                record[key] = [float(x) for x in value.split(",")]
+            else:
+                try:
+                    record[key] = int(value, 0)
+                except ValueError:
+                    record[key] = value
+        records.append(record)
+    return records
 
 
 def engine_table_fnv(chunkinfo: dict) -> str:
@@ -802,6 +923,150 @@ def compare_chunks(result: dict, index: dict) -> dict:
     }
 
 
+def chunk_range(index: dict, block: int, lod: int) -> tuple:
+    """The engine table's single (chunk, item) for a block/LOD pair."""
+    found = []
+    for ci, c in enumerate(index["streamChunks"]):
+        for ii, item in enumerate(c["items"]):
+            if item["block"] == block and item["lod"] == lod:
+                found.append((ci, ii, c["offset"], c["storedBytes"]))
+    if len(found) != 1:
+        raise Failed(f"block {block} lod {lod} has {len(found)} stream items")
+    return found[0]
+
+
+def extract_chunk(index: dict, block: int, lod: int, name: str) -> Path:
+    ci, ii, offset, size = chunk_range(index, block, lod)
+    out = LOGS / "ref" / name
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with LEVEL_STREAM.open("rb") as f:
+        f.seek(offset)
+        data = f.read(size)
+    if len(data) != size:
+        raise Failed(f"short read for {name} at {offset}+{size}")
+    out.write_bytes(data)
+    return out
+
+
+def reference_mesh(index: dict, pair: tuple) -> dict:
+    """probes/asset-reader level_inspect for the same level and chunks."""
+    geometry_block, node_block = pair
+    geometry = extract_chunk(index, geometry_block, 0,
+                             f"block{geometry_block}.chunk")
+    node = extract_chunk(index, node_block, 0, f"block{node_block}.chunk")
+    p = run([LEVEL_INSPECT, LEVEL_RENDER, geometry, node,
+             str(geometry_block), str(node_block)],
+            log=LOGS / f"level-inspect-mesh-{geometry_block}-{node_block}.log")
+    if p.returncode != 0:
+        raise Failed("level_inspect mesh reference failed: "
+                     + ((p.stderr or p.stdout).strip())[-800:])
+    doc = json.loads(p.stdout)
+    if doc.get("status") != "ok":
+        raise Failed(f"level_inspect mesh reference: {doc.get('status')}")
+    (LOGS / f"reference-mesh-{geometry_block}-{node_block}.json").write_text(
+        p.stdout, encoding="utf-8")
+    return doc
+
+
+def reference_instances(index: dict, pair: tuple) -> dict:
+    geometry_block, node_block = pair
+    geometry = extract_chunk(index, geometry_block, 0,
+                             f"block{geometry_block}.chunk")
+    node = extract_chunk(index, node_block, 0, f"block{node_block}.chunk")
+    p = run([LEVEL_INSPECT, "--instances-all", LEVEL_RENDER, geometry, node,
+             str(geometry_block), str(node_block)],
+            log=LOGS / f"level-inspect-instances-{geometry_block}-{node_block}.log")
+    if p.returncode != 0:
+        raise Failed("level_inspect instances reference failed: "
+                     + ((p.stderr or p.stdout).strip())[-800:])
+    doc = json.loads(p.stdout)
+    if doc.get("status") != "ok":
+        raise Failed(f"level_inspect instances reference: {doc.get('status')}")
+    (LOGS / f"reference-instances-{geometry_block}-{node_block}.json").write_text(
+        p.stdout, encoding="utf-8")
+    return doc
+
+
+def compare_draw_list(result: dict, index: dict) -> dict:
+    """Every bound draw against the committed asset-reader's direct draws.
+
+    The engine prints the archive byte position of each primitive record; the
+    committed reader prints the position of the same record's first byte. The
+    binary archive writes a 2-byte 'AR' tag and a U16 object version before the
+    payload, so engine_source - 4 is the reader's primitiveOffset.
+    """
+    draws = result["draws"]
+    summary = draws["summary"]
+    record_chunk = draws["chunks"]["node"]["chunk"]
+    records = [d for d in draws["records"] if d.get("chunk") == record_chunk]
+    bound = [d for d in records if d.get("bound") == 1]
+    unbound = [d for d in records if d.get("bound") != 1]
+
+    reference = reference_mesh(index, DRAW_REFERENCE)
+    want = reference["draws"]
+    meta = reference["metadata"]
+
+    if len(bound) != len(want):
+        raise Failed(f"engine draw list has {len(bound)} bound draws, "
+                     f"level_inspect has {len(want)}")
+    if len(unbound) != summary["otherBlock"]:
+        raise Failed(f"{len(unbound)} unbound draw records vs "
+                     f"{summary['otherBlock']} other-block primitives")
+
+    for i, (have, expect) in enumerate(zip(bound, want)):
+        if have["firstIndex"] != expect["firstIndex"]:
+            raise Failed(f"draw {i} (primitive {have['primitive']}): firstIndex "
+                         f"{have['firstIndex']} != reference {expect['firstIndex']}")
+        if have["indexCount"] != expect["indexCount"]:
+            raise Failed(f"draw {i} (primitive {have['primitive']}): indexCount "
+                         f"{have['indexCount']} != reference {expect['indexCount']}")
+
+    if summary["draws"] != len(want):
+        raise Failed("engine summary draw count differs from the records")
+    if summary["triangles"] != meta["triangleCount"]:
+        raise Failed(f"engine triangles {summary['triangles']} != reference "
+                     f"{meta['triangleCount']}")
+    if summary["vertices"] != meta["vertexCount"]:
+        raise Failed(f"engine vertices {summary['vertices']} != reference "
+                     f"{meta['vertexCount']}")
+    if summary["otherBlock"] != meta["omittedOtherBlockPrimitives"]:
+        raise Failed(f"engine other-block {summary['otherBlock']} != reference "
+                     f"{meta['omittedOtherBlockPrimitives']}")
+    if summary["primitives"] != meta["primitiveCount"] + \
+            meta["omittedOtherBlockPrimitives"]:
+        raise Failed("engine primitive count differs from the reference")
+
+    inst = reference_instances(index, INSTANCE_REFERENCE)
+    imeta = inst["metadata"]
+    engine_instances = draws["instances"]
+    if engine_instances["instanceCount"] != imeta["instanceCount"]:
+        raise Failed(f"engine instance count {engine_instances['instanceCount']} "
+                     f"!= reference {imeta['instanceCount']}")
+    if engine_instances["basePrimitives"] != imeta["basePrimitiveCount"]:
+        raise Failed(f"engine base primitive count "
+                     f"{engine_instances['basePrimitives']} != reference "
+                     f"{imeta['basePrimitiveCount']}")
+
+    return {
+        "geometry_pair": list(DRAW_REFERENCE),
+        "instance_pair": list(INSTANCE_REFERENCE),
+        "draws_compared": len(bound),
+        "draws_unbound": len(unbound),
+        "index_spans_compared": len(bound),
+        "triangles": summary["triangles"],
+        "vertices": summary["vertices"],
+        "draw_hash": summary["hash"],
+        "instance_count": engine_instances["instanceCount"],
+        "base_primitive_count": engine_instances["basePrimitives"],
+        "reference_tools": ["probes/asset-reader level_inspect (direct draws)",
+                            "probes/asset-reader level_inspect --instances-all"],
+        "reference_scope": "firstIndex/indexCount spans and counts; primitive "
+                           "offsets, declarations, topology and VB/IB source "
+                           "indices are printed by the engine but the committed "
+                           "direct-draw API does not expose them",
+    }
+
+
 def whole_files(result: dict) -> dict:
     report = {}
     for label, path in (("levelrender", LEVEL_RENDER), ("levelphysics", LEVEL_PHYSICS)):
@@ -910,6 +1175,7 @@ PARITY_SOURCES = [
     f"{RD}/source/noninterface/target/streammanager.cpp",
     f"{RD}/source/noninterface/target/streamdata.cpp",
     f"{RD}/source/noninterface/target/archive.cpp",
+    f"{RD}/source/noninterface/target/resources.cpp",
 ]
 
 
@@ -1015,6 +1281,7 @@ def main() -> int:
     }
     report["engine_table"] = compare_engine_table(result, index)
     report["chunks"] = compare_chunks(result, index)
+    report["draw_list"] = compare_draw_list(result, index)
     report["whole_files"] = whole_files(result)
     report["levelrender_sha256"] = sha256_file(LEVEL_RENDER)
     report["levelphysics_sha256"] = sha256_file(LEVEL_PHYSICS)
@@ -1058,6 +1325,15 @@ def main() -> int:
     print(f"geometry        chunk {GEOMETRY_CHUNK_INDEX} "
           f"fnv=0x{report['chunks']['geometry_chunk_fnv1a64']} "
           f"sha256={GEOMETRY_CHUNK_SHA256[:16]}")
+    dl = report["draw_list"]
+    print(f"draw list       {dl['draws_compared']} bound / "
+          f"{dl['draws_unbound']} other-block, "
+          f"{dl['triangles']} triangles, {dl['vertices']} vertices, "
+          f"hash={dl['draw_hash']}")
+    print(f"draw compare    {dl['index_spans_compared']} firstIndex/indexCount "
+          f"spans equal to level_inspect {DRAW_REFERENCE[0]}/{DRAW_REFERENCE[1]}; "
+          f"instances={dl['instance_count']}, "
+          f"baseprimitives={dl['base_primitive_count']}")
     print(f"levelrender     {report['whole_files']['levelrender']['bytes']} B "
           f"fnv=0x{report['whole_files']['levelrender']['fnv1a64']}")
     print(f"levelphysics    {report['whole_files']['levelphysics']['bytes']} B "

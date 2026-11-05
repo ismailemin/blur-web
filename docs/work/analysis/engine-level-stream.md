@@ -1,13 +1,15 @@
 # T-005e — level streaming through the engine on wasm32
 
-**Date:** 5 November 2026 (P22 section added; P18 sections below kept as history)
-**Status:** bounded spike. P18 proved the streamer over engine-loaded ranges; P22
-(replacing the "measured blocked" state for the index) makes the engine's own
+**Date:** 5 November 2026 (P27 section added; P22/P18 sections below kept as history)
+**Status:** bounded spike. P22 made the engine's own
 `RenderingData::Target::Scene` archive parse `Level.levelrender` on wasm32 and
-produces the 359 `ChunkInfo` records itself, with no GPU object created. It is
-still not a full level load: resource blocks, render lists, materials and
-textures are not imported, and `ProcessLoadChunk` is compiled but not run. No
-renderer, vehicle, audio or game claim is made.
+produce the 359 `ChunkInfo` records with no GPU object. **P27 adds the CPU-side
+resource and render-list import and a deterministic draw list for
+`usa_la_river`** (§12): resource blocks, vertex/index buffers, texture LODs and
+`RenderListNode::Primitive` records are deserialised with the engine's own
+archive code into data-only structures, and 95 direct draws of block 88 /
+node 283 are emitted and compared with `probes/asset-reader`. No renderer, GPU,
+vehicle or game claim is made.
 **Prerequisites:** `engine/patches/t005c-web-scheduler.patch` and
 `engine/patches/t005b-file-overlay.patch` (both applied first).
 **Design input:** `docs/work/analysis/t005-streaming-design.md` §5.
@@ -563,3 +565,201 @@ Upstream BlurRebuilt `5270304b81983b9e3edbd569ba25235c17bbabd7`, unmodified:
 `ProcessLoadChunk`'s first archive read is the chunk item count
 (`streamdata.cpp:1034-1040`); that is the boundary between the compiled slice
 and the renderer work that remains.
+
+## 12. P27 — the CPU-side draw list
+
+This section supersedes §11.7 items 1 and 2 for the draw-list slice. It is a
+data-extraction record: no renderer, GPU, vehicle or game claim is made.
+
+### 12.1 What is imported now
+
+`Target::Scene` (the level index from §11) is unchanged. On top of it the web
+build now deserialises, with the engine's own archive code:
+
+| Object | Engine path | Data-only result |
+| --- | --- | --- |
+| inline loaded block | `Target::Deserialise(ResourceBlock&)` (`WorldRender::ReadScene`'s loop) | LOD count, vertex/index buffers, nodes, textures; `m_resources` usable |
+| streamed block item | `Target::Deserialise(LodReader<ResourceBlock::Resources>&)` | same, per `ChunkInfo` item |
+| `IndexBuffer` / `VertexBuffer` | `Target::Deserialise(...)` | descriptor (`count`, `stride`/width, byte size, alignment, compression) plus the payload bytes when uncompressed |
+| texture LOD | `Target::Deserialise(LodReader<Texture>&)` | name, hash, LOD, header size, payload size; no texture created (`m_discard = 1`) |
+| vertex declaration | `Target::Deserialise(VertexDeclaration&)` | every element (`stream,offset,type,method,usage,usageIndex`) kept in order |
+| render list | base `RenderListNode` serialiser + `Target::Deserialise(RenderListNode::Primitive&)` | primitives, instances, base primitives, bounds, source lists, chunk data |
+| primitive | as above | `{effect, declaration, topology, indexBuffer, flags, base/instance material, blend descriptor, lods, primitive streams, archive offset}` |
+
+Two rules are load-bearing:
+
+1. **A descriptor is not a fallback.** `CreateIndexBuffer`, `CreateVertexBuffer`
+   and `CreateVertexDeclaration` are never called. Their archive position is
+   replaced by a record of what the call would have been asked for, and the
+   blob is retained only when it is uncompressed. `gpuObjectsCreated` is 0 and
+   the gate asserts it.
+2. **A GPU object that would be required is still a fail-loud abort.** The
+   render-state table (`FX::g_RenderStateMgr.InsertRenderState`) is not run; a
+   primitive keeps its serialised blend descriptor and `blendState = -1`. Every
+   renderer entry point in `display_fail_loud.cpp` still aborts. The legacy
+   (`<v2`) `RenderListNode::Reallocate` relocation path is not ported and
+   aborts by name (`Target::RenderListNode::Reallocate (legacy render list)`).
+
+The buffer destructors in `target/resources.cpp` guard `DestroyIndexBuffer` /
+`DestroyVertexBuffer` with `if (m_data.IsCreated())` on web, because nothing was
+created; the PC statement is unchanged.
+
+`Target::RenderListNode` has no out-of-line virtual in this build (the renderer
+TU is not compiled), so clang emitted no vtable and the wasm link failed. The
+patch declares its destructor on web only and defines it in `target/archive.cpp`
+as the class key function. This is a link anchor; it adds no behaviour.
+
+### 12.2 The draw list
+
+`engine/harness/t005e/stream_harness.cpp` locates the chunks **from the engine's
+own `ChunkInfo` table** (never from a probe table), loads them through
+`StreamManager::LoadChunk`/`GetChunkData`, copies the bytes, and parses each item
+with `WebSpike::ParseResourceBlockLodArchive` — the same
+`LodReader<ResourceBlock::Resources>` deserialiser `ProcessLoadChunk` uses. It
+then walks `Resources::nodes`, picks the node whose virtual `IsNode` reports
+`NODE_TYPE_RENDER_LIST_PLATFORM`, and emits one line per primitive:
+
+```text
+webfiledraw draw 3 chunk=68 nodeIndex=1 primitive=3 source=3248 bound=1 reason=none
+  declaration=6 topology=1 lod=0 lodCount=1 effect=0 vb=88:0 ib=88:0 vbSource=2 ibSource=1
+  firstIndex=0 indexCount=582 triangles=194 lodOffset=977 lodIndices=510
+  minIndex=454 nVertices=332 baseMaterial=0:0 instanceMaterial=1:0 flags=0x00000000
+  blend=1,5,0,0,0,0,1 bounds=ok boundsMin=... boundsMax=...
+  world=null worldReason=instanceTransformNotImported
+```
+
+- `source` is the archive byte offset of the primitive record's fields (the
+  binary archive writes a 2-byte `AR` tag and a `U16` object version before
+  them, so the record starts 4 bytes earlier).
+- `vb`/`ib` are the resolved `(resource block, resource index)` identities.
+- `vbSource`/`ibSource` are the indices into the node's own source lists.
+- `firstIndex`/`indexCount` are the converted triangle-list span, computed from
+  the retained index payload with the same strip parity and degenerate-triangle
+  rule the committed reader uses.
+- `world = null` with a reason: instance transforms live in runtime material
+  rows (`g_mWorld`), which this slice does not import. No matrix is guessed.
+  The serialised instance rows (`primitiveIndex`, material `index:list`, flags,
+  stream count) and the archived primitive/instance bounds are printed.
+
+### 12.3 Measured result (`verify_stream.py --fresh`, exit 0)
+
+| Check | Result |
+| --- | --- |
+| patch | 16 files modified, 0 added, sha256 `fd4de55b0a69d55ddca1f5ec8765021e9b663faa8107f84ef079ce2a2f881b3f` |
+| build | 55 TUs, wasm **794,845 B**, sha256 `67c4feed29a86efb...`, two builds identical |
+| harness | **46/46** checks, two runs identical |
+| inline loaded block | 1 block, LOD 9, 0 vertex buffers, 0 index buffers, 1 node, 0 textures |
+| geometry chunk | block 88 -> chunk 136, offset 54,616,064 / 589,824 B; 5 VBs, 1 IB, 0 nodes; 587,228 B retained, 0 compressed |
+| node chunk | block 283 -> chunk 68, offset 3,737,600 / 104,448 B; 1 render list at node 1: 255 primitives, 0 instances, 0 base primitives |
+| draw list | **95 bound draws, 160 other-block primitives, 0 unbound, 0 index errors** |
+| ranges | **9,343 triangles, 17,782 vertices**, draw-list hash `fd525c1452869aee` |
+| reference (draws) | 95/95 `firstIndex`+`indexCount` spans equal to `level_inspect 88 283`; its metadata `primitiveCount 95`, `omittedOtherBlockPrimitives 160`, `triangleCount 9,343`, `vertexCount 17,782` |
+| reference (instances) | block 27 / node 253 -> chunk 53: node 1 has **57 instances**, 36 base primitives, 5 primitives; `level_inspect --instances-all` reports the same `instanceCount 57` / `basePrimitiveCount 36` |
+| GPU | 0 objects created, 0 refused calls, 0 unsupported paths |
+| PC parity | `streammanager.cpp` 108,025, `streamdata.cpp` 111,514, `archive.cpp` 111,399, `resources.cpp` 108,104 preprocessed lines identical with/without the patch |
+
+The 160 other-block primitives are the reference's own
+`omittedOtherBlockPrimitives`: they bind geometry blocks this slice did not
+import. Their descriptors, spans and bounds are still printed, with
+`vb`/`ib` set and `reason=geometryBlockNotImported`; they are counted, not
+silently dropped and not drawn.
+
+### 12.4 Determinism
+
+Two independent wasm builds are byte-identical (`deterministic=True`), and the
+two harness runs produce identical stdout, which contains every draw record.
+The draw-list hash is recomputed in-process from the printed numeric fields; it
+is `fd525c1452869aee` on both runs and on a fourth, fresh-tree run.
+
+### 12.5 Explicit failures (new in P27)
+
+| Case | Result |
+| --- | --- |
+| buffer blob descriptor differs from its declared size | `Unsupported` with record kind, count, stride, expected/declared bytes and archive offset |
+| blob alignment not a power of two <= 4096, or blob object marker/version wrong | `Unsupported` |
+| compressed buffer | payload dropped, `compression != 0`, `compressedBuffers` counted; the gate requires 0 for the draw-list chunks |
+| record arrays over bound (buffers/declarations/primitives/LODs/streams) | counter incremented and `Unsupported`; the gate requires all zero |
+| legacy (`<v2`) render list | `Target::RenderListNode::Reallocate` aborts by name |
+| index outside `minIndex..minIndex+nVertices-1` or beyond the buffer | `reason=indexOutsidePrimitiveRange`, counted in `indexerrors`; gate requires 0 |
+| missing POSITION0 declaration/stream, unknown topology, unaligned stream offset | named `reason` token on that draw |
+
+### 12.6 Remaining blockers (all renderer/packet work)
+
+1. **Instance transforms and materials are not imported.** `g_mWorld` lives in
+   the constant material rows; the draw list prints `world:null` with a reason.
+   That is the next packet field (v1.1: `world` + `materialId`).
+2. **Textures are described, never created.** Texture LOD names/hashes/sizes are
+   consumed and recorded; no texture data is decoded and no sampler state is
+   created.
+3. **`StreamData::ProcessLoadChunk` is still not run.** The harness calls the
+   same deserialiser, but the chunk state machine (prerequisite refresh,
+   pending swap-in, unload) is not driven. `CacheChunk` is exercised only for
+   chunks 0 and the first prerequisite-bearing chunk (§11.4).
+4. **Only two block pairs are imported** (88/283 for draws, 27/253 for the
+   instance count). The level has 1,227 resource blocks; a full scene would
+   need visibility/culling, which is not implemented.
+5. **No visibility, culling, LOD selection, sorting or batching.** The list is
+   archive order with LOD0 only.
+6. **No renderer, GPU, audio, vehicle, browser or game claim.** The module runs
+   under node; no browser OPFS/worker work is included.
+7. `C_OverlayFs` remains a single read-only layer.
+
+### 12.7 Next step toward packet v1.1
+
+The packet seam (`docs/work/analysis/e1-renderer-strategy.md`) needs
+`world: [16]` and `materialId`. The cheapest next slice reads the render list's
+constant material rows through the already-compiled
+`Deserialise(MaterialListData)` path, follows `type8` nested references, and
+exposes `g_mWorld` per instance and the `g_tAlbedo`/`g_MeshTexture` texture
+index per primitive. That keeps the same rule as this slice: a value is either
+read from the archive or reported as `null` with a reason. It must not be
+described as rendering.
+
+### 12.8 Evidence (P27)
+
+| Path | Size | SHA-256 (16) | Content |
+| --- | ---: | --- | --- |
+| `engine/patches/t005b-stream-overlay.patch` | 77,217 | `FD4DE55B0A69D55D` | 16 web-only files |
+| `engine/verify_stream.py` | 64,804 | `08587B17E9ECEC1A` | the gate |
+| `engine/harness/t005e/stream_harness.cpp` | 50,574 | `54227404E78014F4` | stream + scene + draw list |
+| `engine/harness/t005e/web_drawlist.cpp` | 3,383 | `854C25917D446110` | record storage |
+| `engine/harness/t005e/engine_stream_prelude.h` | 8,555 | `E4595AEC87065B87` | record types + counters |
+| `engine/harness/t005e/scene_target_web.cpp` | 3,691 | `D1872A4A3A1A7473` | renderer-TU link shims |
+| `_work/engine-stream-spike/out/stream_harness_a.wasm`* | 794,845 | `67C4FEED29A86EFB` | 55 objects |
+| `_work/logs/engine-stream-spike/verify-summary.json`* | — | — | every number above |
+| `_work/logs/engine-stream-spike/reference-mesh-88-283.json`* | — | — | committed-reader direct draws |
+| `_work/logs/engine-stream-spike/reference-instances-27-253.json`* | — | — | committed-reader instance counts |
+
+`*` = regenerated by `engine/verify_stream.py`.
+
+### 12.9 Commands
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py engine/verify_stream.py --fresh
+& $py engine/verify_stream.py
+& $py engine/verify_stream.py --skip-native
+```
+
+Recorded result (`--fresh`, exit 0, 119.5 s):
+
+```text
+patch           sha256=fd4de55b0a69d55d
+files           16 modified, 0 added
+objects         55
+wasm            794845 B sha256=67c4feed29a86efb deterministic=True
+harness         46/46 checks pass
+index           359 chunks, blocks=1227, initial=1
+engine index    359 ChunkInfo records == range_probe + level_inspect
+scene cursor    2464509 B (== probe parsedUntilOffset), tablehash=aae9814242df9d36
+scene facts     16 decl / 10 shared textures, 10784 items, 603 prereqs, gpu=0, openstream hint=-1
+stream          244682752 B, largest=2045952 B, chunks=359
+chunk hashes    359/359 match independent Python
+geometry        chunk 157 fnv=0x74dd025de4430925 sha256=b07b386c5da5b915
+draw list       95 bound / 160 other-block, 9343 triangles, 17782 vertices, hash=fd525c1452869aee
+draw compare    95 firstIndex/indexCount spans equal to level_inspect 88/283; instances=57, baseprimitives=36
+levelrender     9873988 B fnv=0x0ef5c027f0924307
+levelphysics    1945409 B fnv=0xb9594f7ce52caa2e
+pc parity       4 TUs preprocessed identical (streammanager.cpp:108025, streamdata.cpp:111514, archive.cpp:111399, resources.cpp:108104 lines)
+verdict         PASS
+```

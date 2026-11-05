@@ -22,6 +22,16 @@ namespace RenderingData
 namespace Target
 {
 
+// render.cpp:624-677. The legacy (pre-v2) RenderListNode relocation path is a
+// renderer TU. This build only accepts target render lists v2..4 (the same
+// bound the committed reader enforces); if the legacy path is ever reached it
+// is a named failure, not a silent skip.
+void RenderListNode::Reallocate()
+{
+	WebSpike::Unsupported( "Target::RenderListNode::Reallocate (legacy render list)",
+		__FILE__, __LINE__ );
+}
+
 // render.cpp:185-191
 Scene::Scene()
 {

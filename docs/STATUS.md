@@ -480,6 +480,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Browser 20 capture, console **0**, geometri 3 upload/1.090.380 B; 17/20 packet hash birebir, 3'ü kamera `atan2` bir-ulp (state/matris birebir). Packet 103 draw.
 - Sınır: parçalar Corvette-only (5 araç aynı gövde), rest-pose teker konumu, diagnostic renkler. Kanıt: `docs/work/verification/T-007-car-parts-integration.md`.
 
+## 5 Kasım 2026 — engine CPU draw list
+
+- `Target::Scene` resource block + render list importu (GPU objesi 0): River block88/chunk136 (5 VB, 1 IB, 587.228 B) ve node283/chunk68 (1 render list, 255 primitive).
+- **95 bound draw**, 160 other-block (nedenli, çizilmedi); **9.343 üçgen / 17.782 vertex**, 0 index hatası; draw-list hash `fd525c1452869aee`.
+- `level_inspect 88/283` ile **95/95 firstIndex+indexCount span eşit**; 57 instance / 36 base primitive eşit.
+- 55 nesne, **794.845 B** wasm, 46/46, PC parity (4 TU). Kalan: `g_mWorld`, materyaller (`g_tAlbedo`/`g_MeshTexture`), dokular, `ProcessLoadChunk`; packet v1.1'e bağlama. Kanıt: `docs/work/verification/T-007-streaming.md` §P27.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

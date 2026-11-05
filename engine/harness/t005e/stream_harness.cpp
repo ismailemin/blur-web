@@ -59,6 +59,17 @@
 #include <renderingdata/archive.h>
 #include <renderingdata/noninterface/archive.inl>
 
+// P27: the resource deserialisers are defined in target/archive.cpp (not in a
+// header), so the harness declares their stable non-template entry points here.
+// The definitions use exactly these types and qualifications.
+namespace WebSpike
+{
+void ParseLoadedResourceBlockArchive( ::Arch::BinaryInputArchive& ar,
+	::RenderingData::Target::ResourceBlock& block );
+void ParseResourceBlockLodArchive( ::Arch::BinaryInputArchive& ar,
+	::RenderingData::Target::ResourceBlock::Resources& next, S32 lod );
+}
+
 // GameHelpers.cpp defines this (util/logicalfs/source/gamefs/GameHelpers.cpp:31)
 // and C_OverlayFs::GetBestLayer reads it. GameHelpers.cpp needs
 // Sys::C_FileSystem::Instance() and cannot link here; the harness supplies the
@@ -190,6 +201,604 @@ const char* kRenderPath = "/levels/usa_la_river/Level.levelrender";
 const char* kStreamPath = "/levels/usa_la_river/Level.levelstream";
 const char* kPhysicsPath = "/levels/usa_la_river/Level.levelphysics";
 
+// --- P27: CPU-side draw list ------------------------------------------------
+
+struct ChunkRange
+{
+	S32 chunk;
+	S32 item;
+	S32 lod;
+	U64 offset;
+	U64 bytes;
+};
+
+// The engine's own ChunkInfo table is the only source of chunk ranges: the
+// harness never receives a probe table. A (block, lod) pair must identify
+// exactly one item, or the request is refused.
+bool findChunkItem( const RenderingData::Target::StreamData& table, S32 block,
+	S32 lod, ChunkRange* out )
+{
+	int found = 0;
+
+	for ( int i = 0; i < table.GetNumChunks(); i++ )
+	{
+		const RenderingData::ChunkInfo& info = table.GetChunkInfo( i );
+
+		for ( int k = 0; k < info.GetNumItems(); k++ )
+		{
+			const RenderingData::ChunkInfo::Item& item = info.GetItem( k );
+
+			if ( item.block == block && item.lod == lod )
+			{
+				if ( found )
+					return false;
+
+				out->chunk = i;
+				out->item = k;
+				out->lod = lod;
+				out->offset = info.GetOffset();
+				out->bytes = info.GetCompressedSize();
+				++found;
+			}
+		}
+	}
+
+	return found == 1;
+}
+
+// One engine chunk read: LoadChunk + GetChunkData, then a private copy so the
+// chunk allocator can be released before the archive is walked.
+bool loadChunkCopy( RenderingData::Target::StreamManager& manager, Sys::I_File* file,
+	const ChunkRange& range, std::vector<U8>& out )
+{
+	if ( !manager.LoadChunk( range.chunk, file, range.offset, range.bytes ) )
+		return false;
+
+	S32 gotIndex = -1;
+	bool loadFailed = true;
+	RenderingData::Target::StreamManager::AutoChunkPointer data =
+		manager.GetChunkData( gotIndex, loadFailed );
+
+	if ( gotIndex != range.chunk || loadFailed || data == 0 )
+		return false;
+
+	out.assign( &*data, &*data + (size_t)range.bytes );
+	return true;
+}
+
+struct DrawTotals
+{
+	int nodes;
+	int primitives;
+	int renderLists;
+	int draws;
+	int otherBlock;
+	int unbound;
+	int triangles;
+	int triangleIndices;
+	int vertices;
+	int indexErrors;
+	int instances;
+	int basePrimitives;
+	uint64_t hash;
+};
+
+struct GeometryView
+{
+	S32 block;
+	bool valid;
+	const WebSpike::BufferRecord* vertexBuffers;
+	int vertexBufferCount;
+	const WebSpike::BufferRecord* indexBuffers;
+	int indexBufferCount;
+};
+
+void fnv_f32( uint64_t& hash, F32 value )
+{
+	U32 bits;
+	memcpy( &bits, &value, sizeof( bits ) );
+	fnv_u32( hash, bits );
+}
+
+// Parse every resource item of one chunk up to and including `range.item`.
+// Returns the target item's Resources (owned by the caller) or 0.
+RenderingData::Target::ResourceBlock::Resources* parseChunkItem(
+	const std::vector<U8>& bytes, RenderingData::Target::Scene* scene,
+	const ChunkRange& range, int* vbBase, int* ibBase, int* primitiveBase )
+{
+	Sys::C_MemoryStream stream( const_cast<U8*>( &bytes[ 0 ] ), (U32)bytes.size() );
+	Arch::BinaryInputArchive ar( stream );
+
+	S32 nItems = 0;
+	ar >> nItems;
+
+	// The chunk's own ChunkInfo record declares how many items it holds; the
+	// archive read must agree.
+	const RenderingData::ChunkInfo& info =
+		scene->GetStreamData().GetChunkInfo( range.chunk );
+
+	if ( nItems != info.GetNumItems() )
+		return 0;
+
+	RenderingData::Target::ResourceBlock::Resources* target = 0;
+
+	for ( int i = 0; i < nItems; i++ )
+	{
+		const S32 lod = info.GetItem( i ).lod;
+		const int vb0 = WebSpike::Draws().vertexBuffers;
+		const int ib0 = WebSpike::Draws().indexBuffers;
+		const int prim0 = WebSpike::Draws().primitives;
+
+		RenderingData::Target::ResourceBlock::Resources* resources =
+			new RenderingData::Target::ResourceBlock::Resources();
+		resources->pScene = scene;
+
+		WebSpike::ParseResourceBlockLodArchive( ar, *resources, lod );
+
+		if ( i == range.item )
+		{
+			target = resources;
+			if ( vbBase ) *vbBase = vb0;
+			if ( ibBase ) *ibBase = ib0;
+			if ( primitiveBase ) *primitiveBase = prim0;
+			break;
+		}
+
+		delete resources;
+	}
+
+	return target;
+}
+
+// Emit one draw record. Every field comes from the archive; a field that the
+// engine did not bind is printed as null with a reason token, never guessed.
+void emitOneDraw( const RenderingData::Target::RenderListNode& list, int drawIndex,
+	int nodeIndex, const WebSpike::PrimitiveRecord& record, int primitiveIndex,
+	S32 chunkIndex, const GeometryView& geometry, const RenderingData::Bounds* pBounds,
+	unsigned char* usedVertexBuffer, DrawTotals* totals )
+{
+	const WebSpike::DrawListState& draws = WebSpike::Draws();
+
+	int positionStream = -1;
+	const char* reason = 0;
+
+	if ( record.declaration < 0 || record.declaration >= draws.declarations )
+	{
+		reason = "declarationOutOfRange";
+	}
+	else
+	{
+		const WebSpike::DeclRecord& decl = draws.decl[ record.declaration ];
+		int found = 0;
+
+		for ( int e = 0; e < decl.count; e++ )
+		{
+			if ( decl.elements[ e ].usage == 0 && decl.elements[ e ].usageIndex == 0 )
+			{
+				if ( found )
+					reason = "duplicatePosition0";
+
+				positionStream = decl.elements[ e ].stream;
+				++found;
+			}
+		}
+
+		if ( found == 0 )
+			reason = "noPosition0";
+	}
+
+	int vertexSource = -1;
+
+	if ( reason == 0 )
+	{
+		int found = 0;
+
+		for ( int s = 0; s < record.streamCount; s++ )
+		{
+			if ( record.streams[ s ].streamIndex == -1 )
+				continue;
+
+			if ( record.streams[ s ].streamIndex == positionStream )
+			{
+				if ( found )
+					reason = "duplicatePositionStream";
+
+				vertexSource = record.streams[ s ].vertexBuffer;
+				++found;
+			}
+		}
+
+		if ( found == 0 )
+			reason = "positionStreamNotBound";
+	}
+
+	S32 vbBlock = -1;
+	S32 vbIndex = -1;
+	S32 ibBlock = -1;
+	S32 ibIndex = -1;
+
+	if ( reason == 0 )
+	{
+		if ( record.indexBuffer < 0 ||
+			record.indexBuffer >= list.GetNumIndexBuffers() )
+		{
+			reason = "indexSourceOutOfRange";
+		}
+		else
+		{
+			const RenderingData::ResourceIndex index =
+				list.GetIndexBufferSource( record.indexBuffer );
+			ibBlock = index.GetBlock();
+			ibIndex = index.GetIndex();
+		}
+	}
+
+	if ( reason == 0 )
+	{
+		if ( vertexSource < 0 || vertexSource >= list.GetNumVertexBuffers() )
+		{
+			reason = "vertexSourceOutOfRange";
+		}
+		else
+		{
+			const RenderingData::ResourceIndex index =
+				list.GetVertexBufferSource( vertexSource );
+			vbBlock = index.GetBlock();
+			vbIndex = index.GetIndex();
+		}
+	}
+
+	bool bound = false;
+
+	if ( reason == 0 )
+	{
+		if ( vbBlock != geometry.block || ibBlock != geometry.block )
+		{
+			++totals->otherBlock;
+			reason = "geometryBlockNotImported";
+		}
+		else if ( !geometry.valid )
+			reason = "geometryResourcesMissing";
+		else if ( vbIndex < 0 || vbIndex >= geometry.vertexBufferCount )
+			reason = "vertexBufferNotImported";
+		else if ( ibIndex < 0 || ibIndex >= geometry.indexBufferCount )
+			reason = "indexBufferNotImported";
+		else if ( record.lodCount == 0 )
+			reason = "primitiveHasNoLod";
+		else
+			bound = true;
+	}
+
+	int vertexShift = 0;
+	int triangleCount = 0;
+	int indexCount = 0;
+	int firstIndex = totals->triangleIndices;
+	const WebSpike::LodRecord* lod =
+		record.lodCount > 0 ? &record.lods[ 0 ] : 0;
+
+	if ( bound )
+	{
+		const WebSpike::BufferRecord& vb = geometry.vertexBuffers[ vbIndex ];
+		const WebSpike::BufferRecord& ib = geometry.indexBuffers[ ibIndex ];
+		int streamByteOffset = 0;
+
+		for ( int s = 0; s < record.streamCount; s++ )
+		{
+			if ( record.streams[ s ].streamIndex == positionStream )
+				streamByteOffset = record.streams[ s ].vertexOffset;
+		}
+
+		if ( vb.compression != 0 || ib.compression != 0 )
+			reason = "compressedBuffer";
+		else if ( !ib.payloadRetained )
+			reason = "indexPayloadNotRetained";
+		else if ( vb.stride <= 0 || ib.stride <= 0 )
+			reason = "zeroBufferStride";
+		else if ( lod->offset < 0 || lod->indices < 0 || lod->offset > ib.count ||
+			lod->indices > ib.count - lod->offset )
+			reason = "indexRangeOutOfBuffer";
+		else if ( lod->minIndex < 0 || lod->vertices < 0 ||
+			lod->minIndex > vb.count || lod->vertices > vb.count - lod->minIndex )
+			reason = "vertexRangeOutOfBuffer";
+		else if ( streamByteOffset < 0 || streamByteOffset % vb.stride != 0 )
+			reason = "unalignedVertexStreamOffset";
+		else
+			vertexShift = streamByteOffset / vb.stride;
+
+		if ( reason == 0 && vertexShift > vb.count )
+			reason = "vertexShiftOutOfBuffer";
+
+		if ( reason == 0 && record.topology != 0 && record.topology != 1 )
+			reason = "unsupportedTopology";
+
+		if ( reason == 0 && record.topology == 0 && ( lod->indices % 3 ) != 0 )
+			reason = "triangleListIndexCount";
+
+		if ( reason == 0 )
+		{
+			const U8* base = (const U8*)draws.arena + ib.payloadOffset;
+
+			for ( int j = 0; j < lod->indices; j++ )
+			{
+				U32 value;
+				if ( ib.stride == 2 )
+					value = (U32)( (const U16*)base )[ lod->offset + j ];
+				else
+					value = ( (const U32*)base )[ lod->offset + j ];
+
+				if ( value < (U32)lod->minIndex ||
+					value >= (U32)( lod->minIndex + lod->vertices ) ||
+					value >= (U32)( vb.count - vertexShift ) )
+				{
+					reason = "indexOutsidePrimitiveRange";
+					break;
+				}
+			}
+		}
+
+		if ( reason == 0 )
+		{
+			const U8* base = (const U8*)draws.arena + ib.payloadOffset;
+
+			if ( record.topology == 0 )
+			{
+				for ( int j = 0; j + 2 < lod->indices; j += 3 )
+				{
+					U32 a = ( (const U32*)base )[ 0 ]; // placeholder, replaced below
+					(void)a;
+					U32 i0, i1, i2;
+
+					if ( ib.stride == 2 )
+					{
+						i0 = (U32)( (const U16*)base )[ lod->offset + j ];
+						i1 = (U32)( (const U16*)base )[ lod->offset + j + 1 ];
+						i2 = (U32)( (const U16*)base )[ lod->offset + j + 2 ];
+					}
+					else
+					{
+						i0 = ( (const U32*)base )[ lod->offset + j ];
+						i1 = ( (const U32*)base )[ lod->offset + j + 1 ];
+						i2 = ( (const U32*)base )[ lod->offset + j + 2 ];
+					}
+
+					if ( i0 == i1 || i1 == i2 || i0 == i2 )
+						continue;
+
+					++triangleCount;
+				}
+			}
+			else
+			{
+				for ( int j = 2; j < lod->indices; j++ )
+				{
+					U32 i0, i1, i2;
+
+					if ( ib.stride == 2 )
+					{
+						i0 = (U32)( (const U16*)base )[ lod->offset + j - 2 ];
+						i1 = (U32)( (const U16*)base )[ lod->offset + j - 1 ];
+						i2 = (U32)( (const U16*)base )[ lod->offset + j ];
+					}
+					else
+					{
+						i0 = ( (const U32*)base )[ lod->offset + j - 2 ];
+						i1 = ( (const U32*)base )[ lod->offset + j - 1 ];
+						i2 = ( (const U32*)base )[ lod->offset + j ];
+					}
+
+					if ( j % 2 )
+					{
+						const U32 swap = i0;
+						i0 = i1;
+						i1 = swap;
+					}
+
+					if ( i0 == i1 || i1 == i2 || i0 == i2 )
+						continue;
+
+					++triangleCount;
+				}
+			}
+
+			indexCount = triangleCount * 3;
+		}
+
+		if ( reason != 0 )
+		{
+			bound = false;
+			indexCount = 0;
+			firstIndex = totals->triangleIndices;
+		}
+	}
+
+	if ( bound )
+	{
+		++totals->draws;
+		totals->triangles += triangleCount;
+		totals->triangleIndices += indexCount;
+
+		if ( vbIndex >= 0 && vbIndex < WebSpike::kMaxBuffers )
+			usedVertexBuffer[ vbIndex ] = 1;
+	}
+
+	printf( "webfiledraw draw %d chunk=%d nodeIndex=%d primitive=%d source=%d "
+		"bound=%d reason=%s declaration=%d topology=%d lod=0 lodCount=%d "
+		"effect=%d vb=%d:%d ib=%d:%d "
+		"vbSource=%d ibSource=%d "
+		"firstIndex=%d indexCount=%d triangles=%d lodOffset=%d lodIndices=%d "
+		"minIndex=%d nVertices=%d baseMaterial=%d:%d instanceMaterial=%d:%d "
+		"flags=0x%08x blend=%d,%d,%d,%d,%d,%d,%d ",
+		drawIndex, (int)chunkIndex, nodeIndex, primitiveIndex, record.streamOffset,
+		bound ? 1 : 0, reason ? reason : "none", record.declaration,
+		record.topology, record.lodCount, record.effect, (int)vbBlock,
+		(int)vbIndex, (int)ibBlock,
+		(int)ibIndex, vertexSource, record.indexBuffer,
+		firstIndex, indexCount, triangleCount,
+		lod ? lod->offset : -1, lod ? lod->indices : -1, lod ? lod->minIndex : -1,
+		lod ? lod->vertices : -1, record.baseMaterialIndex, record.baseMaterialList,
+		record.instanceMaterialIndex, record.instanceMaterialList,
+		(unsigned)record.flags, record.blendSrc, record.blendDest, record.blendOp,
+		record.alphaRef, record.alphaToMask, record.alphaTest, record.cullMode );
+
+	if ( pBounds != 0 )
+		printf( "bounds=ok boundsMin=%.9g,%.9g,%.9g boundsMax=%.9g,%.9g,%.9g ",
+			pBounds->aabbMin.x, pBounds->aabbMin.y, pBounds->aabbMin.z,
+			pBounds->aabbMax.x, pBounds->aabbMax.y, pBounds->aabbMax.z );
+	else
+		printf( "bounds=none " );
+
+	printf( "world=null worldReason=instanceTransformNotImported\n" );
+
+	// Deterministic draw-list hash over the printed numeric fields.
+	fnv_u32( totals->hash, (U32)drawIndex );
+	fnv_u32( totals->hash, (U32)primitiveIndex );
+	fnv_u32( totals->hash, (U32)record.streamOffset );
+	fnv_u32( totals->hash, bound ? 1u : 0u );
+	fnv_u32( totals->hash, (U32)record.declaration );
+	fnv_u32( totals->hash, (U32)record.topology );
+	fnv_u32( totals->hash, (U32)record.effect );
+	fnv_u32( totals->hash, (U32)vbBlock );
+	fnv_u32( totals->hash, (U32)vbIndex );
+	fnv_u32( totals->hash, (U32)ibBlock );
+	fnv_u32( totals->hash, (U32)ibIndex );
+	fnv_u32( totals->hash, (U32)firstIndex );
+	fnv_u32( totals->hash, (U32)indexCount );
+	fnv_u32( totals->hash, (U32)triangleCount );
+	fnv_u32( totals->hash, (U32)( lod ? lod->offset : -1 ) );
+	fnv_u32( totals->hash, (U32)( lod ? lod->indices : -1 ) );
+	fnv_u32( totals->hash, (U32)( lod ? lod->minIndex : -1 ) );
+	fnv_u32( totals->hash, (U32)( lod ? lod->vertices : -1 ) );
+	fnv_u32( totals->hash, (U32)record.baseMaterialIndex );
+	fnv_u32( totals->hash, (U32)record.baseMaterialList );
+	fnv_u32( totals->hash, (U32)record.instanceMaterialIndex );
+	fnv_u32( totals->hash, (U32)record.instanceMaterialList );
+	fnv_u32( totals->hash, (U32)record.flags );
+}
+
+// Walk every node of the parsed block, emit render-list draws and instances,
+// and fill the deterministic totals.
+void emitNodeDraws( RenderingData::Target::ResourceBlock::Resources* resources,
+	const ChunkRange& range, const GeometryView& geometry, DrawTotals* totals )
+{
+	(void)range;
+
+	const WebSpike::DrawListState& draws = WebSpike::Draws();
+	unsigned char usedVertexBuffer[ WebSpike::kMaxBuffers ];
+
+	for ( int i = 0; i < WebSpike::kMaxBuffers; i++ )
+		usedVertexBuffer[ i ] = 0;
+
+	int primitiveCursor = 0;
+	int drawIndex = 0;
+
+	for ( int n = 0; n < resources->nodes.Size(); n++ )
+	{
+		RenderingData::Node* node = Pointer( resources->nodes[ n ] );
+
+		if ( node == 0 )
+			continue;
+
+		++totals->nodes;
+
+		// Target::RenderListNode::GetPointer lives in the renderer TU
+		// (render.cpp), which this build does not compile. IsNode is a virtual
+		// that the target override defines inline, so the cast below is the
+		// same test GetPointer performs.
+		if ( !node->IsNode( RenderingData::NODE_TYPE_RENDER_LIST_PLATFORM ) )
+		{
+			printf( "webfiledraw node %d type=%d renderlist=0\n", n,
+				(int)node->GetNodeType() );
+			continue;
+		}
+
+		RenderingData::Target::RenderListNode* list =
+			static_cast<RenderingData::Target::RenderListNode*>( node );
+
+		const int numPrimitives = list->GetNumPrimitives();
+		const int numInstances = list->GetNumInstances();
+		const int numBasePrimitives = list->GetNumBasePrimitives();
+
+		++totals->renderLists;
+		totals->primitives += numPrimitives;
+		totals->instances += numInstances;
+		totals->basePrimitives += numBasePrimitives;
+
+		printf( "webfiledraw list node=%d primitives=%d instances=%d "
+			"baseprimitives=%d instancebatches=%d dynamiclists=%d\n", n,
+			numPrimitives, numInstances, numBasePrimitives,
+			list->GetNumInstanceBatches(), list->GetNumDynamicMaterialLists() );
+
+		for ( int i = 0; i < numPrimitives; i++ )
+		{
+			const int recordIndex = primitiveCursor + i;
+
+			if ( recordIndex >= draws.primitives )
+			{
+				++totals->unbound;
+				printf( "webfiledraw draw %d chunk=%d nodeIndex=%d primitive=%d "
+					"source=-1 bound=0 reason=primitiveRecordMissing "
+					"declaration=-1 topology=-1 effect=-1 vb=-1:-1 ib=-1:-1 "
+					"firstIndex=0 indexCount=0 triangles=0 lodOffset=-1 "
+					"lodIndices=-1 minIndex=-1 nVertices=-1 baseMaterial=-1:-1 "
+					"instanceMaterial=-1:-1 flags=0x00000000 "
+					"blend=-1,-1,-1,-1,-1,-1,-1 bounds=none world=null "
+					"worldReason=instanceTransformNotImported\n",
+					drawIndex, (int)range.chunk, n, i );
+				++drawIndex;
+				continue;
+			}
+
+			const RenderingData::Bounds* pBounds = 0;
+
+			if ( i < list->GetNumPrimitives() )
+			{
+				// GetPrimitiveBounds indexes the archived per-primitive bounds
+				// vector; a short vector is reported by leaving bounds null.
+				if ( list->GetPrimitiveBounds() != 0 )
+					pBounds = &list->GetPrimitiveBounds( i );
+			}
+
+			emitOneDraw( *list, drawIndex, n, draws.primitive[ recordIndex ], i,
+				range.chunk, geometry, pBounds, usedVertexBuffer, totals );
+			++drawIndex;
+		}
+
+		// Instance rows: the serialised instance description, not a transform.
+		// Instance transforms live in runtime material rows, which this slice
+		// does not import; the draw list therefore prints world=null with a
+		// reason instead of a guessed matrix.
+		for ( int i = 0; i < numInstances && i < 256; i++ )
+		{
+			const RenderingData::RenderListNode::Instance& instance =
+				list->GetInstance( i );
+
+			printf( "webfiledraw instance %d chunk=%d nodeIndex=%d "
+				"primitiveIndex=%d material=%d:%d flags=0x%08x streams=%d "
+				"world=null worldReason=instanceTransformNotImported\n", i,
+				(int)range.chunk, n, (int)instance.primitiveIndex,
+				(int)instance.material.index, (int)instance.material.listIndex,
+				(unsigned)instance.flags, (int)instance.primitiveStreams.Size() );
+		}
+
+		// Archive order: primitives, instances, instance batches, base
+		// primitives. Only primitives and base primitives produce records.
+		primitiveCursor += numPrimitives + numBasePrimitives;
+	}
+
+	// The reference counts one entry per used source vertex buffer, in buffer
+	// order. That is exactly the declaration-driven selection the reference
+	// reader performs; no position data is decoded here.
+	int vertices = 0;
+
+	for ( int i = 0; i < geometry.vertexBufferCount; i++ )
+	{
+		if ( usedVertexBuffer[ i ] )
+			vertices += geometry.vertexBuffers[ i ].count;
+	}
+
+	totals->vertices = vertices;
+}
+
 } // namespace
 
 int main( int argc, char** argv )
@@ -250,6 +859,9 @@ int main( int argc, char** argv )
 	// Arch::BinaryInputArchive reads the Scene object, including StreamData and
 	// all 359 ChunkInfo records through archive.inl's serialiser.
 	WebSpike::SceneReport& report = WebSpike::Report();
+	// P27: the declaration table is filled while the Scene archive is read, so
+	// the draw-list state must start empty here.
+	WebSpike::ResetDrawList();
 
 	Sys::I_File* renderFile = overlay.Open( Sys::C_FilePath( kRenderPath ),
 		Sys::E_FileAccess_Read, Sys::C_OpenParams( 64 * 1024 ) );
@@ -265,6 +877,15 @@ int main( int argc, char** argv )
 	S32 readSceneVersion = -1;
 	U64 scenePayloadAbs = 0;
 	U64 sceneCursorAbs = 0;
+
+	// P27 loaded-block import results (read inside the Scene block scope).
+	S32 loadedBlocks = 0;
+	S32 loadedLod = -1;
+	S32 loadedVb = 0;
+	S32 loadedIb = 0;
+	S32 loadedNodes = 0;
+	S32 loadedTextures = 0;
+	bool loadedOk = false;
 
 	{
 		// The level loader consumes the four-byte "  CP" file magic before
@@ -310,6 +931,24 @@ int main( int argc, char** argv )
 					// A truncated or over-read archive is an explicit check
 					// failure, not a silently accepted prefix.
 					check( "scene_bounds", sceneConsumed <= sceneBodyBytes );
+
+					// P27: the bytes after the loaded-block count are the
+					// initially loaded resource blocks (WorldRender::ReadScene
+					// reads exactly this loop). They are imported with the
+					// data-only Deserialise(ResourceBlock).
+					loadedBlocks = nBlocks;
+					for ( S32 i = 0; i < nBlocks; i++ )
+					{
+						RenderingData::Target::ResourceBlock& rb =
+							scene->GetResourceBlock( i );
+						WebSpike::ParseLoadedResourceBlockArchive( ar, rb );
+						loadedLod = rb.GetLod();
+						loadedVb += rb.GetNumVertexBuffers();
+						loadedIb += rb.GetNumIndexBuffers();
+						loadedNodes += rb.GetNumNodes();
+						loadedTextures += rb.GetNumTextures();
+					}
+					loadedOk = true;
 					break;
 				}
 			}
@@ -491,6 +1130,217 @@ int main( int argc, char** argv )
 		check( "cachechunk_prereq", refused );
 
 		streamData.CloseStreamFile();
+	}
+
+	// --- P27: CPU-side draw list from the engine's own resource import ------
+	// Nothing below creates a GPU object. The inline loaded resource block is
+	// read with Deserialise(ResourceBlock); the streamed geometry and node
+	// chunks are read with the same LodReader<ResourceBlock::Resources>
+	// deserialiser ProcessLoadChunk uses. Buffers are descriptors plus retained
+	// payload bytes; render lists are real RenderListNode objects whose
+	// primitives were deserialised into PrimitiveRecord entries.
+	{
+		WebSpike::ResetChunkRecords();
+
+		const S32 nLoadedBlocks = loadedBlocks;
+		printf( "webfiledraw inline blocks=%d lod=%d vbs=%d ibs=%d nodes=%d "
+			"textures=%d gpu=%d\n", (int)nLoadedBlocks, (int)loadedLod,
+			(int)loadedVb, (int)loadedIb, (int)loadedNodes, (int)loadedTextures,
+			WebSpike::Draws().gpuObjectsCreated );
+		check( "drawlist_inline_block",
+			loadedOk && nLoadedBlocks == 1 && WebSpike::Draws().gpuObjectsCreated == 0 );
+
+		// The two blocks compared with the asset-reader reference: River
+		// geometry block 88 and node block 283 (95 direct draws), and node
+		// block 253 (57 instances) whose geometry is block 27.
+		const S32 kGeometryBlock = 88;
+		const S32 kNodeBlock = 283;
+		const S32 kInstanceNodeBlock = 253;
+
+		static WebSpike::BufferRecord geoVb[ WebSpike::kMaxBuffers ];
+		static WebSpike::BufferRecord geoIb[ WebSpike::kMaxBuffers ];
+		int geoVbCount = 0;
+		int geoIbCount = 0;
+		S32 geoNodeCount = 0;
+		S32 geoTextureCount = 0;
+
+		bool geometryOk = false;
+		{
+			ChunkRange range;
+			const bool located = findChunkItem( scene->GetStreamData(), kGeometryBlock,
+				0, &range );
+			printf( "webfiledraw chunk name=geometry block=%d chunk=%d item=%d "
+				"lod=%d offset=%llu bytes=%llu located=%d\n", (int)kGeometryBlock,
+				(int)range.chunk, (int)range.item, (int)range.lod,
+				(unsigned long long)range.offset,
+				(unsigned long long)range.bytes, located ? 1 : 0 );
+			check( "drawlist_geometry_located", located );
+
+			if ( located )
+			{
+				std::vector<U8> bytes;
+				int vbBase = 0;
+				int ibBase = 0;
+				int primBase = 0;
+				RenderingData::Target::ResourceBlock::Resources* resources =
+					loadChunkCopy( manager, stream, range, bytes )
+					? parseChunkItem( bytes, scene, range, &vbBase, &ibBase, &primBase )
+					: 0;
+				geometryOk = resources != 0;
+
+				const WebSpike::DrawListState& draws = WebSpike::Draws();
+				geoVbCount = draws.vertexBuffers;
+				geoIbCount = draws.indexBuffers;
+				geoNodeCount = draws.resourceNodes;
+				geoTextureCount = draws.resourceTextures;
+
+				for ( int i = 0; i < geoVbCount && i < WebSpike::kMaxBuffers; i++ )
+					geoVb[ i ] = draws.vertexBuffer[ i ];
+				for ( int i = 0; i < geoIbCount && i < WebSpike::kMaxBuffers; i++ )
+					geoIb[ i ] = draws.indexBuffer[ i ];
+
+				printf( "webfiledraw chunk name=geometry parsed=%d vbs=%d ibs=%d "
+					"nodes=%d textures=%d retained=%d compressed=%d\n",
+					geometryOk ? 1 : 0, geoVbCount, geoIbCount, (int)geoNodeCount,
+					(int)geoTextureCount, draws.arenaUsed, draws.compressedBuffers );
+
+				for ( int i = 0; i < geoVbCount; i++ )
+					printf( "webfiledraw vbuf %d count=%d stride=%d bytes=%d "
+						"align=%d compression=%d endian=%d payload=%d\n", i,
+						geoVb[ i ].count, geoVb[ i ].stride, geoVb[ i ].bytes,
+						geoVb[ i ].alignment, geoVb[ i ].compression,
+						geoVb[ i ].endianSwap, geoVb[ i ].payloadRetained );
+				for ( int i = 0; i < geoIbCount; i++ )
+					printf( "webfiledraw ibuf %d count=%d width=%d bytes=%d "
+						"align=%d compression=%d endian=%d payload=%d\n", i,
+						geoIb[ i ].count, geoIb[ i ].stride, geoIb[ i ].bytes,
+						geoIb[ i ].alignment, geoIb[ i ].compression,
+						geoIb[ i ].endianSwap, geoIb[ i ].payloadRetained );
+
+				check( "drawlist_geometry_import",
+					geometryOk && geoVbCount > 0 && geoIbCount > 0 &&
+					draws.compressedBuffers == 0 && draws.arenaExhausted == 0 );
+			}
+		}
+
+		GeometryView geometry;
+		geometry.block = kGeometryBlock;
+		geometry.valid = geometryOk;
+		geometry.vertexBuffers = geoVb;
+		geometry.vertexBufferCount = geoVbCount;
+		geometry.indexBuffers = geoIb;
+		geometry.indexBufferCount = geoIbCount;
+
+		// Node block 283: the 95 direct draws.
+		{
+			WebSpike::ResetChunkRecords();
+			// The geometry payloads live in the arena; ResetChunkRecords keeps
+			// them and only clears the record tables.
+
+			ChunkRange range;
+			const bool located = findChunkItem( scene->GetStreamData(), kNodeBlock, 0,
+				&range );
+			printf( "webfiledraw chunk name=node block=%d chunk=%d item=%d "
+				"lod=%d offset=%llu bytes=%llu located=%d\n", (int)kNodeBlock,
+				(int)range.chunk, (int)range.item, (int)range.lod,
+				(unsigned long long)range.offset,
+				(unsigned long long)range.bytes, located ? 1 : 0 );
+			check( "drawlist_node_located", located );
+
+			if ( located )
+			{
+				std::vector<U8> bytes;
+				RenderingData::Target::ResourceBlock::Resources* resources =
+					loadChunkCopy( manager, stream, range, bytes )
+					? parseChunkItem( bytes, scene, range, 0, 0, 0 ) : 0;
+				const bool parsed = resources != 0;
+				check( "drawlist_node_import", parsed );
+
+				DrawTotals totals;
+				memset( &totals, 0, sizeof( totals ) );
+				totals.hash = fnv_begin();
+
+				if ( parsed )
+					emitNodeDraws( resources, range, geometry, &totals );
+
+				printf( "webfiledraw summary node=%d nodes=%d primitives=%d "
+					"renderlists=%d draws=%d otherblock=%d unbound=%d "
+					"triangles=%d vertices=%d indexerrors=%d drawhash=0x%016llx\n",
+					(int)kNodeBlock, totals.nodes, totals.primitives,
+					totals.renderLists, totals.draws, totals.otherBlock,
+					totals.unbound, totals.triangles, totals.vertices,
+					totals.indexErrors, (unsigned long long)totals.hash );
+
+				check( "drawlist_draws", totals.draws == 95 );
+				check( "drawlist_triangles", totals.triangles == 9343 );
+				check( "drawlist_vertices", totals.vertices == 17782 );
+				check( "drawlist_no_index_errors", totals.indexErrors == 0 );
+
+				delete resources;
+			}
+		}
+
+		// Node block 253: the render list whose instance count is compared with
+		// level_inspect --instances-all (57 instances / 36 base primitives).
+		{
+			WebSpike::ResetChunkRecords();
+
+			ChunkRange range;
+			const bool located = findChunkItem( scene->GetStreamData(),
+				kInstanceNodeBlock, 0, &range );
+			printf( "webfiledraw chunk name=instancenode block=%d chunk=%d item=%d "
+				"lod=%d offset=%llu bytes=%llu located=%d\n",
+				(int)kInstanceNodeBlock,
+				(int)range.chunk, (int)range.item, (int)range.lod,
+				(unsigned long long)range.offset,
+				(unsigned long long)range.bytes, located ? 1 : 0 );
+			check( "drawlist_instance_node_located", located );
+
+			if ( located )
+			{
+				std::vector<U8> bytes;
+				RenderingData::Target::ResourceBlock::Resources* resources =
+					loadChunkCopy( manager, stream, range, bytes )
+					? parseChunkItem( bytes, scene, range, 0, 0, 0 ) : 0;
+				const bool parsed = resources != 0;
+
+				DrawTotals totals;
+				memset( &totals, 0, sizeof( totals ) );
+				totals.hash = fnv_begin();
+
+				if ( parsed )
+					emitNodeDraws( resources, range, geometry, &totals );
+
+				printf( "webfiledraw instances node=%d renderlists=%d "
+					"instanceCount=%d basePrimitives=%d draws=%d\n",
+					(int)kInstanceNodeBlock, totals.renderLists, totals.instances,
+					totals.basePrimitives, totals.draws );
+				check( "drawlist_instance_import", parsed && totals.renderLists > 0 );
+				check( "drawlist_instance_count", totals.instances == 57 );
+				check( "drawlist_base_primitive_count",
+					totals.basePrimitives == 36 );
+
+				delete resources;
+			}
+		}
+
+		const WebSpike::DrawListState& draws = WebSpike::Draws();
+		printf( "webfiledraw counters declarations=%d vertexBuffers=%d "
+			"indexBuffers=%d primitives=%d bufferOverflow=%d primitiveOverflow=%d "
+			"lodOverflow=%d streamOverflow=%d declarationOverflow=%d "
+			"arenaExhausted=%d gpuObjectsCreated=%d renderListHandler=%d\n",
+			draws.declarations, draws.vertexBuffers, draws.indexBuffers,
+			draws.primitives, draws.bufferOverflow, draws.primitiveOverflow,
+			draws.lodOverflow, draws.streamOverflow, draws.declarationOverflow,
+			draws.arenaExhausted, draws.gpuObjectsCreated,
+			report.renderListHandlerRegistered );
+		check( "drawlist_record_bounds",
+			draws.bufferOverflow == 0 && draws.primitiveOverflow == 0 &&
+			draws.lodOverflow == 0 && draws.streamOverflow == 0 &&
+			draws.declarationOverflow == 0 );
+		check( "drawlist_no_gpu_objects", draws.gpuObjectsCreated == 0 );
+		check( "drawlist_renderlist_handler",
+			report.renderListHandlerRegistered == 1 );
 	}
 
 	// --- explicit failures: a missing range is never zero filled -----------

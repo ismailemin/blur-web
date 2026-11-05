@@ -84,9 +84,13 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-multi-car.md`,
   `probes/e1-drive/cars/roster.json`.
 
-### E1h — Engine draw list (P22 sonrası)
-- `draws[]` committed packet yerine engine sahne/çizim listesinden.
-- `levelrender` engine serialiser'ıyla parse; materyal eksikleri açık.
+### E1h — Engine draw list (P27)  ◐
+- Engine `Target::Scene` 95 bound draw + 160 other-block primitif çıkarıyor;
+  9.343 üçgen / 17.782 vertex; `level_inspect 88/283` ile **95/95 span eşit**;
+  draw-list hash `fd525c1452869aee`; 55 nesne, 794.845 B, 46/46, GPU objesi 0.
+- Kalan: `g_mWorld` instance transformları, materyal satırları (`g_tAlbedo`/
+  `g_MeshTexture`), dokular, `ProcessLoadChunk`; packet v1.1'e bağlama.
+- Kanıt: `docs/work/verification/T-007-streaming.md` §P27.
 
 ### E1i — Teker/kompozit görsel (P26)  ✅ (manifest)
 - Corvette modelinden 29 parça / 80 draw: 76 kanıtlı, 4 yan-belirsiz.

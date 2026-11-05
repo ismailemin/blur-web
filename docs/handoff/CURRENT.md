@@ -187,6 +187,12 @@ yok. Kanıt: `docs/work/verification/T-007-multi-car.md`.
 mesh, süspansiyon/steer/camber, diagnostic materyaller. Kanıt:
 `docs/work/verification/T-007-car-parts-integration.md`.
 
+**Engine draw list (P27):** `Target::Scene` 95 bound draw / 160 other-block
+çıkarıyor; 9.343 üçgen / 17.782 vertex; `level_inspect 88/283` ile 95/95 span
+eşit; hash `fd525c1452869aee`; 55 nesne, 794.845 B, 46/46, GPU objesi 0.
+Instance transformları (`g_mWorld`), materyaller ve dokular henüz yok; packet
+v1.1'e bağlanmadı. Kanıt: `docs/work/verification/T-007-streaming.md` §P27.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

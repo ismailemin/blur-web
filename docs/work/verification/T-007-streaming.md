@@ -71,6 +71,42 @@ Real `Level.levelstream` through `C_OverlayFs` → `C_WebFile` → node range so
 3. No texture creation, chunk decompression, browser/GPU renderer, vehicle or
    game claim; `C_OverlayFs` still one read-only layer.
 
+## P27 — engine CPU draw list (5 November 2026)
+
+`verify_stream.py --fresh` → **PASS** (119.9 s), **46/46** checks.
+
+- 55 objects, wasm **794,845 B**, two builds identical.
+- Scene target imports resource blocks and the render list into CPU structures;
+  **0 GPU objects created**, `renderListHandler=1`.
+- `usa_la_river` block 88 → chunk 136 (54,616,064 / 589,824 B; 5 VBs, 1 IB,
+  587,228 B payload, 0 compressed); node block 283 → chunk 68
+  (3,737,600 / 104,448 B; 1 render list, node 1, 255 primitives).
+- **95 bound draws**; 160 other-block primitives printed with block/span/reason
+  (`geometryBlockNotImported`), not drawn.
+- **9,343 triangles / 17,782 vertices**, 0 index errors, draw-list hash
+  `fd525c1452869aee` (same on reused and fresh trees).
+- Instance list block 27/node 253 → 57 instances / 36 base primitives.
+- Reference comparison: **95/95 `firstIndex`+`indexCount` spans equal** to
+  `level_inspect 88 283`, plus `primitiveCount 95`, `triangleCount`,
+  `vertexCount`; `instanceCount 57` / `basePrimitiveCount 36` equal.
+- Each draw carries chunk/node/primitive/archive offsets, declaration,
+  topology, LOD, effect, resolved `vb=block:index`/`ib=block:index`,
+  firstIndex/indexCount, bounds, materials; `world:null` with
+  `instanceTransformNotImported`.
+
+All 55 TUs include the P27 harness; PC preprocessing of `streammanager.cpp`,
+`streamdata.cpp`, `archive.cpp`, `resources.cpp` is identical.
+
+### Blockers on the way to packet v1.1
+
+1. Instance transforms (`g_mWorld`) and runtime materials are not imported;
+   `world:null` with a reason.
+2. Textures are described (name/hash/LOD/size), never created; no decompression.
+3. `ProcessLoadChunk` state machine is still not driven.
+4. Only block pairs 88/283 and 27/253 are imported; no visibility/culling/LOD
+   selection/sorting/batching.
+5. Legacy `<v2` render lists abort by name.
+
 ## Next
 
 Give the target archive a narrow fail-loud type facade so
