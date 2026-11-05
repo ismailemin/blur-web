@@ -48,13 +48,28 @@ Yedekler:
 
 Tam kurtarma adımları: [`../handoff/RESUME_2026-11-06.md`](../handoff/RESUME_2026-11-06.md).
 
+Son doğrulama (kapanış anı): **717/742 check, 25 failure**; 310 m sprint ve
+29 m regresyon geçiyor. Beş aracın tamamı 3 turu bitiremiyor (`no finish`,
+`lap times undefined`, `best null`, 1 respawn, 7201 tick). Verifier ayrıca
+`ghostSources.get(slug)['310m']` üzerinde `TypeError` veriyor; ghost girdisi
+yalnızca 310 m `finish` varsa yazılıyor (`verify_e1_drive.mjs:2349`).
+
+Yedekler (kapanış anı):
+
+- `_work/p67-lap-collision.diff` — **149.781 B**
+- `_work/p67-wip-snapshot/` — **53 dosya / 1.589.319 B** tam `probes/e1-drive` kopyası
+- `_work/p67-untracked/prop-layer.js`
+- `_work/logs/e1-drive/p67-verify-1.log`, `p67-diag-audi.log`
+
 Sıra:
 
-1. P67 lap path follower/closure + finish düzeltmesi, 3 tur ve lap süreleri;
-   prop collision'ı lap moduna ekleme.
-2. `verify_e1_drive` yeşil + 5 capture console 0 olana kadar commit yok.
-3. Düzelmezse `39bd1b6` bilinen yeşil durumuna dön.
-4. Sonra `?course=free` (R04), motor sesi (P62 verisi), prop dokuları.
+1. Lap sayacı/closure teşhisi (`LapRules.observe`, `gateCrossing`, `lapDistance`).
+2. 5 araç 3 tur + finish + lap süreleri.
+3. `ghostSources` TypeError düzeltmesi.
+4. Prop collision (`all-visible`) loop üzerinde etkinleştirme.
+5. `verify_e1_drive` yeşil + 5 capture console 0 olana kadar commit yok.
+6. Düzelmezse `39bd1b6` bilinen yeşil durumuna dön.
+7. Sonra `?course=free` (R04), motor sesi (P62 verisi), prop dokuları.
 
 ## Doğrulama durumu (son bilinen)
 
