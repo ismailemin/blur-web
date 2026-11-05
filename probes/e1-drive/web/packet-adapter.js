@@ -2,11 +2,10 @@
 //
 // Input:  one wasm state snapshot per fixed tick (position, body axes, wheels)
 //         and the static geometry produced by tools/build_geometry.mjs, which
-//         embeds the committed Corvette part manifest (29 parts / 80 draws /
-//         four wheel groups).
-// Output: a v1.1 packet whose static half is the committed River block27 +
-//         Corvette geometry and whose timeline is one `updates[]` entry per
-//         engine tick, plus a deterministic chase camera.
+//         embeds one real body/wheel manifest per roster car.
+// Output: a v1.1 packet whose static half is the committed River block27 geometry
+//         plus the selected car's body, and whose timeline is one `updates[]`
+//         entry per engine tick, plus a deterministic chase camera.
 //
 // The engine owns all motion. This module converts units and frames only:
 //   * the car's local->world matrix is the three body axes the engine reports
@@ -33,6 +32,25 @@ import { TICK_HZ } from './drive-script.js';
 export const CAR_NODE_ID = 'e1.car.body';
 export const WHEELS_RENDERED = true;
 export const WHEEL_CORNERS = Object.freeze(['frontleft', 'frontright', 'backleft', 'backright']);
+
+/**
+ * The body/mesh/parts record for one roster car. `geometry.json` v3 carries all
+ * five real bodies; a session draws exactly one of them, so the packet uploads
+ * one car mesh and never a car it is not driving.
+ */
+export function resolveCarBody(geometry, slug) {
+  if (!geometry || geometry.version !== 3 || !geometry.carBodies) {
+    throw new Error('geometry does not carry per-car bodies; rebuild it with ' +
+      '`node probes/e1-drive/tools/build_geometry.mjs`');
+  }
+  const key = slug ?? geometry.defaultCar;
+  const body = geometry.carBodies[key];
+  if (!body) {
+    throw new Error('geometry has no body for ' + JSON.stringify(key) + '; available: ' +
+      Object.keys(geometry.carBodies).join(', '));
+  }
+  return body;
+}
 
 /** Column-major 16-float multiply, matching WGSL mat4x4f * vec4f. */
 function multiplyMat4(a, b) {
@@ -106,6 +124,9 @@ export class ChaseCamera {
     this.height = options.height ?? 2.4;
     this.lookHeight = options.lookHeight ?? 1.0;
     this.smoothing = options.smoothing ?? 0.18;
+    // Diagnostics only (?camyaw=): rotates the chase eye around the car so a
+    // screenshot can show the side/wheels. Never set by the default page.
+    this.yawOffset = options.yawOffset ?? 0;
     this.yaw = null;
     this.pitch = Math.asin(this.height / Math.hypot(this.distance, this.height));
     this.orbitDistance = Math.hypot(this.distance, this.height);
@@ -116,7 +137,7 @@ export class ChaseCamera {
     const [fx, , fz] = state.axisZ;
     const horizontal = Math.hypot(fx, fz);
     // Behind the car: the forward axis points away from the eye.
-    const yaw = Math.atan2(-fx, -fz);
+    const yaw = Math.atan2(-fx, -fz) + this.yawOffset;
     const pitch = Math.asin(this.height / Math.hypot(this.distance, this.height));
     return { yaw, pitch, horizontal, distance: this.orbitDistance };
   }
@@ -169,28 +190,28 @@ export function createSession(geometry, tick0, options = {}) {
   const reference = carMatrix(tick0);
   const cameraTick0 = camera.update(tick0);
 
+  // The body this session draws: the selected roster car's own real mesh.
+  const body = resolveCarBody(geometry, options.car?.slug);
+  if (!Array.isArray(body.carNodes) || !Array.isArray(body.wheelGroups) || body.wheelGroups.length !== 4) {
+    throw new Error('geometry body ' + body.slug + ' does not carry four wheel groups');
+  }
   const levelDraws = geometry.levelDraws.map((draw) => ({
     ...draw,
     world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
     worldKind: 'baked-into-mesh'
   }));
 
-  if (geometry.version !== 2 || !Array.isArray(geometry.carNodes) ||
-      !Array.isArray(geometry.wheelGroups) || geometry.wheelGroups.length !== 4) {
-    throw new Error('geometry does not carry the committed car-part manifest; rebuild it with ' +
-      '`node probes/e1-drive/tools/build_geometry.mjs`');
-  }
-  const wheelByCorner = new Map(geometry.wheelGroups.map((group) => [group.corner, group]));
+  const wheelByCorner = new Map(body.wheelGroups.map((group) => [group.corner, group]));
   for (const corner of WHEEL_CORNERS) {
     if (!wheelByCorner.has(corner)) throw new Error('geometry has no wheel group for ' + corner);
   }
-  const carMeshId = geometry.carDraws[0]?.meshId;
-  if (!carMeshId) throw new Error('geometry has no car draws');
+  const carMeshId = body.meshId;
+  if (!carMeshId) throw new Error('geometry body has no mesh id');
 
-  // Draws keep their packet ranges and gain the manifest identity and the node
-  // that moves them. Wheel draws sit on their group's rest-pose translation so
-  // their static (tick-0) world matrix is already correct before any update.
-  const carDraws = geometry.carDraws.map((draw) => {
+  // Draws keep their manifest ranges and gain the wheel node that moves them.
+  // Wheel draws sit on their group's rest-pose translation so their static
+  // (tick-0) world matrix is already correct before any update.
+  const carDraws = body.carDraws.map((draw) => {
     const { localBounds, ...rest } = draw;
     const corner = typeof draw.renderPartId === 'string' && draw.renderPartId.startsWith('wheel.')
       ? draw.renderPartId.slice('wheel.'.length) : null;
@@ -203,7 +224,7 @@ export function createSession(geometry, tick0, options = {}) {
     };
   });
 
-  const carNodes = geometry.carNodes.map((node) => ({ ...node, drawIds: node.drawIds.slice() }));
+  const carNodes = body.carNodes.map((node) => ({ ...node, drawIds: node.drawIds.slice() }));
   const carDrawIds = new Set(carDraws.map((draw) => draw.id));
   const owned = new Set();
   for (const node of carNodes) {
@@ -228,7 +249,7 @@ export function createSession(geometry, tick0, options = {}) {
     lastTick: null
   };
 
-  const meshes = geometry.meshes.map((mesh) => ({
+  const meshes = [geometry.meshes[0], body.mesh, geometry.meshes[1]].map((mesh) => ({
     id: mesh.id,
     storage: mesh.storage,
     vertexCount: mesh.vertexCount,
@@ -240,13 +261,14 @@ export function createSession(geometry, tick0, options = {}) {
     coordinateSpace: mesh.coordinateSpace,
     source: mesh.source
   }));
+  const trackMesh = geometry.meshes[1];
 
   const vertexTotal = meshes.reduce((sum, mesh) => sum + mesh.vertexCount, 0);
   const triangleTotal = meshes.reduce((sum, mesh) => sum + mesh.indexCount / 3, 0);
 
-  // The car identity the engine actually decoded. Optional, so a caller that
-  // does not pass it produces exactly the single-car packet this slice shipped
-  // before the roster existed.
+  // The car identity the engine actually decoded, plus the real body mesh this
+  // packet draws for it. Optional, so a caller that does not pass it produces the
+  // default car's packet.
   const car = options.car
     ? {
         name: options.car.name,
@@ -256,10 +278,20 @@ export function createSession(geometry, tick0, options = {}) {
         drivetrain: options.car.drivetrain ?? null,
         mass: options.car.mass ?? null,
         fieldsSha256: options.car.fieldsSha256 ?? null,
-        bodyMesh: 'corvette.c3.race.body',
-        bodyMeshReason:
-          'the committed render packet carries one vehicle body (the Corvette C3 race body); every roster car is ' +
-          'drawn with it because no per-car body mesh is imported in this slice. The physics is the record named above',
+        bodyMesh: body.meshId,
+        bodyMeshReason: body.manifest.fallback
+          ? 'FALLBACK: this roster car has no unambiguous model mapping (' +
+            body.manifest.fallbackReason + '); the committed Corvette C3 body is drawn and labelled. ' +
+            'Physics is the RP_CarDynamics record named above'
+          : 'real per-car body/wheel mesh from ' + body.manifest.sourceModelPakPath + ' (model SHA-256 ' +
+            body.manifest.sourceModelSha256 + '); the manifest is pinned by SHA-256 and its draw ranges are ' +
+            're-verified against the mesh. Physics is the RP_CarDynamics record named above',
+        bodyFallback: body.manifest.fallback === true,
+        bodyManifest: body.manifest.path,
+        bodyManifestSha256: body.manifest.sha256,
+        bodyVertexCount: body.mesh.vertexCount,
+        bodyDrawCount: body.carDraws.length,
+        bodyPartCount: body.carParts.length,
         source: 'RP_CarDynamics record decoded by engine/harness/t005d-vehicle/car_xt.py'
       }
     : null;
@@ -280,10 +312,11 @@ export function createSession(geometry, tick0, options = {}) {
         },
         {
           id: 'parts',
-          tool: 'probes/e1-drive/tools/build_geometry.mjs',
-          source: geometry.manifest?.path ?? null,
-          sourceSha256: geometry.manifest?.sha256 ?? null,
-          note: 'part ids, draw ranges, wheel groups and rest-pose translations copied from the committed Corvette part manifest'
+          tool: 'probes/car-parts/tools/build_manifest.py',
+          source: body.manifest.path,
+          sourceSha256: body.manifest.sha256,
+          note: 'part ids, draw ranges, wheel groups and rest-pose translations copied from the selected car\'s ' +
+            'own committed part manifest'
         },
         {
           id: 'simulation',
@@ -302,7 +335,7 @@ export function createSession(geometry, tick0, options = {}) {
     materials: geometry.materials,
     draws: levelDraws.concat(carDraws),
     placedObjects: [{
-      meshId: 'corvette.c3.race.body',
+      meshId: body.meshId,
       placement: 'engine-spawn-transform',
       world: reference,
       reason:
@@ -322,9 +355,10 @@ export function createSession(geometry, tick0, options = {}) {
       materialsApplied: false,
       lighting: 'diagnostic-directional',
       scope:
-        'River block27/node253 supported instances plus the Corvette C3 race body drawn as 29 manifest parts / ' +
-        '80 draws with four spinning wheel groups; the body and wheel poses come from the wasm ' +
-        'RacingPhysics/Gravity step, materials and lighting are diagnostic',
+        'River block27/node253 supported instances plus the ' + body.name + ' body drawn as ' +
+        body.carParts.length + ' manifest parts / ' + body.carDraws.length + ' draws with four spinning ' +
+        'wheel groups; the body and wheel poses come from the wasm RacingPhysics/Gravity step, materials ' +
+        'and lighting are diagnostic',
       sequence: {
         tickCount: 0,
         tickHz: TICK_HZ,
@@ -350,8 +384,8 @@ export function createSession(geometry, tick0, options = {}) {
           ...(car ? { car } : {})
         },
         parts: {
-          manifest: geometry.manifest ?? null,
-          partCount: geometry.carParts?.length ?? 0,
+          manifest: body.manifest,
+          partCount: body.carParts.length,
           drawCount: carDraws.length,
           nodeCount: carNodes.length,
           nodes: carNodes.map((node) => ({ id: node.id, drawCount: node.drawIds.length })),
@@ -363,12 +397,12 @@ export function createSession(geometry, tick0, options = {}) {
         },
         wheels: {
           rendered: WHEELS_RENDERED,
-          wheelGroupCount: geometry.wheelGroups.length,
+          wheelGroupCount: body.wheelGroups.length,
           wheelNodes: carNodes.filter((node) => node.id !== CAR_NODE_ID).map((node) => node.id),
           spinAxis: 'element-local +X',
           spinAxisSource: 'wheel/rim local bounds are thin on X; VehicleActor.cpp:5158-5197 spins about wheelMatrix.AX()',
-          spinMembers: geometry.wheelGroups[0]?.spinMembers ?? ['tyre', 'rim', 'brakeDisc'],
-          staticMembers: geometry.wheelGroups[0]?.staticMembers ?? ['brakeCaliper'],
+          spinMembers: body.wheelGroups[0]?.spinMembers ?? ['tyre', 'rim', 'brakeDisc'],
+          staticMembers: body.wheelGroups[0]?.staticMembers ?? ['brakeCaliper'],
           angleSource:
             'integrated at 1/60 s from e1_get_state().wheels[].angular (physics wheel angular velocity), ' +
             'starting at 0 on the settled tick; each wheel is assigned to the nearest manifest wheel translation ' +
@@ -380,17 +414,17 @@ export function createSession(geometry, tick0, options = {}) {
             'brake calipers share the wheel rest-pose translation but are not rotated (VehicleActor.cpp:5198, ' +
             '"Brake calipers mustn\'t rotate")',
           reason:
-            'the committed scene reader returns one 80-draw car mesh that contains the wheel geometry; the manifest ' +
-            'proves which draws are tyre/rim/disc/caliper and where each wheel group sits'
+            'the committed scene reader returns one car mesh per model; the selected car\'s manifest proves which ' +
+            'draws are tyre/rim/disc/caliper and where each wheel group sits'
         },
         surfaces: {
           surfaceMappingsApplied: false,
           reason: 'RP_SurfaceMappingList is not installed; engine grip/rolling/MI scales are the documented neutral values'
         },
         track: {
-          id: geometry.meshes[2]?.id ?? null,
+          id: trackMesh?.id ?? null,
           source: 'usa_la_river/Level.levelphysics through the collision-oracle reference parser',
-          triangles: (geometry.meshes[2]?.indexCount ?? 0) / 3,
+          triangles: (trackMesh?.indexCount ?? 0) / 3,
           reason:
             'the committed River draw set is props near the road, not the road surface; this draw is the collision ' +
             'surface the wheels actually trace, labelled as diagnostic collision geometry (no material binding)'
@@ -414,7 +448,6 @@ export function createSession(geometry, tick0, options = {}) {
         'level material list to shader binding',
         'original level and vehicle lighting rigs',
         'vehicle paint lookup texture and runtime light blends',
-        'per-car body meshes (every roster car is drawn with the Corvette C3 manifest)',
         'runtime per-wheel matrices (suspension, steer, camber), higher LODs and damage states',
         'engine asset streaming, culling and draw-list production (this slice drives one car on one loaded block)',
         'level blocks 26, 32 and 31 instances'
@@ -424,7 +457,7 @@ export function createSession(geometry, tick0, options = {}) {
           ? 'one car at a time, selected from the RP_CarDynamics roster at runtime: not a race, a game loop or a full level'
           : 'one car, one loaded River collision mesh, one camera: not a race, a game loop or a full level',
         'no audio, no HUD beyond diagnostics, no multiplayer, no race rules',
-        'the 29 parts are the Corvette C3 manifest for every roster car; no per-car body or wheel mesh is imported',
+        'the car body is the selected roster car\'s own real mesh; its paint, materials and shader parameters are not decoded',
         'packet v1.1 is JSON with inline geometry; it is not an engine draw-list integration',
         'the geometry is a spike fixture (block27/node253) while the simulation runs on the whole level physics mesh, ' +
           'so the car can leave the drawn area if it drives far enough',

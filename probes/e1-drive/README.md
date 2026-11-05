@@ -7,10 +7,12 @@ The first **connector** between the two proven halves of E1:
 - the dynamic render-packet consumer of `probes/render-packet/web/` (v1.1
   `nodes[]`/`updates[]`, fixed-step, interpolated, T-007/E1b).
 
-The car is drawn from the committed Corvette part manifest
-(`probes/car-parts/`): **29 parts / 80 draws**, with **four wheel groups** whose
-tyre/rim/brake-disc members spin about the proven element-local `+X` axis using
-the physics wheel angular velocity. Brake calipers stay static
+The car is drawn from each car's own committed part manifest
+(`probes/car-parts/`): the Corvette ZR1 has **34 parts / 100 draws**, the Lotus
+Exige Cup260 **23 / 88**, the Dodge Challenger **31 / 104**, the Ford Focus RS
+**31 / 115** and the Audi R8 V10 **29 / 84**, each with **four wheel groups**
+whose tyre/rim/brake-disc members spin about the proven element-local `+X` axis
+using that car's physics wheel angular velocity. Brake calipers stay static
 (`VehicleActor.cpp:5198`). Materials remain diagnostic; per-part colours and the
 wheel spin marker are debug aids, labelled in the packet diagnostics.
 
@@ -55,6 +57,21 @@ exact field and value, never patched.
 Select at runtime with `?car=<slug>` in the page (there is also a car selector in
 the page), or `--car <slug>` on the two node tools.
 
+Each car also has **its own visual body**: `probes/car-parts/tools/build_all_manifests.py`
+maps the record name to `\models\vehicles\<lowercased name>.model`, decodes the
+pak entry, and builds a part manifest from it. `_work/car-parts/cars/index.json`
+is the mapping evidence; `build_geometry.mjs` pins every manifest SHA-256, so a
+regenerated or hand-edited manifest is a hard failure. The five models are
+distinct, and so are the five body mesh hashes.
+
+| slug | body model | parts | draws |
+| --- | --- | ---: | ---: |
+| `corvette-zr1-stock` | `corvette_zr1_stock.model` | 34 | 100 |
+| `lotus-exige-cup260-stock` | `lotus_exigecup260_stock.model` | 23 | 88 |
+| `dodge-challenger-stock` | `dodge_challenger_stock.model` | 31 | 104 |
+| `ford-focusrs-stock` | `ford_focusrs_stock.model` | 31 | 115 |
+| `audi-r8v10-stock` | `audi_r8v10_stock.model` | 29 | 84 |
+
 ## Commands
 
 ```powershell
@@ -64,7 +81,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 0. one-time prerequisites (already produced by the T-007 gates)
 & $node probes/render-packet/tools/build_packet.mjs
 & $py   engine/verify_vehicle.py --skip-build        # objects + car.fields, no rebuild
-& $py   probes/car-parts/tools/build_manifest.py     # Corvette part manifest (read-only input)
+& $py   probes/car-parts/tools/build_all_manifests.py # one real body per roster car (read-only input)
 
 # 1. build the library module (185 reused T-005d objects + this slice's harness TU)
 & $node probes/e1-drive/tools/build_module.mjs --force-objects
@@ -72,7 +89,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 2. collision surface under the drive (level physics → mesh, via the oracle parser)
 & $py   probes/e1-drive/tools/extract_track.py
 
-# 3. static geometry (committed packet meshes + level draws + collision surface)
+# 3. static geometry (committed packet meshes + level draws + collision surface + 5 car bodies)
 & $node probes/e1-drive/tools/build_geometry.mjs
 
 # 4. decode the car roster (every RP_CarDynamics record + one field list per car)
@@ -125,9 +142,12 @@ tyres and drivetrain, and `e1_info().car` reports which record it decoded.
 packet the browser renders is produced by the same code the verifier validates.
 
 - `draws[]`: 22 committed level instances (world-space, identity transform) + the
-  diagnostic River collision surface + 80 car draw ranges. Every car draw carries
-  its manifest `partId`/`partKind`, `wheelPart`, `spins`, `nodeId` and a labelled
-  `diagnosticColour`.
+  diagnostic River collision surface + that car's own draw ranges (100 / 88 / 104
+  / 115 / 84). Every car draw carries its manifest `partId`/`partKind`,
+  `wheelPart`, `spins`, `nodeId` and a labelled `diagnosticColour`.
+- `meshes[]`: exactly three — the level mesh, the selected car's own body mesh,
+  and the collision surface. One body per packet keeps the upload bounded
+  (3 uploads, ~1.01–1.11 MB) instead of growing with the roster.
 - `nodes[]`: **nine** nodes — `e1.car.body` (all non-wheel parts) plus, per wheel
   corner, a `.spin` node (tyre/rim/brake disc) and a `.static` node (brake
   caliper). Each draw is owned by exactly one node.
@@ -139,10 +159,12 @@ packet the browser renders is produced by the same code the verifier validates.
 - `draws[].bounds` for the car are recomputed from the mesh's local AABB at the
   tick-0 pose, so the reference frame's bounds are real.
 - `diagnostics.extras.drive.car`: the car this timeline describes (name, record
-  index/id, drivetrain, mass, field-file SHA-256) and the honest note that the
-  drawn body is the committed Corvette C3 mesh for every car.
-- `diagnostics.extras.parts` / `.wheels`: part/draw/node counts, the manifest
-  SHA-256, the rest-pose/spin source and the diagnostic-colour label.
+  index/id, drivetrain, mass, field-file SHA-256) **and the real body it draws**
+  (`bodyMesh`, `bodyManifest`, `bodyManifestSha256`, `bodyVertexCount`,
+  `bodyDrawCount`, `bodyPartCount`, plus the model pak path and SHA-256).
+- `diagnostics.extras.parts` / `.wheels`: part/draw/node counts, that car's
+  manifest (path, SHA-256, model pak path, tyre proof tier, ambiguous wheel
+  draws), the rest-pose/spin source and the diagnostic-colour label.
 - `diagnostics.extras.wheels`: the four wheel corners spin about element-local
   `+X`; physics wheel records are assigned to the nearest manifest wheel
   translation in body-local space.
@@ -189,28 +211,38 @@ sequence hash, and the Corvette's sequence hash is exactly the T-007 value
 ## Evidence
 
 `_work/e1-drive/run.json` (all cars), `state-<slug>.json`, `packet-<slug>.json`,
+`geometry.json` (level + collision surface + one real body per car),
 `cars.json` (the 62-record roster + gate), `browser-evidence.json`,
-`browser-<slug>-{start,mid,coast,end}.png`; `packet.json`/`state_a.json` are the
-default car's aliases. The part/wheel integration is recorded in
-`docs/work/verification/T-007-car-parts-integration.md`; details and numbers:
+`browser-<slug>-{start,mid,coast,end}.png`,
+`browser-<slug>-wheels-240.png` (side view, wheel geometry),
+`browser-evidence-wheels.json`; `packet.json`/`state_a.json` are the default
+car's aliases. The per-car body/wheel integration is recorded in
+`docs/work/verification/T-007-per-car-meshes.md`; details and numbers:
 `docs/work/analysis/e1-drive-slice.md` §10–11 and
 `docs/work/verification/T-007-multi-car.md`.
 
 ## Limits (also carried in the packet's own diagnostics)
 
 - **Diagnostic materials.** Identity albedo, one directional light, screen-space
-  derivative normals; no texture pixels, shadows, post, particles.
-- **One car at a time, selected at runtime.** No opponents, no traffic, no
-  per-car body mesh: every physics car is drawn with the committed Corvette C3
-  body **and its 29 Corvette parts** (labelled `bodyMeshReason`); the part
-  manifest is Corvette-specific, so wheels/body never match the other four
-  cars' shapes.
+  derivative normals; no texture pixels, shadows, post, particles. Paint and
+  material parameters are not decoded.
+- **One car at a time, selected at runtime.** No opponents, no traffic. Each
+  physics car now draws **its own real body and wheels** from its own
+  `root.pak` model (body mesh, parts, wheel groups per car; see the counts in
+  the Cars section). The body is labelled with `bodyMesh`, `bodyMeshReason` and
+  the manifest SHA-256.
+- **Wheel corner identity is bounds evidence.** Symmetric wheel sets cannot be
+  resolved by AABB alone: the ZR1 has 10 ambiguous wheel draws, the Lotus 12,
+  the Dodge 16, the Focus 20 and the Audi 16. Those draws are still drawn and
+  spun on their wheel node, but their `partKind` is `unclassified` and the
+  pairing is `previewAssignment` — no corner label is claimed. The Audi tyre tier
+  is `containment` because its element boxes are larger than the geometry.
 - **The collision surface is not retail render geometry.** The committed River
   draw set is props near the road; the road itself only exists as collision
   triangles, which are drawn here as a labelled diagnostic surface. Nearly
   edge-on slabs therefore speckle (derivative normals at grazing angles). The
-  selection box now covers the whole script for every car (`x −120…−10`,
-  `381` triangles; it was `−120…−30` / `282` for the single-car slice).
+  selection box covers the whole script for every car (`x −120…−10`,
+  `381` triangles).
 - **Wheels use rest-pose placement and physics spin only.** The four wheel groups
   sit at their `MdlDat` element translations; tyre/rim/brake disc rotate about
   element-local `+X` by the integrated physics wheel angular velocity, and the
@@ -225,12 +257,15 @@ default car's aliases. The part/wheel integration is recorded in
   T-005d labels, unchanged. The box is sized from the selected car's own XT
   geometry, so it differs per car.
 - **The car mesh frame to chassis frame mapping is not recovered** (that is the
-  model import), so the body is drawn directly in the engine body frame, and the
-  same body mesh is used for every car.
+  model import), so each body is drawn directly in the engine body frame. The
+  five bodies visibly fit the engine chassis at the spawn, but the retail
+  mesh→body alignment offset is not proven.
 - **The chase camera has no occlusion avoidance.** At tick 150 the slower cars
   are still among the start-area props, so their mid frame shows terrain; the
   coast/end frames show the car. The HUD and the state/packet comparison prove
-  the simulation in every frame.
+  the simulation in every frame. A `?camdist/camheight/camyaw` override exists
+  for diagnostic side/wheel screenshots only; it changes the camera, never
+  physics, and the default page never sets it.
 - **One car, one block, no game.** No audio, race rules, opponents, culling or
   engine streaming, no per-car handling/AI claims.
 - **Native parity** is blocked by the DirectX SDK, as recorded in

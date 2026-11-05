@@ -54,14 +54,22 @@ const PROFILE = path.join(OUT, 'edge-profile');
 const VIEWPORT = { width: 1600, height: 900 };
 const TICKS = option('--ticks', '0,150,240,300').split(',').map(Number);
 const ONLY_CAR = option('--car', null);
+const EXTRA_QUERY = option('--extra-query', '');
+const LABEL_PREFIX = option('--label-prefix', '');
+const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
+const DIAGNOSTIC_CAMERA = /(^|&)cam(dist|height)=/.test(EXTRA_QUERY);
 const MID_TICK = 150;
 
 const run = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
 const geometry = JSON.parse(readFileSync(path.join(OUT, 'geometry.json'), 'utf8'));
 const roster = JSON.parse(readFileSync(path.join(OUT, 'cars.json'), 'utf8'));
-const GEOMETRY_BYTES_TARGET = geometry.meshes.reduce(
-  (sum, mesh) => sum + mesh.positions.length * 4 + mesh.indices.length * 4, 0);
-const MESH_COUNT = geometry.meshes.length;
+// The page uploads exactly three meshes: the level, the selected car's body and
+// the collision surface. One body is in each packet, so the upload stays bounded
+// per car instead of growing with the roster.
+const MESH_COUNT = 3;
+const meshBytes = (mesh) => mesh.positions.length * 4 + mesh.indices.length * 4;
+const levelMesh = geometry.meshes[0];
+const trackMesh = geometry.meshes[1];
 
 const cars = run.cars.filter((car) => !ONLY_CAR || car.slug === ONLY_CAR || car.name === ONLY_CAR);
 if (cars.length === 0) {
@@ -75,11 +83,22 @@ const labelFor = (tick) => (tick === 0 ? 'start' : tick >= 300 ? 'end' : tick ==
 function expectedFor(car) {
   const packet = JSON.parse(readFileSync(path.join(ROOT, car.packet.path), 'utf8'));
   const state = JSON.parse(readFileSync(path.join(ROOT, car.packet.statePath), 'utf8'));
+  const body = geometry.carBodies[car.slug];
+  if (!body) throw new Error('geometry has no body for ' + car.slug);
   return {
     packetHash: new Map(packet.updates.map((update) => [update.tick, update.hash])),
     stateHash: new Map(state.ticks.map((row) => [row.tick, row.stateHash])),
     updates: new Map(packet.updates.map((update) => [update.tick, update])),
-    meshCount: packet.meshes.length
+    meshCount: packet.meshes.length,
+    body,
+    uploadBytes: meshBytes(levelMesh) + meshBytes(body.mesh) + meshBytes(trackMesh),
+    parts: body.carParts.length,
+    draws: body.carDraws.length,
+    nodes: body.carNodes.length,
+    wheelNodes: body.carNodes.filter((node) => node.id !== 'e1.car.body').length,
+    bodyMeshId: body.meshId,
+    bodyManifestSha256: body.manifest.sha256,
+    bodyPositionsSha256: body.manifest.meshValueHashes.positionsFloat32LESha256
   };
 }
 
@@ -183,7 +202,8 @@ await send('Emulation.setDeviceMetricsOverride', { width: VIEWPORT.width, height
 
 async function capture(car, label, tick) {
   messages.length = 0;
-  const url = origin + '/?script=drive&car=' + encodeURIComponent(car.slug) + '&hold=' + tick;
+  const url = origin + '/?script=drive&car=' + encodeURIComponent(car.slug) + '&hold=' + tick +
+    (EXTRA_QUERY ? '&' + EXTRA_QUERY : '');
   await send('Page.navigate', { url });
   let probe = null;
   for (let attempt = 0; attempt < 400; attempt++) {
@@ -212,6 +232,7 @@ async function capture(car, label, tick) {
       uniformWrites: p.uniformWrites, uniformBytes: p.uniformBytes, drawsIssued: p.drawsIssued,
       draws: p.draws, parts: p.parts, carDraws: p.carDraws, packetNodes: p.packetNodes,
       wheelNodes: p.wheelNodes, wheelAngles: p.wheelAngles,
+      bodyMesh: p.bodyMesh, bodyManifest: p.bodyManifest,
       tickHash: p.tickHash, tick0Hash: p.tick0Hash, packetHash: p.packetHash,
       matrixChecksum: p.matrixChecksum, movedScreen: p.movedScreen, camera: p.camera,
       gpu: p.adapter, spawn: p.spawn, info: p.engineInfo,
@@ -292,7 +313,8 @@ for (const car of cars) {
   expectedBySlug.set(car.slug, expected);
   const carRuns = [];
   for (const tick of TICKS) {
-    const entry = await capture(car, labelFor(tick), tick);
+    const label = LABEL_PREFIX ? LABEL_PREFIX + '-' + tick : labelFor(tick);
+    const entry = await capture(car, label, tick);
     carRuns.push(entry);
 
     const tickHash = expected.packetHash.get(tick);
@@ -314,9 +336,14 @@ for (const car of cars) {
     check(`${car.slug}/${entry.label}: geometry uploads equal the mesh count`,
           entry.probe.geometryUploads === MESH_COUNT,
           entry.probe.geometryUploads + ' uploads for ' + MESH_COUNT + ' meshes');
-    check(`${car.slug}/${entry.label}: upload bytes are the mesh bytes`,
-          entry.probe.geometryUploadBytes === GEOMETRY_BYTES_TARGET,
-          String(entry.probe.geometryUploadBytes));
+    check(`${car.slug}/${entry.label}: upload bytes are the level + own body + track meshes`,
+          entry.probe.geometryUploadBytes === expected.uploadBytes,
+          entry.probe.geometryUploadBytes + ' vs ' + expected.uploadBytes);
+    check(`${car.slug}/${entry.label}: the browser drew this car's own body mesh and manifest`,
+          entry.probe.bodyMesh === expected.bodyMeshId &&
+          entry.probe.bodyManifest?.sha256 === expected.bodyManifestSha256 &&
+          entry.probe.bodyManifest?.meshValueHashes?.positionsFloat32LESha256 === expected.bodyPositionsSha256,
+          JSON.stringify({ mesh: entry.probe.bodyMesh, manifest: entry.probe.bodyManifest?.sha256 }));
     check(`${car.slug}/${entry.label}: one uniform write per frame`,
           entry.probe.uniformWrites === entry.probe.frames,
           entry.probe.uniformWrites + ' writes / ' + entry.probe.frames + ' frames');
@@ -331,7 +358,8 @@ for (const car of cars) {
           render.matrix.every((value, index) => Object.is(value, expectedUpdate.matrices[0].world[index])),
           render ? 'matrix differs' : 'no render update');
     check(`${car.slug}/${entry.label}: the browser camera matches the node camera within 1e-6`,
-          cameraDelta !== null && cameraDelta <= 1e-6,
+          DIAGNOSTIC_CAMERA || (cameraDelta !== null && cameraDelta <= 1e-6),
+          DIAGNOSTIC_CAMERA ? 'diagnostic camera override, comparison skipped' :
           'max |delta| ' + (cameraDelta === null ? 'n/a' : cameraDelta.toExponential(3)) +
           ', packet hash exact: ' + (render?.hash === tickHash));
     check(`${car.slug}/${entry.label}: canvas is the packet aspect`, entry.probe.canvas.width > 0 &&
@@ -341,12 +369,14 @@ for (const car of cars) {
           entry.probe.movedScreen.x > 0 && entry.probe.movedScreen.x < VIEWPORT.width &&
           entry.probe.movedScreen.y > 0 && entry.probe.movedScreen.y < VIEWPORT.height,
           JSON.stringify(entry.probe.movedScreen));
-    check(`${car.slug}/${entry.label}: the car is drawn as 29 manifest parts / 80 draws`,
-          entry.probe.parts === 29 && entry.probe.carDraws === 80,
-          entry.probe.parts + ' parts / ' + entry.probe.carDraws + ' draws');
-    check(`${car.slug}/${entry.label}: the packet carries one body and eight wheel nodes`,
-          entry.probe.packetNodes === 9 && entry.probe.wheelNodes === 8 &&
-          entry.probe.render?.matrices?.length === 9,
+    check(`${car.slug}/${entry.label}: the car is drawn as its own manifest parts and draws`,
+          entry.probe.parts === expected.parts && entry.probe.carDraws === expected.draws,
+          entry.probe.parts + ' parts / ' + entry.probe.carDraws + ' draws, expected ' +
+          expected.parts + ' / ' + expected.draws);
+    check(`${car.slug}/${entry.label}: the packet carries one body and one matrix per wheel node`,
+          entry.probe.packetNodes === expected.nodes &&
+          entry.probe.wheelNodes === expected.wheelNodes &&
+          entry.probe.render?.matrices?.length === expected.nodes,
           entry.probe.packetNodes + ' nodes / ' + entry.probe.wheelNodes + ' wheel / ' +
           (entry.probe.render?.matrices?.length ?? 0) + ' matrices');
     const wheelAngleValues = Object.values(entry.probe.wheelAngles ?? {});
@@ -388,12 +418,14 @@ for (const car of cars) {
         carRuns.map((entry) => entry.probe.geometryUploads).join(','));
   const wheelAngleMax = (entry) => Math.max(...Object.values(entry.probe.wheelAngles ?? { frontleft: 0 })
     .map((value) => Math.abs(value)));
-  check(`${car.slug}: the wheel spin angle grows with the scripted drive`,
-        wheelAngleMax(carRuns[carRuns.length - 1]) > wheelAngleMax(carRuns[0]) + 1,
-        wheelAngleMax(carRuns[0]).toFixed(2) + ' -> ' + wheelAngleMax(carRuns[carRuns.length - 1]).toFixed(2) + ' rad');
+  if (carRuns.length > 1) {
+    check(`${car.slug}: the wheel spin angle grows with the scripted drive`,
+          wheelAngleMax(carRuns[carRuns.length - 1]) > wheelAngleMax(carRuns[0]) + 1,
+          wheelAngleMax(carRuns[0]).toFixed(2) + ' -> ' + wheelAngleMax(carRuns[carRuns.length - 1]).toFixed(2) + ' rad');
+  }
 
   // The default car's captures keep their historical file names.
-  if (car.slug === defaultSlug) {
+  if (car.slug === defaultSlug && !LABEL_PREFIX) {
     for (const entry of carRuns) {
       copyFileSync(path.join(ROOT, entry.screenshot), path.join(OUT, `browser-${entry.label}.png`));
       if (entry.carCrop) {
@@ -423,6 +455,7 @@ for (const car of cars) {
       updates: car.packet.updates,
       draws: car.packet.draws
     },
+    body: car.body,
     runs: carRuns
   });
 }
@@ -436,6 +469,11 @@ if (midRuns.length > 1) {
   check('the cars have different state hashes at mid-drive', hashes.size === midRuns.length,
         `${hashes.size} distinct of ${midRuns.length}`);
 }
+const browserBodyHashes = new Set(carResults.map((entry) =>
+  entry.runs[0]?.probe.bodyManifest?.meshValueHashes?.positionsFloat32LESha256));
+check('the browser drew a distinct body mesh for every car',
+      browserBodyHashes.size === carResults.length,
+      `${browserBodyHashes.size} distinct of ${carResults.length}`);
 
 const allMessages = carResults.flatMap((entry) => entry.runs.flatMap((runEntry) => runEntry.messages));
 const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
@@ -474,7 +512,7 @@ const evidence = {
   assertions: { ok: failures.length === 0, failures },
   verdict: blocking.length === 0 && failures.length === 0 ? 'clean-console-and-gates' : 'failed'
 };
-writeFileSync(path.join(OUT, 'browser-evidence.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+writeFileSync(path.join(OUT, EVIDENCE_NAME), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
 writeFileSync(path.join(LOGS, 'edge-process.log'), browserLog, 'utf8');
 
 await shutdown();

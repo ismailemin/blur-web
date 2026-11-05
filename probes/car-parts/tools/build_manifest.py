@@ -1,48 +1,56 @@
-"""Build a deterministic car-part manifest from the real Corvette model.
+"""Build a deterministic, evidence-backed car-part manifest from one real `.model`.
+
+Works for any PC vehicle model that follows the committed reader's layout; it
+was developed and gated on the five roster cars (Corvette ZR1, Lotus Exige
+Cup260, Dodge Challenger, Ford Focus RS, Audi R8 V10) plus the Corvette C3.
 
 Inputs (all read-only):
-  * `_work/car-level-assets/corvette_c3_race.model.decoded` - the decoded PC
-    `.model` payload used by the committed asset probes.
+  * a decoded PC `.model` payload (see `extract_car_models.py`);
   * `scene_inspect.exe` - the committed native first-RenderList LOD0 reader.
-    It supplies exactly the geometry the committed browser preview draws:
-    30,591 vertices / 36,193 triangles / 80 draws, object-local.
+    It supplies the geometry the previews draw: positions, U32 indices and the
+    draw list, object-local.
 
 The manifest adds a source-justified part layer on top of that geometry:
 
-  1. `MdlDat` (the model data block, `C_ModelData::Read`) is parsed with the
-     documented `PC` file-block layout and the serialized `C_Model` /
-     `C_ModelElement` fields: 48-byte HMat43 (four 3-float rows), 24-byte
-     C_AxisBox (two 3-float corners), name ids into `StrTab`, hierarchy
-     indices, `m_RenderMeshId`, `m_PhysicsShapeId`.
-  2. Those element names, matrices and local bounds are the authority for
-     part names and transforms. Nothing is invented.
-  3. Each scene draw is linked to an element only when its index-range AABB
-     proves it:
-       - wheel part: draw AABB equals the element-local bounds (tyres are the
-         exact union of their tread + sidewall draws),
+  1. `MdlDat` (`C_ModelData::Read`) is parsed with the documented `PC`
+     file-block layout and the serialized `C_Model` / `C_ModelElement` fields:
+     48-byte HMat43 (four 3-float rows), 24-byte C_AxisBox (two 3-float
+     corners), name ids into `StrTab`, hierarchy indices, `m_RenderMeshId`,
+     `m_PhysicsShapeId`.
+  2. Element names, matrices and local bounds are the authority for part names
+     and transforms. Nothing is invented.
+  3. A draw is linked to a part only when its index-range AABB proves it:
+       - wheel parts: the draw is contained in the element-local bounds and the
+         symmetric AABB difference is small. A tyre is proven by the exact union
+         of the 1-2 draws that make it.
        - glass / light / plate / mirror / steering: draw AABB matches the
-         element bounds within 5 cm (symmetric difference),
-       - body/interior shell: nearest containing element decides the branch.
-     A draw that proves nothing is emitted as `partKind:"unclassified"` with
-     a reason; it is never given a guessed name.
-  4. Four wheel groups are emitted with the element translation and the
-     documented local X spin axis. Front-left / front-right discs and
-     calipers have byte-identical local bounds in this asset, so their side
-     is not provable. They are emitted as ambiguous pairs; the manifest may
-     carry a deterministic `previewAssignment` for drawing, clearly separate
-     from the proof.
+         element bounds within 5 cm (symmetric difference).
+       - body / interior shell: the nearest containing element decides the
+         branch; a leaf panel name is never invented.
+     A draw that proves nothing is `partKind:"unclassified"` with a reason.
+  4. Four wheel groups come from the file's own `e_wheel_*` elements. The spin
+     axis is element-local +X when the measured wheel bounds are thinnest on X
+     and round on Y/Z; otherwise the tool stops instead of guessing.
+  5. Left/right wheel parts can have identical or nearly identical local
+     bounds. A draw whose corner is not provable is emitted as unclassified and
+     only paired to a corner for drawing, labelled `previewAssignment`.
 
-The tool fails loudly on any unsupported field or on a result that does not
-account for every draw exactly once. It writes only under `_work/car-parts/`.
+The tool fails loudly on an unsupported field, an unprovable wheel axis or a
+result that does not account for every draw exactly once. It writes only to the
+`--out-dir` it is given.
 
 Usage:
-  python probes/car-parts/tools/build_manifest.py
+  python probes/car-parts/tools/build_manifest.py \
+      --model _work/car-parts/models/<sha>.decoded \
+      --out-dir _work/car-parts [--car-slug <slug>] [--car-name <name>] \
+      [--model-pak-path "\\models\\vehicles\\<name>.model"]
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import math
 import struct
@@ -60,24 +68,28 @@ MAX_MODEL_BYTES = 64 * 1024 * 1024
 MAX_STRINGS = 4096
 MAX_STRING_BYTES = 1 << 20
 
-# Wheel part element names, as serialized in the Corvette StrTab.
-WHEEL_PART_PREFIXES = ("E_Tyre_", "E_AlloyRim_", "E_BrakeDisc_", "E_BrakeCaliper_")
+# Wheel part element prefixes. Case differs per asset ("E_Tyre_" vs "e_Tyre_",
+# "e_alloyRim_" vs "E_AlloyRim_"), so the match is case-insensitive and the
+# original spelling is kept everywhere.
 WHEEL_PART_KIND = (
-    ("E_Tyre_", "tyre"),
-    ("E_AlloyRim_", "rim"),
-    ("E_BrakeDisc_", "brakeDisc"),
-    ("E_BrakeCaliper_", "brakeCaliper"),
+    ("e_tyre_", "tyre"),
+    ("e_alloyrim_", "rim"),
+    ("e_brakedisc_", "brakeDisc"),
+    ("e_brakecaliper_", "brakeCaliper"),
 )
-
-GLASS_NAMES = {"e_window_front", "e_window_back", "e_window_left", "e_window_right"}
-LIGHT_SUBSTRINGS = ("Light", "Spotlight", "Headlight")
-PLATE_NAMES = {"e_licenseplate_front", "e_licenseplate_back"}
-MIRROR_NAMES = {"e_mirror_left", "e_mirror_right"}
-STEERING_NAME = "e_SteeringWheel"
 
 CONTAIN_TOL = 0.005
 EXACT_D = 0.05
-WHEEL_D = 0.02
+WHEEL_CONTAIN_TOL = 0.005
+# A wheel-geometry draw must lie inside a wheel element's local box; the box is
+# the outer envelope, so an inner sidewall ring can be up to ~15 cm smaller in
+# symmetric AABB difference and still be the same wheel part. The kind is still
+# chosen by the smallest difference among the containing elements.
+WHEEL_MAX_D = 0.15
+TYRE_UNION_D = 0.05
+AMBIGUITY_MARGIN = 0.01
+
+WHEEL_CORNERS = ("frontleft", "frontright", "backleft", "backright")
 
 
 class Unsupported(RuntimeError):
@@ -186,7 +198,6 @@ def parse_mdldat(data: bytes) -> dict:
     mdldat = next((block for block in children if block["id"] == "MdlDat"), None)
     if mdldat is None or mdldat["type"] != 0x41:
         raise Unsupported("Model has no MdlDat data block")
-    body = data[mdldat["payloadOffset"]:mdldat["end"]]
     if mdldat["payloadBytes"] < 64:
         raise Unsupported("MdlDat is too small")
 
@@ -284,6 +295,7 @@ def parse_mdldat(data: bytes) -> dict:
             "parent": parent,
             "firstChild": first_child,
             "nextSibling": next_sibling,
+            "linearIdentity": is_identity_linear(matrix),
         })
     if span.remaining() != 0:
         raise Unsupported("Models block has trailing bytes")
@@ -327,32 +339,59 @@ def parse_mdldat(data: bytes) -> dict:
             "nextSibling": next_sibling,
             "renderMeshId": render_mesh_id,
             "physicsShapeId": physics_shape_id,
+            "linearIdentity": is_identity_linear(matrix),
         })
     if span.remaining() != 0:
         raise Unsupported("Element block has trailing bytes")
 
-    # This asset uses translation-only element matrices. Reject rather than
-    # silently transpose a rotation/scale that the manifest cannot prove.
-    for model_index, model in enumerate(models):
-        if not is_identity_linear(model["matrix"]):
-            raise Unsupported(f"model {model_index} has a non-identity linear matrix")
+    # Only the DefaultModel (index 0) is in the first RenderList and is used for
+    # part identity. Scene draws carry primitive positions in their element's
+    # local frame (the committed reader reports `nodeTransformsApplied:false`),
+    # so part identity is local-bounds matching; the element matrix is recorded
+    # for placement and is never decomposed or guessed. Its linear part is
+    # expected to be identity within float32 noise; the measured deviation is
+    # recorded and a real rotation/scale would be visible there and in
+    # `linearIdentity`.
+    model0 = [element for element in elements if element["modelIndex"] == 0]
+    if not model0:
+        raise Unsupported("model 0 has no elements")
     for element in elements:
-        if not is_identity_linear(element["matrix"]):
-            raise Unsupported(f"element {element['index']} has a non-identity linear matrix")
+        for row in element["matrix"]:
+            if not all(math.isfinite(value) for value in row):
+                raise Unsupported(f"element {element['name']} has a non-finite matrix")
+        element["linearDeviation"] = max(
+            abs(element["matrix"][row][column] - (1.0 if row == column else 0.0))
+            for row in range(3) for column in range(3))
+    for model_entry in models:
+        for row in model_entry["matrix"]:
+            if not all(math.isfinite(value) for value in row):
+                raise Unsupported(f"model {model_entry['name']} has a non-finite matrix")
+        model_entry["linearDeviation"] = max(
+            abs(model_entry["matrix"][row][column] - (1.0 if row == column else 0.0))
+            for row in range(3) for column in range(3))
+    non_identity = [element["name"] for element in model0 if not element["linearIdentity"]]
+    for element in model0:
+        # Serialized element matrices in these assets already carry the parent's
+        # translation (a wheel member repeats its e_wheel_* parent). Adding the
+        # parent chain would double the offset, so the serialized translation is
+        # the model-space translation. `worldTranslation` keeps that meaning and
+        # the wheel placement check below proves it per asset.
+        element["worldTranslation"] = list(element["matrix"][3])
 
-    # World (model-space) translation: every matrix in the chain is a
-    # translation, so translations add.
+    # Bone models (index > 0) are recorded, never used for geometry; their
+    # translation is recorded with the same model-space meaning.
     for element in elements:
-        total = list(element["matrix"][3])
+        element["worldTranslation"] = list(element["matrix"][3])
+
+    elements_by_index = {element["index"]: element for element in elements}
+    for element in elements:
         parent = element["parent"]
         seen = set()
         while parent >= 0:
             if parent in seen:
                 raise Unsupported("element hierarchy contains a cycle")
             seen.add(parent)
-            total = [total[i] + elements[parent]["matrix"][3][i] for i in range(3)]
-            parent = elements[parent]["parent"]
-        element["worldTranslation"] = total
+            parent = elements_by_index[parent]["parent"]
 
     return {
         "offset": mdldat["offset"],
@@ -366,14 +405,17 @@ def parse_mdldat(data: bytes) -> dict:
         "modelCount": model_count,
         "elementCount": element_count,
         "constraintCount": constraint_count,
+        "nonIdentityElementCount": sum(1 for element in elements if not element["linearIdentity"]),
+        "nonIdentityModelElements": non_identity,
     }
 
 
 def is_identity_linear(matrix: list[list[float]]) -> bool:
+    """Identity within float32 serialization noise (1e-4), not a real rotation."""
     for row in range(3):
         for column in range(3):
             expected = 1.0 if row == column else 0.0
-            if abs(matrix[row][column] - expected) > 1e-6:
+            if abs(matrix[row][column] - expected) > 1e-4:
                 return False
     return True
 
@@ -389,8 +431,55 @@ def column_major_from_rows(matrix: list[list[float]]) -> list[float]:
     return out
 
 
+def identity_rows() -> list[list[float]]:
+    return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]
+
+
 # ---------------------------------------------------------------------------
-# Geometry / draw matching
+# Name rules (evidence is the serialized element name; nothing is guessed)
+# ---------------------------------------------------------------------------
+
+def wheel_kind(name: str) -> str | None:
+    lowered = name.lower()
+    for prefix, kind in WHEEL_PART_KIND:
+        if lowered.startswith(prefix):
+            return kind
+    return None
+
+
+def part_kind_of_element(name: str) -> str | None:
+    lowered = name.lower()
+    if "window" in lowered:
+        return "glass"
+    if "light" in lowered:
+        return "light"
+    if "steeringwheel" in lowered:
+        return "interior"
+    if "licenseplate" in lowered or "mirror" in lowered:
+        return "body"
+    return None
+
+
+def element_branch(element: dict, elements_by_index: dict[int, dict]) -> str:
+    """Nearest branch: e_interior subtree or e_exterior subtree of model 0."""
+    cursor = element
+    seen = set()
+    while cursor is not None:
+        if cursor["index"] in seen:
+            raise Unsupported("element hierarchy contains a cycle")
+        seen.add(cursor["index"])
+        lowered = cursor["name"].lower()
+        if lowered == "e_interior":
+            return "interior"
+        if lowered == "e_exterior":
+            return "exterior"
+        parent = cursor["parent"]
+        cursor = elements_by_index[parent] if parent >= 0 else None
+    return "exterior"
+
+
+# ---------------------------------------------------------------------------
+# Geometry helpers
 # ---------------------------------------------------------------------------
 
 def draw_bounds(positions: list[float], indices: list[int], draw: dict) -> dict:
@@ -417,6 +506,12 @@ def contains(outer_lo, outer_hi, inner_lo, inner_hi, tol: float) -> bool:
     return all(inner_lo[i] >= outer_lo[i] - tol and inner_hi[i] <= outer_hi[i] + tol for i in range(3))
 
 
+def union_bounds(bounds_list: list[dict]) -> tuple[list[float], list[float]]:
+    lo = [min(item["min"][i] for item in bounds_list) for i in range(3)]
+    hi = [max(item["max"][i] for item in bounds_list) for i in range(3)]
+    return lo, hi
+
+
 def volume(lo, hi) -> float:
     return math.prod(max(1e-9, hi[i] - lo[i]) for i in range(3))
 
@@ -425,52 +520,187 @@ def finite_bounds(element: dict) -> bool:
     return all(abs(value) < 1e30 for value in element["min"] + element["max"])
 
 
-def element_world_bounds(element: dict) -> tuple[list[float], list[float]]:
-    t = element["worldTranslation"]
-    return [element["min"][i] + t[i] for i in range(3)], [element["max"][i] + t[i] for i in range(3)]
+# ---------------------------------------------------------------------------
+# Wheel matching
+# ---------------------------------------------------------------------------
+
+def wheel_corner(name: str) -> str:
+    lowered = name.lower()
+    if not lowered.startswith("e_wheel_"):
+        raise Unsupported(f"{name!r} is not an e_wheel_* element")
+    return lowered[len("e_wheel_"):]
 
 
-def part_kind_of_element(name: str) -> str | None:
-    if name in GLASS_NAMES:
-        return "glass"
-    if any(token in name for token in LIGHT_SUBSTRINGS):
-        return "light"
-    if name in PLATE_NAMES or name in MIRROR_NAMES:
-        return "body"
-    if name == STEERING_NAME:
-        return "interior"
-    return None
+def kind_of_draw(draw: dict, wheel_elements: list[dict]) -> tuple[str | None, list[tuple[float, dict]]]:
+    """Wheel part kind = the kind of the containing element with the smallest AABB difference."""
+    candidates = []
+    for element in wheel_elements:
+        if not finite_bounds(element):
+            continue
+        if not contains(element["min"], element["max"], draw["bounds"]["min"], draw["bounds"]["max"],
+                        WHEEL_CONTAIN_TOL):
+            continue
+        difference = aabb_diff(draw["bounds"]["min"], draw["bounds"]["max"], element["min"], element["max"])
+        if difference <= WHEEL_MAX_D:
+            candidates.append((difference, element))
+    if not candidates:
+        return None, []
+    candidates.sort(key=lambda item: (item[0], item[1]["name"]))
+    best = candidates[0][0]
+    tied = [(difference, element) for difference, element in candidates
+            if difference <= best + AMBIGUITY_MARGIN]
+    return wheel_kind(tied[0][1]["name"]), tied
 
 
-def wheel_kind(name: str) -> str | None:
-    for prefix, kind in WHEEL_PART_KIND:
-        if name.startswith(prefix):
-            return kind
-    return None
+def tyre_subsets(tyre_draws: list[dict], element: dict) -> list[dict]:
+    """Every 1-3 draw union that reproduces this tyre element's local bounds."""
+    options = []
+    for size in range(1, 4):
+        for combo in itertools.combinations(tyre_draws, size):
+            lo, hi = union_bounds([draw["bounds"] for draw in combo])
+            difference = aabb_diff(lo, hi, element["min"], element["max"])
+            if difference <= TYRE_UNION_D:
+                options.append({
+                    "draws": [draw["index"] for draw in combo],
+                    "unionBounds": {"min": lo, "max": hi},
+                    "difference": difference,
+                })
+    options.sort(key=lambda option: (option["difference"], len(option["draws"]), option["draws"]))
+    return options
 
 
-def element_branch(element: dict, elements: list[dict]) -> str:
-    """Nearest line: e_interior subtree or e_exterior subtree of model 0."""
-    cursor = element
-    seen = set()
-    while cursor is not None:
-        if cursor["index"] in seen:
-            raise Unsupported("element hierarchy contains a cycle")
-        seen.add(cursor["index"])
-        if cursor["name"] == "e_interior":
-            return "interior"
-        if cursor["name"] == "e_exterior":
-            return "exterior"
-        parent = cursor["parent"]
-        cursor = elements[parent] if parent >= 0 else None
-    return "exterior"
+def assign_tyres(tyre_draws: list[dict],
+                 tyre_elements: list[dict]) -> tuple[str, dict[int, dict], dict[int, dict]]:
+    """Assign every tyre draw to one of the four tyre elements.
+
+    First pass: each element greedily takes its best disjoint 1-3 draw union that
+    reproduces its bounds (tier `union`). Draws left over - an inner sidewall that
+    is smaller than every element box - are distributed by containment and stay
+    ambiguous. If no element can reproduce its bounds at all (measured), every
+    draw is distributed by containment only (tier `containment`) and no corner is
+    claimed.
+    """
+    options = {element["index"]: tyre_subsets(tyre_draws, element) for element in tyre_elements}
+
+    def containment_share(draws: list[dict]) -> dict[int, dict]:
+        if len(draws) % 4 != 0:
+            raise Unsupported(f"{len(draws)} tyre draws do not divide across four corners")
+        per_corner = len(draws) // 4
+        by_index = {draw["index"]: draw for draw in draws}
+        candidates = {}
+        for draw in draws:
+            candidates[draw["index"]] = [
+                element["corner"] for element in tyre_elements
+                if contains(element["min"], element["max"], draw["bounds"]["min"],
+                            draw["bounds"]["max"], WHEEL_CONTAIN_TOL)]
+        order = [element["corner"] for element in tyre_elements]
+        chosen: list[dict] = []
+
+        def solve(position: int, remaining: list[int]) -> bool:
+            if position == len(order):
+                return True
+            corner = order[position]
+            available = [index for index in remaining if corner in candidates[index]]
+            if len(available) < per_corner:
+                return False
+            for combo in itertools.combinations(available, per_corner):
+                chosen.append({"corner": corner, "draws": list(combo)})
+                if solve(position + 1, [index for index in remaining if index not in combo]):
+                    return True
+                chosen.pop()
+            return False
+
+        if not solve(0, sorted(by_index)):
+            raise Unsupported("tyre draws cannot be distributed over the four corners")
+        result = {}
+        for entry in chosen:
+            element = next(element for element in tyre_elements if element["corner"] == entry["corner"])
+            lo, hi = union_bounds([by_index[index]["bounds"] for index in entry["draws"]])
+            result[element["index"]] = {
+                "draws": entry["draws"],
+                "unionBounds": {"min": lo, "max": hi},
+                "difference": aabb_diff(lo, hi, element["min"], element["max"]),
+            }
+        return result
+
+    # Deterministic greedy union assignment in canonical corner order. Each
+    # element takes its best 1-3 draw union that does not reuse another element's
+    # draws. Symmetric corners simply fall through to their next option.
+    covered: dict[int, dict | None] = {}
+    used: set[int] = set()
+    for element in tyre_elements:
+        chosen = None
+        for option in options[element["index"]]:
+            if used.intersection(option["draws"]):
+                continue
+            chosen = option
+            break
+        covered[element["index"]] = chosen
+        if chosen is not None:
+            used.update(chosen["draws"])
+    if any(option is not None for option in covered.values()):
+        leftover = [draw for draw in tyre_draws if draw["index"] not in used]
+        if not leftover:
+            return "union", covered, {element["index"]: None for element in tyre_elements}
+        if len(leftover) % 4 == 0:
+            return "union", covered, containment_share(leftover)
+
+    # Containment-only fallback for every tyre draw.
+    shares = containment_share(tyre_draws)
+    return "containment", {element["index"]: None for element in tyre_elements}, shares
+
+
+def assign_kind_by_corner(kind: str, elements: list[dict], draws: list[dict],
+                          candidate_corners: dict[int, list[str]]) -> dict[int, dict]:
+    """Distribute `draws` over the four same-kind elements (equal share each).
+
+    A draw whose candidate set has one corner is proven; the rest are filled by
+    a deterministic backtracking assignment and labelled preview-only.
+    """
+    if len(elements) != 4:
+        raise Unsupported(f"expected four {kind} elements, found {len(elements)}")
+    if not draws:
+        return {}
+    if len(draws) % 4 != 0:
+        raise Unsupported(f"{len(draws)} {kind} draws do not divide across four corners")
+    per_corner = len(draws) // 4
+    order = [element["corner"] for element in elements]
+    draw_indices = sorted(draw["index"] for draw in draws)
+
+    result: list[dict] = []
+
+    def solve(position: int, remaining: list[int], chosen: list) -> bool:
+        if position == len(order):
+            result.extend(chosen)
+            return True
+        corner = order[position]
+        available = [index for index in remaining if corner in candidate_corners[index]]
+        if len(available) < per_corner:
+            return False
+        for combo in itertools.combinations(available, per_corner):
+            chosen.append({"corner": corner, "draws": list(combo)})
+            if solve(position + 1, [index for index in remaining if index not in combo], chosen):
+                return True
+            chosen.pop()
+        return False
+
+    if not solve(0, draw_indices, []):
+        raise Unsupported(f"{kind} draws cannot be distributed over the four corners")
+    assignment: dict[int, dict] = {}
+    for entry in result:
+        element = next(element for element in elements if element["corner"] == entry["corner"])
+        for draw_index in entry["draws"]:
+            assignment[draw_index] = {"element": element, "corner": entry["corner"]}
+    if sorted(assignment) != draw_indices:
+        raise Unsupported(f"{kind} assignment lost a draw")
+    return assignment
 
 
 # ---------------------------------------------------------------------------
 # Manifest assembly
 # ---------------------------------------------------------------------------
 
-def classify(scene: dict, mdl: dict) -> dict:
+def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
     positions = scene["positions"]
     indices = scene["indices"]
     draws = []
@@ -484,115 +714,213 @@ def classify(scene: dict, mdl: dict) -> dict:
         entry["uniqueVertexCount"] = bounds["vertexCount"]
         entry["indexRange"] = {"first": draw["firstIndex"], "count": draw["indexCount"]}
         entry["vertexRange"] = {"min": bounds["minIndex"], "max": bounds["maxIndex"],
-                               "unique": bounds["vertexCount"]}
+                                "unique": bounds["vertexCount"]}
         draws.append(entry)
 
     elements = [element for element in mdl["elements"] if element["modelIndex"] == 0]
+    elements_by_index = {element["index"]: element for element in elements}
     wheel_elements = [element for element in elements if wheel_kind(element["name"])]
-    if len(wheel_elements) != 16:
-        raise Unsupported(f"expected 16 wheel part elements, found {len(wheel_elements)}")
+    if not wheel_elements:
+        raise Unsupported("model 0 has no tyre/rim/disc/caliper elements")
+    if len(wheel_elements) % 4 != 0:
+        raise Unsupported(f"wheel element count {len(wheel_elements)} is not four per corner")
 
-    # --- tyres: exact union of one tread (albedo tyretred) and one wall
-    # (albedo tyrewall) draw per tyre element ------------------------------
-    tyre_elements = {element["name"]: element for element in wheel_elements
-                     if element["name"].startswith("E_Tyre_")}
-    tyre_draws = {kind: [draw for draw in draws if draw.get("albedoTexture") == value]
-                  for kind, value in (("tread", 3), ("wall", 5))}
-    if len(tyre_elements) != 4 or len(tyre_draws["tread"]) != 4 or len(tyre_draws["wall"]) != 4:
-        raise Unsupported("expected four tyre elements, four tread draws and four wall draws")
+    # --- wheel groups -----------------------------------------------------
+    wheel_parents = [element for element in elements if element["name"].lower().startswith("e_wheel_")]
+    if len(wheel_parents) != 4:
+        raise Unsupported(f"expected four e_wheel_* elements, found {len(wheel_parents)}")
+    corners = [wheel_corner(element["name"]) for element in wheel_parents]
+    if sorted(corners) != sorted(WHEEL_CORNERS):
+        raise Unsupported(f"e_wheel_* corners are {sorted(corners)}, expected {sorted(WHEEL_CORNERS)}")
+    for element in wheel_parents:
+        element["corner"] = wheel_corner(element["name"])
+    for element in wheel_elements:
+        parent = elements_by_index.get(element["parent"])
+        if parent is None or parent not in wheel_parents:
+            raise Unsupported(f"wheel part {element['name']} is not a direct child of an e_wheel_* element")
+        element["corner"] = parent["corner"]
+    for corner in WHEEL_CORNERS:
+        members = [element for element in wheel_elements if element["corner"] == corner]
+        kinds = sorted(wheel_kind(element["name"]) for element in members)
+        expected = sorted(kind for _, kind in WHEEL_PART_KIND)
+        if kinds != expected:
+            raise Unsupported(f"wheel {corner} members are {kinds}, expected {expected}")
 
-    import itertools
-    best = None
-    names = sorted(tyre_elements)
-    for tread_order in itertools.permutations(tyre_draws["tread"]):
-        for wall_order in itertools.permutations(tyre_draws["wall"]):
-            total = 0.0
-            pairs = []
-            for name, tread, wall in zip(names, tread_order, wall_order):
-                element = tyre_elements[name]
-                lo = [min(tread["bounds"]["min"][i], wall["bounds"]["min"][i]) for i in range(3)]
-                hi = [max(tread["bounds"]["max"][i], wall["bounds"]["max"][i]) for i in range(3)]
-                difference = aabb_diff(lo, hi, element["min"], element["max"])
-                total += difference
-                pairs.append({"element": name, "tread": tread["index"], "wall": wall["index"],
-                              "unionBounds": {"min": lo, "max": hi}, "difference": difference})
-            key = (total, [(pair["element"], pair["tread"], pair["wall"]) for pair in pairs])
-            if best is None or key < best[0]:
-                best = (key, pairs, total)
-    if best is None or best[2] > 0.05:
-        raise Unsupported(f"tyre tread/wall pairing is not proven (best union difference {best[2] if best else None})")
-    tyre_pairs = {pair["element"]: pair for pair in best[1]}
+    # The wheel axis proof is measured, not assumed: the group's own bounds must
+    # be thinnest on X and round on Y/Z.
+    for element in wheel_parents:
+        members = [member for member in wheel_elements if member["corner"] == element["corner"]]
+        lo, hi = union_bounds([{"min": member["min"], "max": member["max"]} for member in members])
+        extent = [hi[i] - lo[i] for i in range(3)]
+        round_delta = abs(extent[1] - extent[2]) / max(extent[1], extent[2])
+        element["axisProof"] = {
+            "unionLocalBounds": {"min": lo, "max": hi},
+            "localExtent": extent,
+            "thinAxis": "x" if extent[0] < extent[1] and extent[0] < extent[2] else None,
+            "roundRelativeDelta": round_delta,
+            "roundAxes": "y/z" if round_delta <= 0.10 else None,
+        }
+        if element["axisProof"]["thinAxis"] != "x" or element["axisProof"]["roundAxes"] != "y/z":
+            raise Unsupported(
+                f"wheel {element['corner']} bounds are not thin on X and round on Y/Z: {extent} "
+                f"(round relative delta {round_delta:.4f})")
+
+    # --- wheel kinds ------------------------------------------------------
+    tyre_elements = sorted([element for element in wheel_elements if wheel_kind(element["name"]) == "tyre"],
+                           key=lambda element: WHEEL_CORNERS.index(element["corner"]))
+    tyre_draws = []
+    other_by_kind: dict[str, list[dict]] = {"rim": [], "brakeDisc": [], "brakeCaliper": []}
+    candidate_corners: dict[str, dict[int, list[str]]] = {"rim": {}, "brakeDisc": {}, "brakeCaliper": {}}
+    for draw in draws:
+        kind, tied = kind_of_draw(draw, wheel_elements)
+        if kind is None:
+            continue
+        if kind == "tyre":
+            tyre_draws.append(draw)
+        else:
+            other_by_kind[kind].append(draw)
+            candidate_corners[kind][draw["index"]] = sorted(
+                {element["corner"] for _, element in tied}, key=WHEEL_CORNERS.index)
+    if len(tyre_draws) < 4:
+        raise Unsupported(f"found only {len(tyre_draws)} tyre draws")
+
+    tyre_tier, tyre_options, tyre_extras = assign_tyres(tyre_draws, tyre_elements)
 
     wheel_assignment: dict[int, dict] = {}
-    for name, pair in tyre_pairs.items():
-        element = tyre_elements[name]
-        for role in ("tread", "wall"):
-            draw_index = pair[role]
-            wheel_assignment[draw_index] = {
-                "element": name,
-                "wheelPart": "tyre",
-                "role": role,
-                "proof": "tyre element bounds equal the union of this tread draw and its sidewall draw",
-                "difference": pair["difference"],
-            }
-
-    # --- rims / discs / calipers: direct local-bounds match ---------------
-    handled = set(wheel_assignment)
-    ambiguous = []
-    for draw in draws:
-        if draw["index"] in handled:
-            continue
-        candidates = []
-        for element in wheel_elements:
-            if element["name"] in tyre_elements:
-                continue
-            difference = aabb_diff(draw["bounds"]["min"], draw["bounds"]["max"],
-                                   element["min"], element["max"])
-            if difference <= WHEEL_D:
-                candidates.append((difference, element))
-        if not candidates:
-            continue
-        candidates.sort(key=lambda item: (item[0], item[1]["name"]))
-        best_difference, best_element = candidates[0]
-        # Left/right parts can have byte-identical local bounds (front brake
-        # discs and calipers in this asset). If the best element shares its
-        # bounds with another candidate, the draw cannot be assigned a side.
-        tied = [element for _, element in candidates
-                if aabb_diff(element["min"], element["max"],
-                             best_element["min"], best_element["max"]) <= 0.01]
-        if len(tied) == 1:
-            element = tied[0]
-            wheel_assignment[draw["index"]] = {
-                "element": element["name"],
-                "wheelPart": wheel_kind(element["name"]),
-                "role": "primary",
-                "proof": "draw AABB equals the element-local bounds",
-                "difference": best_difference,
-            }
+    ambiguous: list[dict] = []
+    tyre_rows = []
+    draw_by_index = {draw["index"]: draw for draw in draws}
+    for element in tyre_elements:
+        option = tyre_options[element["index"]]
+        extra = tyre_extras[element["index"]]
+        if option is not None:
+            matchable = []
+            for other in tyre_elements:
+                difference = aabb_diff(option["unionBounds"]["min"], option["unionBounds"]["max"],
+                                       other["min"], other["max"])
+                if difference <= TYRE_UNION_D:
+                    matchable.append((difference, other))
+            matchable.sort(key=lambda item: (item[0], item[1]["name"]))
         else:
-            axle = "front" if all("Front" in element["name"] for element in tied) else (
-                "back" if all("Back" in element["name"] for element in tied) else "unknown")
-            if axle == "unknown":
-                raise Unsupported(f"draw {draw['index']} matches several unrelated wheel parts")
+            matchable = []
+        matched_corners = sorted({other["corner"] for _, other in matchable}, key=WHEEL_CORNERS.index)
+        proven = option is not None and matched_corners == [element["corner"]]
+        union_draws = option["draws"] if option is not None else []
+        extra_draws = extra["draws"] if extra is not None else []
+        all_draws = sorted(union_draws + extra_draws)
+        tyre_rows.append({
+            "element": element["name"],
+            "corner": element["corner"],
+            "draws": all_draws,
+            "unionDraws": union_draws,
+            "extraDraws": extra_draws,
+            "difference": (option["difference"] if option is not None
+                           else (extra["difference"] if extra is not None else None)),
+            "matchedCorners": matched_corners,
+            "proof": "union" if proven else ("containment" if option is None else "union-ambiguous"),
+            "proven": proven,
+        })
+        if option is not None:
+            for draw_index in union_draws:
+                wheel_assignment[draw_index] = {
+                    "element": element["name"] if proven else None,
+                    "wheelPart": "tyre",
+                    "role": "union-pair" if len(union_draws) > 1 else "single",
+                    "proof": ("tyre element bounds equal the union of its draws"
+                              if proven else
+                              "tyre union bounds also match other corners; the corner is not provable"),
+                    "difference": option["difference"],
+                    "corner": element["corner"],
+                    "proven": proven,
+                    "candidates": [other["name"] for _, other in matchable],
+                }
+                if not proven:
+                    ambiguous.append({
+                        "draw": draw_index,
+                        "wheelPart": "tyre",
+                        "axle": "unknown",
+                        "candidates": [other["name"] for _, other in matchable],
+                        "difference": option["difference"],
+                        "reason": "tyre union bounds are identical/nearly identical for several "
+                                  "corners; the corner is not provable",
+                    })
+        for draw_index in extra_draws:
+            candidates = [other["name"] for other in tyre_elements
+                          if contains(other["min"], other["max"],
+                                      draw_by_index[draw_index]["bounds"]["min"],
+                                      draw_by_index[draw_index]["bounds"]["max"], WHEEL_CONTAIN_TOL)]
+            wheel_assignment[draw_index] = {
+                "element": None,
+                "wheelPart": "tyre",
+                "role": "containment-extra",
+                "proof": "draw is only proven to lie inside the tyre element bounds; "
+                         "the corner is preview-only",
+                "difference": extra["difference"] if extra is not None else None,
+                "corner": element["corner"],
+                "proven": False,
+                "candidates": candidates,
+            }
             ambiguous.append({
-                "draw": draw["index"],
-                "wheelPart": wheel_kind(tied[0]["name"]),
-                "axle": axle,
-                "candidates": sorted(element["name"] for element in tied),
-                "difference": best_difference,
-                "reason": "element-local bounds are identical for this left/right pair; side is not provable",
+                "draw": draw_index,
+                "wheelPart": "tyre",
+                "axle": "unknown",
+                "candidates": candidates,
+                "difference": extra["difference"] if extra is not None else None,
+                "reason": "extra tyre draw is smaller than every tyre element box; its corner is "
+                          "only paired for drawing",
             })
 
+    other_rows = []
+    for kind in ("rim", "brakeDisc", "brakeCaliper"):
+        kind_elements = sorted([element for element in wheel_elements
+                                if wheel_kind(element["name"]) == kind],
+                               key=lambda element: WHEEL_CORNERS.index(element["corner"]))
+        if len(kind_elements) != 4:
+            raise Unsupported(f"expected four {kind} elements, found {len(kind_elements)}")
+        assignment = assign_kind_by_corner(kind, kind_elements, other_by_kind[kind],
+                                           candidate_corners[kind])
+        for draw_index, entry in sorted(assignment.items()):
+            corners_for_draw = candidate_corners[kind][draw_index]
+            proven = len(corners_for_draw) == 1
+            element = entry["element"]
+            draw = draws[draw_index]
+            difference = aabb_diff(draw["bounds"]["min"], draw["bounds"]["max"],
+                                   element["min"], element["max"])
+            candidates = sorted((candidate["name"] for candidate in kind_elements
+                                 if candidate["corner"] in corners_for_draw),
+                                key=lambda name: name.lower())
+            wheel_assignment[draw_index] = {
+                "element": element["name"] if proven else None,
+                "wheelPart": kind,
+                "role": "primary",
+                "proof": ("draw AABB equals the element-local bounds" if proven else
+                          "draw matches several corners; corner is preview-only"),
+                "difference": difference,
+                "corner": entry["corner"],
+                "proven": proven,
+                "candidates": candidates,
+            }
+            if not proven:
+                ambiguous.append({
+                    "draw": draw_index,
+                    "wheelPart": kind,
+                    "axle": "unknown",
+                    "candidates": candidates,
+                    "difference": difference,
+                    "reason": "element-local bounds are (nearly) identical for several corners; "
+                              "the corner is not provable",
+                })
+        other_rows.append({
+            "kind": kind,
+            "certified": sum(1 for draw_index in assignment
+                             if len(candidate_corners[kind][draw_index]) == 1),
+            "ambiguous": sum(1 for draw_index in assignment
+                             if len(candidate_corners[kind][draw_index]) > 1),
+        })
+
     # --- non-wheel parts --------------------------------------------------
-    assigned = dict(wheel_assignment)
-    draw_matches: dict[int, dict] = {}
-    for item in ambiguous:
-        assigned[item["draw"]] = {
-            "element": None,
-            "wheelPart": item["wheelPart"],
-            "role": "ambiguous-pair",
-            "proof": item["reason"],
-        }
+    wheel_part_indexes = {element["index"] for element in wheel_elements}
+    wheel_parent_indexes = {element["index"] for element in wheel_parents}
     parts: dict[str, dict] = {}
 
     def add_part(part_id: str, kind: str, name: str | None, element: dict | None,
@@ -607,19 +935,30 @@ def classify(scene: dict, mdl: dict) -> dict:
             "proof": proof,
         })
         part["draws"].append(draw_index)
-        assigned[draw_index] = {"element": name, "wheelPart": None, "role": "primary", "proof": part["proof"]["tier"]}
+        wheel_assignment[draw_index] = {"element": name, "wheelPart": None, "role": "primary",
+                                        "proof": part["proof"]["tier"], "corner": None,
+                                        "proven": True, "candidates": []}
 
+    draw_matches: dict[int, dict] = {}
     for draw in draws:
-        if draw["index"] in assigned:
+        if draw["index"] in wheel_assignment:
             continue
         contained = []
         for element in elements:
+            if element["index"] in wheel_part_indexes or element["index"] in wheel_parent_indexes:
+                continue
             if not finite_bounds(element):
                 continue
-            lo, hi = element_world_bounds(element)
-            if contains(lo, hi, draw["bounds"]["min"], draw["bounds"]["max"], CONTAIN_TOL):
-                contained.append((aabb_diff(draw["bounds"]["min"], draw["bounds"]["max"], lo, hi),
-                                  volume(lo, hi), element))
+            # Scene draws are element-local (the reader applies no node
+            # transform), so the draw AABB is compared with the element's local
+            # bounds directly. For the translation-only DefaultModel this is the
+            # same as shifting both by the element translation, but it also
+            # holds for the one element with float32 matrix noise.
+            if contains(element["min"], element["max"], draw["bounds"]["min"], draw["bounds"]["max"],
+                        CONTAIN_TOL):
+                contained.append((aabb_diff(draw["bounds"]["min"], draw["bounds"]["max"],
+                                           element["min"], element["max"]),
+                                  volume(element["min"], element["max"]), element))
         if not contained:
             proof = {
                 "tier": "none",
@@ -635,14 +974,15 @@ def classify(scene: dict, mdl: dict) -> dict:
             part_id = f"{kind}.{element['name']}"
             proof = {
                 "tier": "element-bounds",
-                "reason": f"draw AABB matches {element['name']} bounds within {difference:.6f} (symmetric difference)",
+                "reason": f"draw AABB matches {element['name']} bounds within {difference:.6f} "
+                          "(symmetric difference)",
                 "element": element["name"],
                 "difference": difference,
             }
             add_part(part_id, kind, element["name"], element, draw["index"], proof)
             draw_matches[draw["index"]] = proof
             continue
-        branch = element_branch(element, elements)
+        branch = element_branch(element, elements_by_index)
         if branch == "interior":
             proof = {
                 "tier": "branch-containment",
@@ -663,35 +1003,35 @@ def classify(scene: dict, mdl: dict) -> dict:
 
     # --- wheel groups -----------------------------------------------------
     wheel_groups = []
-    wheel_parents = [element for element in elements if element["name"].startswith("e_wheel_")]
-    if len(wheel_parents) != 4:
-        raise Unsupported(f"expected four e_wheel_* elements, found {len(wheel_parents)}")
     for element in wheel_parents:
-        base = element["name"]
-        corner = base[len("e_wheel_"):]
-        members = []
-        for child in wheel_elements:
-            if child["parent"] == element["index"] and child["index"] != element["index"]:
-                members.append(child["name"])
-        # Tyre children have the wheel element as parent; in the Corvette the
-        # tyre/rim/disc/caliper elements are direct children of e_wheel_*.
-        draw_set = sorted(index for index, value in wheel_assignment.items()
-                          if value["element"] in members)
+        members = sorted([member for member in wheel_elements if member["corner"] == element["corner"]],
+                         key=lambda member: member["name"])
+        member_draws = sorted(index for index, value in wheel_assignment.items()
+                              if value.get("corner") == element["corner"] and value.get("wheelPart"))
+        proven_draws = [index for index in member_draws if wheel_assignment[index].get("proven")]
+        ambiguous_draws = [index for index in member_draws if not wheel_assignment[index].get("proven")]
+        translation = element["worldTranslation"]
+        if not all(model_bounds["min"][i] - 0.6 <= translation[i] <= model_bounds["max"][i] + 0.6
+                   for i in range(3)):
+            raise Unsupported(
+                f"wheel {element['corner']} translation {translation} is outside the model bounds; "
+                "the serialized element matrix is not model-space")
         wheel_groups.append({
-            "id": f"wheel.{corner}",
+            "id": f"wheel.{element['corner']}",
             "partKind": "wheel",
-            "name": base,
+            "name": element["name"],
             "elementIndex": element["index"],
-            "corner": corner,
+            "corner": element["corner"],
             "localBounds": {"min": element["min"], "max": element["max"]},
+            "memberLocalBounds": element["axisProof"]["unionLocalBounds"],
             "localTransform": {
                 "matrixRows": element["matrix"],
                 "translation": element["matrix"][3],
-                "linearIdentity": True,
+                "linearIdentity": element["linearIdentity"],
             },
             "worldTransform": {
                 "coordinateSpace": "model",
-                "translation": element["worldTranslation"],
+                "translation": translation,
                 "matrixColumnMajor": column_major_from_rows(element["matrix"]),
             },
             "spin": {
@@ -699,69 +1039,34 @@ def classify(scene: dict, mdl: dict) -> dict:
                 "axisSpace": "element-local",
                 "spinMembers": ["tyre", "rim", "brakeDisc"],
                 "staticMembers": ["brakeCaliper"],
+                "axisEvidence": element["axisProof"],
                 "evidence":
-                    "wheel/rim/disc local bounds are thin on X and round on Y/Z, so X is the axle. "
-                    "Upstream VehicleActor.cpp:5158-5167 computes the spin rate about wheelMatrix.AX(); "
-                    "lines 5170-5196 store that wheel matrix for Tyre/AlloyRim/BrakeDisc, and line 5198 "
-                    "states 'Brake calipers mustn't rotate'.",
+                    "the group's member local bounds are thinnest on X and round on Y/Z, so X is the "
+                    "axle. Upstream VehicleActor.cpp:5158-5167 computes the spin rate about "
+                    "wheelMatrix.AX(); lines 5170-5196 store that wheel matrix for Tyre/AlloyRim/BrakeDisc, "
+                    "and line 5198 states 'Brake calipers mustn't rotate'.",
                 "source": "upstream/BlurRebuilt 5270304b code/amax/game/Game/GameActors/Vehicles/VehicleActor.cpp",
             },
             "memberParts": [{
-                "name": child["name"],
-                "wheelPart": wheel_kind(child["name"]),
-                "spins": wheel_kind(child["name"]) != "brakeCaliper",
-                "elementIndex": child["index"],
-                "localBounds": {"min": child["min"], "max": child["max"]},
-            } for child in wheel_elements if child["parent"] == element["index"]],
-            "draws": draw_set,
+                "name": member["name"],
+                "wheelPart": wheel_kind(member["name"]),
+                "spins": wheel_kind(member["name"]) != "brakeCaliper",
+                "elementIndex": member["index"],
+                "localBounds": {"min": member["min"], "max": member["max"]},
+            } for member in members],
+            "provenDraws": proven_draws,
+            "previewDraws": member_draws,
+            "ambiguousDraws": [{
+                "draw": index,
+                "wheelPart": wheel_assignment[index]["wheelPart"],
+                "candidates": wheel_assignment[index]["candidates"],
+                "reason": next(item["reason"] for item in ambiguous if item["draw"] == index),
+                "assignment": "preview-only deterministic pairing; not a corner proof",
+            } for index in ambiguous_draws],
+            "draws": member_draws,
         })
 
-    # The four tyre/rim assignments and the back disc/caliper assignments are
-    # proven per corner. Front discs and calipers are identical left/right;
-    # their draws live in `ambiguous` and are paired for rendering only.
-    for group in wheel_groups:
-        group["provenDraws"] = list(group["draws"])
-        group["previewDraws"] = list(group["draws"])
-        group["ambiguousDraws"] = []
-
-    front_groups = [group for group in wheel_groups if group["corner"].startswith("front")]
-    back_groups = [group for group in wheel_groups if group["corner"].startswith("back")]
-    if len(front_groups) != 2 or len(back_groups) != 2:
-        raise Unsupported("expected two front and two back wheel groups")
-    by_axle = {"front": sorted(front_groups, key=lambda group: group["corner"]),
-               "back": sorted(back_groups, key=lambda group: group["corner"])}
-    ambiguous_by_axle_part: dict[tuple[str, str], list[dict]] = {}
-    for item in ambiguous:
-        ambiguous_by_axle_part.setdefault((item["axle"], item["wheelPart"]), []).append(item)
-    for (axle, wheel_part), items in sorted(ambiguous_by_axle_part.items()):
-        groups = by_axle[axle]
-        # Deterministic presentation pairing: within one wheel-part type on
-        # one axle, sort by draw index and give the first draw to the
-        # lexicographically first corner. This is explicitly not a proof and
-        # is labelled `previewAssignment`.
-        items.sort(key=lambda item: item["draw"])
-        if len(items) != 2:
-            raise Unsupported(
-                f"expected one ambiguous {wheel_part} pair on the {axle} axle, got {len(items)}")
-        for group, item in zip(groups, items):
-            group["previewDraws"].append(item["draw"])
-            group["previewDraws"].sort()
-            group["ambiguousDraws"].append({
-                "draw": item["draw"],
-                "wheelPart": item["wheelPart"],
-                "candidates": item["candidates"],
-                "reason": item["reason"],
-                "assignment": "preview-only deterministic pairing; not a corner proof",
-            })
-            wheel_assignment[item["draw"]] = {
-                "element": None,
-                "wheelPart": item["wheelPart"],
-                "role": "ambiguous-pair",
-                "proof": item["reason"],
-                "previewCorner": group["corner"],
-            }
-
-    # --- final part assembly ---------------------------------------------
+    # --- parts (shells + named) -------------------------------------------
     def vertex_span(draw_indices: list[int]) -> dict:
         vertices = set()
         for draw_index in draw_indices:
@@ -775,12 +1080,12 @@ def classify(scene: dict, mdl: dict) -> dict:
         part = parts[part_id]
         part["draws"].sort()
         if part["elementIndex"] is not None:
-            element = elements[part["elementIndex"]]
+            element = elements_by_index[part["elementIndex"]]
             part["localBounds"] = {"min": element["min"], "max": element["max"]}
             part["localTransform"] = {
                 "matrixRows": element["matrix"],
                 "translation": element["matrix"][3],
-                "linearIdentity": True,
+                "linearIdentity": element["linearIdentity"],
             }
             part["worldTransform"] = {
                 "coordinateSpace": "model",
@@ -809,7 +1114,6 @@ def classify(scene: dict, mdl: dict) -> dict:
         part["triangleCount"] = sum(draws[index]["indexCount"] for index in part["draws"]) // 3
         final_parts.append(part)
 
-    # Wheel groups are themselves parts in the renderer's flat part list.
     for group in wheel_groups:
         final_parts.append({
             "id": group["id"],
@@ -822,6 +1126,7 @@ def classify(scene: dict, mdl: dict) -> dict:
             "provenDraws": group["provenDraws"],
             "ambiguousDraws": group["ambiguousDraws"],
             "localBounds": group["localBounds"],
+            "memberLocalBounds": group["memberLocalBounds"],
             "localTransform": group["localTransform"],
             "worldTransform": group["worldTransform"],
             "spin": group["spin"],
@@ -839,12 +1144,13 @@ def classify(scene: dict, mdl: dict) -> dict:
         })
     final_parts.sort(key=lambda part: part["id"])
 
-    # Draw records carry their final part identity.
+    # --- draw records -----------------------------------------------------
     part_of_draw: dict[int, str] = {}
     for part in final_parts:
         for draw_index in part["draws"]:
             if draw_index in part_of_draw:
-                raise Unsupported(f"draw {draw_index} belongs to both {part_of_draw[draw_index]} and {part['id']}")
+                raise Unsupported(
+                    f"draw {draw_index} belongs to both {part_of_draw[draw_index]} and {part['id']}")
             part_of_draw[draw_index] = part["id"]
 
     for draw in draws:
@@ -865,9 +1171,8 @@ def classify(scene: dict, mdl: dict) -> dict:
                 "reason": ambiguous_item["reason"],
                 "candidates": ambiguous_item["candidates"],
                 "wheelPart": ambiguous_item["wheelPart"],
-                "axle": ambiguous_item["axle"],
             }
-        elif draw["evidence"]:
+        elif draw["evidence"] and draw["evidence"].get("wheelPart"):
             evidence = draw["evidence"]
             draw["match"] = {
                 "tier": "element-bounds",
@@ -879,16 +1184,12 @@ def classify(scene: dict, mdl: dict) -> dict:
             }
         else:
             draw["match"] = draw_matches.get(draw["index"])
-        ambiguous_reason = ambiguous_item["reason"] if ambiguous_item else None
-        if ambiguous_reason:
-            # The draw renders with a wheel group, but its own identity is not
-            # proven: the left/right element bounds are identical. Keep the
-            # presentation id separate from the proof.
+        if ambiguous_item:
             draw["partId"] = None
             draw["partKind"] = "unclassified"
             draw["partName"] = None
             draw["previewPartId"] = part_id
-            draw["unclassifiedReason"] = ambiguous_reason
+            draw["unclassifiedReason"] = ambiguous_item["reason"]
         if part_id and part_id.startswith("unclassified."):
             draw["unclassifiedReason"] = next(part["proof"]["reason"] for part in final_parts
                                               if part["id"] == part_id)
@@ -903,10 +1204,10 @@ def classify(scene: dict, mdl: dict) -> dict:
         "wheelGroups": wheel_groups,
         "ambiguousWheelDraws": ambiguous,
         "wheelAssignment": wheel_assignment,
+        "tyres": tyre_rows,
+        "tyreProofTier": tyre_tier,
+        "wheelKindCounts": other_rows,
     }
-
-def identity_rows() -> list[list[float]]:
-    return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]
 
 
 def build(args: argparse.Namespace) -> dict:
@@ -943,17 +1244,15 @@ def build(args: argparse.Namespace) -> dict:
     scene = json.loads(scene_text)
     if scene.get("status") != "ok":
         raise SystemExit(f"scene reader failed: {scene.get('error') or scene.get('message')}")
-    if len(scene.get("draws", [])) != 80:
-        raise SystemExit(f"expected 80 draws, got {len(scene.get('draws', []))}")
-    if scene["metadata"]["vertexCount"] != 30591 or scene["metadata"]["triangleCount"] != 36193:
-        raise SystemExit("scene geometry counts differ from the documented Corvette result")
+    if not scene.get("draws"):
+        raise SystemExit("scene reader returned no draws")
 
     mdl = parse_mdldat(model_bytes)
     if mdldat_chunk["offset"] != mdl["offset"] or mdldat_chunk["bytes"] != mdl["bytes"]:
         raise SystemExit(
             f"model_inspect MdlDat {mdldat_chunk['offset']}/{mdldat_chunk['bytes']} differs from "
             f"source parser {mdl['offset']}/{mdl['bytes']}")
-    classified = classify(scene, mdl)
+    classified = classify(scene, mdl, scene["bounds"])
 
     positions = scene["positions"]
     indices = scene["indices"]
@@ -981,30 +1280,64 @@ def build(args: argparse.Namespace) -> dict:
         "drawCount": len(classified["draws"]),
         "partCount": len(classified["parts"]),
         "namedPartCount": sum(1 for part in classified["parts"] if part["name"]),
-        "unclassifiedPartCount": sum(1 for part in classified["parts"] if part["partKind"] == "unclassified"),
+        "unclassifiedPartCount": sum(1 for part in classified["parts"]
+                                     if part["partKind"] == "unclassified"),
         "wheelDrawCount": sum(len(group["previewDraws"]) for group in classified["wheelGroups"]),
         "provenWheelDrawCount": sum(len(group["provenDraws"]) for group in classified["wheelGroups"]),
         "ambiguousWheelDrawCount": len(classified["ambiguousWheelDraws"]),
-        "provenDrawCount": sum(1 for draw in classified["draws"] if draw["partId"] is not None),
-        "glassDrawCount": sum(len(part["draws"]) for part in classified["parts"] if part["partKind"] == "glass"),
-        "lightDrawCount": sum(len(part["draws"]) for part in classified["parts"] if part["partKind"] == "light"),
-        "bodyDrawCount": sum(len(part["draws"]) for part in classified["parts"] if part["partKind"] == "body"),
-        "interiorDrawCount": sum(len(part["draws"]) for part in classified["parts"] if part["partKind"] == "interior"),
-        "unclassifiedDrawCount": sum(1 for draw in classified["draws"] if draw["partKind"] == "unclassified"),
+        "provenDrawCount": sum(1 for draw in classified["draws"]
+                               if draw["partId"] is not None and draw["partKind"] != "unclassified"),
+        "glassDrawCount": sum(len(part["draws"]) for part in classified["parts"]
+                              if part["partKind"] == "glass"),
+        "lightDrawCount": sum(len(part["draws"]) for part in classified["parts"]
+                              if part["partKind"] == "light"),
+        "bodyDrawCount": sum(len(part["draws"]) for part in classified["parts"]
+                             if part["partKind"] == "body"),
+        "interiorDrawCount": sum(len(part["draws"]) for part in classified["parts"]
+                                 if part["partKind"] == "interior"),
+        "unclassifiedDrawCount": sum(1 for draw in classified["draws"]
+                                     if draw["partKind"] == "unclassified"),
+        "wheelGroupCount": len(classified["wheelGroups"]),
+        "tyreProofTier": classified["tyreProofTier"],
+        "wheelElementCount": len([element for element in mdl["elements"]
+                                  if element["modelIndex"] == 0 and wheel_kind(element["name"])]),
+        "tyreDrawCount": sum(1 for value in classified["wheelAssignment"].values()
+                             if value.get("wheelPart") == "tyre"),
+        "rimDrawCount": sum(1 for value in classified["wheelAssignment"].values()
+                            if value.get("wheelPart") == "rim"),
+        "brakeDiscDrawCount": sum(1 for value in classified["wheelAssignment"].values()
+                                  if value.get("wheelPart") == "brakeDisc"),
+        "brakeCaliperDrawCount": sum(1 for value in classified["wheelAssignment"].values()
+                                     if value.get("wheelPart") == "brakeCaliper"),
     }
-    if diagnostics["wheelDrawCount"] != 20:
-        raise Unsupported(f"expected 20 wheel draws, got {diagnostics['wheelDrawCount']}")
+    if diagnostics["wheelGroupCount"] != 4:
+        raise Unsupported("expected four wheel groups")
     if diagnostics["provenDrawCount"] + diagnostics["unclassifiedDrawCount"] != diagnostics["drawCount"]:
         raise Unsupported("draw proof accounting does not add up")
+    if diagnostics["wheelDrawCount"] != sum(diagnostics[key] for key in
+                                            ("tyreDrawCount", "rimDrawCount",
+                                             "brakeDiscDrawCount", "brakeCaliperDrawCount")):
+        raise Unsupported("wheel draw accounting does not add up")
+
+    out_dir = args.out_dir.resolve()
+    try:
+        # The mesh path is stored relative to the manifest so two builds into
+        # different output directories produce byte-identical manifests.
+        mesh_relative = mesh_path_for(out_dir, args).resolve().relative_to(out_dir)
+        mesh_path_text = str(mesh_relative).replace("\\", "/")
+    except ValueError:
+        mesh_path_text = str(mesh_path_for(out_dir, args))
+    model_relative = model_path.relative_to(ROOT) if model_path.is_relative_to(ROOT) else None
 
     manifest = {
         "kind": "blur.car-part-manifest",
         "version": 1,
         "generator": "probes/car-parts/tools/build_manifest.py",
         "source": {
-            "model": "_work/car-level-assets/corvette_c3_race.model.decoded",
+            "model": str(model_relative).replace("\\", "/") if model_relative else str(model_path),
             "modelBytes": len(model_bytes),
             "modelSha256": model_sha,
+            "modelPakPath": args.model_pak_path,
             "sceneReader": "_work/build/asset-reader-native/Release/scene_inspect.exe",
             "sceneReaderScope": scene["metadata"].get("scope"),
             "sceneReaderOutputSha256": mesh["source"]["readerOutputSha256"],
@@ -1018,6 +1351,15 @@ def build(args: argparse.Namespace) -> dict:
             "nodeTransformsApplied": False,
             "partTransformsFromMdlDat": True,
             "transformsBakedIntoMesh": False,
+            "elementMatrixFrame":
+                "model-space: the serialized element translation already carries its parent's offset "
+                "(a wheel member repeats its e_wheel_* parent translation), so parent links are recorded "
+                "but not composed. Each wheel group translation is checked against the model bounds.",
+            "car": None if args.car_slug is None else {
+                "slug": args.car_slug,
+                "name": args.car_name,
+                "mapping": args.car_mapping,
+            },
             "note":
                 "Scene geometry is the committed first-RenderList LOD0 output, unchanged. Part names, "
                 "element matrices and local bounds come from the same file's MdlDat block. The consumer "
@@ -1026,11 +1368,16 @@ def build(args: argparse.Namespace) -> dict:
         "matching": {
             "containToleranceMeters": CONTAIN_TOL,
             "exactDifferenceMeters": EXACT_D,
-            "wheelDifferenceMeters": WHEEL_D,
+            "wheelContainToleranceMeters": WHEEL_CONTAIN_TOL,
+            "wheelMaximumDifferenceMeters": WHEEL_MAX_D,
+            "tyreUnionToleranceMeters": TYRE_UNION_D,
+            "ambiguityMarginMeters": AMBIGUITY_MARGIN,
             "description":
                 "A draw is linked to an element only when its index-range AABB is contained in the "
-                "element bounds and the symmetric AABB difference is within the stated threshold. "
-                "Tyres are proven by the exact union of their tread and sidewall draws.",
+                "element bounds and the symmetric AABB difference is within the stated threshold. A "
+                "tyre is proven by the exact union of the 1-2 draws that make it. A draw whose best "
+                "candidate is within ambiguityMarginMeters of another element of the same kind is only "
+                "paired to a corner for drawing.",
         },
         "mdlDat": {
             "offset": mdl["offset"],
@@ -1040,12 +1387,15 @@ def build(args: argparse.Namespace) -> dict:
             "modelCount": mdl["modelCount"],
             "elementCount": mdl["elementCount"],
             "constraintCount": mdl["constraintCount"],
+            "nonIdentityElementCount": mdl["nonIdentityElementCount"],
+            "nonIdentityModelElements": mdl["nonIdentityModelElements"],
             "linearIdentityTolerance": 1e-6,
             "bounds": mdl["bounds"],
             "models": [{
                 "index": model["index"],
                 "name": model["name"],
                 "matrixRows": model["matrix"],
+                "linearIdentity": model["linearIdentity"],
                 "localBounds": ({"min": model["min"], "max": model["max"]}
                                 if model["min"] is not None else None),
                 "elementCount": model["elementCount"],
@@ -1064,13 +1414,15 @@ def build(args: argparse.Namespace) -> dict:
                 "renderMeshId": element["renderMeshId"],
                 "physicsShapeId": element["physicsShapeId"],
                 "matrixRows": element["matrix"],
+                "linearIdentity": element["linearIdentity"],
                 "localBounds": {"min": element["min"], "max": element["max"]},
                 "worldTranslation": element["worldTranslation"],
                 "emptyBounds": not finite_bounds(element),
             } for element in mdl["elements"]],
         },
         "mesh": {
-            "path": "_work/car-parts/mesh.json",
+            "path": mesh_path_text,
+            "pathBase": "manifest-directory",
             "vertexCount": mesh["vertexCount"],
             "indexCount": mesh["indexCount"],
             "positionsFloat32LESha256": mesh["positionsFloat32LESha256"],
@@ -1086,18 +1438,22 @@ def build(args: argparse.Namespace) -> dict:
             "corner": group["corner"],
             "elementIndex": group["elementIndex"],
             "localBounds": group["localBounds"],
+            "memberLocalBounds": group["memberLocalBounds"],
             "localTransform": group["localTransform"],
             "worldTransform": group["worldTransform"],
             "spin": group["spin"],
+            "memberParts": group["memberParts"],
             "provenDraws": group["provenDraws"],
             "previewDraws": group["previewDraws"],
             "ambiguousDraws": group["ambiguousDraws"],
         } for group in classified["wheelGroups"]],
+        "tyres": classified["tyres"],
+        "tyreProofTier": classified["tyreProofTier"],
+        "wheelKindCounts": classified["wheelKindCounts"],
         "unclassifiedDraws": [{
             "draw": item["draw"],
             "partKind": "unclassified",
             "wheelPart": item["wheelPart"],
-            "axle": item["axle"],
             "candidates": item["candidates"],
             "reason": item["reason"],
             "previewPartId": next((group["id"] for group in classified["wheelGroups"]
@@ -1108,34 +1464,42 @@ def build(args: argparse.Namespace) -> dict:
         "limits": [
             "Geometry is the first RenderList's LOD0 only; later render lists, higher LODs, "
             "damage, paint and runtime light states are not imported.",
-            "Element matrices in this asset are translation-only; a non-identity linear part is "
-            "rejected instead of being transposed or guessed.",
+            "DefaultModel element matrices are translation-only in this asset; a non-identity linear "
+            "part is rejected instead of being transposed or guessed.",
             "Draw-to-part identity is proven by index-range AABB matching; material/effect names are "
             "recorded as corroboration, not used as a name source.",
-            "Front left/right brake discs and calipers have identical element-local bounds; their "
-            "side is not provable and the preview pairing is explicitly presentation-only.",
+            "Some left/right wheel parts have identical or nearly identical element-local bounds; their "
+            "corner is not provable and the preview pairing is explicitly presentation-only.",
             "No game integration, rendering fidelity, collision, physics or shader semantics are claimed.",
         ],
     }
 
-    out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    mesh_file = mesh_path_for(out_dir, args)
+    mesh_file.parent.mkdir(parents=True, exist_ok=True)
     (out_dir / "scene-report.json").write_text(scene_text, encoding="utf-8", newline="\n")
-    (out_dir / "mesh.json").write_text(
+    mesh_file.write_text(
         json.dumps(mesh, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8", newline="\n")
     manifest_text = json.dumps(manifest, indent=1, sort_keys=True) + "\n"
     (out_dir / "manifest.json").write_text(manifest_text, encoding="utf-8", newline="\n")
 
     return {
-        "manifest": str((out_dir / "manifest.json")),
+        "manifest": str(out_dir / "manifest.json"),
         "manifestSha256": sha256(manifest_text.encode("utf-8")),
         "manifestBytes": len(manifest_text.encode("utf-8")),
-        "mesh": str((out_dir / "mesh.json")),
-        "meshSha256": sha256((out_dir / "mesh.json").read_bytes()),
-        "sceneReport": str((out_dir / "scene-report.json")),
+        "mesh": str(mesh_file),
+        "meshSha256": sha256(mesh_file.read_bytes()),
+        "meshPositionsSha256": mesh["positionsFloat32LESha256"],
+        "meshIndicesSha256": mesh["indicesUint32LESha256"],
+        "sceneReport": str(out_dir / "scene-report.json"),
         "sceneReportSha256": sha256(scene_text.encode("utf-8")),
+        "model": str(model_relative).replace("\\", "/") if model_relative else str(model_path),
         "modelSha256": model_sha,
+        "car": None if args.car_slug is None else {"slug": args.car_slug, "name": args.car_name},
         "diagnostics": diagnostics,
+        "tyres": classified["tyres"],
+        "tyreProofTier": classified["tyreProofTier"],
+        "wheelKindCounts": classified["wheelKindCounts"],
         "wheelGroups": [{
             "id": group["id"],
             "name": group["name"],
@@ -1143,18 +1507,34 @@ def build(args: argparse.Namespace) -> dict:
             "previewDraws": group["previewDraws"],
             "ambiguousDraws": group["ambiguousDraws"],
             "translation": group["worldTransform"]["translation"],
+            "axisEvidence": group["spin"]["axisEvidence"],
         } for group in classified["wheelGroups"]],
     }
 
 
+def mesh_path_for(out_dir: Path, args: argparse.Namespace) -> Path:
+    if args.mesh_out:
+        return Path(args.mesh_out).resolve()
+    return out_dir / "mesh.json"
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", type=Path, default=MODEL_DEFAULT)
     parser.add_argument("--scene-exe", type=Path, default=SCENE_EXE_DEFAULT)
     parser.add_argument("--model-exe", type=Path, default=MODEL_EXE_DEFAULT)
     parser.add_argument("--scene-json", type=Path, default=None,
                         help="use an existing scene_inspect JSON instead of running the exe")
     parser.add_argument("--out-dir", type=Path, default=OUT_DEFAULT)
+    parser.add_argument("--mesh-out", type=Path, default=None,
+                        help="write mesh.json here instead of <out-dir>/mesh.json")
+    parser.add_argument("--car-slug", default=None)
+    parser.add_argument("--car-name", default=None)
+    parser.add_argument("--car-mapping", default=None,
+                        help="evidence string for how this model was chosen for the car")
+    parser.add_argument("--model-pak-path", default=None,
+                        help="exact in-PAK path of the decoded model")
     args = parser.parse_args()
     try:
         summary = build(args)

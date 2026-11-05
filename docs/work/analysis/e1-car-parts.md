@@ -1,21 +1,30 @@
-# E1 car-part manifest — Corvette C3 race body, wheels, glass and lights
+# E1 car-part manifest — Corvette C3, plus one real manifest per roster car
 
 **Date:** 5 November 2026
-**Owner:** P26 (sub-agent)
-**Scope:** a reusable, deterministic part manifest extracted from the real
-`corvette_c3_race.model`, plus a standalone WebGPU preview that draws the
-manifest with per-part diagnostic colours and spins the four identified wheel
-groups. New directory `probes/car-parts/`, generated output under
+**Owner:** P26 (sub-agent), extended by P29
+**Scope:** a reusable, deterministic part manifest extracted from a real
+`.model`, plus a standalone WebGPU preview that draws the manifest with per-part
+diagnostic colours and spins the four identified wheel groups. P29 generalised
+the builder to any PC vehicle model and built one manifest for each of the five
+E1 roster cars. New directory `probes/car-parts/`, generated output under
 `_work/car-parts/`, logs under `_work/logs/car-parts/`, and this document.
-No change to `probes/asset-reader`, `probes/e1-drive`, `probes/render-packet`,
-the engine, `tools/`, `upstream/` or `game-data/`.
+No change to `probes/asset-reader`, `probes/render-packet`, the engine, `tools/`,
+`upstream/` or `game-data/`.
 
-**Result: 29 parts / 80 draws; 76 draws carry a proven part or group id, four
-front-disc/caliper draws are explicitly unclassified because their left/right
-element bounds are identical. Four wheel groups use the file's own
-`e_wheel_*` names and `MdlDat` translations and spin about element-local +X.
-Two independent builds produce byte-identical manifests; headless Edge/WebGPU
-renders five fixed-angle screenshots with a clean console.**
+**Result (P29):** the same builder now produces complete manifests for the
+Corvette ZR1, Lotus Exige Cup260, Dodge Challenger, Ford Focus RS and Audi R8
+V10 from each car's own `root.pak` model. Every model mapped unambiguously by
+exact normalised name; the five body meshes are distinct; the Corvette C3
+manifest still classifies 29 parts / 80 draws / 76 proven / 4 ambiguous. The
+drive slice draws each car's own body and wheels
+(`docs/work/verification/T-007-per-car-meshes.md`).
+
+**C3 result (P26, unchanged semantics):** 29 parts / 80 draws; 76 draws carry a
+proven part or group id, four front-disc/caliper draws are explicitly
+unclassified because their left/right element bounds are identical. Four wheel
+groups use the file's own `e_wheel_*` names and `MdlDat` translations and spin
+about element-local +X. Two independent builds produce byte-identical manifests;
+headless Edge/WebGPU renders five fixed-angle screenshots with a clean console.
 
 ---
 
@@ -23,17 +32,18 @@ renders five fixed-angle screenshots with a clean console.**
 
 | | |
 | --- | --- |
-| model | `_work/car-level-assets/corvette_c3_race.model.decoded` — 3,169,212 B, SHA-256 `77840511e5ca416ff9e7cbdc9ee9fc960fce0205f83c9be77e0803607c32cb9d` |
+| model (C3) | `_work/car-level-assets/corvette_c3_race.model.decoded` — 3,169,212 B, SHA-256 `77840511e5ca416ff9e7cbdc9ee9fc960fce0205f83c9be77e0803607c32cb9d` |
 | scene geometry | committed `scene_inspect.exe` first RenderList LOD0: **30,591 vertices / 36,193 triangles / 80 draws**, object-local |
 | MdlDat | offset 40 / 10,933 B, SHA-256 `1263afddb8d8e7be1bc55fb0ac826d1d2f90edbd0913632cfc1f8fb1eff7f0cc`, version 1, **18 models / 71 elements / 0 constraints** |
-| manifest | `_work/car-parts/manifest.json` — **240,578 B**, SHA-256 `24aa45f37cce2738b2f6b90bcd043aee736be6db8d7e2e855eb86048f7dbf602` |
-| mesh | `_work/car-parts/mesh.json` — 1,748,966 B, positions `5c845980…9140b2`, indices `dcf98521…4cdd1d` |
-| parts | **29** = 27 named parts + `body.shell` + `interior.shell`; 4 wheel groups, 4 glass, 14 light, 4 plate/mirror, 1 steering, 2 shells |
-| draws | **76 proven** (44 specific element + 32 shell-group) and **4 unclassified** (front brake disc/caliper side) |
-| wheel groups | 4; **20 wheel draws**: 16 corner-proven, 4 side-ambiguous |
-| browser | headless Edge/WebGPU, 1600×900, adapter `nvidia / blackwell`, **0 console messages**, 5 screenshots |
-| determinism | two independent builds: identical manifest, mesh and scene report; repeated fixed-angle screenshot byte-identical |
-| verification | `_work/car-parts/verify.json` — **PASS**, 0 failures |
+| manifest (C3) | `_work/car-parts/manifest.json` — **269,046 B**, SHA-256 `5df83a6b0fac6f24df642bcb742cfe798bd5ff5d154f097674d165d70ede5dbf` |
+| mesh (C3) | `_work/car-parts/mesh.json` — 1,748,966 B, positions `5c845980…9140b2`, indices `dcd98521…4cdd1d` |
+| parts (C3) | **29** = 27 named parts + `body.shell` + `interior.shell`; 4 wheel groups, 4 glass, 14 light, 4 plate/mirror, 1 steering, 2 shells |
+| draws (C3) | **76 proven** (44 specific element + 32 shell-group) and **4 unclassified** (front brake disc/caliper side) |
+| wheel groups (C3) | 4; **20 wheel draws**: 16 corner-proven, 4 side-ambiguous |
+| roster cars | **5 of 5 mapped** by exact normalised model name; draws/parts: ZR1 100/34, Lotus 88/23, Dodge 104/31, Focus 115/31, Audi 84/29 |
+| browser | headless Edge/WebGPU, 1600×900, adapter `nvidia / blackwell`, **0 console messages**, 5 fixed-angle screenshots + 5 wheel-view screenshots per roster car |
+| determinism | two independent builds: identical manifest, mesh and scene report (C3 and a roster car); repeated fixed-angle screenshot byte-identical |
+| verification | `_work/car-parts/verify.json` — **PASS**, 0 failures, five mapped cars, five distinct body mesh hashes |
 
 No engine integration and no game claim. Materials are diagnostic colours; the
 manifest is metadata + geometry ranges, not a reconstructed retail renderer.
@@ -43,11 +53,11 @@ manifest is metadata + geometry ranges, not a reconstructed retail renderer.
 ## 1. What was built
 
 ```text
-corvette_c3_race.model.decoded
+one decoded .model  (C3 + the five roster cars)
         │
-        ├── scene_inspect.exe ──► positions / indices / 80 draws / UV0 / binding
+        ├── scene_inspect.exe ──► positions / indices / draws / UV0 / binding
         ├── model_inspect.exe ──► top-level chunk tree (Model/MdlDat/Render/Coll)
-        └── MdlDat parser ─────► 18 models, 71 elements, StrTab, HMat43, C_AxisBox
+        └── MdlDat parser ─────► models, elements, StrTab, HMat43, C_AxisBox
         │
         ▼
 build_manifest.py ──► manifest.json + mesh.json + scene-report.json
@@ -104,53 +114,129 @@ The block layout was verified by exact payload arithmetic:
 1,629 B, `Header` = 56 B; the block boundaries land exactly on `MdlDat`'s
 declared end (10,973) with an empty `Constr` block before `Render`.
 
-All 18 model matrices and all 71 element matrices are translation-only within
-`1e-6`; the tool **rejects** a non-identity linear part rather than transposing
-or guessing it. `worldTranslation` is the sum of the element translation and
-its parent chain (all translations). `m_RenderMeshId` is `-1` on every
-element; it is recorded but **not** used for mapping.
+For the C3, all 18 model matrices and all 71 element matrices are translation-only
+within `1e-6`; across the five roster models the worst DefaultModel linear
+deviation is 9.1e-6 (float32 rotation noise on one Audi plate). The linear part
+is recorded (`matrixRows`, `matrixColumnMajor`, `linearIdentity` within `1e-4`,
+`linearDeviation`) and never decomposed or transposed. `m_RenderMeshId` is `-1`
+on every element; it is recorded but **not** used for mapping. See §2.5 for the
+element matrix frame.
 
 ### 2.3 Why the mapping is bounds-based
 
 The manifest does not rely on a render-list node name shortcut, and
 `m_RenderMeshId` is `-1` on every element, so there is no name/id shortcut
 from a draw to an element. The manifest therefore links a draw only when its
-index-range AABB proves it:
+index-range AABB proves it. Scene draws carry primitive positions in their
+element's local frame (the committed reader reports
+`nodeTransformsApplied:false`), so matching is element-local:
 
 | rule | threshold | used for |
 | --- | ---: | --- |
-| draw AABB contained in element bounds | 0.005 m slack | candidate set |
+| wheel draw contained in a wheel element's local bounds | 0.005 m slack | wheel candidate set |
+| wheel draw symmetric AABB difference | ≤ 0.15 m | rejects a small body draw inside the wheel box |
+| wheel part kind | smallest difference among the containing elements | tyre / rim / disc / caliper |
+| tyre element reproduced by a union of 1–3 draws | ≤ 0.05 m | tyre proof (tier `union`) |
+| tyre draw only contained in the element | containment only | tyre fallback (tier `containment`) |
+| draw AABB contained in element local bounds | 0.005 m slack | glass, lights, plates, mirrors, steering, shells |
 | symmetric AABB difference | ≤ 0.05 m | glass, lights, plates, mirrors, steering |
-| symmetric AABB difference | ≤ 0.02 m | rims, discs, calipers |
-| union of tread + sidewall AABB | ≤ 0.05 m | tyres |
+| element candidate tie | within 0.01 m of the best | ambiguity, never a corner claim |
 
 The match record keeps the measured difference. A draw with no proven match is
 `partKind:"unclassified"` and carries the reason; it is never given a guessed
-part name.
+part name. A wheel draw whose corner is not provable keeps its wheel part kind
+but is `unclassified` for identity and only paired to a corner for drawing
+(`previewAssignment`).
+
+### 2.4 Roster mapping (P29)
+
+`build_all_manifests.py` maps each roster record to a model with one rule,
+recorded per car:
+
+```
+roster name  Corvette_ZR1_Stock
+normalised   corvette_zr1_stock
+pak entry    \models\vehicles\corvette_zr1_stock.model   (exactly one match)
+```
+
+Every other `\models\vehicles\*.model` whose file name starts with the
+normalised name is recorded in `prefixCandidates`, so the exclusion of `_race`,
+`_legend_*`, `_tuner` and `_talon` variants is visible rather than implicit. The
+separate `\models\vehicles\wheels\<name>.model` resource is recorded
+(`wheelsResource`) but **not** used: the body model's own `e_wheel_*` subtree
+carries the tyre/rim/disc/caliper geometry and the rest-pose transforms. A car
+with zero or several exact matches would be recorded as unmapped with the reason
+and would keep the committed Corvette C3 body, labelled.
+
+| car | record | model pak path | model bytes | SHA-256 (model) |
+| --- | --- | --- | ---: | --- |
+| Corvette ZR1 | 37 / 1554942492 | `\models\vehicles\corvette_zr1_stock.model` | 4,594,975 | `c55cdc1e…e2313453` |
+| Lotus Exige Cup260 | 15 / 805568925 | `\models\vehicles\lotus_exigecup260_stock.model` | 5,867,996 | `1b6af978…2e0ab786` |
+| Dodge Challenger | 9 / 528964602 | `\models\vehicles\dodge_challenger_stock.model` | 4,163,371 | `6195243f…dc487c5` |
+| Ford Focus RS | 50 / 2563977008 | `\models\vehicles\ford_focusrs_stock.model` | 5,530,523 | `0668854b…c9fbe4` |
+| Audi R8 V10 | 55 / 2936683857 | `\models\vehicles\audi_r8v10_stock.model` | 3,659,117 | `2e71aaa7…426120` |
+
+`_work/car-parts/cars/index.json` (72,194 B, SHA-256
+`5042e714a309e28e19498a0d35e18fef941c0fac850e87bc0f986117bb9bc315`) holds the
+mapping table, the decoded-model hash, the manifest and mesh hashes and the
+per-car counts.
+
+### 2.5 Element matrix frame
+
+In every gated asset the serialized element translation already includes its
+parent's offset: a wheel member repeats its `e_wheel_*` parent translation, and
+summing the parent chain would double the offset and place the wheels outside
+the body AABB. The parser therefore uses the serialized translation as the
+model-space translation, records the parent links without composing them, and
+checks every wheel-group translation against the model bounds. One Audi element
+(`e_LicensePlate_Front`) carries float32 rotation noise of 9.1e-6; the linear
+deviation is recorded per element and `linearIdentity` uses a 1e-4 tolerance.
 
 ---
 
 ## 3. Manifest schema
 
-`kind:"blur.car-part-manifest"`, `version:1`.
-Full file: `_work/car-parts/manifest.json`.
+`kind:"blur.car-part-manifest"`, `version:1` — identical for the C3 and for every
+roster car.
+Full file: `_work/car-parts/manifest.json` (C3) and
+`_work/car-parts/cars/<slug>/manifest.json` (roster cars).
 
 ```json
 {
   "kind": "blur.car-part-manifest",
   "version": 1,
-  "source": { "modelSha256": "...", "sceneReaderOutputSha256": "...", "modelChunks": [...] },
-  "matching": { "containToleranceMeters": 0.005, "exactDifferenceMeters": 0.05, ... },
-  "mdlDat": { "offset": 40, "bytes": 10933, "models": [...], "elements": [...] },
-  "mesh": { "path": "_work/car-parts/mesh.json", "vertexCount": 30591, ... },
+  "source": {
+    "model": "_work/car-parts/models/<sha>.decoded",
+    "modelSha256": "...",
+    "modelPakPath": "\\models\\vehicles\\<name>.model",
+    "car": { "slug": "...", "name": "...", "mapping": "roster name ... -> pak entry ..." },
+    "sceneReaderOutputSha256": "...",
+    "modelChunks": [ ... ],
+    "elementMatrixFrame": "model-space; parent links recorded, not composed"
+  },
+  "matching": { "containToleranceMeters": 0.005, "exactDifferenceMeters": 0.05,
+                "wheelMaximumDifferenceMeters": 0.15, "tyreUnionToleranceMeters": 0.05,
+                "ambiguityMarginMeters": 0.01 },
+  "mdlDat": { "offset": 40, "bytes": 10933, "models": [...], "elements": [...],
+              "nonIdentityModelElements": [] },
+  "mesh": { "path": "mesh.json", "pathBase": "manifest-directory",
+            "vertexCount": 30591, ... },
   "parts": [ ... ],
   "draws": [ ... ],
   "wheelGroups": [ ... ],
+  "tyres": [ ... ],
+  "tyreProofTier": "union",
+  "wheelKindCounts": [ ... ],
   "unclassifiedDraws": [ ... ],
   "diagnostics": { "drawCount": 80, "partCount": 29, ... },
   "limits": [ ... ]
 }
 ```
+
+`mesh.path` is relative to the manifest file, so two builds into different output
+directories stay byte-identical. `parts[]`, `draws[]` and `wheelGroups[]` keep
+the P26 shape; `tyres[]`, `tyreProofTier` and `wheelKindCounts[]` are the
+generalised wheel evidence. `source.car` is `null` for the C3 (not a roster car).
 
 ### 3.1 Part record
 
@@ -199,17 +285,33 @@ identity, so the two differ only by the translation placement.
   "drawCount": 80,
   "partCount": 29,
   "namedPartCount": 27,
+  "unclassifiedPartCount": 0,
   "provenDrawCount": 76,
   "unclassifiedDrawCount": 4,
   "wheelDrawCount": 20,
   "provenWheelDrawCount": 16,
   "ambiguousWheelDrawCount": 4,
+  "tyreDrawCount": 8,
+  "rimDrawCount": 4,
+  "brakeDiscDrawCount": 4,
+  "brakeCaliperDrawCount": 4,
+  "wheelGroupCount": 4,
+  "wheelElementCount": 16,
+  "tyreProofTier": "union",
   "glassDrawCount": 4,
   "lightDrawCount": 18,
   "bodyDrawCount": 31,
   "interiorDrawCount": 7
 }
 ```
+
+`provenDrawCount` counts draws with a proven part identity; a draw whose
+`partKind` is `unclassified` is counted only there, so the two numbers always
+add to `drawCount`. Per-car values differ (see §4.7).
+
+The manifest also carries `tyres[]` (per tyre element: chosen draws, union
+difference, matched corners, proof tier) and `wheelKindCounts[]` (proven /
+ambiguous per wheel part kind).
 
 ---
 
@@ -358,9 +460,69 @@ manifest labels this `previewAssignment`; it is not a proof.
 | `wheel.frontleft` | wheel | `e_wheel_frontleft` | 5 | 2,332 | element-name+matrix+bounds |
 | `wheel.frontright` | wheel | `e_wheel_frontright` | 5 | 2,332 | element-name+matrix+bounds |
 
+### 4.7 Roster car manifests (P29)
+
+The same builder, run on each car's own model, produces a complete manifest with
+the same schema. Every draw is owned exactly once; there are no unclassified
+*parts* (a draw that matched no element would be `unclassified.<n>`, and none
+occurred).
+
+| car | draws | parts | named parts | wheel draws | proven wheel | ambiguous wheel | proven draws | tyre tier |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | 100 | 34 | 30 | 20 | 10 | 10 | 90 | union |
+| Lotus Exige Cup260 | 88 | 23 | 19 | 20 | 8 | 12 | 76 | union |
+| Dodge Challenger | 104 | 31 | 27 | 20 | 4 | 16 | 88 | union |
+| Ford Focus RS | 115 | 31 | 27 | 20 | 0 | 20 | 95 | union |
+| Audi R8 V10 | 84 | 29 | 25 | 20 | 4 | 16 | 68 | containment |
+
+Wheel evidence per car (all four groups, all four member kinds):
+
+| car | tyre draws | rim | disc | caliper | wheel element names |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | 8 | 4 | 4 | 4 | `e_Tyre_*`, `e_alloyRim_*`, `e_BrakeDisc_*`, `e_BrakeCaliper_*` |
+| Lotus Exige Cup260 | 8 | 4 | 4 | 4 | `e_Tyre_*` (incl. `e_Tyre_RearRight`), `e_alloyRim_*`, `e_BrakeDisc_*`, `e_BrakeCaliper_*` |
+| Dodge Challenger | 8 | 4 | 4 | 4 | `e_Tyre_*`, `e_AlloyRim_*`, `e_BrakeDisc_*`, `e_BrakeCaliper_*` |
+| Ford Focus RS | 8 | 4 | 4 | 4 | `E_Tyre_*`, `e_alloyRim_*`/`e_AlloyRim_*`, `e_BrakeDisc_*`, `e_BrakeCaliper_*` |
+| Audi R8 V10 | 8 | 4 | 4 | 4 | `E_Tyre_*`, `E_AlloyRim_*`, `e_BrakeDisc_*`, `e_BrakeCaliper_*` |
+
+Spelling differs per asset (`E_`/`e_`, `alloyRim`/`AlloyRim`), so the kind rule
+is a case-insensitive prefix on the serialized name; the original spelling is
+kept in every record. The wheel axis proof is measured per car: the group's
+member union bounds are thinnest on X and round on Y/Z within 10% (the Audi's
+tyre is 5% taller than wide, so 3% would have failed). `+X` is recorded with the
+measured extents in `wheelGroups[].spin.axisEvidence`.
+
+Proof quality varies with the asset, which is why the per-car numbers differ:
+
+- **Corvette ZR1** — back tyres/rims and back calipers are corner-proven; both
+  front tyres share identical element bounds (front pair ambiguous), the front
+  rims differ by only 3 mm (ambiguous), and the discs are identical front/back
+  (axle ambiguous, side provable).
+- **Lotus** — all four tyre element boxes are nearly identical, so every tyre is
+  ambiguous; the second (inner sidewall) draw per tyre is only contained, so all
+  eight tyre draws are preview-paired. Rims and discs are similarly close.
+  All 12 ambiguous wheel draws are decoded tyre/rim geometry, not body panels.
+- **Dodge** — tyres and rims are front/back-identical within 3 mm, so 16 wheel
+  draws are preview-paired; no draw was left unclassified.
+- **Ford Focus** — every wheel part is identical within 4 mm between its front
+  and back element, so all 20 wheel draws are preview-paired. This is the honest
+  limit of AABB evidence on a symmetric wheel set.
+- **Audi** — no union of its tyre draws reproduces the element bounds (the
+  element box is 2–5 cm larger than the geometry), so the tyre tier is
+  `containment`; each corner still gets two tyre draws (one wide, one narrow) by
+  a deterministic equal-share pairing, labelled preview-only.
+
+The `unclassified` label therefore means *identity not proven*, never *geometry
+not drawn*: every wheel draw stays on its wheel node and spins, and the manifest
+records `previewPartId` plus the candidate elements.
+
 ---
 
 ## 5. Browser preview
+
+The standalone preview draws the Corvette C3 manifest by default (it is the
+committed `_work/car-parts/manifest.json`); the per-car manifests are consumed
+by the E1 drive slice, not by this page.
 
 `probes/car-parts/web/` is standalone:
 
@@ -433,29 +595,36 @@ Screenshot hashes:
 `verify_manifest.py` runs `build_manifest.py` twice into separate directories
 and compares:
 
-- `manifest.json` byte-identical (same SHA-256 `24aa45f3…dbf602`);
+- `manifest.json` byte-identical (C3 SHA-256 `5df83a6b…ede5dbf`);
 - `mesh.json` byte-identical (`05605c87…61c9f3`);
 - `scene-report.json` byte-identical (`cfc88cb4…7d7b73`);
-- all 80 draws owned by exactly one part; no duplicate/omitted draw;
-- the four wheel names/translations and +X axis;
-- tyre pair unions (0.000343–0.000648 m);
-- 76 proven / 4 unclassified;
+- the same three files for a non-C3 roster car (Corvette ZR1) and that the
+  rebuilt manifest equals the committed per-car one;
+- all 80 C3 draws owned by exactly one part; no duplicate/omitted draw;
+- for every roster manifest: kind/version, draw ownership, wheel kind counts,
+  four wheel groups with `+X` and measured axis evidence, tyre union arithmetic,
+  mesh value hashes, mapping text and pak path;
+- the five roster models are distinct and the five body mesh hashes are distinct;
+- 76 proven / 4 unclassified for the C3;
 - browser evidence: 5 captures, clean console, 2 geometry uploads,
   `frame × 80` draws, identical repeat screenshot, non-blank side view.
 
 Result: **PASS**, 0 failures (`_work/car-parts/verify.json`,
-SHA-256 `a9e62c03…95343e`).
+SHA-256 `40f48beb…f627dc`, five mapped cars).
 
 Artifacts:
 
 | path | content |
 | --- | --- |
-| `_work/car-parts/manifest.json` | 29 parts / 80 draws / wheel groups / MdlDat records |
-| `_work/car-parts/mesh.json` | 30,591 positions, 108,579 U32 indices |
+| `_work/car-parts/manifest.json` | C3: 29 parts / 80 draws / wheel groups / MdlDat records |
+| `_work/car-parts/mesh.json` | C3: 30,591 positions, 108,579 U32 indices |
 | `_work/car-parts/scene-report.json` | exact `scene_inspect.exe` output |
+| `_work/car-parts/cars/index.json` | roster mapping, per-car hashes and counts |
+| `_work/car-parts/cars/<slug>/` | one manifest + mesh + scene report per car |
+| `_work/car-parts/models/` | decoded per-car models + `.source.json` pak provenance |
 | `_work/car-parts/browser-evidence.json` | per-capture probe/console/hashes |
 | `_work/car-parts/verify.json` | verification result |
-| `_work/car-parts/verify-a`, `verify-b` | two independent build outputs |
+| `_work/car-parts/verify-a`, `verify-b`, `verify-car-a`, `verify-car-b` | independent build outputs |
 | `_work/logs/car-parts/` | build/capture/verify logs |
 
 The manifest also records the exact `model_inspect.exe` chunk tree
@@ -477,13 +646,24 @@ MdlDat parser is cross-checked against the committed model reader.
   that is reported as `branch-containment`, not as a guessed part.
 - **32 shell draws have no leaf name.** `body.shell` (26) and `interior.shell`
   (6) are proven groups, not per-panel names.
-- **Four wheel draws are side-ambiguous.** Front brake discs and calipers have
-  identical left/right element-local bounds. Their `partKind` is
+- **Four C3 wheel draws are side-ambiguous.** Front brake discs and calipers
+  have identical left/right element-local bounds. Their `partKind` is
   `unclassified`; the preview pairing is deterministic but explicitly not a
   proof. No “front-left” label is claimed for those draws.
-- **Element matrices are translation-only in this asset.** The tool rejects a
-  non-identity linear part instead of guessing a transpose. No wheel camber,
-  toe, suspension travel, steering or damage rotation is applied.
+- **Per-car wheel ambiguity is larger and is reported, not hidden.** The ZR1
+  has 10 ambiguous wheel draws, the Lotus 12, the Dodge 16, the Focus 20 and
+  the Audi 16 (see §4.7). In those cases the draw keeps its wheel part kind but
+  its corner is `unclassified` and only paired for drawing. That keeps the
+  rendered wheel count and placement correct while claiming nothing the bounds
+  do not prove.
+- **The Audi tyre tier is `containment`.** Its tyre element boxes are 2–5 cm
+  larger than any union of the tyre draws, so draws are only proven to lie
+  inside the element; the equal-share pairing is preview-only.
+- **Element matrices are recorded, never decomposed.** In every gated asset the
+  DefaultModel linear part is identity within float32 noise (worst measured
+  deviation 9.1e-6 on one Audi plate). A real rotation/scale would appear in
+  `linearIdentity`/`linearDeviation` and in `matrixColumnMajor`; no camber, toe,
+  suspension travel, steering or damage rotation is applied.
 - **The caliper is kept static.** This follows the source comment
   `VehicleActor.cpp:5198`; the per-element runtime assignment for every other
   vehicle part is not reconstructed.
@@ -500,17 +680,19 @@ MdlDat parser is cross-checked against the committed model reader.
 
 ## 8. Next step
 
-The smallest useful consumer is the E1 drive packet: replace the committed
-body-only car mesh with `manifest.parts` + `manifest.wheelGroups`, apply each
-wheel group's `worldTransform` and spin `tyre/rim/disc` by the physics wheel
-angle, and keep `brakeCaliper` static. That connects this manifest to the
-already-proven engine tick without changing the packet contract. The remaining
-open items are:
+**Done in P29.** The E1 drive packet now consumes one manifest per roster car:
+each car's own body mesh, parts and wheel groups, with `tyre/rim/disc` spun by
+that car's physics wheel angular velocity and `brakeCaliper` static
+(`docs/work/verification/T-007-per-car-meshes.md`). The separate
+`\models\vehicles\wheels\<car>.model` cosmetic resource is still not used; the
+body model's own `e_wheel_*` subtree supplies the wheels.
+
+Remaining open items:
 
 1. recover the actual per-element wheel matrices from the vehicle runtime
    (suspension, steer, camber) instead of the rest-pose `MdlDat` translation;
-2. decide whether the four side-ambiguous front disc/caliper draws can be
-   resolved from a render-list instance/order field we have not parsed;
+2. resolve the side/axle-ambiguous wheel draws from a render-list
+   instance/order field we have not parsed (or from the separate wheel resource);
 3. add the separate `Alloy` wheel model resource if the cosmetic rim is needed
    for the PoC;
-4. only then claim a visual car in the E1 drive slice.
+4. only then claim retail-level car appearance in the E1 drive slice.

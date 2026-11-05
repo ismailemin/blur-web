@@ -487,6 +487,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `level_inspect 88/283` ile **95/95 firstIndex+indexCount span eşit**; 57 instance / 36 base primitive eşit.
 - 55 nesne, **794.845 B** wasm, 46/46, PC parity (4 TU). Kalan: `g_mWorld`, materyaller (`g_tAlbedo`/`g_MeshTexture`), dokular, `ProcessLoadChunk`; packet v1.1'e bağlama. Kanıt: `docs/work/verification/T-007-streaming.md` §P27.
 
+## 5 Kasım 2026 — araç başına gerçek gövde
+
+- 5 aracın tamamı `root.pak` içindeki kendi `.model` dosyasına kanıtla eşlendi: Corvette ZR1, Lotus Exige Cup260, Dodge Challenger, Focus RS, Audi R8 V10; model hash'leri ayrı.
+- Araç başına 84–115 draw, 23–34 parça, 20 teker draw'ı (tyre/rim/disc/caliper), ayrı gövde mesh hash'i. Eşleme kanıtsızsa Corvette fallback + neden; hiçbir araç fallback'e düşmedi.
+- `verify_e1_drive` **214/214**; 301/301 temas, 0 NaN, iki koşu aynı; console 0; 3 geometri upload. Teker köşe kimliği AABB kanıtı; simetrik setlerde 10–20 draw `unclassified` (uydurma yok). Audi lastik eşleşmesi `containment` katmanı, preview-only.
+- Kanıt: `docs/work/verification/T-007-per-car-meshes.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

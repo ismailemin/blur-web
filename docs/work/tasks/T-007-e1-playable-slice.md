@@ -57,14 +57,13 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   NaN 0; iki instance + reset+replay aynı state hash.
 - Kanıt: `docs/work/verification/T-007-e1-drive.md`.
 
-### E1e — WebGPU entegrasyonu  ◐
-- Gerçek araç durumu → packet v1.1 → WebGPU; **29 parça/80 draw**, 4 teker
-  grubu fizik açısıyla dönüyor, kaliper sabit; 103 draw, geometri 3 upload,
-  console **0**.
-- Eksik: `draws[]` hâlâ producer'dan (asset-viewer geometrisi + manifest);
-  engine draw-list değil. Materyaller diagnostic, yol collision geometrisi,
-  süspansiyon/steer/camber yok.
-- Kanıt: `docs/work/verification/T-007-e1-drive.md`,
+### E1e — WebGPU entegrasyonu  ✅ (E1)
+- Gerçek araç durumu → packet v1.1 → WebGPU; **araç başına kendi gövdesi**,
+  29–34 parça, 4 teker grubu fizik açısıyla dönüyor, kaliper sabit.
+- 5 araç: 84–115 draw, ayrı gövde mesh hash'i; geometri 3 upload; console **0**.
+- Eksik: `draws[]` hâlâ producer'dan (engine draw-list değil); materyaller
+  diagnostic, süspansiyon/steer/camber yok, rest-pose teker konumu.
+- Kanıt: `docs/work/verification/T-007-per-car-meshes.md`,
   `docs/work/verification/T-007-car-parts-integration.md`.
 
 ### E1f — İlk sürülebilir tur (kabul)

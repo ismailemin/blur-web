@@ -33,6 +33,16 @@ const HOLD = params.has('hold') ? Number(params.get('hold')) : null;
 if (HOLD !== null && (!Number.isInteger(HOLD) || HOLD < 0)) throw new Error('hold must be a non-negative integer tick');
 const INTERPOLATE = params.get('interpolate') !== '0';
 const REQUESTED_CAR = params.get('car');
+// Diagnostic camera override (screenshots only): ?camdist=&camheight= change the
+// chase orbit radius/height without touching physics or any other packet field.
+const CAMERA_OVERRIDE = {};
+if (params.has('camdist')) CAMERA_OVERRIDE.distance = Number(params.get('camdist'));
+if (params.has('camheight')) CAMERA_OVERRIDE.height = Number(params.get('camheight'));
+if (params.has('camyaw')) CAMERA_OVERRIDE.yawOffset = Number(params.get('camyaw'));
+for (const [key, value] of Object.entries(CAMERA_OVERRIDE)) {
+  if (!Number.isFinite(value)) throw new Error('bad camera override ' + key + '=' + params.get(key));
+  if (key !== 'yawOffset' && value <= 0) throw new Error('bad camera override ' + key + '=' + params.get(key));
+}
 
 const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
 const GEOMETRY_URL = '/_work/e1-drive/geometry.json';
@@ -51,6 +61,8 @@ const state = {
   holdReached: HOLD === null ? false : HOLD === 0,
   car: null,
   roster: null,
+  bodyMesh: null,
+  bodyManifest: null,
   engineTick: 0,
   displayTick: 0,
   tick0Hash: null,
@@ -101,6 +113,7 @@ function publish() {
     ['input', 'thr ' + state.input[0].toFixed(2) + ' brk ' + state.input[1].toFixed(2) +
       ' str ' + state.input[2].toFixed(2) + ' hb ' + state.input[3].toFixed(2)],
     ['parts', state.parts + ' parts · ' + state.carDraws + ' draws · ' + state.packetNodes + ' nodes (' + state.wheelNodes + ' wheel)'],
+    ['body', state.bodyMesh ?? '—'],
     ['wheel spin', Object.entries(state.wheelAngles).map(([corner, angle]) => corner + ' ' + angle.toFixed(2)).join(' ')],
     ['frames', String(state.frames) + ' · ticks ' + state.ticksExecuted],
     ['uploads', state.geometryUploads + ' geometry · ' + state.uniformWrites + ' uniform'],
@@ -243,13 +256,17 @@ async function loadEngine() {
 async function startTimeline(tick0, { reload = false } = {}) {
   session = createSession(geometry, tick0, {
     spawn: { ...spawn, source: spawn.source ?? 'probes/e1-drive/tools/spawn.mjs' },
-    car: state.car
+    car: state.car,
+    camera: Object.keys(CAMERA_OVERRIDE).length ? CAMERA_OVERRIDE : undefined
   });
+  state.cameraOverride = Object.keys(CAMERA_OVERRIDE).length ? { ...CAMERA_OVERRIDE } : null;
   const partsInfo = session.packet.diagnostics.extras.parts;
   state.parts = partsInfo?.partCount ?? 0;
   state.carDraws = partsInfo?.drawCount ?? 0;
   state.packetNodes = session.packet.nodes.length;
   state.wheelNodes = session.packet.diagnostics.extras.wheels.wheelNodes.length;
+  state.bodyMesh = session.packet.diagnostics.extras.drive.car?.bodyMesh ?? null;
+  state.bodyManifest = partsInfo?.manifest ?? null;
   state.wheelAngles = session.wheelSpin.angle;
   state.wheelAnglesByTick = session.wheelAnglesByTick;
   // Expose the live timeline so the capture tool can compare the exact update the

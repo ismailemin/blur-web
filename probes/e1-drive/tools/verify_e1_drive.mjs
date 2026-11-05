@@ -39,7 +39,7 @@ import { formatPacket, hashOf, packetHash, validatePacket } from '../../render-p
 import { isRigid } from '../../render-packet/web/interpolate.js';
 import { canonicalJson, hashOf as hashOfLocal } from '../web/packet-hash.js';
 import { sha256Hex } from '../web/sha256.js';
-import { createSession } from '../web/packet-adapter.js';
+import { createSession, resolveCarBody } from '../web/packet-adapter.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from '../web/drive-script.js';
 import { TICK0_LIMITS } from './spawn.mjs';
 
@@ -142,26 +142,63 @@ check('roster passes its decode gate', roster.status === 'PASS' &&
 check('roster covers at least four real cars', roster.roster.cars.length >= 4,
       String(roster.roster.cars.length));
 
-// ------------------------------------------------------- part-manifest gates
-const manifest = geometry.manifest;
-check('geometry embeds the committed Corvette part manifest (29 parts / 80 draws / 4 wheel groups)',
-      manifest?.kind === 'blur.car-part-manifest' && manifest.version === 1 &&
-      manifest.parts === 29 && manifest.draws === 80 && manifest.wheelGroups === 4 &&
-      /^sha256:[0-9a-f]{64}$/.test(manifest.sha256 ?? ''),
-      manifest ? `${manifest.parts} parts, ${manifest.draws} draws, ${manifest.wheelGroups} groups, ${manifest.sha256}` : 'missing');
-check('the manifest draw ranges cover the packet car draws exactly once',
-      geometry.carDraws.length === 80 &&
-      new Set(geometry.carDraws.map((draw) => draw.indexOffset + ':' + draw.indexCount)).size === 80 &&
-      geometry.carDraws.every((draw) => typeof draw.partId === 'string' || draw.partKind === 'unclassified') &&
-      geometry.carDraws.every((draw) => typeof draw.nodeId === 'string' && Array.isArray(draw.diagnosticColour) &&
-        draw.diagnosticColour.length === 3 && draw.diagnosticColour.every(Number.isFinite)),
-      `${geometry.carDraws.length} car draws`);
-check('the car is split into one body node and eight wheel nodes (spin + static per corner)',
-      geometry.carNodes.length === 9 &&
-      geometry.carNodes.filter((node) => node.id === 'e1.car.body').length === 1 &&
-      geometry.carNodes.filter((node) => node.id.endsWith('.spin')).length === 4 &&
-      geometry.carNodes.filter((node) => node.id.endsWith('.static')).length === 4,
-      `${geometry.carNodes.length} nodes`);
+// ------------------------------------------------- per-car body-mesh gates
+const bodies = geometry.carBodies ?? {};
+const rosterSlugs = roster.roster.cars.map((car) => car.slug);
+check('geometry carries one real body per roster car (v3)',
+      geometry.version === 3 && rosterSlugs.every((slug) => bodies[slug]) &&
+      Object.keys(bodies).length === rosterSlugs.length,
+      `${Object.keys(bodies).length} bodies, geometry v${geometry.version}`);
+check('every body names its own model, manifest and mesh',
+      rosterSlugs.every((slug) => {
+        const body = bodies[slug];
+        return body && body.slug === slug && body.manifest.fallback !== true &&
+          typeof body.manifest.sourceModelPakPath === 'string' &&
+          /^sha256:[0-9a-f]{64}$/.test(body.manifest.sha256) &&
+          /^sha256:[0-9a-f]{64}$/.test(body.manifest.meshValueHashes.positionsFloat32LESha256) &&
+          body.manifest.kind === 'blur.car-part-manifest' && body.manifest.version === 1 &&
+          body.wheelGroups.length === 4;
+      }),
+      rosterSlugs.map((slug) => slug + ':' +
+        (bodies[slug]?.manifest?.sourceModelPakPath ?? 'MISSING')).join(', '));
+check('no roster car uses the documented fallback body',
+      geometry.fallbackBodyCount === 0 && Array.isArray(geometry.fallbackBodies) &&
+      geometry.fallbackBodies.length === 0,
+      JSON.stringify(geometry.fallbackBodies ?? null));
+check('the five bodies are distinct real meshes',
+      new Set(rosterSlugs.map((slug) => bodies[slug]?.manifest?.meshValueHashes?.positionsFloat32LESha256))
+        .size === rosterSlugs.length &&
+      new Set(rosterSlugs.map((slug) => bodies[slug]?.manifest?.sourceModelSha256)).size === rosterSlugs.length,
+      rosterSlugs.map((slug) =>
+        (bodies[slug]?.manifest?.meshValueHashes?.positionsFloat32LESha256 ?? 'none').slice(7, 19)).join(', '));
+check('the mapping index is pinned and every car is mapped',
+      /^sha256:[0-9a-f]{64}$/.test(geometry.source.cars?.indexSha256 ?? '') &&
+      bodies[rosterSlugs[0]]?.manifest?.mapping?.includes('.model'),
+      geometry.source.cars?.indexSha256);
+check('every body draw is owned by a part or explicitly unclassified',
+      rosterSlugs.every((slug) => {
+        const body = bodies[slug];
+        return body.carDraws.length === body.manifest.draws &&
+          new Set(body.carDraws.map((draw) => draw.indexOffset + ':' + draw.indexCount)).size ===
+            body.carDraws.length &&
+          body.carDraws.every((draw) => typeof draw.partId === 'string' ||
+            draw.partKind === 'unclassified') &&
+          body.carDraws.every((draw) => typeof draw.nodeId === 'string' &&
+            Array.isArray(draw.diagnosticColour) && draw.diagnosticColour.length === 3 &&
+            draw.diagnosticColour.every(Number.isFinite));
+      }),
+      rosterSlugs.map((slug) => `${slug}:${bodies[slug]?.carDraws?.length}`).join(', '));
+check('every body is split into one body node and spin/static wheel nodes covering every draw',
+      rosterSlugs.every((slug) => {
+        const body = bodies[slug];
+        const ids = body.carNodes.map((node) => node.id);
+        const spin = ids.filter((id) => id.endsWith('.spin')).length;
+        const stat = ids.filter((id) => id.endsWith('.static')).length;
+        return ids.filter((id) => id === 'e1.car.body').length === 1 &&
+          spin === 4 && stat === 4 &&
+          new Set(body.carNodes.flatMap((node) => node.drawIds)).size === body.carDraws.length;
+      }),
+      rosterSlugs.map((slug) => `${bodies[slug]?.carNodes?.length} nodes`).join(', '));
 
 /** One full scripted run of one car in a fresh wasm module instance. */
 async function runOnce(car, fieldBytes) {
@@ -325,6 +362,8 @@ for (const car of cars) {
 
   // ----------------------------------------------------------- per-car packet
   const packet = runA.packet;
+  const body = resolveCarBody(geometry, car.slug);
+  const expectedCarDraws = body.carDraws.length;
   const validation = validatePacket(packet);
   check(`${car.name}: packet conforms to the v1.1 contract`, validation.ok === true,
         validation.errors.slice(0, 6).join(' | '));
@@ -332,8 +371,9 @@ for (const car of cars) {
         packet.version === 1.1 && Array.isArray(packet.updates), String(packet.version));
   check(`${car.name}: one packet tick per scripted tick plus the settled tick`,
         packet.updates.length === SCRIPT_TICKS + 1, String(packet.updates.length));
-  check(`${car.name}: the packet has the expected draw count (22 level props + 1 collision surface + 80 car)`,
-        packet.draws.length === 103 && packet.diagnostics.sequence.staticDrawCount === 23,
+  check(`${car.name}: the packet has the expected draw count (22 level props + 1 collision surface + ${expectedCarDraws} car)`,
+        packet.draws.length === 23 + expectedCarDraws &&
+        packet.diagnostics.sequence.staticDrawCount === 23,
         String(packet.draws.length));
   check(`${car.name}: materials are diagnostic and labelled`,
         packet.diagnostics.materialsApplied === false &&
@@ -347,19 +387,24 @@ for (const car of cars) {
   const BODY_NODE = 'e1.car.body';
   const spinNodeIds = packet.nodes.filter((node) => node.id.endsWith('.spin')).map((node) => node.id);
   const staticNodeIds = packet.nodes.filter((node) => node.id.endsWith('.static')).map((node) => node.id);
-  check(`${car.name}: the packet carries the Corvette parts (29 parts / 80 draws)`,
-        packet.diagnostics.extras.parts?.partCount === 29 &&
-        packet.diagnostics.extras.parts?.drawCount === 80 &&
-        packet.draws.filter((draw) => draw.meshId === 'corvette.c3.race.body').length === 80,
+  check(`${car.name}: the packet draws the car's own body mesh`,
+        packet.diagnostics.extras.drive.car?.bodyMesh === body.meshId &&
+        packet.meshes.some((mesh) => mesh.id === body.meshId) &&
+        packet.placedObjects[0]?.meshId === body.meshId,
+        packet.diagnostics.extras.drive.car?.bodyMesh ?? 'missing');
+  check(`${car.name}: the packet draws this car's own parts and draws (${body.carParts.length} / ${body.carDraws.length})`,
+        packet.diagnostics.extras.parts?.partCount === body.carParts.length &&
+        packet.diagnostics.extras.parts?.drawCount === body.carDraws.length &&
+        packet.draws.filter((draw) => draw.meshId === body.meshId).length === body.carDraws.length,
         JSON.stringify(packet.diagnostics.extras.parts?.partCount));
-  check(`${car.name}: one body node and eight wheel nodes move every car draw exactly once`,
-        packet.nodes.length === 9 &&
+  check(`${car.name}: one body node and its spin/static wheel nodes move every car draw exactly once`,
+        packet.nodes.length === body.carNodes.length &&
         packet.nodes.filter((node) => node.id === BODY_NODE).length === 1 &&
         spinNodeIds.length === 4 && staticNodeIds.length === 4 &&
-        new Set(packet.nodes.flatMap((node) => node.drawIds)).size === 80,
+        new Set(packet.nodes.flatMap((node) => node.drawIds)).size === body.carDraws.length,
         `${packet.nodes.length} nodes, ${spinNodeIds.length} spin, ${staticNodeIds.length} static`);
-  check(`${car.name}: every tick carries the body plus eight wheel matrices`,
-        packet.updates.every((update) => update.matrices.length === 9 &&
+  check(`${car.name}: every tick carries the body plus one matrix per wheel node`,
+        packet.updates.every((update) => update.matrices.length === 1 + spinNodeIds.length + staticNodeIds.length &&
           update.matrices[0].nodeId === BODY_NODE),
         String(packet.updates[0]?.matrices.length));
   const bodyWorldAt = (tick) => packet.updates[tick].matrices[0].world;
@@ -378,7 +423,7 @@ for (const car of cars) {
   check(`${car.name}: brake calipers stay static (no spin applied)`,
         Math.max(...caliperAngles) < 1e-4, `max |angle| ${Math.max(...caliperAngles).toExponential(2)} rad`);
   check(`${car.name}: every car draw carries a labelled diagnostic colour`,
-        packet.draws.filter((draw) => draw.meshId === 'corvette.c3.race.body')
+        packet.draws.filter((draw) => draw.meshId === body.meshId)
           .every((draw) => Array.isArray(draw.diagnosticColour) && draw.diagnosticColour.length === 3 &&
             draw.diagnosticColour.every(Number.isFinite) && typeof draw.colourReason === 'string' &&
             draw.colourReason.includes('not a game material')));
@@ -489,6 +534,29 @@ for (const car of cars) {
       lastTickHash: packet.updates[packet.updates.length - 1].hash,
       midTickHash: packet.updates[150]?.hash ?? null,
       validationErrors: validation.errors.length
+    },
+    body: {
+      meshId: body.meshId,
+      model: body.manifest.sourceModel,
+      modelPakPath: body.manifest.sourceModelPakPath,
+      modelSha256: body.manifest.sourceModelSha256,
+      fallback: body.manifest.fallback === true,
+      manifest: body.manifest.path,
+      manifestSha256: body.manifest.sha256,
+      meshPositionsSha256: body.manifest.meshValueHashes.positionsFloat32LESha256,
+      meshIndicesSha256: body.manifest.meshValueHashes.indicesUint32LESha256,
+      vertices: body.mesh.vertexCount,
+      triangles: body.mesh.indexCount / 3,
+      parts: body.carParts.length,
+      draws: body.carDraws.length,
+      nodes: body.carNodes.length,
+      wheelGroups: body.wheelGroups.length,
+      provenDraws: body.manifest.provenDraws,
+      unclassifiedDraws: body.manifest.unclassifiedDraws,
+      wheelDraws: body.manifest.wheelDraws,
+      ambiguousWheelDraws: body.manifest.ambiguousWheelDraws,
+      tyreProofTier: body.manifest.tyreProofTier,
+      mapping: body.manifest.mapping
     }
   });
 }
@@ -503,6 +571,17 @@ check('every car has a distinct settled (tick 0) state', distinctTick0.size === 
 const distinctPackets = new Set(results.map((entry) => entry.packet.hash));
 check('every car produces a distinct packet', distinctPackets.size === results.length,
       `${distinctPackets.size} distinct of ${results.length}`);
+const distinctBodyMeshes = new Set(results.map((entry) => entry.body.meshPositionsSha256));
+check('every car draws a distinct real body mesh', distinctBodyMeshes.size === results.length,
+      `${distinctBodyMeshes.size} distinct of ${results.length}`);
+const distinctBodyModels = new Set(results.map((entry) => entry.body.modelSha256));
+check('every car draws its own source model', distinctBodyModels.size === results.length,
+      `${distinctBodyModels.size} distinct of ${results.length}`);
+check('no car falls back to the shared Corvette C3 body',
+      results.every((entry) => entry.body.fallback !== true &&
+        !/corvette_c3/i.test(entry.body.modelPakPath ?? '') &&
+        entry.body.meshId === 'car.' + entry.slug + '.body'),
+      results.map((entry) => entry.body.modelPakPath).join(', '));
 check('the cars are actually different machines',
       results.length === 1 ||
       (new Set(results.map((entry) => entry.record.id)).size === results.length &&
@@ -550,18 +629,32 @@ const report = {
   geometry: {
     path: path.relative(ROOT, GEOMETRY).split(path.sep).join('/'),
     bytes: readFileSync(GEOMETRY).length,
+    version: geometry.version,
     levelDraws: geometry.levelDraws.length,
-    carDraws: geometry.carDraws.length,
     levelVertices: geometry.meshes[0].vertexCount,
     levelTriangles: geometry.meshes[0].indexCount / 3,
-    trackVertices: geometry.meshes[2]?.vertexCount ?? 0,
-    trackTriangles: (geometry.meshes[2]?.indexCount ?? 0) / 3,
-    carVertices: geometry.meshes[1].vertexCount,
-    carTriangles: geometry.meshes[1].indexCount / 3,
-    carParts: geometry.carParts.length,
-    wheelGroups: geometry.wheelGroups.length,
-    carNodes: geometry.carNodes.length,
-    manifest: geometry.manifest,
+    trackVertices: geometry.meshes[1]?.vertexCount ?? 0,
+    trackTriangles: (geometry.meshes[1]?.indexCount ?? 0) / 3,
+    bodies: roster.roster.cars.map((car) => {
+      const body = resolveCarBody(geometry, car.slug);
+      return {
+        slug: body.slug,
+        meshId: body.meshId,
+        vertices: body.mesh.vertexCount,
+        triangles: body.mesh.indexCount / 3,
+        draws: body.carDraws.length,
+        parts: body.carParts.length,
+        nodes: body.carNodes.length,
+        wheelGroups: body.wheelGroups.length,
+        positionsSha256: body.manifest.meshValueHashes.positionsFloat32LESha256,
+        manifestSha256: body.manifest.sha256,
+        modelPakPath: body.manifest.sourceModelPakPath,
+        sourceModelSha256: body.manifest.sourceModelSha256,
+        fallback: body.manifest.fallback === true,
+        mapping: body.manifest.mapping
+      };
+    }),
+    cars: geometry.source.cars,
     source: geometry.source.packet,
     sourcePacketHash: geometry.source.packetHash,
     trackSource: geometry.source.track

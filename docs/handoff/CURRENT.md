@@ -193,6 +193,14 @@ eşit; hash `fd525c1452869aee`; 55 nesne, 794.845 B, 46/46, GPU objesi 0.
 Instance transformları (`g_mWorld`), materyaller ve dokular henüz yok; packet
 v1.1'e bağlanmadı. Kanıt: `docs/work/verification/T-007-streaming.md` §P27.
 
+**Araç başına gövde (P29):** 5 aracın tamamı `root.pak` içindeki kendi
+`.model` dosyasına kanıtla eşlendi (Corvette ZR1, Lotus Exige, Dodge Challenger,
+Focus RS, Audi R8 V10). Araç başına 84–115 draw, 23–34 parça, 20 teker draw'ı
+(8/4/4/4), ayrı gövde mesh hash'i. `verify_e1_drive` **214/214**; 5 araçta
+301/301 temas, 0 NaN, console 0; geometri 3 upload. Teker köşe kimliği AABB
+kanıtı; simetrik setlerde 10–20 draw `unclassified` (uydurma yok). Kanıt:
+`docs/work/verification/T-007-per-car-meshes.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

@@ -30,6 +30,7 @@ deterministic state sequence.**
 | screenshots | `_work/e1-drive/browser-{start,mid,end}.png` (+ `-car` crops) |
 | multi-car (P23) | **5 cars** of 62 `RP_CarDynamics` records, selectable at runtime, 164/164 checks, 20 browser captures, 0 console messages — see **§10** (this section's numbers are the original single-car run; §10 records what the roster changed) |
 | car parts + wheels (P28) | **29 parts / 80 draws**, **4 wheel groups** (8 wheel nodes), 202/202 checks, 20 browser captures, 0 console messages — see **§11** |
+| per-car meshes (P29) | **5 of 5 roster cars** draw their own real body/wheels (100/88/104/115/84 draws, 34/23/31/31/29 parts), 214/214 checks, distinct body mesh hashes, 3 uploads per page, 0 console messages — see **§12** |
 
 ---
 
@@ -118,11 +119,12 @@ object list produce the same `.wasm` (`build.json`, `buildDeterministic: true`).
 | mesh | source | vertices | triangles | space |
 | --- | --- | ---: | ---: | --- |
 | `river.block27.instances-all` | committed packet (`level_inspect.exe --instances-all`, 22 draws) | 13,162 | 10,308 | world |
-| `corvette.c3.race.body` | committed packet (`scene_inspect.exe`, 80 draws) | 30,591 | 36,193 | object-local |
-| `river.collision.surface` | `Level.levelphysics` (176/282 inside the run box) | 176 | 282 | world |
+| `car.<slug>.body` (one per roster car) | that car's `root.pak` `.model` through `scene_inspect.exe` (P29; §12) | 28,365–33,048 | 30,736–36,193 | object-local |
+| `river.collision.surface` | `Level.levelphysics` (381 triangles in the run box) | 230 | 381 | world |
 
-103 draws total (22 props + 1 surface + 80 car). No colour, texture or transform
-is invented:
+One packet carries the level, the selected car's body and the collision surface
+(23 static + 84–115 car draws, `23 + carDraws` total). No colour, texture or
+transform is invented:
 
 - materials are the committed identity list (`pixelsIncluded: false`);
 - the collision surface has `materialId: null` and a `materialReason` that says
@@ -635,9 +637,9 @@ tyres are the visible wheels.*
 - **Rest-pose wheel placement.** Wheel groups use their `MdlDat` element
   translations. No suspension travel, steering angle or camber is applied because
   the state does not carry those per-wheel rotations.
-- **Corvette-only parts.** The manifest is Corvette-specific; the other four
-  physics cars are still drawn with the Corvette body and wheels
-  (`bodyMeshReason`). Per-car meshes are the next step.
+- **Corvette-only parts.** *Superseded by §12 (P29).* The manifest is
+  Corvette-specific; the other four physics cars are still drawn with the
+  Corvette body and wheels (`bodyMeshReason`). Per-car meshes are the next step.
 - **Diagnostic materials and colours.** Per-part colours and the spin marker are
   debug aids, not game materials/textures; `materialsApplied:false`.
 - **Spin is integrated, not read.** `wheels[].angular` is a rate; the adapter
@@ -654,7 +656,72 @@ tyres are the visible wheels.*
 
 ### 11.5 Next step
 
-The smallest remaining visual step is **per-car meshes**: decode each roster
-car's own model with the same reader/manifest path and swap the manifest per
-`?car=`. Until then this slice proves the *pipeline* (manifest → per-part nodes →
-physics-driven wheel matrices → WebGPU) on the Corvette only.
+**Done in §12 (P29).** The per-car meshes were decoded with the same
+reader/manifest path and the manifest is selected per `?car=`.
+
+---
+
+## 12. Per-car body and wheel meshes (T-007/E1j, P29)
+
+**Date:** 5 November 2026
+**Scope:** `probes/car-parts/**`, `probes/e1-drive/**`, `_work/car-parts/**`,
+`_work/e1-drive/**`, `_work/logs/{car-parts,e1-drive}/**`, this document,
+`docs/work/analysis/e1-car-parts.md` and
+`docs/work/verification/T-007-per-car-meshes.md`. Physics is unchanged: the
+Corvette state sequence hash is still `83f76590…`.
+
+### 12.1 What changed
+
+`probes/car-parts/tools/build_manifest.py` is now model-generic: it takes any
+decoded PC model and produces the same manifest schema. `build_all_manifests.py`
+maps every roster record to `\models\vehicles\<lowercased name>.model` (exactly
+one match required), decodes it with the committed PAK index reader + packet-zlib
+decoder, and builds one manifest/mesh per car under `_work/car-parts/cars/<slug>/`.
+
+`probes/e1-drive/tools/build_geometry.mjs` reads
+`_work/car-parts/cars/index.json` + the five manifest/mesh pairs, pins every
+manifest SHA-256 and the index SHA-256, re-derives every draw AABB from the mesh
+and emits geometry **v3**: `meshes[]` = [level, collision surface] and
+`carBodies[slug]` = {mesh, parts, wheelGroups, nodes, draws, manifest}.
+
+`web/packet-adapter.js` resolves the body from `options.car.slug`, so a packet
+contains exactly one car mesh (3 uploads: level + that body + surface) and its
+own parts/wheel nodes. `diagnostics.extras.drive.car` now records `bodyMesh`,
+`bodyManifest`, `bodyManifestSha256`, `bodyVertexCount`, `bodyDrawCount`,
+`bodyPartCount`, the model pak path and its SHA-256.
+
+| car | model pak path | draws | parts | body mesh SHA-256 (positions) |
+| --- | --- | ---: | ---: | --- |
+| Corvette ZR1 | `\models\vehicles\corvette_zr1_stock.model` | 100 | 34 | `1319e2ac…d7fd2b` |
+| Lotus Exige Cup260 | `\models\vehicles\lotus_exigecup260_stock.model` | 88 | 23 | `c5cc7937…75e1085` |
+| Dodge Challenger | `\models\vehicles\dodge_challenger_stock.model` | 104 | 31 | `a430202d…21df9b8` |
+| Ford Focus RS | `\models\vehicles\ford_focusrs_stock.model` | 115 | 31 | `8fc09c18…ae539e6` |
+| Audi R8 V10 | `\models\vehicles\audi_r8v10_stock.model` | 84 | 29 | `0fce56a6…59d44f40` |
+
+### 12.2 Verification gate
+
+```powershell
+$py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+$node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
+
+& $py   probes/car-parts/tools/build_all_manifests.py
+& $py   probes/car-parts/tools/verify_manifest.py
+& $node probes/e1-drive/tools/build_geometry.mjs
+& $node probes/e1-drive/tools/verify_e1_drive.mjs
+& $node probes/e1-drive/tools/capture_browser.mjs    # --port 8811 if 8801 is busy
+```
+
+- `_work/e1-drive/geometry.json` — **9,962,640 B**, SHA-256
+  `37341b8db106c22b53e261fccffc746c1b1942ddbf209560841992e67ad34b08`, five
+  bodies with distinct mesh hashes, 9 nodes / 20 wheel draws each.
+- `_work/e1-drive/run.json` — **PASS, 214/214 checks, 0 failures** (202
+  pre-existing + 12 per-car body checks).
+- All five cars: **301/301 wheel-contact ticks, 0 NaN**, distinct state
+  sequences and packets, run A = run B, every per-tick matrix rigid.
+- Headless Edge: 20 captures + 5 wheel-view captures, **0 console messages**,
+  3 geometry uploads per page (1.01–1.11 MB depending on the body), and the
+  browser reports each car's own `bodyMesh`/manifest hash.
+
+Details, screenshots and limits are in
+`docs/work/verification/T-007-per-car-meshes.md` and
+`docs/work/analysis/e1-car-parts.md` §4.7.
