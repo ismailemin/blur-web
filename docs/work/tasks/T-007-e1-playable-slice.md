@@ -147,6 +147,14 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-textured-cars.md`,
   `docs/work/analysis/car-materials.md`.
 
+### E1j — Ses (P62)  ✅ (fizibilite)
+- `race_v8.baf`: `BANK/WAVE/DATA` v4, uADPCM4Bit, 48 kHz; altı motor loop'u
+  decode edildi (720/1500/1995/3015/4005/4995/6000 + decel).
+- RPM→gain/pitch eğrileri retail `.dat`'ten birebir; harness headless Edge'de
+  **decoded-audio-playing-and-curves-match**, console 0.
+- Sıradaki: E1'e motor sesi entegrasyonu (RPM sürüşüyle), sonra tyre/collision.
+- Kanıt: `docs/work/analysis/audio-feasibility.md`, `probes/audio/`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

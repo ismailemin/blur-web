@@ -351,6 +351,12 @@ PASS (0 ihlal). Spawn bileşeninden 1,138 m duvar boşluğu var; lap modu loop
 üzerinde spawn etmeli. Kanıt: `docs/work/analysis/lap-search.md`,
 `_work/lap-search/loops.png`.
 
+**Ses fizibilitesi (P62):** `race_v8.baf` uADPCM4Bit 48 kHz; altı motor
+loop'u decode edildi; RPM→gain/pitch retail `.dat` eğrileriyle birebir; harness
+headless Edge'de **decoded-audio-playing-and-curves-match**, console 0.
+Sıradaki: E1 motor sesi entegrasyonu. Kanıt:
+`docs/work/analysis/audio-feasibility.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

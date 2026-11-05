@@ -670,6 +670,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - loop-01: min duvar 2,06 m, bant 11,75 m, seam 0,5 m, max basamak 0,40 cm, max eğim %1,49; engine trace **PASS**, 0 ihlal.
 - Spawn bileşeninden **1,138 m** duvar boşluğu var; lap modu loop-01 üzerinde spawn etmeli. Kanıt: `docs/work/analysis/lap-search.md`, `_work/lap-search/loops.png`.
 
+## 6 Kasım 2026 — ses fizibilitesi
+
+- `race_v8.baf`: BANK/WAVE/DATA v4, uADPCM4Bit, 48 kHz; sekiz wave decode edildi (altı motor loop'u kullanılıyor).
+- RPM→gain/pitch eğrileri retail `race_v8_engine.dat`'ten birebir; 1500 RPM'de slot1 1.0 / slot2 0.3676 crossfade doğrulandı.
+- Headless Edge harness: **decoded-audio-playing-and-curves-match**, AudioContext running, 0 console. Sıradaki: motor sesini RPM ile E1 sürüşüne bağlamak. Kanıt: `docs/work/analysis/audio-feasibility.md`, `_work/audio/harness.png`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).
