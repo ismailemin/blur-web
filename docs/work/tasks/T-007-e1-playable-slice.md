@@ -78,7 +78,7 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   console **0**; 310 m paket 500 draw / 1.060 update.
 - **P61 kapalı tur bulundu:** collision mesh üzerinde üç loop (222,0 m / 224,2 m
   / 91,1 m); önerilen loop-01 222,0 m, min duvar 2,06 m, bant 11,75 m, seam
-  0,5 m; engine trace PASS. Spawn bileşeninden 1,138 m duvar boşluğu var —
+  0,5 m; engine trace PASS. Spawn bileşeninden 1,118 m duvar boşluğu var —
   tur modu loop üzerinde spawn etmeli. **Sıradaki: loop-01 lap modu.**
 - Kalan: kapalı tur entegrasyonu; ses/rakip yok.
 - Kanıt: `docs/work/verification/T-007-310m-course.md`,

@@ -377,7 +377,8 @@ def main(argv=None):
         maxk = row["survivesErosion"]
         if maxk < 2:
             row["loop"] = None
-            row["reject"] = "ring narrower than the 2.276 m car envelope (island is not enclosed after 0.5 m erosion)"
+            row["reject"] = ("island does not survive 2 clearance erosions "
+                             "(no 1.5 m loop line)")
             continue
         k = min(LOOP_ERODE, maxk)
         F = erode(base, k)

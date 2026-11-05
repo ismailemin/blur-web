@@ -347,7 +347,7 @@ light blend runtime — renk uydurulmadı. 30/30 suite. Kanıt:
 
 **Kapalı tur (P61):** collision mesh üzerinde üç loop bulundu; önerilen
 **loop-01 222,0 m**, min duvar 2,06 m, bant 11,75 m, seam 0,5 m; engine trace
-PASS (0 ihlal). Spawn bileşeninden 1,138 m duvar boşluğu var; lap modu loop
+PASS (0 ihlal). Spawn bileşeninden 1,118 m duvar boşluğu var; lap modu loop
 üzerinde spawn etmeli. Kanıt: `docs/work/analysis/lap-search.md`,
 `_work/lap-search/loops.png`.
 

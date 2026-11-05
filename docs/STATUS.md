@@ -668,7 +668,7 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 
 - Collision mesh üzerinde üç kapalı loop: **loop-01 222,0 m** (önerilen), loop-02 224,2 m, loop-03 91,1 m.
 - loop-01: min duvar 2,06 m, bant 11,75 m, seam 0,5 m, max basamak 0,40 cm, max eğim %1,49; engine trace **PASS**, 0 ihlal.
-- Spawn bileşeninden **1,138 m** duvar boşluğu var; lap modu loop-01 üzerinde spawn etmeli. Kanıt: `docs/work/analysis/lap-search.md`, `_work/lap-search/loops.png`.
+- Spawn bileşeninden **1,118 m** duvar boşluğu var; lap modu loop-01 üzerinde spawn etmeli. Kanıt: `docs/work/analysis/lap-search.md`, `_work/lap-search/loops.png`.
 
 ## 6 Kasım 2026 — ses fizibilitesi
 

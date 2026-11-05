@@ -26,7 +26,7 @@ there. Three closed loops exist in three other, disconnected components:
 loop-01 is the best loop by the rule stated in §4: it is the longest loop whose
 island has at least 10 % void or steep cells (a real obstacle, not only a rough
 patch) and whose ring survives at least three clearance erosions. loop-02 is
-2.185 m longer but circles a rough step/grade ridge with no void or steep face,
+2.18 m longer but circles a rough step/grade ridge with no void or steep face,
 and its ring only survives two erosions; it is recorded as the longest loop.
 
 All three loops are **engine-clean**: 0 hard and 0 safety-margin violations in
@@ -141,21 +141,22 @@ islands are:
 | island | area | component | island survival | loop | what the island is |
 | ---: | ---: | ---: | ---: | --- | --- |
 | 0 | 812 m2 | 5 | 6 erosions | loop-01 | 1,224 void + 763 steep + 1,262 step/grade cells |
-| 1 | 625 m2 | 5 | 0 | rejected | 415 steep + 2,084 step/grade; ring < 0.5 m |
-| 2 | 369 m2 | 129 | 1 | rejected | 1,475 step/grade; ring < 1.0 m |
-| 3 | 238 m2 | 129 | 1 | rejected | 954 step/grade; ring < 1.0 m |
+| 1 | 625 m2 | 5 | 0 | rejected | 415 steep + 2,084 step/grade; not enclosed after 0.5 m erosion |
+| 2 | 369 m2 | 129 | 1 | rejected | 1,475 step/grade; not enclosed after 1.0 m erosion |
+| 3 | 238 m2 | 129 | 1 | rejected | 954 step/grade; not enclosed after 1.0 m erosion |
 | 4 | 230 m2 | 129 | 2 | loop-02 | 918 step/grade (rough ridge) |
-| 5 | 130 m2 | 355 | 0 | rejected | 520 step/grade; ring < 0.5 m |
-| 6 | 114 m2 | 180 | 1 | rejected | 454 step/grade; ring < 1.0 m |
+| 5 | 130 m2 | 355 | 0 | rejected | 520 step/grade; not enclosed after 0.5 m erosion |
+| 6 | 114 m2 | 180 | 1 | rejected | 454 step/grade; not enclosed after 1.0 m erosion |
 | 7 | 100 m2 | 261 | 2 | loop-03 | 402 step/grade |
 
-The six rejected islands are a measured result, not a silent drop: their rings
-are narrower than the 2.276 m car envelope (they are not enclosed after 0.5 m
-erosion), so no car-width loop exists around them. The 1 m screening pass is
-kept only as a diagnostic: it found 69 holes in the spawn region that vanish at
-0.5 m because the finer grid resolves drivable connections through them. The
-0.5 m grid is the P48 model resolution and reproduces the P48 38,758-cell
-component exactly at erosion 2.
+The six rejected islands are a measured result, not a silent drop: each is not
+enclosed after the 1.5 m clearance erosion (survival 0 or 1 in the table), so no
+loop line exists at that clearance. Their rings are at most about 3 m wide, and
+a 2.276 m car envelope leaves no validated loop at the model's safety standard.
+The 1 m screening pass is kept only as a diagnostic: it found 69 holes in the
+spawn region that vanish at 0.5 m because the finer grid resolves drivable
+connections through them. The 0.5 m grid is the P48 model resolution and
+reproduces the P48 38,758-cell component exactly at erosion 2.
 
 ## 5. The best loop (loop-01)
 
@@ -336,12 +337,12 @@ Repeated runs produce identical output:
 
 | artifact | canonical / file SHA-256 |
 | --- | --- |
-| `loops.json` canonical | `sha256:241bb40fc31b03dfeb002450d229d3b76a530f08e930bac64e7fbe45c394f1ae` |
-| `loops.json` file | `de5c64663687b5c8da92802f05c5dc40607dd31635ff096adda2b692695069df` |
-| `verify.json` canonical | `sha256:99734656ed3aea0259fbb32f29702b71e81f404849650645ec53bdde842756cb` |
-| `verify.json` file | `2755fa6c85da0db9b7d67f18e823099314c504f0ae8e3b3d2d84da8b28917d05` |
-| `engine-trace.json` canonical | `sha256:6d81eaa172aa8a7e111e3cfbbdb1c00bd1ded8e29040b741aeaf4ef6a441253f` |
-| `engine-trace.json` file | `dc38938129c4e88934b83f18c7e9ba088de5d6133c2ff19a54d98745fdac4461` |
+| `loops.json` canonical | `sha256:acc47b6bbd0719af857323060b273e83e933bf7b86330d0362b3e70409873536` |
+| `loops.json` file | `2aabf0cd04fc96b2e2cf903a392fc86fc5b2cd6e85772b9d0e8b523a0826a59c` |
+| `verify.json` canonical | `sha256:ced92399c7c0394aad605aa582af43669157a4a8b2cc07bef164a4ecfe2a7236` |
+| `verify.json` file | `6f1b133c6fe04d4e409f99da81ce4307f9f6cfaad7c447771d080acd6464615e` |
+| `engine-trace.json` canonical | `sha256:07d888f1b191cac17d887f7b0aa598ba450b33e3a20db5f426c1a5f1ca4e5b6b` |
+| `engine-trace.json` file | `01dbba4c9a2f45aa1389bcb8bb375a46802dd00807d78a426ba1f40056c25349` |
 | `loops.svg` | `5226b8285ac6468d5139720b5607e3d6b18fc6fa594f5a4fbf6b8993d0d407e9` |
 | `loops.png` | `6a39cc7d87f316ea93c4f2a8ac7f51c0e3a0d101cb368e81e287224463aa03e7` |
 | `grid.npz` | `7fd4314dd14f4d85eea0756c1a7c98c8b36c40a8c299eac1bb9c64c3f06473fb` |

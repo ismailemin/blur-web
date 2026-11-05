@@ -24,7 +24,7 @@ claim is made.
 | --- | ---: | ---: | ---: | --- |
 | spawn (**26**) | 43,651 | 10,912.75 | **0** | **none** |
 | 5 | 86,521 | 21,630.25 | 2 (812 m2, 625 m2) | **loop-01 222.040 m** |
-| 129 | 42,159 | 10,539.75 | 1 (230 m2) | loop-02 224.225 m |
+| 129 | 42,159 | 10,539.75 | 3 (369, 238, 230 m2) | loop-02 224.225 m |
 | 261 | 55,330 | 13,832.50 | 1 (100 m2) | loop-03 91.130 m |
 
 The spawn component is **simply connected at the 0.5 m model resolution**: zero
@@ -45,7 +45,7 @@ The three loops live in three other, disconnected components. The best loop
 | exact verifier | **PASS** (9/9 loop checks) |
 | engine trace | **445 samples, 0 hard, 0 safety-margin violations** |
 
-loop-02 is **2.185 m longer** (224.225 m) but its island is 100 % step/grade
+loop-02 is **2.18 m longer** (224.225 m) but its island is 100 % step/grade
 cells (a rough ridge, no void and no steep face) and its ring only survives two
 erosions. It is recorded as the longest loop, not the recommended one.
 
@@ -87,10 +87,10 @@ collision surface. Trivial 4-cell raster cycles are excluded by the 100 m2
 island threshold and by the ring criterion:
 
 > A base island that is still enclosed after `k` 8-connected erosions of the
-> passable mask has a ring at least `k` cells from every non-passable cell
-> (Chebyshev, hence a Euclidean lower bound). `k=3` is used for the reported
-> loop line (>= 2.0 m clearance); `k=2` is accepted as a labelled tight ring
-> (>= 1.5 m).
+> passable mask has a ring whose retained cells are at least `(k+1)` cells from
+> every non-passable cell (Chebyshev, hence a Euclidean lower bound). `k=3` is
+> used for the reported loop line (>= 2.0 m clearance); `k=2` is accepted as a
+> labelled tight ring (>= 1.5 m).
 
 The loop line is the boundary foreground cells of the eroded island, ordered by
 a Moore boundary trace, corner-cut with a visibility check on the eroded mask,
@@ -197,9 +197,9 @@ scripts read the saved rasters. The final pipeline does not depend on it.
 
 | artifact | bytes | file SHA-256 | canonical |
 | --- | ---: | --- | --- |
-| `loops.json` | 109,407 | `de5c64663687b5c8da92802f05c5dc40607dd31635ff096adda2b692695069df` | `sha256:241bb40fc31b03dfeb002450d229d3b76a530f08e930bac64e7fbe45c394f1ae` |
-| `verify.json` | 8,494 | `2755fa6c85da0db9b7d67f18e823099314c504f0ae8e3b3d2d84da8b28917d05` | `sha256:99734656ed3aea0259fbb32f29702b71e81f404849650645ec53bdde842756cb` |
-| `engine-trace.json` | 163,553 | `dc38938129c4e88934b83f18c7e9ba088de5d6133c2ff19a54d98745fdac4461` | `sha256:6d81eaa172aa8a7e111e3cfbbdb1c00bd1ded8e29040b741aeaf4ef6a441253f` |
+| `loops.json` | 109,292 | `2aabf0cd04fc96b2e2cf903a392fc86fc5b2cd6e85772b9d0e8b523a0826a59c` | `sha256:acc47b6bbd0719af857323060b273e83e933bf7b86330d0362b3e70409873536` |
+| `verify.json` | 8,494 | `6f1b133c6fe04d4e409f99da81ce4307f9f6cfaad7c447771d080acd6464615e` | `sha256:ced92399c7c0394aad605aa582af43669157a4a8b2cc07bef164a4ecfe2a7236` |
+| `engine-trace.json` | 163,553 | `01dbba4c9a2f45aa1389bcb8bb375a46802dd00807d78a426ba1f40056c25349` | `sha256:07d888f1b191cac17d887f7b0aa598ba450b33e3a20db5f426c1a5f1ca4e5b6b` |
 | `loops.svg` | 489,497 | `5226b8285ac6468d5139720b5607e3d6b18fc6fa594f5a4fbf6b8993d0d407e9` | - |
 | `loops.png` | 151,153 | `6a39cc7d87f316ea93c4f2a8ac7f51c0e3a0d101cb368e81e287224463aa03e7` | - |
 | `grid.npz` | 9,600,378 | `7fd4314dd14f4d85eea0756c1a7c98c8b36c40a8c299eac1bb9c64c3f06473fb` | - |
