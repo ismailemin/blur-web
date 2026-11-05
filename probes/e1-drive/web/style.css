@@ -142,6 +142,25 @@ html, body {
 }
 #survey-banner[hidden] { display: none; }
 
+/* Ghost replay label (P63). The car itself is drawn with a translucent cyan
+   diagnostic tint; this tag names it and states that it is a replay. */
+#ghost-tag {
+  position: fixed;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9fe0ff;
+  background: rgba(8, 20, 30, 0.86);
+  border: 1px solid rgba(79, 196, 240, 0.6);
+  border-radius: 999px;
+  pointer-events: none;
+}
+#ghost-tag[hidden] { display: none; }
+
 #results {
   position: fixed;
   left: 50%;

@@ -80,7 +80,10 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   / 91,1 m); önerilen loop-01 222,0 m, min duvar 2,06 m, bant 11,75 m, seam
   0,5 m; engine trace PASS. Spawn bileşeninden 1,118 m duvar boşluğu var —
   tur modu loop üzerinde spawn etmeli. **Sıradaki: loop-01 lap modu.**
-- Kalan: kapalı tur entegrasyonu; ses/rakip yok.
+- **P63 ghost/rival:** her araç için en iyi temiz koşu kaydı (veya committed
+  reference trace) hayalet araç olarak oynatılıyor; `G` aç/kapa, HUD `Δt/Δd`,
+  çarpışma/fizik yok, ek geometri upload'ı yok. `verify_e1_drive` **678/678**.
+- Kalan: kapalı tur entegrasyonu; AI rakip yok.
 - Kanıt: `docs/work/verification/T-007-310m-course.md`,
   `T-007-sprint-rules.md`, `T-007-ledge-fix.md`.
 

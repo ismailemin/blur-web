@@ -14,6 +14,7 @@
 <div id="error" hidden></div>
 <div id="countdown" hidden></div>
 <div id="event" data-visible="0"></div>
+<div id="ghost-tag" hidden aria-label="ghost replay"></div>
 <div id="results" hidden>
   <h2>FINISH</h2>
   <div class="time" id="results-time">—</div>
@@ -30,11 +31,12 @@
 <div id="legend">
   <strong>E1 sprint slice</strong> — wasm RacingPhysics on the River collision mesh → render packet v1.1 → WebGPU<br>
   default: the measured <strong>310 m P48 course</strong> (310.395 m measured, finish at 300.160 m) · <code>?course=short</code> = the 29 m regression straight<br>
-  point-to-point sprint · 2 checkpoints · timer · best time · respawn · physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · static albedo textures on real UV0 · material colour/blend/mips/sRGB not applied · rest-pose wheel placement
+  point-to-point sprint · 2 checkpoints · timer · best time · respawn · <strong>G</strong> ghost replay of your best run (or the committed reference trace) · physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · static albedo textures on real UV0 · material colour/blend/mips/sRGB not applied · rest-pose wheel placement
 </div>
 <div id="keys">
   <strong>W</strong>/<strong>↑</strong> throttle · <strong>S</strong>/<strong>↓</strong> brake ·
   <strong>A</strong> <strong>D</strong> steer · <strong>Space</strong> handbrake · <strong>R</strong> restart ·
+  <strong>G</strong> ghost replay · <strong>I</strong> invert steer ·
   drag = orbit camera · wheel = zoom
 </div>
 <script type="module" src="./app.js"></script>

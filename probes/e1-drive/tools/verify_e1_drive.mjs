@@ -50,6 +50,11 @@ import { SPRINT_EVENT, createSprintRules, coursePosition } from '../web/sprint-r
 import { SPRINT_SCRIPT_TICKS, SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput } from '../web/sprint-script.js';
 import { createBestTimes } from '../web/sprint-best.js';
 import {
+  GHOST_CORNERS, GHOST_INDEX_KIND, GHOST_KEY_PREFIX, GHOST_SOURCE, buildGhostArcTable, createGhostStore,
+  decodeGhost, ghostFromRun, ghostGap, ghostHash, ghostMatrices, ghostPoseAt, ghostSecondsAtArc,
+  referenceGhostFileName, validateGhostRecord
+} from '../web/ghost-replay.js';
+import {
   createWasmResetEngineSet, createWasmTelemetryEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
   TELEMETRY_MANOEUVRE, TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_SPEC, tickAtSpeedKph
 } from '../web/telemetry.js';
@@ -1260,11 +1265,50 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
   const packet = session.finalise();
   return {
     module, rules, states, inputs, events, rows, packet, createMs, simMs,
+    // Ghost replay reads the same recorded angles the adapter integrated, so the
+    // ghost wheels are the run's own wheels and not a re-integration.
+    wheelAnglesByTick: session.wheelAnglesByTick,
     finish: events.find((event) => event.type === SPRINT_EVENT.FINISH) ?? null,
     checkpoints: events.filter((event) => event.type === SPRINT_EVENT.CHECKPOINT),
     go: events.find((event) => event.type === SPRINT_EVENT.GO) ?? null,
     respawns: events.filter((event) => event.type === SPRINT_EVENT.RESPAWN)
   };
+}
+
+/**
+ * The ghost record of one completed deterministic sprint. `source` is the
+ * committed reference trace (the page uses the same builder for the user's own
+ * best run). Nothing here touches the engine.
+ */
+function buildGhostForRun(car, run, layout, course, finish, stateSequenceHash) {
+  return ghostFromRun({
+    car: car.slug,
+    course,
+    courseId: layout.courseId,
+    layoutHash: layout.hash,
+    countdownTicks: layout.countdown.ticks,
+    finishTick: finish.tick,
+    timeSeconds: finish.timeSeconds,
+    stateSequenceHash,
+    updates: run.packet.updates,
+    wheelAnglesByTick: run.wheelAnglesByTick,
+    source: GHOST_SOURCE.REFERENCE,
+    sourceLabel: 'reference ghost - committed deterministic sprint trace (' +
+      finish.timeSeconds.toFixed(3) + ' s)'
+  });
+}
+
+/** Manifest wheel rest matrices of one car, the same ones the adapter composes with. */
+function ghostWheelRestFor(slug) {
+  const body = geometry.carBodies[slug];
+  if (!body) throw new Error('geometry has no body for ' + slug);
+  const rest = {};
+  for (const corner of GHOST_CORNERS) {
+    const group = body.wheelGroups.find((candidate) => candidate.corner === corner);
+    if (!group) throw new Error('body ' + slug + ' has no wheel rest pose for ' + corner);
+    rest[corner] = group.matrixColumnMajor;
+  }
+  return rest;
 }
 
 /** Run the diagnostic off-course driver and rebuild at the checkpoint the rules picked. */
@@ -1770,6 +1814,53 @@ for (const car of cars) {
   });
 }
 
+// Every car's drive and sprint state sequence hash. The drive and 29 m sprint
+// (`sprintShort`) anchors are the P36/P37 values: physics, cars, camera and
+// telemetry did not move. `sprint310` is the new default 310 m timeline, so its
+// state sequence is a new anchor (the course changed, not the physics).
+//
+// The `packet` anchor is the whole-packet hash, so it moves whenever the static
+// packet body changes; P49 added the real UV0 and static albedo texture payloads
+// (geometry v5), P55 added the P52 per-car albedo textures + car UV0 stream
+// (geometry v6), and P59 changed the per-draw car UV flags from uvFlipV to
+// uvFlipU, so these values are the P59 geometry. Physics did not move: the
+// drive/sprint state sequence anchors below are still P36/P37.
+//
+// Declared before the sprint runs because the ghost-replay block re-derives the
+// committed reference ghosts from those anchored runs.
+const PHYSICS_ANCHORS = Object.freeze({
+  'corvette-zr1-stock': {
+    drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
+    packet: 'sha256:4c82e8f8689d47b342ac5831684ed0fdbe7ce4d6760760eec3c16c534c9295ef',
+    sprint310: 'sha256:da7e14f16be2649f32902d18cc999cd39af09320d4e4b24ec40a37c086f9a553',
+    sprintShort: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
+  },
+  'lotus-exige-cup260-stock': {
+    drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
+    packet: 'sha256:77e70becdb8e65944495f033110d69a75c57259ddd986eba582cadf6cae063c5',
+    sprint310: 'sha256:83f05df48244c000889b4d1adcc83afe34a98f5b65370de3d87419448a92367e',
+    sprintShort: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
+  },
+  'dodge-challenger-stock': {
+    drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
+    packet: 'sha256:da25d019fb943a0acf4662e0d836c0a8ff4256f1af130cefcdb2be5c8ede1dfc',
+    sprint310: 'sha256:accf125a629dbf7f66e7dbed2d38990fb21c67ad26a65fbef288e3716ac8210a',
+    sprintShort: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
+  },
+  'ford-focusrs-stock': {
+    drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
+    packet: 'sha256:0590c3e8ccf95ccf40cfdc19786db8bcf6244cddf9af8b5c459f683dd33e8860',
+    sprint310: 'sha256:1094698d566bf3a6f335545ea37089113874c21d2f438a059d2c95e3d9f2063f',
+    sprintShort: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
+  },
+  'audi-r8v10-stock': {
+    drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
+    packet: 'sha256:61e030bfc127c462358b01a4bd7aa36e7f530f503f9995c7877c96a099f6bf92',
+    sprint310: 'sha256:0b32413d797b23b0db957f2583ab221fe3e64388144d743b8d20e2b39f14b5ca',
+    sprintShort: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
+  }
+});
+
 // ------------------------------------------------------------- sprint runs
 // Each roster car runs the deterministic sprint in its own fresh module. The
 // rules observe the physics; the recorded input sequence is replayed into
@@ -1777,6 +1868,9 @@ for (const car of cars) {
 // sequences must be identical — that is the proof that the race rules did not
 // change the simulation.
 const sprintResults = [];
+// Per-car ghost record + the run it was derived from, used by the ghost block
+// after both courses have run.
+const ghostSources = new Map();
 for (const car of cars) {
   const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
   const run = await runSprint(car, fieldBytes);
@@ -1888,6 +1982,16 @@ for (const car of cars) {
         run.packet.diagnostics.extras.drive.script);
 
   const sprintRunPath = path.join(OUT, `sprint-${car.slug}.json`);
+  // Ghost record of this run. It is the same per-tick data the run artifact
+  // carries (pose + wheel angles), re-encoded compactly; it never steps the
+  // engine and its hash covers the whole recorded sequence.
+  const ghostRecord = finish ? buildGhostForRun(car, run, derivedLayout, '310m', finish, stateSequenceHash) : null;
+  if (ghostRecord) {
+    ghostSources.set(car.slug, {
+      '310m': { record: ghostRecord, run, layout: derivedLayout, finish },
+      short: null
+    });
+  }
   writeFileSync(sprintRunPath, JSON.stringify({
     kind: 'e1-drive.sprint-run',
     version: 1,
@@ -1945,6 +2049,14 @@ for (const car of cars) {
       validationErrors: sprintValidation.errors.length
     },
     runPath: path.relative(ROOT, sprintRunPath).split(path.sep).join('/'),
+    ghost: ghostRecord ? {
+      hash: ghostRecord.hash,
+      tickCount: ghostRecord.tickCount,
+      finishTick: ghostRecord.finishTick,
+      timeSeconds: ghostRecord.timeSeconds,
+      source: ghostRecord.source,
+      sampleBytes: Math.round(ghostRecord.tickCount * 11 * 4)
+    } : null,
     captures
   });
 }
@@ -1993,6 +2105,13 @@ for (const car of cars) {
         run.states.every((state) => state.finite === 1) && replayMatches,
         `${run.states.length} ticks, replay ${replayMatches}`);
   const shortRunPath = path.join(OUT, `sprint-short-${car.slug}.json`);
+  // Same ghost encoding for the 29 m regression course, keyed separately.
+  const ghostShortRecord = finish ? buildGhostForRun(car, run, shortLayout, 'short', finish, stateSequenceHash) : null;
+  const ghostEntry = ghostSources.get(car.slug) ?? { '310m': null, short: null };
+  if (ghostShortRecord) {
+    ghostEntry.short = { record: ghostShortRecord, run, layout: shortLayout, finish };
+  }
+  ghostSources.set(car.slug, ghostEntry);
   writeFileSync(shortRunPath, JSON.stringify({
     kind: 'e1-drive.sprint-run',
     version: 1,
@@ -2027,16 +2146,310 @@ for (const car of cars) {
     stateSequenceHash,
     replayMatches,
     captures: shortCaptures,
-    runPath: path.relative(ROOT, shortRunPath).split(path.sep).join('/')
+    runPath: path.relative(ROOT, shortRunPath).split(path.sep).join('/'),
+    ghost: ghostShortRecord ? {
+      hash: ghostShortRecord.hash,
+      tickCount: ghostShortRecord.tickCount,
+      finishTick: ghostShortRecord.finishTick,
+      timeSeconds: ghostShortRecord.timeSeconds,
+      source: ghostShortRecord.source
+    } : null
   });
 }
 
-// ------------------------------------------------------------- telemetry
-// Three deterministic manoeuvres per car. Each manoeuvre runs in its own fresh
-// wasm module instance (this build cannot rebuild one instance more than about
-// three times), the whole series is run twice in two independent instance sets,
-// and the recorded input sequence is replayed into a third set. The analysis
-// only reads the state the engine reports.
+// ------------------------------------------------------------- ghost replay
+// The ghost is a recording of the sprint runs above, not a second simulation.
+// The committed reference set under probes/e1-drive/ghosts/ is regenerated from
+// these exact runs: `--write-ghosts` writes it and a normal run compares the
+// bytes, so a stale or hand-edited ghost is a hard failure. The checks below
+// prove the compact record reproduces the run's own body and wheel matrices,
+// that the hash is deterministic, that the store keeps only the fastest ghost
+// per car and course, and that the delta is a race-clock gap (not a guess).
+const GHOST_DIR = path.join(ROOT, 'probes/e1-drive/ghosts');
+const GHOST_INDEX_FILE = path.join(GHOST_DIR, 'index.json');
+const WRITE_GHOSTS = args.includes('--write-ghosts');
+const GHOST_COURSES = ['310m', 'short'];
+if (WRITE_GHOSTS && ONLY_CAR) throw new Error('--write-ghosts regenerates the whole set; drop --car');
+
+const matrixMaxDelta = (a, b) => {
+  let max = 0;
+  for (let index = 0; index < 16; index++) max = Math.max(max, Math.abs(a[index] - b[index]));
+  return max;
+};
+
+const ghostIndex = {
+  kind: GHOST_INDEX_KIND,
+  version: 1,
+  note:
+    'Committed deterministic reference ghost per roster car and course. Generated by ' +
+    '`node probes/e1-drive/tools/verify_e1_drive.mjs --write-ghosts` from the same sprint runs whose state ' +
+    'sequence hashes are pinned in run.json; the verifier re-derives and compares the bytes.',
+  encoding: 'position3 + quaternion4 + wheelAngle4 per engine tick, float32le base64',
+  sampleHz: TICK_HZ,
+  cars: {}
+};
+const ghostFiles = new Map();
+for (const car of cars) {
+  ghostIndex.cars[car.slug] = {};
+  for (const course of GHOST_COURSES) {
+    const source = ghostSources.get(car.slug)?.[course] ?? null;
+    if (!source) continue;
+    const text = JSON.stringify(source.record, null, 2) + '\n';
+    const fileName = referenceGhostFileName(car.slug, course);
+    ghostFiles.set(car.slug + '/' + course, { fileName, text, source });
+    ghostIndex.cars[car.slug][course] = {
+      slug: car.slug,
+      course,
+      file: 'probes/e1-drive/ghosts/' + fileName,
+      bytes: Buffer.byteLength(text, 'utf8'),
+      sha256: 'sha256:' + sha256(Buffer.from(text, 'utf8')),
+      ghostHash: source.record.hash,
+      timeSeconds: source.record.timeSeconds,
+      finishTick: source.record.finishTick,
+      tickCount: source.record.tickCount,
+      countdownTicks: source.record.countdownTicks,
+      layoutHash: source.record.layoutHash,
+      stateSequenceHash: source.record.stateSequenceHash,
+      source: source.record.source,
+      sourceLabel: source.record.sourceLabel
+    };
+  }
+}
+const ghostIndexText = JSON.stringify(ghostIndex, null, 2) + '\n';
+if (WRITE_GHOSTS) {
+  mkdirSync(GHOST_DIR, { recursive: true });
+  writeFileSync(GHOST_INDEX_FILE, ghostIndexText, 'utf8');
+  for (const { fileName, text } of ghostFiles.values()) writeFileSync(path.join(GHOST_DIR, fileName), text, 'utf8');
+}
+
+check('ghost: the committed reference set covers every roster car on both courses',
+      cars.every((car) => GHOST_COURSES.every((course) => ghostIndex.cars[car.slug]?.[course])) &&
+      ghostFiles.size === cars.length * GHOST_COURSES.length,
+      ghostFiles.size + ' records');
+check('ghost: the committed reference index is exactly the regenerated one (no hand-edited ghost)',
+      existsSync(GHOST_INDEX_FILE) && readFileSync(GHOST_INDEX_FILE, 'utf8') === ghostIndexText,
+      WRITE_GHOSTS ? 'regenerated' : 'index differs');
+
+const ghostRows = [];
+const ghostReconstruction = { bodyMax: 0, wheelMax: 0, quaternionMax: 0, selfDeltaSeconds: 0, selfDeltaMetres: 0 };
+let ghostAnchored = 0;
+for (const car of cars) {
+  for (const course of GHOST_COURSES) {
+    const file = ghostFiles.get(car.slug + '/' + course);
+    const indexPath = GHOST_DIR;
+    if (!file) {
+      check(`${car.name} (${course}): ghost record exists`, false, 'no derived record');
+      continue;
+    }
+    const { record, run, layout, finish } = file.source;
+    const text = file.text;
+    const entry = ghostIndex.cars[car.slug][course];
+    const committedPath = path.join(indexPath, file.fileName);
+    const committedText = existsSync(committedPath) ? readFileSync(committedPath, 'utf8') : null;
+    check(`${car.name} (${course}): the committed reference ghost is the deterministic trace byte for byte`,
+          committedText !== null && committedText === text &&
+          entry.sha256 === 'sha256:' + sha256(Buffer.from(text, 'utf8')),
+          committedText === null ? 'missing ' + file.fileName : (committedText === text ? 'match' : 'bytes differ'));
+
+    const recordCheck = validateGhostRecord(record);
+    check(`${car.name} (${course}): the ghost record validates and its canonical hash re-computes`,
+          recordCheck.ok && ghostHash(record) === record.hash && record.source === GHOST_SOURCE.REFERENCE,
+          recordCheck.errors.join('; ') || record.hash);
+    const anchored = record.stateSequenceHash ===
+      PHYSICS_ANCHORS[car.slug][course === '310m' ? 'sprint310' : 'sprintShort'] &&
+      record.timeSeconds === finish.timeSeconds && record.finishTick === finish.tick &&
+      record.tickCount === finish.tick + 1 && record.layoutHash === layout.hash &&
+      record.courseId === layout.courseId && record.car === car.slug && record.course === course;
+    if (anchored) ghostAnchored++;
+    check(`${car.name} (${course}): the ghost was recorded from the anchored sprint run`,
+          anchored,
+          `${record.timeSeconds} s / tick ${record.finishTick} / ${record.stateSequenceHash}`);
+    // Same run -> same record -> same hash. This is the ghost determinism gate.
+    const rebuilt = buildGhostForRun(car, run, layout, course, finish, record.stateSequenceHash);
+    check(`${car.name} (${course}): two derivations of the same run produce the same ghost hash`,
+          rebuilt.hash === record.hash && rebuilt.sample.data === record.sample.data,
+          rebuilt.hash === record.hash ? record.hash : rebuilt.hash + ' vs ' + record.hash);
+    // The ghost builder must be read-only for the run: every update hash still
+    // verifies (the stored hash was taken before the field was added) and the run
+    // still aggregates to its anchored sequence hash.
+    const runIntact = run.packet.updates.every((update) => {
+      const body = { ...update };
+      delete body.hash;
+      return hashOfLocal(body) === update.hash;
+    }) && aggregate(run.states.map((state) => hashOfLocal(state))) === record.stateSequenceHash;
+    check(`${car.name} (${course}): recording the ghost did not mutate the run, its packet or its state sequence`,
+          runIntact, runIntact ? 'intact' : 'the recorded run changed');
+
+    const decoded = decodeGhost(record);
+    const rest = ghostWheelRestFor(car.slug);
+    const byTick = new Map(run.packet.updates.map((update) => [update.tick, update]));
+    let bodyMax = 0;
+    let wheelMax = 0;
+    let quaternionMax = 0;
+    for (let tick = 0; tick < record.tickCount; tick++) {
+      const update = byTick.get(tick);
+      const frame = ghostMatrices(decoded, tick, rest);
+      const pose = ghostPoseAt(decoded, tick);
+      quaternionMax = Math.max(quaternionMax, Math.abs(Math.hypot(pose.quaternion[0], pose.quaternion[1],
+        pose.quaternion[2], pose.quaternion[3]) - 1));
+      const bodyEntry = update.matrices.find((entryMatrix) => entryMatrix.nodeId === 'e1.car.body');
+      bodyMax = Math.max(bodyMax, matrixMaxDelta(frame.body, bodyEntry.world));
+      for (const corner of GHOST_CORNERS) {
+        for (const kind of ['spin', 'static']) {
+          const nodeId = 'e1.car.wheel.' + corner + '.' + kind;
+          const expected = update.matrices.find((entryMatrix) => entryMatrix.nodeId === nodeId);
+          if (!expected) throw new Error('run packet has no ' + nodeId + ' at tick ' + tick);
+          wheelMax = Math.max(wheelMax, matrixMaxDelta(frame.wheels[corner][kind], expected.world));
+        }
+      }
+    }
+    ghostReconstruction.bodyMax = Math.max(ghostReconstruction.bodyMax, bodyMax);
+    ghostReconstruction.wheelMax = Math.max(ghostReconstruction.wheelMax, wheelMax);
+    ghostReconstruction.quaternionMax = Math.max(ghostReconstruction.quaternionMax, quaternionMax);
+    check(`${car.name} (${course}): the compact record rebuilds the run's body pose at every tick`,
+          bodyMax <= 5e-3, 'max |body delta| ' + bodyMax.toExponential(3));
+    check(`${car.name} (${course}): the recorded wheel angles rebuild every wheel matrix at every tick`,
+          wheelMax <= 5e-3, 'max |wheel delta| ' + wheelMax.toExponential(3));
+    check(`${car.name} (${course}): every recorded rotation is a unit quaternion`,
+          quaternionMax <= 1e-5, 'max |1 - |q|| ' + quaternionMax.toExponential(3));
+
+    // The delta is measured against the same recorded sequence: replaying the
+    // run against its own ghost must be a zero gap while the run is actually
+    // making progress (a plateau — countdown or a stalled car — compares two
+    // times at the same arc by definition).
+    const progressOf = Array.isArray(layout.course.samples)
+      ? (position) => coursePosition(layout.course.samples, position).arc
+      : (position) => position[0];
+    const table = buildGhostArcTable(decoded, progressOf);
+    let selfSeconds = 0;
+    let selfMetres = 0;
+    let progressTicks = 0;
+    for (let tick = 1; tick < record.tickCount; tick++) {
+      if (!(table.arcs[tick] > table.arcs[tick - 1] + 1e-4)) continue;
+      progressTicks++;
+      const state = run.states[tick];
+      const player = {
+        arc: progressOf(state.position),
+        seconds: Math.max(0, (tick - record.countdownTicks) / record.tickHz)
+      };
+      const gap = ghostGap(table, player);
+      selfSeconds = Math.max(selfSeconds, Math.abs(gap.seconds));
+      selfMetres = Math.max(selfMetres, Math.abs(gap.metres));
+    }
+    ghostReconstruction.selfDeltaSeconds = Math.max(ghostReconstruction.selfDeltaSeconds, selfSeconds);
+    ghostReconstruction.selfDeltaMetres = Math.max(ghostReconstruction.selfDeltaMetres, selfMetres);
+    check(`${car.name} (${course}): replaying the run against its own ghost is a zero gap on every moving tick`,
+          progressTicks > 100 && selfSeconds <= 2e-3 && selfMetres <= 2e-2,
+          `${progressTicks} moving ticks, max ${selfSeconds.toExponential(2)} s / ${selfMetres.toExponential(2)} m`);
+    check(`${car.name} (${course}): the ghost clock reaches the recorded finish time at its last tick`,
+          Math.abs(ghostSecondsAtArc(table, table.arcs[table.tickCount - 1]).seconds - record.timeSeconds) < 1e-6,
+          record.timeSeconds + ' s');
+
+    ghostRows.push({
+      slug: car.slug,
+      course,
+      hash: record.hash,
+      file: path.relative(ROOT, committedPath).split(path.sep).join('/'),
+      bytes: entry.bytes,
+      fileSha256: entry.sha256,
+      timeSeconds: record.timeSeconds,
+      finishTick: record.finishTick,
+      tickCount: record.tickCount,
+      bodyMaxDelta: Number(bodyMax.toExponential(3)),
+      wheelMaxDelta: Number(wheelMax.toExponential(3)),
+      selfDeltaSeconds: Number(selfSeconds.toExponential(3)),
+      selfDeltaMetres: Number(selfMetres.toExponential(3))
+    });
+  }
+}
+
+// Interpolation is presentation-only but must still be deterministic: at a
+// fractional tick the pose lies between the two recorded integer samples.
+{
+  const firstCar = cars[0];
+  const decoded = decodeGhost(ghostSources.get(firstCar.slug)['310m'].record);
+  const a = ghostPoseAt(decoded, 10);
+  const b = ghostPoseAt(decoded, 11);
+  const mid = ghostPoseAt(decoded, 10.5);
+  const expected = a.position.map((value, index) => (value + b.position[index]) / 2);
+  const positionDelta = Math.max(...mid.position.map((value, index) => Math.abs(value - expected[index])));
+  const angleExpected = (a.wheelAngles.frontleft + b.wheelAngles.frontleft) / 2;
+  check('ghost: a fractional tick interpolates deterministically between the two recorded ticks',
+        positionDelta < 5e-3 && Math.abs(mid.wheelAngles.frontleft - angleExpected) < 5e-3 &&
+        ghostPoseAt(decoded, 10.5).position.every((value, index) => Object.is(value, mid.position[index])),
+        'max |position - mean| ' + positionDelta.toExponential(3));
+}
+
+// The page's store: fastest ghost per car, one key per course, hostile storage
+// and tampered records degrade to "no ghost" instead of replaying a bad pose.
+{
+  const makeStorage = () => {
+    const map = new Map();
+    return { map, getItem: (key) => map.get(key) ?? null, setItem: (key, value) => map.set(key, String(value)) };
+  };
+  const storage = makeStorage();
+  const longStore = createGhostStore(storage, '310m', { layoutHash: derivedLayout.hash });
+  const corvetteGhost = ghostSources.get(cars[0].slug)['310m'].record;
+  const first = longStore.submit(cars[0].slug, corvetteGhost);
+  const same = longStore.submit(cars[0].slug, corvetteGhost);
+  const slower = { ...corvetteGhost, timeSeconds: corvetteGhost.timeSeconds + 1 };
+  slower.hash = ghostHash(slower);
+  const slowerSubmit = longStore.submit(cars[0].slug, slower);
+  check('ghost store: the fastest ghost is kept and a slower run never overwrites it',
+        first.improved === true && same.improved === false && slowerSubmit.improved === false &&
+        longStore.bestSecondsFor(cars[0].slug) === corvetteGhost.timeSeconds &&
+        longStore.get(cars[0].slug).hash === corvetteGhost.hash,
+        JSON.stringify({ first: first.improved, same: same.improved, slower: slowerSubmit.improved }));
+  check('ghost store: the 310 m and 29 m ghosts use independent per-course keys',
+        longStore.key === GHOST_KEY_PREFIX + '310m' && storage.map.has(GHOST_KEY_PREFIX + '310m') &&
+        createGhostStore(storage, 'short', { layoutHash: shortLayout.hash }).key === GHOST_KEY_PREFIX + 'short',
+        longStore.key);
+  const otherStorage = makeStorage();
+  otherStorage.setItem(GHOST_KEY_PREFIX + '310m', JSON.stringify({
+    kind: 'e1-drive.sprint-ghost-store', version: 1, course: '310m',
+    cars: { [cars[0].slug]: { ...corvetteGhost, hash: 'sha256:' + '0'.repeat(64) } }
+  }));
+  const tampered = createGhostStore(otherStorage, '310m');
+  check('ghost store: a tampered record is dropped instead of replayed (no silent fallback)',
+        tampered.get(cars[0].slug) === null && /invalid record/.test(tampered.lastError ?? ''),
+        tampered.lastError);
+  const throwing = createGhostStore({ getItem() { throw new Error('denied'); }, setItem() { throw new Error('quota'); } }, '310m');
+  const throwingSubmit = throwing.submit(cars[0].slug, corvetteGhost);
+  check('ghost store: a throwing storage degrades to memory-only instead of failing the page',
+        throwingSubmit.improved === true && throwingSubmit.persistent === false && throwing.bestSecondsFor(cars[0].slug) === null,
+        String(throwingSubmit.persistent));
+}
+
+// Cross-run delta signs at a mid-course arc: the Audi's ghost is ahead of the
+// Corvette's pace and the Focus's ghost is behind the Audi's pace.
+{
+  const courseSamples = derivedLayout.course.samples;
+  const arc = 250;
+  const tableFor = (slug) => buildGhostArcTable(
+    decodeGhost(ghostSources.get(slug)['310m'].record), (position) => coursePosition(courseSamples, position).arc);
+  const audiTable = tableFor('audi-r8v10-stock');
+  const focusTable = tableFor('ford-focusrs-stock');
+  const corvetteTable = tableFor(cars[0].slug);
+  const corvetteTimeAtArc = ghostSecondsAtArc(corvetteTable, arc).seconds;
+  const audiTimeAtArc = ghostSecondsAtArc(audiTable, arc).seconds;
+  const focusTimeAtArc = ghostSecondsAtArc(focusTable, arc).seconds;
+  const behindAudi = ghostGap(audiTable, { arc, seconds: corvetteTimeAtArc });
+  const aheadOfFocus = ghostGap(focusTable, { arc, seconds: audiTimeAtArc });
+  check('ghost delta: a slower player is measured behind a faster ghost and a faster player ahead of a slower ghost',
+        audiTimeAtArc < corvetteTimeAtArc - 0.2 &&
+        behindAudi.seconds > 0.2 && behindAudi.metres > 1 &&
+        focusTimeAtArc > audiTimeAtArc + 0.4 &&
+        aheadOfFocus.seconds < -0.4 && aheadOfFocus.metres < -1,
+        JSON.stringify({
+          audiTimeAtArc: audiTimeAtArc.toFixed(3),
+          corvetteTimeAtArc: corvetteTimeAtArc.toFixed(3),
+          focusTimeAtArc: focusTimeAtArc.toFixed(3),
+          behindAudi: behindAudi.seconds.toFixed(3),
+          aheadOfFocus: aheadOfFocus.seconds.toFixed(3)
+        }));
+}
+
+
 async function telemetryInstances(car, fieldBytes) {
   const factory = (await import(pathToFileURL(MODULE).href)).default;
   return createWasmTelemetryEngineSet({
@@ -2284,49 +2697,8 @@ async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
   };
 }
 
-// Every car's drive and sprint state sequence hash. The drive and 29 m sprint
-// (`sprintShort`) anchors are the P36/P37 values: physics, cars, camera and
-// telemetry did not move. `sprint310` is the new default 310 m timeline, so its
-// state sequence is a new anchor (the course changed, not the physics).
-//
-// The `packet` anchor is the whole-packet hash, so it moves whenever the static
-// packet body changes; P49 added the real UV0 and static albedo texture payloads
-// (geometry v5), P55 added the P52 per-car albedo textures + car UV0 stream
-// (geometry v6), and P59 changed the per-draw car UV flags from uvFlipV to
-// uvFlipU, so these values are the P59 geometry. Physics did not move: the
-// drive/sprint state sequence anchors below are still P36/P37.
-const PHYSICS_ANCHORS = Object.freeze({
-  'corvette-zr1-stock': {
-    drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
-    packet: 'sha256:4c82e8f8689d47b342ac5831684ed0fdbe7ce4d6760760eec3c16c534c9295ef',
-    sprint310: 'sha256:da7e14f16be2649f32902d18cc999cd39af09320d4e4b24ec40a37c086f9a553',
-    sprintShort: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
-  },
-  'lotus-exige-cup260-stock': {
-    drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
-    packet: 'sha256:77e70becdb8e65944495f033110d69a75c57259ddd986eba582cadf6cae063c5',
-    sprint310: 'sha256:83f05df48244c000889b4d1adcc83afe34a98f5b65370de3d87419448a92367e',
-    sprintShort: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
-  },
-  'dodge-challenger-stock': {
-    drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
-    packet: 'sha256:da25d019fb943a0acf4662e0d836c0a8ff4256f1af130cefcdb2be5c8ede1dfc',
-    sprint310: 'sha256:accf125a629dbf7f66e7dbed2d38990fb21c67ad26a65fbef288e3716ac8210a',
-    sprintShort: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
-  },
-  'ford-focusrs-stock': {
-    drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
-    packet: 'sha256:0590c3e8ccf95ccf40cfdc19786db8bcf6244cddf9af8b5c459f683dd33e8860',
-    sprint310: 'sha256:1094698d566bf3a6f335545ea37089113874c21d2f438a059d2c95e3d9f2063f',
-    sprintShort: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
-  },
-  'audi-r8v10-stock': {
-    drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
-    packet: 'sha256:61e030bfc127c462358b01a4bd7aa36e7f530f503f9995c7877c96a099f6bf92',
-    sprint310: 'sha256:0b32413d797b23b0db957f2583ab221fe3e64388144d743b8d20e2b39f14b5ca',
-    sprintShort: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
-  }
-});
+// The per-car state sequence anchors (`PHYSICS_ANCHORS`) are declared before the
+// sprint runs; the telemetry block asserts them unchanged.
 
 const telemetryResults = [];
 const telemetryReferenceStates = new Map();
@@ -3227,6 +3599,30 @@ const report = {
     },
     restartCars: sprintRestartResults
   },
+  ghost: {
+    kind: GHOST_INDEX_KIND,
+    index: path.relative(ROOT, GHOST_INDEX_FILE).split(path.sep).join('/'),
+    indexSha256: 'sha256:' + sha256(Buffer.from(ghostIndexText, 'utf8')),
+    encoding: ghostIndex.encoding,
+    sampleHz: TICK_HZ,
+    presentationOnly: true,
+    physicsUnchanged: ghostAnchored === ghostFiles.size,
+    cars: ghostRows,
+    reconstruction: {
+      maxBodyMatrixDelta: ghostReconstruction.bodyMax,
+      maxWheelMatrixDelta: ghostReconstruction.wheelMax,
+      maxQuaternionUnitError: ghostReconstruction.quaternionMax,
+      maxSelfGapSeconds: ghostReconstruction.selfDeltaSeconds,
+      maxSelfGapMetres: ghostReconstruction.selfDeltaMetres
+    },
+    limits: [
+      'a replay of one recorded run, not an AI opponent, a racing line or a second simulation',
+      'one ghost per car and course; no collision, no input, no physics value and no packet field',
+      'a run with a respawn is not recorded (its engine tick axis restarts)',
+      'the ghost is drawn with a labelled translucent diagnostic tint from the already-uploaded car mesh',
+      'the reference trace is the committed deterministic scripted sprint, not a human best'
+    ]
+  },
   roster: {
     path: path.relative(ROOT, ROSTER).split(path.sep).join('/'),
     source: roster.source,
@@ -3393,6 +3789,20 @@ console.log(JSON.stringify({
       target: respawnRebuild?.target.gateId ?? null,
       elapsedAfter: respawnRun.post?.elapsed ?? null
     }
+  },
+  ghost: {
+    indexSha256: 'sha256:' + sha256(Buffer.from(ghostIndexText, 'utf8')),
+    encoding: ghostIndex.encoding,
+    records: ghostRows.map((row) => ({
+      car: row.slug,
+      course: row.course,
+      seconds: row.timeSeconds,
+      ticks: row.tickCount,
+      bytes: row.bytes,
+      hash: row.hash,
+      bodyMaxDelta: row.bodyMaxDelta,
+      selfGapSeconds: row.selfDeltaSeconds
+    }))
   },
   cars: results.map((entry) => ({
     car: entry.name,

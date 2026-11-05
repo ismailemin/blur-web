@@ -59,7 +59,7 @@ export function resolveCarBody(geometry, slug) {
 }
 
 /** Column-major 16-float multiply, matching WGSL mat4x4f * vec4f. */
-function multiplyMat4(a, b) {
+export function multiplyMat4(a, b) {
   const out = new Array(16);
   for (let column = 0; column < 4; column++) {
     for (let row = 0; row < 4; row++) {
@@ -71,8 +71,9 @@ function multiplyMat4(a, b) {
   return out;
 }
 
-/** Rotation about element-local +X (the proven wheel axle). */
-function rotationXMatrix(angle) {
+/** Rotation about element-local +X (the proven wheel axle). Exported so the
+ *  ghost replay composes wheel matrices with the same function as the live car. */
+export function rotationXMatrix(angle) {
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   return [1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1];

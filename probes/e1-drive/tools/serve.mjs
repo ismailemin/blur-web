@@ -1,8 +1,9 @@
 // Static server for the E1 drive slice.
 //
-// Serves exactly two trees, both read-only:
+// Serves exactly three trees, all read-only:
 //   /                -> probes/e1-drive/web/            (the page)
 //   /_work/e1-drive/ -> _work/e1-drive/                 (module, geometry, level, packet)
+//   /ghosts/         -> probes/e1-drive/ghosts/         (committed reference ghost traces)
 //
 // No directory listing, no writes, no path escapes. Callable as a module
 // (`startServer({port})`) or directly (`node probes/e1-drive/tools/serve.mjs [--port 8801]`).
@@ -15,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const WEB = path.join(ROOT, 'probes/e1-drive/web');
 const WORK = path.join(ROOT, '_work/e1-drive');
+const GHOSTS = path.join(ROOT, 'probes/e1-drive/ghosts');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -40,6 +42,7 @@ export function startServer({ port = 8801 } = {}) {
     let file;
     if (pathname === '/' || pathname === '/index.html') file = path.join(WEB, 'index.html');
     else if (pathname.startsWith('/_work/e1-drive/')) file = safeJoin(WORK, pathname.slice('/_work/e1-drive/'.length));
+    else if (pathname.startsWith('/ghosts/')) file = safeJoin(GHOSTS, pathname.slice('/ghosts/'.length));
     else file = safeJoin(WEB, pathname.slice(1));
 
     if (!file || !existsSync(file) || !statSync(file).isFile()) {

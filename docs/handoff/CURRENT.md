@@ -357,6 +357,12 @@ headless Edge'de **decoded-audio-playing-and-curves-match**, console 0.
 Sıradaki: E1 motor sesi entegrasyonu. Kanıt:
 `docs/work/analysis/audio-feasibility.md`.
 
+**Ghost/rival (P63):** her araç için temiz biten koşu (veya committed reference
+trace) 44 B/tick kayıt olarak saklanıyor; hayalet araç aynı mesh'ten ikinci
+pipeline ile çiziliyor, çarpışma/fizik yok, ek upload yok. `G` aç/kapa,
+`?ghost=1`; HUD `Δt/Δd`. `verify_e1_drive` **678/678**; 5 capture console 0.
+Kanıt: `docs/work/verification/T-007-ghost.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

@@ -676,6 +676,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - RPM→gain/pitch eğrileri retail `race_v8_engine.dat`'ten birebir; 1500 RPM'de slot1 1.0 / slot2 0.3676 crossfade doğrulandı.
 - Headless Edge harness: **decoded-audio-playing-and-curves-match**, AudioContext running, 0 console. Sıradaki: motor sesini RPM ile E1 sürüşüne bağlamak. Kanıt: `docs/work/analysis/audio-feasibility.md`, `_work/audio/harness.png`.
 
+## 6 Kasım 2026 — ghost/rival replay
+
+- Her araç için temiz biten 310 m koşusu (veya committed reference trace) 44 B/tick kayıt; `localStorage` + `probes/e1-drive/ghosts/` fallback, SHA doğrulamalı.
+- Hayalet araç aynı car mesh'inden ikinci pipeline ile translucent çiziliyor; çarpışma/fizik/packet girişi yok, ek buffer/texture/geometry upload yok.
+- `G`/`?ghost=1`, HUD `Δt/Δd`; `verify_e1_drive` **678/678**, 5 capture console 0, fizik hash'leri değişmedi. Kanıt: `docs/work/verification/T-007-ghost.md`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

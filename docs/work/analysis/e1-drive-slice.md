@@ -1894,3 +1894,93 @@ opaque. No full-game claim.
 Full commands, before/after images, hashes and the exact rule:
 `docs/work/verification/T-007-car-uv-orientation.md`.
 
+## 25. Ghost / rival replay of a completed sprint (T-007/ghost, P63)
+
+**Date:** 6 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-ghost.md`. No change to
+`probes/car-materials/`, `probes/car-parts/`, `probes/drivable-path/`, the engine,
+`probes/render-packet/`, `tools/`, `upstream/` or `game-data/`. **No physics
+change:** every drive/sprint state sequence anchor is the P59 value and the ghost
+is a recording of those runs, not a new simulation.
+
+### 25.1 Why a recording, not a rival AI
+
+The sprint is one car on one measured segment; there is no opponent simulation and
+adding one would be a new physics/AI claim. The slice instead lets the user race
+**their own best run**: at the finish the page copies the run's own per-tick body
+pose and integrated wheel angles into a compact record, and the next attempt plays
+that record back through the same car mesh. Before the first finish, the committed
+deterministic reference trace (the scripted Stanley follower's run) stands in,
+clearly labelled. The ghost never steps the engine, never collides and never enters
+the packet.
+
+### 25.2 Record and hash
+
+One sample per engine tick from the settled tick 0 to the finish tick:
+`position3 + rotationQuaternion4 + wheelAngle4`, float32 little-endian, base64
+(44 B/tick; 14.2–59.7 KB per reference file). The body matrix is rebuilt from the
+quaternion and translation; each wheel is `body × manifest rest × Rx(angle)` with
+the same `multiplyMat4`/`rotationXMatrix` the adapter uses. The canonical-JSON
+SHA-256 of the whole record (including the payload) is the ghost hash. The verifier
+re-derives every committed reference from its own sprint run on each normal run,
+compares the bytes, and reconstructs all nine node matrices at every tick: max
+|body Δ| **5.0e-6** and max |wheel Δ| **3.1e-5** (float32 sample quantization),
+and two derivations of the same run produce the same hash and payload.
+
+Storage is one `localStorage` key per course
+(`e1-drive.sprint.ghost.v1.310m` / `…v1.short`), a map from car slug to the
+fastest clean ghost; a slower run does not overwrite it, a respawned run is not
+recorded (the engine tick axis restarts) and a tampered record is dropped with a
+reason instead of replayed. Without a stored ghost the page fetches the committed
+reference and verifies both the file SHA-256 and the record hash; a failure leaves
+the ghost off and says why.
+
+### 25.3 Rendering and HUD
+
+The consumer reserves ghost uniform slots in the existing uniform buffer and adds
+one pipeline with the same bind groups, vertex layout and car mesh, a translucent
+cyan diagnostic tint and a depth test without depth write. Each ghost frame is
+**one extra draw set of already uploaded geometry** (84–115 draws): no buffer, no
+texture and no geometry upload (`geometryUploads` stays 3), and no new GPU buffer
+(the soak buffer gate remains 11). `G` toggles the ghost in place; the HUD shows the
+source, `Δt` (player time minus ghost time at the player's arc, positive = behind)
+and `Δd` (ghost arc at the player's time minus the player's arc, positive =
+behind), and the on-screen tag reads `GHOST · … · REPLAY, NO COLLISION`.
+`?ghostoffset=<ticks>` is a capture-only presentation offset (the headless 5-car
+capture uses +60 so the ghost is visibly ahead of the identical scripted run); it
+moves only the drawn ghost.
+
+### 25.4 Playback clock and delta
+
+Playback follows the **race clock** (`countdownTicks − remaining`, else
+`countdownTicks + elapsedTicks`, minus one tick plus the fixed-step alpha), so a
+respawn — which restarts the engine tick axis but keeps `elapsedTicks` — does not
+rewind the ghost. The delta uses the running maximum of the measured arc as the
+progress axis (straight `x` on the 29 m course), so projection wobble cannot rewind
+it; a finished ghost clamps at the finish. Replaying a run against its own ghost is
+a zero gap on every moving tick (≤ 2.3e-7 s / 3.9e-5 m measured), and the cross-car
+signs follow the unchanged physics (the Audi ghost is ahead of the Corvette's pace,
+the Focus ghost behind the Audi's).
+
+### 25.5 Verification
+
+`verify_e1_drive.mjs` — **PASS, 678/678 checks, 0 failures** (570 before; the new
+block covers the 10 reference records, the index, reconstruction, determinism,
+purity, the store and the delta). The ten sprint state sequence anchors are
+unchanged. `capture_browser.mjs --mode ghost` produced 5 ghost-visible frames plus
+the G-toggle pair in headless Edge/WebGPU with **0 console messages**, 3 geometry
+uploads and the exact
+`drawsIssued = frames × draws + ghostFrames × ghostDrawSlots` relation; the browser
+pose is bit-identical to the record. `--mode sprint` and `--mode restart` remain
+green (ghost off by default), so best-time and restart behaviour are unchanged.
+
+### 25.6 Limits
+
+A replay, not an AI: one ghost, no collision, no input, no packet entry, no retail
+rival behaviour. The committed reference is the deterministic scripted follower,
+not a human best. The tint is a diagnostic colour, not a recovered material. One
+extra draw set per ghost frame is not culled or LOD'd. No full-game claim.
+
+Full commands, hashes, screenshots and evidence paths:
+`docs/work/verification/T-007-ghost.md`.

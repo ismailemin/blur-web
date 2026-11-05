@@ -27,11 +27,14 @@
 // Cross-car: distinct mid-drive positions and distinct state hashes.
 
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './serve.mjs';
 import { buildOccluder } from '../web/camera-occlusion.js';
+import { buildGhostArcTable, decodeGhost, ghostGap, ghostMatrices } from '../web/ghost-replay.js';
+import { coursePosition } from '../web/sprint-rules.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const OUT = path.join(ROOT, '_work/e1-drive');
@@ -60,9 +63,9 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey'].includes(MODE)) {
+if (!['drive', 'sprint', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, respawn, telemetry, restart or telemetry-restart)');
+    ' (drive, sprint, respawn, telemetry, restart, telemetry-restart, survey or ghost)');
 }
 // Course selection: 310 (default, `_work/e1-drive/sprint.json`) or short
 // (`?course=short`, `_work/e1-drive/sprint-short.json`).
@@ -247,7 +250,8 @@ async function capture(car, label, tick, options = {}) {
   messages.length = 0;
   const url = origin + '/?script=' + script + '&car=' + encodeURIComponent(car.slug) + '&hold=' + tick +
     (course ? '&' + course : '') +
-    (EXTRA_QUERY ? '&' + EXTRA_QUERY : '');
+    (EXTRA_QUERY ? '&' + EXTRA_QUERY : '') +
+    (options.extraQuery ? '&' + options.extraQuery : '');
   await send('Page.navigate', { url });
   let probe = null;
   for (let attempt = 0; attempt < 400; attempt++) {
@@ -297,6 +301,7 @@ async function capture(car, label, tick, options = {}) {
       sprintEvents: p.sprintEvents ?? [],
       sprintResult: p.sprintResult ?? null,
       sprintBest: p.sprintBest ?? null,
+      ghost: p.ghost ?? null,
       overlays: {
         countdownHidden: document.getElementById('countdown')?.hidden ?? null,
         countdownText: document.getElementById('countdown')?.textContent ?? null,
@@ -304,7 +309,10 @@ async function capture(car, label, tick, options = {}) {
         resultsTime: document.getElementById('results-time')?.textContent ?? null,
         resultsBest: document.getElementById('results-best')?.textContent ?? null,
         eventText: document.getElementById('event')?.textContent ?? null,
-        eventVisible: document.getElementById('event')?.dataset.visible ?? null
+        eventVisible: document.getElementById('event')?.dataset.visible ?? null,
+        ghostTagHidden: document.getElementById('ghost-tag')?.hidden ?? null,
+        ghostTagText: document.getElementById('ghost-tag')?.textContent ?? null,
+        hudText: document.getElementById('hud')?.textContent ?? null
       },
       bestStored: (() => { try { return localStorage.getItem('${SPRINT_BEST_KEY}'); } catch { return null; } })(),
       render: update ? {
@@ -384,6 +392,7 @@ function cameraMaxDelta(a, b) {
 
 if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
+    : MODE === 'ghost' ? await ghostCapturePass()
     : MODE === 'survey' ? await surveyCapturePass()
     : MODE === 'respawn' ? await respawnCapturePass()
       : MODE === 'restart' ? await restartCapturePass()
@@ -591,6 +600,251 @@ async function sprintCapturePass() {
         screenshot: row.screenshot, carCrop: row.carCrop,
         packetHashExact: row.packetHashExact, cameraMaxDelta: row.cameraMaxDelta,
         messages: row.messages.length
+      }))
+    }
+  };
+}
+
+/**
+ * Ghost replay capture (`--mode ghost`): the page replays the committed
+ * deterministic reference ghost while the scripted sprint drives the same car.
+ * `?ghostoffset=60` is a capture-only presentation offset so the ghost is
+ * visibly ahead of the player; the recorded pose, hash and delta are still the
+ * committed record's. Each capture checks that the browser pose is bit-identical
+ * to the record at the reported tick, that enabling/hiding the ghost uploads no
+ * geometry, that the HUD/tag label the replay, and that the console stays clean.
+ */
+async function ghostCapturePass() {
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  const sprintRun = COURSE === 'short' ? runDocument.sprint?.shortCourse : runDocument.sprint;
+  if (!sprintRun?.cars) {
+    throw new Error('run.json has no ' + COURSE + ' sprint results — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const sprintLayout = JSON.parse(readFileSync(
+    path.join(OUT, COURSE === 'short' ? 'sprint-short.json' : 'sprint.json'), 'utf8'));
+  const ghostIndexFile = path.join(ROOT, 'probes/e1-drive/ghosts/index.json');
+  const ghostIndex = JSON.parse(readFileSync(ghostIndexFile, 'utf8'));
+  const courseKey = COURSE === 'short' ? 'short' : '310m';
+  const GHOST_OFFSET_TICKS = 60;
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const rows = [];
+  const shotPath = (slug, name) => path.join(OUT, `browser-${slug}-${name}.png`);
+  const shoot = async (slug, name) => {
+    const data = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const file = shotPath(slug, name);
+    writeFileSync(file, Buffer.from(data.data, 'base64'));
+    return path.relative(ROOT, file).split(path.sep).join('/');
+  };
+  const pressGhostKey = async () => {
+    for (const type of ['keyDown', 'keyUp']) {
+      await send('Input.dispatchKeyEvent', {
+        type, key: 'g', code: 'KeyG', windowsVirtualKeyCode: 71, nativeVirtualKeyCode: 71,
+        text: type === 'keyDown' ? 'g' : undefined
+      });
+    }
+  };
+  const readGhostProbe = async () => evaluate(`(()=>{
+    const p = window.e1DriveProbe;
+    if (!p) return null;
+    return {
+      state: p.consumer, error: p.error, frames: p.frames, holdReached: p.holdReached,
+      displayTick: p.displayTick, engineTick: p.engineTick,
+      geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
+      draws: p.draws, drawsIssued: p.drawsIssued, ghost: p.ghost ?? null,
+      sprint: p.sprint ?? null
+    };
+  })()`);
+  const waitFrames = async (label, startFrames, extra = 4) => {
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const probe = await readGhostProbe().catch(() => null);
+      if (probe && probe.state === 'error') throw new Error(label + ': page error: ' + probe.error);
+      if (probe && probe.frames >= startFrames + extra) return probe;
+      await sleep(100);
+    }
+    throw new Error(label + ': frames did not advance');
+  };
+
+  for (const car of cars) {
+    const entry = sprintRun.cars.find((candidate) => candidate.slug === car.slug);
+    if (!entry) throw new Error('run.json has no sprint result for ' + car.slug);
+    const ghostEntry = ghostIndex.cars?.[car.slug]?.[courseKey];
+    if (!ghostEntry) throw new Error('ghosts/index.json has no ' + courseKey + ' record for ' + car.slug);
+    const recordPath = path.join(ROOT, ghostEntry.file);
+    const record = JSON.parse(readFileSync(recordPath, 'utf8'));
+    const decoded = decodeGhost(record);
+    const body = geometry.carBodies[car.slug];
+    if (!body) throw new Error('geometry has no body for ' + car.slug);
+    const rest = {};
+    for (const group of body.wheelGroups) rest[group.corner] = group.matrixColumnMajor;
+    const uploadBytes = meshBytes(levelMesh) + meshBytes(body.mesh) + meshBytes(trackMesh);
+    const draws = 22 + geometry.trackVisual.drawCount + body.carDraws.length;
+    const mid = entry.captures.find((captureSpec) => captureSpec.label === 'mid') ??
+      entry.captures.find((captureSpec) => captureSpec.tick > 200);
+    if (!mid) throw new Error(car.slug + ': run.json has no mid capture tick');
+    const label = 'sprint-ghost';
+    const shot = await capture(car, label, mid.tick, {
+      script: 'sprint',
+      extraQuery: 'ghost=1&ghostoffset=' + GHOST_OFFSET_TICKS
+    });
+    const probe = shot.probe;
+    const ghost = probe.ghost;
+    const overlay = probe.overlays ?? {};
+    const expectedTick = probe.displayTick + GHOST_OFFSET_TICKS - 1;
+    const nodePose = ghostData => ghostMatrices(decoded, ghostData.playbackTick, rest);
+    const pose = ghost ? nodePose(ghost) : null;
+    const bodyDelta = ghost?.bodyMatrix && pose
+      ? Math.max(...ghost.bodyMatrix.map((value, index) => Math.abs(value - pose.body[index]))) : null;
+    const wheelDelta = ghost?.wheelMatrices && pose
+      ? Math.max(...Object.keys(pose.wheels).flatMap((corner) =>
+          ghost.wheelMatrices[corner].map((value, index) => Math.abs(value - pose.wheels[corner].spin[index])))) : null;
+    const progressOf = Array.isArray(sprintLayout.course.samples)
+      ? (position) => coursePosition(sprintLayout.course.samples, position).arc
+      : (position) => position[0];
+    const table = buildGhostArcTable(decoded, progressOf);
+    const nodeGap = probe.sprint
+      ? ghostGap(table, {
+        arc: COURSE === 'short' ? probe.sprint.maxX : probe.sprint.arc,
+        seconds: probe.sprint.elapsedSeconds
+      }) : null;
+
+    passCheck(`${car.slug}/${label}: the page reports the committed reference ghost and it is visible`,
+      ghost?.available === true && ghost.enabled === true && ghost.source === 'reference-trace' &&
+      ghost.hash === ghostEntry.ghostHash && ghost.layoutHash === sprintLayout.hash &&
+      ghost.timeSeconds === ghostEntry.timeSeconds && ghost.tickCount === ghostEntry.tickCount,
+      JSON.stringify({ source: ghost?.source, hash: ghost?.hash, expected: ghostEntry.ghostHash }));
+    passCheck(`${car.slug}/${label}: the ghost is replayed on the race clock plus the capture offset`,
+      ghost?.playbackTick === expectedTick && ghost.playbackTick > 0 && ghost.playbackTick < ghost.tickCount,
+      `playback ${ghost?.playbackTick}, display ${probe.displayTick}, expected ${expectedTick}`);
+    passCheck(`${car.slug}/${label}: the browser ghost pose is the committed record's pose (bit-identical)`,
+      bodyDelta !== null && bodyDelta === 0 && wheelDelta !== null && wheelDelta === 0,
+      `body ${bodyDelta}, wheels ${wheelDelta}`);
+    passCheck(`${car.slug}/${label}: enabling the ghost adds no geometry upload`,
+      probe.geometryUploads === MESH_COUNT && probe.geometryUploadBytes === uploadBytes,
+      `${probe.geometryUploads} uploads / ${probe.geometryUploadBytes} B`);
+    passCheck(`${car.slug}/${label}: every ghost frame is one extra draw set of the uploaded car mesh`,
+      ghost?.drawSlots === body.carDraws.length && ghost.frames > 0 &&
+      probe.drawsIssued === probe.frames * probe.draws + ghost.frames * ghost.drawSlots,
+      JSON.stringify({ slots: ghost?.drawSlots, ghostFrames: ghost?.frames, frames: probe.frames,
+        issued: probe.drawsIssued, expected: probe.frames * probe.draws + (ghost?.frames ?? 0) * (ghost?.drawSlots ?? 0) }));
+    passCheck(`${car.slug}/${label}: the ghost HUD delta is the same race-clock gap the record defines`,
+      ghost?.delta && nodeGap && Math.abs(ghost.delta.seconds - nodeGap.seconds) < 1e-9 &&
+      Math.abs(ghost.delta.metres - nodeGap.metres) < 1e-9,
+      JSON.stringify({ page: ghost?.delta, node: nodeGap }));
+    passCheck(`${car.slug}/${label}: the ghost tag and HUD label the replay and its source`,
+      overlay.ghostTagHidden === false && /GHOST/.test(overlay.ghostTagText ?? '') &&
+      /no collision/i.test(overlay.ghostTagText ?? '') &&
+      /ghost/.test(overlay.hudText ?? '') && /reference replay/.test(overlay.hudText ?? '') &&
+      /Δ/.test(overlay.hudText ?? ''),
+      JSON.stringify({ tag: overlay.ghostTagText, hud: (overlay.hudText ?? '').split('\n').find((line) => line.startsWith('ghost')) }));
+
+    if (car.slug === cars[0].slug) {
+      // G hides the ghost without a reload and without touching geometry.
+      const before = await readGhostProbe();
+      await pressGhostKey();
+      await sleep(250);
+      const hidden = await readGhostProbe();
+      const frozenFrames = hidden.ghost.frames;
+      await sleep(350);
+      const hiddenLater = await readGhostProbe();
+      passCheck(`${car.slug}/${label}: G hides the ghost in place, without a reload or an upload`,
+        hidden.ghost.enabled === false && hidden.ghost.frames === frozenFrames &&
+        hiddenLater.frames > hidden.frames && hiddenLater.ghost.frames === frozenFrames &&
+        hiddenLater.geometryUploads === MESH_COUNT && hiddenLater.geometryUploadBytes === uploadBytes &&
+        hiddenLater.drawsIssued - hidden.drawsIssued === (hiddenLater.frames - hidden.frames) * hidden.draws,
+        JSON.stringify({ enabled: hidden.ghost.enabled, ghostFrames: frozenFrames,
+          uploads: hiddenLater.geometryUploads, issuedDelta: hiddenLater.drawsIssued - hidden.drawsIssued }));
+      const hiddenShot = await shoot(car.slug, 'sprint-ghost-off');
+      await pressGhostKey();
+      await sleep(250);
+      const shown = await waitFrames(car.slug + ' ghost re-shown', hiddenLater.frames, 3);
+      passCheck(`${car.slug}/${label}: G shows the ghost again on the next frame`,
+        shown.ghost.enabled === true && shown.ghost.frames > frozenFrames &&
+        shown.geometryUploads === MESH_COUNT && shown.geometryUploadBytes === uploadBytes,
+        JSON.stringify({ enabled: shown.ghost.enabled, ghostFrames: shown.ghost.frames }));
+      rows.push({
+        toggle: {
+          before: { frames: before.frames, ghostFrames: before.ghost.frames, enabled: before.ghost.enabled },
+          hidden: { frames: hidden.frames, ghostFrames: hidden.ghost.frames, enabled: hidden.ghost.enabled },
+          shown: { frames: shown.frames, ghostFrames: shown.ghost.frames, enabled: shown.ghost.enabled },
+          hiddenScreenshot: hiddenShot
+        }
+      });
+    }
+
+    rows.push({
+      car: car.name,
+      slug: car.slug,
+      label,
+      tick: mid.tick,
+      displayTick: probe.displayTick,
+      playbackTick: ghost?.playbackTick ?? null,
+      url: shot.url,
+      screenshot: shot.screenshot,
+      carCrop: shot.carCrop,
+      ghost: {
+        hash: ghost?.hash ?? null,
+        source: ghost?.source ?? null,
+        enabled: ghost?.enabled ?? null,
+        timeSeconds: ghost?.timeSeconds ?? null,
+        tickCount: ghost?.tickCount ?? null,
+        drawSlots: ghost?.drawSlots ?? null,
+        frames: ghost?.frames ?? null,
+        delta: ghost?.delta ?? null,
+        nodeDelta: nodeGap,
+        bodyMaxDelta: bodyDelta,
+        wheelMaxDelta: wheelDelta,
+        offsetTicks: GHOST_OFFSET_TICKS
+      },
+      stateHash: probe.tickHashes[mid.tick]?.stateHash ?? null,
+      nodeStateHash: mid.stateHash,
+      frames: probe.frames,
+      drawsIssued: probe.drawsIssued,
+      geometryUploads: probe.geometryUploads,
+      geometryUploadBytes: probe.geometryUploadBytes,
+      hudGhostRow: (overlay.hudText ?? '').split('\n').find((line) => line.startsWith('ghost')) ?? null,
+      messages: shot.messages
+    });
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages ?? []);
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  passCheck('console is clean in every ghost capture', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  const captures = rows.filter((row) => row.slug);
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'ghost',
+    courseId: COURSE === 'short' ? 'short' : '310m',
+    layout: { hash: sprintLayout.hash, span: sprintLayout.course.span },
+    ghost: {
+      index: path.relative(ROOT, ghostIndexFile).split(path.sep).join('/'),
+      encoding: ghostIndex.encoding,
+      offsetTicks: GHOST_OFFSET_TICKS,
+      offsetNote: '?ghostoffset is presentation only: it moves the drawn ghost so a headless frame shows it ' +
+        'apart from the player; the record, the pose comparison, the delta and the physics are unmoved',
+      indexSha256: 'sha256:' + createHash('sha256').update(readFileSync(ghostIndexFile)).digest('hex')
+    },
+    cars: captures,
+    toggle: rows.filter((row) => row.toggle).map((row) => row.toggle),
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-ghost.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-ghost.log'), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-gates',
+    summary: {
+      verdict: evidence.verdict,
+      consoleMessages: evidence.console.totalMessages,
+      errorsAndWarnings: evidence.console.errorsAndWarnings,
+      failures: passFailures,
+      captures: captures.map((row) => ({
+        car: row.car, tick: row.tick, playbackTick: row.playbackTick,
+        ghostHash: row.ghost.hash, ghostFrames: row.ghost.frames,
+        deltaSeconds: row.ghost.delta?.seconds ?? null,
+        screenshot: row.screenshot, messages: row.messages.length
       }))
     }
   };

@@ -19,7 +19,13 @@
 //     `uvFlipU:true, uvFlipV:false`, i.e. it samples (1-u, v): the model U axis
 //     runs opposite to the decoded image's reading direction on every readable
 //     island, while V already matches the image's top-down rows. The UV values
-//     are not modified; see geometry.carTextures.uvConvention.
+//     are not modified; see geometry.carTextures.uvConvention;
+//   * P63 ghost replay: `setGhostFrame(nodeMatrices)` re-draws the *already
+//     uploaded* car mesh a second time with the ghost record's per-tick node
+//     matrices and a translucent diagnostic tint. It adds draw calls and uniform
+//     slots, never a buffer, a texture or a geometry upload, and it is outside the
+//     packet timeline, so the packet hash, the physics and the player's matrices
+//     are untouched.
 // Everything else (pipeline, upload counting, interpolation, camera handling) is
 // unchanged from the committed consumer.
 //
@@ -115,6 +121,62 @@ const NEUTRAL_ALBEDO = 0.8;
 const DRAW_UNIFORM_STRIDE = 256; // minUniformBufferOffsetAlignment default
 const DRAW_UNIFORM_BYTES = 160; // mat4 + mat4 + albedo vec4 + texParams vec4
 const SUPPORTED_VERSIONS = [1, 1.1];
+
+// Ghost replay (P63): the same car mesh, per-tick ghost node matrices and a
+// labelled translucent diagnostic tint. It samples no texture (texParams is 0),
+// writes no depth and never contributes to the packet. The tint is presentation
+// only: it is not a material colour and no material is recovered.
+const GHOST_SHADER = /* wgsl */ `
+struct DrawUniforms {
+  viewProjection: mat4x4f,
+  world: mat4x4f,
+  albedo: vec4f,
+  texParams: vec4f,
+};
+struct Scene {
+  lightDirection: vec4f,
+  lightColour: vec4f,
+  ambient: vec4f,
+};
+@group(0) @binding(0) var<uniform> draw: DrawUniforms;
+@group(1) @binding(0) var<uniform> scene: Scene;
+@group(2) @binding(0) var albedoSampler: sampler;
+@group(2) @binding(1) var albedoTexture: texture_2d<f32>;
+
+struct VertexOut {
+  @builtin(position) position: vec4f,
+  @location(0) world: vec3f,
+  @location(1) local: vec3f,
+};
+
+@vertex fn vertexMain(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut {
+  var result: VertexOut;
+  let worldPosition = draw.world * vec4f(position, 1.0);
+  result.world = worldPosition.xyz;
+  result.local = position;
+  result.position = draw.viewProjection * worldPosition;
+  return result;
+}
+
+@fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
+  let raw = cross(dpdx(input.world), dpdy(input.world));
+  let length = length(raw);
+  let face = select(vec3f(0.0, 1.0, 0.0), raw / max(length, 1e-20), length > 0.0);
+  let lambert = abs(dot(face, normalize(scene.lightDirection.xyz)));
+  let brightness = 0.55 + 0.45 * lambert;
+  let tint = draw.albedo.rgb * brightness;
+  // The same element-local spin band as the live car, so a ghost's wheels are
+  // visibly rotating rather than four static discs.
+  let angle = atan2(input.local.z, input.local.y);
+  let band = smoothstep(0.86, 0.98, cos(angle)) * draw.albedo.a;
+  let marked = mix(tint, vec3f(0.92, 0.99, 1.0), band * 0.55);
+  return vec4f(pow(clamp(marked, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), 0.34);
+}
+`;
+
+/** Diagnostic ghost tint (linear-ish RGB; the consumer applies its own gamma). */
+export const GHOST_TINT = Object.freeze([0.10, 0.62, 0.92]);
+export const GHOST_ALPHA = 0.34;
 
 /**
  * The explicit PoC sampler. P45/P47 record that the engine wrap mode, filter,
@@ -242,6 +304,11 @@ export class PacketConsumer {
     this.updateMaps = null;
     this.drawMovers = null;
     this.lastTick = 0;
+    // Ghost replay (P63): a second draw set over the uploaded car mesh. The
+    // matrices are supplied per frame by the page; the consumer never simulates.
+    this.ghostDraws = [];
+    this.ghostMatrices = null;
+    this.ghostEnabled = false;
     this.stats = {
       renders: 0,
       geometryUploads: 0,
@@ -249,6 +316,13 @@ export class PacketConsumer {
       uniformWrites: 0,
       uniformBytes: 0,
       drawsIssued: 0,
+      // Ghost instrumentation: draw slots per packet, draws issued and frames
+      // where the ghost was visible. Ghost draws reuse the same buffers, so
+      // `geometryUploads` stays flat when the ghost is toggled.
+      ghostDraws: 0,
+      ghostDrawsIssued: 0,
+      ghostFrames: 0,
+      ghostEnabled: false,
       ticksExecuted: 0,
       alpha: 0,
       renderTick: 0,
@@ -351,6 +425,38 @@ export class PacketConsumer {
       primitive: { topology: 'triangle-list', cullMode: 'none' },
       depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' }
     });
+    // Ghost pipeline (P63): same bind groups, vertex buffers and depth format as
+    // the main pipeline, but a translucent tint, no depth write and no texture
+    // sample. Drawing it after the opaque draws keeps the track/props in front of
+    // it (depthCompare less) without a sort.
+    const ghostModule = this.device.createShaderModule({ code: GHOST_SHADER });
+    const ghostInfo = await ghostModule.getCompilationInfo();
+    const ghostErrors = ghostInfo.messages.filter((message) => message.type === 'error');
+    if (ghostErrors.length) throw new Error('ghost shader: ' + ghostErrors.map((message) => message.message).join('; '));
+    this.ghostPipeline = await this.device.createRenderPipelineAsync({
+      layout: pipelineLayout,
+      vertex: {
+        module: ghostModule,
+        entryPoint: 'vertexMain',
+        buffers: [
+          { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
+          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] }
+        ]
+      },
+      fragment: {
+        module: ghostModule,
+        entryPoint: 'fragmentMain',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
+          }
+        }]
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less' }
+    });
     this.drawLayout = drawLayout;
     this.sceneLayout = sceneLayout;
     this.textureLayout = textureLayout;
@@ -415,6 +521,11 @@ export class PacketConsumer {
     this.timeline = null;
     this.updateMaps = null;
     this.drawMovers = null;
+    this.ghostDraws = [];
+    this.ghostMatrices = null;
+    this.ghostEnabled = false;
+    this.stats.ghostDraws = 0;
+    this.stats.ghostEnabled = false;
   }
 
   async load(packet) {
@@ -537,9 +648,19 @@ export class PacketConsumer {
       this.stats.textureUploadBytes += rgba.length;
     }
 
+    // Ghost draw slots (P63): one ghost copy per visible draw of the selected
+    // car's body mesh. Slots are reserved in the existing uniform buffer, so the
+    // buffer count is unchanged (the soak gate stays at 11) and enabling the ghost
+    // uploads nothing.
+    const carBodyMeshId = packet.diagnostics?.extras?.drive?.car?.bodyMesh ?? null;
+    const ghostDrawCount = carBodyMeshId
+      ? packet.draws.filter((draw) => draw.meshId === carBodyMeshId && draw.visible !== false).length
+      : 0;
     const drawCount = packet.draws.length;
+    this.ghostDraws = [];
+    this.stats.ghostDraws = ghostDrawCount;
     this.uniformBuffer = this.device.createBuffer({
-      size: drawCount * DRAW_UNIFORM_STRIDE,
+      size: (drawCount + ghostDrawCount) * DRAW_UNIFORM_STRIDE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
     this.buffers.push(this.uniformBuffer);
@@ -575,6 +696,17 @@ export class PacketConsumer {
       }
     }
     this.stats.texturedDraws = this.draws.filter((draw) => draw.textureId != null).length;
+    // Ghost draw list: the same mesh, index ranges, textures and node ids as the
+    // live car. Nothing is uploaded; only the per-frame node matrix differs.
+    if (ghostDrawCount > 0) {
+      this.ghostDraws = this.draws.filter((draw) => draw.meshId === carBodyMeshId && draw.visible !== false);
+      if (this.ghostDraws.length !== ghostDrawCount) {
+        throw new Error('ghost draw slots ' + ghostDrawCount + ' but ' + this.ghostDraws.length + ' car draws');
+      }
+      for (const draw of this.ghostDraws) {
+        if (!draw.nodeId) throw new Error('ghost draw ' + draw.id + ' has no node id');
+      }
+    }
     // E1 drive-slice delta: a draw may be explicitly hidden (`visible:false`).
     // The hidden physics collision surface is not a draw in this packet, but the
     // flag keeps the contract honest if a producer carries it here.
@@ -665,6 +797,32 @@ export class PacketConsumer {
     this.timeline.lastTick = this.lastTick;
     this.timeline.tickCount = updates.length;
     return this.timeline;
+  }
+
+  /**
+   * Ghost replay (P63): supply the ghost's node matrices for the next frame.
+   *
+   * `nodeMatrices` is a Map of nodeId -> column-major 16-float world matrix (the
+   * same nine node ids the packet's car nodes use), or null to hide the ghost.
+   * The consumer only re-draws geometry it already uploaded for this packet, so
+   * a ghost frame costs draw calls and uniform bytes but never a buffer, a
+   * texture or a geometry upload. The ghost is not part of `updates[]`, the
+   * packet hash, the physics or the player's matrices.
+   */
+  setGhostFrame(nodeMatrices) {
+    if (!nodeMatrices) {
+      this.ghostMatrices = null;
+      this.ghostEnabled = false;
+      this.stats.ghostEnabled = false;
+      return;
+    }
+    if (!(nodeMatrices instanceof Map)) throw new Error('ghost frame needs a Map of node matrices');
+    for (const [nodeId, world] of nodeMatrices) {
+      if (!isRigid(world)) throw new Error('ghost matrix for ' + nodeId + ' is not rigid');
+    }
+    this.ghostMatrices = nodeMatrices;
+    this.ghostEnabled = true;
+    this.stats.ghostEnabled = true;
   }
 
   /** Interpolate the per-tick orbit camera; f = 0 returns tick A's stored matrices. */
@@ -781,7 +939,9 @@ export class PacketConsumer {
     }
 
     const viewProjection = multiply(frame.projection, frame.view);
-    const bytes = new Float32Array(this.draws.length * (DRAW_UNIFORM_STRIDE / 4));
+    const ghostActive = this.ghostEnabled && this.ghostMatrices !== null && this.ghostDraws.length > 0;
+    const slotCount = this.draws.length + (ghostActive ? this.ghostDraws.length : 0);
+    const bytes = new Float32Array(slotCount * (DRAW_UNIFORM_STRIDE / 4));
     for (let index = 0; index < this.draws.length; index++) {
       const draw = this.draws[index];
       const base = index * (DRAW_UNIFORM_STRIDE / 4);
@@ -806,6 +966,19 @@ export class PacketConsumer {
         draw.uvFlipV === true ? 1 : 0,
         0
       ], base + 36);
+    }
+    if (ghostActive) {
+      // Ghost slots follow the packet's own draw uniforms in the same buffer.
+      // The tint is the labelled diagnostic colour; texParams stays 0 because the
+      // ghost shader does not sample a texture.
+      for (let index = 0; index < this.ghostDraws.length; index++) {
+        const draw = this.ghostDraws[index];
+        const base = (this.draws.length + index) * (DRAW_UNIFORM_STRIDE / 4);
+        bytes.set(viewProjection, base);
+        bytes.set(this.ghostMatrices.get(draw.nodeId) ?? draw.world, base + 16);
+        bytes.set([GHOST_TINT[0], GHOST_TINT[1], GHOST_TINT[2], draw.spins ? 0.85 : 0], base + 32);
+        bytes.set([0, 0, 0, 0], base + 36);
+      }
     }
     this.device.queue.writeBuffer(this.uniformBuffer, 0, bytes);
 
@@ -840,13 +1013,35 @@ export class PacketConsumer {
       pass.setBindGroup(0, this.drawBindGroup, [index * DRAW_UNIFORM_STRIDE]);
       pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
     }
+    if (ghostActive) {
+      // Second pass over the same vertex/index/UV buffers: the ghost car with the
+      // translucent diagnostic tint. No geometry is uploaded; the ghost shader
+      // samples no texture, so the placeholder bind group is enough.
+      pass.setPipeline(this.ghostPipeline);
+      pass.setBindGroup(2, this.placeholderGroup);
+      let ghostMesh = null;
+      for (let index = 0; index < this.ghostDraws.length; index++) {
+        const draw = this.ghostDraws[index];
+        if (ghostMesh !== draw.meshId) {
+          pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
+          pass.setVertexBuffer(1, draw.mesh.uvBuffer);
+          pass.setIndexBuffer(draw.mesh.indexBuffer, 'uint32');
+          ghostMesh = draw.meshId;
+        }
+        pass.setBindGroup(0, this.drawBindGroup, [(this.draws.length + index) * DRAW_UNIFORM_STRIDE]);
+        pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
+      }
+      this.stats.ghostDrawsIssued += this.ghostDraws.length;
+      this.stats.ghostFrames++;
+    }
     pass.end();
     this.device.queue.submit([encoder.finish()]);
 
     this.stats.renders++;
     this.stats.uniformWrites++;
     this.stats.uniformBytes += bytes.byteLength;
-    this.stats.drawsIssued += this.visibleDraws.length;
+    this.stats.drawsIssued += this.visibleDraws.length + (ghostActive ? this.ghostDraws.length : 0);
+    this.stats.ghostEnabled = ghostActive;
     this.stats.cursor = frame.cursor;
     this.stats.renderTick = frame.tickFloor;
     this.stats.alpha = frame.alpha;

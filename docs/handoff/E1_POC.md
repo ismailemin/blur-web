@@ -28,6 +28,7 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 | `/?script=sprint` | Deterministik sprint (5 araç) |
 | `/?telemetry=1&car=<slug>` | 0–100, fren, yanal grip + grafikler |
 | `/?survey=1` | 539,81 m River görsel koridoru (oynanabilir parkur **değil**) |
+| `/?ghost=1` | hayalet/rival replay açık başlar |
 
 ## Araçlar
 
@@ -53,6 +54,7 @@ Dodge 4,633 → Focus 5,133 s.
 | `W` / `↑` | gaz |
 | `S` / `↓` | fren |
 | `A` / `D` / `←` / `→` | direksiyon (varsayılan kullanıcı yönü; `I` ile ters) |
+| `G` | ghost/rival replay aç/kapa |
 | `I` | direksiyon yönünü çevir (kalıcı değil, o sayfa oturumu) |
 | `Space` | el freni |
 | `R` | yerinde restart (sayfa yenilemez) |

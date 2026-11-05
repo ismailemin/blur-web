@@ -49,8 +49,12 @@ import { sha256Hex } from './sha256.js';
 import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
 import { layoutStartHeading, validateSprintLayout } from './sprint-layout.js';
-import { SPRINT_EVENT, createSprintRules } from './sprint-rules.js';
+import { SPRINT_EVENT, coursePosition, createSprintRules } from './sprint-rules.js';
 import { createBestTimes } from './sprint-best.js';
+import {
+  GHOST_CORNERS, GHOST_SOURCE, buildGhostArcTable, createGhostStore, decodeGhost, ghostFromRun,
+  ghostGap, ghostMatrices, referenceGhostFileName, validateGhostRecord
+} from './ghost-replay.js';
 import { respawnScriptInput, sprintScriptInput, SPRINT_PACKET_SCRIPT } from './sprint-script.js';
 import {
   createWasmResetEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
@@ -108,6 +112,18 @@ if (COURSE_PARAM !== '310' && COURSE_PARAM !== 'short') {
   throw new Error('unknown course ' + JSON.stringify(COURSE_PARAM) + ' (use 310 or short)');
 }
 const COURSE_IS_SHORT = COURSE_PARAM === 'short';
+// Ghost / rival replay (P63): `G` toggles it, `?ghost=1` shows it from the start.
+// The ghost is a *recording of one completed run* (your fastest clean run, or the
+// committed deterministic reference trace), replayed through the same car mesh.
+// `?ghostoffset=<ticks>` is a capture-only presentation offset: it shifts where
+// the ghost is drawn so a headless frame can show it apart from the player car,
+// and it changes nothing about the record, the timer, the packet or the physics.
+const GHOST_REQUESTED = params.get('ghost') === '1';
+const GHOST_OFFSET = params.has('ghostoffset') ? Number(params.get('ghostoffset')) : 0;
+if (!Number.isInteger(GHOST_OFFSET) || Math.abs(GHOST_OFFSET) > 1800) {
+  throw new Error('ghostoffset must be an integer in [-1800, 1800]');
+}
+const GHOST_INDEX_URL = '/ghosts/index.json';
 // Diagnostic camera override (screenshots only): ?camdist=&camheight= change the
 // chase orbit radius/height without touching physics or any other packet field.
 const CAMERA_OVERRIDE = {};
@@ -208,6 +224,9 @@ const state = {
   sprintResult: null,
   sprintBanner: null,
   respawning: false,
+  // Ghost / rival replay (`G`; null outside the sprint modes). The page never
+  // auto-enables it, so existing captures and the legacy drive are unchanged.
+  ghost: null,
   // Number of in-place world rebuilds (R / sprint restart). Never a page reload.
   restarts: 0,
   // Telemetry (`?telemetry=1` only).
@@ -219,11 +238,56 @@ const state = {
   soakReport: null
 };
 
+/**
+ * Live ghost state for the HUD and the capture probe. The delta is "what the
+ * player still has to make up": positive seconds/metres = the player is behind
+ * the ghost at the same arc / the ghost is ahead at the same race time.
+ */
+function ghostSummary() {
+  if (!sprintRules) return null;
+  const sprint = state.sprint;
+  const enabled = ghostEnabled && ghost.record !== null;
+  let delta = null;
+  if (sprint && ghost.table) {
+    const seconds = sprint.finished ? sprint.finishTimeSeconds : sprint.elapsedSeconds;
+    const arc = COURSE_IS_SHORT ? sprint.maxX : sprint.arc;
+    if (Number.isFinite(seconds) && Number.isFinite(arc)) delta = ghostGap(ghost.table, { arc, seconds });
+  }
+  return {
+    available: ghost.record !== null,
+    enabled,
+    source: ghost.source,
+    label: ghost.label,
+    reason: ghost.reason,
+    note: ghost.note,
+    hash: ghost.record?.hash ?? null,
+    layoutHash: ghost.record?.layoutHash ?? null,
+    tickCount: ghost.record?.tickCount ?? null,
+    finishTick: ghost.record?.finishTick ?? null,
+    timeSeconds: ghost.record?.timeSeconds ?? null,
+    stateSequenceHash: ghost.record?.stateSequenceHash ?? null,
+    delta,
+    offsetTicks: GHOST_OFFSET,
+    playbackTick: ghostFrame ? ghostFrame.tick : null,
+    bodyMatrix: ghostFrame ? ghostFrame.body : null,
+    wheelMatrices: ghostFrame ? {
+      frontleft: ghostFrame.wheels.frontleft.spin,
+      frontright: ghostFrame.wheels.frontright.spin,
+      backleft: ghostFrame.wheels.backleft.spin,
+      backright: ghostFrame.wheels.backright.spin
+    } : null,
+    drawSlots: consumer.stats.ghostDraws,
+    drawsIssued: consumer.stats.ghostDrawsIssued,
+    frames: consumer.stats.ghostFrames
+  };
+}
+
 function publish() {
   document.documentElement.dataset.driveState = state.consumer;
   document.documentElement.dataset.holdReached = String(state.holdReached);
   if (state.sprint) document.documentElement.dataset.sprint = state.sprint.phase;
   if (state.telemetry) document.documentElement.dataset.telemetry = state.telemetry.ready ? 'ready' : 'running';
+  state.ghost = ghostSummary();
   window.e1DriveProbe = state;
   const rows = [
     ['mode', state.mode + (state.hold === null ? '' : ' · hold ' + state.hold + (state.holdReached ? ' reached' : ''))],
@@ -260,6 +324,27 @@ function publish() {
       ' · ' + Math.round(sprint.progress * 100) + '%']);
     rows.push(['best', state.sprintBest === null ? '—' :
       state.sprintBest.toFixed(3) + ' s' + (state.sprintResult?.improved ? ' (new)' : '')]);
+  }
+  if (state.ghost) {
+    const ghostRow = state.ghost;
+    if (!ghostRow.available) {
+      rows.push(['ghost', 'none · ' + (ghostRow.reason ?? 'no record for this car and course')]);
+    } else if (!ghostRow.enabled) {
+      rows.push(['ghost', ghostRow.label + ' · G to show' +
+        (ghostRow.offsetTicks ? ' · offset ' + ghostRow.offsetTicks + 't' : '')]);
+    } else {
+      const delta = ghostRow.delta;
+      let gap = 'delta n/a';
+      if (delta) {
+        const level = Math.abs(delta.seconds) <= 0.0005 && Math.abs(delta.metres) <= 0.05;
+        const seconds = level ? 0 : delta.seconds;
+        gap = 'Δt ' + seconds.toFixed(3) + ' s · Δd ' + Math.abs(delta.metres).toFixed(1) + ' m ' +
+          (level ? 'level' : seconds > 0 ? 'behind' : 'ahead');
+      }
+      rows.push(['ghost', (ghostRow.source === GHOST_SOURCE.BEST ? 'your best' : 'reference') +
+        ' replay · ' + gap +
+        (ghostRow.offsetTicks ? ' · offset ' + ghostRow.offsetTicks + 't (capture)' : '') + ' · G to hide']);
+    }
   }
   if (state.soak) {
     const soak = state.soak;
@@ -324,6 +409,15 @@ function publishSurveyBanner() {
 
 /** Countdown, event banner and results panel, all driven by rules state. */
 function publishSprintOverlays() {
+  const ghostTag = document.getElementById('ghost-tag');
+  if (ghostTag) {
+    const visible = state.ghost?.enabled === true;
+    ghostTag.hidden = !visible;
+    ghostTag.textContent = visible
+      ? 'GHOST · ' + (state.ghost.source === GHOST_SOURCE.BEST ? 'your best run' : 'reference trace') +
+        ' · replay, no collision'
+      : '';
+  }
   const countdown = document.getElementById('countdown');
   const banner = document.getElementById('event');
   const results = document.getElementById('results');
@@ -396,6 +490,16 @@ window.addEventListener('keydown', (event) => {
     publish();
     return;
   }
+  if ((event.key === 'g' || event.key === 'G') && !event.repeat) {
+    // Ghost replay toggle. It is presentation only: the record, the timer, the
+    // packet, the physics and the keyboard steering mapping are untouched.
+    if (ghost.record) {
+      ghostEnabled = !ghostEnabled;
+      updateGhostFrame();
+      publish();
+    }
+    return;
+  }
   if (event.key === 'r' || event.key === 'R') {
     // Both modes rebuild the world in place: the scene's scheduler groups are
     // created and destroyed with the scene, so one wasm instance can be rebuilt
@@ -444,12 +548,140 @@ let sprintRules = null;
 let bestTimes = null;
 let pendingRespawn = null;
 let soakLayout = null;
+// Ghost replay (P63): one record per car and course — the page's own fastest
+// clean run if it has one, otherwise the committed deterministic reference trace.
+let ghostStore = null;
+let ghost = { record: null, decoded: null, table: null, source: 'none', label: null, reason: null, note: null };
+let ghostEnabled = false;
+let ghostWheelRest = null;
+// Last ghost pose handed to the consumer: { tick, body, wheels }. Published for
+// the capture probe so the browser pose can be compared with the committed record.
+let ghostFrame = null;
 // Cumulative in-place rebuilds of this page's single wasm instance in telemetry
 // mode (one e1_create in loadEngine, then one e1_reset per manoeuvre and per R).
 let telemetryResets = 0;
 
 function readState() {
   return JSON.parse(module.UTF8ToString(module._e1_get_state()));
+}
+
+// ------------------------------------------------------------------ ghost replay
+// The ghost is a recording, not a simulation. These helpers only read the stored
+// record and compose node matrices for the consumer to draw; they never call the
+// engine and never touch a packet, a state or a physics value.
+
+/** Course progress axis used by the ghost delta: measured arc or straight x. */
+function ghostArcOf(position) {
+  if (COURSE_IS_SHORT) return position[0];
+  return coursePosition(sprintRules.layout.course.samples, position).arc;
+}
+
+/** Select the active ghost record and build its playback + delta tables. */
+function setGhostRecord(record, source, label, note = null) {
+  const decoded = decodeGhost(record);
+  ghost = {
+    record,
+    decoded,
+    table: buildGhostArcTable(decoded, ghostArcOf),
+    source,
+    label: label ?? record.sourceLabel ?? null,
+    reason: null,
+    note
+  };
+}
+
+/** The ghost's tick for the frame about to be drawn: the race clock, not the engine tick. */
+function ghostPlaybackTick() {
+  const sprint = state.sprint;
+  if (!sprint || !ghost.decoded) return null;
+  const countdownTicks = ghost.decoded.record.countdownTicks;
+  const base = sprint.phase === 'countdown'
+    ? countdownTicks - sprint.countdownTicks
+    : countdownTicks + sprint.elapsedTicks;
+  const alpha = INTERPOLATE && !holdReached ? driver.currentAlpha() : 0;
+  const tick = base - 1 + alpha + GHOST_OFFSET;
+  return Math.max(0, Math.min(ghost.decoded.tickCount - 1, tick));
+}
+
+/** Compose the ghost's nine node matrices and hand them to the consumer. */
+function updateGhostFrame() {
+  if (!sprintRules || !ghostEnabled || !ghost.decoded) {
+    ghostFrame = null;
+    consumer.setGhostFrame(null);
+    return;
+  }
+  const tick = ghostPlaybackTick();
+  if (tick === null) {
+    ghostFrame = null;
+    consumer.setGhostFrame(null);
+    return;
+  }
+  const matrices = ghostMatrices(ghost.decoded, tick, ghostWheelRest);
+  const nodeMatrices = new Map();
+  nodeMatrices.set('e1.car.body', matrices.body);
+  for (const corner of GHOST_CORNERS) {
+    nodeMatrices.set('e1.car.wheel.' + corner + '.spin', matrices.wheels[corner].spin);
+    nodeMatrices.set('e1.car.wheel.' + corner + '.static', matrices.wheels[corner].static);
+  }
+  consumer.setGhostFrame(nodeMatrices);
+  ghostFrame = { tick, body: matrices.body, wheels: matrices.wheels };
+}
+
+/**
+ * Load the ghost for this car and course: the stored best run first, then the
+ * committed deterministic reference trace. A failure is reported in the HUD,
+ * never thrown into the drive loop and never replaced by a guessed pose.
+ */
+async function loadGhost(storage) {
+  ghost = { record: null, decoded: null, table: null, source: 'none', label: null, reason: null, note: null };
+  ghostFrame = null;
+  if (!SPRINT_MODE || !sprintRules) return;
+  const body = geometry.carBodies[car.slug];
+  if (!body) throw new Error('geometry has no body for ' + car.slug);
+  ghostWheelRest = Object.fromEntries(body.wheelGroups.map((group) => [group.corner, group.matrixColumnMajor]));
+  const course = COURSE_IS_SHORT ? 'short' : '310m';
+  ghostStore = createGhostStore(storage, course, { layoutHash: sprintRules.layout.hash });
+  const stored = ghostStore.get(car.slug);
+  let note = null;
+  if (stored) {
+    if (stored.layoutHash && stored.layoutHash !== sprintRules.layout.hash) {
+      note = 'the stored best ghost was recorded on another sprint layout and was not replayed';
+    } else {
+      try {
+        setGhostRecord(stored, GHOST_SOURCE.BEST, 'your best run (' + stored.timeSeconds.toFixed(3) + ' s)');
+        return;
+      } catch (error) {
+        note = 'the stored best ghost was rejected: ' + error.message;
+      }
+    }
+  }
+  try {
+    const indexResponse = await fetch(GHOST_INDEX_URL, { cache: 'no-store' });
+    if (!indexResponse.ok) throw new Error('reference ghost index unavailable (HTTP ' + indexResponse.status + ')');
+    const index = await indexResponse.json();
+    const entry = index?.cars?.[car.slug]?.[course];
+    if (!entry) throw new Error('no committed reference ghost for ' + car.slug + ' on ' + course);
+    const response = await fetch('/ghosts/' + referenceGhostFileName(car.slug, course), { cache: 'no-store' });
+    if (!response.ok) throw new Error('reference ghost file unavailable (HTTP ' + response.status + ')');
+    const text = await response.text();
+    if (entry.sha256 && 'sha256:' + sha256Hex(text) !== entry.sha256) {
+      throw new Error('reference ghost file does not match its committed SHA-256');
+    }
+    const record = JSON.parse(text);
+    const checked = validateGhostRecord(record);
+    if (!checked.ok) throw new Error('reference ghost rejected: ' + checked.errors.join('; '));
+    if (entry.ghostHash && entry.ghostHash !== record.hash) {
+      throw new Error('reference ghost hash differs from the committed index');
+    }
+    if (record.layoutHash !== sprintRules.layout.hash) {
+      throw new Error('reference ghost was recorded on another sprint layout');
+    }
+    setGhostRecord(record, GHOST_SOURCE.REFERENCE,
+      'reference ghost — committed deterministic sprint trace (' + record.timeSeconds.toFixed(3) + ' s)', note);
+  } catch (error) {
+    ghost.reason = error.message;
+    ghost.note = note;
+  }
 }
 
 /** Fill the selector from the roster and keep it in sync with ?car=. */
@@ -545,6 +777,10 @@ async function loadEngine() {
     try { storage = window.localStorage; } catch { storage = null; }
     bestTimes = createBestTimes(storage, SPRINT_BEST_KEY);
     state.sprintBest = bestTimes.bestFor(car.slug);
+    // Ghost / rival replay: the stored best run, or the committed deterministic
+    // reference trace. `?ghost=1` shows it from the start; otherwise `G` toggles.
+    await loadGhost(storage);
+    ghostEnabled = GHOST_REQUESTED && ghost.record !== null;
     // The 310 m course starts on the measured tangent of its start gate; the
     // 29 m regression course keeps the committed drive spawn heading. The soak
     // schedule runs drive/telemetry segments whose node anchors were recorded
@@ -621,7 +857,51 @@ function handleSprintEvents(events) {
         improved: submitted.improved,
         persistent: submitted.persistent
       };
+      recordGhostFinish(event);
     }
+  }
+}
+
+/**
+ * Store a finished clean run as this car's ghost for the next attempt. The record
+ * is the run's own per-tick transform sequence (see web/ghost-replay.js) and its
+ * hash is the canonical hash of that sequence; nothing here touches physics.
+ */
+function recordGhostFinish(event) {
+  if (!ghostStore || !session || !car) return;
+  if (sprintRules.respawns > 0 || event.checkpoints !== sprintRules.totalCheckpoints) {
+    ghost.note = 'this run was not recorded as a ghost because it was not a clean run';
+    return;
+  }
+  try {
+    const hashes = state.tickHashes.filter((row) => row.tick <= event.tick).map((row) => row.stateHash);
+    if (hashes.length !== event.tick + 1) {
+      throw new Error('timeline has ' + hashes.length + ' ticks but the finish is at tick ' + event.tick);
+    }
+    const record = ghostFromRun({
+      car: car.slug,
+      course: ghostStore.course,
+      courseId: state.sprintCourseId,
+      layoutHash: state.sprintLayoutHash,
+      countdownTicks: state.sprintLayout?.countdownTicks ?? 0,
+      finishTick: event.tick,
+      timeSeconds: event.timeSeconds,
+      stateSequenceHash: 'sha256:' + sha256Hex(hashes.join('\n')),
+      updates: session.packet.updates,
+      wheelAnglesByTick: state.wheelAnglesByTick,
+      source: GHOST_SOURCE.BEST,
+      sourceLabel: 'your best run (' + event.timeSeconds.toFixed(3) + ' s)'
+    });
+    const submitted = ghostStore.submit(car.slug, record);
+    if (submitted.stored) {
+      setGhostRecord(record, GHOST_SOURCE.BEST, record.sourceLabel);
+      ghost.note = null;
+    } else {
+      ghost.note = 'this run was slower than the stored ghost (' +
+        (submitted.previousSeconds === null ? '—' : submitted.previousSeconds.toFixed(3) + ' s') + ')';
+    }
+  } catch (error) {
+    ghost.note = 'this run could not be stored as a ghost: ' + error.message;
   }
 }
 
@@ -1644,6 +1924,7 @@ function frame(nowMs) {
     state.cameraOcclusion = cameraAtDisplay.occlusion ?? null;
   }
 
+  updateGhostFrame();
   consumer.syncTimeline();
   const rendered = consumer.renderFrame({ cursor });
   if (rendered) {

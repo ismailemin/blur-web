@@ -52,6 +52,7 @@ sürüşü deneyebileceği PoC.
 | Engine packet export | P54 | ✅ 451 draw (8 schema gap) |
 | Kapalı tur araması | P61 | ✅ loop-01 222,0 m (engine trace PASS) |
 | Ses fizibilitesi | P62 | ✅ 6 motor loop'u + RPM eğrileri |
+| Ghost/rival replay | P63 | ✅ 678/678, upload 0 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |
