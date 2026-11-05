@@ -354,6 +354,11 @@ dsize kuralı; 48 B / 1944 B). Öneri: `BaseProfile`/`StartRace` için açık
 encoder, golden layout native sayıları (56 B, isim @16, 17 UTF-16LE; 2104 B,
 20 slot). Kanıt: `docs/work/analysis/net-layout.md`.
 
+**PoC kontrolü (P57):** `tools/check_e1_poc.py` 19/19 PASS: modül/glue,
+geometry v6, levelphysics, spawn, 310 m + 29 m layout/runs, 5 araç, UV/doku
+manifestleri, sayfa ve 8801 sunucusu. Kullanıcı checklist’i:
+`docs/handoff/E1_POC_TEST.md`.
+
 ## Bilinen engeller / riskler
 
 - **56 instance** destekli (Stage A+B); blok31 (1 instance) prerequisite

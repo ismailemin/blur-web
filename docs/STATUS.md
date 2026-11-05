@@ -636,6 +636,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Öneri: `BaseProfile`/`NetStartRacePacketPlayer`/`StartRace` için açık encoder; golden layout native (56 B, isim @16 17 UTF-16LE; 2104 B / 20 slot).
 - Probe ana suite'e eklendi: **30/30**. Kanıt: `docs/work/analysis/net-layout.md`, `probes/net-layout/`.
 
+## 5 Kasım 2026 — PoC hazırlık kontrolü
+
+- `tools/check_e1_poc.py`: 19/19 PASS, 0 FAIL, ~0,32 s; modül/glue, geometry v6, levelphysics, spawn, 310 m + 29 m layout/per-car runs, 5 araç, UV/doku manifestleri, sayfa kaynakları ve 8801 sunucusu.
+- `--json`/`--hash` modları; eksik artifact exit 2, check failure exit 1. Sunucu başlatmıyor/durdurmuyor.
+- `docs/handoff/E1_POC_TEST.md`: başlatma, URL, 5 araç süreleri, kontroller, modlar, console 0 kontrolü, sınırlar, hata bildirme. Kanıt: `_work/logs/e1-poc-check.log`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.
