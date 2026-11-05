@@ -168,6 +168,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   Entegrasyon P67 lap modunda yapılacak.
 - Kanıt: `docs/work/analysis/prop-collision.md`, `probes/prop-collision/`.
 
+### E1l — Free-roam alanı (P65)  ✅
+- Spawn havzası **R04: 9.689,5 m²** (310 m koridorunun ~2,3 katı), **%100
+  çizili** (`g56-n289`); yeni geometri/upload gerekmiyor.
+- Alanın %56,6’sı 310 m hattının 12 m dışında; 366 m çap, 11,5 m medyan
+  genişlik, spawn bowl 95 m’ye kadar.
+- **R01 (17.618 m²) erişilemez** (3,50 m / 100 m duvar); R03 14,98 m void.
+  Sadece R04 spawn-connected.
+- Öneri: `?course=free` (no corridor respawn), 310 m sprint ayrı kalır.
+- Kanıt: `docs/work/analysis/free-roam.md`, `_work/free-roam/free-roam.png`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

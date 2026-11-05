@@ -54,6 +54,7 @@ sürüşü deneyebileceği PoC.
 | Ses fizibilitesi | P62 | ✅ 6 motor loop'u + RPM eğrileri |
 | Ghost/rival replay | P63 | ✅ 678/678, upload 0 |
 | Prop collision verisi | P66 | ✅ 468 collider, 52/52 resolver |
+| Free-roam alanı | P65 | ✅ R04 9.689,5 m², %100 çizili |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

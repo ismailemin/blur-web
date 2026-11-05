@@ -370,6 +370,12 @@ aktif, 95 on-course hariç). Resolver: 2.98×1.68 m car OBB, SAT push-out,
 kapatıyor. Lap-01 entegrasyonu P67'de. Kanıt:
 `docs/work/analysis/prop-collision.md`.
 
+**Free-roam (P65):** spawn havzası **R04 9.689,5 m²**, %100 `g56-n289` ile
+çizili; 310 m hattının ~2,3 katı, %56,6’sı hattın 12 m dışında. R01 17.618 m²
+ama 3,50 m/100 m duvarla erişilemez; R03 14,98 m void. Öneri: `?course=free`,
+koridor respawn'ı kapalı. Kanıt: `docs/work/analysis/free-roam.md`,
+`_work/free-roam/free-roam.png`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

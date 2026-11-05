@@ -688,6 +688,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Resolver: 2.98×1.68 m car OBB, SAT, μ=0.45, 7 substeps @31 m/s; head-on gap 0.001 m, glancing %96 teğetsel, 0 tunneling; 52/52 PASS.
 - **Önemli:** 310 m hattı 52–61 / 114–122 / 125–128 / 181–207 m kümelerinde prop kesiyor; all-visible hattı kapatır. Lap-01'de ölçülüp entegre edilecek. Kanıt: `docs/work/analysis/prop-collision.md`.
 
+## 6 Kasım 2026 — free-roam alanı
+
+- Spawn havzası **R04 9.689,5 m²** (310 m koridorunun ~2,3 katı), **%100 çizili** (g56-n289); yeni upload yok. %56,6'sı 310 m hattının 12 m dışında; çap 366 m, medyan genişlik 11,5 m.
+- R01 17.618 m² ama 3,50 m/100 m duvarla erişilemez; R03 14,98 m void; yalnız R04 spawn-connected.
+- Öneri: `?course=free`, koridor respawn'ı kapalı; 310 m sprint ayrı. Kanıt: `docs/work/analysis/free-roam.md`, `_work/free-roam/free-roam.png`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).
