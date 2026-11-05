@@ -1703,3 +1703,107 @@ respawn band is a declared rule below P48's measured 7.78 m wall clearance; the
 course beyond the finish is unmeasured and not driven. Full record:
 `docs/work/verification/T-007-310m-course.md`.
 
+## 23. Per-car albedo textures on each car's own UV0 stream (T-007/textured-cars, P55)
+
+**Date:** 6 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-textured-cars.md`. No change to
+`probes/car-materials/`, `probes/car-parts/`, `probes/drivable-path/`, the
+engine, `probes/render-packet/`, `tools/`, `upstream/` or `game-data/`. The P52
+material manifest and the committed car-parts files are read-only inputs, pinned
+by SHA-256. Physics, sprint, camera, telemetry, restart and soak behaviour are
+unchanged.
+
+### 23.1 What was missing
+
+P52 resolved every draw of the five roster cars to its committed material row and
+decoded the static `g_MeshTexture` image behind **224 of the 491 car draws**
+(40 images, 18,178,048 RGBA bytes). The E1 drive slice still drew all five bodies
+with per-part diagnostic colours (`materialsApplied:false`), and the car mesh had
+no UV0 stream at all: `packet-consumer.js` bound an explicit zero UV buffer for
+it because the part manifest exports only positions and indices.
+
+### 23.2 What the export adds
+
+`tools/build_car_textures.py` (new) turns the committed P52 record into PoC data
+without re-decoding or re-resolving anything:
+
+- **Draw → material → texture**: per car, all draws keep their P52 status,
+  material row (id, stage, type name, archive/field offsets), resolved
+  `block:index` / `shared:index` identity, name and `u32` texture hash. 224 are
+  `staticAlbedo`, 45 are the `_NO_ALBEDO` paint lookup, 66 the light off/on blend
+  and 156 the other `_NO_ALBEDO` shaders, each with the committed P52 reason.
+- **UV0**: the `uv0` array of the committed `scene_inspect.exe` scene report,
+  exported byte-exactly (signed zeros preserved) as `car-uv-<slug>.bin`. Its
+  positions are numerically the part-manifest mesh (the report keeps `-0`, the
+  mesh serialised `0`, so a byte hash of the two position arrays differs in the
+  sign of zero only). Every draw range, part identity and UV availability flag is
+  required to agree between the P52 manifest, the car-parts manifest and the scene
+  report before a byte is written, and each draw's UV0 value hash (FNV-1a 64 over
+  the referenced float32 UV pairs) is recomputed by `build_geometry.mjs`.
+- **Pixels**: the committed P52 `.rgba` files are re-hashed and embedded as
+  base64. No decode is repeated here and no pixel is modified.
+
+`build_geometry.mjs` therefore emits **geometry v6**: each body mesh carries its
+real UV stream, each car draw carries `textureId`, `textureBinding` and
+`uvFlipV`, and each body carries its own textures. `packet-adapter.js` puts the
+static level/track pack **plus only the driven car's own images** in the packet,
+so a page uploads 143–145 textures (136 track + 7–9 car) and never the roster.
+`packet-consumer.js` already had the `rgba8unorm` mip0 texture, the UV vertex
+buffer and the `texParams` select; it gained the per-draw V direction below.
+
+### 23.3 The one declared sampling choice: `v' = 1 − v` for car draws
+
+The exported UV0 and the decoded pixels are unmodified, but sampling them as-is
+renders the artwork vertically mirrored. The evidence is pixel-level and
+specific: the ZR1 rear plate (`nyc_10`, shared 6) reads `NEW YORK` at the bottom
+with the number mirrored under the raw stream, and reads upright with
+`v' = 1 − v`; the Audi plate (`spain10`, shared 7) and the ZR1 rear emblem
+(`corvette_zr1_decals`, resource block 8) behave the same, so both texture
+storage kinds share one convention. Glyph order is preserved and only the
+vertical axis changes, which is a V inversion — not a per-draw UV transform and
+not a 180° rotation. `geometry.carTextures.uvConvention` records the rule, the
+three observations and the fact that no per-material texture matrix, wrap state
+or mip state is recovered. `texParams.y` carries the flag per draw; the track and
+level packs keep the raw stream, so the accepted P49 track evidence is not
+silently changed. **The same inversion is likely present in the track pack**
+(its road textures carry no readable text, so P49 could not see it); re-opening
+that pack is outside this task and is recorded as an open item.
+
+### 23.4 Result
+
+- `verify_e1_drive.mjs` **570/570**, 0 failures (was 550/550). The 20 new checks
+  cover the pinned export, the per-car UV stream and its byte/sha identity, the
+  224/45/66/156 split with per-draw labels, per-car texture identity and RGBA
+  re-hash, the recomputed per-draw UV0 hash (224/224), the UV bounds, the
+  `(u, 1−v)` convention and the bounded per-packet texture set.
+- All five drive state sequence hashes are **unchanged** (P36/P37 values); the
+  sprint, telemetry, restart and reset checks are unchanged. The whole-packet
+  hash moved because the packet now carries the car UV stream and textures, so
+  the five `PHYSICS_ANCHORS.packet` constants are re-pinned with that note.
+- 20 headless Edge/WebGPU captures: **0 console messages**, 0 assertion failures,
+  143–145 textures / 3.02–5.44 MB per page, 37–50 textured car draws per car,
+  17/20 packet hashes byte-exact (the documented Node/Edge `Math.atan2` ulp case).
+- The car bodies now show their own artwork: plates, decals, badges, wheel
+  textures, brake discs and interior weave, per car. The Focus's four glass draws
+  bind the `focusrs-alpha` image and render its RGB opaque (no blend state).
+- A 1-minute two-run soak keeps **145 live textures** (exactly one packet) across
+  four packet loads per run: created 580 = 4 × 145, destroyed 435, live 145 in
+  both runs and at every sample — no texture leak. The page's own soak report is
+  PASS; the tool's drive/telemetry node-anchor comparisons fail for a
+  pre-existing reason unrelated to textures (the soak world starts on the 310 m
+  tangent since P50), see the verification record.
+
+### 23.5 Limits
+
+224/491 car draws are textured; the 267 runtime-only draws stay diagnostic with
+their P52 reason. Only mip0 is uploaded and no sRGB, anisotropy, material colour,
+blend state or shader stage is applied. The paint lookup and light blend are
+runtime inputs and are not recovered. The car mesh is still drawn in the engine
+body frame; per-material texture matrices and mirrored plate quads are not
+recovered (the Audi plate's `E` strip stays on the mirrored side). No full-game
+claim.
+
+Full commands, counts, per-car tables, screenshots, soak evidence and hashes:
+`docs/work/verification/T-007-textured-cars.md`.
+
