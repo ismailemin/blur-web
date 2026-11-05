@@ -1623,3 +1623,83 @@ shader stages or retail sampler; no culling/sorting/LOD/instancing; the last
 Verification, commands, per-section table, per-car browser bytes, screenshots,
 before/after pixel patch and every file hash:
 `docs/work/verification/T-007-textured-track.md`.
+
+## 22. The measured 310 m P48 course is the default sprint (T-007/310m, P50)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-310m-course.md`. No change to
+drivable-path, track-coverage, car-parts, collision-oracle, render-packet, the
+engine, `tools/`, `upstream/` or `game-data/`. The P48 path is consumed read-only
+and pinned by file + canonical hash. Physics, packet body, camera, telemetry and
+reset behaviour are unchanged.
+
+### 22.1 Why the course moved
+
+P37's playable sprint was 29 m because that was the length of the committed real
+draw under the spawn corridor. P48 then measured a **310.395 m collision-only
+drivable path** from the same spawn (1,245 samples at 0.25 m, max step 1.55 cm,
+max 2 m grade 3.09 %, 0 wall hits in 621 engine traces), and P51 measured **100 %
+draw coverage** of that path from the already-drawn section `river.block56.node289`.
+The two blockers that stopped the 539.81 m corridor (a 6.36 cm section join and two
+engine-confirmed 50 m faces at arc 57.82 / 530.71) are not on this route.
+
+### 22.2 How the course is derived
+
+`web/sprint-layout.js` gained `deriveLongCourseLayout`: it validates and pins
+`_work/drivable-path/path.json`, builds the 0.25 m arc table, measures collision
+ground on every sample, places the start at arc 0, the two checkpoints at the 1/3
+and 2/3 points of the finish span, and the finish at the last sample before
+`measuredEnd − 10 m`. Each gate line is the left normal of the local 5 m tangent
+and is re-measured at 0.1 m against the real draw (nearest within 0.5 m of the
+collision surface, the P51 rule). The 29 m course stays `deriveSprintLayout`, now
+carrying `courseId: 'short'`.
+
+`tools/build_sprint.mjs` writes both layouts. The page loads the 310 m one by
+default and the 29 m one with `?course=short`; best times are stored per course
+(`e1-drive.sprint.best.v2.310m` / `…v2.short`).
+
+### 22.3 How the car drives it
+
+The scripted sprint is a Stanley follower (P43's controller form) with a measured
+speed-dependent steering gain and a per-tick steering rate limit. The engine's
+steering authority falls sharply with speed (0.1 request ≈ 0.01 rad/s yaw at
+24 m/s; 1.0 ≈ 1.3 rad/s), so the gain scales with speed. The car is created on the
+start gate facing the measured tangent (0.767411 rad) — the drive-slice spawn
+heading π/2 is unchanged. The follower stays within 0.85 m of the measured line,
+slows to 13 m/s over the last 18 m, and the post-finish brake stops it at arc
+306–308, before the measured narrowing.
+
+### 22.4 Result
+
+- `verify_e1_drive.mjs` **550/550** (was 522/522). New checks cover the pinned P48
+  path, both layout derivations, the 10 m finish clearance, gate perpendicularity,
+  independent 61/61 gate coverage for both courses, the 7-station × 1,202-sample
+  car-width band (8,414/8,414), engine-ground agreement (125 probes), the path
+  rules (out-of-order, local-ground below-ground, outside-corridor, gate heading),
+  the per-course best keys and both per-car sprint suites.
+- All five cars finish: Corvette 14.650 s, Lotus 14.767 s, Dodge 14.917 s, Focus
+  15.217 s, Audi 14.150 s; 0 respawns, 0 NaN, wheel contact on every tick, max
+  lateral 0.59–0.85 m, and a replay with the rules off that reproduces every state
+  hash. A one-instance `e1_reset()` restart reproduces the finish.
+- The 29 m regression still finishes at the exact P37 times (2.800 / 2.850 /
+  3.000 / 3.267 / 2.283 s) with the P37 state hashes.
+- Drive and packet anchors are unchanged (P49 values); the new 310 m sprint state
+  sequences are new anchors, recorded in the verifier with that reason.
+- Headless Edge/WebGPU: **20 captures** (5 cars × start / mid / checkpoint /
+  finish) on the 310 m course, **0 console messages**, 0 assertion failures,
+  13/20 packet hashes byte-exact (the seven differences are the documented Node /
+  Edge last-bit transcendental cases; camera |Δ| ≤ 4.55e-13, car matrices
+  bit-identical). The 29 m course is captured the same way with `--course short`.
+  In the mid frame the HUD reads `310 m P48 (default) · 310.4 m measured · finish
+  300.2 m`, `1/2 cp`, 22.9 m/s, 50 %; the finish overlay shows 14.650 s and the
+  new best time.
+
+### 22.5 Limits
+
+Point-to-point, no lap; five small draw seams inside one section; the start
+heading is a convention; the follower is a deterministic PoC driver; the ±6 m
+respawn band is a declared rule below P48's measured 7.78 m wall clearance; the
+course beyond the finish is unmeasured and not driven. Full record:
+`docs/work/verification/T-007-310m-course.md`.
+

@@ -9,6 +9,15 @@
 // scripted sprint applies and replaying it into a fresh module: every per-tick
 // state hash must be identical.
 //
+// Two course shapes are supported by the same state machine:
+//
+//   * path courses (`layout.course.samples`) — the default 310 m P48 course.
+//     Progress and the off-course test use the nearest point on the measured
+//     polyline, the fall rule uses the measured ground at the car's arc, and
+//     every gate is an arbitrary segment perpendicular to the path.
+//   * the straight 29 m regression course (`layout.course.band`) — progress and
+//     the off-course test use x against the spawn corridor, exactly as P37.
+//
 // Everything is a function of the tick sequence and the committed layout, never
 // of wall-clock time, so two runs produce identical events and times.
 
@@ -69,11 +78,91 @@ export function gateCrossing(previousPosition, position, gate) {
   };
 }
 
+/**
+ * Nearest point on the measured course polyline: arc length, lateral distance
+ * and the segment index. Pure geometry over the committed layout samples.
+ */
+export function coursePosition(samples, position) {
+  if (!Array.isArray(samples) || samples.length < 2) throw new Error('course has no polyline');
+  const px = position[0];
+  const pz = position[2];
+  let best = null;
+  for (let index = 0; index < samples.length - 1; index++) {
+    const a = samples[index];
+    const b = samples[index + 1];
+    const vx = b.x - a.x;
+    const vz = b.z - a.z;
+    const lengthSquared = vx * vx + vz * vz;
+    let t = 0;
+    if (lengthSquared > 0) {
+      t = ((px - a.x) * vx + (pz - a.z) * vz) / lengthSquared;
+      if (t < 0) t = 0; else if (t > 1) t = 1;
+    }
+    const dx = a.x + vx * t - px;
+    const dz = a.z + vz * t - pz;
+    const distanceSquared = dx * dx + dz * dz;
+    if (best === null || distanceSquared < best.distanceSquared - 1e-12) {
+      best = {
+        distanceSquared,
+        distance: Math.sqrt(distanceSquared),
+        arc: round6(a.arc + (b.arc - a.arc) * t),
+        segment: index,
+        point: [round6(a.x + vx * t), round6(a.z + vz * t)]
+      };
+    }
+  }
+  return { distance: best.distance, arc: best.arc, segment: best.segment, point: best.point };
+}
+
+/** Measured off-course band half-width at an arc. */
+export function bandHalfWidthAt(layout, arc) {
+  const corridor = layout.course.corridor;
+  if (corridor?.rows?.length) {
+    let best = corridor.rows[0];
+    for (const row of corridor.rows) {
+      if (Math.abs(row.arc - arc) < Math.abs(best.arc - arc)) best = row;
+    }
+    return best.bandHalfWidthMetres ?? corridor.halfWidthMetres;
+  }
+  if (corridor?.halfWidthMetres) return corridor.halfWidthMetres;
+  return layout.course.band?.halfWidthMetres ?? 3;
+}
+
+/** Measured course ground height at an arc (nearest measured sample). */
+export function courseGroundAt(layout, arc) {
+  const samples = layout.course.samples;
+  if (!Array.isArray(samples) || samples.length === 0) return layout.course.spawnGroundY;
+  let best = samples[0];
+  for (const sample of samples) {
+    if (Math.abs(sample.arc - arc) < Math.abs(best.arc - arc)) best = sample;
+  }
+  return best.groundY ?? layout.course.spawnGroundY;
+}
+
+/** True when the layout is a path course (the default 310 m course). */
+export function isPathLayout(layout) {
+  return Array.isArray(layout?.course?.samples) && layout.course.samples.length >= 2;
+}
+
 /** Why a position is off the measured course, or null when it is on it. */
 export function outsideCourseReason(position, layout) {
   const span = layout.course.span;
-  const band = layout.course.band;
   const respawn = layout.rules.respawn;
+  if (isPathLayout(layout)) {
+    const course = coursePosition(layout.course.samples, position);
+    if (course.arc < span.startArc - respawn.overshootMarginMetres) {
+      return { reason: 'behind-start', arc: course.arc, lateral: course.distance };
+    }
+    if (course.arc > span.finishArc + respawn.overshootMarginMetres) {
+      return { reason: 'past-finish-line', arc: course.arc, lateral: course.distance };
+    }
+    const halfWidth = bandHalfWidthAt(layout, course.arc);
+    if (course.distance > halfWidth + respawn.outsideBandMarginMetres) {
+      return { reason: 'outside-corridor', arc: course.arc, lateral: round6(course.distance), halfWidth };
+    }
+    return null;
+  }
+  const band = layout.course.band;
   const x = position[0];
   const z = position[2];
   if (x < span.startX - respawn.overshootMarginMetres) return 'behind-start';
@@ -102,7 +191,7 @@ export class SprintRules {
     this.countdownTicks = this.layout.countdown.ticks;
     this.elapsedTicks = 0;
     this.gateIndex = 1; // gate 0 is the start line the car is standing on
-    this.passedGates = [{ id: 'start', index: 0, tick: 0, timeSeconds: 0, position: null }];
+    this.passedGates = [{ id: 'start', index: 0, tick: 0, timeSeconds: 0, position: null, arc: 0 }];
     this.finishTimeSeconds = null;
     this.finishTick = null;
     this.finishPosition = null;
@@ -114,7 +203,11 @@ export class SprintRules {
     this.respawnTicks = 0;
     this.airborneTicks = 0;
     this.closed = false;
-    this.maxX = this.layout.course.span.startX;
+    this.maxX = this.layout.course.span.startX ?? this.layout.course.span.startArc;
+    this.maxArc = this.layout.course.span.startArc ?? 0;
+    this.arc = this.maxArc;
+    this.lateral = 0;
+    this.maxLateral = 0;
     this.prevState = null;
     this.awaitingRejoin = false;
     this.lastEvent = null;
@@ -141,7 +234,16 @@ export class SprintRules {
     if (state.finite !== 1) this.nanTicks++;
     if (state.anyContact === 1) { this.contactTicks++; this.airborneTicks = 0; }
     else this.airborneTicks++;
-    if (Number.isFinite(state.position?.[0]) && state.position[0] > this.maxX) this.maxX = state.position[0];
+    if (Array.isArray(state.position) && Number.isFinite(state.position[0]) && Number.isFinite(state.position[2])) {
+      if (state.position[0] > this.maxX) this.maxX = state.position[0];
+      if (isPathLayout(this.layout)) {
+        const course = coursePosition(this.layout.course.samples, state.position);
+        this.arc = course.arc;
+        this.lateral = course.distance;
+        if (course.distance > this.maxLateral) this.maxLateral = course.distance;
+        if (course.arc > this.maxArc) this.maxArc = course.arc;
+      }
+    }
   }
 
   /** Input the rules allow (the driver asks; the rules gate, physics does not change). */
@@ -205,7 +307,8 @@ export class SprintRules {
               index: gate.index,
               tick: state.tick,
               timeSeconds: seconds(this.elapsedTicks),
-              position: crossing.point
+              position: crossing.point,
+              arc: gate.arc ?? null
             };
             this.passedGates.push(record);
             events.push({ type: SPRINT_EVENT.CHECKPOINT, ...record });
@@ -225,7 +328,7 @@ export class SprintRules {
             this.gateIndex++;
             this.passedGates.push({
               id: gate.id, index: gate.index, tick: state.tick,
-              timeSeconds: seconds(this.elapsedTicks), position: crossing.point
+              timeSeconds: seconds(this.elapsedTicks), position: crossing.point, arc: gate.arc ?? null
             });
             this.phase = SPRINT_PHASE.FINISHED;
             this.finishTimeSeconds = seconds(this.elapsedTicks);
@@ -236,6 +339,7 @@ export class SprintRules {
               tick: state.tick,
               timeSeconds: this.finishTimeSeconds,
               gateId: gate.id,
+              arc: gate.arc ?? null,
               checkpoints: this.passedGates.filter((entry) => entry.index > 0 && entry.index < gate.index).length,
               position: crossing.point
             });
@@ -271,13 +375,19 @@ export class SprintRules {
   respawnReason(state) {
     const respawn = this.layout.rules.respawn;
     const reasons = [];
+    // The fall rule is relative to the measured ground at the car's arc on a path
+    // course (the 310 m course rises/falls along its length), and to the spawn
+    // ground on the straight regression course.
+    const localGround = isPathLayout(this.layout)
+      ? courseGroundAt(this.layout, this.arc)
+      : this.layout.course.spawnGroundY;
     if (Number.isFinite(state.position?.[1]) &&
-        state.position[1] < this.layout.course.spawnGroundY - respawn.fallBelowGroundMetres) {
+        state.position[1] < localGround - respawn.fallBelowGroundMetres) {
       reasons.push('below-ground');
     }
     if (this.airborneTicks >= respawn.airborneTicks) reasons.push('airborne');
     const outside = outsideCourseReason(state.position ?? [0, 0, 0], this.layout);
-    if (outside) reasons.push(outside);
+    if (outside) reasons.push(typeof outside === 'string' ? outside : outside.reason);
     return reasons.length ? { reasons } : null;
   }
 
@@ -287,7 +397,7 @@ export class SprintRules {
     return {
       x: gate.x,
       z: gate.z,
-      heading: this.layout.course.spawn.headingRad,
+      heading: gate.headingRad ?? this.layout.course.spawn.headingRad,
       gateId: gate.id,
       gateIndex: gate.index
     };
@@ -312,7 +422,10 @@ export class SprintRules {
   /** Plain snapshot for the HUD, the harness probe and the evidence files. */
   snapshot(state = this.prevState) {
     const span = this.layout.course.span;
-    const progress = Math.max(0, Math.min(1, (this.maxX - span.startX) / (span.finishX - span.startX)));
+    const path = isPathLayout(this.layout);
+    const progress = path
+      ? Math.max(0, Math.min(1, (this.maxArc - span.startArc) / (span.finishArc - span.startArc)))
+      : Math.max(0, Math.min(1, (this.maxX - span.startX) / (span.finishX - span.startX)));
     const nextGate = this.nextGate;
     return {
       phase: this.phase,
@@ -335,11 +448,18 @@ export class SprintRules {
         kind: nextGate.kind,
         index: nextGate.index,
         x: nextGate.x,
-        distanceMetres: state ? round6(nextGate.x - state.position[0]) : null
+        arc: nextGate.arc ?? null,
+        distanceMetres: path
+          ? round6(Math.max(0, (nextGate.arc ?? span.finishArc) - this.arc))
+          : (state ? round6(nextGate.x - state.position[0]) : null)
       } : null,
       passedGates: this.passedGates.map((gate) => ({ ...gate })),
       progress: round6(progress),
       maxX: round6(this.maxX),
+      maxArc: round6(this.maxArc),
+      arc: round6(this.arc),
+      lateralMetres: round6(this.lateral),
+      maxLateralMetres: round6(this.maxLateral),
       respawns: this.respawns,
       respawnLog: this.respawnLog.map((entry) => ({ ...entry })),
       contactTicks: this.contactTicks,
@@ -347,7 +467,14 @@ export class SprintRules {
       offCourseTicks: this.respawnTicks,
       lastEvent: this.lastEvent ? { ...this.lastEvent } : null,
       layoutHash: this.layout.hash,
-      course: {
+      courseId: this.layout.courseId ?? null,
+      course: path ? {
+        startArc: span.startArc,
+        finishArc: span.finishArc,
+        lengthMetres: span.lengthMetres,
+        measuredLengthMetres: span.measuredLengthMetres,
+        bandHalfWidthMetres: bandHalfWidthAt(this.layout, this.arc)
+      } : {
         startX: span.startX,
         finishX: span.finishX,
         lengthMetres: span.lengthMetres,

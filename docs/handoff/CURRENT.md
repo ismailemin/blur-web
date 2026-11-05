@@ -319,6 +319,13 @@ asset-reader ile birebir; 267 draw runtime-only (45 paint, 66 light blend,
 156 no-albedo). Henüz sürüş packet'ine bağlanmadı (gövde diagnostic).
 Kanıt: `docs/work/analysis/car-materials.md`.
 
+**310 m oynanabilir sprint (P50):** varsayılan parkur artık 310,395 m
+collision-clean course; start + 2 checkpoint (~100/200 m) + finish ~300 m.
+5 araç bitiriyor: Audi **14,15 s**, Corvette 14,65, Lotus 14,77, Dodge 14,92,
+Focus 15,22. 29 m `?course=short`. `verify_e1_drive` **550/550**; sprint/short/
+restart/respawn/survey capture console 0. Kanıt:
+`docs/work/verification/T-007-310m-course.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

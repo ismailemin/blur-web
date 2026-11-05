@@ -69,29 +69,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-track-visual.md`,
   `docs/work/verification/T-007-per-car-meshes.md`.
 
-### E1f — Sprint + ilk tur (kabul)  ◐
-- **P37 sprint (noktadan noktaya):** start + 2 checkpoint + finish; süre,
-  best time, respawn. 5 araç: **2,283–3,267 s** (Audi en hızlı, Focus en yavaş);
-  `verify_e1_drive` **348/348**; console 0.
-- Gate'ler kaplı yol bandından türetildi (x = −88 → −59; her kolon 61/61 draw +
-  61/61 collision).
-- **P40 reset fix:** `C_Scene` group handle'ları oluşturuluyor/yok ediliyor;
-  tek instance'ta **10+ rebuild**, telemetri tek instance, `R` yerinde restart
-  (sayfa yenilemesi yok); 50 rebuild aynı hash, heap sabit.
-- **P41/P46 koridor:** 539,81 m draw-coverage hattı **parkur değil**; ölçülen
-  çizgi 57,82 m'de 50 m'lik collision duvarından geçiyor, şasi 52,7–53,4 m'de
-  duruyor. Proxy lift (0,10 m) denenip ölçüldü, varsayılan yapılmadı.
-  Oynanabilir sprint **29 m** olarak kaldı; 540 m görsel `?survey=1` ile
-  etiketli sunuluyor (394 draw / 57.133 tri).
-- **P48 gerçek sürülebilir yol:** collision mesh üzerinde **310,395 m**
-  kesintisiz parkur bulundu (spawn → (103.5,1292.5)); max basamak 1,55 cm,
-  max 2 m eğim %3,09, duvara min 7,78 m. 621 engine trace, 0 ihlal; 8/8
-  bağımsız doğrulama. Bitişte yüzey 4 m sonra 2,0 m'ye daralıyor.
-- **P51 görsel kapsama:** parkurun **%100**'ü `g56-n289` ile çizili
-  (1.245/1.245; 8 draw / 939 üçgen; visual–collision −0,92…+0,93 mm; 16,1–24,2 m
-  genişlik). Yeni section gerekmiyor.
-- **Sıradaki: 310 m sprint entegrasyonu**; 29 m regression control kalacak.
-- Kanıt: `docs/work/verification/T-007-sprint-rules.md`.
+### E1f — 310 m sprint (kabul)  ◐
+- **Varsayılan 310,395 m collision-clean parkur** (P48/P51); start + 2
+  checkpoint (arc ~100/200) + finish arc ~300. 5 araç bitiriyor:
+  Audi **14,15 s**, Corvette 14,65, Lotus 14,77, Dodge 14,92, Focus 15,22.
+- 29 m parkur `?course=short` regression olarak korunuyor.
+- `verify_e1_drive` **550/550**; sprint/short/restart/respawn/survey capture
+  console **0**; 310 m paket 500 draw / 1.060 update.
+- Kalan: kapalı tur yok (point-to-point); ses/rakip yok.
+- Kanıt: `docs/work/verification/T-007-310m-course.md`,
+  `T-007-sprint-rules.md`, `T-007-ledge-fix.md`.
 
 ### E1g — Çoklu araç (P23)  ✅
 - `RP_CarDynamics` 62 kayıt, 62/62 completeness gate; 5 araç seçildi:

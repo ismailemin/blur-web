@@ -1,12 +1,17 @@
 // Best sprint times, persisted in localStorage.
 //
-// The sprint is per car, so the stored record is a map from car slug to the best
-// finish time. Nothing here is needed by the physics or the packet: it is a
-// presentation record, and every failure mode (no storage, private mode, quota,
-// malformed JSON) degrades to "no best time" instead of throwing into the drive
-// loop. The verifier exercises all of those paths with a fake storage.
+// One record per course and car: the page passes `e1-drive.sprint.best.v2.310m`
+// for the default 310 m course and `…v2.short` for the 29 m regression course, so
+// the two courses never overwrite each other. The stored record is a map from car
+// slug to the best finish time. Nothing here is needed by the physics or the
+// packet: it is a presentation record, and every failure mode (no storage,
+// private mode, quota, malformed JSON) degrades to "no best time" instead of
+// throwing into the drive loop. The verifier exercises all of those paths with a
+// fake storage.
 
 export const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v1';
+/** The page uses one store per course: `…v2.310m` and `…v2.short`. */
+export const SPRINT_BEST_KEY_PREFIX = 'e1-drive.sprint.best.v2.';
 
 const round3 = (value) => Math.round(value * 1000) / 1000;
 

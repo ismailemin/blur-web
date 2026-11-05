@@ -48,7 +48,7 @@ import { hashOf } from './packet-hash.js';
 import { sha256Hex } from './sha256.js';
 import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
-import { validateSprintLayout } from './sprint-layout.js';
+import { layoutStartHeading, validateSprintLayout } from './sprint-layout.js';
 import { SPRINT_EVENT, createSprintRules } from './sprint-rules.js';
 import { createBestTimes } from './sprint-best.js';
 import { respawnScriptInput, sprintScriptInput, SPRINT_PACKET_SCRIPT } from './sprint-script.js';
@@ -100,6 +100,14 @@ const HOLD = params.has('hold') ? Number(params.get('hold')) : null;
 if (HOLD !== null && (!Number.isInteger(HOLD) || HOLD < 0)) throw new Error('hold must be a non-negative integer tick');
 const INTERPOLATE = params.get('interpolate') !== '0';
 const REQUESTED_CAR = params.get('car');
+// Course selection: the default is the measured 310.395 m P48 course; `?course=short`
+// loads the original 29 m straight regression course. Each course has its own
+// layout artifact and its own best-time namespace.
+const COURSE_PARAM = params.get('course') ?? '310';
+if (COURSE_PARAM !== '310' && COURSE_PARAM !== 'short') {
+  throw new Error('unknown course ' + JSON.stringify(COURSE_PARAM) + ' (use 310 or short)');
+}
+const COURSE_IS_SHORT = COURSE_PARAM === 'short';
 // Diagnostic camera override (screenshots only): ?camdist=&camheight= change the
 // chase orbit radius/height without touching physics or any other packet field.
 const CAMERA_OVERRIDE = {};
@@ -115,7 +123,10 @@ const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
 const GEOMETRY_URL = '/_work/e1-drive/geometry.json';
 const LEVEL_URL = '/_work/e1-drive/Level.levelphysics';
 const SPAWN_URL = '/_work/e1-drive/spawn.json';
-const SPRINT_URL = '/_work/e1-drive/sprint.json';
+const SPRINT_URL = COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json' : '/_work/e1-drive/sprint.json';
+
+/** Best-time storage key: one record per course, never mixed. */
+const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' + (COURSE_IS_SHORT ? 'short' : '310m');
 
 const canvas = document.getElementById('scene');
 const driver = new FixedStepDriver();
@@ -184,6 +195,7 @@ const state = {
   sprint: null,
   sprintLayout: null,
   sprintLayoutHash: null,
+  sprintCourseId: null,
   sprintEvents: [],
   sprintBest: null,
   sprintResult: null,
@@ -227,6 +239,11 @@ function publish() {
   if (state.sprint) {
     const sprint = state.sprint;
     const timer = sprint.finished ? sprint.finishTimeSeconds : sprint.elapsedSeconds;
+    const course = sprint.course;
+    rows.push(['course', COURSE_IS_SHORT
+      ? '29 m straight (regression) · ' + course.lengthMetres.toFixed(1) + ' m · ?course=short'
+      : '310 m P48 (default) · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(1) +
+        ' m measured · finish ' + (course.finishArc ?? course.lengthMetres).toFixed(1) + ' m']);
     rows.push(['sprint', sprint.phase + ' · ' + Number(timer).toFixed(3) + ' s' +
       (sprint.finished ? ' · FINISHED' : '') + (sprint.respawns ? ' · ' + sprint.respawns + ' respawn' : '')]);
     rows.push(['gates', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' cp · ' +
@@ -289,7 +306,8 @@ function publishSurveyBanner() {
   banner.hidden = false;
   banner.textContent = 'EXTENDED CORRIDOR SURVEY — the real 539.81 m River draw is in the scene; ' +
     'it is not a course: the measured line crosses a 50 m collision face at 57.82 m, ' +
-    'the faithful chassis stops at 52.7-53.4 m. Playable sprint: 29 m straight.';
+    'the faithful chassis stops at 52.7-53.4 m. Playable sprint: the measured 310 m P48 course ' +
+    '(default) or the 29 m straight (`?course=short`).';
 }
 
 /** Countdown, event banner and results panel, all driven by rules state. */
@@ -472,8 +490,7 @@ async function loadEngine() {
   levelBytes = new Uint8Array(await levelResponse.arrayBuffer());
   fieldBytes = new Uint8Array(await fieldsResponse.arrayBuffer());
 
-  const tick0 = createWorld(spawn.x, spawn.z, spawn.heading);
-
+  let tick0;
   if (SPRINT_MODE || SOAK) {
     if (!sprintResponse.ok) {
       throw new Error('sprint layout fetch failed: HTTP ' + sprintResponse.status +
@@ -485,18 +502,30 @@ async function loadEngine() {
     sprintRules = createSprintRules(layout);
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
+    state.sprintCourseId = layout.courseId ?? null;
     state.sprintLayout = {
       hash: layout.hash,
-      gates: layout.gates.map((gate) => ({ id: gate.id, kind: gate.kind, index: gate.index, x: gate.x, z: gate.z })),
+      courseId: layout.courseId ?? null,
+      gates: layout.gates.map((gate) => ({
+        id: gate.id, kind: gate.kind, index: gate.index,
+        x: gate.x, z: gate.z, arc: gate.arc ?? null
+      })),
       span: layout.course.span,
-      band: layout.course.band,
+      band: layout.course.band ?? null,
+      corridor: layout.course.corridor ?? null,
+      coverage: layout.course.coverage ?? null,
       countdownTicks: layout.countdown.ticks,
       rules: layout.rules
     };
     let storage = null;
     try { storage = window.localStorage; } catch { storage = null; }
-    bestTimes = createBestTimes(storage);
+    bestTimes = createBestTimes(storage, SPRINT_BEST_KEY);
     state.sprintBest = bestTimes.bestFor(car.slug);
+    // The 310 m course starts on the measured tangent of its start gate; the
+    // 29 m regression course keeps the committed drive spawn heading.
+    tick0 = createWorld(spawn.x, spawn.z, layoutStartHeading(layout, spawn));
+  } else {
+    tick0 = createWorld(spawn.x, spawn.z, spawn.heading);
   }
 
   engine = {
@@ -527,7 +556,7 @@ function currentInput(tick) {
   if (SPRINT_FALL) {
     return sprintRules.respawns > 0 ? sprintRules.gateInput([1, 0, 0, 0]) : respawnScriptInput(tick);
   }
-  if (SCRIPTED_SPRINT) return sprintScriptInput(sprintRules);
+  if (SCRIPTED_SPRINT) return sprintScriptInput(sprintRules, session?.lastState ?? null);
   return sprintRules.gateInput(keyboardInput());
 }
 
@@ -882,7 +911,7 @@ async function runTelemetryMode() {
 
 const SOAK_PHASE_ORDER = Object.freeze(['drive', 'sprint', 'telemetry']);
 const SOAK_DRIVE_TICKS = SCRIPT_TICKS;
-const SOAK_SPRINT_MAX_TICKS = 600;
+const SOAK_SPRINT_MAX_TICKS = 3600;
 const SOAK_SPRINT_TAIL_TICKS = 120;
 const SOAK_SAMPLE_TICKS = 60;   // one heap/pool/upload sample per simulated second
 
@@ -908,7 +937,7 @@ let soakDone = false;
 /** Input the soak plan asks for on the step that reaches `tick`. */
 function soakPhaseInput(tick) {
   if (soakPhase === 'drive') return scriptedInput(tick);
-  if (soakPhase === 'sprint' && sprintRules) return sprintScriptInput(sprintRules);
+  if (soakPhase === 'sprint' && sprintRules) return sprintScriptInput(sprintRules, session?.lastState ?? null);
   return [0, 0, 0, 0];
 }
 
@@ -1630,8 +1659,8 @@ async function main() {
   if (HOLD !== null && LEGACY_DRIVE && HOLD > SCRIPT_TICKS) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sequence (' + SCRIPT_TICKS + ')');
   }
-  if (HOLD !== null && SCRIPTED_SPRINT && HOLD > 600) {
-    throw new Error('hold tick ' + HOLD + ' is beyond the scripted sprint (600)');
+  if (HOLD !== null && SCRIPTED_SPRINT && HOLD > 3600) {
+    throw new Error('hold tick ' + HOLD + ' is beyond the scripted sprint (3600)');
   }
 
   state.consumer = 'running';

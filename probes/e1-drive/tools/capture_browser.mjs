@@ -64,6 +64,14 @@ if (!['drive', 'sprint', 'respawn', 'telemetry', 'restart', 'telemetry-restart',
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
     ' (drive, sprint, respawn, telemetry, restart or telemetry-restart)');
 }
+// Course selection: 310 (default, `_work/e1-drive/sprint.json`) or short
+// (`?course=short`, `_work/e1-drive/sprint-short.json`).
+const COURSE = option('--course', '310');
+if (!['310', 'short'].includes(COURSE)) {
+  throw new Error('unknown --course ' + JSON.stringify(COURSE) + ' (use 310 or short)');
+}
+const COURSE_QUERY = COURSE === 'short' ? 'course=short' : '';
+const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' + (COURSE === 'short' ? 'short' : '310m');
 const DIAGNOSTIC_CAMERA = /(^|&)cam(dist|height)=/.test(EXTRA_QUERY);
 const MID_TICK = 150;
 
@@ -224,8 +232,10 @@ await send('Emulation.setDeviceMetricsOverride', { width: VIEWPORT.width, height
 
 async function capture(car, label, tick, options = {}) {
   const script = options.script ?? 'drive';
+  const course = options.course ?? (script === 'sprint' ? (COURSE_QUERY ? COURSE_QUERY : null) : null);
   messages.length = 0;
   const url = origin + '/?script=' + script + '&car=' + encodeURIComponent(car.slug) + '&hold=' + tick +
+    (course ? '&' + course : '') +
     (EXTRA_QUERY ? '&' + EXTRA_QUERY : '');
   await send('Page.navigate', { url });
   let probe = null;
@@ -282,7 +292,7 @@ async function capture(car, label, tick, options = {}) {
         eventText: document.getElementById('event')?.textContent ?? null,
         eventVisible: document.getElementById('event')?.dataset.visible ?? null
       },
-      bestStored: (() => { try { return localStorage.getItem('e1-drive.sprint.best.v1'); } catch { return null; } })(),
+      bestStored: (() => { try { return localStorage.getItem('${SPRINT_BEST_KEY}'); } catch { return null; } })(),
       render: update ? {
         tick: update.tick,
         hash: update.hash,
@@ -380,7 +390,15 @@ async function sprintCapturePass() {
   if (!runDocument.sprint?.cars) {
     throw new Error('run.json has no sprint block — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
   }
-  const sprintRun = runDocument.sprint;
+  // The default sprint block is the 310 m course; the short regression results
+  // live under sprint.shortCourse.
+  const sprintRun = COURSE === 'short' ? runDocument.sprint.shortCourse : runDocument.sprint;
+  if (!sprintRun?.cars) {
+    throw new Error('run.json has no ' + COURSE + ' sprint results — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const sprintLayout = COURSE === 'short'
+    ? JSON.parse(readFileSync(path.join(OUT, 'sprint-short.json'), 'utf8'))
+    : JSON.parse(readFileSync(path.join(OUT, 'sprint.json'), 'utf8'));
   const rows = [];
   const passFailures = [];
   const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
@@ -395,7 +413,7 @@ async function sprintCapturePass() {
     const finishSeconds = entry.finish.timeSeconds;
 
     for (const spec of entry.captures) {
-      const label = 'sprint-' + spec.label;
+      const label = (COURSE === 'short' ? 'sprint-short-' : 'sprint-') + spec.label;
       const shot = await capture(car, label, spec.tick, { script: 'sprint' });
       const probe = shot.probe;
       const state = probe.sprint;
@@ -413,7 +431,7 @@ async function sprintCapturePass() {
         probe.holdReached === true && probe.displayTick === spec.tick && probe.render?.tick === spec.tick,
         `display ${probe.displayTick}, render ${probe.render?.tick}`);
       passCheck(`${car.slug}/${label}: the page drove the requested car`,
-        probe.car?.name === car.name && probe.sprintLayoutHash === sprintRun.layout.hash,
+        probe.car?.name === car.name && probe.sprintLayoutHash === sprintLayout.hash,
         JSON.stringify({ car: probe.car?.name, layout: probe.sprintLayoutHash }));
       passCheck(`${car.slug}/${label}: browser state hash equals the node sprint state`,
         probe.tickHashes[spec.tick]?.stateHash === spec.stateHash,
@@ -452,6 +470,12 @@ async function sprintCapturePass() {
           overlay.eventVisible === '1' && /checkpoint/i.test(overlay.eventText ?? ''),
           JSON.stringify({ phase: state?.phase, cp: state?.checkpointsPassed, elapsed: state?.elapsedSeconds,
             progress: state?.progress, banner: overlay.eventText }));
+      } else if (spec.label === 'mid') {
+        passCheck(`${car.slug}/${label}: mid-course frame is running with progress near half`,
+          state?.phase === 'running' && state.checkpointsPassed >= 1 &&
+          Math.abs(state.progress - spec.progress) < 1e-6 && state.progress >= 0.45 &&
+          overlay.resultsHidden === true,
+          JSON.stringify({ phase: state?.phase, cp: state?.checkpointsPassed, progress: state?.progress }));
       } else if (spec.label === 'finish') {
         passCheck(`${car.slug}/${label}: the finish fires with the node time and both checkpoints`,
           state?.finished === true && state.checkpointsPassed === 2 &&
@@ -524,7 +548,8 @@ async function sprintCapturePass() {
   const evidence = {
     browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
     mode: 'sprint',
-    layout: { hash: sprintRun.layout.hash, span: sprintRun.layout.span },
+    courseId: COURSE === 'short' ? 'short' : '310m',
+    layout: { hash: sprintLayout.hash, span: sprintLayout.course.span },
     cars: rows,
     packetHashAgreement: { exact, total: rows.length, note:
       'a mismatch is a documented last-bit transcendental difference between Node 24 and Edge 156 (Math.atan2 ' +
@@ -534,8 +559,9 @@ async function sprintCapturePass() {
     assertions: { ok: passFailures.length === 0, failures: passFailures },
     verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
   };
-  writeFileSync(path.join(OUT, 'browser-evidence-sprint.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
-  writeFileSync(path.join(LOGS, 'edge-sprint.log'), browserLog, 'utf8');
+  writeFileSync(path.join(OUT, COURSE === 'short' ? 'browser-evidence-sprint-short.json' : 'browser-evidence-sprint.json'),
+    JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, COURSE === 'short' ? 'edge-sprint-short.log' : 'edge-sprint.log'), browserLog, 'utf8');
   return {
     ok: evidence.verdict === 'clean-console-and-gates',
     summary: {
@@ -603,11 +629,14 @@ async function surveyCapturePass() {
     full.trackVisual === 'asset-reader-direct-draws' && full.trackDraws === 394 &&
     full.trackTriangles === 57133 && full.collisionVisible === false,
     `${full.trackDraws} draws / ${full.trackTriangles} tri`);
-  passCheck('survey: the playable sprint is still the 29 m covered straight',
+  passCheck('survey: the playable sprint is the 310 m P48 course, with ?course=short kept as regression',
     (() => {
       const layout = JSON.parse(readFileSync(path.join(OUT, 'sprint.json'), 'utf8'));
+      const shortLayoutFile = JSON.parse(readFileSync(path.join(OUT, 'sprint-short.json'), 'utf8'));
       return full.sprintLayoutHash === layout.hash &&
-        layout.course.span.lengthMetres > 28 && layout.course.span.lengthMetres < 30;
+        layout.course.span.measuredLengthMetres > 310 && layout.course.span.measuredLengthMetres < 311 &&
+        layout.course.span.finishArc > 299 && layout.course.span.finishArc < 301 &&
+        shortLayoutFile.course.span.lengthMetres === 29;
     })(),
     JSON.stringify({ page: full.sprintLayoutHash }));
   const blocking = messages.filter((entry) => entry.source !== 'console.log');
@@ -651,7 +680,8 @@ async function respawnCapturePass() {
   const passFailures = [];
   const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
   messages.length = 0;
-  const url = origin + '/?script=sprint&sprintfall=1&car=' + encodeURIComponent(car.slug);
+  const url = origin + '/?script=sprint&sprintfall=1&car=' + encodeURIComponent(car.slug) +
+    (COURSE_QUERY ? '&' + COURSE_QUERY : '');
   await send('Page.navigate', { url });
   let live = null;
   for (let attempt = 0; attempt < 500; attempt++) {
@@ -700,9 +730,10 @@ async function respawnCapturePass() {
   const targetGate = full.sprintLayout?.gates?.find((gate) => gate.id === first?.target?.gateId);
   passCheck('respawn: exactly one respawn event is recorded in the page',
     sprint?.respawns === 1, String(sprint?.respawns));
-  passCheck('respawn: the event names the measured reason and the checkpoint it rebuilds at',
-    first !== null && first.reasons.includes('outside-gate-band') &&
-    first.target?.gateId === 'checkpoint-1' && targetGate !== undefined,
+  passCheck('respawn: the event names the measured reason and the gate it rebuilds at',
+    first !== null &&
+    (first.reasons.includes('outside-gate-band') || first.reasons.includes('outside-corridor')) &&
+    ['start', 'checkpoint-1', 'checkpoint-2'].includes(first.target?.gateId) && targetGate !== undefined,
     JSON.stringify(first));
   passCheck('respawn: the page rebuilt the engine at the checkpoint and is driving again',
     full.respawning !== true && full.engineTick >= 12 && full.ticksExecuted > 0 &&
@@ -1347,7 +1378,12 @@ async function restartCapturePass() {
   if (!runDocument.sprint?.cars) {
     throw new Error('run.json has no sprint block - run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
   }
-  const sprintRun = runDocument.sprint;
+  const sprintRun = COURSE === 'short' ? runDocument.sprint.shortCourse : runDocument.sprint;
+  if (!sprintRun?.cars) {
+    throw new Error('run.json has no ' + COURSE + ' sprint results - run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const restartLayout = JSON.parse(readFileSync(
+    path.join(OUT, COURSE === 'short' ? 'sprint-short.json' : 'sprint.json'), 'utf8'));
   const passFailures = [];
   const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
   const shotPath = (slug, name) => path.join(OUT, `browser-${slug}-${name}.png`);
@@ -1377,7 +1413,7 @@ async function restartCapturePass() {
       geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
       draws: p.draws, drawsIssued: p.drawsIssued, matrixCount: p.updates?.[p.displayTick]?.matrices?.length ?? null,
       timelineTicks: p.updates?.length ?? null, car: p.car, speed: p.speed, position: p.position,
-      bestStored: (()=>{try{return localStorage.getItem('e1-drive.sprint.best.v1');}catch{return null;}})(),
+      bestStored: (()=>{try{return localStorage.getItem('${SPRINT_BEST_KEY}');}catch{return null;}})(),
       overlays: {
         resultsHidden: document.getElementById('results')?.hidden ?? null,
         resultsTime: document.getElementById('results-time')?.textContent ?? null,
@@ -1401,7 +1437,8 @@ async function restartCapturePass() {
     const entry = sprintRun.cars.find((candidate) => candidate.slug === car.slug);
     if (!entry) throw new Error('run.json has no sprint result for ' + car.slug);
     messages.length = 0;
-    const url = origin + '/?script=sprint&car=' + encodeURIComponent(car.slug);
+    const url = origin + '/?script=sprint&car=' + encodeURIComponent(car.slug) +
+      (COURSE_QUERY ? '&' + COURSE_QUERY : '');
     await send('Page.navigate', { url });
 
     const finished = await waitFor(car.slug + ' first finish',
@@ -1494,7 +1531,7 @@ async function restartCapturePass() {
     mode: 'restart',
     note: 'R on a finished scripted sprint; the same page, wasm instance and probe object continue ' +
       '(docs/work/verification/T-007-reset-fix.md)',
-    layout: { hash: sprintRun.layout.hash },
+    layout: { hash: restartLayout.hash },
     cars: rows,
     console: { totalMessages: allMessages.length, errorsAndWarnings: 0, messages: allMessages },
     assertions: { ok: passFailures.length === 0, failures: passFailures },

@@ -23,7 +23,7 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 
 | URL | Ne |
 |---|---|
-| `/` | Serbest sürüş + sprint kuralları (29 m parkur) |
+| `/` | Serbest sürüş + sprint kuralları (310 m parkur) |
 | `/?script=drive` | Deterministik 300 tick sürüş |
 | `/?script=sprint` | Deterministik sprint (5 araç) |
 | `/?telemetry=1&car=<slug>` | 0–100, fren, yanal grip + grafikler |
@@ -33,13 +33,15 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 
 Üstteki **CAR** listesi veya `?car=`:
 
-| Araç | Slug | Sprint (29 m) |
+| Araç | Slug | 310 m sprint |
 |---|---|---:|
-| Corvette ZR1 | `corvette-zr1-stock` | 2,800 s |
-| Lotus Exige Cup260 | `lotus-exige-cup260-stock` | 2,850 s |
-| Dodge Challenger | `dodge-challenger-stock` | 3,000 s |
-| Ford Focus RS (FWD) | `ford-focusrs-stock` | 3,267 s |
-| Audi R8 V10 (AWD) | `audi-r8v10-stock` | 2,283 s |
+| Corvette ZR1 | `corvette-zr1-stock` | 14,65 s |
+| Lotus Exige Cup260 | `lotus-exige-cup260-stock` | 14,77 s |
+| Dodge Challenger | `dodge-challenger-stock` | 14,92 s |
+| Ford Focus RS (FWD) | `ford-focusrs-stock` | 15,22 s |
+| Audi R8 V10 (AWD) | `audi-r8v10-stock` | **14,15 s** |
+
+29 m kısa parkur: `?course=short` (Corvette 2,800 s … Audi 2,283 s).
 
 Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
 Dodge 4,633 → Focus 5,133 s.
@@ -58,7 +60,7 @@ Dodge 4,633 → Focus 5,133 s.
 
 ## Sprint
 
-- Countdown → 2 checkpoint → finish (29 m düz parkur)
+- Countdown → 2 checkpoint → finish (310 m parkur)
 - Süre, checkpoint sayısı, araç başına en iyi süre (`localStorage`)
 - Off-course → checkpoint’ten respawn; süre/checkpoint korunur
 - Kamera prop’ların içine girmiyor (BVH occlusion)
@@ -67,14 +69,14 @@ Dodge 4,633 → Focus 5,133 s.
 
 - Console’da **0 mesaj**
 - WebGPU canvas; araç kendi gövdesi/tekerleriyle
-- Gerçek pist draw’ları: 29 m sprint bölgesi + prop’lar
+- Gerçek pist draw'ları: 310 m parkur + prop'lar
 - Sabit adım 1/60; deterministik hash’ler
 
 ## Bilinen sınırlar
 
-- **Oynanabilir parkur 29 m**; 540 m görsel koridor `?survey=1` ile izlenir ama
-  **parkur değildir**: ölçülen çizgi 57,82 m’de 50 m’lik collision duvarından
-  geçiyor; şasi 52,7–53,4 m’de duruyor. Uydurma çözüm yok.
+- **Oynanabilir parkur 310 m** (collision-clean, %100 görsel kapsama);
+  540 m draw koridoru `?survey=1` ile izlenir ama **parkur değil** (57,82 m'de
+  50 m collision duvarı). 29 m kısa parkur `?course=short`.
 - Kapalı tur yok (committed veriyle mümkün değil).
 - Pist görseli gerçek River draw set'i; 394 draw'dan **297**'si gerçek albedo +
   UV0 ile dokulu, 95'i diagnostic. Mip/sRGB/anisotropy, boya, gölge ve post yok.

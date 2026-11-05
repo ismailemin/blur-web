@@ -617,6 +617,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 40/40 doku `texture_inspect --raw` ile birebir; 491/491 draw C++ parser ile uyumlu; 3 build × 126 dosya byte-identical.
 - Gövde henüz diagnostic renkli; doku entegrasyonu sıradaki. Kanıt: `docs/work/analysis/car-materials.md`, `_work/car-materials/roster/`.
 
+## 5 Kasım 2026 — 310 m oynanabilir sprint
+
+- Varsayılan parkur **310,395 m** (collision-clean); start + 2 checkpoint (arc ~100/200) + finish arc ~300. 29 m `?course=short`.
+- 5 araç bitiriyor: Audi **14,15 s**, Corvette 14,65, Lotus 14,77, Dodge 14,92, Focus 15,22; 2/2 checkpoint, 0 respawn, 0 NaN.
+- `verify_e1_drive` **550/550**; sprint/short/restart/respawn/survey capture console **0**; 310 m paket 500 draw / 1.060 update. Kanıt: `docs/work/verification/T-007-310m-course.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

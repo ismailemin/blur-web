@@ -43,10 +43,10 @@ import { createSession, resolveCarBody } from '../web/packet-adapter.js';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from '../web/drive-script.js';
 import {
-  CHECKPOINT_FRACTIONS, COLUMN_STEP, GATE_SAMPLE_STEP, deriveSprintLayout,
-  validateSprintLayout
+  CHECKPOINT_FRACTIONS, COLUMN_STEP, GATE_SAMPLE_STEP, LONG_COURSE_PATH, SHORT_COURSE_ID,
+  deriveLongCourseLayout, deriveSprintLayout, layoutStartHeading, validateSprintLayout
 } from '../web/sprint-layout.js';
-import { SPRINT_EVENT, createSprintRules } from '../web/sprint-rules.js';
+import { SPRINT_EVENT, createSprintRules, coursePosition } from '../web/sprint-rules.js';
 import { SPRINT_SCRIPT_TICKS, SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput } from '../web/sprint-script.js';
 import { createBestTimes } from '../web/sprint-best.js';
 import {
@@ -87,6 +87,7 @@ const check = (label, ok, detail = '') => {
 };
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
+const round6Local = (value) => Math.round(value * 1e6) / 1e6;
 
 const wrapAngle = (value) => {
   let angle = value;
@@ -450,7 +451,8 @@ async function createCollisionProbe() {
   const info = JSON.parse(instance.UTF8ToString(instance._e1_info()));
   const probe = (x, y, z, dx, dy, dz, distance) => JSON.parse(instance.UTF8ToString(
     instance._e1_ray_probe(x, y, z, dx, dy, dz, distance)));
-  return { instance, probe, info };
+  const ground = (x, z) => JSON.parse(instance.UTF8ToString(instance._e1_ground_probe(x, z)));
+  return { instance, probe, ground, info };
 }
 
 const collisionProbe = await createCollisionProbe();
@@ -554,42 +556,100 @@ for (const car of cars) {
 }
 
 // ------------------------------------------------------------- sprint layout
-// The sprint gates are derived from the geometry, not typed in. The committed
-// file is the derivation output; this re-runs the derivation and then measures
-// the gates again with independent point-in-triangle code.
+// ------------------------------------------------------------- sprint layouts
+// Two measured courses: the default 310 m P48 path and the 29 m regression
+// straight. Both files are derivation outputs; this re-runs both derivations and
+// then re-measures the gates and the long-course car-width band with independent
+// point-in-triangle code (not the layout module's plane-lambda form).
 const SPRINT_FILE = path.join(OUT, 'sprint.json');
-if (!existsSync(SPRINT_FILE)) {
-  throw new Error('sprint layout missing — run `node probes/e1-drive/tools/build_sprint.mjs` first');
+const SPRINT_SHORT_FILE = path.join(OUT, 'sprint-short.json');
+for (const file of [SPRINT_FILE, SPRINT_SHORT_FILE]) {
+  if (!existsSync(file)) {
+    throw new Error(path.basename(file) + ' missing — run `node probes/e1-drive/tools/build_sprint.mjs` first');
+  }
 }
 const sprintFileBytes = readFileSync(SPRINT_FILE);
 const sprintFile = JSON.parse(sprintFileBytes.toString('utf8'));
+const sprintShortBytes = readFileSync(SPRINT_SHORT_FILE);
+const sprintShortFile = JSON.parse(sprintShortBytes.toString('utf8'));
 const layoutSpawn = { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, heading: TICK0_LIMITS.heading, source: TICK0_LIMITS.source };
-const derivedLayout = deriveSprintLayout(geometry, layoutSpawn);
 
-check('the sprint layout is exactly the one derived from this geometry (no hand-edited gate)',
-      canonicalJson(sprintFile) === canonicalJson(derivedLayout),
-      sprintFile.hash ?? 'no layout hash');
-check('the sprint layout passes its own structural validation',
-      validateSprintLayout(derivedLayout, geometry, layoutSpawn).ok === true,
-      validateSprintLayout(derivedLayout, geometry, layoutSpawn).errors.join(' | '));
+const LONG_PATH_FILE = path.join(ROOT, LONG_COURSE_PATH.file);
+const longPathBytes = readFileSync(LONG_PATH_FILE);
+const longPathFileSha = 'sha256:' + sha256(longPathBytes);
+if (longPathFileSha !== LONG_COURSE_PATH.fileSha256) {
+  throw new Error('the P48 course path is not the recorded artifact: ' + longPathFileSha +
+    ' (expected ' + LONG_COURSE_PATH.fileSha256 + ')');
+}
+const longPath = JSON.parse(longPathBytes.toString('utf8'));
+const derivedLayout = deriveLongCourseLayout(geometry, layoutSpawn, longPath);
+const shortLayout = deriveSprintLayout(geometry, layoutSpawn, { courseId: SHORT_COURSE_ID });
 const sprintSpan = derivedLayout.course.span;
 const sprintGates = derivedLayout.gates;
-check('the sprint has a start at the spawn, two or three checkpoints and a finish',
-      sprintGates[0].kind === 'start' && sprintGates[0].x === layoutSpawn.x &&
+const shortSpan = shortLayout.course.span;
+const shortGates = shortLayout.gates;
+
+check('the P48 310 m path artifact is the recorded one (file SHA-256 and canonical hash)',
+      longPathFileSha === LONG_COURSE_PATH.fileSha256 && longPath.hash === LONG_COURSE_PATH.canonicalHash &&
+      longPath.course.points.length === LONG_COURSE_PATH.sampleCount,
+      `${longPathFileSha} / ${longPath.hash}`);
+check('the default sprint layout is exactly the one derived from the P48 path and this geometry (no hand-edited gate)',
+      canonicalJson(sprintFile) === canonicalJson(derivedLayout),
+      sprintFile.hash ?? 'no layout hash');
+check('the 29 m regression layout is exactly the one derived from this geometry (no hand-edited gate)',
+      canonicalJson(sprintShortFile) === canonicalJson(shortLayout),
+      sprintShortFile.hash ?? 'no layout hash');
+check('both sprint layouts pass their own structural validation',
+      validateSprintLayout(derivedLayout, geometry, layoutSpawn).ok === true &&
+      validateSprintLayout(shortLayout, geometry, layoutSpawn).ok === true,
+      [...validateSprintLayout(derivedLayout, geometry, layoutSpawn).errors,
+        ...validateSprintLayout(shortLayout, geometry, layoutSpawn).errors].join(' | '));
+check('the default course is the measured 310.395 m P48 path with the documented 10 m finish clearance',
+      derivedLayout.courseId === '310m' &&
+      Math.abs(derivedLayout.course.lengthMetres - 310.3952) < 1e-3 &&
+      derivedLayout.course.sampleCount === 1245 &&
+      Math.abs(sprintSpan.finishArc - 300.159666) < 1e-6 &&
+      sprintSpan.finishArc <= sprintSpan.measuredLengthMetres - 10 + 1e-9,
+      `${derivedLayout.course.lengthMetres} m, finish arc ${sprintSpan.finishArc}, ` +
+      `${sprintSpan.measuredLengthMetres - sprintSpan.finishArc} m before the measured end`);
+check('the default course has a start at the spawn, two checkpoints and a finish, in order',
+      sprintGates[0].kind === 'start' && sprintGates[0].arc === 0 &&
+      sprintGates[0].x === layoutSpawn.x && sprintGates[0].z === layoutSpawn.z &&
       sprintGates.filter((gate) => gate.kind === 'checkpoint').length === CHECKPOINT_FRACTIONS.length &&
-      sprintGates[sprintGates.length - 1].kind === 'finish',
-      sprintGates.map((gate) => `${gate.id}@${gate.x}`).join(' '));
-check('the gates are strictly ordered inside the measured span and the finish is before the drawn road ends',
-      sprintGates.every((gate, index) => index === 0 || gate.x > sprintGates[index - 1].x) &&
-      sprintGates[sprintGates.length - 1].x === sprintSpan.finishX &&
-      sprintSpan.finishX <= sprintSpan.lastFullyCoveredX - sprintSpan.finishClearanceMetres + 1e-9,
-      `start ${sprintSpan.startX}, finish ${sprintSpan.finishX}, last fully covered ${sprintSpan.lastFullyCoveredX}, ` +
-      `span ${sprintSpan.lengthMetres} m`);
+      sprintGates[sprintGates.length - 1].kind === 'finish' &&
+      sprintGates.every((gate, index) => index === 0 || gate.arc > sprintGates[index - 1].arc),
+      sprintGates.map((gate) => `${gate.id}@${gate.arc}`).join(' '));
+check('the default gates sit on measured samples and are perpendicular to the local path tangent',
+      sprintGates.every((gate) => {
+        const sample = derivedLayout.course.samples[gate.sampleIndex];
+        return sample && Math.abs(sample.arc - gate.arc) < 1e-9 &&
+          Math.abs(sample.x - gate.x) < 1e-9 && Math.abs(sample.z - gate.z) < 1e-9 &&
+          Math.abs(gate.tangent.tx * (gate.b[0] - gate.a[0]) +
+            gate.tangent.tz * (gate.b[1] - gate.a[1])) < 0.02;
+      }),
+      sprintGates.map((gate) => `${gate.id}:dot ` + (
+        gate.tangent.tx * (gate.b[0] - gate.a[0]) + gate.tangent.tz * (gate.b[1] - gate.a[1])).toFixed(4)).join(' '));
+check('the default course re-measures 100 % draw coverage with no gaps',
+      derivedLayout.course.coverage.samples === 1204 &&
+      derivedLayout.course.coverage.coveredSamples === 1204 &&
+      derivedLayout.course.coverage.coverageFraction === 1 &&
+      derivedLayout.course.coverage.gaps.length === 0 &&
+      derivedLayout.course.coverage.maxSurfaceDeltaMetres < 0.001,
+      `${derivedLayout.course.coverage.coveredSamples}/${derivedLayout.course.coverage.samples}, ` +
+      `max delta ${derivedLayout.course.coverage.maxSurfaceDeltaMetres} m`);
+check('the 29 m regression course keeps its P37 start, two checkpoints, finish and 2 m clearance',
+      shortLayout.courseId === 'short' && shortGates[0].x === layoutSpawn.x &&
+      shortGates.filter((gate) => gate.kind === 'checkpoint').length === CHECKPOINT_FRACTIONS.length &&
+      shortGates[shortGates.length - 1].kind === 'finish' &&
+      shortGates.every((gate, index) => index === 0 || gate.x > shortGates[index - 1].x) &&
+      shortGates[shortGates.length - 1].x === shortSpan.finishX &&
+      shortSpan.finishX <= shortSpan.lastFullyCoveredX - shortSpan.finishClearanceMetres + 1e-9,
+      `start ${shortSpan.startX}, finish ${shortSpan.finishX}, last fully covered ${shortSpan.lastFullyCoveredX}`);
 
 // Independent measurement: barycentric area signs (not the tool's plane-lambda
 // form) and a plane height from the triangle normal. Every 0.1 m sample across
-// every gate must be over a real block56/node289 triangle AND a collision
-// triangle, and no column past the recorded end may be fully covered.
+// every gate of both layouts must be over a real block56/node289 triangle within
+// 0.5 m of the collision surface AND over a collision triangle.
 const g56Section = geometry.trackVisual.sections.find((section) => section.key === 'river.block56.node289');
 const g56Mesh = geometry.meshes.find((mesh) => mesh.id === geometry.trackVisual.meshId);
 const g56Triangles = [];
@@ -611,7 +671,8 @@ for (let offset = 0; offset < collisionMesh.indices.length; offset += 3) {
   }));
 }
 
-/** Barycentric sign test in XZ; returns the plane height or null. */function independentHeight(triangle, x, z) {
+/** Barycentric sign test in XZ; returns the plane height or null. */
+function independentHeight(triangle, x, z) {
   const [a, b, c] = triangle;
   const area = (p, q, r) => (q[0] - p[0]) * (r[2] - p[2]) - (r[0] - p[0]) * (q[2] - p[2]);
   const d1 = area(a, b, [x, 0, z]);
@@ -636,30 +697,137 @@ function independentHeightAt(triangles, x, z) {
   }
   return best;
 }
-const gateSamples = sprintGates.map((gate) => {
+
+/**
+ * Independent XZ bucket index (written here, not imported) so the 1,204-sample
+ * band proof is fast without sharing the layout module's index code.
+ */
+class IndependentTriangleIndex {
+  constructor(triangles, bucket = 4) {
+    this.bucket = bucket;
+    this.buckets = new Map();
+    this.triangles = triangles;
+    for (const triangle of triangles) {
+      const xs = triangle.map((vertex) => vertex[0]);
+      const zs = triangle.map((vertex) => vertex[2]);
+      for (let bx = Math.floor(Math.min(...xs) / bucket); bx <= Math.floor(Math.max(...xs) / bucket); bx++) {
+        for (let bz = Math.floor(Math.min(...zs) / bucket); bz <= Math.floor(Math.max(...zs) / bucket); bz++) {
+          const key = bx + ',' + bz;
+          let list = this.buckets.get(key);
+          if (!list) { list = []; this.buckets.set(key, list); }
+          list.push(triangle);
+        }
+      }
+    }
+  }
+  heights(x, z) {
+    const list = this.buckets.get(Math.floor(x / this.bucket) + ',' + Math.floor(z / this.bucket)) ?? [];
+    const hits = [];
+    for (const triangle of list) {
+      const height = independentHeight(triangle, x, z);
+      if (height !== null) hits.push(height);
+    }
+    return hits;
+  }
+  highest(x, z) {
+    const hits = this.heights(x, z);
+    return hits.length ? Math.max(...hits) : null;
+  }
+  nearestTo(x, z, target) {
+    let best = null;
+    for (const height of this.heights(x, z)) {
+      const delta = Math.abs(height - target);
+      if (best === null || delta < best) best = delta;
+    }
+    return best;
+  }
+}
+const independentDrawn = new IndependentTriangleIndex(g56Triangles);
+const independentCollision = new IndependentTriangleIndex(collisionTriangleList);
+
+/** Independent gate-line re-measure: 0.1 m samples, nearest draw to the surface. */
+function independentGateMeasure(gate) {
+  const length = Math.hypot(gate.b[0] - gate.a[0], gate.b[1] - gate.a[1]);
+  const samples = Math.round(length / GATE_SAMPLE_STEP) + 1;
   let drawn = 0;
   let collision = 0;
-  const samples = Math.round((gate.b[1] - gate.a[1]) / GATE_SAMPLE_STEP) + 1;
+  let maxDelta = 0;
   for (let sample = 0; sample < samples; sample++) {
-    const z = Number((gate.a[1] + sample * GATE_SAMPLE_STEP).toFixed(6));
-    if (independentHeightAt(g56Triangles, gate.x, z) !== null) drawn++;
-    if (independentHeightAt(collisionTriangleList, gate.x, z) !== null) collision++;
+    const t = samples === 1 ? 0 : sample / (samples - 1);
+    const x = Number((gate.a[0] + (gate.b[0] - gate.a[0]) * t).toFixed(6));
+    const z = Number((gate.a[1] + (gate.b[1] - gate.a[1]) * t).toFixed(6));
+    const height = independentCollision.highest(x, z);
+    if (height === null) continue;
+    collision++;
+    const delta = independentDrawn.nearestTo(x, z, height);
+    if (delta !== null && delta <= 0.5) {
+      drawn++;
+      if (delta > maxDelta) maxDelta = delta;
+    }
   }
-  return { id: gate.id, x: gate.x, samples, drawn, collision };
-});
-check('every gate line is covered by the real track visual and by a collision triangle (independent re-measure)',
+  return { id: gate.id, arc: gate.arc ?? null, x: gate.x, z: gate.z, samples, drawn, collision, maxDelta };
+}
+const gateSamples = sprintGates.map(independentGateMeasure);
+const shortGateSamples = shortGates.map(independentGateMeasure);
+check('every default-course gate line is covered by the real track visual and by a collision triangle (independent re-measure)',
       gateSamples.every((gate) => gate.drawn === gate.samples && gate.collision === gate.samples),
       gateSamples.map((gate) => `${gate.id}:${gate.drawn}/${gate.samples} drawn, ${gate.collision}/${gate.samples} collision`).join(' '));
+check('every 29 m regression gate line is still covered by the real track visual and a collision triangle (independent)',
+      shortGateSamples.every((gate) => gate.drawn === gate.samples && gate.collision === gate.samples),
+      shortGateSamples.map((gate) => `${gate.id}:${gate.drawn}/${gate.samples} drawn, ${gate.collision}/${gate.samples} collision`).join(' '));
 
-const lastCovered = sprintSpan.lastFullyCoveredX;
+// Long-course car-width band: seven lateral stations (0, +/-0.419, +/-0.838,
+// +/-1.138 m = the 1.676 m envelope and the +0.30 m margin) at every 0.25 m
+// sample inside the finish. Both layers must exist and the draw must sit on the
+// collision surface within the P51 0.5 m rule.
+const BAND_STATIONS = [0, -0.419, 0.419, -0.838, 0.838, -1.138, 1.138];
+let bandSamples = 0;
+let bandCollision = 0;
+let bandDrawn = 0;
+let bandMaxDelta = 0;
+const bandFailures = [];
+const longInside = derivedLayout.course.samples.filter((sample) => sample.arc <= sprintSpan.finishArc + 1e-9);
+for (let index = 1; index < longInside.length - 1; index++) {
+  const previous = longInside[index - 1];
+  const next = longInside[index + 1];
+  const tx = next.x - previous.x;
+  const tz = next.z - previous.z;
+  const length = Math.hypot(tx, tz);
+  const nx = -tz / length;
+  const nz = tx / length;
+  for (const station of BAND_STATIONS) {
+    bandSamples++;
+    const x = longInside[index].x + nx * station;
+    const z = longInside[index].z + nz * station;
+    const height = independentCollision.highest(x, z);
+    if (height === null) {
+      bandFailures.push({ arc: longInside[index].arc, station, missing: 'collision' });
+      continue;
+    }
+    bandCollision++;
+    const delta = independentDrawn.nearestTo(x, z, height);
+    if (delta === null || delta > 0.5) {
+      bandFailures.push({ arc: longInside[index].arc, station, missing: 'drawn', delta });
+      continue;
+    }
+    bandDrawn++;
+    if (delta > bandMaxDelta) bandMaxDelta = delta;
+  }
+}
+check('the whole 310 m course is drawn and physical across the measured car-width band (independent, 7 stations)',
+      bandFailures.length === 0 && bandDrawn === bandSamples && bandCollision === bandSamples,
+      `${bandDrawn}/${bandSamples} drawn, ${bandCollision}/${bandSamples} collision, ` +
+      `max delta ${round6Local(bandMaxDelta)} m`);
+
+const lastCovered = shortSpan.lastFullyCoveredX;
 let coveredPastEnd = 0;
 let fullyCoveredColumns = 0;
-for (let x = sprintSpan.startX; x <= lastCovered + 0.25 + 1e-9; x += COLUMN_STEP) {
+for (let x = shortSpan.startX; x <= lastCovered + 0.25 + 1e-9; x += COLUMN_STEP) {
   const rounded = Number(x.toFixed(6));
   let ok = true;
-  const samples = Math.round((derivedLayout.course.band.halfWidthMetres * 2) / GATE_SAMPLE_STEP) + 1;
+  const samples = Math.round((shortLayout.course.band.halfWidthMetres * 2) / GATE_SAMPLE_STEP) + 1;
   for (let sample = 0; sample < samples && ok; sample++) {
-    const z = Number((derivedLayout.course.band.z - derivedLayout.course.band.halfWidthMetres +
+    const z = Number((shortLayout.course.band.z - shortLayout.course.band.halfWidthMetres +
       sample * GATE_SAMPLE_STEP).toFixed(6));
     if (independentHeightAt(g56Triangles, rounded, z) === null) ok = false;
     else if (independentHeightAt(collisionTriangleList, rounded, z) === null) ok = false;
@@ -667,27 +835,88 @@ for (let x = sprintSpan.startX; x <= lastCovered + 0.25 + 1e-9; x += COLUMN_STEP
   if (ok) fullyCoveredColumns++;
   if (rounded > lastCovered + 1e-9 && ok) coveredPastEnd++;
 }
-check('the measured covered segment is contiguous and the recorded end is the last fully covered column',
-      fullyCoveredColumns >= Math.round((lastCovered - sprintSpan.startX) / COLUMN_STEP) + 1 && coveredPastEnd === 0,
+check('the 29 m covered segment is contiguous and the recorded end is the last fully covered column',
+      fullyCoveredColumns >= Math.round((lastCovered - shortSpan.startX) / COLUMN_STEP) + 1 && coveredPastEnd === 0,
       `${fullyCoveredColumns} fully covered columns, ${coveredPastEnd} past the recorded end ${lastCovered}`);
+
+// Engine ground agreement on the long course: the layout's collision mesh is a
+// provenance subset, so every tenth sample (plus every gate) is compared with the
+// engine's own _e1_ground_probe. The engine is the authority for the surface the
+// wheels trace; the layout must not be measuring a different one.
+let groundChecks = 0;
+let groundMaxDelta = 0;
+let groundFailures = 0;
+for (let index = 0; index < longInside.length; index += 10) {
+  const sample = longInside[index];
+  const probe = collisionProbe.ground(sample.x, sample.z);
+  groundChecks++;
+  if (!probe || probe.hit !== 1) { groundFailures++; continue; }
+  const delta = Math.abs(probe.y - sample.groundY);
+  if (delta > groundMaxDelta) groundMaxDelta = delta;
+  if (delta > 0.01) groundFailures++;
+}
+for (const gate of sprintGates) {
+  const probe = collisionProbe.ground(gate.x, gate.z);
+  groundChecks++;
+  if (!probe || probe.hit !== 1) { groundFailures++; continue; }
+  const delta = Math.abs(probe.y - gate.height);
+  if (delta > groundMaxDelta) groundMaxDelta = delta;
+  if (delta > 0.01) groundFailures++;
+}
+check('the 310 m course ground matches the engine ground probe at every gate and every tenth sample',
+      groundFailures === 0 && groundMaxDelta < 0.01,
+      `${groundChecks} probes, max delta ${round6Local(groundMaxDelta)} m, ${groundFailures} failures`);
+
 const sprintLayoutCheck = {
   hash: derivedLayout.hash,
+  courseId: derivedLayout.courseId,
   file: path.relative(ROOT, SPRINT_FILE).split(path.sep).join('/'),
   fileSha256: 'sha256:' + sha256(sprintFileBytes),
+  path: {
+    file: LONG_COURSE_PATH.file, fileSha256: longPathFileSha, canonicalHash: longPath.hash,
+    lengthMetres: derivedLayout.course.lengthMetres, sampleCount: derivedLayout.course.sampleCount
+  },
   spawn: derivedLayout.source.spawn,
+  startHeadingRad: layoutStartHeading(derivedLayout, layoutSpawn),
   spawnGroundY: derivedLayout.course.spawnGroundY,
-  band: derivedLayout.course.band,
   span: sprintSpan,
+  corridor: derivedLayout.course.corridor,
+  coverage: derivedLayout.course.coverage,
   gates: sprintGates.map((gate) => ({
-    id: gate.id, kind: gate.kind, x: gate.x, z: gate.z, widthMetres: gate.widthMetres,
+    id: gate.id, kind: gate.kind, arc: gate.arc, x: gate.x, z: gate.z, headingRad: gate.headingRad,
+    widthMetres: gate.widthMetres,
     drawnSamples: gate.coverage.drawnSamples, collisionSamples: gate.coverage.collisionSamples,
     samples: gate.coverage.samples, heightRange: gate.coverage.drawnHeightRange
   })),
   independentGateSamples: gateSamples,
-  fullyCoveredColumns,
-  coveredColumnsPastEnd: coveredPastEnd,
+  independentBand: {
+    stations: BAND_STATIONS.length, samples: bandSamples, drawn: bandDrawn,
+    collision: bandCollision, maxDeltaMetres: round6Local(bandMaxDelta)
+  },
+  engineGround: { probes: groundChecks, maxDeltaMetres: round6Local(groundMaxDelta), failures: groundFailures },
   countdown: derivedLayout.countdown,
   rules: derivedLayout.rules
+};
+const sprintShortLayoutCheck = {
+  hash: shortLayout.hash,
+  courseId: shortLayout.courseId,
+  file: path.relative(ROOT, SPRINT_SHORT_FILE).split(path.sep).join('/'),
+  fileSha256: 'sha256:' + sha256(sprintShortBytes),
+  spawn: shortLayout.source.spawn,
+  startHeadingRad: layoutStartHeading(shortLayout, layoutSpawn),
+  spawnGroundY: shortLayout.course.spawnGroundY,
+  band: shortLayout.course.band,
+  span: shortSpan,
+  gates: shortGates.map((gate) => ({
+    id: gate.id, kind: gate.kind, x: gate.x, z: gate.z, widthMetres: gate.widthMetres,
+    drawnSamples: gate.coverage.drawnSamples, collisionSamples: gate.coverage.collisionSamples,
+    samples: gate.coverage.samples, heightRange: gate.coverage.drawnHeightRange
+  })),
+  independentGateSamples: shortGateSamples,
+  fullyCoveredColumns,
+  coveredColumnsPastEnd: coveredPastEnd,
+  countdown: shortLayout.countdown,
+  rules: shortLayout.rules
 };
 
 /** One full scripted run of one car in a fresh wasm module instance. */
@@ -780,7 +1009,7 @@ async function runOnce(car, fieldBytes) {  const factory = (await import(pathToF
 }
 
 /** Replay a recorded input sequence without sprint rules: physics must not know. */
-async function replaySprintInputs(car, fieldBytes, inputs) {
+async function replaySprintInputs(car, fieldBytes, inputs, layout = derivedLayout) {
   const factory = (await import(pathToFileURL(MODULE).href)).default;
   const module = await factory();
   const levelPtr = module._malloc(levelBytes.length);
@@ -788,7 +1017,7 @@ async function replaySprintInputs(car, fieldBytes, inputs) {
   module.HEAPU8.set(levelBytes, levelPtr);
   module.HEAPU8.set(fieldBytes, fieldsPtr);
   const created = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
-                                    TICK0_LIMITS.x, TICK0_LIMITS.z, TICK0_LIMITS.heading);
+                                    TICK0_LIMITS.x, TICK0_LIMITS.z, layoutStartHeading(layout, layoutSpawn));
   if (!created) throw new Error('sprint replay create failed for ' + car.name);
   const hashes = [hashOfLocal(JSON.parse(module.UTF8ToString(module._e1_get_state())))];
   for (const input of inputs) {
@@ -800,7 +1029,7 @@ async function replaySprintInputs(car, fieldBytes, inputs) {
 }
 
 /** One deterministic sprint run of one car in a fresh wasm module instance. */
-async function runSprint(car, fieldBytes) {
+async function runSprint(car, fieldBytes, layout = derivedLayout) {
   const factory = (await import(pathToFileURL(MODULE).href)).default;
   const module = await factory();
   const levelPtr = module._malloc(levelBytes.length);
@@ -810,14 +1039,14 @@ async function runSprint(car, fieldBytes) {
   module.HEAPU8.set(fieldBytes, fieldsPtr);
   const t0 = Date.now();
   const created = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
-                                    TICK0_LIMITS.x, TICK0_LIMITS.z, TICK0_LIMITS.heading);
+                                    TICK0_LIMITS.x, TICK0_LIMITS.z, layoutStartHeading(layout, layoutSpawn));
   if (!created) throw new Error(`sprint e1_create failed for ${car.name}: ` + module.UTF8ToString(module._e1_last_error()));
   const createMs = Date.now() - t0;
 
-  const rules = createSprintRules(derivedLayout);
+  const rules = createSprintRules(layout);
   const state0 = JSON.parse(module.UTF8ToString(module._e1_get_state()));
   const session = createSession(geometry, state0, {
-    spawn: { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, headingRad: TICK0_LIMITS.heading, source: TICK0_LIMITS.source },
+    spawn: { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, headingRad: layoutStartHeading(layout, layoutSpawn), source: TICK0_LIMITS.source },
     script: SPRINT_PACKET_SCRIPT,
     car: {
       slug: car.slug, name: car.name, recordIndex: car.record.index, recordId: car.record.id,
@@ -834,8 +1063,9 @@ async function runSprint(car, fieldBytes) {
     speed: state0.speed, position: state0.position, progress: 0, stateHash: hashOfLocal(state0)
   }];
   const startMs = Date.now();
+  let previous = state0;
   for (let tick = 1; tick <= SPRINT_SCRIPT_TICKS; tick++) {
-    const input = sprintScriptInput(rules);
+    const input = sprintScriptInput(rules, previous);
     inputs.push(input);
     module._e1_set_input(input[0], input[1], input[2], input[3]);
     if (!module._e1_step()) throw new Error(`sprint e1_step failed for ${car.name} at tick ${tick}`);
@@ -849,6 +1079,7 @@ async function runSprint(car, fieldBytes) {
       tick, phase: rules.phase, elapsedTicks: rules.elapsedTicks, elapsedSeconds: rules.elapsedSeconds,
       speed: state.speed, position: state.position, progress: snapshot.progress, stateHash: hashOfLocal(state)
     });
+    previous = state;
     if (rules.phase === 'finished' && state.tick - rules.finishTick >= 120) break;
   }
   const simMs = Date.now() - startMs;
@@ -870,9 +1101,9 @@ async function runRespawnScenario(car, fieldBytes) {
   const fieldsPtr = module._malloc(fieldBytes.length + 1);
   module.HEAPU8.set(levelBytes, levelPtr);
   module.HEAPU8.set(fieldBytes, fieldsPtr);
-  const createAt = (x, z) => {
+  const createAt = (x, z, heading = layoutStartHeading(derivedLayout, layoutSpawn)) => {
     const ok = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
-                                 x, z, TICK0_LIMITS.heading);
+                                 x, z, heading);
     if (!ok) throw new Error('respawn create failed: ' + module.UTF8ToString(module._e1_last_error()));
     return JSON.parse(module.UTF8ToString(module._e1_get_state()));
   };
@@ -887,7 +1118,7 @@ async function runRespawnScenario(car, fieldBytes) {
       const probe = JSON.parse(module.UTF8ToString(module._e1_ground_probe(target.x, target.z)));
       const elapsedBefore = rules.elapsedTicks;
       const gateProgressBefore = rules.checkpointsPassed;
-      const state0 = createAt(target.x, target.z);
+      const state0 = createAt(target.x, target.z, target.heading);
       rules.rejoin(state0);
       rebuild = {
         tick,
@@ -1355,12 +1586,11 @@ for (const car of cars) {
   const finish = run.finish;
   const checkpoints = run.checkpoints;
   const checkpointTick = checkpoints[0]?.tick ?? null;
+  const midRow = run.rows.find((row) => row.progress >= 0.5 && row.tick > 0) ?? null;
   const captureTicks = [
     { label: 'start', tick: 0 },
-    // The checkpoint frame is the exact crossing tick. The start-area truck prop
-    // can cross the car there (physics has no prop collision), which is the
-    // documented near-field camera limit; the frame, banner, HUD and hashes are
-    // all from the crossing itself.
+    { label: 'mid', tick: midRow?.tick ?? null },
+    // The checkpoint frame is the exact crossing tick.
     { label: 'checkpoint', tick: checkpointTick, eventTick: checkpointTick },
     { label: 'finish', tick: finish?.tick ?? null, eventTick: finish?.tick ?? null }
   ].filter((entry) => entry.tick !== null);
@@ -1406,22 +1636,27 @@ for (const car of cars) {
           (index === 0 || event.timeSeconds > checkpoints[index - 1].timeSeconds)) &&
         checkpoints.every((event) => {
           const gate = derivedLayout.gates[event.index];
-          return event.position[2] >= gate.a[1] - 1e-6 && event.position[2] <= gate.b[1] + 1e-6 &&
-            Math.abs(event.position[0] - gate.x) <= 1e-6;
+          return Math.hypot(event.position[0] - gate.x, event.position[2] - gate.z) <=
+            gate.widthMetres / 2 + 1e-6;
         }),
-        checkpoints.map((event) => `${event.id}@${event.tick}:${event.timeSeconds}`).join(' '));
+        checkpoints.map((event) => `${event.id}@${event.arc}:${event.tick}:${event.timeSeconds}`).join(' '));
   const finishGate = derivedLayout.gates[derivedLayout.gates.length - 1];
   check(`${car.name}: the finish fires once, inside the finish gate line, after both checkpoints`,
         finish !== null && finish.checkpoints === 2 &&
-        Math.abs(finish.position[0] - finishGate.x) <= 1e-6 &&
-        finish.position[2] >= finishGate.a[1] - 1e-6 && finish.position[2] <= finishGate.b[1] + 1e-6 &&
+        Math.abs(finish.arc - finishGate.arc) <= 1e-6 &&
+        Math.hypot(finish.position[0] - finishGate.x, finish.position[2] - finishGate.z) <=
+          finishGate.widthMetres / 2 + 1e-6 &&
         finish.timeSeconds > checkpoints[checkpoints.length - 1].timeSeconds &&
         run.respawns.length === 0,
         finish ? `${finish.timeSeconds} s at tick ${finish.tick}, pos ${finish.position.map((v) => v.toFixed(2)).join(',')}` : 'no finish');
-  check(`${car.name}: the sprint covers the measured span under throttle`,
-        finish !== null && Math.abs((finish.position[0] - sprintSpan.startX) - sprintSpan.lengthMetres) <= 0.01 &&
-        finish.timeSeconds > 0.5,
-        finish ? `${(finish.position[0] - sprintSpan.startX).toFixed(3)} m of ${sprintSpan.lengthMetres} m in ${finish.timeSeconds} s` : 'no finish');
+  check(`${car.name}: the sprint covers the measured 310 m span under throttle`,
+        finish !== null && Math.abs(finish.arc - sprintSpan.finishArc) <= 0.01 &&
+        finish.timeSeconds > 5,
+        finish ? `${finish.arc.toFixed(3)} m of ${sprintSpan.finishArc} m in ${finish.timeSeconds} s` : 'no finish');
+  check(`${car.name}: the car stays inside the measured 6 m off-course band for the whole run`,
+        finish !== null && run.rules.maxLateral <= derivedLayout.course.corridor.halfWidthMetres,
+        finish ? `max lateral ${run.rules.maxLateral.toFixed(3)} m of ` +
+          `${derivedLayout.course.corridor.halfWidthMetres} m` : 'no finish');
   check(`${car.name}: the rules gated the input (zero in countdown, brake after the finish)`,
         run.inputs.slice(0, derivedLayout.countdown.ticks).every((input) => input.every((value) => value === 0)) &&
         run.inputs.slice(finish ? finish.tick : 0).every((input) => input[0] === 0 && input[1] === 1),
@@ -1471,24 +1706,27 @@ for (const car of cars) {
     drivetrain: car.drivetrain,
     default: car.slug === defaultCar.slug,
     layoutHash: derivedLayout.hash,
+    courseId: derivedLayout.courseId,
     countdownTicks: derivedLayout.countdown.ticks,
     goTick: run.go?.tick ?? null,
     finish: finish ? {
       timeSeconds: finish.timeSeconds,
       tick: finish.tick,
+      arc: finish.arc,
       position: finish.position,
       speed: run.states[finish.tick].speed,
       checkpoints: finish.checkpoints
     } : null,
     checkpoints: checkpoints.map((event) => ({
-      id: event.id, index: event.index, tick: event.tick,
+      id: event.id, index: event.index, arc: event.arc, tick: event.tick,
       timeSeconds: event.timeSeconds, position: event.position
     })),
     respawns: run.respawns.length,
     ticks: run.states.length,
     contactTicks: run.states.filter((state) => state.anyContact === 1).length,
     nanTicks: run.states.filter((state) => state.finite !== 1).length,
-    maxX: run.rules.maxX,
+    maxArc: run.rules.maxArc,
+    maxLateralMetres: run.rules.maxLateral,
     progress: run.rules.snapshot().progress,
     stateSequenceHash,
     replayMatches,
@@ -1502,6 +1740,88 @@ for (const car of cars) {
     },
     runPath: path.relative(ROOT, sprintRunPath).split(path.sep).join('/'),
     captures
+  });
+}
+
+// ------------------------------------------- 29 m regression course (?course=short)
+// The original P37 sprint is kept playable behind ?course=short. It uses the
+// same rules engine and the same throttle-hold driver; its finish times are the
+// P37 anchor values and it must not regress.
+const sprintShortResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const run = await runSprint(car, fieldBytes, shortLayout);
+  const hashes = run.states.map((state) => hashOfLocal(state));
+  const stateSequenceHash = aggregate(hashes);
+  const replayHashes = await replaySprintInputs(car, fieldBytes, run.inputs, shortLayout);
+  const replayMatches = replayHashes.length === hashes.length &&
+    replayHashes.every((hash, index) => hash === hashes[index]);
+  const finish = run.finish;
+  const checkpoints = run.checkpoints;
+  const checkpointTick = checkpoints[0]?.tick ?? null;
+  const shortMidRow = run.rows.find((row) => row.progress >= 0.5 && row.tick > 0) ?? null;
+  const shortCaptureTicks = [
+    { label: 'start', tick: 0 },
+    { label: 'mid', tick: shortMidRow?.tick ?? null },
+    { label: 'checkpoint', tick: checkpointTick, eventTick: checkpointTick },
+    { label: 'finish', tick: finish?.tick ?? null, eventTick: finish?.tick ?? null }
+  ].filter((entry) => entry.tick !== null);
+  const shortCaptures = shortCaptureTicks.map(({ label, tick, eventTick }) => {
+    const update = run.packet.updates.find((entry) => entry.tick === tick);
+    const row = run.rows.find((entry) => entry.tick === tick);
+    return {
+      label, tick, eventTick: eventTick ?? null,
+      stateHash: row?.stateHash ?? null, updateHash: update?.hash ?? null,
+      matrix: update?.matrices?.[0]?.world ?? null, matrices: update?.matrices ?? null,
+      camera: update?.camera ?? null, position: row?.position ?? null,
+      speed: row?.speed ?? null, progress: row?.progress ?? null,
+      elapsedSeconds: row?.elapsedSeconds ?? null
+    };
+  });
+  check(`${car.name}: the 29 m regression course still finishes with both checkpoints and no respawn`,
+        finish !== null && finish.checkpoints === 2 && checkpoints.length === 2 &&
+        run.respawns.length === 0 && finish.timeSeconds > 2 && finish.timeSeconds < 4,
+        finish ? `${finish.timeSeconds} s at tick ${finish.tick}` : 'no finish');
+  check(`${car.name}: the 29 m regression course keeps wheel contact, no NaN and replay-identical states`,
+        run.states.every((state) => state.anyContact === 1) &&
+        run.states.every((state) => state.finite === 1) && replayMatches,
+        `${run.states.length} ticks, replay ${replayMatches}`);
+  const shortRunPath = path.join(OUT, `sprint-short-${car.slug}.json`);
+  writeFileSync(shortRunPath, JSON.stringify({
+    kind: 'e1-drive.sprint-run',
+    version: 1,
+    courseId: shortLayout.courseId,
+    car: { slug: car.slug, name: car.name, record: car.record, drivetrain: car.drivetrain, fields: car.fields },
+    layoutHash: shortLayout.hash,
+    layoutFile: path.relative(ROOT, SPRINT_SHORT_FILE).split(path.sep).join('/'),
+    tickHz: TICK_HZ,
+    countdownTicks: shortLayout.countdown.ticks,
+    stateSequenceHash,
+    events: run.events,
+    finish,
+    checkpoints,
+    respawns: run.respawns,
+    ticks: run.rows,
+    inputs: run.inputs,
+    captures: shortCaptures
+  }, null, 2) + '\n', 'utf8');
+  sprintShortResults.push({
+    slug: car.slug,
+    name: car.name,
+    drivetrain: car.drivetrain,
+    default: car.slug === defaultCar.slug,
+    layoutHash: shortLayout.hash,
+    courseId: shortLayout.courseId,
+    finish: finish ? { timeSeconds: finish.timeSeconds, tick: finish.tick, position: finish.position } : null,
+    checkpoints: checkpoints.map((event) => ({ id: event.id, timeSeconds: event.timeSeconds })),
+    respawns: run.respawns.length,
+    ticks: run.states.length,
+    contactTicks: run.states.filter((state) => state.anyContact === 1).length,
+    nanTicks: run.states.filter((state) => state.finite !== 1).length,
+    stateSequenceHash,
+    replayMatches,
+    captures: shortCaptures,
+    runPath: path.relative(ROOT, shortRunPath).split(path.sep).join('/')
   });
 }
 
@@ -1694,7 +2014,7 @@ async function runTelemetryResetSeries(car, fieldBytes, reference) {
  * same rules and script. Both attempts must produce the same input sequence, the
  * same per-tick state hashes and the same finish.
  */
-async function runSprintRestart(car, fieldBytes) {
+async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
   const factory = (await import(pathToFileURL(MODULE).href)).default;
   const module = await factory();
   const levelPtr = module._malloc(levelBytes.length);
@@ -1707,23 +2027,25 @@ async function runSprintRestart(car, fieldBytes) {
     const ok = restart
       ? module._e1_reset()
       : module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
-                          TICK0_LIMITS.x, TICK0_LIMITS.z, TICK0_LIMITS.heading);
+                          TICK0_LIMITS.x, TICK0_LIMITS.z, layoutStartHeading(layout, layoutSpawn));
     if (!ok) throw new Error(`${car.name}: sprint ${restart ? 'restart' : 'create'} failed: ` +
                              module.UTF8ToString(module._e1_last_error()));
-    const rules = createSprintRules(derivedLayout);
+    const rules = createSprintRules(layout);
     const state0 = read();
     rules.prime(state0);
     const hashes = [hashOfLocal(state0)];
     const inputs = [];
     const events = [];
+    let previous = state0;
     for (let tick = 1; tick <= SPRINT_SCRIPT_TICKS; tick++) {
-      const input = sprintScriptInput(rules);
+      const input = sprintScriptInput(rules, previous);
       inputs.push(input);
       module._e1_set_input(input[0], input[1], input[2], input[3]);
       if (!module._e1_step()) throw new Error(`${car.name}: sprint restart step failed at ${tick}`);
       const state = read();
       hashes.push(hashOfLocal(state));
       events.push(...rules.step(state));
+      previous = state;
       if (rules.phase === 'finished' && state.tick - rules.finishTick >= 120) break;
     }
     return {
@@ -1756,40 +2078,44 @@ async function runSprintRestart(car, fieldBytes) {
   };
 }
 
-// Every car's drive and sprint state sequence hash from the P36/P37 records. The
-// telemetry pass must not move them: it uses its own instances and never touches
-// the drive, sprint or keyboard paths.
+// Every car's drive and sprint state sequence hash. The drive and 29 m sprint
+// (`sprintShort`) anchors are the P36/P37 values: physics, cars, camera and
+// telemetry did not move. `sprint310` is the new default 310 m timeline, so its
+// state sequence is a new anchor (the course changed, not the physics).
 //
 // The `packet` anchor is the whole-packet hash, so it moves whenever the static
 // packet body changes; P49 added the real UV0 and static albedo texture payloads
-// (geometry v5), so these four values are re-pinned to the P49 geometry. The three
-// `drive`/`sprint` state hashes are unchanged from P36/P37: physics, cars, sprint,
-// camera and telemetry were not touched.
+// (geometry v5), so these values are the P49 geometry.
 const PHYSICS_ANCHORS = Object.freeze({
   'corvette-zr1-stock': {
     drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
     packet: 'sha256:3f0bd5a12e2d3ec4ca44f30571e8d7a88d66aac1b476ede6eddf84757c62c20d',
-    sprint: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
+    sprint310: 'sha256:da7e14f16be2649f32902d18cc999cd39af09320d4e4b24ec40a37c086f9a553',
+    sprintShort: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
   },
   'lotus-exige-cup260-stock': {
     drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
     packet: 'sha256:9daf559a8c8f2ed8d3b623dbe1dc453002ad1187730ceb6607117d651c270387',
-    sprint: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
+    sprint310: 'sha256:83f05df48244c000889b4d1adcc83afe34a98f5b65370de3d87419448a92367e',
+    sprintShort: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
   },
   'dodge-challenger-stock': {
     drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
     packet: 'sha256:d4e9f0550bd83b3260a4a3c8e9926345d19bca62f7cd3d8da172eaaa937c7222',
-    sprint: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
+    sprint310: 'sha256:accf125a629dbf7f66e7dbed2d38990fb21c67ad26a65fbef288e3716ac8210a',
+    sprintShort: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
   },
   'ford-focusrs-stock': {
     drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
     packet: 'sha256:10a2e09274af1172e2690bfbd9e6c5a90e9d8a4e86d819276b1c5b4b361adb99',
-    sprint: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
+    sprint310: 'sha256:1094698d566bf3a6f335545ea37089113874c21d2f438a059d2c95e3d9f2063f',
+    sprintShort: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
   },
   'audi-r8v10-stock': {
     drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
     packet: 'sha256:5b96bc3d50f25bda3f6ab5ea2780427d9538e467e9d61a1641ba62efd0d82d05',
-    sprint: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
+    sprint310: 'sha256:0b32413d797b23b0db957f2583ab221fe3e64388144d743b8d20e2b39f14b5ca',
+    sprintShort: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
   }
 });
 
@@ -1820,6 +2146,7 @@ for (const car of cars) {
   const driveRow = results.find((entry) => entry.slug === car.slug);
   const anchors = PHYSICS_ANCHORS[car.slug];
   const sprintRow = sprintResults.find((entry) => entry.slug === car.slug);
+  const sprintShortRow = sprintShortResults.find((entry) => entry.slug === car.slug);
   const independentTopSpeed = Math.max(...runA.series.states.accel.map((state) => state.speed));
 
   check(`${car.name}: telemetry runs three manoeuvres in one instance each`,
@@ -1927,9 +2254,10 @@ for (const car of cars) {
         anchors !== undefined &&
         driveRow?.determinism.stateSequenceHash === anchors.drive &&
         driveRow?.packet.hash === anchors.packet &&
-        sprintRow?.stateSequenceHash === anchors.sprint,
+        sprintRow?.stateSequenceHash === anchors.sprint310 &&
+        sprintShortRow?.stateSequenceHash === anchors.sprintShort,
         `${driveRow?.determinism.stateSequenceHash.slice(7, 15)} / ` +
-        `${sprintRow?.stateSequenceHash.slice(7, 15)}`);
+        `${sprintRow?.stateSequenceHash.slice(7, 15)} / ${sprintShortRow?.stateSequenceHash.slice(7, 15)}`);
 
   const telemetryPath = path.join(OUT, `telemetry-${car.slug}.json`);
   writeFileSync(telemetryPath, JSON.stringify({
@@ -1995,10 +2323,12 @@ for (const car of cars) {
     physicsAnchors: {
       drive: driveRow?.determinism.stateSequenceHash ?? null,
       packet: driveRow?.packet.hash ?? null,
-      sprint: sprintRow?.stateSequenceHash ?? null,
+      sprint310: sprintRow?.stateSequenceHash ?? null,
+      sprintShort: sprintShortRow?.stateSequenceHash ?? null,
       unchanged: driveRow?.determinism.stateSequenceHash === anchors?.drive &&
         driveRow?.packet.hash === anchors?.packet &&
-        sprintRow?.stateSequenceHash === anchors?.sprint
+        sprintRow?.stateSequenceHash === anchors?.sprint310 &&
+        sprintShortRow?.stateSequenceHash === anchors?.sprintShort
     }
   });
   log.push(`${car.slug}: telemetry ${runA.ms}+${runB.ms} ms, ` +
@@ -2208,9 +2538,11 @@ for (const car of cars) {
 
 // ------------------------------------------------------------- sprint rules tests
 // Synthetic states exercise the order and respawn decisions without an engine;
-// the real-engine respawn below proves the same path end to end.
+// the real-engine respawn below proves the same path end to end. The P37-style
+// tests run on the 29 m regression layout (they are x-based by construction) and
+// the path-based tests below run on the default 310 m layout.
 function fakeState(tick, x, z, options = {}) {
-  const y = options.y ?? derivedLayout.course.spawnGroundY + 0.35;
+  const y = options.y ?? shortLayout.course.spawnGroundY + 0.35;
   const contact = options.contact ?? 1;
   return {
     tick,
@@ -2223,25 +2555,25 @@ function fakeState(tick, x, z, options = {}) {
     input: [0, 0, 0, 0]
   };
 }
-function advanceToGo(rules, x = sprintSpan.startX + 0.01) {
+function advanceToGo(rules, x = shortSpan.startX + 0.01) {
   let tick = 0;
-  rules.prime(fakeState(tick, x, derivedLayout.course.band.z));
+  rules.prime(fakeState(tick, x, shortLayout.course.band.z));
   while (rules.phase === 'countdown') {
     tick++;
-    rules.step(fakeState(tick, x, derivedLayout.course.band.z));
+    rules.step(fakeState(tick, x, shortLayout.course.band.z));
   }
   return tick;
 }
-const rulesLayout = derivedLayout;
+const rulesLayout = shortLayout;
 // Out-of-order test: the car starts just before checkpoint 2 (so checkpoint 1 was
 // never crossed) and is then moved across checkpoint 2 and the finish line.
 const orderRules = createSprintRules(rulesLayout);
 let orderTick = advanceToGo(orderRules, -70);
 const orderEvents = [];
 orderTick++;
-orderEvents.push(...orderRules.step(fakeState(orderTick, -68, derivedLayout.course.band.z)));
+orderEvents.push(...orderRules.step(fakeState(orderTick, -68, shortLayout.course.band.z)));
 orderTick++;
-orderEvents.push(...orderRules.step(fakeState(orderTick, -58, derivedLayout.course.band.z)));
+orderEvents.push(...orderRules.step(fakeState(orderTick, -58, shortLayout.course.band.z)));
 check('sprint rules: a finish crossed before the ordered checkpoints is rejected and labelled',
       orderEvents.some((event) => event.type === SPRINT_EVENT.GATE_OUT_OF_ORDER) &&
       orderEvents.some((event) => event.type === SPRINT_EVENT.FINISH_BLOCKED) &&
@@ -2250,8 +2582,8 @@ check('sprint rules: a finish crossed before the ordered checkpoints is rejected
 
 const belowRules = createSprintRules(rulesLayout);
 let belowTick = advanceToGo(belowRules);
-const belowEvents = belowRules.step(fakeState(belowTick + 1, sprintSpan.startX + 1, derivedLayout.course.band.z,
-  { y: derivedLayout.course.spawnGroundY - 2 }));
+const belowEvents = belowRules.step(fakeState(belowTick + 1, shortSpan.startX + 1, shortLayout.course.band.z,
+  { y: shortLayout.course.spawnGroundY - 2 }));
 check('sprint rules: falling below the measured ground triggers a respawn with a reason',
       belowEvents.some((event) => event.type === SPRINT_EVENT.RESPAWN &&
         event.reasons.includes('below-ground')) &&
@@ -2264,7 +2596,7 @@ const airStartTick = airTick;
 let airEvents = [];
 for (let step = 1; step <= rulesLayout.rules.respawn.airborneTicks + 1; step++) {
   airTick++;
-  airEvents.push(...airRules.step(fakeState(airTick, sprintSpan.startX + 2, derivedLayout.course.band.z,
+  airEvents.push(...airRules.step(fakeState(airTick, shortSpan.startX + 2, shortLayout.course.band.z,
     { contact: 0 })));
 }
 const firstAir = airEvents.find((event) => event.type === SPRINT_EVENT.RESPAWN);
@@ -2285,6 +2617,95 @@ check('sprint rules: R restart resets the timer, gates and finish state',
       resetRules.phase === 'countdown' && resetRules.elapsedTicks === 0 && resetRules.gateIndex === 1 &&
       resetRules.finishTimeSeconds === null && resetRules.checkpointsPassed === 0,
       resetRules.phase + ' ' + resetRules.elapsedTicks);
+
+// ---- path-course rules on the default 310 m layout -------------------------
+const longSamples = derivedLayout.course.samples;
+function pathSampleIndexAt(arc) {
+  let index = 0;
+  let best = Infinity;
+  for (let cursor = 0; cursor < longSamples.length; cursor++) {
+    const distance = Math.abs(longSamples[cursor].arc - arc);
+    if (distance < best) { best = distance; index = cursor; }
+  }
+  return index;
+}
+function pathSampleAt(arc) {
+  return longSamples[pathSampleIndexAt(arc)];
+}
+function pathState(tick, arc, lateral = 0, options = {}) {
+  const index = pathSampleIndexAt(arc);
+  const sample = longSamples[index];
+  const previous = longSamples[Math.max(0, index - 1)];
+  const next = longSamples[Math.min(longSamples.length - 1, index + 1)];
+  const tx = next.x - previous.x;
+  const tz = next.z - previous.z;
+  const length = Math.hypot(tx, tz);
+  const nx = length > 0 ? -tz / length : 0;
+  const nz = length > 0 ? tx / length : 1;
+  const contact = options.contact ?? 1;
+  return {
+    tick,
+    position: [sample.x + nx * lateral, options.y ?? sample.groundY + 0.35, sample.z + nz * lateral],
+    speed: options.speed ?? 18,
+    contacts: [contact, contact, contact, contact],
+    anyContact: contact,
+    finite: options.finite ?? 1,
+    wheels: [],
+    input: [0, 0, 0, 0]
+  };
+}
+function advancePathToGo(rules) {
+  let tick = 0;
+  rules.prime(pathState(0, 0));
+  while (rules.phase === 'countdown') { tick++; rules.step(pathState(tick, 0)); }
+  return tick;
+}
+const pathOrderRules = createSprintRules(derivedLayout);
+let pathOrderTick = advancePathToGo(pathOrderRules);
+const pathOrderEvents = [];
+pathOrderTick++;
+pathOrderEvents.push(...pathOrderRules.step(pathState(pathOrderTick, derivedLayout.gates[2].arc - 1)));
+pathOrderTick++;
+pathOrderEvents.push(...pathOrderRules.step(pathState(pathOrderTick, derivedLayout.gates[2].arc + 1)));
+pathOrderTick++;
+pathOrderEvents.push(...pathOrderRules.step(pathState(pathOrderTick, sprintSpan.finishArc + 1)));
+check('sprint rules: on the 310 m course an out-of-order checkpoint and a blocked finish are labelled, not counted',
+      pathOrderEvents.some((event) => event.type === SPRINT_EVENT.GATE_OUT_OF_ORDER) &&
+      pathOrderEvents.some((event) => event.type === SPRINT_EVENT.FINISH_BLOCKED) &&
+      pathOrderRules.phase === 'running' && pathOrderRules.checkpointsPassed === 0,
+      pathOrderEvents.map((event) => event.type).join(','));
+
+const pathBelowRules = createSprintRules(derivedLayout);
+const pathBelowTick = advancePathToGo(pathBelowRules);
+const pathMidSample = pathSampleAt(150);
+const pathBelowEvents = pathBelowRules.step(pathState(pathBelowTick + 1, 150, 0,
+  { y: pathMidSample.groundY - 2 }));
+check('sprint rules: the 310 m fall rule uses the measured ground at the car arc, not the spawn height',
+      pathBelowEvents.some((event) => event.type === SPRINT_EVENT.RESPAWN &&
+        event.reasons.includes('below-ground')) &&
+      pathBelowRules.awaitingRejoin === true,
+      pathBelowEvents.map((event) => event.type + ':' + (event.reasons ?? []).join('+')).join(','));
+
+const pathOutsideRules = createSprintRules(derivedLayout);
+const pathOutsideTick = advancePathToGo(pathOutsideRules);
+const pathOutsideEvents = pathOutsideRules.step(pathState(pathOutsideTick + 1, 150,
+  derivedLayout.course.corridor.halfWidthMetres + 2));
+check('sprint rules: leaving the measured band on the 310 m course triggers outside-corridor',
+      pathOutsideEvents.some((event) => event.type === SPRINT_EVENT.RESPAWN &&
+        event.reasons.includes('outside-corridor')) &&
+      pathOutsideRules.awaitingRejoin === true,
+      pathOutsideEvents.map((event) => event.type + ':' + (event.reasons ?? []).join('+')).join(','));
+
+const pathTargetRules = createSprintRules(derivedLayout);
+pathTargetRules.gateIndex = 2;
+const pathTarget = pathTargetRules.respawnTarget();
+check('sprint rules: a 310 m respawn targets the last passed gate point and its measured heading',
+      pathTarget.gateId === 'checkpoint-1' &&
+      Math.abs(pathTarget.x - derivedLayout.gates[1].x) < 1e-9 &&
+      Math.abs(pathTarget.z - derivedLayout.gates[1].z) < 1e-9 &&
+      pathTarget.heading === derivedLayout.gates[1].headingRad &&
+      Math.abs(layoutStartHeading(derivedLayout, layoutSpawn) - sprintGates[0].headingRad) < 1e-12,
+      `${pathTarget.gateId} @ ${pathTarget.heading}`);
 
 // Best-time store: localStorage-shaped, including hostile storages.
 function fakeStorage(initial = null) {
@@ -2322,6 +2743,17 @@ check('best times: malformed JSON and a throwing storage degrade to no record in
       throwingSubmit.improved === true && throwingBest.persistent === false &&
       throwingBest.bestFor('corvette-zr1-stock') === null,
       JSON.stringify({ corrupt: corruptSubmit.best, throwingPersistent: throwingBest.persistent }));
+const courseKeyStorage = fakeStorage();
+const longBest = createBestTimes(courseKeyStorage, 'e1-drive.sprint.best.v2.310m');
+const shortBest = createBestTimes(courseKeyStorage, 'e1-drive.sprint.best.v2.short');
+longBest.submit('corvette-zr1-stock', { seconds: 14.65 });
+shortBest.submit('corvette-zr1-stock', { seconds: 2.8 });
+check('best times: the 310 m and 29 m courses keep independent per-course best-time keys',
+      longBest.bestFor('corvette-zr1-stock') === 14.65 &&
+      shortBest.bestFor('corvette-zr1-stock') === 2.8 &&
+      courseKeyStorage.map.has('e1-drive.sprint.best.v2.310m') &&
+      courseKeyStorage.map.has('e1-drive.sprint.best.v2.short'),
+      JSON.stringify([...courseKeyStorage.map.keys()]));
 
 // ------------------------------------------------------------- real respawn
 const respawnCar = results.find((entry) => entry.default) ?? results[0];
@@ -2330,13 +2762,14 @@ const respawnEvent = respawnRun.respawnEvents[0] ?? null;
 const respawnRebuild = respawnRun.rebuild;
 check('respawn: the off-course car triggers exactly one respawn with a measured reason',
       respawnRun.respawnEvents.length === 1 && respawnEvent !== null &&
-      respawnEvent.reasons.includes('outside-gate-band'),
+      respawnEvent.reasons.includes('outside-corridor'),
       respawnEvent ? `${respawnEvent.reasons.join('+')} at tick ${respawnEvent.tick}, z ${respawnEvent.position[2].toFixed(2)}` : 'no respawn');
 check('respawn: the car is rebuilt at the last passed checkpoint, on a real ground hit',
       respawnRebuild !== null && respawnEvent !== null &&
       respawnRebuild.target.gateId === respawnEvent.target.gateId &&
+      respawnRebuild.target.heading === derivedLayout.gates[0].headingRad &&
       respawnRebuild.probe.hit === 1 &&
-      Math.abs(respawnRebuild.probe.y - derivedLayout.course.spawnGroundY) < 0.2 &&
+      Math.abs(respawnRebuild.probe.y - derivedLayout.gates[0].height) < 0.2 &&
       Math.hypot(respawnRebuild.position[0] - respawnRebuild.target.x,
         respawnRebuild.position[2] - respawnRebuild.target.z) < 1.0 &&
       respawnRebuild.contacts.join('') === '1111' && respawnRebuild.tickAfterBuild === 0,
@@ -2348,10 +2781,10 @@ check('respawn: the attempt timer keeps running across the respawn and the gate 
       respawnRun.post.checkpointsPassed >= respawnRebuild.gateProgressBefore &&
       respawnRun.post.respawns === 1,
       respawnRun.post ? `elapsed ${respawnRun.post.elapsed} s, ${respawnRun.post.checkpointsPassed} checkpoints kept` : 'no post state');
-check('respawn: after the rebuild the car drives on from the checkpoint and stays on course',
+check('respawn: after the rebuild the car drives on from the checkpoint and stays inside the measured band',
       respawnRun.post !== null && respawnRun.post.speed > 1 &&
-      Math.abs(respawnRun.post.position[2] - derivedLayout.course.band.z) <=
-        derivedLayout.course.band.halfWidthMetres + derivedLayout.rules.respawn.outsideBandMarginMetres,
+      coursePosition(derivedLayout.course.samples, respawnRun.post.position).distance <=
+        derivedLayout.course.corridor.halfWidthMetres + derivedLayout.rules.respawn.outsideBandMarginMetres,
       respawnRun.post ? `${respawnRun.post.speed.toFixed(2)} m/s at ` +
         respawnRun.post.position.map((v) => v.toFixed(2)).join(',') : 'no post state');
 
@@ -2539,6 +2972,7 @@ const report = {
     }))
   },
   sprint: {
+    courseId: derivedLayout.courseId,
     layout: sprintLayoutCheck,
     rules: derivedLayout.rules,
     countdown: derivedLayout.countdown,
@@ -2546,11 +2980,17 @@ const report = {
       finishRejectedWithoutCheckpoints: true,
       outOfOrderCheckpointIgnored: true,
       belowGroundRespawn: belowEvents.map((event) => event.reasons ?? []).flat(),
+      pathBelowGroundRespawn: pathBelowEvents.map((event) => event.reasons ?? []).flat(),
+      pathOutsideBandRespawn: pathOutsideEvents.map((event) => event.reasons ?? []).flat(),
       airborneRespawnTicks: rulesLayout.rules.respawn.airborneTicks,
       restartResetsTimer: true
     },
     bestTimes: {
       key: 'e1-drive.sprint.best.v1',
+      pageKeys: {
+        '310m': 'e1-drive.sprint.best.v2.310m',
+        short: 'e1-drive.sprint.best.v2.short'
+      },
       corvette: bestTimes.bestFor('corvette-zr1-stock'),
       audi: bestTimes.bestFor('audi-r8v10-stock'),
       corruptJsonFallsBack: corruptSubmit.improved === true,
@@ -2569,7 +3009,14 @@ const report = {
         speed: respawnRun.post.speed
       } : null
     },
-    cars: sprintResults
+    cars: sprintResults,
+    shortCourse: {
+      courseId: shortLayout.courseId,
+      layout: sprintShortLayoutCheck,
+      file: '_work/e1-drive/sprint-short.json',
+      cars: sprintShortResults
+    },
+    restartCars: sprintRestartResults
   },
   roster: {
     path: path.relative(ROOT, ROSTER).split(path.sep).join('/'),

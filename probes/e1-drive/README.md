@@ -46,14 +46,36 @@ packet as hidden physics provenance (`visible:false`). See
 `T-007-ledge-fix.md` for the corridor and `T-007-textured-track.md` for the
 textured pass.
 
+### The playable sprint is the measured 310 m P48 course
+
+The default course is the **P48 collision-only drivable path**: 310.395 m from the
+committed spawn (−88, 1050) to (103.5, 1292.5), 1,245 samples at 0.25 m, max step
+1.55 cm, max 2‑m grade 3.09 %, minimum distance to a steep collision face 7.78 m.
+P51 measured **100 % draw coverage** from section `river.block56.node289` at the
+car-width band, so the whole course is already drawn. The gates are derived from
+that path (`tools/build_sprint.mjs` → `_work/e1-drive/sprint.json`):
+
+| gate | arc | point | heading | width | coverage |
+| --- | ---: | --- | ---: | ---: | --- |
+| start | 0.000 | (−88.0, 1050.0) | 0.7674 | 6 m | 61/61 |
+| checkpoint 1 | 100.108 | (−18.50, 1122.05) | 0.7674 | 6 m | 61/61 |
+| checkpoint 2 | 200.075 | (42.83, 1200.56) | 0.5839 | 6 m | 61/61 |
+| finish | 300.160 | (97.53, 1284.18) | 0.6222 | 6 m | 61/61 |
+
+The finish is **10.24 m before the measured end** so the car can stop before the
+surface narrows to 2.0 m at +4 m. The 29 m straight is kept as the regression
+course behind `?course=short` (`_work/e1-drive/sprint-short.json`), unchanged from
+P37. Both courses use the same rules engine; the 310 m course uses the Stanley
+path follower in `web/sprint-script.js`, the 29 m course keeps the P37 throttle
+hold.
+
 ### The extended corridor is a survey, not a course
 
 The 539.81 m corridor measured by `probes/track-coverage` is **drawn** and
 **measured**, but it is **not a race course**: its measured centre line crosses a
 50 m vertical collision face at **arc 57.82 m** (and again at 530.71 m), and the
-faithful box chassis stops on the 6.4 cm section-join rise at **52.7-53.4 m**. The
-playable sprint therefore stays the **29 m straight** on the same spawn, and the
-corridor is reported as a survey:
+faithful box chassis stops on the 6.4 cm section-join rise at **52.7-53.4 m**. It
+is reported as a survey:
 
 - `?survey=1` labels the drawn corridor in the page (no gate, timer or result
   changes) and states the measured limit;
@@ -155,18 +177,20 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/build_corridor_survey.mjs           # survey.json + survey.html
 & $node probes/e1-drive/tools/corridor_probe.mjs                   # per-car physical limit
 
-# 5. derive the sprint gates from the measured covered road (writes sprint.json)
+# 5. derive both sprint layouts from the measured data:
+#    sprint.json = the default 310 m P48 course, sprint-short.json = the 29 m regression
 & $node probes/e1-drive/tools/build_sprint.mjs
 
-# 6. scripted drive of every roster car twice, sprint runs + respawn + layout
-#    checks, telemetry series twice + input replay, 10 create/reset rebuilds per
-#    car in one instance, one-instance telemetry and sprint restart, packet
-#    validation and the extended-corridor survey/limit checks (522 checks)
+# 6. scripted drive of every roster car twice, both sprint courses + respawn +
+#    layout/band checks, telemetry series twice + input replay, 10 create/reset
+#    rebuilds per car in one instance, one-instance telemetry and sprint restart,
+#    packet validation and the extended-corridor survey/limit checks (550 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 
 # 7. headless Edge/WebGPU screenshots + console gate
 & $node probes/e1-drive/tools/capture_browser.mjs                  # drive captures
-& $node probes/e1-drive/tools/capture_browser.mjs --mode sprint    # start/cp/finish per car
+& $node probes/e1-drive/tools/capture_browser.mjs --mode sprint    # 310 m: start/mid/checkpoint/finish per car
+& $node probes/e1-drive/tools/capture_browser.mjs --mode sprint --course short  # 29 m regression
 & $node probes/e1-drive/tools/capture_browser.mjs --mode survey    # ?survey=1 corridor label
 & $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
 & $node probes/e1-drive/tools/capture_browser.mjs --mode telemetry # metric panel per car
@@ -291,62 +315,87 @@ camera holds instead of collapsing into the car.
 
 ## Sprint rules
 
-The page is a **point-to-point sprint**, not a lap: the committed real track visual
-covers a 29 m segment of the drive and no lap exists in this data. The gates are
-derived from the geometry (`tools/build_sprint.mjs` → `_work/e1-drive/sprint.json`)
-and re-derived by the verifier, so no coordinate is typed in:
+The page is a **point-to-point sprint**, not a lap. Two measured courses are
+derived and re-derived by the verifier, so no coordinate is typed in:
 
-| gate | x | width | coverage |
+- **default `310m`** — the P48 collision-only path (310.395 m, 1,245 samples at
+  0.25 m). Gates sit on measured samples, perpendicular to the local 5 m tangent;
+  the finish is 10.24 m before the measured end. `_work/e1-drive/sprint.json`.
+- **`?course=short`** — the original 29 m P37 straight on the spawn corridor.
+  `_work/e1-drive/sprint-short.json`.
+
+| gate | 310 m arc | 310 m point | heading | width | coverage |
+| --- | ---: | --- | ---: | ---: | --- |
+| start | 0.000 | (−88.0, 1050.0) | 0.7674 | 6 m | 61/61 drawn + 61/61 collision |
+| checkpoint 1 | 100.108 | (−18.50, 1122.05) | 0.7674 | 6 m | 61/61 + 61/61 |
+| checkpoint 2 | 200.075 | (42.83, 1200.56) | 0.5839 | 6 m | 61/61 + 61/61 |
+| finish | 300.160 | (97.53, 1284.18) | 0.6222 | 6 m | 61/61 + 61/61 |
+
+The 310 m course is 1204/1204 samples covered (100 %, max surface delta 0.929 mm),
+and the verifier independently re-measures **7 stations × 1202 samples = 8,414**
+car-width points (envelope 1.676 m + 0.30 m margin): 8,414/8,414 drawn and
+physical. The engine's own `_e1_ground_probe` agrees with the layout at every gate
+and every 10th sample (125 probes, max delta < 1 cm).
+
+| gate | 29 m x | width | coverage |
 | --- | ---: | ---: | --- |
 | start (spawn line) | −88.00 | 6 m (z 1047…1053) | 61/61 drawn + 61/61 collision samples |
 | checkpoint 1 | −78.25 | 6 m | 61/61 + 61/61 |
 | checkpoint 2 | −68.75 | 6 m | 61/61 + 61/61 |
 | finish | −59.00 | 6 m | 61/61 + 61/61 |
 
-Rule: a column is covered when every 0.1 m sample across the spawn corridor
-(z = spawn z ± 3 m) has **both** a real `block56/node289` triangle over it and a
-collision triangle under it. The fully covered segment runs from the spawn to
-**x = −57.00**; the finish sits 2 m before that (`finishClearanceMetres`), so no
-gate line has to leave the drawn road. The checkpoints are the 1/3 and 2/3 points
-of that span, snapped to a 0.25 m grid. The layout hash is
-`sha256:9e5b7befe60227ddf826ffa3fe5983e56ae091ac49e3cf1ad17005221da4f703`; the
-verifier re-hashes the file, re-derives it from `geometry.json` and re-measures
-every gate sample with independent barycentric code.
+Short-course rule: a column is covered when every 0.1 m sample across the spawn
+corridor (z = spawn z ± 3 m) has **both** a real `block56/node289` triangle over
+it and a collision triangle under it. The fully covered segment runs from the
+spawn to **x = −57.00**; the finish sits 2 m before that.
 
 | rule | value |
 | --- | --- |
 | countdown | 90 ticks (1.5 s, labels 3 / 2 / 1), input held at zero; timer starts at GO |
 | timer | engine ticks from GO at 60 Hz; keeps running across a respawn, freezes on the finish |
 | gate order | checkpoints count only in index order; a finish before the last checkpoint is recorded as `finish-blocked` |
-| respawn | chassis > 1 m below the measured spawn ground, 30 airborne ticks, or outside the gate corridor (±3 m + 1 m) |
-| respawn target | last passed checkpoint (start line before the first) |
-| best time | per car in `localStorage` key `e1-drive.sprint.best.v1`; only a faster finish overwrites |
+| progress | 310 m: arc of the nearest point on the measured polyline; 29 m: x against the spawn corridor |
+| respawn | 310 m: > 1 m below the measured ground at the car's arc, 30 airborne ticks, or outside the ±6 m band; 29 m: spawn ground and ±3 m corridor |
+| respawn target | last passed checkpoint, at its gate point and measured heading |
+| best time | per car and per course: `e1-drive.sprint.best.v2.310m` / `…v2.short`; only a faster finish overwrites |
 | restart | `R` resets the engine, timeline, timer and gate progress; the best time is kept |
 
-Modes: `/` = keyboard sprint, `?script=sprint` = deterministic scripted sprint
-(throttle while running, brake after the finish), `?script=sprint&sprintfall=1` =
-diagnostic driver that steers off the corridor to exercise respawn,
-`?script=drive` = the original 300-tick drive with no rules (kept for the
-P23/P31/P36 evidence), and `?survey=1` = the label for the drawn extended
-corridor (below; it changes no gate, timer or result). Rules never touch physics:
-the verifier records each scripted sprint's input sequence, replays it into a
-fresh module with the rules switched off, and requires every state hash to match.
+Modes: `/` = keyboard sprint on the 310 m course, `?script=sprint` = deterministic
+scripted sprint (Stanley path follower while running, brake after the finish),
+`?course=short` = the 29 m regression course, `?script=sprint&sprintfall=1` =
+diagnostic driver that steers off the course to exercise respawn, `?script=drive` =
+the original 300-tick drive with no rules (kept for the P23/P31/P36 evidence), and
+`?survey=1` = the label for the drawn extended corridor (below; it changes no gate,
+timer or result). Rules never touch physics: the verifier records each scripted
+sprint's input sequence, replays it into a fresh module with the rules switched
+off, and requires every state hash to match.
 
-Measured scripted sprints (`_work/e1-drive/run.json` → `sprint.cars`):
+Measured scripted sprints on the default course (`_work/e1-drive/run.json` →
+`sprint.cars`):
 
-| car | finish | tick | checkpoint 1 | checkpoint 2 | speed at finish | state sequence hash |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| Corvette ZR1 | **2.800 s** | 258 | 1.683 s | 2.317 s | 22.35 m/s | `fdd893bd…e62622` |
-| Lotus Exige Cup260 | **2.850 s** | 261 | 1.733 s | 2.350 s | 20.83 m/s | `c9b17397…b52dfc` |
-| Dodge Challenger | **3.000 s** | 270 | 1.783 s | 2.450 s | 19.05 m/s | `438e2e12…e12684` |
-| Ford Focus RS (FWD) | **3.267 s** | 286 | 1.967 s | 2.683 s | 18.70 m/s | `cc911ea3…2af937` |
-| Audi R8 V10 (AWD) | **2.283 s** | 227 | 1.317 s | 1.850 s | 24.26 m/s | `d52d4b8f…44dea` |
+| car | finish | tick | checkpoint 1 | checkpoint 2 | max speed | max lateral | state sequence hash |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | **14.650 s** | 969 | 5.700 s | 9.950 s | 24.73 m/s | 0.59 m | `da7e14f1…f9a553` |
+| Lotus Exige Cup260 | **14.767 s** | 976 | 5.783 s | 10.067 s | 24.69 m/s | 0.61 m | `83f05df4…92367e` |
+| Dodge Challenger | **14.917 s** | 985 | 5.950 s | 10.233 s | 24.65 m/s | 0.79 m | `accf125a…6ac8210a` |
+| Ford Focus RS (FWD) | **15.217 s** | 1003 | 6.267 s | 10.550 s | 24.63 m/s | 0.85 m | `1094698d…d9f2063f` |
+| Audi R8 V10 (AWD) | **14.150 s** | 939 | 5.183 s | 9.450 s | 24.81 m/s | 0.70 m | `0b32413d…f14b5ca` |
 
 Every car: 2/2 checkpoints in order, no respawn, wheel contact on every tick, 0
-NaN, and a bit-identical replay with the rules off. The AWD Audi is fastest and
-the FWD Focus slowest, as the drivetrain and the unchanged physics predict. A
-real off-course run (steer off the corridor) respawns once at checkpoint 1 with
-the timer still running (2.45 s → 4.45 s) and the checkpoint kept.
+NaN, a bit-identical replay with the rules off, and a restart in the same wasm
+instance that reproduces the finish tick, time and every state hash. The AWD Audi
+is fastest and the FWD Focus slowest, as the unchanged physics predicts.
+
+The 29 m regression course keeps the P37 values exactly:
+
+| car | finish | tick | checkpoint 1 | checkpoint 2 | state sequence hash |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | **2.800 s** | 258 | 1.683 s | 2.317 s | `fdd893bd…e62622` |
+| Lotus Exige Cup260 | **2.850 s** | 261 | 1.733 s | 2.350 s | `c9b17397…b52dfc` |
+| Dodge Challenger | **3.000 s** | 270 | 1.783 s | 2.450 s | `438e2e12…e12684` |
+| Ford Focus RS (FWD) | **3.267 s** | 286 | 1.967 s | 2.683 s | `cc911ea3…2af937` |
+| Audi R8 V10 (AWD) | **2.283 s** | 227 | 1.317 s | 1.850 s | `d52d4b8f…44dea` |
+
 
 ## Extended corridor survey (`?survey=1`)
 
@@ -369,7 +418,8 @@ course**:
 Coverage (a draw within 0.5 m of the collision surface) does not test walls, width,
 steps or slope: a 50 m cliff face is both drawn and collided, so its cells count as
 covered and the measured Dijkstra line can run straight through it. `?survey=1`
-labels exactly that; the playable sprint stays the 29 m straight.
+labels exactly that; the playable sprint is the measured 310 m P48 course (or the
+29 m regression straight with `?course=short`).
 
 ## Telemetry (`?telemetry=1`)
 
@@ -492,8 +542,9 @@ sequence hash, and the Corvette's sequence hash is exactly the T-007 value
 
 `_work/e1-drive/run.json` (all cars, including the camera ranges and
 blocked/near-field counts), `state-<slug>.json`, `packet-<slug>.json`,
-`sprint.json` (the derived layout), `sprint-<slug>.json` (per-car sprint ticks,
-events, inputs and the start/checkpoint/finish capture updates),
+`sprint.json` (the default 310 m layout), `sprint-short.json` (the 29 m regression
+layout), `sprint-<slug>.json` / `sprint-short-<slug>.json` (per-car sprint ticks,
+events, inputs and the start/mid/checkpoint/finish capture updates),
 `telemetry.json` (all cars' measured metrics, hashes and rank comparison),
 `telemetry-<slug>.json` (full 60 Hz traces, metrics, hash aggregates and unit
 definitions),
@@ -515,7 +566,8 @@ measured limit),
 `browser-evidence-texture.json` (close-up texture proof),
 `soak-run-{1,2}.json`, `browser-soak-run{1,2}-{start,mid,end}.png`,
 `browser-<slug>-{start,mid,coast,end}.png`,
-`browser-<slug>-sprint-{start,checkpoint,finish}.png`,
+`browser-<slug>-sprint-{start,mid,checkpoint,finish}.png`,
+`browser-<slug>-sprint-short-{start,mid,checkpoint,finish}.png` (29 m regression),
 `browser-<slug>-sprint-restart-{before,countdown,finish}.png`,
 `browser-<slug>-sprint-respawn.png`,
 `browser-<slug>-telemetry.png` (+ `-car.png`),
@@ -570,16 +622,23 @@ per-car metrics and plausibility comparison are recorded in
   vertices / 57,133 triangles). Measured fact: block88/node283
   bounds are `x 944…2478, z 2206…3237` and do **not** overlap the drive box
   (`x −120…−10, z 1010…1090`); block56/node289 does (its road y at the spawn is
-  5.80685 vs the engine's 5.8074 ground probe). Measured for the sprint: the full
-  6 m gate band is covered to `x = −57.00`, and along the recorded car line the
-  last drawn ground is around `x = −48.5`; the tail of the 300-tick drive and the
-  off-road area have no committed real draw, so no ground is drawn there. The HUD
+  5.80685 vs the engine's 5.8074 ground probe). The 310 m P48 course is fully
+  drawn by block56/node289 (P51: 100 % at the car-width band, 8 draws), while the
+  tail of the 300-tick drive (`?script=drive`) and the off-road area have no
+  committed real draw, so no ground is drawn there. The HUD
   says `394 real draws · 57133 tri · 297 textured (136 tex, 439360 B) · no-draw 2088 tri · slab hidden`.
 - **The extended corridor is a survey, not a course.** The measured line crosses
   two engine-confirmed 50 m vertical collision faces (arc 57.82 m and 530.71 m)
   and a cliff pinch at 55.7-59.7 m; every car stops at 52.66-53.37 m on the
   section-join rise and at 55.49-56.20 m at the pinch. `?survey=1` labels the drawn
-  corridor; nothing about the playable 29 m sprint changes.
+  corridor; nothing about the playable 310 m course or the 29 m regression changes.
+- **The 310 m course is point-to-point.** It is the farthest point of the spawn
+  collision component; there is no lap. Its finish is at arc 300.160 m, 10.24 m
+  before the measured end, because the surface narrows to 2.0 m at +4 m past that
+  end. The course crosses five draw-to-draw seams in the same section
+  (50.18 / 76.89 / 168.64 / 222.78 / 242.00 m); P51 measured 0 uncovered
+  sub-samples at 0.02 m across them, but they are seams in one section, not extra
+  road.
 - **The collision surface is physics-only and hidden.** The wheels still trace
   `Level.levelphysics`, but the collision mesh is now carried in
   `packet.physicsSurfaces` with `visible:false`; it is not uploaded and not
