@@ -13,10 +13,13 @@
 //         measured by track-coverage, which supplies the other five sections of
 //         the 539.81 m corridor (block58/50/71/64/59) with their pinned
 //         positions/indices hashes and source draw ranges.
+//         _work/e1-drive/track-textures.json + track-uv.bin + textures/*.rgba:
+//         the P45/P47 UV0 and static albedo export (build_track_textures.py).
 //         Read only; every reference and manifest is pinned by SHA-256 and every
 //         draw range is validated against its mesh before it is used.
 // Output: _work/e1-drive/geometry.json — the level mesh, the real River track
-//         visual (committed level_inspect direct draws), one body per roster car
+//         visual (committed level_inspect direct draws) with its real P45 UV0
+//         stream and static albedo textures (geometry v5), one body per roster car
 //         (mesh, draws, parts, wheel groups and nodes), and the collision surface
 //         kept as hidden physics provenance.
 //         Nothing is re-derived from the game files here; the packet populates
@@ -747,6 +750,99 @@ const trackSections = TRACK_VISUAL_SECTIONS.map(loadTrackVisualSection);
     }
   }
 }
+
+// ------------------------------------------------- real UV0 + albedo textures
+//
+// `build_track_textures.py` exports the P45/P47 measurements as data: the UV0
+// array of every merged vertex (the committed `level_inspect` mesh stream P45
+// proved equal to the engine stream draw by draw) and one RGBA bitmap per
+// distinct static `g_tAlbedo` source (the committed BC1 decode of the P34/P47
+// blob). Nothing here is derived again: the manifest pins every texture and UV
+// value by hash, the RGBA files are re-hashed before they are embedded, and a
+// draw without a P45/P47 row keeps `textureId:null` with a labelled reason.
+const TRACK_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/track-textures.json');
+if (!existsSync(TRACK_TEXTURE_MANIFEST)) {
+  throw new Error('missing ' + path.relative(ROOT, TRACK_TEXTURE_MANIFEST) +
+    ' — run `python probes/e1-drive/tools/build_track_textures.py` first');
+}
+const textureManifestBytes = readFileSync(TRACK_TEXTURE_MANIFEST);
+const textureManifest = JSON.parse(textureManifestBytes.toString('utf8'));
+if (textureManifest.kind !== 'e1-drive.track-textures' || textureManifest.version !== 1) {
+  throw new Error('track texture manifest kind/version is not e1-drive.track-textures v1');
+}
+if (textureManifest.pins?.uvAggregate !== '2ed1f4b0b3c9148e' ||
+    textureManifest.pins?.bindingAggregate !== '9cc08756505dd497') {
+  throw new Error('track texture manifest does not carry the P45/P47 aggregates');
+}
+if (textureManifest.sections.length !== TRACK_VISUAL_SECTIONS.length) {
+  throw new Error('track texture manifest has ' + textureManifest.sections.length +
+    ' sections, the visual has ' + TRACK_VISUAL_SECTIONS.length);
+}
+for (let index = 0; index < TRACK_VISUAL_SECTIONS.length; index++) {
+  if (textureManifest.sections[index].key !== TRACK_VISUAL_SECTIONS[index].key) {
+    throw new Error('track texture manifest section ' + index + ' is ' +
+      textureManifest.sections[index].key + ', the visual expects ' + TRACK_VISUAL_SECTIONS[index].key);
+  }
+}
+
+const uvPath = path.join(ROOT, textureManifest.uvStream.path);
+const uvBuffer = readFileSync(uvPath);
+if (uvBuffer.length !== textureManifest.uvStream.bytes ||
+    sha256(uvBuffer) !== textureManifest.uvStream.sha256) {
+  throw new Error('track UV stream is not the one the manifest pinned: ' + sha256(uvBuffer));
+}
+if (uvBuffer.length !== textureManifest.uvStream.vertexCount * 8) {
+  throw new Error('track UV stream length does not match its vertex count');
+}
+const trackUvs = new Float32Array(textureManifest.uvStream.vertexCount * 2);
+for (let index = 0; index < trackUvs.length; index++) {
+  trackUvs[index] = uvBuffer.readFloatLE(index * 4);
+  if (!Number.isFinite(trackUvs[index])) throw new Error('track UV stream has a non-finite component at ' + index);
+}
+
+const textureRecords = textureManifest.textures.map((texture) => {
+  const file = path.join(ROOT, texture.rgbaPath);
+  const bytes = readFileSync(file);
+  if (sha256(bytes) !== texture.rgbaSha256) {
+    throw new Error(texture.id + ': RGBA file is not the one the manifest pinned');
+  }
+  if (bytes.length !== texture.rgbaBytes || bytes.length !== texture.width * texture.height * 4) {
+    throw new Error(texture.id + ': RGBA length does not match its declared size');
+  }
+  return {
+    id: texture.id,
+    source: texture.block + ':' + texture.index,
+    block: texture.block,
+    index: texture.index,
+    name: texture.name,
+    textureHash: texture.textureHash,
+    width: texture.width,
+    height: texture.height,
+    levels: texture.levels,
+    format: texture.format,
+    formatName: texture.formatName,
+    payloadBytes: texture.payloadBytes,
+    rgbaBytes: texture.rgbaBytes,
+    rgbaSha256: texture.rgbaSha256,
+    rgbaFnv1a64: texture.rgbaFnv1a64,
+    decodeRegistry: texture.registry,
+    drawCount: texture.drawCount,
+    blob: texture.blob,
+    blobSha256: texture.blobSha256,
+    rgbaBase64: bytes.toString('base64')
+  };
+});
+if (new Set(textureRecords.map((texture) => texture.id)).size !== textureRecords.length) {
+  throw new Error('track texture ids are not unique');
+}
+const textureById = new Map(textureRecords.map((texture) => [texture.id, texture]));
+const textureDrawByKey = new Map(textureManifest.draws.map((draw) => [
+  draw.sectionKey + ':' + draw.sectionDrawIndex, draw
+]));
+if (textureDrawByKey.size !== textureManifest.draws.length) {
+  throw new Error('track texture manifest draw keys are not unique');
+}
+
 const trackPositions = [];
 const trackIndices = [];
 const trackDraws = [];
@@ -760,12 +856,26 @@ for (const section of trackSections) {
   for (const value of doc.indices) trackIndices.push(value + trackVertexBase);
 
   const drawStartCount = trackDraws.length;
+  let sectionDrawIndex = 0;
   for (const draw of doc.draws) {
     if (!Number.isInteger(draw.firstIndex) || !Number.isInteger(draw.indexCount) ||
         draw.indexCount <= 0 || draw.indexCount % 3 !== 0 ||
         draw.firstIndex < 0 || draw.firstIndex + draw.indexCount > doc.indices.length) {
       throw new Error(section.key + ': draw ' + draw.primitiveIndex + ' has an invalid index range');
     }
+    const binding = textureDrawByKey.get(section.key + ':' + sectionDrawIndex);
+    if (!binding || binding.mergedDrawIndex !== trackDraws.length) {
+      throw new Error(section.key + ': draw ' + sectionDrawIndex + ' is missing from the texture manifest ' +
+        '(or its merged index moved)');
+    }
+    if (binding.primitiveIndex !== draw.primitiveIndex) {
+      throw new Error(section.key + ': draw ' + sectionDrawIndex + ' primitive index differs from the manifest');
+    }
+    const texture = binding.textureId === null ? null : textureById.get(binding.textureId);
+    if (binding.textureId !== null && !texture) {
+      throw new Error(section.key + ': draw ' + sectionDrawIndex + ' names unknown texture ' + binding.textureId);
+    }
+    sectionDrawIndex++;
     let minIndex = Infinity;
     let maxIndex = -Infinity;
     const min = [Infinity, Infinity, Infinity];
@@ -791,9 +901,21 @@ for (const section of trackSections) {
       indexOffset: trackIndexBase + draw.firstIndex,
       indexCount: draw.indexCount,
       materialId: null,
-      materialReason:
-        'asset-reader direct draw: the level material list is decoded but not applied by this slice; ' +
-        'the draw keeps its source index range and is rendered with the diagnostic albedo (materialsApplied:false)',
+      materialReason: texture
+        ? 'asset-reader direct draw: the static g_tAlbedo texture ' + texture.id + ' (' + texture.name +
+          ', ' + texture.width + 'x' + texture.height + ') is bound and sampled with the real UV0 stream; the ' +
+          'rest of the material (colour, blend state, shader stages) is not applied (materialsApplied:false)'
+        : 'asset-reader direct draw: no static albedo texture is bound (' + binding.bindingStatus + ': ' +
+          binding.bindingReason + '); the draw keeps its source index range and the diagnostic albedo',
+      textureId: texture ? texture.id : null,
+      textureBinding: {
+        status: binding.bindingStatus,
+        reason: binding.bindingReason,
+        source: binding.textureSource,
+        name: binding.textureName ?? null,
+        uvProvenance: binding.uvProvenance,
+        uvHash: binding.uvHash
+      },
       layer: 'opaque',
       bounds: { min: min.map((value) => Number(value.toFixed(6))), max: max.map((value) => Number(value.toFixed(6))) },
       worldKind: 'baked-into-mesh',
@@ -822,6 +944,11 @@ for (const section of trackSections) {
     });
   }
 
+  if (sectionDrawIndex !== doc.draws.length) {
+    throw new Error(section.key + ': texture manifest covers ' + sectionDrawIndex + ' of ' + doc.draws.length + ' draws');
+  }
+
+  const manifestSection = textureManifest.sections.find((entry) => entry.key === section.key);
   trackSectionRecords.push({
     key: section.key,
     geometryBlock: section.geometryBlock,
@@ -839,6 +966,12 @@ for (const section of trackSections) {
     triangleCount: doc.triangleCount,
     drawCount: doc.draws.length,
     drawIndexRange: [drawStartCount, trackDraws.length - 1],
+    uv: {
+      source: 'level_inspect reference-mesh uv0 (P45-verified)',
+      values: manifestSection.uvValues,
+      sha256: manifestSection.uvSha256,
+      texturedDraws: manifestSection.texturedDraws
+    },
     bounds: {
       min: doc.bounds.min.map((value) => Number(value.toFixed(6))),
       max: doc.bounds.max.map((value) => Number(value.toFixed(6)))
@@ -871,6 +1004,22 @@ const trackVisualMesh = {
   indices: trackIndices,
   positionsSha256: 'sha256:' + float32Hash(trackPositions),
   indicesSha256: 'sha256:' + uint32Hash(trackIndices),
+  uv: {
+    storage: 'base64-float32le',
+    components: 2,
+    vertexCount: textureManifest.uvStream.vertexCount,
+    values: trackUvs.length,
+    bytes: uvBuffer.length,
+    sha256: textureManifest.uvStream.sha256,
+    data: uvBuffer.toString('base64'),
+    source: {
+      manifest: path.relative(ROOT, TRACK_TEXTURE_MANIFEST).split(path.sep).join('/'),
+      manifestSha256: sha256(textureManifestBytes),
+      stream: textureManifest.uvStream.path,
+      provenance: 'level_inspect reference-mesh uv0; P45 compared every draw against the engine UV0 stream bit-exactly',
+      aggregate: textureManifest.pins.uvAggregate
+    }
+  },
   coordinateSpace: 'world',
   source: {
     tool: 'level_inspect (committed direct-draw references)',
@@ -878,7 +1027,8 @@ const trackVisualMesh = {
     sections: trackSectionRecords,
     note:
       'real River levelrender direct draws, concatenated without transform or clipping; ' +
-      'the per-draw source index ranges are preserved; materials are diagnostic, no texture is bound'
+      'the per-draw source index ranges are preserved; each draw carries the real UV0 stream and, where ' +
+      'P44/P45/P47 measured a static albedo binding, its texture id; the rest of the material is diagnostic'
   }
 };
 
@@ -890,6 +1040,7 @@ const trackVisual = {
   vertexCount: trackVisualMesh.vertexCount,
   triangleCount: trackVisualMesh.indexCount / 3,
   drawCount: trackDraws.length,
+  texturedDrawCount: trackDraws.filter((draw) => draw.textureId !== null).length,
   bounds: {
     min: trackMin.map((value) => Number(value.toFixed(6))),
     max: trackMax.map((value) => Number(value.toFixed(6)))
@@ -1059,7 +1210,7 @@ if (!bodies[defaultSlug]) throw new Error('roster default car has no body: ' + d
 
 const geometry = {
   kind: 'e1-drive.geometry',
-  version: 4,
+  version: 5,
   source: {
     packet: path.relative(ROOT, SOURCE).split(path.sep).join('/'),
     packetVersion: packet.version,
@@ -1108,6 +1259,22 @@ const geometry = {
         triangles: trackVisualMesh.indexCount / 3,
         draws: trackDraws.length,
         bounds: trackVisual.bounds,
+        uv: {
+          bytes: trackVisualMesh.uv.bytes,
+          vertexCount: trackVisualMesh.uv.vertexCount,
+          sha256: trackVisualMesh.uv.sha256,
+          aggregate: textureManifest.pins.uvAggregate
+        },
+        textures: {
+          manifest: path.relative(ROOT, TRACK_TEXTURE_MANIFEST).split(path.sep).join('/'),
+          manifestSha256: sha256(textureManifestBytes),
+          count: textureRecords.length,
+          rgbaBytes: textureRecords.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+          texturedDraws: trackVisual.texturedDrawCount,
+          fallbackRuntimeOnly: textureManifest.coverage.fallbackRuntimeOnly,
+          fallbackNoBindingRow: textureManifest.coverage.fallbackNoBindingRow,
+          sampler: textureManifest.sampler
+        },
         sections: trackSectionRecords
       },
       collision: {
@@ -1126,7 +1293,8 @@ const geometry = {
     note:
       'static geometry copied verbatim from the committed render-packet spike; ' +
       'level draws are world-space (instances baked by the reader), car draws are object-local; ' +
-      'track draws are the real River levelrender direct draws from the committed level_inspect references; ' +
+      'track draws are the real River levelrender direct draws from the committed level_inspect references, ' +
+      'with the real UV0 stream and the P44/P45/P47 static albedo texture where one was measured; ' +
       'part ids, wheel groups and rest-pose transforms are copied from each car\'s committed part manifest; ' +
       'the collision surface comes from the level physics file through the collision-oracle reference parser ' +
       'and is kept as hidden physics provenance, not drawn'
@@ -1136,6 +1304,29 @@ const geometry = {
   meshes: [meshEntry({ ...levelMesh, source: levelMesh.source }), trackVisualMesh],
   levelDraws: levelDraws.map(levelDrawEntry),
   trackVisual,
+  textures: textureRecords,
+  texturePack: {
+    kind: textureManifest.kind,
+    version: textureManifest.version,
+    manifest: path.relative(ROOT, TRACK_TEXTURE_MANIFEST).split(path.sep).join('/'),
+    manifestSha256: sha256(textureManifestBytes),
+    sampler: textureManifest.sampler,
+    coverage: textureManifest.coverage,
+    uvStream: {
+      storage: textureManifest.uvStream.storage,
+      path: textureManifest.uvStream.path,
+      sha256: textureManifest.uvStream.sha256,
+      values: textureManifest.uvStream.values,
+      vertexCount: textureManifest.uvStream.vertexCount,
+      bytes: textureManifest.uvStream.bytes
+    },
+    materialScope:
+      'static g_tAlbedo texture pixels only: the engine material colour, blend state, shader stages, mip chain ' +
+      'and sRGB interpretation are not applied, so this is not retail material fidelity',
+    note:
+      'pixels are the committed BC1 decode of the P34/P47 blobs, mapped by the real P45 UV0 stream; ' +
+      'wrap/filter/mip are the explicit PoC sampler in texturePack.sampler, not recovered engine state'
+  },
   collisionSurface,
   carBodies: bodies,
   defaultCar: defaultSlug,
@@ -1177,6 +1368,14 @@ console.log(JSON.stringify({
     vertices: trackVisualMesh.vertexCount,
     triangles: trackVisualMesh.indexCount / 3,
     draws: trackDraws.length,
+    texturedDraws: trackVisual.texturedDrawCount,
+    textures: textureRecords.length,
+    textureBytes: textureRecords.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    uv: {
+      values: trackVisualMesh.uv.values,
+      bytes: trackVisualMesh.uv.bytes,
+      sha256: trackVisualMesh.uv.sha256
+    },
     bounds: trackVisual.bounds,
     corridor: geometry.source.track.corridor,
     sections: trackSectionRecords.map((section) => ({

@@ -74,7 +74,8 @@ const roster = JSON.parse(readFileSync(path.join(OUT, 'cars.json'), 'utf8'));
 // and the selected car's body. The collision surface is hidden physics provenance
 // in packet.physicsSurfaces, so it is neither uploaded nor drawn.
 const MESH_COUNT = 3;
-const meshBytes = (mesh) => mesh.positions.length * 4 + mesh.indices.length * 4;
+const meshBytes = (mesh) => mesh.positions.length * 4 + mesh.indices.length * 4 +
+  (mesh.uv ? mesh.uv.bytes : mesh.vertexCount * 8);
 const levelMesh = geometry.meshes[0];
 const trackMesh = geometry.meshes.find((mesh) => mesh.id === geometry.trackVisual.meshId);
 if (!trackMesh) throw new Error('geometry has no real track visual mesh');
@@ -108,6 +109,10 @@ function expectedFor(car) {
     trackDraws: geometry.trackVisual.drawCount,
     trackTriangles: geometry.trackVisual.triangleCount,
     trackLabel: geometry.trackVisual.label,
+    texturedDraws: geometry.trackVisual.texturedDrawCount,
+    textureCount: geometry.textures.length,
+    textureBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    uvVertices: trackMesh.uv.vertexCount,
     fallbackTriangles: geometry.collisionSurface.coverage?.fallbackTriangles ?? 0,
     coveredTriangles: geometry.collisionSurface.coverage?.coveredTriangles ?? 0,
     collisionVisible: packet.diagnostics.extras.collisionSurface?.visible ?? null,
@@ -248,6 +253,9 @@ async function capture(car, label, tick, options = {}) {
       frames: p.frames, ticksExecuted: p.ticksExecuted, cappedFrames: p.cappedFrames,
       pauseDrops: p.pauseDrops, zeroTickFrames: p.zeroTickFrames,
       geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
+      textureUploads: p.textureUploads, textureUploadBytes: p.textureUploadBytes, uvUploadBytes: p.uvUploadBytes,
+      trackTexturedDraws: p.trackTexturedDraws, trackTextures: p.trackTextures,
+      trackTextureBytes: p.trackTextureBytes, trackUvVertices: p.trackUvVertices,
       uniformWrites: p.uniformWrites, uniformBytes: p.uniformBytes, drawsIssued: p.drawsIssued,
       draws: p.draws, parts: p.parts, carDraws: p.carDraws, packetNodes: p.packetNodes,
       wheelNodes: p.wheelNodes, wheelAngles: p.wheelAngles,
@@ -1032,6 +1040,15 @@ for (const car of cars) {
     check(`${car.slug}/${entry.label}: upload bytes are the level + own body + track meshes`,
           entry.probe.geometryUploadBytes === expected.uploadBytes,
           entry.probe.geometryUploadBytes + ' vs ' + expected.uploadBytes);
+    check(`${car.slug}/${entry.label}: the static albedo textures are uploaded for the textured track draws`,
+          entry.probe.textureUploads === expected.textureCount &&
+          entry.probe.textureUploadBytes === expected.textureBytes &&
+          entry.probe.trackTextures === expected.textureCount &&
+          entry.probe.trackTextureBytes === expected.textureBytes &&
+          entry.probe.trackTexturedDraws === expected.texturedDraws &&
+          entry.probe.trackUvVertices === expected.uvVertices,
+          entry.probe.textureUploads + ' textures / ' + entry.probe.textureUploadBytes + ' B / ' +
+          entry.probe.trackTexturedDraws + ' textured draws / ' + entry.probe.trackUvVertices + ' UV vertices');
     check(`${car.slug}/${entry.label}: the browser drew this car's own body mesh and manifest`,
           entry.probe.bodyMesh === expected.bodyMeshId &&
           entry.probe.bodyManifest?.sha256 === expected.bodyManifestSha256 &&
@@ -1303,6 +1320,10 @@ console.log(JSON.stringify({
     ticksExecuted: entry.probe.ticksExecuted,
     geometryUploads: entry.probe.geometryUploads,
     geometryUploadBytes: entry.probe.geometryUploadBytes,
+    textureUploads: entry.probe.textureUploads,
+    textureUploadBytes: entry.probe.textureUploadBytes,
+    uvUploadBytes: entry.probe.uvUploadBytes,
+    texturedTrackDraws: entry.probe.trackTexturedDraws,
     uniformWrites: entry.probe.uniformWrites,
     drawsIssued: entry.probe.drawsIssued,
     gpu: entry.probe.gpu,

@@ -44,9 +44,9 @@ export const WHEEL_CORNERS = Object.freeze(['frontleft', 'frontright', 'backleft
  * one car mesh and never a car it is not driving.
  */
 export function resolveCarBody(geometry, slug) {
-  if (!geometry || geometry.version !== 4 || !geometry.carBodies) {
-    throw new Error('geometry does not carry per-car bodies and the v4 track visual; rebuild it with ' +
-      '`node probes/e1-drive/tools/build_geometry.mjs`');
+  if (!geometry || geometry.version !== 5 || !geometry.carBodies) {
+    throw new Error('geometry does not carry per-car bodies, the v5 track visual and its static albedo ' +
+      'textures; rebuild it with `node probes/e1-drive/tools/build_geometry.mjs`');
   }
   const key = slug ?? geometry.defaultCar;
   const body = geometry.carBodies[key];
@@ -390,11 +390,29 @@ export function createSession(geometry, tick0, options = {}) {
     indexCount: mesh.indexCount,
     positions: mesh.positions,
     indices: mesh.indices,
+    uv: mesh.uv ?? null,
     positionsSha256: mesh.positionsSha256,
     indicesSha256: mesh.indicesSha256,
     coordinateSpace: mesh.coordinateSpace,
     source: mesh.source
   }));
+  for (const mesh of meshes) {
+    if (!mesh.uv) continue;
+    if (mesh.uv.storage !== 'base64-float32le' || mesh.uv.components !== 2 ||
+        mesh.uv.vertexCount !== mesh.vertexCount || typeof mesh.uv.data !== 'string') {
+      throw new Error('mesh ' + mesh.id + ' has a UV stream that does not match its vertex count');
+    }
+  }
+  if (!Array.isArray(geometry.textures) || geometry.textures.length === 0 || !geometry.texturePack) {
+    throw new Error('geometry does not carry the v5 static albedo textures; rebuild it with ' +
+      '`node probes/e1-drive/tools/build_geometry.mjs`');
+  }
+  const textureIds = new Set(geometry.textures.map((texture) => texture.id));
+  for (const draw of trackDraws) {
+    if (draw.textureId !== null && !textureIds.has(draw.textureId)) {
+      throw new Error('track draw ' + draw.id + ' names unknown texture ' + draw.textureId);
+    }
+  }
 
   const vertexTotal = meshes.reduce((sum, mesh) => sum + mesh.vertexCount, 0);
   const triangleTotal = meshes.reduce((sum, mesh) => sum + mesh.indexCount / 3, 0);
@@ -466,6 +484,8 @@ export function createSession(geometry, tick0, options = {}) {
     lights: [geometry.light],
     meshes,
     materials: geometry.materials,
+    textures: geometry.textures,
+    texturePack: geometry.texturePack,
     draws: staticDraws.concat(carDraws),
     physicsSurfaces,
     placedObjects: [{
@@ -594,9 +614,24 @@ export function createSession(geometry, tick0, options = {}) {
           id: trackVisual.meshId,
           trackVisual: trackVisual.label,
           drawCount: trackDraws.length,
+          texturedDrawCount: trackDraws.filter((draw) => draw.textureId !== null).length,
           vertexCount: trackMesh.vertexCount,
           triangleCount: trackMesh.indexCount / 3,
           bounds: trackVisual.bounds,
+          uv: {
+            storage: trackMesh.uv.storage,
+            components: trackMesh.uv.components,
+            values: trackMesh.uv.values,
+            bytes: trackMesh.uv.bytes,
+            sha256: trackMesh.uv.sha256,
+            source: trackMesh.uv.source.provenance
+          },
+          textures: {
+            count: geometry.textures.length,
+            rgbaBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+            sampler: geometry.texturePack.sampler,
+            coverage: geometry.texturePack.coverage
+          },
           sections: trackVisual.sections.map((section) => ({
             key: section.key,
             geometryBlock: section.geometryBlock,
@@ -610,8 +645,9 @@ export function createSession(geometry, tick0, options = {}) {
           })),
           reason:
             'real River levelrender direct draws from the committed level_inspect references are drawn ' +
-            'instead of the diagnostic collision slab; every draw keeps its source index range, ' +
-            'materials remain diagnostic (materialsApplied:false) and no texture is bound',
+            'instead of the diagnostic collision slab; every draw keeps its source index range, the real UV0 ' +
+            'stream and, where P44/P45/P47 measured one, its static g_tAlbedo texture; material colour, blend ' +
+            'state, shader stages, mip chain and sRGB interpretation remain unapplied (materialsApplied:false)',
           coverage: collisionSurface.coverage ?? null
         },
         collisionSurface: {
@@ -635,7 +671,8 @@ export function createSession(geometry, tick0, options = {}) {
       },
       approximations: [
         'level and vehicle materials are not applied; car parts use a diagnostic per-part colour, all other draws use a neutral albedo, under one directional light',
-        'the real track visual keeps every source draw index range but is shaded with the diagnostic albedo; its level material ids are not bound',
+        'the real track visual keeps every source draw index range and samples the static g_tAlbedo texture with the real UV0 stream on 297 of 394 draws; the 2 runtime-only albedo draws and the 95 block88/node283 draws with no P45/P47 binding row keep the diagnostic albedo',
+        'texture sampling is rgba8unorm mip0 with repeat/linear: no sRGB-to-linear conversion, mip chain, anisotropy or material colour is applied, so it is not retail sampling fidelity',
         'no shadow, post-process, particle or effect pass exists in this consumer',
         'face normals come from screen-space derivatives of the world position, not from original vertex normals',
         'the car mesh is aligned to the engine body frame directly; the retail mesh import and its offset are not recovered',
@@ -645,6 +682,7 @@ export function createSession(geometry, tick0, options = {}) {
       ],
       notRecovered: [
         'level material list to shader binding',
+        'retail texture sampler state (wrap mode, filter, anisotropy, mip selection, sRGB interpretation)',
         'original level and vehicle lighting rigs',
         'vehicle paint lookup texture and runtime light blends',
         'runtime per-wheel matrices (suspension, steer, camber), higher LODs and damage states',

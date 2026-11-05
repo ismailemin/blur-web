@@ -599,6 +599,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Bitişten 4 m sonra yüzey 2,0 m'ye daralıyor (2,276 m araç zarfı); engel duvar değil, daralma. 539,81 m draw koridoru ve 555 m height route reddedildi (50 m fink).
 - Sıradaki: 310 m sprint entegrasyonu; 29 m regression control. Kanıt: `docs/work/analysis/drivable-path.md`, `_work/drivable-path/path-map.png`.
 
+## 5 Kasım 2026 — dokulu pist
+
+- 394 draw'dan **297**'si gerçek albedo + UV0 ile sample ediliyor: 136 doku / 439.360 B RGBA; 192.988 float UV / 771.952 B; sampler repeat/linear/mip0/rgba8unorm, sRGB yok (PoC seçimi).
+- block88 95 draw binding row olmadığı için diagnostic (`noBindingRowForSection`); 2 runtime-only. Textured coverage: block56 49/49, altı koridor section 297/299.
+- `verify_e1_drive` **522/522**; 20 capture console 0; 1 dk soak texture leak yok (136 live). geometry v5 18.791.525 B. Kanıt: `docs/work/verification/T-007-textured-track.md`.
+
 ## 5 Kasım 2026 — PoC çalıştırılabilir
 
 - `tools/run_e1_poc.ps1` + `docs/handoff/E1_POC.md`: eksik artifact kontrolü, tek komut, `http://127.0.0.1:8801/`.

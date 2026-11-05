@@ -36,10 +36,15 @@ real River render geometry: the committed `level_inspect` direct draws
 (block88/node283, 95 draws / 17,782 vertices / 9,343 triangles, plus the
 drive-covering block56/node289 section) **plus the six measured sections of the
 539.81 m River corridor**, merged into one labelled `river.track.visual` mesh
-(394 draws / 96,494 vertices / 57,133 triangles). The diagnostic collision surface
-is no longer drawn; it stays in the packet as hidden physics provenance
-(`visible:false`). See `docs/work/verification/T-007-track-visual.md` for the two
-original sections and `docs/work/verification/T-007-ledge-fix.md` for the corridor.
+(394 draws / 96,494 vertices / 57,133 triangles). **297 of those draws sample
+their own static `g_tAlbedo` texture with the real P45 UV0 stream** (136 textures,
+439,360 decoded RGBA bytes); the 2 runtime-only albedo draws and the 95
+block88/node283 draws with no P45/P47 binding row keep the labelled diagnostic
+albedo. The diagnostic collision surface is no longer drawn; it stays in the
+packet as hidden physics provenance (`visible:false`). See
+`docs/work/verification/T-007-track-visual.md` for the two original sections,
+`T-007-ledge-fix.md` for the corridor and `T-007-textured-track.md` for the
+textured pass.
 
 ### The extended corridor is a survey, not a course
 
@@ -136,6 +141,9 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 2. collision surface under the drive (physics provenance; kept hidden, not drawn)
 & $py   probes/e1-drive/tools/extract_track.py
 
+# 2b. real UV0 + static albedo texture export (P45/P47 rows + committed BC1 decode)
+& $py   probes/e1-drive/tools/build_track_textures.py
+
 # 3. static geometry (level packet + real level_inspect track visual + 5 car bodies + hidden collision)
 & $node probes/e1-drive/tools/build_geometry.mjs
 
@@ -153,7 +161,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 6. scripted drive of every roster car twice, sprint runs + respawn + layout
 #    checks, telemetry series twice + input replay, 10 create/reset rebuilds per
 #    car in one instance, one-instance telemetry and sprint restart, packet
-#    validation and the extended-corridor survey/limit checks (514 checks)
+#    validation and the extended-corridor survey/limit checks (522 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 
 # 7. headless Edge/WebGPU screenshots + console gate
@@ -219,15 +227,20 @@ tyres and drivetrain, and `e1_info().car` reports which record it decoded.
 packet the browser renders is produced by the same code the verifier validates.
 
 - `draws[]`: 22 committed level instances (world-space, identity transform) + the **real
-  River track visual** (144 `level_inspect` direct draws: 95 from block88/node283 and
-  49 from block56/node289) + that car's own draw ranges (100 / 88 / 104 / 115 / 84).
+  River track visual** (394 `level_inspect`/track-coverage direct draws, each with
+  its own UV0 and, for 297 of them, a static `g_tAlbedo` texture id) + that car's
+  own draw ranges (100 / 88 / 104 / 115 / 84).
   Every car draw carries its manifest `partId`/`partKind`, `wheelPart`, `spins`,
   `nodeId` and a labelled `diagnosticColour`. Every track draw keeps its source
   index range and is labelled `trackVisual:"asset-reader-direct-draws"`.
 - `meshes[]`: exactly three — the level mesh, the real track visual (one merged
-  mesh, 32,290 vertices / 19,167 triangles) and the selected car's own body mesh.
-  One body per packet keeps the upload bounded (3 uploads, ~1.62–1.72 MB) instead
-  of growing with the roster. The collision surface is **not** in `meshes`.
+  mesh, 96,494 vertices / 57,133 triangles, 192,988 UV0 values) and the selected
+  car's own body mesh. One body per packet keeps the upload bounded (3 uploads,
+  ~3.95–4.08 MB with the UV buffers) instead of growing with the roster. The
+  collision surface is **not** in `meshes`.
+- `textures[]` / `texturePack`: 136 decoded static albedo RGBA bitmaps
+  (439,360 B), their `block:index` identity and hashes, plus the explicit sampler
+  metadata (`repeat`, linear, mip0, `rgba8unorm`, no sRGB).
 - `physicsSurfaces[]`: one hidden collision surface (`visible:false`,
   `physicsOnly:true`, 230 vertices / 381 triangles) carried for provenance only;
   it is not uploaded and not drawn.
@@ -244,10 +257,11 @@ packet the browser renders is produced by the same code the verifier validates.
 - `draws[].bounds` for the car are recomputed from the mesh's local AABB at the
   tick-0 pose, so the reference frame's bounds are real.
 - `diagnostics.extras.track`: the real track visual label
-  (`asset-reader-direct-draws`), 144 draws / 32,290 vertices / 19,167 triangles,
-  both source sections (block88/node283 95/17,782/9,343 and block56/node289
-  49/14,508/9,824) with their pinned reference SHA-256 values, and the measured
-  collision coverage (67 covered / 314 no-draw triangles in the drive box).
+  (`asset-reader-direct-draws`), 394 draws / 96,494 vertices / 57,133 triangles,
+  the seven source sections with their pinned reference SHA-256 values, the
+  UV0/texture coverage (297 textured / 2 runtime-only / 95 no-binding-row, 136
+  textures / 439,360 B) and the measured collision coverage (3,845 covered /
+  2,088 no-draw triangles).
 - `diagnostics.extras.collisionSurface`: the hidden collision surface
   (`visible:false`, `physicsOnly:true`, 381 triangles) and where it came from.
 - `diagnostics.extras.drive.car`: the car this timeline describes (name, record
@@ -265,7 +279,7 @@ The camera is an orbit camera behind the car; yaw follows the car with a fixed
 per-tick lag, so it is a pure function of the tick sequence (no wall clock). Its
 distance is collision-limited: every tick casts the segment from the car's aim
 point to the desired eye against the **visible static geometry** (level props +
-real track visual, 29,475 triangles) and places the eye 0.4 m in front of the
+real track visual, 67,441 triangles) and places the eye 0.4 m in front of the
 first hit. Pull-in is immediate, push-out is eased by 0.08 of the gap per tick.
 Each update carries `camera.occlusion { requestedDistance, distance, blocked,
 nearField, hitDistance, hitMesh }`, and `diagnostics.extras.camera.occlusion`
@@ -413,7 +427,9 @@ plan twice in two fresh page instances, takes start/mid/end screenshots, and gat
   sequence independent of frame pacing);
 - no NaN/Inf state and no abort;
 - wasm heap constant, scheduler pool head/group handles constant, GPU packet
-  buffers bounded (created − destroyed = live = one packet's 8 buffers);
+  buffers bounded (created − destroyed = live = one packet's 11 buffers: three
+  meshes × (positions, indices, UV) + uniform + scene) and textures bounded
+  (live = 136, one packet's textures);
 - exactly three mesh uploads per timeline load and one uniform write/draw set
   per frame;
 - every complete drive/sprint segment reproduces the node verifier's state
@@ -441,11 +457,14 @@ HUD block and a results overlay.
 page's car selector; `?car` defaults to the roster's recorded default, so the
 original single-car links still work.
 
-`web/packet-consumer.js` is a copy of the committed consumer with two additions:
-`syncTimeline()`, which accepts ticks appended after `load()`, and a soak-only
+`web/packet-consumer.js` is a copy of the committed consumer with these additions:
+`syncTimeline()`, which accepts ticks appended after `load()`; a soak-only
 buffer lifecycle (`releaseGeometry()` + `stats.packetLoads/buffersCreated/
 buffersDestroyed`, invoked at every `load()`) so repeated timeline rebuilds cannot
-grow GPU memory. The render/pipeline code is unchanged.
+grow GPU memory; and the textured-track delta — a second vertex buffer with the
+mesh's UV0, one `rgba8unorm` mip0 texture + bind group per static albedo source, a
+1×1 white placeholder for untextured draws, and `texParams` in the draw uniform.
+No other render/pipeline logic changed.
 
 `web/fixed-step.js` and `web/interpolate.js` are verbatim copies of the committed
 modules; `web/packet-camera.mjs` is a verbatim copy of the producer/validator
@@ -479,7 +498,9 @@ events, inputs and the start/checkpoint/finish capture updates),
 `telemetry-<slug>.json` (full 60 Hz traces, metrics, hash aggregates and unit
 definitions),
 `geometry.json` (level packet + real track visual + one real body per car + hidden
-collision), `cars.json` (the 62-record roster + gate), `reset-cycles.json`
+collision), `track-textures.json` (UV0 stream, sampler, 136 texture records and
+394 per-draw bindings), `track-uv.bin` + `textures/*.rgba` (the exported UV and
+pixel bytes), `cars.json` (the 62-record roster + gate), `reset-cycles.json`
 (10 create/reset cycles per car in one instance with per-cycle hashes, heap and
 scheduler pool, plus the one-instance telemetry and sprint-restart comparison),
 `browser-evidence.json`,
@@ -491,6 +512,7 @@ scheduler pool, plus the one-instance telemetry and sprint-restart comparison),
 measured limit),
 `browser-evidence-telemetry.json`, `browser-evidence-restart.json`,
 `browser-evidence-telemetry-restart.json`, `browser-evidence-soak.json`,
+`browser-evidence-texture.json` (close-up texture proof),
 `soak-run-{1,2}.json`, `browser-soak-run{1,2}-{start,mid,end}.png`,
 `browser-<slug>-{start,mid,coast,end}.png`,
 `browser-<slug>-sprint-{start,checkpoint,finish}.png`,
@@ -503,7 +525,9 @@ measured limit),
 car's aliases. The track visual, its source sections and the coverage limit
 are recorded in `docs/work/verification/T-007-track-visual.md`; the six-section
 corridor, its survey, the measured course limit and the rejected proxy fix are
-recorded in `docs/work/verification/T-007-ledge-fix.md`; the per-car
+recorded in `docs/work/verification/T-007-ledge-fix.md`; the static albedo
+texture export, the 297/97 coverage and the declared sampler are recorded in
+`docs/work/verification/T-007-textured-track.md`; the per-car
 body/wheel integration is recorded in
 `docs/work/verification/T-007-per-car-meshes.md`; the chase-camera occlusion
 rule, the before/after frames and the near-field limit are recorded in
@@ -519,9 +543,14 @@ per-car metrics and plausibility comparison are recorded in
 
 ## Limits (also carried in the packet's own diagnostics)
 
-- **Diagnostic materials.** Identity albedo, one directional light, screen-space
-  derivative normals; no texture pixels, shadows, post, particles. Paint and
-  material parameters are not decoded.
+- **Materials remain diagnostic, except the static albedo pixels.** The 297
+  textured track draws sample their own `g_tAlbedo` texture with the real UV0;
+  material colour, blend state, shader stages, mip chains and sRGB interpretation
+  are not applied, and the sampler (`repeat` + linear on mip0, `rgba8unorm`) is a
+  declared PoC choice, not recovered engine state. Cars, props and the 97 unbound
+  track draws keep diagnostic colours. One directional light, screen-space
+  derivative normals; no shadows, post or particles. Paint and material
+  parameters are not decoded.
 - **One car at a time, selected at runtime.** No opponents, no traffic. Each
   physics car now draws **its own real body and wheels** from its own
   `root.pak` model (body mesh, parts, wheel groups per car; see the counts in
@@ -545,7 +574,7 @@ per-car metrics and plausibility comparison are recorded in
   6 m gate band is covered to `x = −57.00`, and along the recorded car line the
   last drawn ground is around `x = −48.5`; the tail of the 300-tick drive and the
   off-road area have no committed real draw, so no ground is drawn there. The HUD
-  says `394 real draws · 57133 tri · no-draw 2088 tri · slab hidden`.
+  says `394 real draws · 57133 tri · 297 textured (136 tex, 439360 B) · no-draw 2088 tri · slab hidden`.
 - **The extended corridor is a survey, not a course.** The measured line crosses
   two engine-confirmed 50 m vertical collision faces (arc 57.82 m and 530.71 m)
   and a cliff pinch at 55.7-59.7 m; every car stops at 52.66-53.37 m on the
@@ -629,8 +658,8 @@ per-car metrics and plausibility comparison are recorded in
   headless compositor is not vsync-limited, so the wall-clock intervals are not
   the user's display cadence. GPU buffer count is bounded by destroying the
   previous packet's buffers on every reload; the soak gate requires
-  created − destroyed = live = 8 (three meshes + uniform + scene) at every
-  checkpoint. Five simulated minutes = 18,000 ticks; a one-tick-per-frame run
+  created − destroyed = live = 11 (three meshes × positions/indices/UV + uniform +
+  scene), and texture objects are destroyed with the packet (live = 136). Five simulated minutes = 18,000 ticks; a one-tick-per-frame run
   completed in ~70 s here because headless rAF is not throttled to 60 Hz.
 - **Native parity** is blocked by the DirectX SDK, as recorded in
   `T-007-vehicle-physics.md`.

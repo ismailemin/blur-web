@@ -1539,3 +1539,87 @@ Verification, per-car numbers, hashes, screenshots and limits:
 `docs/work/verification/T-007-ledge-fix.md`. The P43 record
 (`T-007-extended-sprint.md`) keeps the corridor measurement and is marked
 superseded where it read the chassis as the only blocker.
+
+## 21. Real static albedo textures on the real UV0 stream (T-007/textured-track, P49)
+
+**Date:** 5 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-textured-track.md`. No change to
+track-coverage, drivable-path, car-parts, render-packet, engine, tools,
+`upstream/` or `game-data/`. Physics, cars, sprint, camera, telemetry, restart and
+soak behaviour are untouched.
+
+### 21.1 What was missing
+
+P31/P46 drew the real River direct draws with a diagnostic albedo: the geometry,
+draw ranges and world positions were real, but every draw was a neutral colour
+because `materialsApplied:false`. P45 measured the UV0 stream of the 299 corridor
+draws and P47 decoded the static `g_tAlbedo` texture of each of them, but neither
+pass uploaded, bound or sampled anything. §20's blocker 1 (no sampling) is closed
+here for the six measured sections.
+
+### 21.2 What P49 exports and uploads
+
+`tools/build_track_textures.py` (new) turns the committed P45/P47 rows and the
+committed `level_inspect` mesh references into PoC data:
+
+- **UV0**: the `uv0` array of all seven merged sections, in the merged vertex
+  order (`track-uv.bin`, 192,988 float32 values / 771,952 B). Each draw's
+  referenced UV pairs are hashed exactly as `verify_stream.py` does and must
+  equal the P47 `uvhash`; all 299 match. The UV aggregate is the P45 value
+  `2ed1f4b0b3c9148e`.
+- **Pixels**: one RGBA file per distinct static source
+  (`textures/track.albedo.<block>.<index>.rgba`, 136 files / 439,360 B). Each is
+  decoded by the committed `texture_inspect --raw` from the P47/P34 blob and
+  re-hashed against the recorded RGBA FNV-1a 64; a mismatch aborts.
+- **Bindings**: per-draw `textureId` and `bindingStatus`. 297 draws are
+  `bound-static-albedo`; 2 are `runtimeOnlyAlbedoParameter` (g50-n265 primitives
+  241/242); 95 block88/node283 draws are `noBindingRowForSection` (P44/P45/P47
+  never covered that section). Nothing is invented for the 97.
+
+`build_geometry.mjs` verifies the manifest/UV/file hashes, embeds the UV stream
+and the RGBA payloads (base64) plus the sampler metadata as **geometry v5**
+(18,791,525 B, +1.82 MB), and gives every track draw its `textureId` and
+`textureBinding` record. `packet-adapter.js` copies `uv`, `textures` and
+`texturePack` into the packet; `packet-consumer.js` creates one `rgba8unorm`
+mip0 texture + bind group per source, a second vertex buffer with the real UV0,
+and a 1×1 white placeholder for untextured draws.
+
+### 21.3 Sampling is one declared choice, not recovered engine state
+
+P45/P47 list wrap mode, filter, anisotropy, mip selection and texture matrices as
+unresolved. P49 publishes the choice instead of hiding it: `repeat` address mode
+(UV0 leaves `[0,1]`), linear min/mag, mip0 only, `rgba8unorm`, no sRGB
+conversion, no material colour and a white tint for textured draws. A textured
+draw samples its own UV; an untextured draw samples the white placeholder and
+mixes back to its diagnostic albedo (`texParams.x = 0`), so `textureSample` has no
+non-uniform control flow. Mip/sRGB/retail sampler fidelity is explicitly **not**
+claimed.
+
+### 21.4 Result
+
+- `verify_e1_drive.mjs` **522/522** (was 514/514). The eight new checks cover UV
+  presence/hash, the 297/2/95 split, texture uniqueness/provenance, RGBA re-hash,
+  the sampler contract, finite sampled UV0 and the exact runtime-only pair.
+- 20 headless Edge/WebGPU captures: **0 console messages**, 136 textures /
+  439,360 B and 297 textured track draws on every page, state hashes equal to
+  Node.
+- 1-minute two-run soak: **PASS**, 136 live textures at the end (no texture leak),
+  buffers live 11 (9 mesh + uniform + scene), 0 console messages.
+- The five drive state sequence hashes are the P36 values; the whole-packet hash
+  moved because the packet now carries the UV stream and the textures, and the
+  five `PHYSICS_ANCHORS.packet` constants are re-pinned with that note.
+- The road patch changes from the neutral diagnostic `206,206,206` to the
+  sampled `129,130,111` (fixed screen patch; see the verification record for the
+  caveat).
+
+### 21.5 Limits
+
+97/394 draws stay diagnostic (2 runtime-only, 95 unbound); only mip0 is
+uploaded; wrap/filter/sRGB are a declared PoC choice; no material colour, blend,
+shader stages or retail sampler; no culling/sorting/LOD/instancing; the last
+~12 m of the sprint still has no committed draw. No full-game claim.
+
+Verification, commands, per-section table, per-car browser bytes, screenshots,
+before/after pixel patch and every file hash:
+`docs/work/verification/T-007-textured-track.md`.

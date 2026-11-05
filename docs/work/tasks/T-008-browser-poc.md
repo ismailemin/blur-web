@@ -46,6 +46,7 @@ sürüşü deneyebileceği PoC.
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |
 | Track dokuları | P47 | ✅ (297/297 statik) |
+| Dokulu pist | P49 | ✅ (297/394 draw) |
 | Soak/performans | P42 | ✅ (18.000 tick) |
 | Engine CPU draw list | P27 + P30 + P32 | ✅ 56 instance; PoC'ye bağlama sırada |
 | Stage B pist instance'ları | P25 | ✅ |

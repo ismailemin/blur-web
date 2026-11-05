@@ -123,8 +123,12 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   (102 P34 + 96 track); **297/297 statik binding** çözüldü (2 runtime-only);
   track aggregate `8d91645d4ee00831`, binding `9cc08756505dd497`; 96/96
   asset-reader ile birebir.
-- Kalan: sampling/UV/wrap/filter, visibility/culling/LOD, `ProcessLoadChunk`;
-  PoC producer'ına bağlama.
+- **Dokulu pist (P49):** 394 draw'dan **297**'si gerçek albedo + UV0 ile
+  sample ediliyor; 136 doku / 439.360 B RGBA; block88 95 draw diagnostic
+  (`noBindingRowForSection`), 2 runtime-only. `verify_e1_drive` **522/522**;
+  console 0; soak texture leak yok.
+- Kalan: mip/sRGB/anisotropy, materyal renk/blend, culling/LOD; PoC producer'ına
+  bağlama.
 - Kanıt: `docs/work/verification/T-007-drawlist-57.md`,
   `T-007-drawlist-56.md`, `T-007-engine-textures.md`.
 

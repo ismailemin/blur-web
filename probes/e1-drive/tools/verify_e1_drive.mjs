@@ -63,6 +63,7 @@ const LOGS = path.join(ROOT, '_work/logs/e1-drive');
 const MODULE = path.join(OUT, 'module/e1_drive.mjs');
 const BUILD = path.join(OUT, 'module/build.json');
 const GEOMETRY = path.join(OUT, 'geometry.json');
+const TRACK_TEXTURE_MANIFEST = path.join(OUT, 'track-textures.json');
 const ROSTER = path.join(OUT, 'cars.json');
 const LEVEL = path.join(ROOT, 'game-data/Blur/levels/usa_la_river/Level.levelphysics');
 
@@ -163,8 +164,8 @@ check('roster covers at least four real cars', roster.roster.cars.length >= 4,
 // ------------------------------------------------- per-car body-mesh gates
 const bodies = geometry.carBodies ?? {};
 const rosterSlugs = roster.roster.cars.map((car) => car.slug);
-check('geometry carries one real body per roster car (v4)',
-      geometry.version === 4 && rosterSlugs.every((slug) => bodies[slug]) &&
+check('geometry carries one real body per roster car (v5)',
+      geometry.version === 5 && rosterSlugs.every((slug) => bodies[slug]) &&
       Object.keys(bodies).length === rosterSlugs.length,
       `${Object.keys(bodies).length} bodies, geometry v${geometry.version}`);
 check('every body names its own model, manifest and mesh',
@@ -238,8 +239,8 @@ const corridorTotals = corridorSections.reduce((sum, section) => ({
   triangles: sum.triangles + (section?.triangleCount ?? 0),
   vertices: sum.vertices + (section?.vertexCount ?? 0)
 }), { draws: 0, triangles: 0, vertices: 0 });
-check('geometry carries the real track visual from committed direct draws (v4)',
-      geometry.version === 4 && trackVisual?.label === 'asset-reader-direct-draws' &&
+check('geometry carries the real track visual from committed direct draws (v5)',
+      geometry.version === 5 && trackVisual?.label === 'asset-reader-direct-draws' &&
       geometry.meshes.some((mesh) => mesh.id === trackVisual?.meshId) &&
       trackDraws.length === trackVisual?.drawCount && trackDraws.length > 0,
       `${trackVisual?.label ?? 'missing'} / ${trackDraws.length} draws`);
@@ -292,6 +293,114 @@ check('the collision coverage is measured against the committed corridor draws',
         geometry.collisionSurface.triangleCount,
       `${geometry.collisionSurface?.coverage?.coveredTriangles ?? 0} covered / ` +
       `${geometry.collisionSurface?.coverage?.fallbackTriangles ?? 0} no-draw triangles`);
+
+// ------------------------------------------------- static albedo textures
+// P44/P45/P47 measured one static `g_tAlbedo` source for 297 of the 394 draws and
+// documented the other 97 (2 runtime-only parameters + 95 block88 draws with no
+// binding row). The visual must sample the real UV0 stream for every draw it can,
+// and must keep the labelled diagnostic albedo for the rest: no texture, UV or
+// colour is invented here.
+const textureManifest = JSON.parse(readFileSync(TRACK_TEXTURE_MANIFEST, 'utf8'));
+const trackMesh = geometry.meshes.find((mesh) => mesh.id === trackVisual?.meshId);
+const trackUv = trackMesh?.uv ?? null;
+const uvBuffer = trackUv?.data ? Buffer.from(trackUv.data, 'base64') : Buffer.alloc(0);
+const uvValues = trackUv && uvBuffer.length === trackUv.bytes
+  ? new Float32Array(uvBuffer.buffer, uvBuffer.byteOffset, uvBuffer.length / 4)
+  : new Float32Array(0);
+const textures = Array.isArray(geometry.textures) ? geometry.textures : [];
+const textureIds = new Set(textures.map((texture) => texture.id));
+const texturedDraws = trackDraws.filter((draw) => draw.textureId != null);
+const runtimeDraws = trackDraws.filter((draw) => draw.textureBinding?.status === 'runtimeOnlyAlbedoParameter');
+const unboundDraws = trackDraws.filter((draw) => draw.textureBinding?.status === 'noBindingRowForSection');
+
+check('the track mesh carries the real P45 UV0 stream for every merged vertex',
+      trackUv && trackUv.storage === 'base64-float32le' && trackUv.components === 2 &&
+      trackUv.vertexCount === trackVisual?.vertexCount && trackUv.vertexCount === 96494 &&
+      trackUv.values === 192988 && trackUv.bytes === 771952 &&
+      uvBuffer.length === trackUv.bytes && uvValues.length === trackUv.values &&
+      uvValues.every(Number.isFinite) &&
+      'sha256:' + sha256(uvBuffer) === trackUv.sha256 &&
+      trackUv.source?.aggregate === '2ed1f4b0b3c9148e',
+      `${trackUv?.vertexCount ?? 0} vertices / ${trackUv?.bytes ?? 0} B / ${trackUv?.sha256 ?? 'missing'}`);
+check('the UV stream is the exported P45/P47 stream (manifest and geometry agree)',
+      textureManifest.kind === 'e1-drive.track-textures' && textureManifest.version === 1 &&
+      textureManifest.pins?.uvAggregate === '2ed1f4b0b3c9148e' &&
+      textureManifest.pins?.bindingAggregate === '9cc08756505dd497' &&
+      textureManifest.uvStream?.sha256 === trackUv?.sha256 &&
+      textureManifest.sections.length === 7 &&
+      textureManifest.sections.reduce((sum, section) => sum + section.texturedDraws, 0) === 297,
+      textureManifest.uvStream?.sha256 ?? 'missing');
+check('297 draws sample a static albedo texture; 2 runtime-only and 95 unbound draws stay diagnostic',
+      texturedDraws.length === 297 && runtimeDraws.length === 2 && unboundDraws.length === 95 &&
+      trackDraws.every((draw) => draw.textureBinding &&
+        ['bound-static-albedo', 'runtimeOnlyAlbedoParameter', 'noBindingRowForSection']
+          .includes(draw.textureBinding.status)) &&
+      texturedDraws.every((draw) => draw.textureBinding.source && draw.textureBinding.uvHash) &&
+      runtimeDraws.every((draw) => draw.textureBinding.source === null && draw.textureId === null) &&
+      unboundDraws.every((draw) => draw.textureId === null),
+      `${texturedDraws.length} textured / ${runtimeDraws.length} runtime / ${unboundDraws.length} no-binding-row`);
+check('the 136 static albedo textures are unique and traced to their block:index',
+      textures.length === 136 && textureIds.size === 136 &&
+      textures.every((texture) => texture.drawCount > 0 &&
+        /^track\.albedo\.\d+\.\d+$/.test(texture.id) &&
+        texture.source === texture.block + ':' + texture.index &&
+        texture.width > 0 && texture.height > 0 && texture.levels > 0 &&
+        texture.format === 827611204 && texture.formatName === 'DXT1/BC1' &&
+        (texture.decodeRegistry === 'engine-textures.json' || texture.decodeRegistry === 'track-textures.json')) &&
+      new Set(textures.map((texture) => texture.source)).size === 136 &&
+      textures.filter((texture) => texture.decodeRegistry === 'engine-textures.json').length === 40 &&
+      textures.filter((texture) => texture.decodeRegistry === 'track-textures.json').length === 96,
+      `${textures.length} textures, ${textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0)} RGBA B`);
+check('every embedded RGBA payload re-hashes to the exported texture file and manifest',
+      textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) === 439360 &&
+      textures.every((texture) => {
+        const embedded = Buffer.from(texture.rgbaBase64, 'base64');
+        const file = path.join(ROOT, '_work/e1-drive/textures', texture.id + '.rgba');
+        if (!existsSync(file)) return false;
+        return embedded.length === texture.rgbaBytes &&
+          embedded.length === texture.width * texture.height * 4 &&
+          'sha256:' + sha256(embedded) === texture.rgbaSha256 &&
+          readFileSync(file).equals(embedded);
+      }) &&
+      textureManifest.textures.length === 136 &&
+      textureManifest.textures.every((texture) => textures.some((candidate) =>
+        candidate.id === texture.id && candidate.rgbaSha256 === texture.rgbaSha256)),
+      '136 RGBA payloads equal the exported .rgba files');
+check('the sampler is the explicit repeat/linear mip0 choice, not a recovered engine state',
+      geometry.texturePack?.sampler?.addressModeU === 'repeat' &&
+      geometry.texturePack.sampler.addressModeV === 'repeat' &&
+      geometry.texturePack.sampler.magFilter === 'linear' &&
+      geometry.texturePack.sampler.minFilter === 'linear' &&
+      geometry.texturePack.sampler.mipLevelsUploaded === 1 &&
+      geometry.texturePack.sampler.textureFormat === 'rgba8unorm' &&
+      geometry.texturePack.sampler.colourSpace === 'raw-decoded-texels' &&
+      /not retail/.test(geometry.texturePack.sampler.reason ?? '') &&
+      geometry.texturePack.coverage?.texturedDraws === 297 &&
+      geometry.texturePack.coverage?.fallbackDraws === 97,
+      geometry.texturePack?.sampler?.reason?.slice(0, 80) ?? 'missing');
+check('every textured draw samples finite UV0 inside the exported stream',
+      texturedDraws.every((draw) => {
+        if (!/^0x[0-9a-f]{16}$/.test(draw.textureBinding.uvHash ?? '')) return false;
+        if (!textureIds.has(draw.textureId)) return false;
+        let lowU = Infinity; let highU = -Infinity; let lowV = Infinity; let highV = -Infinity;
+        const end = draw.indexOffset + draw.indexCount;
+        for (let offset = draw.indexOffset; offset < end; offset++) {
+          const vertex = trackMesh.indices[offset];
+          const u = uvValues[vertex * 2];
+          const v = uvValues[vertex * 2 + 1];
+          if (!Number.isFinite(u) || !Number.isFinite(v)) return false;
+          if (u < lowU) lowU = u; if (u > highU) highU = u;
+          if (v < lowV) lowV = v; if (v > highV) highV = v;
+        }
+        return highU - lowU > 0 || highV - lowV > 0;
+      }),
+      `${texturedDraws.length} draws over ${uvValues.length / 2} vertices`);
+check('the two runtime-only draws are exactly g50-n265 primitives 241/242',
+      runtimeDraws.length === 2 &&
+      runtimeDraws.every((draw) =>
+        draw.source.geometryBlock === 50 && draw.source.nodeBlock === 265 &&
+        [241, 242].includes(draw.source.primitiveIndex)),
+      runtimeDraws.map((draw) => draw.source.geometryBlock + '/' + draw.source.primitiveIndex).join(', '));
 
 // ------------------------------------------------------ camera occlusion
 // The chase camera resolves occlusion against the visible static geometry. The
@@ -1650,30 +1759,36 @@ async function runSprintRestart(car, fieldBytes) {
 // Every car's drive and sprint state sequence hash from the P36/P37 records. The
 // telemetry pass must not move them: it uses its own instances and never touches
 // the drive, sprint or keyboard paths.
+//
+// The `packet` anchor is the whole-packet hash, so it moves whenever the static
+// packet body changes; P49 added the real UV0 and static albedo texture payloads
+// (geometry v5), so these four values are re-pinned to the P49 geometry. The three
+// `drive`/`sprint` state hashes are unchanged from P36/P37: physics, cars, sprint,
+// camera and telemetry were not touched.
 const PHYSICS_ANCHORS = Object.freeze({
   'corvette-zr1-stock': {
     drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
-    packet: 'sha256:ac6501fd078c2e69d21590d1e05aa925154d6b2b21c38f884c0afc5e4514e106',
+    packet: 'sha256:3f0bd5a12e2d3ec4ca44f30571e8d7a88d66aac1b476ede6eddf84757c62c20d',
     sprint: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
   },
   'lotus-exige-cup260-stock': {
     drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
-    packet: 'sha256:e128f73199d22a9169fbd8721e7f061142962abcca3545efdb02455cd47a8ffe',
+    packet: 'sha256:9daf559a8c8f2ed8d3b623dbe1dc453002ad1187730ceb6607117d651c270387',
     sprint: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
   },
   'dodge-challenger-stock': {
     drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
-    packet: 'sha256:62808a417c717c88456d5bfdac44d1be72cb1babfa49a7930e5d7b3b9288612a',
+    packet: 'sha256:d4e9f0550bd83b3260a4a3c8e9926345d19bca62f7cd3d8da172eaaa937c7222',
     sprint: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
   },
   'ford-focusrs-stock': {
     drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
-    packet: 'sha256:384dade24e201b52d631910c31c8b10d62c6e43e2dfc48bf3c4bc3f2b9d432f1',
+    packet: 'sha256:10a2e09274af1172e2690bfbd9e6c5a90e9d8a4e86d819276b1c5b4b361adb99',
     sprint: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
   },
   'audi-r8v10-stock': {
     drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
-    packet: 'sha256:d9620adc699d120d42580b5fc0360a360bbab52fc3c8a96254929d5c00d5f69b',
+    packet: 'sha256:5b96bc3d50f25bda3f6ab5ea2780427d9538e467e9d61a1641ba62efd0d82d05',
     sprint: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
   }
 });
@@ -2356,6 +2471,17 @@ const report = {
     trackDraws: trackVisual?.drawCount ?? 0,
     trackLabel: trackVisual?.label ?? null,
     trackSections: trackVisual?.sections ?? [],
+    textures: {
+      count: geometry.textures?.length ?? 0,
+      rgbaBytes: Array.isArray(geometry.textures)
+        ? geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) : 0,
+      texturedDraws: trackVisual?.texturedDrawCount ?? 0,
+      uvVertices: geometry.meshes.find((mesh) => mesh.id === trackVisual?.meshId)?.uv?.vertexCount ?? 0,
+      uvBytes: geometry.meshes.find((mesh) => mesh.id === trackVisual?.meshId)?.uv?.bytes ?? 0,
+      uvSha256: geometry.meshes.find((mesh) => mesh.id === trackVisual?.meshId)?.uv?.sha256 ?? null,
+      sampler: geometry.texturePack?.sampler ?? null,
+      coverage: geometry.texturePack?.coverage ?? null
+    },
     collisionSurface: {
       meshId: geometry.collisionSurface?.meshId ?? null,
       vertices: geometry.collisionSurface?.vertexCount ?? 0,
@@ -2575,6 +2701,7 @@ console.log(JSON.stringify({
     draws: report.geometry.trackDraws,
     vertices: report.geometry.trackVertices,
     triangles: report.geometry.trackTriangles,
+    textures: report.geometry.textures,
     fallbackTriangles: report.geometry.collisionSurface.coverage?.fallbackTriangles ?? 0,
     coveredTriangles: report.geometry.collisionSurface.coverage?.coveredTriangles ?? 0,
     collisionVisible: report.geometry.collisionSurface.visible,

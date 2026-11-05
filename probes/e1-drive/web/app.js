@@ -150,6 +150,10 @@ const state = {
   trackVisual: null,
   trackDraws: 0,
   trackTriangles: 0,
+  trackTexturedDraws: 0,
+  trackTextures: 0,
+  trackTextureBytes: 0,
+  trackUvVertices: 0,
   collisionVisible: null,
   collisionFallbackTriangles: 0,
   collisionCoveredTriangles: 0,
@@ -161,6 +165,9 @@ const state = {
   zeroTickFrames: 0,
   geometryUploads: 0,
   geometryUploadBytes: 0,
+  textureUploads: 0,
+  textureUploadBytes: 0,
+  uvUploadBytes: 0,
   uniformWrites: 0,
   uniformBytes: 0,
   drawsIssued: 0,
@@ -246,7 +253,9 @@ function publish() {
     ['input', 'thr ' + state.input[0].toFixed(2) + ' brk ' + state.input[1].toFixed(2) +
       ' str ' + state.input[2].toFixed(2) + ' hb ' + state.input[3].toFixed(2)],
     ['parts', state.parts + ' parts · ' + state.carDraws + ' draws · ' + state.packetNodes + ' nodes (' + state.wheelNodes + ' wheel)'],
-    ['track', state.trackDraws + ' real draws · ' + state.trackTriangles + ' tri · no-draw ' +
+    ['track', state.trackDraws + ' real draws · ' + state.trackTriangles + ' tri · ' +
+      state.trackTexturedDraws + ' textured (' + state.trackTextures + ' tex, ' +
+      state.trackTextureBytes + ' B) · no-draw ' +
       state.collisionFallbackTriangles + ' tri · slab ' +
       (state.collisionVisible === false ? 'hidden' : state.collisionVisible === true ? 'visible' : '—')],
     ['body', state.bodyMesh ?? '—'],
@@ -603,6 +612,10 @@ async function startTimeline(tick0, {
   state.trackVisual = trackInfo?.trackVisual ?? null;
   state.trackDraws = trackInfo?.drawCount ?? 0;
   state.trackTriangles = trackInfo?.triangleCount ?? 0;
+  state.trackTexturedDraws = trackInfo?.texturedDrawCount ?? 0;
+  state.trackTextures = trackInfo?.textures?.count ?? 0;
+  state.trackTextureBytes = trackInfo?.textures?.rgbaBytes ?? 0;
+  state.trackUvVertices = trackInfo?.uv ? trackInfo.uv.values / trackInfo.uv.components : 0;
   state.collisionFallbackTriangles = trackInfo?.coverage?.fallbackTriangles ?? 0;
   state.collisionCoveredTriangles = trackInfo?.coverage?.coveredTriangles ?? 0;
   state.collisionVisible = session.packet.diagnostics.extras.collisionSurface?.visible ?? null;
@@ -796,6 +809,10 @@ async function runTelemetryMode() {
   state.trackVisual = trackInfo?.trackVisual ?? null;
   state.trackDraws = trackInfo?.drawCount ?? 0;
   state.trackTriangles = trackInfo?.triangleCount ?? 0;
+  state.trackTexturedDraws = trackInfo?.texturedDrawCount ?? 0;
+  state.trackTextures = trackInfo?.textures?.count ?? 0;
+  state.trackTextureBytes = trackInfo?.textures?.rgbaBytes ?? 0;
+  state.trackUvVertices = trackInfo?.uv ? trackInfo.uv.values / trackInfo.uv.components : 0;
   state.collisionFallbackTriangles = trackInfo?.coverage?.fallbackTriangles ?? 0;
   state.collisionCoveredTriangles = trackInfo?.coverage?.coveredTriangles ?? 0;
   state.collisionVisible = session.packet.diagnostics.extras.collisionSurface?.visible ?? null;
@@ -933,8 +950,14 @@ function soakBuffers() {
     buffersCreated: stats.buffersCreated,
     buffersDestroyed: stats.buffersDestroyed,
     buffersLive: stats.buffersCreated - stats.buffersDestroyed,
+    texturesCreated: stats.texturesCreated,
+    texturesDestroyed: stats.texturesDestroyed,
+    texturesLive: stats.texturesCreated - stats.texturesDestroyed,
     geometryUploads: stats.geometryUploads,
     geometryUploadBytes: stats.geometryUploadBytes,
+    uvUploadBytes: stats.uvUploadBytes,
+    textureUploads: stats.texturesUploaded,
+    textureUploadBytes: stats.textureUploadBytes,
     uniformWrites: stats.uniformWrites,
     drawsIssued: stats.drawsIssued,
     renders: stats.renders,
@@ -1304,8 +1327,14 @@ function soakSummariseReport(wallMs) {
       buffersDestroyed: stats.buffersDestroyed,
       buffersLive: stats.buffersCreated - stats.buffersDestroyed,
       liveValues: bufferLive,
+      texturesCreated: stats.texturesCreated,
+      texturesDestroyed: stats.texturesDestroyed,
+      texturesLive: stats.texturesCreated - stats.texturesDestroyed,
       geometryUploads: stats.geometryUploads,
       geometryUploadBytes: stats.geometryUploadBytes,
+      uvUploadBytes: stats.uvUploadBytes,
+      textureUploads: stats.texturesUploaded,
+      textureUploadBytes: stats.textureUploadBytes,
       uploadsPerLoad: uploadsPerLoad[0] ?? null,
       uniformWrites: stats.uniformWrites,
       drawsIssued: stats.drawsIssued,
@@ -1396,6 +1425,9 @@ async function runSoakMode(initialTick0) {
         state.matrixChecksum = consumer.stats.matrixChecksum;
         state.geometryUploads = consumer.stats.geometryUploads;
         state.geometryUploadBytes = consumer.stats.geometryUploadBytes;
+        state.textureUploads = consumer.stats.texturesUploaded;
+        state.textureUploadBytes = consumer.stats.textureUploadBytes;
+        state.uvUploadBytes = consumer.stats.uvUploadBytes;
         state.uniformWrites = consumer.stats.uniformWrites;
         state.drawsIssued = consumer.stats.drawsIssued;
         state.draws = consumer.draws.length;
@@ -1537,6 +1569,9 @@ function frame(nowMs) {
     state.movedScreen = consumer.stats.movedScreen;
     state.geometryUploads = consumer.stats.geometryUploads;
     state.geometryUploadBytes = consumer.stats.geometryUploadBytes;
+    state.textureUploads = consumer.stats.texturesUploaded;
+    state.textureUploadBytes = consumer.stats.textureUploadBytes;
+    state.uvUploadBytes = consumer.stats.uvUploadBytes;
     state.uniformWrites = consumer.stats.uniformWrites;
     state.uniformBytes = consumer.stats.uniformBytes;
     state.drawsIssued = consumer.stats.drawsIssued;

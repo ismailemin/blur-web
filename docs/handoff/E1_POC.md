@@ -76,7 +76,8 @@ Dodge 4,633 → Focus 5,133 s.
   **parkur değildir**: ölçülen çizgi 57,82 m’de 50 m’lik collision duvarından
   geçiyor; şasi 52,7–53,4 m’de duruyor. Uydurma çözüm yok.
 - Kapalı tur yok (committed veriyle mümkün değil).
-- Materyaller diagnostic; doku/boya/gölge/post yok.
+- Pist görseli gerçek River draw set'i; 394 draw'dan **297**'si gerçek albedo +
+  UV0 ile dokulu, 95'i diagnostic. Mip/sRGB/anisotropy, boya, gölge ve post yok.
 - Teker konumu rest-pose; süspansiyon/steer/camber yok.
 - Box gravity proxy; XT `physicsParameters` açık.
 - Ses, rakip, multiplayer yok.

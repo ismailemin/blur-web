@@ -302,6 +302,12 @@ doğrulama. Bitişten 4 m sonra yüzey 2,0 m'ye daralıyor. Sıradaki: 310 m spr
 entegrasyonu; 29 m regression control. Kanıt:
 `docs/work/analysis/drivable-path.md`, `probes/drivable-path/`.
 
+**Dokulu pist (P49):** 394 draw'dan **297**'si gerçek albedo + P45 UV0 ile
+sample ediliyor (136 doku / 439.360 B RGBA); block88'de 95 draw binding row
+olmadığı için diagnostic, 2 runtime-only. `verify_e1_drive` **522/522**;
+20 capture console 0; soak'ta texture leak yok. Kanıt:
+`docs/work/verification/T-007-textured-track.md`.
+
 **T-008 PoC (5 Kasım):** kullanıcı testi hedefi: tek harita (River), **≥4 gerçek
 araç**, seçilebilir, WASD + chase camera, sabit adım, console temiz. Kart:
 `docs/work/tasks/T-008-browser-poc.md`. Çoklu araç (P23), engine draw-list

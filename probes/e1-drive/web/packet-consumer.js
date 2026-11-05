@@ -8,7 +8,13 @@
 //   * a draw may carry `diagnosticColour` + `spins`, which set a debug albedo and
 //     a local-angle spin marker. Materials are still not applied;
 //   * a draw with `visible:false` is not submitted (the P31 packet keeps the
-//     collision surface out of `draws` entirely, so this is a safety path).
+//     collision surface out of `draws` entirely, so this is a safety path);
+//   * a mesh may carry `uv` (base64 float32 LE, 2 components, P45 UV0) and the
+//     packet may carry `textures` (decoded static g_tAlbedo RGBA) + `texturePack`
+//     (sampler and scope metadata). A draw with `textureId` samples that texture
+//     with its own UV; a draw without one keeps the diagnostic albedo. The
+//     sampler is the explicit `TEXTURE_SAMPLER` choice (repeat + linear on mip0,
+//     rgba8unorm, no sRGB conversion): not recovered retail state.
 // Everything else (pipeline, upload counting, interpolation, camera handling) is
 // unchanged from the committed consumer.
 //
@@ -25,7 +31,10 @@
 // `spins` (the car parts do). Those are debug colours, still with
 // materialsApplied:false, and `spins` only enables a local-angle marker band so
 // the wheel rotation is visible on rotationally symmetric tyre/rim/disc
-// geometry. Neither is a game material or a texture sample.
+// geometry. Neither is a game material or a texture sample. A draw may also carry
+// `textureId`, which is the P44/P45/P47 static albedo texture measured for that
+// draw: it is sampled with the mesh's real UV0 stream, and still is not the full
+// game material (no colour, blend, shader stages, mips or sRGB transform).
 
 import { interpolateRigid, isRigid, matrixChecksum } from './interpolate.js';
 
@@ -34,6 +43,7 @@ struct DrawUniforms {
   viewProjection: mat4x4f,
   world: mat4x4f,
   albedo: vec4f,
+  texParams: vec4f,
 };
 struct Scene {
   lightDirection: vec4f,
@@ -42,18 +52,22 @@ struct Scene {
 };
 @group(0) @binding(0) var<uniform> draw: DrawUniforms;
 @group(1) @binding(0) var<uniform> scene: Scene;
+@group(2) @binding(0) var albedoSampler: sampler;
+@group(2) @binding(1) var albedoTexture: texture_2d<f32>;
 
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) world: vec3f,
   @location(1) local: vec3f,
+  @location(2) uv: vec2f,
 };
 
-@vertex fn vertexMain(@location(0) position: vec3f) -> VertexOut {
+@vertex fn vertexMain(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut {
   var result: VertexOut;
   let worldPosition = draw.world * vec4f(position, 1.0);
   result.world = worldPosition.xyz;
   result.local = position;
+  result.uv = uv;
   result.position = draw.viewProjection * worldPosition;
   return result;
 }
@@ -64,7 +78,15 @@ struct VertexOut {
   let face = select(vec3f(0.0, 1.0, 0.0), raw / max(length, 1e-20), length > 0.0);
   let lambert = abs(dot(face, normalize(scene.lightDirection.xyz)));
   let brightness = scene.ambient.x + (1.0 - scene.ambient.x) * lambert;
-  let radiance = scene.lightColour.rgb * scene.lightColour.a * draw.albedo.rgb * brightness;
+  // texParams.x is 1 for a draw with a bound static g_tAlbedo texture and 0
+  // otherwise. The sample is unconditional (a white 1x1 placeholder is bound for
+  // untextured draws), so there is no non-uniform control flow around
+  // textureSample; mix() then selects the diagnostic albedo. The sampled value is
+  // the raw decoded BC1 texel (rgba8unorm, no sRGB conversion) and is not
+  // multiplied by a material colour, because none is recovered.
+  let sampled = textureSample(albedoTexture, albedoSampler, input.uv).rgb;
+  let base = mix(draw.albedo.rgb, sampled, draw.texParams.x);
+  let radiance = scene.lightColour.rgb * scene.lightColour.a * base * brightness;
   // Diagnostic spin marker: a band fixed in element-local space. It is not a
   // material; it makes the wheel rotation visible on rotationally symmetric
   // geometry. draw.albedo.a is 0 for every non-spinning draw.
@@ -77,7 +99,27 @@ struct VertexOut {
 
 const NEUTRAL_ALBEDO = 0.8;
 const DRAW_UNIFORM_STRIDE = 256; // minUniformBufferOffsetAlignment default
+const DRAW_UNIFORM_BYTES = 160; // mat4 + mat4 + albedo vec4 + texParams vec4
 const SUPPORTED_VERSIONS = [1, 1.1];
+
+/**
+ * The explicit PoC sampler. P45/P47 record that the engine wrap mode, filter,
+ * anisotropy and mip selection are not recovered, so this is one declared choice:
+ * repeat (UV0 leaves [0,1]), linear min/mag on the single uploaded mip level.
+ * It is the same metadata `geometry.texturePack.sampler` publishes.
+ */
+export const TEXTURE_SAMPLER = Object.freeze({
+  addressModeU: 'repeat',
+  addressModeV: 'repeat',
+  magFilter: 'linear',
+  minFilter: 'linear',
+  mipmapFilter: 'nearest',
+  mipLevels: 1,
+  format: 'rgba8unorm',
+  colourSpace: 'raw-decoded-texels'
+});
+
+const PLACEHOLDER_TEXTURE_ID = '__untextured__';
 
 export const MATRIX_CONVENTION =
   'column-major 16-float array; column-vector; right-handed view; WebGPU clip depth 0..1';
@@ -175,6 +217,8 @@ export class PacketConsumer {
     this.draws = [];
     this.meshes = new Map();
     this.buffers = [];
+    this.textures = [];
+    this.textureGroups = new Map();
     this.device = null;
     this.orbit = null;
     this.usePacketCamera = true;
@@ -202,7 +246,16 @@ export class PacketConsumer {
       // soak gate measures created - destroyed == live and that live does not grow.
       packetLoads: 0,
       buffersCreated: 0,
-      buffersDestroyed: 0
+      buffersDestroyed: 0,
+      // Texture instrumentation: one GPUTexture + bind group per static albedo
+      // source, plus the 1x1 placeholder. Destroyed with the packet, so a soak
+      // restart cannot grow GPU texture memory either.
+      texturesCreated: 0,
+      texturesDestroyed: 0,
+      texturesUploaded: 0,
+      textureUploadBytes: 0,
+      uvUploadBytes: 0,
+      texturedDraws: 0
     };
 
     canvas.addEventListener('pointerdown', (event) => {
@@ -255,19 +308,30 @@ export class PacketConsumer {
       entries: [{
         binding: 0,
         visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 144 }
+        buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: DRAW_UNIFORM_BYTES }
       }]
     });
     const sceneLayout = this.device.createBindGroupLayout({
       entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 48 } }]
     });
-    const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [drawLayout, sceneLayout] });
+    const textureLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
+    const pipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [drawLayout, sceneLayout, textureLayout]
+    });
     this.pipeline = await this.device.createRenderPipelineAsync({
       layout: pipelineLayout,
       vertex: {
         module,
         entryPoint: 'vertexMain',
-        buffers: [{ arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] }]
+        buffers: [
+          { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
+          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] }
+        ]
       },
       fragment: { module, entryPoint: 'fragmentMain', targets: [{ format: this.format }] },
       primitive: { topology: 'triangle-list', cullMode: 'none' },
@@ -275,6 +339,36 @@ export class PacketConsumer {
     });
     this.drawLayout = drawLayout;
     this.sceneLayout = sceneLayout;
+    this.textureLayout = textureLayout;
+
+    // The sampler is one explicit PoC choice (see TEXTURE_SAMPLER). The 1x1 white
+    // placeholder is bound for every draw without a static albedo texture, so the
+    // fragment shader can sample unconditionally and select with mix().
+    this.sampler = this.device.createSampler({
+      addressModeU: TEXTURE_SAMPLER.addressModeU,
+      addressModeV: TEXTURE_SAMPLER.addressModeV,
+      magFilter: TEXTURE_SAMPLER.magFilter,
+      minFilter: TEXTURE_SAMPLER.minFilter,
+      mipmapFilter: TEXTURE_SAMPLER.mipmapFilter
+    });
+    this.placeholderTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: TEXTURE_SAMPLER.format,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
+    this.device.queue.writeTexture(
+      { texture: this.placeholderTexture },
+      new Uint8Array([255, 255, 255, 255]),
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+    this.placeholderGroup = this.device.createBindGroup({
+      layout: this.textureLayout,
+      entries: [
+        { binding: 0, resource: this.sampler },
+        { binding: 1, resource: this.placeholderTexture.createView() }
+      ]
+    });
   }
 
   /**
@@ -290,6 +384,12 @@ export class PacketConsumer {
       this.stats.buffersDestroyed++;
     }
     this.buffers = [];
+    for (const texture of this.textures) {
+      try { texture.destroy(); } catch { /* already lost: not a leak */ }
+      this.stats.texturesDestroyed++;
+    }
+    this.textures = [];
+    this.textureGroups = new Map();
     this.meshes = new Map();
     this.meshBounds = null;
     this.draws = [];
@@ -332,9 +432,41 @@ export class PacketConsumer {
         usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
       });
       this.device.queue.writeBuffer(indexBuffer, 0, indices);
-      this.buffers.push(vertexBuffer, indexBuffer);
-      this.stats.buffersCreated += 2;
-      this.meshes.set(mesh.id, { vertexBuffer, indexBuffer, vertexCount: mesh.vertexCount, indexCount: mesh.indexCount });
+      // UV0: the track mesh carries the real P45 stream (base64 float32 LE). Every
+      // other mesh (level props, car body) has no TEXCOORD0 binding in this slice;
+      // it gets an explicit zero buffer so the pipeline's second vertex buffer is
+      // always valid, and the shader selects the diagnostic albedo anyway.
+      let uvs;
+      if (mesh.uv) {
+        if (mesh.uv.storage !== 'base64-float32le' || mesh.uv.components !== 2 ||
+            typeof mesh.uv.data !== 'string') {
+          throw new Error('mesh ' + mesh.id + ' has an unsupported uv stream');
+        }
+        const binary = atob(mesh.uv.data);
+        if (binary.length !== mesh.uv.bytes || binary.length !== mesh.vertexCount * 8) {
+          throw new Error('mesh ' + mesh.id + ' uv byte length does not match its vertex count');
+        }
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+        uvs = new Float32Array(bytes.buffer);
+      } else {
+        uvs = new Float32Array(mesh.vertexCount * 2);
+      }
+      const uvBuffer = this.device.createBuffer({
+        size: Math.max(16, Math.ceil(uvs.byteLength / 4) * 4),
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+      });
+      this.device.queue.writeBuffer(uvBuffer, 0, uvs);
+      this.buffers.push(vertexBuffer, indexBuffer, uvBuffer);
+      this.stats.buffersCreated += 3;
+      this.stats.uvUploadBytes += uvs.byteLength;
+      this.meshes.set(mesh.id, {
+        vertexBuffer,
+        indexBuffer,
+        uvBuffer,
+        vertexCount: mesh.vertexCount,
+        indexCount: mesh.indexCount
+      });
       // Mesh AABB, used only to frame the moving body for screenshot evidence.
       if (!this.meshBounds) this.meshBounds = new Map();
       const bounds = { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] };
@@ -347,7 +479,48 @@ export class PacketConsumer {
       this.meshBounds.set(mesh.id, bounds);
       // Counted separately from per-frame work: this must never grow at runtime.
       this.stats.geometryUploads++;
-      this.stats.geometryUploadBytes += positions.byteLength + indices.byteLength;
+      this.stats.geometryUploadBytes += positions.byteLength + indices.byteLength + uvs.byteLength;
+    }
+
+    // Static albedo textures: one rgba8unorm mip0 texture + bind group per P34/P47
+    // source. The bytes are the committed BC1 decode embedded by build_geometry;
+    // no mip chain, sRGB conversion or anisotropy is applied (see TEXTURE_SAMPLER).
+    const textureRecords = Array.isArray(packet.textures) ? packet.textures : [];
+    if (textureRecords.length === 0) {
+      throw new Error('packet carries no static albedo textures; rebuild geometry with build_geometry.mjs');
+    }
+    for (const record of textureRecords) {
+      if (record.width <= 0 || record.height <= 0 || typeof record.rgbaBase64 !== 'string') {
+        throw new Error('texture ' + record.id + ' has no usable RGBA payload');
+      }
+      const binary = atob(record.rgbaBase64);
+      if (binary.length !== record.rgbaBytes || binary.length !== record.width * record.height * 4) {
+        throw new Error('texture ' + record.id + ' RGBA byte length does not match its size');
+      }
+      const rgba = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) rgba[index] = binary.charCodeAt(index);
+      const texture = this.device.createTexture({
+        size: [record.width, record.height, 1],
+        format: TEXTURE_SAMPLER.format,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+      });
+      this.device.queue.writeTexture(
+        { texture },
+        rgba,
+        { bytesPerRow: record.width * 4, rowsPerImage: record.height },
+        [record.width, record.height, 1]
+      );
+      this.textures.push(texture);
+      this.stats.texturesCreated++;
+      this.textureGroups.set(record.id, this.device.createBindGroup({
+        layout: this.textureLayout,
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: texture.createView() }
+        ]
+      }));
+      this.stats.texturesUploaded++;
+      this.stats.textureUploadBytes += rgba.length;
     }
 
     const drawCount = packet.draws.length;
@@ -359,7 +532,7 @@ export class PacketConsumer {
     this.stats.buffersCreated++;
     this.drawBindGroup = this.device.createBindGroup({
       layout: this.drawLayout,
-      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer, offset: 0, size: 144 } }]
+      entries: [{ binding: 0, resource: { buffer: this.uniformBuffer, offset: 0, size: DRAW_UNIFORM_BYTES } }]
     });
 
     const light = packet.lights[0];
@@ -383,7 +556,11 @@ export class PacketConsumer {
       if (!Number.isInteger(draw.indexOffset) || !Number.isInteger(draw.indexCount) || draw.indexCount % 3) throw new Error('draw ' + draw.id + ' has an invalid index range');
       if (draw.indexOffset + draw.indexCount > draw.mesh.indexCount) throw new Error('draw ' + draw.id + ' index range exceeds mesh');
       if (!isRigid(draw.world)) throw new Error('draw ' + draw.id + ' world matrix is not rigid');
+      if (draw.textureId != null && !this.textureGroups.has(draw.textureId)) {
+        throw new Error('draw ' + draw.id + ' names texture ' + draw.textureId + ' that the packet did not upload');
+      }
     }
+    this.stats.texturedDraws = this.draws.filter((draw) => draw.textureId != null).length;
     // E1 drive-slice delta: a draw may be explicitly hidden (`visible:false`).
     // The hidden physics collision surface is not a draw in this packet, but the
     // flag keeps the contract honest if a producer carries it here.
@@ -596,12 +773,18 @@ export class PacketConsumer {
       const base = index * (DRAW_UNIFORM_STRIDE / 4);
       bytes.set(viewProjection, base);
       bytes.set(frame.worlds[index], base + 16);
-      const colour = Array.isArray(draw.diagnosticColour) && draw.diagnosticColour.length >= 3
-        ? draw.diagnosticColour
-        : [NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, NEUTRAL_ALBEDO];
+      const colour = draw.textureId != null
+        ? [1, 1, 1]
+        : (Array.isArray(draw.diagnosticColour) && draw.diagnosticColour.length >= 3
+          ? draw.diagnosticColour
+          : [NEUTRAL_ALBEDO, NEUTRAL_ALBEDO, NEUTRAL_ALBEDO]);
       // w = diagnostic spin-marker strength, not opacity. Zero for every draw
       // that does not spin (body, caliper, level, collision surface).
       bytes.set([colour[0], colour[1], colour[2], draw.spins ? 0.85 : 0], base + 32);
+      // texParams.x = 1 only when a static albedo texture is bound. A textured
+      // draw is tinted white so the sampled texel is used unchanged; no material
+      // colour is invented.
+      bytes.set([draw.textureId != null ? 1 : 0, 0, 0, 0], base + 36);
     }
     this.device.queue.writeBuffer(this.uniformBuffer, 0, bytes);
 
@@ -618,13 +801,20 @@ export class PacketConsumer {
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(1, this.sceneBindGroup);
     let activeMesh = null;
+    let activeTexture = null;
     for (let index = 0; index < this.draws.length; index++) {
       const draw = this.draws[index];
       if (draw.visible === false) continue;
       if (activeMesh !== draw.meshId) {
         pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
+        pass.setVertexBuffer(1, draw.mesh.uvBuffer);
         pass.setIndexBuffer(draw.mesh.indexBuffer, 'uint32');
         activeMesh = draw.meshId;
+      }
+      const textureKey = draw.textureId != null ? draw.textureId : PLACEHOLDER_TEXTURE_ID;
+      if (activeTexture !== textureKey) {
+        pass.setBindGroup(2, draw.textureId != null ? this.textureGroups.get(draw.textureId) : this.placeholderGroup);
+        activeTexture = textureKey;
       }
       pass.setBindGroup(0, this.drawBindGroup, [index * DRAW_UNIFORM_STRIDE]);
       pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
