@@ -70,6 +70,13 @@ tipli hata durumları. Headless Edge **engine-audio-module-verified**, 6/6 decod
 **console 0**. E1 entegrasyonu `Engine().RPM()` ile tek `setRpm` çağrısı.
 Kanıt: `docs/work/analysis/audio-engine-module.md`.
 
+**P72a — prop dokuları (fizibilite):** Görünür yapısal prop'ların tamamı
+(fence/pipe/rack/wall/container) **zaten dokulu**. 97 diagnostic track draw'ın
+95'i block88 (ekran kapsaması 0), 2'si runtime-only. Gerçek eksik **22 level
+instance draw** (10.308 üçgen): reader UV0/material yaymıyor. `expand_instance`
+uzatması **18 draw / 10.212 üçgen** için BC1 albedo açabilir (14 görünür).
+Kanıt: `docs/work/analysis/prop-textures.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

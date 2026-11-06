@@ -723,6 +723,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 5 araç 401 tick, 0 temas, 0 respawn; `verify_e1_drive` **818/818**, capture **20/20 console 0**, checker **23/23**, suite 30/30.
 - Doğu kanalı (1.321 m²) C03 prop duvarı yüzünden erişilemez. Kanıt: `docs/work/verification/T-007-free-roam.md`.
 
+## 6 Kasım 2026 — prop dokuları fizibilitesi
+
+- Görünür yapısal prop'lar zaten dokulu (460 P66 / 423 P68 bileşen, `bound-static-albedo`).
+- 97 diagnostic track draw: 95'i block88 (far plane dışı, ekran 0), 2'si runtime-only.
+- Gerçek eksik **22 level-instance draw** (10.308 tri): reader UV0/material yaymıyor. `expand_instance` uzatması **18 draw / 10.212 tri** BC1 albedo açar; 4 BC3 cab draw alfa kararına kadar diagnostic.
+- Adaylar 49/49 doğrulandı, ikinci build byte-identical. Kanıt: `docs/work/analysis/prop-textures.md`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

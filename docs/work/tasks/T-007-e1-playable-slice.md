@@ -210,6 +210,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Sıradaki: E1 sayfasında `Engine().RPM()` ile tek `setRpm` çağrısı + gesture.
 - Kanıt: `docs/work/analysis/audio-engine-module.md`, `_work/audio/module-harness.png`.
 
+### E1p — Prop dokuları (P72a)  ✅ fizibilite
+- Görünür yapısal prop'ların **tamamı zaten dokulu**: 460 P66 / 423 P68
+  track-visual bileşeni `bound-static-albedo` (çit, boru, rack, duvar, konteyner).
+- 97 diagnostic track draw'ın 95'i block88 (kamera 230 m far plane dışında,
+  ekran kapsaması **0**), 2'si runtime-only albedo.
+- Gerçek eksik: **22 level-instance draw** (8 yerleşim, 10.308 üçgen; 6 wreck +
+  2 truck) — level instance reader UV0/material yaymıyor.
+- Reader uzatması `expand_instance`: UV0 (usage5/type8) + material zinciri →
+  **18 draw / 10.212 üçgen** (14 görünür / 8.222) BC1 albedo kazanır; 4 BC3
+  cab draw alfa kararına kadar diagnostic kalır.
+- Kanıt: `docs/work/analysis/prop-textures.md`; adaylar 49/49 doğrulandı.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
