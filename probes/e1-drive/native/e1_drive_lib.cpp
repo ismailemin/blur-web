@@ -1150,6 +1150,20 @@ const char* e1_get_state()
 	return s_state;
 }
 
+// Live engine RPM. This is the same value the retail audio graph reads:
+// `Engine().RPM()` (BaseMessageHandler.cpp:1940/1970 publishes
+// `DynamicsRPM = RPM * .0001` to the `RPMInput` graph parameter). It is read
+// straight from the integrated engine state, never derived from speed or a
+// guessed gear. Returns -1 before a world is ready so the page keeps its audio
+// silent instead of synthesising a value.
+extern "C" __attribute__( ( visibility( "default" ) ) )
+float e1_engine_rpm()
+{
+	using namespace e1;
+	if ( !gWorld.ready || !gWorld.car ) return -1.f;
+	return (float)gWorld.car->Engine().RPM();
+}
+
 // Metadata the page and the verifier report without asking the state: settled
 // ground height, ride height, car identity, the reset counter and the tick.
 extern "C" __attribute__( ( visibility( "default" ) ) )

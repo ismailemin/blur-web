@@ -66,6 +66,10 @@ import {
   createWasmResetEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
   TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_PACKET_SCRIPT, TELEMETRY_SPEC
 } from './telemetry.js';
+// Committed, verified retail engine-audio module (P71). Served read-only from
+// `probes/audio/web/` by tools/serve.mjs; it creates no AudioContext until a
+// real gesture calls `ensureStarted()`.
+import { createEngineAudio } from '/audio/engine-audio.js';
 const params = new URLSearchParams(location.search);
 const SCRIPT_PARAM = params.get('script');
 const TELEMETRY = params.get('telemetry') === '1';
@@ -91,6 +95,14 @@ if (TELEMETRY && params.has('hold')) {
 if (SOAK && (TELEMETRY || SCRIPT_PARAM || params.has('hold') || params.has('sprintfall'))) {
   throw new Error('?soak=1 is its own deterministic session; drop telemetry/script/hold/sprintfall');
 }
+// Engine audio (P71): the verified `Race_V8_Engine` RPM layers. Default on, but
+// silent until a real key/pointer gesture; `?audio=0` forces it off (headless
+// captures and diagnostics) and is the only guaranteed-silent setting.
+const AUDIO_PARAM = params.get('audio');
+if (AUDIO_PARAM !== null && AUDIO_PARAM !== '0' && AUDIO_PARAM !== '1') {
+  throw new Error('audio must be 0 or 1 (omit for on)');
+}
+const AUDIO_ENABLED = AUDIO_PARAM !== '0';
 const SOAK_SECONDS = params.has('soakSeconds') ? Number(params.get('soakSeconds')) : 300;
 const SOAK_TICKS_PER_FRAME = params.has('soakTicksPerFrame') ? Number(params.get('soakTicksPerFrame')) : 1;
 if (SOAK) {
@@ -251,7 +263,10 @@ const state = {
   // Soak (`?soak=1` only): a deterministic segment schedule, frame-time ring and
   // heap/pool/upload checkpoints. The full report is published when it finishes.
   soak: null,
-  soakReport: null
+  soakReport: null,
+  // Engine audio (P71): typed status plus the RPM/layer values the HUD shows.
+  // Null until the module has been constructed or forced off.
+  audio: null
 };
 
 /**
@@ -307,7 +322,8 @@ function publish() {
   window.e1DriveProbe = state;
   const rows = [
     ['mode', state.mode + (state.hold === null ? '' : ' · hold ' + state.hold + (state.holdReached ? ' reached' : ''))],
-    ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—']
+    ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—'],
+    ['audio', audioHudValue()]
   ];
   if (state.telemetry?.ready) {
     const metrics = state.telemetry.metrics;
@@ -544,6 +560,12 @@ const keys = new Set();
 // scripted sprint controller never passes through this mapping.
 let steerSign = params.get('invertSteer') === '0' ? 1 : -1;
 window.addEventListener('keydown', (event) => {
+  if ((event.key === 'm' || event.key === 'M') && !event.repeat) {
+    // Engine-audio mute. Presentation only: it drives the module's master gain
+    // and changes no physics, packet, timer or capture value.
+    toggleAudioMute();
+    return;
+  }
   if (SOAK) return; // the soak plan owns the session; no keyboard/restart input
   if ((event.key === 'i' || event.key === 'I') && !event.repeat) {
     steerSign = -steerSign;
@@ -584,6 +606,25 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('keyup', (event) => keys.delete(event.key.toLowerCase()));
 window.addEventListener('blur', () => keys.clear());
 
+// Engine audio starts only from a real user gesture. These listeners never
+// create a context on load and never fire in a headless capture (no gesture).
+// Only the driving keys / mute start it: the capture-only R (restart) and G
+// (ghost) synthetic keys must not create an AudioContext and log a browser
+// autoplay warning, which is exactly what a console-clean capture forbids.
+const AUDIO_GESTURE_KEYS = new Set([
+  'w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'm'
+]);
+window.addEventListener('keydown', (event) => {
+  if (typeof event.key === 'string' && AUDIO_GESTURE_KEYS.has(event.key.toLowerCase())) startEngineAudio();
+});
+window.addEventListener('pointerdown', startEngineAudio);
+// Dispose the context (and its six sources) when the page is hidden/unloaded.
+window.addEventListener('pagehide', () => {
+  if (!engineAudio) return;
+  engineAudio.dispose();
+  publishAudioState({ state: 'disposed', contextState: 'closed', rpm: null, activeLayers: 0, layers: [] });
+});
+
 
 function keyboardInput() {
   const throttle = keys.has('w') || keys.has('arrowup') ? 1 : 0;
@@ -623,6 +664,164 @@ let ghostFrame = null;
 // Cumulative in-place rebuilds of this page's single wasm instance in telemetry
 // mode (one e1_create in loadEngine, then one e1_reset per manoeuvre and per R).
 let telemetryResets = 0;
+
+// ------------------------------------------------------------------ engine audio
+// The verified module plays six decoded retail `Race_V8_Engine_*` loops and
+// applies the exact `EngineNVolume`/`EngineNPitch` curves. The page supplies one
+// number per frame: the wasm car's own `Engine().RPM()` (exposed as
+// `_e1_engine_rpm()`), which is the documented `RPMInput` source. There is no
+// synth and no fallback: if the WAVs or the AudioContext are unavailable, the
+// page stays silent and the HUD states the typed reason.
+let engineAudio = null;
+let audioMuted = false;
+let audioRpmOverride = null;
+
+/** The live retail RPM value; null before a world exists (never a guess). */
+function liveEngineRpm() {
+  if (!module || typeof module._e1_engine_rpm !== 'function') return null;
+  const rpm = module._e1_engine_rpm();
+  return Number.isFinite(rpm) && rpm >= 0 ? rpm : null;
+}
+
+function publishAudioState(extra = {}) {
+  const status = engineAudio ? engineAudio.status : null;
+  state.audio = {
+    enabled: AUDIO_ENABLED,
+    state: !AUDIO_ENABLED ? 'off' : status ? status.state : 'unavailable',
+    reason: !AUDIO_ENABLED ? 'forced-off' : status ? status.reason : 'not-created',
+    detail: !AUDIO_ENABLED ? '?audio=0' : status ? status.detail : null,
+    contextState: status ? status.contextState : 'none',
+    muted: audioMuted,
+    override: audioRpmOverride !== null,
+    rpm: null,
+    x: null,
+    activeLayers: 0,
+    layers: [],
+    ...extra
+  };
+}
+
+/** HUD row: state / RPM / layers / mute, or the typed unavailable reason. */
+function audioHudValue() {
+  if (!AUDIO_ENABLED) return 'off (?audio=0)';
+  const audio = state.audio;
+  if (!audio) return 'initialising';
+  if (audio.state === 'unavailable') return 'audio unavailable: ' + audio.reason;
+  if (audio.state === 'idle') return 'idle · drive key/click starts · M mute';
+  if (audio.state === 'loading') return 'loading six layers · M mute';
+  const layers = audio.activeLayers ?? 0;
+  return audio.state + ' · ' + (Number.isFinite(audio.rpm) ? Math.round(audio.rpm) + ' rpm' : '— rpm') +
+    ' · ' + layers + ' layer' + (layers === 1 ? '' : 's') +
+    (audio.override ? ' · capture hold' : '') +
+    (audio.muted ? ' · muted (M)' : ' · M mute');
+}
+
+/**
+ * One `setRpm` per rendered frame, after the fixed-step read. The module smooths
+ * gain/rate with `setTargetAtTime`; no source is restarted, no audio is created.
+ */
+function driveEngineAudio() {
+  if (!engineAudio) return;
+  // A gesture can arrive while the wasm module is still loading; wait for the
+  // first world instead of reporting a missing RPM accessor.
+  if (!module) return;
+  const rpm = audioRpmOverride !== null ? audioRpmOverride : liveEngineRpm();
+  if (rpm === null) {
+    publishAudioState({
+      state: 'unavailable', reason: 'rpm-unavailable',
+      detail: 'wasm build does not expose _e1_engine_rpm()'
+    });
+    return;
+  }
+  let sample;
+  try {
+    sample = engineAudio.setRpm(rpm);
+  } catch (error) {
+    publishAudioState({ state: 'unavailable', reason: 'rpm-invalid', detail: error.message });
+    return;
+  }
+  publishAudioState({
+    rpm: sample.rpm,
+    x: sample.x,
+    activeLayers: sample.layers.filter((layer) => layer.gain > 0.0005).length,
+    layers: sample.layers.map((layer) => ({
+      slot: layer.slot, wave: layer.wave, gain: layer.gain, rate: layer.rate
+    }))
+  });
+}
+
+/** Gesture-only start. Never called from load, the frame loop or a timer. */
+function startEngineAudio() {
+  if (!AUDIO_ENABLED || !engineAudio) return;
+  if (engineAudio.state === 'loading' || engineAudio.state === 'running' || engineAudio.state === 'disposed') return;
+  engineAudio.ensureStarted().then((status) => {
+    if (status.state === 'running') {
+      engineAudio.setMuted(audioMuted);
+      driveEngineAudio();
+    } else {
+      publishAudioState({ state: 'unavailable', reason: status.reason, detail: status.detail });
+    }
+    publish();
+  }).catch(() => {
+    publishAudioState({ state: 'unavailable', reason: 'start-failed', detail: 'ensureStarted threw' });
+    publish();
+  });
+}
+
+/** `M`: mute/unmute through the module's master gain. Works before start. */
+function toggleAudioMute() {
+  audioMuted = !audioMuted;
+  if (engineAudio) audioMuted = engineAudio.setMuted(audioMuted);
+  publishAudioState();
+  publish();
+}
+
+/** Construct at load: synchronous, no AudioContext, no fetch. */
+function initEngineAudio() {
+  if (!AUDIO_ENABLED) { publishAudioState(); return; }
+  try {
+    engineAudio = createEngineAudio({ baseUrl: '/_work/audio/', initialRpm: 0, masterGain: 0.5 });
+    engineAudio.onStatusChange((status) => {
+      publishAudioState({ state: status.state, reason: status.reason, detail: status.detail });
+      publish();
+    });
+    publishAudioState();
+  } catch (error) {
+    engineAudio = null;
+    publishAudioState({ state: 'unavailable', reason: 'construct-failed', detail: error.message });
+  }
+}
+
+initEngineAudio();
+// Capture/diagnostic handle: the same instance, plus a presentation-only RPM
+// hold so `--mode audio` can verify the retail curves without racing the loop.
+window.e1DriveAudio = {
+  get enabled() { return AUDIO_ENABLED; },
+  get status() {
+    return engineAudio ? engineAudio.status
+      : { state: AUDIO_ENABLED ? 'unavailable' : 'off', reason: AUDIO_ENABLED ? 'not-created' : 'forced-off', detail: null, contextState: 'none' };
+  },
+  getDiagnostics() { return engineAudio ? engineAudio.getDiagnostics() : null; },
+  setRpm(rpm) {
+    audioRpmOverride = Math.max(0, Number(rpm));
+    driveEngineAudio();
+    publish();
+    return this.getDiagnostics();
+  },
+  clearRpm() {
+    audioRpmOverride = null;
+    driveEngineAudio();
+    publish();
+    return this.getDiagnostics();
+  },
+  setMuted(value) {
+    audioMuted = Boolean(value);
+    if (engineAudio) audioMuted = engineAudio.setMuted(audioMuted);
+    publishAudioState();
+    publish();
+    return audioMuted;
+  }
+};
 
 function readState() {
   return JSON.parse(module.UTF8ToString(module._e1_get_state()));
@@ -1045,6 +1244,7 @@ async function respawnAt(target, nowUs) {
     const tick0 = createWorld(target.x, target.z, target.heading);
     const tick1 = await startTimeline(tick0, { reload: true, rejoin: true });
     applyState(tick1);
+    driveEngineAudio();
     holdReached = HOLD !== null && HOLD <= tick1.tick ? true : holdReached;
     state.ticksExecuted = 0;
     driver.reset(nowUs);
@@ -1640,6 +1840,7 @@ function soakStepTicks(count) {
       handleSprintEvents(events);
     }
     applyState(snapshot);
+    driveEngineAudio();
     if (soakTotalTicks - soakLastSampleTick >= SOAK_SAMPLE_TICKS) {
       soakLastSampleTick = soakTotalTicks;
       soakSample();
@@ -1981,6 +2182,7 @@ async function doReset(nowUs) {
     const tick0 = engine.reset();
     const tick1 = await startTimeline(tick0, { reload: true });
     applyState(tick1);
+    driveEngineAudio();
     state.engineTick = tick1.tick;
     state.ticksExecuted = 0;
     state.restarts += 1;
@@ -2042,6 +2244,10 @@ function frame(nowMs) {
     }
     if (!sample.ticks) applyState(session.lastState);
   }
+
+  // One audio parameter update per rendered frame, from the RPM the simulation
+  // actually used (held state included). Silent until the module was started.
+  driveEngineAudio();
 
   if (pendingRespawn) {
     const target = pendingRespawn;

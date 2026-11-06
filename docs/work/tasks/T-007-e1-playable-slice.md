@@ -202,13 +202,14 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-free-roam.md`,
   `_work/e1-drive/browser-<slug>-free-*.png`.
 
-### E1o — Motor sesi (P70)  ✅ modül hazır
-- `probes/audio/web/engine-audio.js`: 6 `RaceV8_Engine_*` loop'u, retail
-  RPM→gain/pitch PLF eğrileri, gesture-only AudioContext, `setRpm`/`mute`/`dispose`.
-- Headless Edge: **engine-audio-module-verified**, 6/6 decode, gain/rate farkı
-  ≤5,9e-8, RMS 0,041–0,137, **console 0**; fetch/decode hata yolları tipli.
-- Sıradaki: E1 sayfasında `Engine().RPM()` ile tek `setRpm` çağrısı + gesture.
-- Kanıt: `docs/work/analysis/audio-engine-module.md`, `_work/audio/module-harness.png`.
+### E1o — Motor sesi (P70/P71)  ✅ entegre
+- `e1_engine_rpm()` native export (`Engine().RPM()`), wasm A/B deterministik.
+- `probes/audio/web/engine-audio.js` sayfada: ilk tuş/click'te AudioContext,
+  kare başına `setRpm`, `M` mute, `?audio=0`, `pagehide` dispose.
+- Headless: **826/826** verify, `--mode audio` **16/16**, console **0**;
+  1500/3015/6000 RPM gain/rate farkı ≤6e-8, mute RMS 0.
+- Sınır: tek V8 graph, RPM-only; decel/throttle/induction/mixer yok.
+- Kanıt: `docs/work/verification/T-007-audio.md`, `_work/e1-drive/browser-audio-running.png`.
 
 ### E1p — Prop dokuları (P72a)  ✅ fizibilite
 - Görünür yapısal prop'ların **tamamı zaten dokulu**: 460 P66 / 423 P68

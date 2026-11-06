@@ -30,7 +30,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { startServer } from './serve.mjs';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { buildGhostArcTable, decodeGhost, ghostGap, ghostMatrices } from '../web/ghost-replay.js';
@@ -63,9 +63,9 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, respawn, telemetry, restart, telemetry-restart, survey or ghost)');
+    ' (drive, sprint, lap, free, respawn, telemetry, restart, telemetry-restart, survey, ghost or audio)');
 }
 // Course selection: 310 (default, `_work/e1-drive/sprint.json`), short
 // (`?course=short`, `_work/e1-drive/sprint-short.json`), lap (`?course=lap`,
@@ -434,6 +434,242 @@ function cameraMaxDelta(a, b) {
   return max;
 }
 
+/**
+ * Engine-audio capture (`--mode audio`): proves the page starts the committed
+ * module only from a real CDP gesture, holds a known RPM, matches the retail
+ * `EngineNVolume`/`EngineNPitch` curves at 1500/3015/6000 within 1e-3, reads a
+ * non-zero analyser RMS, and mutes to silence. Also proves `?audio=0` leaves the
+ * page with no module instance. The URL is the legacy drive held at tick 0, so
+ * the run's physics/state is the unchanged drive mode.
+ */
+async function audioCapturePass() {
+  const car = cars.find((entry) => entry.slug === defaultSlug) ?? cars[0];
+  const evidenceFile = option('--evidence-name', 'browser-evidence-audio.json');
+  const audioModule = await import(pathToFileURL(path.join(ROOT, 'probes/audio/web/engine-audio.js')).href);
+  const rpms = [1500, 3015, 6000];
+  const audioChecks = [];
+  const audioCheck = (label, ok, detail = '') => {
+    audioChecks.push({ label, ok, detail });
+    check(label, ok, detail);
+  };
+
+  const pageState = async () => evaluate(`(()=>{
+    const p = window.e1DriveProbe;
+    const a = window.e1DriveAudio;
+    if (!p || !a) return null;
+    const d = a.getDiagnostics();
+    const hud = document.getElementById('hud')?.textContent ?? '';
+    return {
+      consumer: p.consumer, error: p.error, holdReached: p.holdReached, frames: p.frames,
+      enabled: a.enabled, status: a.status,
+      diag: d ? {
+        state: d.state, contextState: d.contextState, rpm: d.rpm, x: d.x, baseUrl: d.baseUrl,
+        decoded: d.decoded.map((entry) => ({
+          wave: entry.wave, duration: entry.duration, channels: entry.channels,
+          sampleRate: entry.sampleRate, peak: entry.peak
+        })),
+        layers: d.layers, levels: d.levels, muted: d.muted
+      } : null,
+      hud
+    };
+  })()`);
+
+  const waitReady = async (url, label) => {
+    for (let attempt = 0; attempt < 1600; attempt++) {
+      const probe = await evaluate(`(()=>{const p=window.e1DriveProbe;return p?{url:location.href,state:p.consumer,error:p.error,holdReached:p.holdReached,frames:p.frames}:null})()`).catch(() => null);
+      if (probe && probe.url === url && probe.state === 'error') throw new Error(label + ': page error: ' + probe.error);
+      if (probe && probe.url === url && probe.state === 'running' && probe.holdReached && probe.frames >= 12) return;
+      await sleep(150);
+    }
+    throw new Error(label + ': page did not become ready');
+  };
+
+  // 1) `?audio=0` must leave the page with no module instance and a typed HUD.
+  const forcedUrl = origin + '/?script=drive&audio=0&hold=0&car=' + encodeURIComponent(car.slug);
+  messages.length = 0;
+  await send('Page.navigate', { url: forcedUrl });
+  await waitReady(forcedUrl, 'audio force-off');
+  const forced = await pageState();
+  audioCheck('?audio=0 leaves the page with no audio instance and an explicit off HUD',
+             forced?.enabled === false && forced?.diag === null && /off \(\?audio=0\)/.test(forced?.hud ?? ''),
+             forced ? `enabled=${forced.enabled}, diag=${forced.diag === null ? 'null' : 'present'}` : 'no probe');
+  audioCheck('?audio=0 console is clean', messages.length === 0, messages.map((entry) => entry.source).join(','));
+
+  // 2) Default page: constructed but idle, no context, nothing decoded.
+  const url = origin + '/?script=drive&hold=0&car=' + encodeURIComponent(car.slug);
+  messages.length = 0;
+  await send('Page.navigate', { url });
+  await waitReady(url, 'audio idle');
+  const idle = await pageState();
+  audioCheck('before any gesture the module is idle with no AudioContext and 0 decoded layers',
+             idle?.enabled === true && idle?.status?.state === 'idle' &&
+             idle?.status?.contextState === 'none' && idle?.diag?.decoded?.length === 0 &&
+             /idle/.test(idle?.hud ?? ''),
+             idle ? `${idle.status?.state}/${idle.status?.contextState}/decoded ${idle.diag?.decoded?.length}` : 'no probe');
+
+  // 3) A real CDP mouse gesture (not an autoplay override) starts the graph.
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: Math.round(VIEWPORT.width / 2), y: Math.round(VIEWPORT.height / 2),
+    button: 'left', clickCount: 1
+  });
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: Math.round(VIEWPORT.width / 2), y: Math.round(VIEWPORT.height / 2),
+    button: 'left', clickCount: 1
+  });
+  let running = null;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    running = await pageState();
+    if (running?.status?.state === 'running') break;
+    if (running?.status?.state === 'unavailable') break;
+    await sleep(100);
+  }
+  audioCheck('a trusted mouse gesture starts the AudioContext and decodes 6/6 retail layers',
+             running?.status?.state === 'running' && running?.status?.contextState === 'running' &&
+             running?.diag?.decoded?.length === 6 && running?.diag?.layers?.length === 6,
+             running ? `${running.status?.state}/${running.status?.contextState}/decoded ${running.diag?.decoded?.length}` : 'no probe');
+
+  const decodedWaves = (running?.diag?.decoded ?? []).map((entry) => entry.wave).sort();
+  audioCheck('the decoded layers are the six RaceV8_Engine_* loops (decel excluded, as documented)',
+             decodedWaves.length === 6 && decodedWaves.every((wave) =>
+               ['RaceV8_Engine_1500', 'RaceV8_Engine_1995', 'RaceV8_Engine_3015',
+                'RaceV8_Engine_4005', 'RaceV8_Engine_4995', 'RaceV8_Engine_6000'].includes(wave)),
+             decodedWaves.join(', '));
+
+  // 4) Hold each retail RPM and compare the live AudioParams with the PLF.
+  const samples = [];
+  for (const rpm of rpms) {
+    await evaluate(`window.e1DriveAudio.setRpm(${rpm}) && true`);
+    await sleep(500);
+    const snapshot = await pageState();
+    const expected = audioModule.sampleEngineCurves(rpm);
+    const expectedBySlot = new Map(expected.layers.map((layer) => [layer.slot, layer]));
+    let maxGainDelta = 0;
+    let maxRateDelta = 0;
+    const rows = (snapshot?.diag?.layers ?? []).map((layer) => {
+      const target = expectedBySlot.get(layer.slot);
+      const gainDelta = Math.abs(layer.gain - target.gain);
+      const rateDelta = Math.abs(layer.rate - target.rate);
+      maxGainDelta = Math.max(maxGainDelta, gainDelta);
+      maxRateDelta = Math.max(maxRateDelta, rateDelta);
+      return {
+        slot: layer.slot, wave: layer.wave,
+        targetGain: target.gain, targetRate: target.rate,
+        gain: layer.gain, rate: layer.rate,
+        gainDelta, rateDelta
+      };
+    });
+    const rms = snapshot?.diag?.levels?.rms ?? 0;
+    const peak = snapshot?.diag?.levels?.peak ?? 0;
+    samples.push({
+      rpm, requestedRpm: snapshot?.diag?.rpm ?? null, x: snapshot?.diag?.x ?? null,
+      maxGainDelta, maxRateDelta, rms, peak, layers: rows
+    });
+    audioCheck(`${rpm} RPM: per-layer live gains/rates match the retail PLF within 1e-3`,
+               rows.length === 6 && snapshot?.diag?.rpm === rpm && maxGainDelta < 1e-3 && maxRateDelta < 1e-3,
+               `gain ${maxGainDelta.toExponential(2)}, rate ${maxRateDelta.toExponential(2)}`);
+    audioCheck(`${rpm} RPM: analyser output is non-silent (RMS > 0.001)`,
+               rms > 0.001, `RMS ${rms.toFixed(5)}, peak ${peak.toFixed(5)}`);
+  }
+
+  const runningHud = (await pageState())?.hud ?? '';
+  audioCheck('HUD reports running, the held RPM and the active layer count',
+             /running/.test(runningHud) && /6000 rpm/.test(runningHud) && /layer/.test(runningHud),
+             runningHud.split('\n').find((line) => line.startsWith('audio ')) ?? 'no audio row');
+
+  const runningShot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  const runningFile = path.join(OUT, 'browser-audio-running.png');
+  writeFileSync(runningFile, Buffer.from(runningShot.data, 'base64'));
+
+  // 5) Mute -> silence -> unmute.
+  await evaluate('window.e1DriveAudio.setMuted(true) && true');
+  await sleep(400);
+  const muted = await pageState();
+  audioCheck('mute drives the analyser to silence (< 0.002) without closing the context',
+             (muted?.diag?.levels?.rms ?? 1) < 0.002 && muted?.diag?.contextState === 'running',
+             `RMS ${(muted?.diag?.levels?.rms ?? -1).toFixed(5)}, context ${muted?.diag?.contextState}`);
+  audioCheck('HUD reports the muted state', /muted \(M\)/.test(muted?.hud ?? ''),
+             muted?.hud?.split('\n').find((line) => line.startsWith('audio ')) ?? 'no audio row');
+  const mutedShot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+  const mutedFile = path.join(OUT, 'browser-audio-muted.png');
+  writeFileSync(mutedFile, Buffer.from(mutedShot.data, 'base64'));
+
+  await evaluate('window.e1DriveAudio.setMuted(false) && true');
+  await sleep(400);
+  const unmuted = await pageState();
+  audioCheck('unmute restores output (RMS > 0.001)',
+             (unmuted?.diag?.levels?.rms ?? 0) > 0.001,
+             `RMS ${(unmuted?.diag?.levels?.rms ?? 0).toFixed(5)}`);
+
+  const capturedMessages = messages.splice(0);
+  audioCheck('console is clean through gesture, RPM hold, mute and unmute',
+             capturedMessages.length === 0,
+             capturedMessages.map((entry) => entry.source + ': ' + entry.text).join(' | '));
+
+  const passed = audioChecks.filter((entry) => entry.ok).length;
+  const evidence = {
+    kind: 'e1-drive.engine-audio-evidence',
+    version: 1,
+    status: passed === audioChecks.length ? 'PASS' : 'FAIL',
+    car: car.slug,
+    url: url.replace(origin, ''),
+    forceOff: {
+      url: forcedUrl.replace(origin, ''),
+      enabled: forced?.enabled ?? null,
+      diagnostics: forced?.diag ?? null,
+      hud: forced?.hud ?? null
+    },
+    beforeGesture: {
+      state: idle?.status?.state ?? null,
+      contextState: idle?.status?.contextState ?? null,
+      decoded: idle?.diag?.decoded?.length ?? null,
+      hud: idle?.hud ?? null
+    },
+    gesture: 'Input.dispatchMouseEvent mousePressed/mouseReleased at viewport centre (trusted user gesture); ' +
+      'Edge is started without --autoplay-policy=no-user-gesture-required',
+    afterGesture: {
+      state: running?.status?.state ?? null,
+      contextState: running?.status?.contextState ?? null,
+      decoded: running?.diag?.decoded ?? [],
+      baseUrl: running?.diag?.baseUrl ?? null
+    },
+    rpms: samples,
+    mute: {
+      mutedRms: muted?.diag?.levels?.rms ?? null,
+      restoredRms: unmuted?.diag?.levels?.rms ?? null,
+      contextState: muted?.diag?.contextState ?? null
+    },
+    console: capturedMessages,
+    checks: audioChecks,
+    screenshots: [
+      path.relative(ROOT, runningFile).split(path.sep).join('/'),
+      path.relative(ROOT, mutedFile).split(path.sep).join('/')
+    ],
+    limits: 'one Race_V8_engine graph, RPM only; not the retail mixer; decoded WAVs live under _work/audio and are not committed'
+  };
+  writeFileSync(path.join(OUT, evidenceFile), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+
+  return {
+    ok: passed === audioChecks.length,
+    summary: {
+      mode: 'audio',
+      status: evidence.status,
+      car: car.slug,
+      checks: `${passed}/${audioChecks.length}`,
+      consoleMessages: capturedMessages.length,
+      rpms: samples.map((row) => ({
+        rpm: row.rpm,
+        maxGainDelta: row.maxGainDelta,
+        maxRateDelta: row.maxRateDelta,
+        rms: row.rms
+      })),
+      mute: { mutedRms: evidence.mute.mutedRms, restoredRms: evidence.mute.restoredRms },
+      screenshots: evidence.screenshots,
+      evidence: path.relative(ROOT, path.join(OUT, evidenceFile)).split(path.sep).join('/'),
+      failures
+    }
+  };
+}
+
 if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
     : MODE === 'lap' ? await lapCapturePass()
@@ -443,7 +679,8 @@ if (MODE !== 'drive') {
     : MODE === 'respawn' ? await respawnCapturePass()
       : MODE === 'restart' ? await restartCapturePass()
         : MODE === 'telemetry-restart' ? await telemetryRestartCapturePass()
-          : await telemetryCapturePass();
+          : MODE === 'audio' ? await audioCapturePass()
+            : await telemetryCapturePass();
   await shutdown();
   await sleep(400);
   console.log(JSON.stringify(result.summary, null, 2));

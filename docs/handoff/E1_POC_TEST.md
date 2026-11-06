@@ -65,6 +65,7 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 | `S` / `↓` | fren |
 | `A` / `D` / `←` / `→` | direksiyon |
 | `Space` | el freni |
+| `M` | motor sesini aç/kapa |
 | `R` | yerinde restart (sayfa yenilenmez) |
 | Fare sürükle | kamera orbit |
 | Tekerlek | zoom |
@@ -93,6 +94,7 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 - [ ] `?course=lap`: 3 tur → start/finish çizgisi 3 kez → finish; tur süreleri ve en iyi tur görünür.
 - [ ] Tur modunda truck/bina prop'ları solid; loop-01'de temas yok (HUD: 468 colliders).
 - [ ] `?course=free`: 431 collider solid; truck/bina içinden geçilmiyor; HUD `free roam`; `R` spawn'a dönüyor.
+- [ ] İlk tuş/click sonrası motor sesi geliyor; RPM yükselince pitch yükseliyor; `M` sessize alıyor; `?audio=0` tamamen sessiz.
 - [ ] Süre tablodaki değere ±0,01 s (scripted) veya makul (klavye).
 - [ ] `R`: aynı sayfada yeniden countdown; süre sıfırlanır, en iyi süre korunur.
 - [ ] Beş araç seçilebilir; her biri kendi gövdesi/tekerleriyle görünür.

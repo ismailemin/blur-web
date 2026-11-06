@@ -31,6 +31,16 @@ table and three 60 Hz traces in a panel, and a JSON report
 (`_work/e1-drive/telemetry-<slug>.json`). It is a diagnostic validation, not a
 retail-fidelity claim.
 
+The car also has **engine audio** after the first real user gesture (a click or
+a driving key). It plays the six decoded retail `Race_V8_engine` RPM loops from
+the committed `probes/audio/web/engine-audio.js` module and follows the wasm
+`Engine().RPM()` once per frame; `M` mutes/unmutes and `?audio=0` forces it off.
+A missing WAV or `AudioContext` leaves the page silent with a typed
+`audio unavailable: <reason>` HUD row. The WAVs stay read-only under
+`_work/audio/` and are not committed. A server process started before this
+change must be restarted so it serves the new `/audio/` and `/_work/audio/`
+routes. See `docs/work/verification/T-007-audio.md`.
+
 The car is drawn from each car's own committed part manifest
 (`probes/car-parts/`): the Corvette ZR1 has **34 parts / 100 draws**, the Lotus
 Exige Cup260 **23 / 88**, the Dodge Challenger **31 / 104**, the Ford Focus RS
@@ -219,6 +229,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs --mode telemetry # metric panel per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode restart   # R on a finished sprint, 5 cars
 & $node probes/e1-drive/tools/capture_browser.mjs --mode telemetry-restart # R in telemetry, no reload
+& $node probes/e1-drive/tools/capture_browser.mjs --mode audio    # gesture, 1500/3015/6000 RPM, mute
 
 # 8. one-instance rebuild reproduction (10+ create/reset cycles, exact trap + heap/pool log)
 & $node probes/e1-drive/tools/repro_reset.mjs --cycles 10
@@ -254,6 +265,7 @@ harness, with the batch harness replaced by a library ABI:
 | `e1_step()` | exactly one `C_Scene::Simulate(1/60)` + `PhysicsTimer::UpdatePhysicsTimer()`. |
 | `e1_get_state()` | JSON snapshot of this tick: position, the three body axes, velocity, angular velocity, ground-relative speed, four wheel records (contact, suspension, position, spin, surface, userData, ground normal), `finite`, `anyContact`, and the input actually applied. |
 | `e1_info()` | car name, XT handle id, ground/start Y, dt, settle-tick count, current tick, reset count, `sizeof(CarDynamicsXt)`. |
+| `e1_engine_rpm()` | the live `RacingPhysics::Car::Engine().RPM()` as a float; `-1` before a world is ready. This is the value the retail audio graph publishes as `RPMInput` (`BaseMessageHandler.cpp:1940/1970`); the page's engine audio consumes it once per frame. |
 | `e1_ground_probe(x, z)` | the same fill+trace the wheel uses, as JSON: hit, height, normal, cached triangle count. Used to prove the spawn instead of guessing it. |
 | `e1_diag()` | diagnostic snapshot of the live world: scene/body/car pointers, the scene's scheduler group handle and policy, and the scheduler pool (size, free-list head, global counters, per-group queued/executing/dependencies/next/event). Used by `tools/repro_reset.mjs` and the verifier to prove rebuilds do not leak groups; not on the physics path. |
 | `e1_last_error()` | the message behind a 0 return. |
@@ -751,6 +763,8 @@ measured limit),
 `browser-evidence-telemetry-restart.json`, `browser-evidence-soak.json`,
 `browser-evidence-texture.json` (close-up texture proof),
 `browser-evidence-ghost.json` (ghost replay: 5 cars, G toggle, pose/delta/upload gates),
+`browser-evidence-audio.json` + `browser-audio-{running,muted}.png` (engine audio:
+force-off, gesture gate, 1500/3015/6000 RPM live gains/rates/RMS, mute),
 `probes/e1-drive/ghosts/index.json` + `ghosts/<slug>-{310m,short}.json` (committed
 deterministic reference ghost per car and course),
 `soak-run-{1,2}.json`, `browser-soak-run{1,2}-{start,mid,end}.png`,
@@ -883,6 +897,11 @@ per-car metrics and plausibility comparison are recorded in
   The consumer's manual drag/zoom debug camera is not occlusion-checked;
   `?camdist/camheight/camyaw` are, change only the camera and never physics, and
   the default page never sets them.
+- **Engine audio is one retail graph, RPM only.** The page plays the six decoded
+  `Race_V8_engine` loops through the committed module; it does not reproduce the
+  retail mixer, throttle/damage/induction layers, the decel layer (flat zero in
+  this graph) or a car-to-bank mapping. The WAVs are game data under
+  `_work/audio/` and are not committed. See `T-007-audio.md`.
 - **The ghost is a recorded replay, not an AI opponent.** One ghost per car and
   course; it has no collision, no input, no physics body and no packet entry, and
   no retail rival behaviour is reproduced. It follows the recorded engine-tick

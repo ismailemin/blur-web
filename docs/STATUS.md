@@ -730,6 +730,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Gerçek eksik **22 level-instance draw** (10.308 tri): reader UV0/material yaymıyor. `expand_instance` uzatması **18 draw / 10.212 tri** BC1 albedo açar; 4 BC3 cab draw alfa kararına kadar diagnostic.
 - Adaylar 49/49 doğrulandı, ikinci build byte-identical. Kanıt: `docs/work/analysis/prop-textures.md`.
 
+## 6 Kasım 2026 — motor sesi entegrasyonu
+
+- `e1_engine_rpm()` native export'u + wasm; sayfa kare başına `Engine().RPM()` → `setRpm`.
+- Ses yalnız ilk tuş/click'te başlar; `M` mute, `?audio=0`; `pagehide` dispose.
+- `verify_e1_drive` **826/826**; `--mode audio` **16/16**, console **0**; 1500/3015/6000 RPM gain/rate farkı ≤6e-8; mute RMS 0, unmute 0,133.
+- Kanıt: `docs/work/verification/T-007-audio.md`, `_work/e1-drive/browser-audio-running.png`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

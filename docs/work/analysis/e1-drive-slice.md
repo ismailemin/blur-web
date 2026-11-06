@@ -88,6 +88,7 @@ void e1_set_input(float throttle, float brake, float steer, float handbrake);
 int  e1_step(void);                                   /* one C_Scene::Simulate(1/60) */
 const char* e1_get_state(void);                       /* JSON, this tick */
 const char* e1_info(void);                            /* car, ground, dt, tick, resets */
+float e1_engine_rpm(void);                            /* live Engine().RPM(); -1 before a world */
 const char* e1_ground_probe(float x, float z);        /* fill+trace at one point */
 const char* e1_last_error(void);
 ```
@@ -2190,3 +2191,70 @@ The prop layer is a visible-mesh kinematic approximation. The scripted run is a
 23–29 m diagnostic manoeuvre, not a racing line. There is no free-roam ghost,
 best time, AI, traffic or full-game claim (details and evidence:
 `docs/work/verification/T-007-free-roam.md`).
+
+## 28. Engine audio follows the wasm RPM (T-007/audio, P71)
+
+### 28.1 What was added
+
+The slice now plays the committed retail engine-audio module
+(`probes/audio/web/engine-audio.js`) against the simulation's own RPM:
+
+- `native/e1_drive_lib.cpp` exports `float e1_engine_rpm()`; the value is
+  `RacingPhysics::Car::Engine().RPM()` (the documented `RPMInput` source,
+  `BaseMessageHandler.cpp:1940/1970`) and is `-1` before a world exists.
+  It is not derived from speed or a guessed gear.
+- `tools/build_module.mjs` exports `_e1_engine_rpm`; the 186-object wasm was
+  rebuilt deterministically (A/B hash identical, 1,006,289 B,
+  `sha256:eb9efc0064f0d871…`).
+- `tools/serve.mjs` adds two read-only trees through the existing `safeJoin`:
+  `/audio/` → `probes/audio/web/` and `/_work/audio/` → `_work/audio/`.
+  The six decoded WAVs are game data and are not committed.
+- `web/app.js` constructs the module at load (no context, no fetch), starts it
+  only from a real gesture (`pointerdown` or a driving key), calls `setRpm`
+  once per rendered frame and after reset/respawn, adds `M` mute, the `audio`
+  HUD row and `pagehide` dispose. `?audio=0` forces it off with no instance.
+- `web/index.html` documents `M`; the user-visible HUD row reports state, RPM,
+  active layer count and mute.
+
+The gesture filter is deliberate: `R` (restart) and `G` (ghost) are used by
+headless captures, so they must not create an `AudioContext`; only pointerdown,
+`W/A/S/D`, arrows, Space and `M` start audio.
+
+### 28.2 Verification
+
+`verify_e1_drive.mjs` — PASS (**826 checks**, 818 existing + 8 audio). The new
+checks compare the module table with `_work/audio/engine-model.json`, verify the
+six WAV sizes/SHA-256, prove construction/`setRpm` create no context, check the
+typed RPM errors and `dispose()`, and read the live accessor (`-1` before a
+world, **799.75 RPM** at the settled spawn; limiter 7250). Independently
+evaluating the decoded PLF at 1500/3015/6000 gives a max delta of **0**.
+
+`capture_browser.mjs --mode audio` — PASS, **16/16**, console **0**. Before the
+gesture there is no context; a trusted CDP mouse gesture reaches `running` with
+6/6 decoded mono 48 kHz layers. Holding 1500/3015/6000 RPM, the live
+`AudioParam` gains/rates match the retail curves with max deltas of
+**1.30e-8 / 8.57e-10 / 1.23e-14** and **5.76e-8 / 5.93e-8 / 4.98e-8** (limit
+1e-3); analyser RMS is **0.0643 / 0.0394 / 0.1391**. Mute reaches RMS **0** with
+the context still running; unmute restores **0.1330**. `?audio=0` leaves no
+instance and an explicit off HUD.
+
+Regression: `capture_browser.mjs --mode lap` (20 captures, console 0,
+0 assertions, 15/20 byte-exact) and `--mode free` (20 captures, console 0,
+0 assertions, 14/20) both pass; `verify_asset_probe.py --skip-build` is
+**30/30** and `check_e1_poc.py` **23/23**. The free capture presses `R`; the
+gesture filter keeps that synthetic key silent, which is why its console is
+clean again.
+
+Evidence: `_work/e1-drive/browser-evidence-audio.json`,
+`browser-audio-{running,muted}.png`, the `engineAudio` block in `run.json`, and
+the `p71-*` logs. Server processes started before this change must be
+restarted to serve `/audio/`.
+
+### 28.3 Limits
+
+One retail graph (`Race_V8_engine`) and one parameter (RPM); the decel layer is
+excluded (flat-zero volume chain), and the bus is not the retail mixer. No
+throttle/damage/induction/EQ layers and no car-to-bank mapping. The WAVs remain
+uncommitted game data under `_work/audio/`. The page disposes on `pagehide`, so
+a bfcache restore stays silent until reload. Full detail and evidence:
+`docs/work/verification/T-007-audio.md`.

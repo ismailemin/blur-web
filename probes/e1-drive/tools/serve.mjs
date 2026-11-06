@@ -1,11 +1,13 @@
 // Static server for the E1 drive slice.
 //
-// Serves exactly five trees, all read-only:
+// Serves exactly seven trees, all read-only:
 //   /                -> probes/e1-drive/web/            (the page)
 //   /_work/e1-drive/ -> _work/e1-drive/                 (module, geometry, level, packet, layouts)
 //   /ghosts/         -> probes/e1-drive/ghosts/         (committed reference ghost traces)
 //   /prop-collision/ -> probes/prop-collision/          (read-only P66 resolver + lib)
 //   /_work/free-roam-prop/ -> _work/free-roam-prop/     (P68b extended free-roam collider manifest)
+//   /audio/          -> probes/audio/web/               (the committed engine-audio ES module)
+//   /_work/audio/    -> _work/audio/                    (decoded retail WAVs, read-only, not committed)
 //
 // No directory listing, no writes, no path escapes. Callable as a module
 // (`startServer({port})`) or directly (`node probes/e1-drive/tools/serve.mjs [--port 8801]`).
@@ -22,6 +24,8 @@ const GHOSTS = path.join(ROOT, 'probes/e1-drive/ghosts');
 const PROP = path.join(ROOT, 'probes/prop-collision');
 const PROP_WORK = path.join(ROOT, '_work/prop-collision');
 const FREE_PROP_WORK = path.join(ROOT, '_work/free-roam-prop');
+const AUDIO = path.join(ROOT, 'probes/audio/web');
+const AUDIO_WORK = path.join(ROOT, '_work/audio');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -32,7 +36,8 @@ const TYPES = {
   '.wasm': 'application/wasm',
   '.fields': 'text/plain; charset=utf-8',
   '.bin': 'application/octet-stream',
-  '.levelphysics': 'application/octet-stream'
+  '.levelphysics': 'application/octet-stream',
+  '.wav': 'audio/wav'
 };
 
 function safeJoin(base, relative) {
@@ -51,6 +56,8 @@ export function startServer({ port = 8801 } = {}) {
     else if (pathname.startsWith('/prop-collision/')) file = safeJoin(PROP, pathname.slice('/prop-collision/'.length));
     else if (pathname.startsWith('/_work/prop-collision/')) file = safeJoin(PROP_WORK, pathname.slice('/_work/prop-collision/'.length));
     else if (pathname.startsWith('/_work/free-roam-prop/')) file = safeJoin(FREE_PROP_WORK, pathname.slice('/_work/free-roam-prop/'.length));
+    else if (pathname.startsWith('/audio/')) file = safeJoin(AUDIO, pathname.slice('/audio/'.length));
+    else if (pathname.startsWith('/_work/audio/')) file = safeJoin(AUDIO_WORK, pathname.slice('/_work/audio/'.length));
     else file = safeJoin(WEB, pathname.slice(1));
 
     if (!file || !existsSync(file) || !statSync(file).isFile()) {

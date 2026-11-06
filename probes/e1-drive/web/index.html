@@ -31,12 +31,12 @@
 <div id="legend">
   <strong>E1 sprint slice</strong> — wasm RacingPhysics on the River collision mesh → render packet v1.1 → WebGPU<br>
   default: the measured <strong>310 m P48 course</strong> (310.395 m measured, finish at 300.160 m) · <code>?course=short</code> = the 29 m regression straight · <code>?course=lap</code> = the <strong>P61 loop-01 3-lap race</strong> (222.040 m, component 5) · <code>?course=free</code> = <strong>free roam</strong> on the P65/P68 spawn basin (7,702 m², no gates/finish/lap)<br>
-  point-to-point sprint, 3-lap race or free roam · timer/lap times/best lap · respawn/containment · <strong>G</strong> ghost replay on the sprint courses · physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · static albedo textures on real UV0 · material colour/blend/mips/sRGB not applied · rest-pose wheel placement · lap and free-roam modes add a read-only visible-prop layer (<code>all-visible</code>)
+  point-to-point sprint, 3-lap race or free roam · timer/lap times/best lap · respawn/containment · <strong>G</strong> ghost replay on the sprint courses · physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · static albedo textures on real UV0 · material colour/blend/mips/sRGB not applied · rest-pose wheel placement · lap and free-roam modes add a read-only visible-prop layer (<code>all-visible</code>) · <strong>engine audio</strong> follows the wasm <code>Engine().RPM()</code> after your first key/click (six retail V8 loops; <code>?audio=0</code> off)
 </div>
 <div id="keys">
   <strong>W</strong>/<strong>↑</strong> throttle · <strong>S</strong>/<strong>↓</strong> brake ·
   <strong>A</strong> <strong>D</strong> steer · <strong>Space</strong> handbrake · <strong>R</strong> restart ·
-  <strong>G</strong> ghost replay · <strong>I</strong> invert steer ·
+  <strong>G</strong> ghost replay · <strong>I</strong> invert steer · <strong>M</strong> mute engine audio ·
   drag = orbit camera · wheel = zoom
 </div>
 <script type="module" src="./app.js"></script>

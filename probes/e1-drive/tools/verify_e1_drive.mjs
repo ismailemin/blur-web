@@ -4614,6 +4614,129 @@ writeFileSync(path.join(OUT, 'Level.levelphysics'), levelBytes);
 writeFileSync(path.join(OUT, 'car.fields'), readFileSync(path.join(ROOT, defaultForAliases.fields.path)));
 writeFileSync(path.join(OUT, 'spawn.json'), JSON.stringify(TICK0_LIMITS, null, 2) + '\n', 'utf8');
 
+// ---------------------------------------------------------------- engine audio (P71)
+// The page drives `probes/audio/web/engine-audio.js` once per frame with the
+// wasm car's live `Engine().RPM()`. These non-browser gates re-derive the retail
+// curves from the decoded model, verify the six served WAVs, and prove that
+// constructing the module / calling setRpm creates no AudioContext.
+const audioModule = await import(pathToFileURL(path.join(ROOT, 'probes/audio/web/engine-audio.js')).href);
+const audioModel = JSON.parse(readFileSync(path.join(ROOT, '_work/audio/engine-model.json'), 'utf8'));
+const audioPlf = (points, x) => {
+  if (!points || points.length === 0) return 0;
+  if (x <= points[0][0]) return points[0][1];
+  for (let i = 1; i < points.length; i += 1) {
+    const [x0, y0] = points[i - 1];
+    const [x1, y1] = points[i];
+    if (x <= x1) return x1 === x0 ? y1 : y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+  }
+  return points[points.length - 1][1];
+};
+const audioCurves = audioModule.RETAIL_RACE_V8_ENGINE_CURVES;
+const audioModelLoops = audioModel.loops;
+const audioModuleSlots = new Set(audioCurves.map((layer) => layer.slot));
+const audioComparedLoops = audioModelLoops.filter((loop) => audioModuleSlots.has(loop.slot));
+const audioExcludedLoops = audioModelLoops.filter((loop) => !audioModuleSlots.has(loop.slot));
+const audioTableMatches = audioCurves.length === 6 && audioComparedLoops.length === 6 &&
+  audioComparedLoops.every((loop) => {
+    const layer = audioCurves.find((entry) => entry.slot === loop.slot);
+    return layer && layer.wave === loop.wave && layer.rpmLabel === loop.rpmLabel &&
+      JSON.stringify(layer.volume) === JSON.stringify(loop.volume) &&
+      JSON.stringify(layer.pitch) === JSON.stringify(loop.pitch);
+  });
+check('engine audio: the shipped module table is the decoded retail Race_V8_engine model (slots, labels, every point)',
+      audioTableMatches, `${audioCurves.length} layers vs ${audioComparedLoops.length} compared decoded loops`);
+check('engine audio: only RaceV8_Engine_decel (slot 7) is excluded, as documented (its volume chain is flat zero)',
+      audioExcludedLoops.length === 1 && audioExcludedLoops[0].slot === 7 &&
+      audioExcludedLoops[0].wave === 'RaceV8_Engine_decel',
+      audioExcludedLoops.map((loop) => `${loop.slot}:${loop.wave}`).join(', ') || 'none excluded');
+
+const audioRpms = [1500, 3015, 6000];
+let audioMaxDelta = 0;
+const audioSamples = [];
+for (const rpm of audioRpms) {
+  const sample = audioModule.sampleEngineCurves(rpm);
+  const x = audioModule.rpmToX(rpm);
+  let delta = 0;
+  for (const loop of audioComparedLoops) {
+    const layer = sample.layers.find((entry) => entry.slot === loop.slot);
+    if (!layer) { delta = Infinity; continue; }
+    const gain = audioPlf(loop.volume, x);
+    const rate = Math.max(audioModule.MIN_PLAYBACK_RATE, audioPlf(loop.pitch, x));
+    delta = Math.max(delta, Math.abs(layer.gain - gain), Math.abs(layer.rate - rate));
+  }
+  audioMaxDelta = Math.max(audioMaxDelta, delta);
+  audioSamples.push({ rpm, x, maxDelta: delta });
+}
+check('engine audio: x = RPM * 0.0001 and the six layer gains/rates match the retail PLF at 1500/3015/6000',
+      audioMaxDelta < 1e-9, `max delta ${audioMaxDelta.toExponential(2)}`);
+
+const audioWavProblems = [];
+let audioWavCount = 0;
+for (const [wave, entry] of Object.entries(audioModel.wavFiles)) {
+  if (wave === 'RaceV8_Engine_decel') continue;
+  audioWavCount += 1;
+  const file = path.join(ROOT, '_work/audio', entry.file);
+  if (!existsSync(file)) { audioWavProblems.push(entry.file + ': missing'); continue; }
+  const bytes = readFileSync(file);
+  if (bytes.length !== entry.bytes) audioWavProblems.push(entry.file + ': ' + bytes.length + ' B');
+  else if (sha256(bytes) !== entry.sha256) audioWavProblems.push(entry.file + ': sha256 mismatch');
+}
+check('engine audio: the six decoded WAVs under _work/audio are present, sized and hash-identical to the model',
+      audioWavCount === 6 && audioWavProblems.length === 0,
+      audioWavProblems.join('; ') || `${audioWavCount} files`);
+
+let audioIdle = null;
+try { audioIdle = audioModule.createEngineAudio(); } catch { audioIdle = null; }
+let audioIdleDiag = null;
+if (audioIdle) {
+  audioIdle.setRpm(1500);
+  audioIdleDiag = audioIdle.getDiagnostics();
+}
+check('engine audio: construction + setRpm create no AudioContext and decode nothing before a gesture',
+      audioIdle !== null && audioIdle.state === 'idle' && audioIdleDiag.contextState === 'none' &&
+      audioIdleDiag.decoded.length === 0 && audioIdleDiag.targets.length === 6 &&
+      audioIdleDiag.layers.length === 0,
+      audioIdleDiag
+        ? `state ${audioIdleDiag.state}, context ${audioIdleDiag.contextState}, decoded ${audioIdleDiag.decoded.length}, ` +
+          `targets ${audioIdleDiag.targets.length}, live ${audioIdleDiag.layers.length}`
+        : 'construction failed');
+
+let audioNegative = null;
+let audioNonFinite = null;
+if (audioIdle) {
+  try { audioIdle.setRpm(-1); } catch (error) { audioNegative = error; }
+  try { audioIdle.setRpm(Number.NaN); } catch (error) { audioNonFinite = error; }
+}
+check('engine audio: negative and non-finite RPM are rejected with typed errors (no silent clamp)',
+      audioNegative instanceof RangeError && audioNonFinite instanceof TypeError,
+      `${audioNegative?.name ?? 'none'} / ${audioNonFinite?.name ?? 'none'}`);
+
+const audioDisposed = audioIdle ? audioIdle.dispose() : null;
+const audioDisposedDiag = audioIdle ? audioIdle.getDiagnostics() : null;
+check('engine audio: dispose reports disposed and drops layers/buffers with no live context',
+      audioDisposed !== null && audioDisposed.state === 'disposed' &&
+      audioDisposedDiag.layers.length === 0 && audioDisposedDiag.decoded.length === 0,
+      audioDisposed ? `${audioDisposed.state}, ${audioDisposedDiag.layers.length} layers` : 'no instance');
+
+const audioRuntime = await (await import(pathToFileURL(MODULE).href)).default();
+const audioRpmBefore = typeof audioRuntime._e1_engine_rpm === 'function' ? audioRuntime._e1_engine_rpm() : null;
+const audioFieldsBytes = readFileSync(path.join(ROOT, defaultForAliases.fields.path));
+const audioLevelPtr = audioRuntime._malloc(levelBytes.length);
+const audioFieldsPtr = audioRuntime._malloc(audioFieldsBytes.length + 1);
+audioRuntime.HEAPU8.set(levelBytes, audioLevelPtr);
+audioRuntime.HEAPU8.set(audioFieldsBytes, audioFieldsPtr);
+const audioCreated = audioRuntime._e1_create(audioLevelPtr, levelBytes.length, audioFieldsPtr,
+                                             audioFieldsBytes.length, TICK0_LIMITS.x, TICK0_LIMITS.z,
+                                             TICK0_LIMITS.heading);
+audioRuntime._free(audioLevelPtr);
+audioRuntime._free(audioFieldsPtr);
+const audioRpmAfter = audioCreated ? audioRuntime._e1_engine_rpm() : null;
+const audioLimiter = roster.roster.cars.find((car) => car.slug === defaultForAliases.slug)?.values?.limiterRPM ?? null;
+check('engine audio: _e1_engine_rpm() is -1 before a world and the live Engine().RPM() after create',
+      audioRpmBefore === -1 && audioCreated === 1 && Number.isFinite(audioRpmAfter) &&
+      audioRpmAfter > 0 && (audioLimiter === null || audioRpmAfter <= audioLimiter),
+      `before ${audioRpmBefore}, after ${audioRpmAfter}, limiter ${audioLimiter}`);
+
 const report = {
   purpose: 'E1 drive slice: wasm vehicle physics -> render packet v1.1 -> WebGPU consumer, several XT cars',
   status: failures.length === 0 ? 'PASS' : 'FAIL',
@@ -4634,6 +4757,22 @@ const report = {
       objects: t005Provenance.wasm?.objects
     } : null,
     exports: build.exports
+  },
+  engineAudio: {
+    module: 'probes/audio/web/engine-audio.js',
+    model: '_work/audio/engine-model.json',
+    rpms: audioRpms,
+    xDomain: 'x = RPM * 0.0001',
+    maxCurveDelta: audioMaxDelta,
+    samples: audioSamples,
+    wavCount: audioWavCount,
+    wavHashesMatchModel: audioWavProblems.length === 0,
+    idleConstructionCreatesNoContext: audioIdleDiag?.contextState === 'none',
+    rpmBeforeCreate: audioRpmBefore,
+    rpmAfterCreate: audioRpmAfter,
+    limiterRPM: audioLimiter,
+    note: 'the page drives this module once per frame with _e1_engine_rpm() (wasm Engine().RPM()); ' +
+      'capture_browser.mjs --mode audio verifies live AudioParam gains/rates and RMS'
   },
   geometry: {
     path: path.relative(ROOT, GEOMETRY).split(path.sep).join('/'),

@@ -82,6 +82,7 @@ Dodge 4,633 → Focus 5,133 s.
 | `S` / `↓` | fren |
 | `A` / `D` / `←` / `→` | direksiyon (varsayılan kullanıcı yönü; `I` ile ters) |
 | `G` | ghost/rival replay aç/kapa |
+| `M` | motor sesini aç/kapa (ilk tuş/click sesi başlatır) |
 | `I` | direksiyon yönünü çevir (kalıcı değil, o sayfa oturumu) |
 | `Space` | el freni |
 | `R` | yerinde restart (sayfa yenilemez) |
@@ -104,6 +105,7 @@ Scripted sprint controller bu eşlemeden geçmez.
 
 - Console’da **0 mesaj**
 - WebGPU canvas; araç kendi gövdesi/tekerleriyle
+- İlk tuş/click sonrası motor sesi RPM ile; `M` mute
 - Gerçek pist draw'ları: 310 m parkur + prop'lar
 - Sabit adım 1/60; deterministik hash’ler
 
