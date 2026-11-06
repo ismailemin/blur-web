@@ -737,6 +737,14 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_e1_drive` **826/826**; `--mode audio` **16/16**, console **0**; 1500/3015/6000 RPM gain/rate farkı ≤6e-8; mute RMS 0, unmute 0,133.
 - Kanıt: `docs/work/verification/T-007-audio.md`, `_work/e1-drive/browser-audio-running.png`.
 
+## 6 Kasım 2026 — level-instance prop dokuları
+
+- 22 level-instance draw'dan **18'i / 10.212 üçgen** gerçek BC1 albedo + UV0 ile çiziliyor; **4'ü / 96 üçgen** `bc3-alpha-rule-missing` diagnostic.
+- 4 texture (8.192 B) + UV stream (105.296 B) additive; committed layout/ghost pinleri değişmedi.
+- Before/after: tick-120 truck **%37,1**, free prop **%5,6**, sprint start **%5,4** değişti.
+- `verify_e1_drive` **838/838**, suite **31/31**, checker **23/23**, `--mode props` **25/25 console 0**.
+- Kanıt: `docs/work/verification/T-007-prop-textures.md`, `_work/e1-drive/browser-*-prop-truck.png`.
+
 ## 6 Kasım 2026 — level-instance UV0 reader
 
 - `scene_reader.cpp`: 22 level-instance draw → **22/22 UV0** (F16_2), material/albedo zinciri; UV stream **105.296 B**, hash `158a3ac8…`.

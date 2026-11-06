@@ -45,9 +45,9 @@ export const WHEEL_CORNERS = Object.freeze(['frontleft', 'frontright', 'backleft
  */
 export function resolveCarBody(geometry, slug) {
   if (!geometry || geometry.version !== 6 || !geometry.carBodies) {
-    throw new Error('geometry does not carry per-car bodies, the v5 track visual, its static albedo ' +
-      'textures and the P52 per-car albedo textures with their UV0 stream; rebuild it with ' +
-      '`node probes/e1-drive/tools/build_geometry.mjs`');
+    throw new Error('geometry does not carry per-car bodies, the track visual, the level-instance ' +
+      'prop UV0/BC1 pack, the static albedo textures and the P52 per-car albedo textures with their ' +
+      'UV0 stream; rebuild it with `node probes/e1-drive/tools/build_geometry.mjs`');
   }
   const key = slug ?? geometry.defaultCar;
   const body = geometry.carBodies[key];
@@ -409,13 +409,19 @@ export function createSession(geometry, tick0, options = {}) {
     throw new Error('geometry does not carry the v5 static albedo textures; rebuild it with ' +
       '`node probes/e1-drive/tools/build_geometry.mjs`');
   }
+  if (!Array.isArray(geometry.levelTextures) || geometry.levelTextures.length !== 4 ||
+      !geometry.levelPropTexturePack) {
+    throw new Error('geometry does not carry the P73b level-instance prop BC1 pack; rebuild it with ' +
+      '`node probes/e1-drive/tools/build_geometry.mjs`');
+  }
   if (!Array.isArray(body.textures) || !body.texturePack || !body.mesh.uv) {
     throw new Error('geometry body ' + body.slug + ' does not carry its P52 albedo textures and UV0 stream; ' +
       'rebuild it with `node probes/e1-drive/tools/build_geometry.mjs`');
   }
-  // The packet carries the static level/track pack plus only the driven car's own
-  // images, so the upload stays bounded by one car instead of the roster.
-  const packetTextures = geometry.textures.concat(body.textures);
+  // The packet carries the static level/track pack plus the four level-prop BC1
+  // images and only the driven car's own images, so the upload stays bounded by
+  // one car instead of the roster.
+  const packetTextures = geometry.textures.concat(geometry.levelTextures, body.textures);
   const textureIds = new Set(packetTextures.map((texture) => texture.id));
   if (textureIds.size !== packetTextures.length) {
     throw new Error('the packet texture set contains duplicate ids');
@@ -423,6 +429,17 @@ export function createSession(geometry, tick0, options = {}) {
   for (const draw of trackDraws) {
     if (draw.textureId !== null && !textureIds.has(draw.textureId)) {
       throw new Error('track draw ' + draw.id + ' names unknown texture ' + draw.textureId);
+    }
+  }
+  if (levelDraws.some((draw) => draw.textureId != null) && !geometry.meshes[0]?.uv) {
+    throw new Error('the level-prop draws bind textures but the level mesh has no UV0 stream');
+  }
+  for (const draw of levelDraws) {
+    if (draw.textureId != null && !textureIds.has(draw.textureId)) {
+      throw new Error('level prop draw ' + draw.id + ' names unknown texture ' + draw.textureId);
+    }
+    if (draw.textureId != null && !draw.textureBinding?.uvHash) {
+      throw new Error('level prop draw ' + draw.id + ' binds a texture without a recorded UV0 hash');
     }
   }
   for (const draw of carDraws) {
@@ -620,10 +637,39 @@ export function createSession(geometry, tick0, options = {}) {
             'diagnostic per-part colours for visual debugging only (materialsApplied:false); a draw with a ' +
             'bound P52 static albedo image samples that image with the mesh UV0 stream and does not use the colour',
         },
+        levelProps: {
+          meshId: geometry.meshes[0]?.id ?? null,
+          drawCount: levelDraws.length,
+          texturedDrawCount: levelDraws.filter((draw) => draw.textureId != null).length,
+          diagnosticDrawCount: levelDraws.filter((draw) => draw.textureId == null).length,
+          texturedTriangles: levelDraws.filter((draw) => draw.textureId != null)
+            .reduce((sum, draw) => sum + draw.indexCount / 3, 0),
+          diagnosticTriangles: levelDraws.filter((draw) => draw.textureId == null)
+            .reduce((sum, draw) => sum + draw.indexCount / 3, 0),
+          blockedInstances: levelDraws.filter((draw) => draw.textureId == null)
+            .map((draw) => draw.source.instanceIndex),
+          blockedReason: 'bc3-alpha-rule-missing',
+          manifest: geometry.levelPropTexturePack?.manifest ?? null,
+          manifestSha256: geometry.levelPropTexturePack?.manifestSha256 ?? null,
+          contentHash: geometry.levelPropTexturePack?.contentHash ?? null,
+          textures: geometry.levelTextures.length,
+          textureBytes: geometry.levelTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+          uvVertices: geometry.meshes[0]?.uv?.vertexCount ?? 0,
+          uvValues: geometry.meshes[0]?.uv?.values ?? 0,
+          uvBytes: geometry.meshes[0]?.uv?.bytes ?? 0,
+          uvSha256: geometry.meshes[0]?.uv?.sha256 ?? null,
+          sampler: geometry.levelPropTexturePack?.sampler ?? null,
+          reason:
+            'P73a exported the real instance UV0 and the static g_tAlbedo identity; 18 of 22 draws ' +
+            'sample a decoded BC1 image with that UV0 stream while the 4 BC3-alpha cab draws keep a ' +
+            'labelled neutral diagnostic albedo because no alpha rule is declared. Material colour, ' +
+            'blend state, shader stages, mip chain and sRGB are not applied',
+        },
         textures: {
           levelAndTrack: {
-            count: geometry.textures.length,
-            rgbaBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+            count: geometry.textures.length + geometry.levelTextures.length,
+            rgbaBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) +
+              geometry.levelTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
           },
           car: {
             count: body.textures.length,
@@ -641,10 +687,11 @@ export function createSession(geometry, tick0, options = {}) {
             rgbaBytes: packetTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
           },
           reason:
-            'the packet carries the static level/track albedo pack plus only the driven car\'s own P52 ' +
-            'static images; 224 of 491 car draws are textured and the 267 runtime-only draws (45 paint ' +
-            'lookup, 66 light off/on blend, 156 _NO_ALBEDO) keep the diagnostic albedo and the committed ' +
-            'P52 reason. No mip chain, sRGB, material colour or blend state is applied',
+            'the packet carries the static track albedo pack, the four level-instance BC1 images and only ' +
+            'the driven car\'s own P52 static images; 18 of 22 level prop draws and 224 of 491 car draws ' +
+            'sample a static image, while the 4 BC3-alpha cab draws and the 267 runtime-only car draws ' +
+            '(45 paint lookup, 66 light off/on blend, 156 _NO_ALBEDO) keep the diagnostic albedo and the ' +
+            'committed reason. No mip chain, sRGB, material colour or blend state is applied',
         },
         wheels: {
           rendered: WHEELS_RENDERED,

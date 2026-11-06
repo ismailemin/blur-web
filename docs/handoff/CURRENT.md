@@ -47,7 +47,7 @@
 **P67 — loop-01 3 tur + prop collision (TAMAM, doğrulandı):**
 `?course=lap` P61 `loop-01` (222,04 m) üzerinde 3 turluk yarış. 5 araç
 **85,47–86,28 s**, tur süreleri ~28,4–29,2 s, **0 respawn**, replay/restart
-birebir; `verify_e1_drive` **826/826**, suite 30/30, checker 23/23. `all-visible` prop katmanı
+birebir; `verify_e1_drive` **838/838**, suite 31/31, checker 23/23. `all-visible` prop katmanı
 tur modunda aktif ve inert (loop-01'de prop yok, 0 temas). Kanıt:
 `docs/work/verification/T-007-lap-mode.md`. Sıradaki: `?course=free` (R04).
 
@@ -76,11 +76,11 @@ instance draw** (10.308 üçgen): reader UV0/material yaymıyor. `expand_instanc
 uzatması **18 draw / 10.212 üçgen** için BC1 albedo açabilir (14 görünür).
 Kanıt: `docs/work/analysis/prop-textures.md`.
 
-**P73a — level-instance UV0 (reader hazır):** `scene_reader.cpp` 22 draw'ın
-**22/22** UV0'sini (F16_2) ve albedo zincirini export ediyor; **18 draw /
-10.212 üçgen** BC1 bindable, 4 BC3 draw alfasız. Native `/W4` + CTest 15/15,
-suite 31/31, artifact 558/558. Kanıt:
-`docs/work/analysis/level-instance-textures.md`.
+**P73a/P73b — prop dokuları (TAMAM):** Reader 22/22 UV0 + albedo zinciri
+export ediyor; **18 draw / 10.212 üçgen** gerçek BC1 albedo + UV0 ile çiziliyor,
+4 BC3 draw diagnostic. Tick-120 truck karesi **%37,1** değişti.
+`verify_e1_drive` **838/838**, suite 31/31, checker 23/23, `--mode props`
+**25/25 console 0**. Kanıt: `docs/work/verification/T-007-prop-textures.md`.
 
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /

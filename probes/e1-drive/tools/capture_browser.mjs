@@ -63,9 +63,9 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'props', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, respawn, telemetry, restart, telemetry-restart, survey, ghost or audio)');
+    ' (drive, sprint, lap, free, props, respawn, telemetry, restart, telemetry-restart, survey, ghost or audio)');
 }
 // Course selection: 310 (default, `_work/e1-drive/sprint.json`), short
 // (`?course=short`, `_work/e1-drive/sprint-short.json`), lap (`?course=lap`,
@@ -132,12 +132,24 @@ function expectedFor(car) {
     texturedDraws: geometry.trackVisual.texturedDrawCount,
     textureCount: geometry.textures.length,
     textureBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    levelPropDraws: geometry.levelDraws.length,
+    levelPropTexturedDraws: geometry.levelDraws.filter((draw) => draw.textureId != null).length,
+    levelPropDiagnosticDraws: geometry.levelDraws.filter((draw) => draw.textureId == null).length,
+    levelPropTextures: geometry.levelTextures.length,
+    levelPropTextureBytes: geometry.levelTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    levelPropUvVertices: levelMesh.uv.vertexCount,
+    levelPropUvBytes: levelMesh.uv.bytes,
+    levelPropManifestSha256: geometry.levelPropTexturePack.manifestSha256,
+    levelPropContentHash: geometry.levelPropTexturePack.contentHash,
+    levelPropBlockedInstances: geometry.levelDraws.filter((draw) => draw.textureId == null)
+      .map((draw) => draw.source.instanceIndex),
     carTexturedDraws: body.carDraws.filter((draw) => draw.textureId != null).length,
     carTextures: body.textures.length,
     carTextureBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
     carUvVertices: body.mesh.uv.vertexCount,
-    totalTextureCount: geometry.textures.length + body.textures.length,
+    totalTextureCount: geometry.textures.length + geometry.levelTextures.length + body.textures.length,
     totalTextureBytes: geometry.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) +
+      geometry.levelTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) +
       body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
     carDrawClasses: body.texturePack.coverage,
     uvVertices: trackMesh.uv.vertexCount,
@@ -324,6 +336,11 @@ async function capture(car, label, tick, options = {}) {
       textureUploads: p.textureUploads, textureUploadBytes: p.textureUploadBytes, uvUploadBytes: p.uvUploadBytes,
       trackTexturedDraws: p.trackTexturedDraws, trackTextures: p.trackTextures,
       trackTextureBytes: p.trackTextureBytes, trackUvVertices: p.trackUvVertices,
+      levelPropDraws: p.levelPropDraws, levelPropTexturedDraws: p.levelPropTexturedDraws,
+      levelPropDiagnosticDraws: p.levelPropDiagnosticDraws, levelPropTextures: p.levelPropTextures,
+      levelPropTextureBytes: p.levelPropTextureBytes, levelPropUvVertices: p.levelPropUvVertices,
+      levelPropManifestSha256: p.levelPropManifestSha256, levelPropContentHash: p.levelPropContentHash,
+      levelPropBlockedInstances: p.levelPropBlockedInstances,
       carTexturedDraws: p.carTexturedDraws, carTextures: p.carTextures,
       carTextureBytes: p.carTextureBytes, carUvVertices: p.carUvVertices,
       carPaintDraws: p.carPaintDraws, carLightDraws: p.carLightDraws, carNoAlbedoDraws: p.carNoAlbedoDraws,
@@ -674,6 +691,7 @@ if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
     : MODE === 'lap' ? await lapCapturePass()
     : MODE === 'free' ? await freeCapturePass()
+    : MODE === 'props' ? await propsCapturePass()
     : MODE === 'ghost' ? await ghostCapturePass()
     : MODE === 'survey' ? await surveyCapturePass()
     : MODE === 'respawn' ? await respawnCapturePass()
@@ -1093,6 +1111,194 @@ async function freeCapturePass() {
   return {
     ok: blocking.length === 0 && passFailures.length === 0,
     summary,
+    evidence
+  };
+}
+
+/**
+ * Level-instance prop capture (`--mode props`): frames that must show the 18
+ * BC1-textured truck/wreck draws with their real UV0 + static albedo, while the
+ * 4 BC3-alpha cab draws stay diagnostic. Four frames per roster car:
+ *
+ *   * drive tick 120 — the near-field truck crossing (P72a's 39.64 % coverage
+ *     peak; the camera occlusion record names `river.block27.instances-all`),
+ *   * free-roam prop approach — the same truck cluster from the free spawn,
+ *   * 310 m sprint start — the truck cluster ahead of the spawn,
+ *   * loop-01 lap start — a regression frame (loop-01 is ~180 m away, so it is
+ *     recorded and checked but does not claim a truck in view).
+ *
+ * Every frame must keep console 0 and 0 assertions and report the same level
+ * prop pack (22 draws, 18 textured / 4 diagnostic, 4 BC1 images / 8,192 B,
+ * 13,162 UV vertices, pinned manifest and content hashes).
+ */
+async function propsCapturePass() {
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  const freeRun = runDocument.sprint?.freeRoam;
+  if (!freeRun?.cars) {
+    throw new Error('run.json has no free-roam block — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const rows = [];
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const expected = {
+    draws: geometry.levelDraws.length,
+    textured: geometry.levelDraws.filter((draw) => draw.textureId != null).length,
+    diagnostic: geometry.levelDraws.filter((draw) => draw.textureId == null).length,
+    textures: geometry.levelTextures.length,
+    textureBytes: geometry.levelTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    uvVertices: levelMesh.uv.vertexCount,
+    manifestSha256: geometry.levelPropTexturePack.manifestSha256,
+    contentHash: geometry.levelPropTexturePack.contentHash,
+    blocked: geometry.levelDraws.filter((draw) => draw.textureId == null)
+      .map((draw) => draw.source.instanceIndex),
+  };
+
+  for (const car of cars) {
+    const freeEntry = freeRun.cars.find((candidate) => candidate.slug === car.slug);
+    if (!freeEntry) throw new Error('run.json has no free-roam result for ' + car.slug);
+    const freeProp = freeEntry.captures.find((captureEntry) => captureEntry.label === 'free-prop');
+    if (!freeProp) throw new Error(car.slug + ': free-roam run has no free-prop capture');
+    const body = geometry.carBodies[car.slug];
+    if (!body) throw new Error('geometry has no body for ' + car.slug);
+    const draws = 22 + geometry.trackVisual.drawCount + body.carDraws.length;
+    // The P72a 39.64 % peak was measured on the default car at drive tick 120.
+    // Other cars travel further by tick 120, so they also get their own first
+    // measured near-field truck crossing from the committed packet cameras.
+    const packetPath = path.join(ROOT, run.cars.find((entry) => entry.slug === car.slug).packet.path);
+    const truckUpdate = JSON.parse(readFileSync(packetPath, 'utf8')).updates.find((update) =>
+      update.camera?.occlusion?.hitMesh === 'river.block27.instances-all' &&
+      update.camera.occlusion.nearField === true);
+    if (!truckUpdate) throw new Error(car.slug + ': packet has no near-field level-prop truck crossing');
+
+    const specs = [
+      { label: 'prop-tick120', tick: 120, options: { script: 'drive' },
+        rule: 'drive tick 120; the default car is at the P72a near-field truck peak' },
+      { label: 'prop-truck', tick: truckUpdate.tick, options: { script: 'drive' },
+        rule: 'first measured near-field truck crossing in this car packet camera timeline' },
+      { label: 'prop-free', tick: freeProp.tick, options: { script: 'sprint', course: 'course=free' },
+        rule: 'free-roam prop approach on the R04 basin' },
+      { label: 'prop-sprint-start', tick: 0, options: { script: 'sprint', course: '' },
+        rule: '310 m sprint start, truck cluster ahead of the spawn' },
+      { label: 'prop-lap-start', tick: 0, options: { script: 'sprint', course: 'course=lap' },
+        rule: 'loop-01 lap start regression frame (loop-01 is ~180 m from the truck cluster)' },
+    ];
+
+    for (const spec of specs) {
+      const shot = await capture(car, spec.label, spec.tick, spec.options);
+      const probe = shot.probe;
+      const messages = shot.messages;
+      const blocking = messages.filter((entry) => entry.source !== 'console.log');
+
+      passCheck(`${car.slug}/${spec.label}: held at tick ${spec.tick} on the page timeline`,
+        probe.holdReached === true && probe.displayTick === spec.tick && probe.render?.tick === spec.tick,
+        `display ${probe.displayTick}, render ${probe.render?.tick}`);
+      passCheck(`${car.slug}/${spec.label}: the page drove the requested car`,
+        probe.car?.name === car.name, JSON.stringify(probe.car?.name));
+      passCheck(`${car.slug}/${spec.label}: console is clean`,
+        blocking.length === 0,
+        blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+      passCheck(`${car.slug}/${spec.label}: the level prop pack is the pinned one`,
+        probe.levelPropDraws === expected.draws &&
+        probe.levelPropTexturedDraws === expected.textured &&
+        probe.levelPropDiagnosticDraws === expected.diagnostic &&
+        probe.levelPropTextures === expected.textures &&
+        probe.levelPropTextureBytes === expected.textureBytes &&
+        probe.levelPropUvVertices === expected.uvVertices &&
+        probe.levelPropManifestSha256 === expected.manifestSha256 &&
+        probe.levelPropContentHash === expected.contentHash &&
+        JSON.stringify(probe.levelPropBlockedInstances) === JSON.stringify(expected.blocked),
+        `${probe.levelPropTexturedDraws}/${probe.levelPropDraws} textured, ` +
+        `${probe.levelPropTextures} tex / ${probe.levelPropTextureBytes} B, ` +
+        `blocked ${JSON.stringify(probe.levelPropBlockedInstances)}`);
+      passCheck(`${car.slug}/${spec.label}: one draw per draw per frame`,
+        probe.draws === draws && probe.drawsIssued === probe.frames * probe.draws,
+        `${probe.draws} draws, ${probe.drawsIssued} issued / ${probe.frames} frames`);
+      passCheck(`${car.slug}/${spec.label}: the 4 BC3 cab draws are not bound to a texture`,
+        probe.levelPropBlockedInstances.length === 4 &&
+        probe.levelPropBlockedInstances.every((instance) => [14, 15, 19, 20].includes(instance)),
+        JSON.stringify(probe.levelPropBlockedInstances));
+
+      const truckFrame = spec.label === 'prop-truck' ||
+        (spec.label === 'prop-tick120' && car.slug === run.defaultCar);
+      if (truckFrame) {
+        const occlusion = probe.render?.camera?.occlusion ?? null;
+        passCheck(`${car.slug}/${spec.label}: the camera reports the near-field truck crossing`,
+          occlusion?.nearField === true &&
+          occlusion?.hitMesh === 'river.block27.instances-all',
+          JSON.stringify(occlusion));
+      }
+
+      rows.push({
+        car: car.name,
+        slug: car.slug,
+        label: spec.label,
+        rule: spec.rule,
+        tick: spec.tick,
+        url: shot.url,
+        screenshot: shot.screenshot,
+        carCrop: shot.carCrop,
+        camera: probe.render?.camera ?? null,
+        cameraOcclusion: probe.render?.camera?.occlusion ?? null,
+        levelPropDraws: probe.levelPropDraws,
+        levelPropTexturedDraws: probe.levelPropTexturedDraws,
+        levelPropDiagnosticDraws: probe.levelPropDiagnosticDraws,
+        levelPropTextures: probe.levelPropTextures,
+        levelPropTextureBytes: probe.levelPropTextureBytes,
+        levelPropUvVertices: probe.levelPropUvVertices,
+        levelPropManifestSha256: probe.levelPropManifestSha256,
+        levelPropContentHash: probe.levelPropContentHash,
+        levelPropBlockedInstances: probe.levelPropBlockedInstances,
+        draws: probe.draws,
+        drawsIssued: probe.drawsIssued,
+        frames: probe.frames,
+        geometryUploads: probe.geometryUploads,
+        geometryUploadBytes: probe.geometryUploadBytes,
+        textureUploads: probe.textureUploads,
+        textureUploadBytes: probe.textureUploadBytes,
+        messages
+      });
+    }
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages);
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  passCheck('console is clean in every level-prop capture', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'props',
+    levelProps: {
+      meshId: levelMesh.id,
+      draws: expected.draws,
+      texturedDraws: expected.textured,
+      diagnosticDraws: expected.diagnostic,
+      blockedInstances: expected.blocked,
+      blockedReason: 'bc3-alpha-rule-missing',
+      textures: expected.textures,
+      textureBytes: expected.textureBytes,
+      uvVertices: expected.uvVertices,
+      manifest: geometry.levelPropTexturePack.manifest,
+      manifestSha256: expected.manifestSha256,
+      contentHash: expected.contentHash,
+    },
+    captures: rows,
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-props.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-props.log'), browserLog, 'utf8');
+  return {
+    ok: blocking.length === 0 && passFailures.length === 0,
+    summary: {
+      mode: 'props',
+      cars: cars.length,
+      captures: rows.length,
+      console: allMessages.length,
+      assertions: passFailures.length,
+      failures: passFailures,
+      screenshots: rows.map((row) => row.screenshot)
+    },
     evidence
   };
 }
@@ -2037,6 +2243,21 @@ for (const car of cars) {
           entry.probe.trackUvVertices === expected.uvVertices,
           entry.probe.textureUploads + ' textures / ' + entry.probe.textureUploadBytes + ' B / ' +
           entry.probe.trackTexturedDraws + ' textured draws / ' + entry.probe.trackUvVertices + ' UV vertices');
+    check(`${car.slug}/${entry.label}: the 18 level-prop BC1 draws sample the real instance UV0`,
+          entry.probe.levelPropDraws === expected.levelPropDraws &&
+          entry.probe.levelPropTexturedDraws === expected.levelPropTexturedDraws &&
+          entry.probe.levelPropDiagnosticDraws === expected.levelPropDiagnosticDraws &&
+          entry.probe.levelPropTextures === expected.levelPropTextures &&
+          entry.probe.levelPropTextureBytes === expected.levelPropTextureBytes &&
+          entry.probe.levelPropUvVertices === expected.levelPropUvVertices &&
+          entry.probe.levelPropManifestSha256 === expected.levelPropManifestSha256 &&
+          entry.probe.levelPropContentHash === expected.levelPropContentHash &&
+          JSON.stringify(entry.probe.levelPropBlockedInstances) ===
+            JSON.stringify(expected.levelPropBlockedInstances),
+          `${entry.probe.levelPropTexturedDraws}/${entry.probe.levelPropDraws} level draws textured, ` +
+          `${entry.probe.levelPropTextures} tex / ${entry.probe.levelPropTextureBytes} B, ` +
+          `${entry.probe.levelPropUvVertices} UV vertices, blocked ` +
+          JSON.stringify(entry.probe.levelPropBlockedInstances));
     check(`${car.slug}/${entry.label}: this car's own P52 albedo textures are uploaded and sampled`,
           entry.probe.carTextures === expected.carTextures &&
           entry.probe.carTextureBytes === expected.carTextureBytes &&

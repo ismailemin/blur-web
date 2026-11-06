@@ -211,18 +211,19 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Sınır: tek V8 graph, RPM-only; decel/throttle/induction/mixer yok.
 - Kanıt: `docs/work/verification/T-007-audio.md`, `_work/e1-drive/browser-audio-running.png`.
 
-### E1p — Prop dokuları (P72a/P73a)  ✅ reader hazır
+### E1p — Prop dokuları (P72a/P73a/P73b)  ✅
 - Görünür yapısal prop'lar zaten dokulu (460 P66 / 423 P68 bileşen).
-- 97 diagnostic track draw'ın 95'i block88 (ekran 0), 2'si runtime-only.
-- **Reader uzatıldı:** 22 level-instance draw'ın **22/22** UV0'si (F16_2,
-  usage5 @16) + material/albedo zinciri export edildi; UV stream
-  **26.324 float / 105.296 B**, hash `158a3ac8…`.
-- **18 draw / 10.212 üçgen** BC1 bindable; **4 draw / 96 üçgen** BC3 alfa
-  kuralı gelene kadar `bc3-alpha-rule-missing`.
-- Native `/W4` temiz, **CTest 15/15**, suite **31/31**, artifact **558/558**.
-- Kanıt: `docs/work/analysis/level-instance-textures.md`,
-  `_work/asset-reader/level-instance-textures.json`.
-- Sıradaki (P73b): 5 texture + UV stream'i E1'e aktarıp 18 draw'ı bind etmek.
+- **22 level-instance draw** reader'da açıldı: **18 draw / 10.212 üçgen** BC1
+  static albedo + gerçek UV0 ile çiziliyor; **4 draw / 96 üçgen** BC3
+  `bc3-alpha-rule-missing` olarak diagnostic.
+- 4 texture (32×16 BC1, 8.192 B) + UV stream (105.296 B) geometry/packet'a
+  additive; committed layout/ghost pinleri değişmedi.
+- Before/after: tick 120 truck karesi **%37,1** değişti; free prop **%5,6**.
+- `verify_e1_drive` **838/838**, suite **31/31**, checker **23/23**,
+  `--mode props` **25/25 console 0**.
+- Kanıt: `docs/work/verification/T-007-prop-textures.md`,
+  `_work/e1-drive/browser-*-prop-truck.png`.
+- Sınır: `g_tMaterial`, renk/blend/alpha/mip/sRGB yok; 4 BC3 draw kapalı.
 
 ## Pipeline (bağımlılık sırası)
 

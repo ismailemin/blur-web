@@ -54,6 +54,15 @@ of RGBA); the other 267 draws (45 runtime paint lookups, 66 light off/on blends,
 committed P52 reason. The wheel spin marker remains a debug aid. See
 `docs/work/verification/T-007-textured-cars.md`.
 
+The 22 committed level-instance props (River `block27/node253`, 13,162 vertices /
+10,308 triangles) now sample their **real static albedo and source UV0 on 18
+draws / 10,212 triangles** (14 visible in the driven view). Four decoded BC1
+images (`car01_lic_diff`, `car02_lic_diff`, `car03_lic_diff`,
+`bigtruck02_diff`, 8,192 B) come from the P73a export; the `4` cab draws that
+resolve to `cab01alphas_diff` (DXT5/BC3) stay explicitly **diagnostic** as
+`bc3-alpha-rule-missing` because no alpha rule is declared. No alpha value,
+texture or UV is guessed. See `docs/work/verification/T-007-prop-textures.md`.
+
 The car drives on the whole River collision mesh, but the **drawn** track is the
 real River render geometry: the committed `level_inspect` direct draws
 (block88/node283, 95 draws / 17,782 vertices / 9,343 triangles, plus the
@@ -192,6 +201,9 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 2c. per-car material/texture resolution + car UV0 export (P52 record, read-only)
 & $py   probes/e1-drive/tools/build_car_textures.py
 
+# 2d. level-instance prop UV0 + 4 decoded BC1 images (P73a export, read-only)
+& $py   probes/e1-drive/tools/build_level_instance_textures.py
+
 # 3. static geometry (level packet + real level_inspect track visual + 5 car bodies + hidden collision)
 & $node probes/e1-drive/tools/build_geometry.mjs
 
@@ -213,7 +225,8 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 #    rebuilds per car in one instance, one-instance telemetry and sprint restart,
 #    packet validation, the extended-corridor survey/limit checks, the per-car
 #    albedo/UV checks, the ghost replay reconstruction/store/delta checks and the
-#    free-roam layout/run/containment/restart/prop checks (818 checks)
+#    free-roam layout/run/containment/restart/prop checks and the level-prop
+#    UV0/BC1 pack checks (838 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 & $node probes/e1-drive/tools/verify_e1_drive.mjs --write-ghosts  # regenerate the committed reference ghosts
 
@@ -223,6 +236,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint --course short  # 29 m regression
 & $node probes/e1-drive/tools/capture_browser.mjs --mode lap       # ?course=lap: start/lap1/lap2/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode free      # ?course=free: spawn/mid/prop/reset per car
+& $node probes/e1-drive/tools/capture_browser.mjs --mode props     # 5 cars x tick-120/near-field truck/free-prop/sprint/lap
 & $node probes/e1-drive/tools/capture_browser.mjs --mode survey    # ?survey=1 corridor label
 & $node probes/e1-drive/tools/capture_browser.mjs --mode ghost     # 5-car ghost-visible frames + G toggle
 & $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
@@ -303,11 +317,12 @@ packet the browser renders is produced by the same code the verifier validates.
   ~3.95–4.08 MB with the UV buffers) instead of growing with the roster. The
   collision surface is **not** in `meshes`.
 - `textures[]` / `texturePack`: 136 decoded static track albedo RGBA bitmaps
-  (439,360 B) plus that car's own 7–9 P52 images (2.58–5.00 MB), their
-  `block:index` / `shared:index` identity and hashes, plus the explicit sampler
-  metadata (`repeat`, linear, mip0, `rgba8unorm`, no sRGB). The car pack also
-  carries `uvConvention` (`u' = 1 − u`, `v' = v`) with its pixel evidence; the
-  track pack keeps the raw stream.
+  (439,360 B), the 4 decoded level-prop BC1 images (8,192 B) and that car's own
+  7–9 P52 images (2.58–5.00 MB), their `block:index` / `shared:index` identity
+  and hashes, plus the explicit sampler metadata (`repeat`, linear, mip0,
+  `rgba8unorm`, no sRGB). The car pack also carries `uvConvention`
+  (`u' = 1 − u`, `v' = v`) with its pixel evidence; the track and level packs
+  keep the raw stream.
 - `physicsSurfaces[]`: one hidden collision surface (`visible:false`,
   `physicsOnly:true`, 230 vertices / 381 triangles) carried for provenance only;
   it is not uploaded and not drawn.
@@ -661,8 +676,9 @@ plan twice in two fresh page instances, takes start/mid/end screenshots, and gat
 - wasm heap constant, scheduler pool head/group handles constant, GPU packet
   buffers bounded (created − destroyed = live = one packet's 11 buffers: three
   meshes × (positions, indices, UV) + uniform + scene) and textures bounded
-  (live = 136 track + 7–9 car = 143–145, exactly one packet's textures; a
-  1-minute run creates 580 = 4 loads × 145 and destroys 435, so live stays 145);
+  (live = 136 track + 4 level prop + 7–9 car = 147–149, exactly one packet's
+  textures; a 1-minute run with the default 9-image car creates 596 = 4 loads ×
+  149 and destroys 447, so live stays 149);
 - exactly three mesh uploads per timeline load and one uniform write/draw set
   per frame;
 - every complete drive/sprint segment reproduces the node verifier's state
@@ -705,7 +721,7 @@ original single-car links still work.
 buffer lifecycle (`releaseGeometry()` + `stats.packetLoads/buffersCreated/
 buffersDestroyed`, invoked at every `load()`) so repeated timeline rebuilds cannot
 grow GPU memory; and the textured delta — a second vertex buffer with the
-mesh's UV0 (track and car; level props keep an explicit zero buffer), one
+mesh's UV0 (track, the level props' real P73a instance stream and car), one
 `rgba8unorm` mip0 texture + bind group per static albedo source, a 1×1 white
 placeholder for untextured draws, and `texParams` in the draw uniform
 (`x` = texture bound, `y`/`z` = the declared U/V flip flags; the car pack uses
@@ -748,7 +764,12 @@ its own UV0 and albedo textures + hidden collision), `car-textures.json` (the
 P52 draw/material/texture resolution, the UV convention and per-car coverage),
 `car-uv-<slug>.bin` (the five committed UV0 streams), `track-textures.json` (UV0
 stream, sampler, 136 texture records and 394 per-draw bindings), `track-uv.bin` +
-`textures/*.rgba` (the exported UV and pixel bytes), `cars.json` (the 62-record
+`textures/*.rgba` (the exported UV and pixel bytes),
+`level-instance-textures.json` (the 22-draw P73a UV0/BC1 pack, 18/4 split,
+manifest and content hashes), `level-textures/*.rgba` (the four decoded BC1
+images, 8,192 B), `browser-evidence-props.json` (5 cars × 5 level-prop frames),
+`browser-evidence-prop-textures.json` (before/after pixel diff),
+`before-prop/*.png` + `browser-<slug>-prop-*.png`, `cars.json` (the 62-record
 roster + gate), `reset-cycles.json`
 (10 create/reset cycles per car in one instance with per-cycle hashes, heap and
 scheduler pool, plus the one-instance telemetry and sprint-restart comparison),
@@ -953,8 +974,9 @@ per-car metrics and plausibility comparison are recorded in
   previous packet's buffers on every reload; the soak gate requires
   created − destroyed = live = 11 (three meshes × positions/indices/UV + uniform +
   scene), and texture objects are destroyed with the packet (live = 136 track +
-  7–9 car = 143–145, exactly one packet; 580 created − 435 destroyed = 145 live in
-  the 1-minute run). Five simulated minutes = 18,000 ticks; a one-tick-per-frame run
+  4 level prop + 7–9 car = 147–149, exactly one packet; 596 created − 447 destroyed
+  = 149 live in the 1-minute run with the default 9-image car). Five simulated
+  minutes = 18,000 ticks; a one-tick-per-frame run
   completed in ~70 s here because headless rAF is not throttled to 60 Hz.
 - **Free roam is one measured basin, contained by a box.** `?course=free` is the
   P65 R04 basin at the committed spawn. The reset box is the P68a/P68b

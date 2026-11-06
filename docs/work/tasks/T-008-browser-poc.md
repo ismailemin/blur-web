@@ -63,6 +63,7 @@ sürüşü deneyebileceği PoC.
 | Motor sesi entegrasyonu | P71 | ✅ 826/826, 16/16 audio capture |
 | Prop dokuları fizibilitesi | P72a | ✅ 18 draw reader ile açılabilir |
 | Level-instance UV0 reader | P73a | ✅ 22/22 UV0, 18 BC1 bindable |
+| Prop texture render | P73b | ✅ 18 draw/10.212 tri, 838/838 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

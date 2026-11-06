@@ -2258,3 +2258,72 @@ throttle/damage/induction/EQ layers and no car-to-bank mapping. The WAVs remain
 uncommitted game data under `_work/audio/`. The page disposes on `pagehide`, so
 a bfcache restore stays silent until reload. Full detail and evidence:
 `docs/work/verification/T-007-audio.md`.
+
+## 29. Level-instance props sample their real static albedo + UV0 (T-007/props, P73b)
+
+**Date:** 7 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`, `_work/logs/e1-drive/**`,
+this section and `docs/work/verification/T-007-prop-textures.md`. Read-only
+inputs: the P73a asset-reader export (`level-instance-textures.json`,
+`level-instance-uv.bin`, `level-instances-all.json`), the committed P34 texture
+registry and BC reader. No asset-reader, engine, tool, other probe, `upstream/`
+or `game-data/` change. Physics, cars, sprint, camera, restart and audio are
+untouched.
+
+### 29.1 What was missing, and what is bound now
+
+P73a exported the real source UV0 and the static `g_tAlbedo` identity for the 22
+`River block27/node253` level instances, but nothing sampled or uploaded them.
+P73b joins that export to the committed P34 registry:
+
+- **18 draws / 10,212 triangles** resolve to DXT1/BC1 and now sample their own
+  decoded image on the real instance UV0 stream (14 of them are visible in the
+  driven view; 4 are behind the spawn).
+- **4 draws / 96 triangles** resolve to `cab01alphas_diff` (DXT5/BC3) and stay
+  explicitly **diagnostic** as `bc3-alpha-rule-missing`; no alpha rule, texture,
+  pixel or UV is invented.
+
+The four images are `car01_lic_diff`, `car02_lic_diff`, `car03_lic_diff` and
+`bigtruck02_diff`, all 32×16 mip0, **8,192 decoded RGBA B**. Instance UV0 is
+26,324 float32 / 105,296 B (aggregate `0xb07310e198de4c19`), exactly the P73a
+stream.
+
+### 29.2 How it is wired
+
+`tools/build_level_instance_textures.py` re-derives all 22 per-draw UV hashes,
+decodes the four BC1 blobs with the committed reader, re-hashes the RGBA
+against the registry and writes `_work/e1-drive/level-instance-textures.json`
+(file SHA-256 `80857371…b788`, content hash `d30dcae6…6499`). `build_geometry.mjs`
+pins that manifest, embeds the UV stream on the level mesh and the four images in
+`geometry.levelTextures`, and gives the 18 draws a `textureId` plus a
+`textureBinding` record; the 4 blocked draws keep `textureId:null` and their
+neutral labelled diagnostic colour. `packet-adapter.js` concatenates the level
+images into the packet and exposes `diagnostics.extras.levelProps`; the consumer
+needs **no new shader semantics** — it already supports per-draw `textureId`, a
+mesh UV buffer and `texParams`.
+
+The geometry document stays **v6** because the pack is additive and that keeps
+every committed layout/ghost pin valid. The packet texture count moves from 145
+to **149** for the default car (+4 images / +8,192 B); the level UV buffer
+replaces a same-size zero-filled buffer.
+
+### 29.3 Verification and limits
+
+`verify_e1_drive.mjs` — **838/838, 0 failures** (826 + 12 level-prop/packet
+checks). Full `verify_asset_probe.py` **31/31**; `check_e1_poc.py` **23/23**;
+1-minute two-run soak PASS with **149** live textures and 0 console messages.
+
+`capture_browser.mjs --mode props` — 5 cars × 5 frames (tick 120, each car's
+measured near-field truck tick, free-prop, sprint start, lap start), **0 console
+messages, 0 assertions**. The drive/free/sprint/lap passes remain clean. The
+before/after pixel delta is **37.13 %** at the tick-120 near-field truck,
+**5.63 %** on the free-prop frame and **5.35 %** at the sprint start.
+
+Limits: static `g_tAlbedo` pixels only — `g_tMaterial`, material colour, blend
+state, alpha, shader stages, sampler wrap/filter, mips and sRGB remain
+unapplied; the sampler is the same explicit repeat/linear/mip0 `rgba8unorm`
+choice as the track. The committed packet/consumer path carries world-space
+positions + UV0 and lights with screen-space derivative normals, so no vertex
+normal array is invented. The 4 BC3 cab draws stay blocked. No full-game claim.
+Full detail, per-draw hashes, before/after paths and the diff report:
+`docs/work/verification/T-007-prop-textures.md`.

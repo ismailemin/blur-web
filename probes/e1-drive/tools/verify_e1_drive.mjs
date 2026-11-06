@@ -187,7 +187,7 @@ check('roster covers at least four real cars', roster.roster.cars.length >= 4,
 // ------------------------------------------------- per-car body-mesh gates
 const bodies = geometry.carBodies ?? {};
 const rosterSlugs = roster.roster.cars.map((car) => car.slug);
-check('geometry carries one real body per roster car (v6)',
+check('geometry carries one real body per roster car (v6 + P73b level props)',
       geometry.version === 6 && rosterSlugs.every((slug) => bodies[slug]) &&
       Object.keys(bodies).length === rosterSlugs.length,
       `${Object.keys(bodies).length} bodies, geometry v${geometry.version}`);
@@ -262,7 +262,7 @@ const corridorTotals = corridorSections.reduce((sum, section) => ({
   triangles: sum.triangles + (section?.triangleCount ?? 0),
   vertices: sum.vertices + (section?.vertexCount ?? 0)
 }), { draws: 0, triangles: 0, vertices: 0 });
-check('geometry carries the real track visual from committed direct draws (v6)',
+check('geometry carries the real track visual from committed direct draws (v6 + P73b level props)',
       geometry.version === 6 && trackVisual?.label === 'asset-reader-direct-draws' &&
       geometry.meshes.some((mesh) => mesh.id === trackVisual?.meshId) &&
       trackDraws.length === trackVisual?.drawCount && trackDraws.length > 0,
@@ -424,6 +424,133 @@ check('the two runtime-only draws are exactly g50-n265 primitives 241/242',
         draw.source.geometryBlock === 50 && draw.source.nodeBlock === 265 &&
         [241, 242].includes(draw.source.primitiveIndex)),
       runtimeDraws.map((draw) => draw.source.geometryBlock + '/' + draw.source.primitiveIndex).join(', '));
+
+// ------------------------------- level-instance prop UV0 + BC1 albedo (P73b)
+// P73a exported the real UV0 and the static g_tAlbedo identity for the 22
+// block27/node253 instance draws. P73b binds the 18 BC1 draws to their decoded
+// images and keeps the 4 BC3-alpha cab draws explicitly diagnostic. The checks
+// below reject a missing UV stream, a changed draw range, a texture bound to the
+// wrong UVs, any BC3 texture in the packet, or a silently invented fallback.
+const LEVEL_PROP_MANIFEST = path.join(OUT, 'level-instance-textures.json');
+const levelPropManifestBytes = readFileSync(LEVEL_PROP_MANIFEST);
+const levelPropManifest = JSON.parse(levelPropManifestBytes.toString('utf8'));
+const levelPropPack = geometry.levelPropTexturePack;
+const levelTextures = Array.isArray(geometry.levelTextures) ? geometry.levelTextures : [];
+const levelDraws = Array.isArray(geometry.levelDraws) ? geometry.levelDraws : [];
+const levelMesh = geometry.meshes.find((mesh) => mesh.id === 'river.block27.instances-all');
+const levelUv = levelMesh?.uv ?? null;
+const levelUvBytes = levelUv?.data ? Buffer.from(levelUv.data, 'base64') : Buffer.alloc(0);
+const levelUvValues = levelUv && levelUvBytes.length === levelUv.bytes
+  ? new Float32Array(levelUvBytes.buffer, levelUvBytes.byteOffset, levelUvBytes.length / 4)
+  : new Float32Array(0);
+const levelTextureIds = new Set(levelTextures.map((texture) => texture.id));
+const levelTextured = levelDraws.filter((draw) => draw.textureId != null);
+const levelDiagnostic = levelDraws.filter((draw) => draw.textureId == null);
+const levelBlockedInstances = [14, 15, 19, 20];
+
+function levelDrawUvHash(draw) {
+  const buffer = Buffer.alloc(draw.indexCount * 8);
+  let offset = 0;
+  for (let index = draw.indexOffset; index < draw.indexOffset + draw.indexCount; index++) {
+    const vertex = levelMesh.indices[index];
+    levelUvBytes.copy(buffer, offset, vertex * 8, vertex * 8 + 8);
+    offset += 8;
+  }
+  let value = 0xcbf29ce484222325n;
+  for (const byte of buffer) {
+    value ^= BigInt(byte);
+    value = (value * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return value.toString(16).padStart(16, '0');
+}
+
+check('the level-prop manifest is the pinned P73b export and geometry carries it',
+      /^sha256:[0-9a-f]{64}$/.test(levelPropPack?.manifestSha256 ?? '') &&
+      'sha256:' + sha256(levelPropManifestBytes) === levelPropPack.manifestSha256 &&
+      levelPropManifest.kind === 'e1-drive.level-instance-textures' &&
+      levelPropManifest.version === 1 &&
+      levelPropManifest.contentHash === levelPropPack.contentHash &&
+      levelPropManifest.source?.assetReaderManifestSha256 ===
+        'sha256:1a33893026887f0e022eeec782791cbedf9153146d389b7c076f9d0b84f47fb4' &&
+      levelPropManifest.source?.uvStreamSha256 ===
+        'sha256:158a3ac81b4cf7a5b1b92d327d8dfcd97ab29100387eb72d3b84f1f333962c83',
+      levelPropPack?.manifestSha256 ?? 'missing');
+check('the level mesh carries the P73a instance UV0 stream for every vertex',
+      levelUv && levelUv.storage === 'base64-float32le' && levelUv.components === 2 &&
+      levelUv.vertexCount === levelMesh?.vertexCount && levelMesh.vertexCount === 13162 &&
+      levelUv.values === 26324 && levelUv.bytes === 105296 &&
+      levelUvBytes.length === levelUv.bytes && levelUvValues.length === levelUv.values &&
+      levelUvValues.every(Number.isFinite) &&
+      'sha256:' + sha256(levelUvBytes) === levelUv.sha256 &&
+      levelUv.source?.aggregate === '0xb07310e198de4c19',
+      `${levelUv?.vertexCount ?? 0} vertices / ${levelUv?.bytes ?? 0} B / ${levelUv?.sha256 ?? 'missing'}`);
+check('18 level-prop draws sample a BC1 image and the 4 BC3-alpha cab draws stay diagnostic',
+      levelDraws.length === 22 && levelTextured.length === 18 && levelDiagnostic.length === 4 &&
+      levelTextured.reduce((sum, draw) => sum + draw.indexCount / 3, 0) === 10212 &&
+      levelDiagnostic.reduce((sum, draw) => sum + draw.indexCount / 3, 0) === 96 &&
+      JSON.stringify(levelDiagnostic.map((draw) => draw.source.instanceIndex)) ===
+        JSON.stringify(levelBlockedInstances) &&
+      levelDiagnostic.every((draw) =>
+        draw.textureBinding?.status === 'blocked-bc3-alpha' &&
+        draw.textureBinding?.source === '1205:0' &&
+        draw.textureBinding?.name === 'cab01alphas_diff' &&
+        draw.textureBinding?.uvHash &&
+        draw.diagnosticColourReason?.includes('blocked-bc3-alpha')),
+      `${levelTextured.length}/${levelDraws.length} textured, blocked ` +
+      JSON.stringify(levelDiagnostic.map((draw) => draw.source.instanceIndex)));
+check('every level-prop draw UV0 hash is re-derived from the exported stream',
+      levelDraws.every((draw) => {
+        if (!/^0x[0-9a-f]{16}$/.test(draw.textureBinding?.uvHash ?? '')) return false;
+        if (!Number.isInteger(draw.indexOffset) || !Number.isInteger(draw.indexCount) ||
+            draw.indexCount <= 0 || draw.indexCount % 3 !== 0 ||
+            draw.indexOffset + draw.indexCount > levelMesh.indexCount) return false;
+        return '0x' + levelDrawUvHash(draw) === draw.textureBinding.uvHash;
+      }),
+      `${levelDraws.length} draws over ${levelUvValues.length / 2} vertices`);
+check('the 4 decoded level-prop BC1 images are unique, complete and re-hash to their files',
+      levelTextures.length === 4 && levelTextureIds.size === 4 &&
+      levelTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) === 8192 &&
+      levelTextures.every((texture) => {
+        if (!/^level\.albedo\.\d+\.\d+$/.test(texture.id) ||
+            texture.source !== texture.block + ':' + texture.index ||
+            texture.formatName !== 'DXT1/BC1' ||
+            texture.width !== 32 || texture.height !== 16) return false;
+        const embedded = Buffer.from(texture.rgbaBase64, 'base64');
+        const file = path.join(ROOT, '_work/e1-drive/level-textures', texture.id + '.rgba');
+        if (!existsSync(file)) return false;
+        return embedded.length === texture.rgbaBytes &&
+          embedded.length === texture.width * texture.height * 4 &&
+          'sha256:' + sha256(embedded) === texture.rgbaSha256 &&
+          readFileSync(file).equals(embedded) &&
+          levelPropManifest.textures.some((candidate) =>
+            candidate.id === texture.id && candidate.rgbaSha256 === texture.rgbaSha256);
+      }) &&
+      new Set(levelTextures.map((texture) => texture.rgbaFnv1a64)).size === 4,
+      `${levelTextures.length} images / ` +
+      `${levelTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0)} RGBA B`);
+check('every textured level-prop draw names one of the four uploaded BC1 images',
+      levelTextured.every((draw) =>
+        levelTextureIds.has(draw.textureId) && draw.textureBinding?.status === 'bound-static-albedo-bc1') &&
+      levelDiagnostic.every((draw) => draw.textureId === null) &&
+      levelPropManifest.draws.filter((draw) => draw.bindable).every((draw) =>
+        levelTextured.some((candidate) => candidate.textureBinding.uvHash === draw.uvHash &&
+          candidate.textureId === draw.textureId)) &&
+      !levelTextures.some((texture) => /BC3|DXT5/.test(texture.formatName)),
+      levelTextured.map((draw) => draw.textureId).join(', '));
+check('the level-prop sampler is the explicit repeat/linear mip0 choice, not a recovered engine state',
+      levelPropPack?.sampler?.addressModeU === 'repeat' &&
+      levelPropPack.sampler.addressModeV === 'repeat' &&
+      levelPropPack.sampler.magFilter === 'linear' &&
+      levelPropPack.sampler.minFilter === 'linear' &&
+      levelPropPack.sampler.mipLevelsUploaded === 1 &&
+      levelPropPack.sampler.textureFormat === 'rgba8unorm' &&
+      levelPropPack.sampler.colourSpace === 'raw-decoded-texels' &&
+      /not retail/.test(levelPropPack.sampler.reason ?? '') &&
+      levelPropPack.coverage?.texturedDraws === 18 &&
+      levelPropPack.coverage?.diagnosticDraws === 4 &&
+      levelPropPack.coverage?.blockedReason === 'bc3-alpha-rule-missing' &&
+      /not applied/.test(levelPropPack.materialScope ?? ''),
+      levelPropPack?.sampler?.reason?.slice(0, 80) ?? 'missing');
 
 // ------------------------------------------- per-car albedo textures + UV0
 // P52 resolved every draw of the five roster cars to its committed material row
@@ -2005,14 +2132,26 @@ for (const car of cars) {
   const packetTextureIds = new Set(packet.textures.map((texture) => texture.id));
   const packetCarDraws = packet.draws.filter((draw) => draw.meshId === body.meshId);
   const packetCarTextured = packetCarDraws.filter((draw) => draw.textureId != null);
-  check(`${car.name}: the packet uploads the 136 track textures plus only this car's own images`,
-        packet.textures.length === 136 + packetCarTextures.length &&
+  check(`${car.name}: the packet uploads the 136 track + 4 level-prop textures plus only this car's own images`,
+        packet.textures.length === 136 + 4 + packetCarTextures.length &&
         packetTextureIds.size === packet.textures.length &&
         packet.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) ===
-          439360 + packetCarTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) &&
-        packet.carTexturePack?.manifestSha256 === geometry.carTextures.manifestSha256,
+          439360 + 8192 + packetCarTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) &&
+        packet.carTexturePack?.manifestSha256 === geometry.carTextures.manifestSha256 &&
+        packet.textures.filter((texture) => /^level\.albedo\./.test(texture.id)).length === 4 &&
+        !packet.textures.some((texture) => /^level\.albedo\./.test(texture.id) &&
+          /BC3|DXT5/.test(texture.formatName)),
         `${packet.textures.length} textures / ` +
         `${packet.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0)} B`);
+  check(`${car.name}: the packet binds 18 level props to the uploaded BC1 pack and keeps 4 diagnostic`,
+        packet.draws.filter((draw) => draw.meshId === levelMesh.id).length === 22 &&
+        packet.draws.filter((draw) => draw.meshId === levelMesh.id && draw.textureId != null).length === 18 &&
+        packet.draws.filter((draw) => draw.meshId === levelMesh.id && draw.textureId == null).length === 4 &&
+        packet.meshes.find((mesh) => mesh.id === levelMesh.id)?.uv?.sha256 === levelUv.sha256 &&
+        packet.diagnostics.extras.levelProps?.manifestSha256 === levelPropPack.manifestSha256 &&
+        packet.diagnostics.extras.levelProps?.texturedDrawCount === 18 &&
+        packet.diagnostics.extras.levelProps?.diagnosticDrawCount === 4,
+        `${packet.draws.filter((draw) => draw.meshId === levelMesh.id && draw.textureId != null).length}/22 level draws textured`);
   check(`${car.name}: every car draw samples a texture the packet uploaded, and the UV0 mesh is real`,
         packetCarDraws.length === body.carDraws.length &&
         packetCarTextured.length === body.carDraws.filter((draw) => draw.textureId != null).length &&
@@ -2339,40 +2478,41 @@ for (const car of cars) {
 // The `packet` anchor is the whole-packet hash, so it moves whenever the static
 // packet body changes; P49 added the real UV0 and static albedo texture payloads
 // (geometry v5), P55 added the P52 per-car albedo textures + car UV0 stream
-// (geometry v6), and P59 changed the per-draw car UV flags from uvFlipV to
-// uvFlipU, so these values are the P59 geometry. Physics did not move: the
-// drive/sprint state sequence anchors below are still P36/P37.
+// (geometry v6), P59 changed the per-draw car UV flags from uvFlipV to
+// uvFlipU, and P73b added the level-instance prop UV0 + four BC1 images to the
+// v6 document, so these values are the P73b packet. Physics did not move:
+// the drive/sprint state sequence anchors below are still P36/P37.
 //
 // Declared before the sprint runs because the ghost-replay block re-derives the
 // committed reference ghosts from those anchored runs.
 const PHYSICS_ANCHORS = Object.freeze({
   'corvette-zr1-stock': {
     drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
-    packet: 'sha256:4c82e8f8689d47b342ac5831684ed0fdbe7ce4d6760760eec3c16c534c9295ef',
+    packet: 'sha256:002270e8ec44227b28aee6c0dd93dfc78aec8255f4fbc9412ae420c56899caf6',
     sprint310: 'sha256:da7e14f16be2649f32902d18cc999cd39af09320d4e4b24ec40a37c086f9a553',
     sprintShort: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
   },
   'lotus-exige-cup260-stock': {
     drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
-    packet: 'sha256:77e70becdb8e65944495f033110d69a75c57259ddd986eba582cadf6cae063c5',
+    packet: 'sha256:64349c38dc169e24fe998fd8dd1455d6f9733d470361596650d46adba576c666',
     sprint310: 'sha256:83f05df48244c000889b4d1adcc83afe34a98f5b65370de3d87419448a92367e',
     sprintShort: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
   },
   'dodge-challenger-stock': {
     drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
-    packet: 'sha256:da25d019fb943a0acf4662e0d836c0a8ff4256f1af130cefcdb2be5c8ede1dfc',
+    packet: 'sha256:c8840b47e5d85bb978c5ec45e26e8f5e6760546b2c96dc0de0a84c352a68dfd2',
     sprint310: 'sha256:accf125a629dbf7f66e7dbed2d38990fb21c67ad26a65fbef288e3716ac8210a',
     sprintShort: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
   },
   'ford-focusrs-stock': {
     drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
-    packet: 'sha256:0590c3e8ccf95ccf40cfdc19786db8bcf6244cddf9af8b5c459f683dd33e8860',
+    packet: 'sha256:ea512e216357acd4bc0188a57a2bf65b1e4c7163011e23ffc3bef118f3cf6ec7',
     sprint310: 'sha256:1094698d566bf3a6f335545ea37089113874c21d2f438a059d2c95e3d9f2063f',
     sprintShort: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
   },
   'audi-r8v10-stock': {
     drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
-    packet: 'sha256:61e030bfc127c462358b01a4bd7aa36e7f530f503f9995c7877c96a099f6bf92',
+    packet: 'sha256:3eff99b481bca27bca5fc4c27b28ec4c37b4d804b72fee581c15ed4680a0cd8d',
     sprint310: 'sha256:0b32413d797b23b0db957f2583ab221fe3e64388144d743b8d20e2b39f14b5ca',
     sprintShort: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
   }

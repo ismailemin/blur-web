@@ -82,6 +82,15 @@ const CAR_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/car-textures.json')
 const COMMITTED_CAR_TEXTURES =
   'sha256:7d885ecdd53b51878a7343d0ee3ebb266c94ff648b555517a4492bdaf3973169';
 
+// P73b level-instance prop pack: the P73a UV0 export plus the four decoded BC1
+// sources, emitted by `build_level_instance_textures.py`. Committed output of
+// that tool; a different file is a hard failure, because the level-prop pixels
+// and UV bindings may only change when the export is rebuilt and the consumer
+// documents are updated with it.
+const LEVEL_PROP_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/level-instance-textures.json');
+const COMMITTED_LEVEL_PROP_TEXTURES =
+  'sha256:80857371e8aeb3cf2f0d50cd956b8c117825abec39dc2b7e31bc6adbc3bcb788';
+
 const sourceBytes = readFileSync(SOURCE);
 const packet = JSON.parse(sourceBytes.toString('utf8'));
 if (packet.kind !== 'blur.render-packet' || packet.version !== 1.1) {
@@ -262,26 +271,69 @@ const meshEntry = (mesh) => ({
   indexCount: mesh.indexCount,
   positions: mesh.positions,
   indices: mesh.indices,
+  uv: mesh.uv ?? null,
   positionsSha256: mesh.positionsSha256,
   indicesSha256: mesh.indicesSha256,
   coordinateSpace: mesh.coordinateSpace,
   source: mesh.source
 });
 
-const levelDrawEntry = (draw) => ({
-  id: draw.id,
-  meshId: draw.meshId,
-  vertexOffset: draw.vertexOffset,
-  vertexCount: draw.vertexCount,
-  indexOffset: draw.indexOffset,
-  indexCount: draw.indexCount,
-  materialId: draw.materialId,
-  materialReason: draw.materialReason,
-  layer: draw.layer,
-  bounds: draw.bounds,
-  worldKind: draw.worldKind,
-  source: draw.source
-});
+const LEVEL_DIAGNOSTIC_COLOUR = [0.8, 0.8, 0.8];
+const levelDrawEntry = (draw, propBinding) => {
+  const { binding, texture } = propBinding;
+  const blocked = !binding.bindable;
+  return {
+    id: draw.id,
+    meshId: draw.meshId,
+    vertexOffset: draw.vertexOffset,
+    vertexCount: draw.vertexCount,
+    indexOffset: draw.indexOffset,
+    indexCount: draw.indexCount,
+    materialId: draw.materialId,
+    materialReason: texture
+      ? 'P73a resolved the source UV0 and static g_tAlbedo image ' + texture.id + ' (' +
+        texture.name + ', ' + texture.width + 'x' + texture.height + '); it is sampled with the ' +
+        'real instance UV0 stream. Material colour, blend, alpha, shader and sampler state remain unapplied'
+      : 'P73a resolved the source UV0 and the g_tAlbedo identity ' + binding.albedoTexture +
+        ', but the source is DXT5/BC3 and no alpha rule is declared (' + binding.blockedReason +
+        '); the draw keeps the labelled neutral diagnostic albedo and is not bound',
+    textureId: texture ? texture.id : null,
+    textureBinding: {
+      status: binding.status,
+      reason: blocked
+        ? 'cab01alphas_diff is DXT5/BC3; no alpha-test or blend rule is declared, so the draw is not bound'
+        : 'P73a static g_tAlbedo identity resolved to a DXT1/BC1 image and the real UV0 was exported',
+      source: binding.resourceBlock + ':' + binding.resourceIndex,
+      name: binding.albedoTexture,
+      uvProvenance: 'level-instance-uv0 (P73a export, parallel to level_inspect --instances-all positions)',
+      uvHash: binding.uvHash,
+      uvRange: binding.uvRange,
+    },
+    diagnosticColour: LEVEL_DIAGNOSTIC_COLOUR.slice(),
+    diagnosticColourReason: blocked
+      ? 'blocked-bc3-alpha: no alpha rule, texture not bound; neutral diagnostic albedo, not a material'
+      : 'not used while the static albedo texture is bound (the consumer uses a white tint and the sampled texel)',
+    layer: draw.layer,
+    bounds: draw.bounds,
+    worldKind: draw.worldKind,
+    source: {
+      ...draw.source,
+      propTextureProvenance: {
+        drawId: binding.drawId,
+        section: binding.section,
+        instanceIndex: binding.instanceIndex,
+        basePrimitiveIndex: binding.basePrimitiveIndex,
+        material: binding.material,
+        materialRow: binding.materialRow,
+        resourceBlock: binding.resourceBlock,
+        resourceIndex: binding.resourceIndex,
+        textureFormat: binding.textureFormat,
+        status: binding.status,
+        blockedReason: binding.blockedReason,
+      }
+    }
+  };
+};
 
 // Diagnostic colours. These are debug colours, not materials: the packet keeps
 // materialsApplied:false and every draw says so. Tyre colours identify the
@@ -1128,6 +1180,158 @@ if (textureDrawByKey.size !== textureManifest.draws.length) {
   throw new Error('track texture manifest draw keys are not unique');
 }
 
+// ------------------------------------------- level-instance prop UV0 + albedo
+//
+// P73a exports the real UV0 stream and the resolved static `g_tAlbedo` identity
+// for the 22 River block27/node253 instance draws. `build_level_instance_textures.py`
+// joins that identity to the P34 registry and the committed BC decoder, and pins
+// the 18 BC1 draws / 4 BC3-alpha draws. The mesh positions/indices are the same
+// committed reader output the render packet carries, so the UV stream is parallel
+// by construction; every hash and draw range is re-checked here.
+if (!existsSync(LEVEL_PROP_TEXTURE_MANIFEST)) {
+  throw new Error('missing ' + path.relative(ROOT, LEVEL_PROP_TEXTURE_MANIFEST) +
+    ' — run `python probes/e1-drive/tools/build_level_instance_textures.py` first');
+}
+const levelPropManifestBytes = readFileSync(LEVEL_PROP_TEXTURE_MANIFEST);
+const levelPropManifestSha = sha256(levelPropManifestBytes);
+if (levelPropManifestSha !== COMMITTED_LEVEL_PROP_TEXTURES) {
+  throw new Error('level-instance prop manifest is not the committed one: ' + levelPropManifestSha +
+    ' (expected ' + COMMITTED_LEVEL_PROP_TEXTURES + ')');
+}
+const levelPropDoc = JSON.parse(levelPropManifestBytes.toString('utf8'));
+if (levelPropDoc.kind !== 'e1-drive.level-instance-textures' || levelPropDoc.version !== 1) {
+  throw new Error('level-instance prop manifest kind/version is not e1-drive.level-instance-textures v1');
+}
+if (levelPropDoc.mesh?.id !== levelMesh.id ||
+    levelPropDoc.mesh?.vertexCount !== levelMesh.vertexCount ||
+    levelPropDoc.mesh?.triangleCount !== levelMesh.indexCount / 3) {
+  throw new Error('level-instance prop manifest does not describe the render-packet level mesh');
+}
+if (hex(levelPropDoc.mesh.positionsSha256) !== hex(levelMesh.positionsSha256) ||
+    hex(levelPropDoc.mesh.indicesSha256) !== hex(levelMesh.indicesSha256)) {
+  throw new Error('level-instance prop manifest mesh hashes differ from the render-packet level mesh');
+}
+
+const levelPropUvPath = path.join(ROOT, levelPropDoc.uvStream.path);
+const levelPropUvBytes = readFileSync(levelPropUvPath);
+if (levelPropUvBytes.length !== levelPropDoc.uvStream.bytes ||
+    sha256(levelPropUvBytes) !== levelPropDoc.uvStream.sha256) {
+  throw new Error('level-instance prop UV stream is not the one the manifest pinned: ' +
+    sha256(levelPropUvBytes));
+}
+if (levelPropUvBytes.length !== levelMesh.vertexCount * 8) {
+  throw new Error('level-instance prop UV stream length does not match the level mesh vertex count');
+}
+const levelPropUvs = new Float32Array(levelMesh.vertexCount * 2);
+for (let index = 0; index < levelPropUvs.length; index++) {
+  levelPropUvs[index] = levelPropUvBytes.readFloatLE(index * 4);
+  if (!Number.isFinite(levelPropUvs[index])) {
+    throw new Error('level-instance prop UV stream has a non-finite component at ' + index);
+  }
+}
+const levelPropUv = {
+  storage: 'base64-float32le',
+  components: 2,
+  vertexCount: levelMesh.vertexCount,
+  values: levelPropUvs.length,
+  bytes: levelPropUvBytes.length,
+  sha256: levelPropDoc.uvStream.sha256,
+  data: levelPropUvBytes.toString('base64'),
+  source: {
+    manifest: path.relative(ROOT, LEVEL_PROP_TEXTURE_MANIFEST).split(path.sep).join('/'),
+    manifestSha256: levelPropManifestSha,
+    stream: levelPropDoc.uvStream.path,
+    aggregate: levelPropDoc.uvStream.aggregate,
+    provenance:
+      'P73a asset-reader UV0 export (F16_2 -> float32le), parallel to the committed ' +
+      'level_inspect --instances-all positions; every per-draw hash is re-derived here',
+  },
+};
+
+const levelPropTextures = levelPropDoc.textures.map((texture) => {
+  const file = path.join(ROOT, texture.rgbaPath);
+  if (!existsSync(file)) {
+    throw new Error(texture.id + ': missing decoded RGBA file ' + texture.rgbaPath);
+  }
+  const bytes = readFileSync(file);
+  if (sha256(bytes) !== texture.rgbaSha256) {
+    throw new Error(texture.id + ': RGBA file is not the one the manifest pinned');
+  }
+  if (bytes.length !== texture.rgbaBytes || bytes.length !== texture.width * texture.height * 4) {
+    throw new Error(texture.id + ': RGBA length does not match its declared size');
+  }
+  return {
+    id: texture.id,
+    source: texture.source,
+    block: texture.block,
+    index: texture.index,
+    name: texture.name,
+    textureHash: texture.textureHash,
+    width: texture.width,
+    height: texture.height,
+    levels: texture.levels,
+    format: texture.format,
+    formatName: texture.formatName,
+    payloadBytes: texture.payloadBytes,
+    rgbaPath: texture.rgbaPath,
+    rgbaBytes: texture.rgbaBytes,
+    rgbaSha256: texture.rgbaSha256,
+    rgbaFnv1a64: texture.rgbaFnv1a64,
+    rgbaBase64: bytes.toString('base64'),
+    decodeRegistry: 'engine-textures.json',
+    drawCount: texture.bindableDraws,
+    triangles: texture.triangles,
+    blob: texture.blob,
+    blobSha256: texture.blobSha256,
+  };
+});
+if (new Set(levelPropTextures.map((texture) => texture.id)).size !== levelPropTextures.length) {
+  throw new Error('level-instance prop texture ids are not unique');
+}
+const levelPropTextureById = new Map(levelPropTextures.map((texture) => [texture.id, texture]));
+if (levelPropDoc.draws.length !== levelDraws.length) {
+  throw new Error('level-instance prop manifest covers ' + levelPropDoc.draws.length +
+    ' draws, the render packet has ' + levelDraws.length);
+}
+const levelBindings = levelDraws.map((draw) => {
+  const instanceIndex = draw.source?.instanceIndex;
+  const binding = levelPropDoc.draws.find((entry) => entry.instanceIndex === instanceIndex);
+  if (!binding) {
+    throw new Error('level draw ' + draw.id + ' has no instance ' + instanceIndex + ' in the prop manifest');
+  }
+  if (binding.basePrimitiveIndex !== draw.source.basePrimitiveIndex ||
+      binding.firstIndex !== draw.indexOffset || binding.indexCount !== draw.indexCount) {
+    throw new Error('level draw ' + draw.id + ' index range/primitive differs from the prop manifest');
+  }
+  const recomputed = '0x' + drawUvHash(levelPropUvs, levelMesh.indices,
+    draw.indexOffset, draw.indexCount);
+  if (recomputed !== binding.uvHash) {
+    throw new Error('level draw ' + draw.id + ' UV0 hash ' + recomputed +
+      ' does not match the exported ' + binding.uvHash);
+  }
+  const texture = binding.textureId === null ? null : levelPropTextureById.get(binding.textureId);
+  if (binding.textureId !== null && !texture) {
+    throw new Error('level draw ' + draw.id + ' names unknown texture ' + binding.textureId);
+  }
+  if (binding.bindable && !texture) {
+    throw new Error('level draw ' + draw.id + ' is bindable but has no BC1 texture');
+  }
+  if (!binding.bindable && (texture || binding.blockedReason !== 'bc3-alpha-rule-missing')) {
+    throw new Error('level draw ' + draw.id + ' is not blocked with bc3-alpha-rule-missing as declared');
+  }
+  return { binding, texture };
+});
+const levelBindable = levelBindings.filter((entry) => entry.binding.bindable);
+const levelBlocked = levelBindings.filter((entry) => !entry.binding.bindable);
+if (levelBindable.length !== 18 || levelBlocked.length !== 4) {
+  throw new Error('level-instance prop split is ' + levelBindable.length + '/' +
+    levelBlocked.length + ', expected 18/4');
+}
+if (levelBindable.reduce((sum, entry) => sum + entry.binding.triangleCount, 0) !== 10212 ||
+    levelBlocked.reduce((sum, entry) => sum + entry.binding.triangleCount, 0) !== 96) {
+  throw new Error('level-instance prop triangle split changed');
+}
+
 const trackPositions = [];
 const trackIndices = [];
 const trackDraws = [];
@@ -1495,6 +1699,10 @@ if (!bodies[defaultSlug]) throw new Error('roster default car has no body: ' + d
 
 const geometry = {
   kind: 'e1-drive.geometry',
+  // The level-prop pack is additive to the v6 document: keeping the version
+  // keeps every committed layout/ghost pin (which include `geometryVersion`)
+  // valid for the unchanged sprint geometry. The P73b pack is validated by its
+  // own manifest pin and checks, not by a version bump.
   version: 6,
   source: {
     packet: path.relative(ROOT, SOURCE).split(path.sep).join('/'),
@@ -1589,9 +1797,42 @@ const geometry = {
         note: track.source.note
       }
     },
+    levelProps: {
+      meshId: levelMesh.id,
+      vertexCount: levelMesh.vertexCount,
+      triangleCount: levelMesh.indexCount / 3,
+      draws: levelDraws.length,
+      uv: {
+        path: levelPropDoc.uvStream.path,
+        sha256: levelPropDoc.uvStream.sha256,
+        values: levelPropDoc.uvStream.values,
+        bytes: levelPropDoc.uvStream.bytes,
+        aggregate: levelPropDoc.uvStream.aggregate,
+        declaration: levelPropDoc.uvStream.declaration,
+      },
+      textures: {
+        manifest: path.relative(ROOT, LEVEL_PROP_TEXTURE_MANIFEST).split(path.sep).join('/'),
+        manifestSha256: levelPropManifestSha,
+        contentHash: levelPropDoc.contentHash,
+        count: levelPropTextures.length,
+        rgbaBytes: levelPropTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+        texturedDraws: levelBindable.length,
+        texturedTriangles: levelBindable.reduce((sum, entry) => sum + entry.binding.triangleCount, 0),
+        diagnosticDraws: levelBlocked.length,
+        diagnosticTriangles: levelBlocked.reduce((sum, entry) => sum + entry.binding.triangleCount, 0),
+        blockedInstances: levelBlocked.map((entry) => entry.binding.instanceIndex),
+        blockedReason: 'bc3-alpha-rule-missing',
+        sampler: levelPropDoc.sampler,
+      },
+      note:
+        'P73a asset-reader UV0 + static g_tAlbedo identity; the four BC1 images are decoded by the ' +
+        'committed BC reader and the four BC3-alpha cab draws stay diagnostic (bc3-alpha-rule-missing)',
+    },
     note:
       'static geometry copied verbatim from the committed render-packet spike; ' +
       'level draws are world-space (instances baked by the reader), car draws are object-local; ' +
+      'level prop draws sample the P73a instance UV0 stream and a decoded BC1 static g_tAlbedo image on 18 ' +
+      'of 22 draws, while the 4 BC3-alpha cab draws keep the labelled neutral diagnostic albedo; ' +
       'track draws are the real River levelrender direct draws from the committed level_inspect references, ' +
       'with the real UV0 stream and the P44/P45/P47 static albedo texture where one was measured; ' +
       'car draws keep their committed part manifest ranges and sample the P52 static albedo image with the ' +
@@ -1602,8 +1843,36 @@ const geometry = {
   },
   light: packet.lights[0],
   materials: packet.materials,
-  meshes: [meshEntry({ ...levelMesh, source: levelMesh.source }), trackVisualMesh],
-  levelDraws: levelDraws.map(levelDrawEntry),
+  meshes: [meshEntry({ ...levelMesh, uv: levelPropUv, source: levelMesh.source }), trackVisualMesh],
+  levelDraws: levelDraws.map((draw, index) => levelDrawEntry(draw, levelBindings[index])),
+  levelTextures: levelPropTextures,
+  levelPropTexturePack: {
+    kind: levelPropDoc.kind,
+    version: levelPropDoc.version,
+    manifest: path.relative(ROOT, LEVEL_PROP_TEXTURE_MANIFEST).split(path.sep).join('/'),
+    manifestSha256: levelPropManifestSha,
+    contentHash: levelPropDoc.contentHash,
+    scope: levelPropDoc.scope,
+    sampler: levelPropDoc.sampler,
+    coverage: levelPropDoc.coverage,
+    uvStream: {
+      path: levelPropDoc.uvStream.path,
+      sha256: levelPropDoc.uvStream.sha256,
+      values: levelPropDoc.uvStream.values,
+      vertexCount: levelPropDoc.uvStream.vertexCount,
+      bytes: levelPropDoc.uvStream.bytes,
+      aggregate: levelPropDoc.uvStream.aggregate,
+      declaration: levelPropDoc.uvStream.declaration,
+    },
+    materialScope:
+      'static g_tAlbedo texture pixels only: the engine material colour, blend state, alpha rule, ' +
+      'shader stages, mip chain and sRGB interpretation are not applied, so this is not retail ' +
+      'material fidelity',
+    note:
+      'pixels are the committed BC1 decode of the P34 blobs, mapped by the P73a instance UV0 stream; ' +
+      'wrap/filter/mip are the explicit PoC sampler, not recovered engine state; the 4 BC3-alpha ' +
+      'cab draws are not bound',
+  },
   trackVisual,
   textures: textureRecords,
   carTextures: {
@@ -1679,6 +1948,25 @@ console.log(JSON.stringify({
   levelDraws: geometry.levelDraws.length,
   levelVertices: levelMesh.vertexCount,
   levelTriangles: levelMesh.indexCount / 3,
+  levelProps: {
+    manifest: path.relative(ROOT, LEVEL_PROP_TEXTURE_MANIFEST).split(path.sep).join('/'),
+    manifestSha256: levelPropManifestSha,
+    contentHash: levelPropDoc.contentHash,
+    texturedDraws: levelBindable.length,
+    texturedTriangles: levelBindable.reduce((sum, entry) => sum + entry.binding.triangleCount, 0),
+    diagnosticDraws: levelBlocked.length,
+    diagnosticTriangles: levelBlocked.reduce((sum, entry) => sum + entry.binding.triangleCount, 0),
+    blockedInstances: levelBlocked.map((entry) => entry.binding.instanceIndex),
+    blockedReason: 'bc3-alpha-rule-missing',
+    textures: levelPropTextures.length,
+    textureBytes: levelPropTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    uv: {
+      values: levelPropUv.values,
+      bytes: levelPropUv.bytes,
+      sha256: levelPropUv.sha256,
+      aggregate: levelPropUv.source.aggregate,
+    },
+  },
   trackVisual: {
     label: trackVisual.label,
     meshId: TRACK_VISUAL_ID,

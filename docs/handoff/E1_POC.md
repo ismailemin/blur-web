@@ -120,8 +120,9 @@ Scripted sprint controller bu eşlemeden geçmez.
 - Tur modunda ghost yok (tur arc'ı her tur sıfırlanır; committed lap referansı
   yok), `G` nedenini yazar.
 - Pist görseli gerçek River draw set'i; 394 draw'dan **297**'si gerçek albedo +
-  UV0 ile dokulu, 95'i diagnostic. Araçlarda 491 draw'dan **224**'ü dokulu,
-  267'si diagnostic. Mip/sRGB/anisotropy, boya, gölge ve post yok.
+  UV0 ile dokulu. **18 level-instance draw (10.212 tri)** — truck/wreck — gerçek
+  albedo + UV0 ile çiziliyor; 4 BC3 cab draw diagnostic. Araçlarda 491 draw'dan
+  **224**'ü dokulu. Mip/sRGB/anisotropy, boya, gölge ve post yok.
 - Teker konumu rest-pose; süspansiyon/steer/camber yok.
 - Box gravity proxy; XT `physicsParameters` açık.
 - Ses, rakip, multiplayer yok.

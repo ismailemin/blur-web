@@ -208,6 +208,15 @@ const state = {
   trackTextures: 0,
   trackTextureBytes: 0,
   trackUvVertices: 0,
+  levelPropDraws: 0,
+  levelPropTexturedDraws: 0,
+  levelPropDiagnosticDraws: 0,
+  levelPropTextures: 0,
+  levelPropTextureBytes: 0,
+  levelPropUvVertices: 0,
+  levelPropManifestSha256: null,
+  levelPropContentHash: null,
+  levelPropBlockedInstances: [],
   carTexturedDraws: 0,
   carTextures: 0,
   carTextureBytes: 0,
@@ -1287,6 +1296,16 @@ async function startTimeline(tick0, {
   state.trackTextures = trackInfo?.textures?.count ?? 0;
   state.trackTextureBytes = trackInfo?.textures?.rgbaBytes ?? 0;
   state.trackUvVertices = trackInfo?.uv ? trackInfo.uv.values / trackInfo.uv.components : 0;
+  const levelPropInfo = session.packet.diagnostics.extras.levelProps;
+  state.levelPropDraws = levelPropInfo?.drawCount ?? 0;
+  state.levelPropTexturedDraws = levelPropInfo?.texturedDrawCount ?? 0;
+  state.levelPropDiagnosticDraws = levelPropInfo?.diagnosticDrawCount ?? 0;
+  state.levelPropTextures = levelPropInfo?.textures ?? 0;
+  state.levelPropTextureBytes = levelPropInfo?.textureBytes ?? 0;
+  state.levelPropUvVertices = levelPropInfo?.uvVertices ?? 0;
+  state.levelPropManifestSha256 = levelPropInfo?.manifestSha256 ?? null;
+  state.levelPropContentHash = levelPropInfo?.contentHash ?? null;
+  state.levelPropBlockedInstances = levelPropInfo?.blockedInstances ?? [];
   const textureInfo = session.packet.diagnostics.extras.textures;
   state.carTexturedDraws = partsInfo?.texturedDrawCount ?? 0;
   state.carTextures = textureInfo?.car?.count ?? 0;
@@ -1497,6 +1516,16 @@ async function runTelemetryMode() {
   state.trackTextures = trackInfo?.textures?.count ?? 0;
   state.trackTextureBytes = trackInfo?.textures?.rgbaBytes ?? 0;
   state.trackUvVertices = trackInfo?.uv ? trackInfo.uv.values / trackInfo.uv.components : 0;
+  const levelPropInfo = session.packet.diagnostics.extras.levelProps;
+  state.levelPropDraws = levelPropInfo?.drawCount ?? 0;
+  state.levelPropTexturedDraws = levelPropInfo?.texturedDrawCount ?? 0;
+  state.levelPropDiagnosticDraws = levelPropInfo?.diagnosticDrawCount ?? 0;
+  state.levelPropTextures = levelPropInfo?.textures ?? 0;
+  state.levelPropTextureBytes = levelPropInfo?.textureBytes ?? 0;
+  state.levelPropUvVertices = levelPropInfo?.uvVertices ?? 0;
+  state.levelPropManifestSha256 = levelPropInfo?.manifestSha256 ?? null;
+  state.levelPropContentHash = levelPropInfo?.contentHash ?? null;
+  state.levelPropBlockedInstances = levelPropInfo?.blockedInstances ?? [];
   const textureInfo = session.packet.diagnostics.extras.textures;
   state.carTexturedDraws = partsInfo?.texturedDrawCount ?? 0;
   state.carTextures = textureInfo?.car?.count ?? 0;
