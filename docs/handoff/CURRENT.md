@@ -58,6 +58,12 @@ duvarı yüzünden erişilemez; erişilebilir spawn bileşeni **7.702,25 m²**.
 üretildi; 29/29 doğrulama, deterministik. Kanıt:
 `docs/work/analysis/free-roam-props.md`.
 
+**P70 — motor sesi modülü (hazır):** `probes/audio/web/engine-audio.js` altı
+motor loop'unu retail RPM→gain/pitch eğrileriyle çalıyor; gesture-only start,
+tipli hata durumları. Headless Edge **engine-audio-module-verified**, 6/6 decode,
+**console 0**. E1 entegrasyonu `Engine().RPM()` ile tek `setRpm` çağrısı.
+Kanıt: `docs/work/analysis/audio-engine-module.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

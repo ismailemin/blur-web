@@ -205,12 +205,13 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   düşme reseti.
 - Kanıt: `verify_e1_drive` free-roam blokları + 5 araç capture, console 0.
 
-### E1o — Motor sesi (P69)  ⏳ plan
-- P62'nin altı `RaceV8_Engine_*` loop'u + retail RPM→gain/pitch eğrileri
-  (`docs/work/analysis/audio-feasibility.md`).
-- Yeni `web/engine-audio.js`; AudioContext yalnız kullanıcı etkileşiminden
-  sonra (tarayıcı politikası); RPM engine state'ten; 0 console.
-- Harness + capture ile gain/pitch doğrulaması.
+### E1o — Motor sesi (P70)  ✅ modül hazır
+- `probes/audio/web/engine-audio.js`: 6 `RaceV8_Engine_*` loop'u, retail
+  RPM→gain/pitch PLF eğrileri, gesture-only AudioContext, `setRpm`/`mute`/`dispose`.
+- Headless Edge: **engine-audio-module-verified**, 6/6 decode, gain/rate farkı
+  ≤5,9e-8, RMS 0,041–0,137, **console 0**; fetch/decode hata yolları tipli.
+- Sıradaki: E1 sayfasında `Engine().RPM()` ile tek `setRpm` çağrısı + gesture.
+- Kanıt: `docs/work/analysis/audio-engine-module.md`, `_work/audio/module-harness.png`.
 
 ## Pipeline (bağımlılık sırası)
 

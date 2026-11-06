@@ -16,6 +16,9 @@ through Web Audio with the exact retail curves.
 | `serve.mjs` | Read-only server for the harness and `_work/audio` |
 | `harness/index.html`, `harness/harness.js` | Web Audio harness (6 RPM loops + exact PLF gains/pitches) |
 | `capture_harness.mjs` | Headless Edge verification: decoded buffers, gains/rates, RMS, console, screenshot |
+| `web/engine-audio.js` | **Standalone ES module** — six looping layers + exact retail PLF curves, gesture-gated start, typed failure states |
+| `web/index.html`, `web/module-harness.js` | Harness page for the module; exposes `window.engineAudioProbe` |
+| `capture_module.mjs` | Headless Edge verification of the module (no autoplay override, real click) |
 
 ## Run
 
@@ -48,6 +51,23 @@ Automated capture:
 ```powershell
 node probes/audio/capture_harness.mjs
 ```
+
+## Reusable module
+
+`probes/audio/web/engine-audio.js` packages the same six layers and curves as an
+ES module for the E1 page. It creates no `AudioContext` until `ensureStarted()`
+is called from a user gesture, and reports `unavailable` + `reason` instead of
+playing a substitute.
+
+```powershell
+node probes/audio/serve.mjs --port 8810
+# open http://127.0.0.1:8810/web/ and press "Start audio"
+node probes/audio/capture_module.mjs
+```
+
+API, integration recipe, evidence and limits:
+`docs/work/analysis/audio-engine-module.md`. The P62 harness above is unchanged
+(`/` and `/harness.js` still serve the same bytes).
 
 ## Format notes
 

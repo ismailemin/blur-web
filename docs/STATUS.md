@@ -709,6 +709,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `_work/free-roam-prop/colliders-r04.json`: **431 collider**, kapsama %64,6 → **%100**; head-on 0,001 m, 0 tunneling.
 - Doğrulama **25/25 + 29/29**, deterministik. Kanıt: `docs/work/analysis/free-roam-props.md`, `_work/free-roam-prop/map.png`.
 
+## 6 Kasım 2026 — motor sesi modülü
+
+- `probes/audio/web/engine-audio.js`: altı `RaceV8_Engine_*` loop'u, retail RPM→gain/pitch PLF eğrileri, gesture-only AudioContext, `setRpm`/mute/dispose.
+- Headless Edge **engine-audio-module-verified**: 6/6 decode, gain/rate farkı ≤5,9e-8, RMS 0,041–0,137, console 0; fetch/decode hataları tipli.
+- Sıradaki: E1'de `Engine().RPM()` → `setRpm` + gesture. Kanıt: `docs/work/analysis/audio-engine-module.md`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

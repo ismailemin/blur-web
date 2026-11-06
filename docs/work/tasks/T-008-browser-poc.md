@@ -58,6 +58,7 @@ sürüşü deneyebileceği PoC.
 | 3 turluk kapalı tur | P67 | ✅ loop-01 86,1 s, 766/766 |
 | PoC kontrolü (lap) | P67 | ✅ 21/21 |
 | Free-roam prop manifesti | P68b | ✅ 431 collider, %100 kapsama |
+| Motor sesi modülü | P70 | ✅ 6 loop, 0 console |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

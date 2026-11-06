@@ -1,7 +1,8 @@
-// Read-only server for the engine-audio feasibility harness.
+// Read-only server for the engine-audio probes.
 //
-//   /                     -> probes/audio/harness/index.html
+//   /                     -> probes/audio/harness/index.html      (P62 harness)
 //   /harness.js           -> probes/audio/harness/harness.js
+//   /web/, /web/<file>    -> probes/audio/web/<file>              (module harness)
 //   /_work/audio/<file>   -> _work/audio/<file>  (.wav/.json only)
 //
 // No directory listing, no writes, no path escapes. Callable as a module or:
@@ -14,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HARNESS = path.join(ROOT, 'probes/audio/harness');
+const WEB = path.join(ROOT, 'probes/audio/web');
 const AUDIO = path.join(ROOT, '_work/audio');
 
 const TYPES = {
@@ -39,6 +41,15 @@ export function startServer({ port = 8810 } = {}) {
       file = path.join(HARNESS, 'index.html');
     } else if (pathname === '/harness.js') {
       file = path.join(HARNESS, 'harness.js');
+    } else if (pathname === '/web' || pathname === '/web/') {
+      file = path.join(WEB, 'index.html');
+    } else if (pathname.startsWith('/web/')) {
+      const relative = pathname.slice('/web/'.length);
+      if (!/\.(html|js|css)$/i.test(relative)) {
+        response.writeHead(403).end('only .html, .js and .css');
+        return;
+      }
+      file = safeJoin(WEB, relative);
     } else if (pathname.startsWith('/_work/audio/')) {
       const relative = pathname.slice('/_work/audio/'.length);
       if (!/\.(wav|json)$/i.test(relative)) {
