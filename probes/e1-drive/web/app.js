@@ -48,14 +48,15 @@ import { hashOf } from './packet-hash.js';
 import { sha256Hex } from './sha256.js';
 import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
-import { layoutStartHeading, validateSprintLayout } from './sprint-layout.js';
-import { SPRINT_EVENT, coursePosition, createSprintRules } from './sprint-rules.js';
+import { isLapLayout, layoutStartHeading, layoutStartPosition, validateSprintLayout } from './sprint-layout.js';
+import { SPRINT_EVENT, courseGroundAt, coursePosition, createSprintRules } from './sprint-rules.js';
 import { createBestTimes } from './sprint-best.js';
 import {
   GHOST_CORNERS, GHOST_SOURCE, buildGhostArcTable, createGhostStore, decodeGhost, ghostFromRun,
   ghostGap, ghostMatrices, referenceGhostFileName, validateGhostRecord
 } from './ghost-replay.js';
-import { respawnScriptInput, sprintScriptInput, SPRINT_PACKET_SCRIPT } from './sprint-script.js';
+import { LAP_PACKET_SCRIPT, LAP_SCRIPT_TICKS, respawnScriptInput, sprintScriptInput, SPRINT_PACKET_SCRIPT } from './sprint-script.js';
+import { PROP_MANIFEST, PROP_PROFILE, createPropLayer } from './prop-layer.js';
 import {
   createWasmResetEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
   TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_PACKET_SCRIPT, TELEMETRY_SPEC
@@ -105,13 +106,15 @@ if (HOLD !== null && (!Number.isInteger(HOLD) || HOLD < 0)) throw new Error('hol
 const INTERPOLATE = params.get('interpolate') !== '0';
 const REQUESTED_CAR = params.get('car');
 // Course selection: the default is the measured 310.395 m P48 course; `?course=short`
-// loads the original 29 m straight regression course. Each course has its own
-// layout artifact and its own best-time namespace.
+// loads the original 29 m straight regression course, and `?course=lap` loads the
+// P61 loop-01 three-lap layout. Each course has its own best-time namespace.
 const COURSE_PARAM = params.get('course') ?? '310';
-if (COURSE_PARAM !== '310' && COURSE_PARAM !== 'short') {
-  throw new Error('unknown course ' + JSON.stringify(COURSE_PARAM) + ' (use 310 or short)');
+if (COURSE_PARAM !== '310' && COURSE_PARAM !== 'short' && COURSE_PARAM !== 'lap') {
+  throw new Error('unknown course ' + JSON.stringify(COURSE_PARAM) + ' (use 310, short or lap)');
 }
 const COURSE_IS_SHORT = COURSE_PARAM === 'short';
+const COURSE_IS_LAP = COURSE_PARAM === 'lap';
+const COURSE_KEY = COURSE_IS_SHORT ? 'short' : COURSE_IS_LAP ? 'lap' : '310m';
 // Ghost / rival replay (P63): `G` toggles it, `?ghost=1` shows it from the start.
 // The ghost is a *recording of one completed run* (your fastest clean run, or the
 // committed deterministic reference trace), replayed through the same car mesh.
@@ -139,10 +142,13 @@ const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
 const GEOMETRY_URL = '/_work/e1-drive/geometry.json';
 const LEVEL_URL = '/_work/e1-drive/Level.levelphysics';
 const SPAWN_URL = '/_work/e1-drive/spawn.json';
-const SPRINT_URL = COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json' : '/_work/e1-drive/sprint.json';
+const SPRINT_URL = COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
+  : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json' : '/_work/e1-drive/sprint.json';
+const PROP_MANIFEST_URL = '/_work/prop-collision/colliders.json';
+const PROP_RESOLVER_URL = '/prop-collision/lib/resolver.mjs';
 
 /** Best-time storage key: one record per course, never mixed. */
-const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' + (COURSE_IS_SHORT ? 'short' : '310m');
+const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' + COURSE_KEY;
 
 const canvas = document.getElementById('scene');
 const driver = new FixedStepDriver();
@@ -227,6 +233,7 @@ const state = {
   // Ghost / rival replay (`G`; null outside the sprint modes). The page never
   // auto-enables it, so existing captures and the legacy drive are unchanged.
   ghost: null,
+  props: null,
   // Number of in-place world rebuilds (R / sprint restart). Never a page reload.
   restarts: 0,
   // Telemetry (`?telemetry=1` only).
@@ -311,19 +318,36 @@ function publish() {
     const sprint = state.sprint;
     const timer = sprint.finished ? sprint.finishTimeSeconds : sprint.elapsedSeconds;
     const course = sprint.course;
-    rows.push(['course', COURSE_IS_SHORT
-      ? '29 m straight (regression) · ' + course.lengthMetres.toFixed(1) + ' m · ?course=short'
-      : '310 m P48 (default) · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(1) +
-        ' m measured · finish ' + (course.finishArc ?? course.lengthMetres).toFixed(1) + ' m']);
+    rows.push(['course', COURSE_IS_LAP
+      ? 'loop-01 P61 · 3 laps · ' + course.lengthMetres.toFixed(1) + ' m · ?course=lap'
+      : COURSE_IS_SHORT
+        ? '29 m straight (regression) · ' + course.lengthMetres.toFixed(1) + ' m · ?course=short'
+        : '310 m P48 (default) · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(1) +
+          ' m measured · finish ' + (course.finishArc ?? course.lengthMetres).toFixed(1) + ' m']);
     rows.push(['sprint', sprint.phase + ' · ' + Number(timer).toFixed(3) + ' s' +
-      (sprint.finished ? ' · FINISHED' : '') + (sprint.respawns ? ' · ' + sprint.respawns + ' respawn' : '')]);
-    rows.push(['gates', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' cp · ' +
-      (sprint.nextGate
-        ? 'next ' + sprint.nextGate.id + ' in ' + Math.max(0, sprint.nextGate.distanceMetres).toFixed(1) + ' m'
-        : 'finish crossed') +
-      ' · ' + Math.round(sprint.progress * 100) + '%']);
+      (sprint.finished ? ' · FINISHED' : '') +
+      (COURSE_IS_LAP ? ' · lap ' + sprint.lap + '/' + sprint.laps : '') +
+      (sprint.respawns ? ' · ' + sprint.respawns + ' respawn' : '')]);
+    if (COURSE_IS_LAP) {
+      rows.push(['laps', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' done · ' +
+        'current ' + Number(sprint.currentLapSeconds).toFixed(3) + ' s · ' +
+        'last ' + (sprint.lastLapSeconds === null ? '—' : sprint.lastLapSeconds.toFixed(3) + ' s') + ' · ' +
+        'best ' + (sprint.bestLapSeconds === null ? '—' : sprint.bestLapSeconds.toFixed(3) + ' s') + ' · ' +
+        Math.round(sprint.progress * 100) + '%']);
+    } else {
+      rows.push(['gates', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' cp · ' +
+        (sprint.nextGate
+          ? 'next ' + sprint.nextGate.id + ' in ' + Math.max(0, sprint.nextGate.distanceMetres).toFixed(1) + ' m'
+          : 'finish crossed') +
+        ' · ' + Math.round(sprint.progress * 100) + '%']);
+    }
     rows.push(['best', state.sprintBest === null ? '—' :
       state.sprintBest.toFixed(3) + ' s' + (state.sprintResult?.improved ? ' (new)' : '')]);
+    if (state.props) {
+      rows.push(['props', state.props.profile + ' · ' + state.props.colliders + ' colliders · ' +
+        state.props.contacts + ' contacts · ' + state.props.blockedTicks + ' blocked ticks · ' +
+        state.props.substeps + ' substeps']);
+    }
   }
   if (state.ghost) {
     const ghostRow = state.ghost;
@@ -448,11 +472,19 @@ function publishSprintOverlays() {
     document.getElementById('results-time').textContent =
       state.sprintResult.timeSeconds.toFixed(3) + ' s  ·  ' + state.sprintResult.car;
     const best = state.sprintResult.bestSeconds;
-    document.getElementById('results-best').textContent =
-      'checkpoints ' + state.sprintResult.checkpoints + '/' + sprint.totalCheckpoints +
-      ' · respawns ' + state.sprintResult.respawns +
-      ' · best ' + (best === null ? '—' : best.toFixed(3) + ' s') +
-      (state.sprintResult.improved ? ' (new best)' : '');
+    if (COURSE_IS_LAP) {
+      document.getElementById('results-best').textContent =
+        'laps ' + (state.sprintResult.lapTimes ?? []).map((seconds) => seconds.toFixed(3)).join(' / ') +
+        ' s · best lap ' + (state.sprintResult.bestLapSeconds ?? best ?? 0).toFixed(3) + ' s' +
+        ' · respawns ' + state.sprintResult.respawns +
+        (state.sprintResult.improved ? ' · new race best' : '');
+    } else {
+      document.getElementById('results-best').textContent =
+        'checkpoints ' + state.sprintResult.checkpoints + '/' + sprint.totalCheckpoints +
+        ' · respawns ' + state.sprintResult.respawns +
+        ' · best ' + (best === null ? '—' : best.toFixed(3) + ' s') +
+        (state.sprintResult.improved ? ' (new best)' : '');
+    }
   } else {
     results.hidden = true;
   }
@@ -548,6 +580,8 @@ let sprintRules = null;
 let bestTimes = null;
 let pendingRespawn = null;
 let soakLayout = null;
+// Additive visible-prop layer (P66): lap mode only, all-visible profile.
+let propLayer = null;
 // Ghost replay (P63): one record per car and course — the page's own fastest
 // clean run if it has one, otherwise the committed deterministic reference trace.
 let ghostStore = null;
@@ -575,7 +609,6 @@ function ghostArcOf(position) {
   if (COURSE_IS_SHORT) return position[0];
   return coursePosition(sprintRules.layout.course.samples, position).arc;
 }
-
 /** Select the active ghost record and build its playback + delta tables. */
 function setGhostRecord(record, source, label, note = null) {
   const decoded = decodeGhost(record);
@@ -636,10 +669,17 @@ async function loadGhost(storage) {
   ghost = { record: null, decoded: null, table: null, source: 'none', label: null, reason: null, note: null };
   ghostFrame = null;
   if (!SPRINT_MODE || !sprintRules) return;
+  if (COURSE_IS_LAP) {
+    // The ghost is a 310 m / 29 m replay aid; the lap arc resets every lap and no
+    // committed lap reference exists, so the lap mode states the reason instead
+    // of replaying a mismatched clock. `G` stays inert in this mode.
+    ghost.reason = 'ghost replay is not available on the three-lap loop';
+    return;
+  }
   const body = geometry.carBodies[car.slug];
   if (!body) throw new Error('geometry has no body for ' + car.slug);
   ghostWheelRest = Object.fromEntries(body.wheelGroups.map((group) => [group.corner, group.matrixColumnMajor]));
-  const course = COURSE_IS_SHORT ? 'short' : '310m';
+  const course = COURSE_KEY;
   ghostStore = createGhostStore(storage, course, { layoutHash: sprintRules.layout.hash });
   const stored = ghostStore.get(car.slug);
   let note = null;
@@ -758,8 +798,7 @@ async function loadEngine() {
     sprintRules = createSprintRules(layout);
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
-    state.sprintCourseId = layout.courseId ?? null;
-    state.sprintLayout = {
+    state.sprintCourseId = layout.courseId ?? null;    state.sprintLayout = {
       hash: layout.hash,
       courseId: layout.courseId ?? null,
       gates: layout.gates.map((gate) => ({
@@ -773,6 +812,24 @@ async function loadEngine() {
       countdownTicks: layout.countdown.ticks,
       rules: layout.rules
     };
+    // P66 visible-prop layer: enabled on the lap only, all-visible profile. The
+    // resolver is consumed read-only; the engine remains the physics authority.
+    if (COURSE_IS_LAP) {
+      const [manifestResponse, resolver] = await Promise.all([
+        fetch(PROP_MANIFEST_URL, { cache: 'no-store' }),
+        import(PROP_RESOLVER_URL)
+      ]);
+      if (!manifestResponse.ok) {
+        throw new Error('prop manifest fetch failed: HTTP ' + manifestResponse.status + ' (' + PROP_MANIFEST + ')');
+      }
+      const manifest = await manifestResponse.json();
+      if (manifest.kind !== 'prop-collision-colliders' || manifest.version !== 1) {
+        throw new Error('prop manifest is not prop-collision-colliders v1');
+      }
+      const world = resolver.createWorld(manifest, { profile: PROP_PROFILE });
+      propLayer = createPropLayer({ world, carEnvelope: manifest.carEnvelope });
+      state.props = propLayer.snapshot();
+    }
     let storage = null;
     try { storage = window.localStorage; } catch { storage = null; }
     bestTimes = createBestTimes(storage, SPRINT_BEST_KEY);
@@ -782,10 +839,12 @@ async function loadEngine() {
     await loadGhost(storage);
     ghostEnabled = GHOST_REQUESTED && ghost.record !== null;
     // The 310 m course starts on the measured tangent of its start gate; the
-    // 29 m regression course keeps the committed drive spawn heading. The soak
+    // 29 m regression course keeps the committed drive spawn heading; the lap
+    // starts on P61 loop-01's own point and tangent (component 5). The soak
     // schedule runs drive/telemetry segments whose node anchors were recorded
     // at the legacy spawn heading, so its shared world keeps that heading.
-    tick0 = createWorld(spawn.x, spawn.z, SOAK ? spawn.heading : layoutStartHeading(layout, spawn));
+    const start = layoutStartPosition(layout, spawn);
+    tick0 = createWorld(start.x, start.z, SOAK ? spawn.heading : start.heading);
   } else {
     tick0 = createWorld(spawn.x, spawn.z, spawn.heading);
   }
@@ -811,6 +870,13 @@ async function loadEngine() {
   return tick0;
 }
 
+/** Local measured ground under a state (the prop layer's vertical reference). */
+function groundYForState(state) {
+  if (!sprintRules) return state.position[1] - 0.35;
+  const arc = coursePosition(sprintRules.layout.course.samples, state.position).arc;
+  return courseGroundAt(sprintRules.layout, arc);
+}
+
 /** The input the current mode and rules allow for the step that reaches `tick`. */
 function currentInput(tick) {
   if (SOAK) return soakPhaseInput(tick);
@@ -828,19 +894,23 @@ function handleSprintEvents(events) {
     state.sprintEvents.push(event);
     if (state.sprintEvents.length > 64) state.sprintEvents.shift();
     state.sprintBanner = {
-      kind: event.type === SPRINT_EVENT.RESPAWN ? 'respawn' : event.type === SPRINT_EVENT.CHECKPOINT ? 'checkpoint' : 'other',
+      kind: event.type === SPRINT_EVENT.RESPAWN ? 'respawn' : event.type === SPRINT_EVENT.CHECKPOINT ? 'checkpoint'
+        : event.type === SPRINT_EVENT.LAP ? 'lap' : 'other',
       text: event.type === SPRINT_EVENT.CHECKPOINT
         ? 'checkpoint ' + event.index + '/' + sprintRules.totalCheckpoints + ' · ' + event.timeSeconds.toFixed(3) + ' s'
-        : event.type === SPRINT_EVENT.RESPAWN
-          ? 'respawn · ' + event.reasons.join(', ') + ' · ' + event.timeSeconds.toFixed(3) + ' s'
-          : event.type.toUpperCase(),
+        : event.type === SPRINT_EVENT.LAP
+          ? 'lap ' + event.lap + '/' + event.laps + ' · ' + event.lapSeconds.toFixed(3) + ' s' +
+            ' · best ' + event.bestLapSeconds.toFixed(3) + ' s'
+          : event.type === SPRINT_EVENT.RESPAWN
+            ? 'respawn · ' + event.reasons.join(', ') + ' · ' + event.timeSeconds.toFixed(3) + ' s'
+            : event.type.toUpperCase(),
       untilTick: event.tick + 90
     };
     if (event.type === SPRINT_EVENT.FINISH) {
       const submitted = bestTimes.submit(car.slug, {
         seconds: event.timeSeconds,
         car: car.name,
-        checkpoints: event.checkpoints,
+        checkpoints: event.laps ?? event.checkpoints,
         respawns: sprintRules.respawns
       });
       state.sprintBest = submitted.best;
@@ -848,7 +918,10 @@ function handleSprintEvents(events) {
         visible: true,
         timeSeconds: event.timeSeconds,
         position: event.position,
-        checkpoints: event.checkpoints,
+        checkpoints: event.laps ?? event.checkpoints,
+        laps: event.laps ?? null,
+        lapTimes: event.lapTimes ?? null,
+        bestLapSeconds: event.bestLapSeconds ?? null,
         respawns: sprintRules.respawns,
         car: car.name,
         slug: car.slug,
@@ -868,6 +941,7 @@ function handleSprintEvents(events) {
  * hash is the canonical hash of that sequence; nothing here touches physics.
  */
 function recordGhostFinish(event) {
+  if (COURSE_IS_LAP) return;
   if (!ghostStore || !session || !car) return;
   if (sprintRules.respawns > 0 || event.checkpoints !== sprintRules.totalCheckpoints) {
     ghost.note = 'this run was not recorded as a ghost because it was not a clean run';
@@ -929,10 +1003,12 @@ async function respawnAt(target, nowUs) {
 /** Rebuild the world and restart the packet timeline from the settled tick. */
 async function startTimeline(tick0, {
   reload = false, rejoin = false,
-  packetScript = SPRINT_MODE ? SPRINT_PACKET_SCRIPT : undefined
+  packetScript = SPRINT_MODE ? (COURSE_IS_LAP ? LAP_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT) : undefined
 } = {}) {
+  const start = sprintRules ? layoutStartPosition(sprintRules.layout, spawn) : spawn;
   session = createSession(geometry, tick0, {
-    spawn: { ...spawn, source: spawn.source ?? 'probes/e1-drive/tools/spawn.mjs' },
+    spawn: { x: start.x, z: start.z, headingRad: start.headingRad ?? start.heading,
+      source: start.source ?? (sprintRules?.layout?.source?.spawnSource ?? spawn.source ?? 'probes/e1-drive/tools/spawn.mjs') },
     car: state.car,
     script: packetScript === null ? undefined : packetScript,
     camera: Object.keys(CAMERA_OVERRIDE).length ? CAMERA_OVERRIDE : undefined
@@ -974,13 +1050,18 @@ async function startTimeline(tick0, {
   state.tick0Hash = update0.hash;
   state.tick0Update = update0;
   state.tick0State = tick0;
+  if (propLayer) {
+    propLayer.begin(tick0, groundYForState(tick0));
+    state.props = propLayer.snapshot();
+  }
   if (sprintRules) {
     if (rejoin) sprintRules.rejoin(tick0);
     else sprintRules.prime(tick0);
   }
   // One more tick so the v1.1 consumer has a two-tick timeline to load.
   engine.setInput(currentInput(1));
-  const tick1 = engine.step();
+  const rawTick1 = engine.step();
+  const tick1 = propLayer ? propLayer.afterTick(rawTick1, groundYForState(rawTick1)) : rawTick1;
   const update1 = session.appendState(tick1);
   state.tickHashes.push({ tick: 1, stateHash: hashOf(tick1), packetHash: update1.hash });
   state.engineTick = tick1.tick;
@@ -1866,10 +1947,12 @@ function frame(nowMs) {
     for (let index = 0; index < sample.ticks; index++) {
       const nextTick = state.engineTick + 1;
       engine.setInput(currentInput(nextTick));
-      const snapshot = engine.step();
+      const rawSnapshot = engine.step();
+      const snapshot = propLayer ? propLayer.afterTick(rawSnapshot, groundYForState(rawSnapshot)) : rawSnapshot;
       const update = session.appendState(snapshot);
       state.tickHashes.push({ tick: snapshot.tick, stateHash: hashOf(snapshot), packetHash: update.hash });
       state.ticksExecuted++;
+      if (propLayer) state.props = propLayer.snapshot();
       if (sprintRules) {
         const events = sprintRules.step(snapshot);
         handleSprintEvents(events);
@@ -1995,8 +2078,9 @@ async function main() {
   if (HOLD !== null && LEGACY_DRIVE && HOLD > SCRIPT_TICKS) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sequence (' + SCRIPT_TICKS + ')');
   }
-  if (HOLD !== null && SCRIPTED_SPRINT && HOLD > 3600) {
-    throw new Error('hold tick ' + HOLD + ' is beyond the scripted sprint (3600)');
+  if (HOLD !== null && SCRIPTED_SPRINT && HOLD > (COURSE_IS_LAP ? LAP_SCRIPT_TICKS : 3600)) {
+    throw new Error('hold tick ' + HOLD + ' is beyond the scripted sprint (' +
+      (COURSE_IS_LAP ? LAP_SCRIPT_TICKS : 3600) + ')');
   }
 
   state.consumer = 'running';

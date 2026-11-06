@@ -694,6 +694,14 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - R01 17.618 m² ama 3,50 m/100 m duvarla erişilemez; R03 14,98 m void; yalnız R04 spawn-connected.
 - Öneri: `?course=free`, koridor respawn'ı kapalı; 310 m sprint ayrı. Kanıt: `docs/work/analysis/free-roam.md`, `_work/free-roam/free-roam.png`.
 
+## 6 Kasım 2026 — loop-01 3 turluk yarış
+
+- `?course=lap`: P61 `loop-01` (222,04 m, component 5) üzerinde **3 tur**; ayrı spawn `(115.5, 1164.0)`, 4 m start/finish çizgisi.
+- 5 araç: **85,47–86,28 s**, tur süreleri ~28,4–29,2 s, **0 respawn**; replay ve `e1_reset()` restart birebir.
+- `all-visible` prop katmanı turda aktif/inert (loop-01'de prop yok, 0 temas); resolver P66'dan read-only.
+- `verify_e1_drive` **766/766**, suite **30/30**, checker **21/21**; 20/20 browser capture, console **0**. Kanıt: `docs/work/verification/T-007-lap-mode.md`.
+- Seam projeksiyonu lap 2/3'ü düşürüyordu; yarım-tur koşulu kaldırıldı, `lapDistance` tek ölçüt.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

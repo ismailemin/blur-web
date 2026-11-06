@@ -178,6 +178,40 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Öneri: `?course=free` (no corridor respawn), 310 m sprint ayrı kalır.
 - Kanıt: `docs/work/analysis/free-roam.md`, `_work/free-roam/free-roam.png`.
 
+### E1m — 3 turluk kapalı tur (P67)  ✅
+- `?course=lap`: P61 `loop-01` üzerinde **222,04 m, 3 tur**; 902 örnek, ayrı
+  spawn `(115.5, 1164.0)`, start/finish 4 m çizgi.
+- 5 araç deterministik: **85,47–86,28 s**, tur süreleri ~28,4–29,2 s, 0 respawn,
+  replay/restart birebir; max lateral ≤0,984 m, min steep-face 1,949 m.
+- `all-visible` prop katmanı tur modunda **aktif ve inert** (loop-01'de prop yok,
+  0 temas); resolver P66'dan read-only tüketiliyor.
+- Verifier **766/766**; suite 30/30; checker 21/21. Kanıt:
+  `docs/work/verification/T-007-lap-mode.md`.
+- Not: ilk uygulamada seam projeksiyonu lap 2/3'ü düşürüyordu; yarım-tur
+  koşulu kaldırıldı (ayrıntı verification doc §2).
+
+### E1n — Free-roam + solid prop'lar (P68/P69)  ⏳ veri hazır
+- `?course=free`: committed spawn `(-88, 1050)`, **7.415 m²** erişilebilir spawn
+  bileşeni (P68a/P68b ölçümü); checkpoint/finish yok, koridor respawn'ı yok.
+- **P68b manifesti:** `_work/free-roam-prop/colliders-r04.json` — **431 collider**
+  (8 instance + 423 track component), `all-visible`; kapsama %64,6 → **%100**
+  (7.702,25 m² referans bileşen). Spawn açıklığı **5,803 m**, head-on 0,001 m,
+  0 tunneling, 29/29 PASS.
+- `all-visible` doğu kanalını (1.321 m²) C03 boru/çit duvarı yüzünden kesiyor;
+  bu cep **erişilemez** ve oraya spawn/respawn yok. Bu, uydurma değil ölçüm.
+- Uygulama: `prop-layer.js` free modda bu manifesti + kendi SHA pinlerini
+  kullanmalı; 310 m/lap mevcut `colliders.json` pinlerinde kalmalı.
+- HUD: free-roam etiketi, hız, konum; `R` spawn'a döner; bölge dışı/zeminden
+  düşme reseti.
+- Kanıt: `verify_e1_drive` free-roam blokları + 5 araç capture, console 0.
+
+### E1o — Motor sesi (P69)  ⏳ plan
+- P62'nin altı `RaceV8_Engine_*` loop'u + retail RPM→gain/pitch eğrileri
+  (`docs/work/analysis/audio-feasibility.md`).
+- Yeni `web/engine-audio.js`; AudioContext yalnız kullanıcı etkileşiminden
+  sonra (tarayıcı politikası); RPM engine state'ten; 0 console.
+- Harness + capture ile gain/pitch doğrulaması.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
@@ -191,7 +225,7 @@ E1i wheels ───────────────────────
 
 - [ ] River'da araç sabit adımla hareket ediyor; NaN/çökme yok.
 - [ ] Çarpışma ve pist sınırları görsel olarak net.
-- [ ] Tam tur sürülüp bitirilebiliyor.
+- [x] Tam tur sürülüp bitirilebiliyor (loop-01 3 tur, 5 araç, 0 respawn).
 - [ ] 60 Hz simülasyon, stabil kare hızı, console temiz.
 - [ ] Kalan sadakat farkları listeli ve oyun hatasını gizlemiyor.
 - [ ] Native/wasm fizik parity (mümkün olan yerde) kanıtlı.

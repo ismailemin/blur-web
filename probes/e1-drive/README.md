@@ -7,14 +7,15 @@ The first **connector** between the two proven halves of E1:
 - the dynamic render-packet consumer of `probes/render-packet/web/` (v1.1
   `nodes[]`/`updates[]`, fixed-step, interpolated, T-007/E1b).
 
-The page now runs a **point-to-point sprint** on the measured covered segment of
+The page runs a **point-to-point sprint** on the measured covered segment of
 the real River draw: a 3-2-1 countdown, a running timer, two checkpoints that must
 be crossed in order, a finish gate before the drawn road ends, a results overlay
 with a per-car best time in `localStorage`, `R` restart and a respawn at the last
-checkpoint when the car leaves the surface. It is still one car and one measured
-segment, **not a lap**; the rules are presentation/bookkeeping only and do not
-change the physics (the verifier replays every scripted sprint's input sequence
-into a fresh module and gets identical state hashes).
+checkpoint when the car leaves the surface. Behind **`?course=lap`** it also runs
+a **3-lap race** on the P61 `loop-01` closed collision loop (222.040 m). The
+rules are presentation/bookkeeping only and do not change the physics (the
+verifier replays every scripted sprint's input sequence into a fresh module and
+gets identical state hashes).
 
 `G` replays a completed run as a **ghost** (your fastest clean run for this car and
 course, else the committed deterministic reference trace) with a labelled
@@ -191,7 +192,8 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/corridor_probe.mjs                   # per-car physical limit
 
 # 5. derive both sprint layouts from the measured data:
-#    sprint.json = the default 310 m P48 course, sprint-short.json = the 29 m regression
+#    sprint.json = the default 310 m P48 course, sprint-short.json = the 29 m regression,
+#    sprint-lap.json = the P61 loop-01 3-lap race
 & $node probes/e1-drive/tools/build_sprint.mjs
 
 # 6. scripted drive of every roster car twice, both sprint courses + respawn +
@@ -207,6 +209,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs                  # drive captures
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint    # 310 m: start/mid/checkpoint/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint --course short  # 29 m regression
+& $node probes/e1-drive/tools/capture_browser.mjs --mode lap       # ?course=lap: start/lap1/lap2/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode survey    # ?survey=1 corridor label
 & $node probes/e1-drive/tools/capture_browser.mjs --mode ghost     # 5-car ghost-visible frames + G toggle
 & $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
@@ -389,15 +392,52 @@ spawn to **x = −57.00**; the finish sits 2 m before that.
 | best time | per car and per course: `e1-drive.sprint.best.v2.310m` / `…v2.short`; only a faster finish overwrites |
 | restart | `R` resets the engine, timeline, timer and gate progress; the best time is kept |
 
-Modes: `/` = keyboard sprint on the 310 m course, `?script=sprint` = deterministic
-scripted sprint (Stanley path follower while running, brake after the finish),
-`?course=short` = the 29 m regression course, `?script=sprint&sprintfall=1` =
-diagnostic driver that steers off the course to exercise respawn, `?script=drive` =
-the original 300-tick drive with no rules (kept for the P23/P31/P36 evidence), and
-`?survey=1` = the label for the drawn extended corridor (below; it changes no gate,
-timer or result). Rules never touch physics: the verifier records each scripted
-sprint's input sequence, replays it into a fresh module with the rules switched
-off, and requires every state hash to match.
+## Three-lap race (`?course=lap`)
+
+The lap course is derived from the committed P61 artifact
+`_work/lap-search/loops.json` (`loop-01`, component 5): 902 samples at 0.25 m,
+222.040 m, line at the first sample perpendicular to the 5 m seam tangent. The
+spawn is **on the loop**, because loop-01 is separated from the old spawn
+component by a measured 1.118 m wall. `_work/e1-drive/sprint-lap.json` is pinned
+to the loops file and canonical hash; a different artifact is a hard failure.
+
+| rule | value |
+| --- | --- |
+| countdown | 90 ticks, input held at zero; timer starts at GO |
+| lap gate | one physical start/finish line, 4 m wide, crossed forward three times |
+| lap count | a crossing counts only after `lapDistance` reaches the next full lap; neither the spawn nor a respawn on the line counts |
+| timer | engine ticks from GO; lap times are race-clock deltas; best lap is the minimum |
+| respawn | outside the declared ±1.25 m band, or the P48 airborne/ground rules; target is the current lap line |
+| props | P66 `all-visible` layer (468 colliders) applied additively after the engine tick; loop-01 is clear of them (0 contacts) |
+| restart | `R` resets engine, timeline, lap counter and timer |
+
+Measured scripted races (`_work/e1-drive/run.json` → `sprint.lapCourse`):
+
+| car | lap 1 | lap 2 | lap 3 | total | finish tick | max lateral | min steep-face |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Corvette ZR1 | 29.000 | 28.550 | 28.550 | **86.100 s** | 5256 | 0.784 m | 2.056 m |
+| Lotus Exige Cup260 | 29.117 | 28.583 | 28.583 | **86.283 s** | 5267 | 0.810 m | 2.063 m |
+| Dodge Challenger | 29.050 | 28.550 | 28.517 | **86.117 s** | 5257 | 0.854 m | 2.040 m |
+| Ford Focus RS (FWD) | 29.167 | 28.533 | 28.550 | **86.250 s** | 5265 | 0.984 m | 1.949 m |
+| Audi R8 V10 (AWD) | 28.650 | 28.400 | 28.417 | **85.467 s** | 5218 | 0.812 m | 2.041 m |
+
+Every car: three ordered crossings, no respawn, wheel contact on every tick, 0
+NaN, a bit-identical replay with the rules off, a deterministic state-sequence
+anchor and a valid packet timeline. The `all-visible` prop layer is active and
+inert on the clear loop (0 contacts). The page checks the same run in the browser
+(`capture_browser.mjs --mode lap`).
+
+Modes: `/` = keyboard sprint on the 310 m course, `?course=lap` = keyboard
+three-lap race on loop-01, `?script=sprint` = deterministic scripted sprint
+(Stanley path follower while running, brake after the finish),
+`?script=sprint&course=lap` = scripted lap race, `?course=short` = the 29 m
+regression course, `?script=sprint&sprintfall=1` = diagnostic driver that steers
+off the course to exercise respawn, `?script=drive` = the original 300-tick drive
+with no rules (kept for the P23/P31/P36 evidence), and `?survey=1` = the label for
+the drawn extended corridor (below; it changes no gate, timer or result). Rules
+never touch physics: the verifier records each scripted sprint's input sequence,
+replays it into a fresh module with the rules switched off, and requires every
+state hash to match.
 
 Measured scripted sprints on the default course (`_work/e1-drive/run.json` →
 `sprint.cars`):
@@ -666,6 +706,10 @@ deterministic reference ghost per car and course),
 `browser-<slug>-{start,mid,coast,end}.png`,
 `browser-<slug>-sprint-{start,mid,checkpoint,finish}.png`,
 `browser-<slug>-sprint-short-{start,mid,checkpoint,finish}.png` (29 m regression),
+`sprint-lap.json` (the P61 loop-01 3-lap layout), `sprint-lap-<slug>.json`
+(per-car three-lap ticks, lap times, inputs and start/lap1/lap2/finish updates),
+`browser-evidence-lap.json` + `browser-<slug>-sprint-lap-{start,lap1,lap2,finish}.png`
+(5-car lap race, console and prop-layer gates),
 `browser-<slug>-sprint-restart-{before,countdown,finish}.png`,
 `browser-<slug>-sprint-respawn.png`,
 `browser-<slug>-sprint-ghost.png` + `browser-<slug>-sprint-ghost-off.png` (G toggle),

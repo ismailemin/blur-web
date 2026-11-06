@@ -124,6 +124,9 @@ WEB_FILES = [
     "probes/e1-drive/web/sprint-rules.js",
     "probes/e1-drive/web/sprint-script.js",
     "probes/e1-drive/web/sprint-best.js",
+    "probes/e1-drive/web/ghost-replay.js",
+    "probes/e1-drive/web/prop-layer.js",
+    "probes/prop-collision/lib/resolver.mjs",
     "probes/e1-drive/web/telemetry.js",
     "probes/e1-drive/web/corridor-survey.js",
 ]
@@ -993,6 +996,144 @@ def check_server(report):
                      "index + 8 artifacts served, bytes match the local files", [SERVER + "/"])
 
 
+LAP_EXPECTED = {
+    "corvette-zr1-stock": 86.100,
+    "lotus-exige-cup260-stock": 86.283333,
+    "dodge-challenger-stock": 86.116667,
+    "ford-focusrs-stock": 86.250,
+    "audi-r8v10-stock": 85.466667,
+}
+LAP_LENGTH = 222.040211
+LAP_SPAWN = (115.5, 1164.0, 1.638873)
+LAP_HASH = "sha256:167643a9a108bc927d093da2b3d1408d639c1cc4110920511455b68c68ad1f91"
+
+
+def check_sprint_lap(report):
+    item = "sprint-lap"
+    label = "sprint-lap.json (P61 loop-01 3-lap race)"
+    path = WORK / "sprint-lap.json"
+    if not path.is_file():
+        return report.fail(item, label, "missing " + rel(path), [rel(path)], True), None
+    try:
+        layout = load_json(path)
+    except Exception as exc:  # noqa: BLE001
+        return report.fail(item, label, "unreadable JSON: " + str(exc), [rel(path)]), None
+
+    problems = []
+    if layout.get("kind") != "e1-drive.sprint":
+        problems.append("kind is not e1-drive.sprint")
+    if layout.get("courseId") != "lap":
+        problems.append("courseId is not lap")
+    course = layout.get("course") or {}
+    if abs((course.get("lengthMetres") or 0) - LAP_LENGTH) > 1e-6:
+        problems.append("course length " + repr(course.get("lengthMetres")))
+    if course.get("sampleCount") != 902 or course.get("sampleStepMetres") != 0.25:
+        problems.append("course is not 902 samples at 0.25 m")
+    if (course.get("laps") or 0) != 3:
+        problems.append("course is not 3 laps")
+    spawn = course.get("spawn") or {}
+    if abs((spawn.get("x") or 0) - LAP_SPAWN[0]) > 1e-9 or abs((spawn.get("z") or 0) - LAP_SPAWN[1]) > 1e-9:
+        problems.append("lap spawn is not (115.5, 1164.0)")
+    if abs((spawn.get("headingRad") or 0) - LAP_SPAWN[2]) > 1e-6:
+        problems.append("lap spawn heading " + repr(spawn.get("headingRad")))
+    coverage = course.get("coverage") or {}
+    if coverage.get("samples") != 902 or coverage.get("coveredSamples") != 902:
+        problems.append("lap centreline coverage is not 902/902")
+    if coverage.get("gaps"):
+        problems.append("lap centreline has coverage gaps")
+    band = coverage.get("band") or {}
+    if (band.get("drawnSamples") or 0) < 6286:
+        problems.append("lap band coverage " + str(band.get("drawnSamples")) + " < 6286")
+    gates = layout.get("gates") or []
+    if len(gates) != 2:
+        problems.append("lap gate count " + str(len(gates)) + " != 2")
+    else:
+        for gate, want_arc, kind in ((gates[0], 0.0, "start"), (gates[1], LAP_LENGTH, "finish")):
+            if gate.get("kind") != kind:
+                problems.append("lap gate " + kind + " kind mismatch")
+            if abs((gate.get("arc") or 0) - want_arc) > 1e-6:
+                problems.append("lap gate " + kind + " arc " + repr(gate.get("arc")))
+            if abs((gate.get("x") or 0) - LAP_SPAWN[0]) > 5e-4 or abs((gate.get("z") or 0) - LAP_SPAWN[1]) > 5e-4:
+                problems.append("lap gate " + kind + " point")
+            if gate.get("widthMetres") != 4:
+                problems.append("lap gate " + kind + " width " + repr(gate.get("widthMetres")))
+            line_coverage = gate.get("coverage") or {}
+            if line_coverage.get("drawnSamples") != 41 or line_coverage.get("collisionSamples") != 41:
+                problems.append("lap gate " + kind + " coverage is not 41/41")
+            if line_coverage.get("covered") is not True:
+                problems.append("lap gate " + kind + " is not covered")
+    digest = layout.get("hash") or ""
+    if digest != LAP_HASH:
+        problems.append("lap layout hash " + digest + " != " + LAP_HASH)
+
+    if problems:
+        return report.fail(item, label, "; ".join(problems), [rel(path)]), layout
+    return report.ok(
+        item, label,
+        "222.040 m / 902 samples, 3 laps, 4 m line 41/41, band {}/{} drawn, hash {}...".format(
+            band.get("drawnSamples"), band.get("samples"), digest.split(":")[1][:16]),
+        [rel(path)],
+    ), layout
+
+
+def check_lap_runs(report, layout):
+    item = "runs-lap"
+    label = "per-car 3-lap race runs (expected totals, lap order, no respawn)"
+    if layout is None:
+        return report.fail(item, label, "lap layout unavailable", [])
+    problems = []
+    summary = []
+    for car in CARS:
+        path = WORK / ("sprint-lap-" + car["slug"] + ".json")
+        if not path.is_file():
+            problems.append(rel(path) + ": missing")
+            continue
+        try:
+            run = load_json(path)
+        except Exception as exc:  # noqa: BLE001
+            problems.append(rel(path) + ": unreadable JSON (" + str(exc) + ")")
+            continue
+        finish = run.get("finish") or {}
+        expected = LAP_EXPECTED.get(car["slug"])
+        if not finish or finish.get("type") != "finish":
+            problems.append(rel(path) + ": no finish event")
+            continue
+        if expected is None or abs(float(finish.get("timeSeconds")) - expected) > 1e-3:
+            problems.append(rel(path) + ": finish {:.3f} s != expected {:.3f} s".format(
+                float(finish.get("timeSeconds")), expected or -1))
+        laps = run.get("laps") or []
+        if len(laps) != 3:
+            problems.append(rel(path) + ": " + str(len(laps)) + " lap events != 3")
+        else:
+            if laps[0].get("type") != "lap" or laps[0].get("lap") != 1:
+                problems.append(rel(path) + ": lap 1 event mismatch")
+            if laps[1].get("type") != "lap" or laps[1].get("lap") != 2:
+                problems.append(rel(path) + ": lap 2 event mismatch")
+            if laps[2].get("type") != "finish" or laps[2].get("lap") != 3:
+                problems.append(rel(path) + ": lap 3 finish event mismatch")
+        lap_times = run.get("lapTimes") or []
+        if len(lap_times) != 3 or any(seconds <= 1 for seconds in lap_times):
+            problems.append(rel(path) + ": lapTimes is not three valid laps")
+        elif abs(sum(lap_times) - float(finish.get("timeSeconds"))) > 2e-5:
+            problems.append(rel(path) + ": lap times do not add up to the finish")
+        if run.get("respawns"):
+            problems.append(rel(path) + ": " + str(len(run["respawns"])) + " respawn(s)")
+        if run.get("layoutHash") != layout.get("hash"):
+            problems.append(rel(path) + ": layoutHash != current lap layout hash")
+        if (run.get("car") or {}).get("slug") != car["slug"]:
+            problems.append(rel(path) + ": car.slug mismatch")
+        if not str(run.get("stateSequenceHash") or "").startswith("sha256:"):
+            problems.append(rel(path) + ": stateSequenceHash is not a sha256")
+        max_lateral = run.get("maxLateralMetres")
+        if not isinstance(max_lateral, (int, float)) or max_lateral > 1.25 + 1e-9:
+            problems.append(rel(path) + ": max lateral " + repr(max_lateral) + " > 1.25 m")
+        if not problems:
+            summary.append("{} {:.3f} s".format(car["slug"], float(finish.get("timeSeconds"))))
+    if problems:
+        return report.fail(item, label, "; ".join(problems), [])
+    return report.ok(item, label, "5 cars, 3 laps each, no respawn: " + " / ".join(summary), [])
+
+
 def run_checks():
     report = Report(ROOT)
     check_library(report)
@@ -1004,6 +1145,8 @@ def run_checks():
     check_per_car(report, layout, "sprint310", "sprint-", "310m", "per-car 310 m sprint runs (expected finish times)")
     _item, short_layout = check_sprint_short(report)
     check_per_car(report, short_layout, "short", "sprint-short-", "short", "per-car 29 m regression runs")
+    _item, lap_layout = check_sprint_lap(report)
+    check_lap_runs(report, lap_layout)
     _item, roster = check_roster(report)
     check_fields(report, roster)
     check_textures(report)
@@ -1021,6 +1164,7 @@ def hash_targets():
         WORK / "spawn.json",
         WORK / "sprint.json",
         WORK / "sprint-short.json",
+        WORK / "sprint-lap.json",
         WORK / "cars.json",
         WORK / "track-textures.json",
         WORK / "track-uv.bin",

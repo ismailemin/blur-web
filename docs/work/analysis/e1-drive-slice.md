@@ -1984,3 +1984,107 @@ extra draw set per ghost frame is not culled or LOD'd. No full-game claim.
 
 Full commands, hashes, screenshots and evidence paths:
 `docs/work/verification/T-007-ghost.md`.
+
+## 26. A real three-lap race on P61 loop-01 (T-007/lap, P67)
+
+### 26.1 What was added
+
+`?course=lap` is a separate, playable layout on P61 `loop-01`: the closed
+**222.040211 m** collision loop in component 5, 902 samples at 0.25 m, first
+point == last point at `(115.5, 1164.0)`. The loop is disconnected from the
+committed spawn component by the measured 1.118 m / 50 m wall, so the layout
+spawns on the loop itself with its 5 m seam tangent (`1.638873 rad`). The line is
+both the start and the finish; three forward crossings end the race. The layout is
+`_work/e1-drive/sprint-lap.json`, canonical hash
+`sha256:167643a9a108bc927d093da2b3d1408d639c1cc4110920511455b68c68ad1f91`.
+The P61 source is consumed read-only against its pinned file and canonical hashes.
+
+The `LapRules` state machine counts a crossing only after `lapDistance` has
+accumulated the next full lap, so the start pose and a respawn on the line cannot
+count as a lap. It records each lap's race-clock time, keeps the timer running
+across a respawn, and rebuilds an off-course car on the last lap line. `R` resets
+laps, lap times, timer and finish.
+
+An earlier revision also required the previous sample's projected arc to be past
+half the loop. At the seam the closed polyline repeats its first point, so a
+position a few centimetres before the line can project onto the start segment
+(arc ~0) instead of the end segment (arc ~length). All five cars completed lap 1
+and then dropped every later crossing (Audi crossed at ticks 1667, 3222, 4780 and
+6334; only the first counted). The guard was redundant because `lapDistance`
+already guarantees a full lap, so it was removed; the same defect and fix are
+recorded in `probes/e1-drive/web/sprint-rules.js`.
+
+### 26.2 The follower
+
+The same deterministic controller is used with a lap profile: pure pursuit on a
+`3 + 0.40·v` m lookahead (max 9 m), cruise 12 m/s, lateral acceleration
+2.0 m/s², steer gain 3.0. Only controller constants changed; no physics value
+changes. Pure pursuit replaced the Stanley lateral term because the latter
+saturates at the loop's ~10 m hairpins when the car is slow. The 310 m and 29 m
+courses keep their exact previous controller and hashes.
+
+Every roster car drives three laps with **0 respawns**, wheel contact on every
+tick, 0 NaN, an input replay that reproduces every state hash and an `e1_reset()`
+restart with identical lap times:
+
+| car | lap 1 | lap 2 | lap 3 | total | best lap | max running lateral | min centre-to-face |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Corvette ZR1 | 29.000 | 28.550 | 28.550 | **86.100 s** | 28.550 s | 0.784 m | 2.056 m |
+| Lotus Exige Cup260 | 29.117 | 28.583 | 28.583 | **86.283 s** | 28.583 s | 0.810 m | 2.063 m |
+| Dodge Challenger | 29.050 | 28.550 | 28.517 | **86.117 s** | 28.517 s | 0.854 m | 2.040 m |
+| Ford Focus RS (FWD) | 29.167 | 28.533 | 28.550 | **86.250 s** | 28.533 s | 0.984 m | 1.949 m |
+| Audi R8 V10 (AWD) | 28.650 | 28.400 | 28.417 | **85.467 s** | 28.400 s | 0.812 m | 2.041 m |
+
+The measured minimum centre-to-steep-face distance during the race is 1.949 m;
+the 2.981 x 1.676 m car circumradius is 1.710 m, so the whole footprint clears
+every steep face by at least 0.239 m. The declared respawn band is ±1.25 m.
+
+### 26.3 Visible-prop layer (P66, read-only)
+
+The lap enables the P66 `all-visible` manifest (468 OBB colliders) through the
+committed resolver. The layer runs after the engine tick and adjusts only the pose
+used by the packet, rules observer and camera; it never writes an engine value.
+The 310 m sprint keeps its existing `roadside` policy.
+
+Measured: **loop-01 has no mapped visible prop**. 0 of 901 loop poses are blocked
+under `all-visible`, and the nearest collider is **69.530 m** away, outside the
+manifest's 30 m region (built around the 310 m course). `all-visible` is therefore
+safe on the lap, but inert: there is no truck on the loop to hit. The layer is
+tested against real manifest colliders instead: a 31 m/s head-on into the 5.39 m
+`level.instance.00` truck stops on the near face with no residual overlap; a
+31 m/s hit on a 0.02 m fence component does not tunnel; a 5° glancing hit along the
+44.7 m `river.block56.node289.draw.102.component.005` building keeps 99.7 % of its
+travel without overlap. These prove the layer, not lap props.
+
+### 26.4 Draw coverage
+
+The loop has real committed draws: 902/902 centre samples are covered by the union
+of the 394 committed track draws (block71/node209 and block64/node209 cover the
+loop), with a maximum surface delta of 0.9 mm. The car-width band (7 stations,
+1.676 m envelope + 0.30 m margin) is **6,286/6,307 = 99.667 %** drawn; the 21
+missing stations are the lateral-edge stations (-1.138 / -0.838 m) at arc
+82.65-99.31 m, while the collision surface exists at all 6,307. No diagnostic
+surface or invented texture is used; the real committed draws are rendered.
+
+### 26.5 Verification
+
+`verify_e1_drive.mjs` — PASS after this pass (**766 checks**; the exact count is in
+`_work/e1-drive/run.json`). New checks: P61 artifact/hash, lap layout derivation
+and structure, 222.040 m / 902 samples / 3 laps, line coverage, independent
+centre-line and band draw coverage, engine ground agreement, per-car three-lap
+times/order/finish/band/steep clearance/prop layer/anchor/replay, lap rules
+(crossing order, finish, respawn target, reset), lap restart, and the prop-layer
+head-on/glancing/no-tunnelling tests. The 310 m, 29 m and ghost blocks are
+unchanged, including every previously pinned state hash.
+
+The full browser pass is 5 cars x start / lap 1 / lap 2 / finish with console 0;
+details and screenshot paths are in `docs/work/verification/T-007-lap-mode.md`.
+
+### 26.6 Limits
+
+The lap starts in component 5; it is not the committed spawn and it does not
+bridge the wall. The P66 manifest has no collider on loop-01, so the enabled
+`all-visible` layer is inert there and the truck/fence tests are resolver-layer
+tests elsewhere in the manifest. There is no AI, no traffic, no lap ghost (the
+sprint/regression ghosts are unchanged) and no full-game claim. The ±1.25 m band
+is a declared respawn rule, not a measured lane.

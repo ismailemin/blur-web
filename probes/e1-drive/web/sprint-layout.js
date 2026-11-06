@@ -31,6 +31,8 @@ export const SPRINT_LAYOUT_VERSION = 1;
 export const LONG_COURSE_ID = '310m';
 /** Regression course (the original 29 m straight). */
 export const SHORT_COURSE_ID = 'short';
+/** Three-lap course on the P61 loop-01 closed collision loop (222.040 m). */
+export const LAP_COURSE_ID = 'lap';
 
 /**
  * P48 course artifact pins. The long layout may only be built from this exact
@@ -49,6 +51,45 @@ export const LONG_COURSE_PATH = Object.freeze({
 
 /** The long course finishes this far before the measured 310.395 m end. */
 export const LONG_FINISH_CLEARANCE_METRES = 10.0;
+
+/**
+ * P61 lap course artifact pins. The lap layout may only be built from this exact
+ * loops.json and the `loop-01` loop inside it: a different artifact is a hard
+ * failure, never a silently different lap.
+ */
+export const LAP_LOOPS_PATH = Object.freeze({
+  file: '_work/lap-search/loops.json',
+  fileSha256: 'sha256:2aabf0cd04fc96b2e2cf903a392fc86fc5b2cd6e85772b9d0e8b523a0826a59c',
+  canonicalHash: 'sha256:acc47b6bbd0719af857323060b273e83e933bf7b86330d0362b3e70409873536',
+  loopId: 'loop-01',
+  component: 5,
+  lengthMetres: 222.0402,
+  sampleCount: 902,
+  start: Object.freeze([115.5, 1164.0]),
+  laps: 3
+});
+/** Number of laps in the lap course. */
+export const LAP_COUNT = 3;
+/** Requested lap start/finish line half-width (4 m line). */
+export const LAP_GATE_HALF_WIDTH = 2.0;
+/**
+ * Off-course respawn band for the lap. The follower's measured maximum lateral
+ * over the anchored three-lap runs is 1.199 m (1.3 m is the declared threshold);
+ * the run's measured minimum centre-to-steep-face distance is 1.885 m, and the
+ * car OBB circumradius is 1.710 m, so the driven car clears every steep face by
+ * at least 0.175 m. The band is a respawn rule, not a geometric lane guarantee
+ * at its edge.
+ */
+export const LAP_BAND_HALF_WIDTH_METRES = 1.25;
+export const LAP_BAND_SOURCE = Object.freeze({
+  minSteepFaceDistanceMetres: 2.063,
+  drivenMinCentreToSteepFaceMetres: 1.949,
+  carCircumradiusMetres: 1.710,
+  drivenMaxLateralMetres: 0.984,
+  note: 'P61 loop-01 exact steep-face distance and the P67 anchored five-car run; the band is a ' +
+    'declared respawn rule, not a measured lane'
+});
+
 /** Requested long-course gate half-width (6 m gate line). */
 export const LONG_GATE_HALF_WIDTH = 3.0;
 /**
@@ -123,6 +164,38 @@ export function drawnTriangles(geometry) {
     throw new Error(DRAWN_SECTION_KEY + ' has ' + triangles.length + ' triangles, record says ' + section.triangleCount);
   }
   return { section, triangles };
+}
+
+/**
+ * Every real track-visual triangle, all committed sections. The lap lies in
+ * component 5, outside the 310 m course's block56/node289 section, so its draw
+ * coverage must be measured against the whole committed draw set (block71/node209
+ * and block64/node209 cover the loop).
+ */
+export function allDrawnTriangles(geometry) {
+  const track = geometry?.trackVisual;
+  if (!track || track.label !== 'asset-reader-direct-draws') {
+    throw new Error('geometry does not carry the real track visual; rebuild geometry.json');
+  }
+  const mesh = geometry.meshes?.find((entry) => entry.id === track.meshId);
+  if (!mesh) throw new Error('the track visual mesh ' + track.meshId + ' is missing');
+  const triangles = [];
+  for (const draw of track.draws) {
+    for (let offset = draw.indexOffset; offset < draw.indexOffset + draw.indexCount; offset += 3) {
+      const a = mesh.indices[offset];
+      const b = mesh.indices[offset + 1];
+      const c = mesh.indices[offset + 2];
+      triangles.push([
+        [mesh.positions[a * 3], mesh.positions[a * 3 + 1], mesh.positions[a * 3 + 2]],
+        [mesh.positions[b * 3], mesh.positions[b * 3 + 1], mesh.positions[b * 3 + 2]],
+        [mesh.positions[c * 3], mesh.positions[c * 3 + 1], mesh.positions[c * 3 + 2]]
+      ]);
+    }
+  }
+  if (triangles.length !== track.triangleCount) {
+    throw new Error('the committed track visual has ' + triangles.length + ' triangles, record says ' + track.triangleCount);
+  }
+  return { triangles, sections: track.sections };
 }
 
 /** Collision triangles (the surface the wheels trace) from the hidden surface. */
@@ -686,6 +759,376 @@ export function deriveLongCourseLayout(geometry, spawn, pathDoc, options = {}) {
 }
 
 /**
+ * Validate the P61 loops artifact and build the 0.25 m arc table of loop-01.
+ * The loop's first and last point are the same committed point (the seam), so
+ * the returned polyline is closed: arc 0 .. length, last sample == first.
+ */
+export function lapCourseSamples(loopsDoc, expected = LAP_LOOPS_PATH) {
+  if (!loopsDoc || loopsDoc.kind !== 'lap-search.loops' || loopsDoc.version !== 1) {
+    throw new Error('the lap course needs the measured lap-search.loops v1 artifact');
+  }
+  if (loopsDoc.hash !== expected.canonicalHash) {
+    throw new Error('the lap loops artifact is not the recorded one: ' + loopsDoc.hash +
+      ' (expected ' + expected.canonicalHash + ')');
+  }
+  const loop = loopsDoc.loops?.find((entry) => entry.id === expected.loopId);
+  if (!loop) throw new Error('the lap loops artifact has no ' + expected.loopId);
+  if (loop.closed !== true) throw new Error(expected.loopId + ' is not a closed loop');
+  if (loop.component !== expected.component) {
+    throw new Error(expected.loopId + ' is in component ' + loop.component + ', expected ' + expected.component);
+  }
+  if (!Array.isArray(loop.points) || loop.points.length !== expected.sampleCount) {
+    throw new Error(expected.loopId + ' needs ' + expected.sampleCount + ' samples');
+  }
+  if (Math.abs(loop.length - expected.lengthMetres) > 1e-3) {
+    throw new Error('the measured loop length ' + loop.length + ' m is not ' + expected.lengthMetres + ' m');
+  }
+  const first = loop.points[0];
+  const last = loop.points[loop.points.length - 1];
+  if (first[0] !== expected.start[0] || first[1] !== expected.start[1]) {
+    throw new Error('the lap loop does not start at the recorded point ' + expected.start.join(', '));
+  }
+  if (last[0] !== first[0] || last[1] !== first[1]) {
+    throw new Error('the lap loop does not close on its start point');
+  }
+  const samples = [];
+  let arc = 0;
+  for (let index = 0; index < loop.points.length; index++) {
+    const point = loop.points[index];
+    if (index > 0) {
+      arc += Math.hypot(point[0] - loop.points[index - 1][0], point[1] - loop.points[index - 1][1]);
+    }
+    if (index > 0 && !(arc > samples[index - 1].arc)) {
+      throw new Error('lap sample ' + index + ' does not advance the arc length');
+    }
+    samples.push({ index, arc: round6(arc), x: round6(point[0]), z: round6(point[1]) });
+  }
+  if (Math.abs(arc - expected.lengthMetres) > 1e-3) {
+    throw new Error('lap sample arc ' + arc + ' m differs from ' + expected.lengthMetres + ' m');
+  }
+  return samples;
+}
+
+/** Signed side of the line A->B for a point (same form as sprint-rules.js). */
+function lineSide(a, b, point) {
+  return (b[0] - a[0]) * (point[1] - a[1]) - (b[1] - a[1]) * (point[0] - a[0]);
+}
+
+/**
+ * Derive the 3-lap course from P61's committed loop-01. The loop is closed, so
+ * the start line is also the finish line; the layout names one `start` gate and
+ * one `finish` gate on the same measured point and `course.lap.line` is the line
+ * the rules count. Draw coverage is measured against every committed track draw.
+ */
+export function deriveLapCourseLayout(geometry, loopsDoc, options = {}) {
+  const laps = options.laps ?? LAP_COUNT;
+  const requestedHalfWidth = options.gateHalfWidthMetres ?? LAP_GATE_HALF_WIDTH;
+  const bandHalfWidth = options.bandHalfWidthMetres ?? LAP_BAND_HALF_WIDTH_METRES;
+  if (laps !== LAP_COUNT) throw new Error('the lap course is exactly ' + LAP_COUNT + ' laps');
+  if (!(requestedHalfWidth >= GATE_MIN_HALF_WIDTH) || !(bandHalfWidth > 0)) {
+    throw new Error('lap-course layout options are invalid');
+  }
+
+  const samples = lapCourseSamples(loopsDoc);
+  const { triangles: drawnList, sections } = allDrawnTriangles(geometry);
+  const collisionList = collisionTriangles(geometry);
+  const drawn = new TriangleIndex(drawnList);
+  const collision = new TriangleIndex(collisionList);
+
+  for (const sample of samples) {
+    const ground = collision.heightAt(sample.x, sample.z);
+    if (ground === null) {
+      throw new Error('no collision triangle under lap sample ' + sample.index + ' at ' + sample.x + ',' + sample.z);
+    }
+    sample.groundY = round6(ground);
+  }
+
+  const length = samples[samples.length - 1].arc;
+  const start = samples[0];
+  // Tangent across the seam: the unique ring is samples[0 .. n-2], because the
+  // last sample repeats the first. A 5 m window gives the heading at the line.
+  const ring = samples.length - 1;
+  const half = Math.round(GATE_TANGENT_WINDOW_METRES / 2 / SAMPLE_STEP_METRES);
+  const before = samples[(ring - half + ring) % ring];
+  const after = samples[half % ring];
+  let tx = after.x - before.x;
+  let tz = after.z - before.z;
+  const tangentLength = Math.hypot(tx, tz);
+  if (!(tangentLength > 1e-9)) throw new Error('the lap start tangent is degenerate');
+  tx /= tangentLength; tz /= tangentLength;
+  const tangent = { tx: round6(tx), tz: round6(tz), windowMetres: round6(half * SAMPLE_STEP_METRES * 2) };
+  const headingRad = round6(Math.atan2(tx, tz));
+  const nx = -tz;
+  const nz = tx;
+
+  // Start/finish line coverage at 0.1 m; narrow symmetrically if the committed
+  // draws do not cover the requested width (never below the 4 m minimum line).
+  let halfWidth = requestedHalfWidth;
+  let coverage = null;
+  let measuredHalfWidth = null;
+  while (halfWidth >= GATE_MIN_HALF_WIDTH - 1e-9) {
+    const a = [round6(start.x - nx * halfWidth), round6(start.z - nz * halfWidth)];
+    const b = [round6(start.x + nx * halfWidth), round6(start.z + nz * halfWidth)];
+    coverage = lineCoverage(a, b, drawn, collision);
+    if (coverage.covered) { measuredHalfWidth = round6(halfWidth); break; }
+    halfWidth = round6(halfWidth - 0.25);
+  }
+  if (measuredHalfWidth === null) {
+    throw new Error('the lap start line is not drawn and physical even at ' +
+      GATE_MIN_HALF_WIDTH + ' m half-width');
+  }
+  let a = [round6(start.x - nx * measuredHalfWidth), round6(start.z - nz * measuredHalfWidth)];
+  let b = [round6(start.x + nx * measuredHalfWidth), round6(start.z + nz * measuredHalfWidth)];
+  // gateCrossing() counts a positive -> non-positive crossing. Orient the line
+  // so the last 0.5 m before the seam is on the positive (approach) side.
+  const behind = samples[samples.length - 2];
+  if (lineSide(a, b, behind) <= 0) { const swap = a; a = b; b = swap; }
+  const line = {
+    arc: 0,
+    x: start.x,
+    z: start.z,
+    groundY: start.groundY,
+    headingRad,
+    tangent,
+    widthMetres: round6(measuredHalfWidth * 2),
+    requestedWidthMetres: round6(requestedHalfWidth * 2),
+    narrowed: measuredHalfWidth < requestedHalfWidth - 1e-9,
+    a,
+    b,
+    coverage
+  };
+
+  // Centre-line coverage over every committed sample: the nearest real draw
+  // must sit within the P51 0.5 m tolerance of the collision surface.
+  const coveredSamples = [];
+  let maxSurfaceDelta = 0;
+  for (const sample of samples) {
+    let best = null;
+    for (const hit of drawn.at(sample.x, sample.z)) {
+      const delta = Math.abs(hit.height - sample.groundY);
+      if (best === null || delta < best) best = delta;
+    }
+    if (best !== null && best <= SURFACE_TOLERANCE_METRES) {
+      coveredSamples.push(sample.index);
+      if (best > maxSurfaceDelta) maxSurfaceDelta = best;
+    }
+  }
+  const coveredSet = new Set(coveredSamples);
+  const gaps = [];
+  let gapStart = null;
+  for (const sample of samples) {
+    if (!coveredSet.has(sample.index) && gapStart === null) gapStart = sample;
+    if (coveredSet.has(sample.index) && gapStart !== null) {
+      gaps.push({ startArc: gapStart.arc, endArc: sample.arc });
+      gapStart = null;
+    }
+  }
+  if (gapStart !== null) gaps.push({ startArc: gapStart.arc, endArc: length });
+
+  // Car-width band: seven lateral stations (0, +/-0.419, +/-0.838, +/-1.138 m).
+  const BAND_STATIONS = [0, -0.419, 0.419, -0.838, 0.838, -1.138, 1.138];
+  let bandSamples = 0;
+  let bandDrawn = 0;
+  let bandCollision = 0;
+  let bandMaxDelta = 0;
+  const bandMisses = [];
+  for (let index = 0; index < ring; index++) {
+    const previous = samples[(index - 1 + ring) % ring];
+    const next = samples[(index + 1) % ring];
+    const bx = next.x - previous.x;
+    const bz = next.z - previous.z;
+    const bandLength = Math.hypot(bx, bz);
+    const bnx = -bz / bandLength;
+    const bnz = bx / bandLength;
+    for (const station of BAND_STATIONS) {
+      bandSamples++;
+      const x = samples[index].x + bnx * station;
+      const z = samples[index].z + bnz * station;
+      const height = collision.heightAt(x, z);
+      if (height === null) {
+        bandMisses.push({ arc: samples[index].arc, station, missing: 'collision' });
+        continue;
+      }
+      bandCollision++;
+      let best = null;
+      for (const hit of drawn.at(x, z)) {
+        const delta = Math.abs(hit.height - height);
+        if (best === null || delta < best) best = delta;
+      }
+      if (best === null || best > SURFACE_TOLERANCE_METRES) {
+        bandMisses.push({ arc: samples[index].arc, station, missing: 'drawn',
+          nearestDeltaMetres: best === null ? null : round6(best) });
+        continue;
+      }
+      bandDrawn++;
+      if (best > bandMaxDelta) bandMaxDelta = best;
+    }
+  }
+
+  const referencePoints = samples.map((sample) => ({
+    arc: sample.arc, x: sample.x, z: sample.z, deviation: 0,
+    bandMarginMetres: round6(bandHalfWidth - 1.138)
+  }));
+
+  const startGate = {
+    id: 'start', kind: 'start', index: 0, sampleIndex: 0, arc: 0,
+    x: line.x, z: line.z, height: line.groundY, headingRad, tangent,
+    widthMetres: line.widthMetres, requestedWidthMetres: line.requestedWidthMetres,
+    narrowed: line.narrowed, a: line.a, b: line.b, coverage: line.coverage
+  };
+  const finishGate = {
+    id: 'finish', kind: 'finish', index: 1, sampleIndex: samples.length - 1, arc: length,
+    x: line.x, z: line.z, height: line.groundY, headingRad, tangent,
+    widthMetres: line.widthMetres, requestedWidthMetres: line.requestedWidthMetres,
+    narrowed: line.narrowed, a: line.a, b: line.b, coverage: line.coverage
+  };
+
+  const layout = {
+    kind: SPRINT_LAYOUT_KIND,
+    version: SPRINT_LAYOUT_VERSION,
+    courseId: LAP_COURSE_ID,
+    source: {
+      geometry: '_work/e1-drive/geometry.json',
+      geometryVersion: geometry.version,
+      lapLoops: LAP_LOOPS_PATH.file,
+      lapLoopsFileSha256: LAP_LOOPS_PATH.fileSha256,
+      lapLoopsCanonicalHash: loopsDoc.hash,
+      loopId: LAP_LOOPS_PATH.loopId,
+      loopComponent: LAP_LOOPS_PATH.component,
+      loopLengthMetres: loopsDoc.loops.find((entry) => entry.id === LAP_LOOPS_PATH.loopId).length,
+      drawnSections: sections.map((section) => section.key),
+      trackVisual: geometry.trackVisual.label,
+      spawn: { x: start.x, z: start.z, headingRad },
+      spawnSource: 'loop-01 start point from _work/lap-search/loops.json (P61); component 5'
+    },
+    course: {
+      rule:
+        'the lap course follows P61 loop-01 (222.040 m, 902 samples at 0.25 m) exactly; the start/finish ' +
+        'line sits on the first measured sample and is perpendicular to the 5 m tangent across the seam; ' +
+        'three forward crossings of that line end the race',
+      name: 'usa_la_river P61 loop-01',
+      spawn: { x: start.x, z: start.z, headingRad },
+      spawnGroundY: start.groundY,
+      start: { x: start.x, z: start.z, arc: 0, groundY: start.groundY },
+      finish: { x: start.x, z: start.z, arc: length, groundY: start.groundY },
+      measuredEnd: { x: start.x, z: start.z, arc: length, groundY: start.groundY },
+      lengthMetres: length,
+      finishArc: length,
+      sampleStepMetres: SAMPLE_STEP_METRES,
+      sampleCount: samples.length,
+      laps,
+      span: {
+        startArc: 0,
+        finishArc: length,
+        lengthMetres: length,
+        measuredLengthMetres: length,
+        laps,
+        note: 'arc lengths are measured along the closed P61 loop-01; lap N ends at the next forward crossing ' +
+          'of arc 0 and the timer is the engine tick clock from GO'
+      },
+      corridor: {
+        rule: 'off-course respawn band is a declared +/-' + bandHalfWidth + ' m around the measured loop line',
+        halfWidthMetres: round6(bandHalfWidth),
+        source: { ...LAP_BAND_SOURCE }
+      },
+      lap: {
+        laps,
+        lengthMetres: length,
+        minLapMetres: round6(length * 0.5),
+        line,
+        bandHalfWidthMetres: round6(bandHalfWidth),
+        source: {
+          file: LAP_LOOPS_PATH.file,
+          fileSha256: LAP_LOOPS_PATH.fileSha256,
+          canonicalHash: loopsDoc.hash,
+          loopId: LAP_LOOPS_PATH.loopId,
+          component: LAP_LOOPS_PATH.component,
+          samples: LAP_LOOPS_PATH.sampleCount
+        }
+      },
+      coverage: {
+        samples: samples.length,
+        coveredSamples: coveredSamples.length,
+        coverageFraction: round6(coveredSamples.length / samples.length),
+        toleranceMetres: SURFACE_TOLERANCE_METRES,
+        maxSurfaceDeltaMetres: round6(maxSurfaceDelta),
+        gaps,
+        gapTotalMetres: round6(gaps.reduce((sum, gap) => sum + (gap.endArc - gap.startArc), 0)),
+        band: {
+          stations: BAND_STATIONS.length,
+          samples: bandSamples,
+          drawnSamples: bandDrawn,
+          collisionSamples: bandCollision,
+          coverageFraction: round6(bandDrawn / bandSamples),
+          maxSurfaceDeltaMetres: round6(bandMaxDelta),
+          misses: bandMisses.slice(0, 32),
+          missCount: bandMisses.length
+        },
+        rule: 'a sample is covered when the nearest real committed track draw (any section) is within ' +
+          SURFACE_TOLERANCE_METRES + ' m of the collision surface (P51 track-coverage rule); the car-width ' +
+          'band uses the 7 stations of the 1.676 m envelope plus the labelled 0.30 m margin'
+      },
+      samples: samples.map((sample) => ({
+        arc: sample.arc,
+        x: sample.x,
+        z: sample.z,
+        groundY: sample.groundY,
+        covered: coveredSet.has(sample.index)
+      })),
+      sampling: {
+        gateSampleStepMetres: GATE_SAMPLE_STEP,
+        tangentWindowMetres: GATE_TANGENT_WINDOW_METRES,
+        sampleStepMetres: SAMPLE_STEP_METRES
+      },
+      reference: {
+        rule:
+          'driver control reference: the measured P61 loop line itself, closed at the seam; it is a controller ' +
+          'aid, not a new road, and the lap line, laps and timer stay on the measured samples',
+        windowMetres: 0,
+        carHalfWidthMetres: 1.138,
+        maxDeviationMetres: 0,
+        minBandMarginMetres: round6(bandHalfWidth - 1.138),
+        points: referencePoints
+      }
+    },
+    gates: [startGate, finishGate],
+    countdown: {
+      ticks: COUNTDOWN_TICKS,
+      stepTicks: COUNTDOWN_STEP_TICKS,
+      labels: ['3', '2', '1'],
+      goLabel: 'GO',
+      rule: 'input is held at zero until the countdown reaches GO; the timer starts at GO and the car is on the start line'
+    },
+    rules: {
+      tickHz: 60,
+      timer: 'elapsed engine ticks from GO at 1/60 s; it keeps running across a respawn and freezes on the third lap',
+      gateOrder: 'the start/finish line counts only on a forward crossing after at least half a lap; three laps end the race',
+      finishRequiresAllCheckpoints: false,
+      progress: 'progress is cumulative forward travel along the measured closed loop, clamped to three laps',
+      respawn: {
+        fallBelowGroundMetres: 1.0,
+        airborneTicks: 30,
+        outsideBandMarginMetres: 0.0,
+        overshootMarginMetres: 0.0,
+        target: 'the start/finish line point and its measured tangent heading (the last lap line)',
+        rule: 'respawn when the chassis falls more than 1 m below the measured ground at its arc or stays ' +
+          'airborne for 30 ticks, or leaves the declared band; the attempt timer keeps running and the lap ' +
+          'count is kept'
+      },
+      limits: [
+        'the lap starts in collision component 5 (P61 loop-01), separated from the committed spawn component ' +
+          'by the measured 1.118 m wall gap; the start is moved into component 5 and is not a gate-layout change',
+        'three laps of the measured 222.040 m loop; the start/finish line is rules geometry only and no gate ' +
+          'mesh is added to the render packet',
+        'no opponents, no AI and no race audio'
+      ]
+    }
+  };
+  layout.hash = hashOf(layout);
+  return layout;
+}
+
+/**
  * Derive the sprint layout. `spawn` is the committed spawn ({x, z, heading});
  * options exist for tests but the committed tool never overrides the corridor.
  */
@@ -870,6 +1313,34 @@ export function layoutStartHeading(layout, spawn) {
   return spawn.heading;
 }
 
+/** True for the P61 three-lap course. */
+export function isLapLayout(layout) {
+  return layout?.courseId === LAP_COURSE_ID;
+}
+
+/**
+ * Start position and heading the car is created with. The 310 m course and the
+ * 29 m regression start at the committed spawn; the lap starts on P61 loop-01's
+ * own start point (component 5) with its measured tangent. This is a layout
+ * start, not a change to the committed spawn artifact.
+ */
+export function layoutStartPosition(layout, spawn) {
+  if (isLapLayout(layout)) {
+    return {
+      x: layout.course.spawn.x,
+      z: layout.course.spawn.z,
+      heading: layout.gates[0].headingRad,
+      headingRad: layout.gates[0].headingRad
+    };
+  }
+  return {
+    x: spawn.x,
+    z: spawn.z,
+    heading: layoutStartHeading(layout, spawn),
+    headingRad: layoutStartHeading(layout, spawn)
+  };
+}
+
 /**
  * Structural validation used by the page. The verifier additionally re-derives
  * the layout and proves it matches the file byte for byte.
@@ -892,22 +1363,38 @@ export function validateSprintLayout(layout, geometry, spawn) {
     fail('layout track visual label does not match the loaded geometry');
   }
   if (spawn && layout?.source?.spawn) {
+    const lap = isLapLayout(layout);
+    const reference = lap ? layout.course.spawn : spawn;
     for (const axis of ['x', 'z']) {
-      if (Math.abs(layout.source.spawn[axis] - spawn[axis]) > 1e-9) {
-        fail('layout spawn ' + axis + ' ' + layout.source.spawn[axis] + ' differs from the page spawn ' + spawn[axis]);
+      if (Math.abs(layout.source.spawn[axis] - reference[axis]) > 1e-9) {
+        fail('layout spawn ' + axis + ' ' + layout.source.spawn[axis] +
+          (lap ? ' differs from the lap start ' : ' differs from the page spawn ') + reference[axis]);
       }
     }
-    if (Math.abs(layout.source.spawn.headingRad - spawn.heading) > 1e-12) {
-      fail('layout spawn heading differs from the page spawn');
+    const referenceHeading = lap ? layout.gates[0].headingRad : spawn.heading;
+    if (Math.abs(layout.source.spawn.headingRad - referenceHeading) > 1e-12) {
+      fail('layout spawn heading differs from the ' + (lap ? 'lap start tangent' : 'page spawn'));
     }
   }
   const gates = layout?.gates;
-  if (!Array.isArray(gates) || gates.length < 3 || gates.length > 5) {
+  const lapCourse = isLapLayout(layout);
+  if (lapCourse) {
+    if (!Array.isArray(gates) || gates.length !== 2) {
+      fail('the lap layout needs exactly a start and a finish gate on the same line');
+    }
+  } else if (!Array.isArray(gates) || gates.length < 3 || gates.length > 5) {
     fail('layout needs a start, two or three checkpoints and a finish');
-  } else {
-    if (gates[0].kind !== 'start' || gates[gates.length - 1].kind !== 'finish') fail('layout gate order is not start..finish');
+  }
+  if (Array.isArray(gates)) {
+    if (gates[0]?.kind !== 'start' || gates[gates.length - 1]?.kind !== 'finish') {
+      fail('layout gate order is not start..finish');
+    }
     const checkpoints = gates.filter((gate) => gate.kind === 'checkpoint');
-    if (checkpoints.length < 2 || checkpoints.length > 3) fail('layout needs two or three checkpoints');
+    if (lapCourse) {
+      if (checkpoints.length !== 0) fail('the lap layout has checkpoints; laps are counted at the line');
+    } else if (checkpoints.length < 2 || checkpoints.length > 3) {
+      fail('layout needs two or three checkpoints');
+    }
     const pathCourse = Array.isArray(layout?.course?.samples);
     for (let index = 0; index < gates.length; index++) {
       const gate = gates[index];
@@ -928,7 +1415,26 @@ export function validateSprintLayout(layout, geometry, spawn) {
       if (gate.coverage?.covered !== true) fail('gate ' + gate.id + ' is not fully covered');
     }
     const span = layout?.course?.span;
-    if (pathCourse) {
+    if (lapCourse) {
+      const lap = layout?.course?.lap;
+      if (!span || !(gates[0].arc === span.startArc) || !(gates[gates.length - 1].arc === span.finishArc)) {
+        fail('lap gate arcs do not match the measured loop span');
+      } else if (!(span.finishArc === span.measuredLengthMetres)) {
+        fail('the lap finish is not the loop closure');
+      }
+      if (!lap || lap.laps !== LAP_COUNT || !(lap.lengthMetres > 100) ||
+          !Array.isArray(lap.line?.a) || !Array.isArray(lap.line?.b)) {
+        fail('the lap layout has no usable three-lap line');
+      } else {
+        if (lap.line.a[0] !== gates[0].a[0] || lap.line.a[1] !== gates[0].a[1] ||
+            lap.line.b[0] !== gates[0].b[0] || lap.line.b[1] !== gates[0].b[1]) {
+          fail('the lap line is not the start gate line');
+        }
+        if (!(Math.abs(lap.lengthMetres - span.lengthMetres) < 1e-6)) fail('the lap length is not the span length');
+      }
+      if (!(layout?.course?.coverage?.coverageFraction >= 0.99)) fail('the loop centre-line coverage is below 99 %');
+      if (!(layout?.course?.coverage?.band?.coverageFraction >= 0.98)) fail('the loop car-width coverage is below 98 %');
+    } else if (pathCourse) {
       if (!span || !(gates[0].arc === span.startArc) || !(gates[gates.length - 1].arc === span.finishArc)) {
         fail('gate arcs do not match the measured span');
       } else if (!(span.finishArc < span.measuredLengthMetres)) {

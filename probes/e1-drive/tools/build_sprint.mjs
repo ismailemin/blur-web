@@ -21,7 +21,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  LONG_COURSE_PATH, SHORT_COURSE_ID, deriveLongCourseLayout, deriveSprintLayout
+  LAP_LOOPS_PATH, LONG_COURSE_PATH, SHORT_COURSE_ID, deriveLapCourseLayout, deriveLongCourseLayout,
+  deriveSprintLayout
 } from '../web/sprint-layout.js';
 import { TICK0_LIMITS } from './spawn.mjs';
 
@@ -30,14 +31,19 @@ const WORK = path.join(ROOT, '_work/e1-drive');
 const GEOMETRY = path.join(WORK, 'geometry.json');
 const SPAWN = path.join(WORK, 'spawn.json');
 const COURSE_PATH = path.join(ROOT, LONG_COURSE_PATH.file);
+const LOOPS_PATH = path.join(ROOT, LAP_LOOPS_PATH.file);
 const OUT = path.join(WORK, 'sprint.json');
 const OUT_SHORT = path.join(WORK, 'sprint-short.json');
+const OUT_LAP = path.join(WORK, 'sprint-lap.json');
 
 if (!existsSync(GEOMETRY)) {
   throw new Error('missing _work/e1-drive/geometry.json — run `node probes/e1-drive/tools/build_geometry.mjs` first');
 }
 if (!existsSync(COURSE_PATH)) {
   throw new Error('missing ' + LONG_COURSE_PATH.file + ' — the P48 measured course is required for the default sprint');
+}
+if (!existsSync(LOOPS_PATH)) {
+  throw new Error('missing ' + LAP_LOOPS_PATH.file + ' — the P61 loop-01 course is required for the lap layout');
 }
 const geometryBytes = readFileSync(GEOMETRY);
 const geometry = JSON.parse(geometryBytes.toString('utf8'));
@@ -54,9 +60,18 @@ if (coursePathSha !== LONG_COURSE_PATH.fileSha256) {
 }
 const coursePath = JSON.parse(coursePathBytes.toString('utf8'));
 
+const loopsBytes = readFileSync(LOOPS_PATH);
+const loopsFileSha = 'sha256:' + sha256(loopsBytes);
+if (loopsFileSha !== LAP_LOOPS_PATH.fileSha256) {
+  throw new Error('the P61 loops artifact is not the recorded file: ' + loopsFileSha +
+    ' (expected ' + LAP_LOOPS_PATH.fileSha256 + ')');
+}
+const loopsDoc = JSON.parse(loopsBytes.toString('utf8'));
+
 const layouts = [
   { file: OUT, layout: deriveLongCourseLayout(geometry, spawn, coursePath) },
-  { file: OUT_SHORT, layout: deriveSprintLayout(geometry, spawn, { courseId: SHORT_COURSE_ID }) }
+  { file: OUT_SHORT, layout: deriveSprintLayout(geometry, spawn, { courseId: SHORT_COURSE_ID }) },
+  { file: OUT_LAP, layout: deriveLapCourseLayout(geometry, loopsDoc) }
 ];
 
 const summary = [];
@@ -96,5 +111,6 @@ for (const { file, layout } of layouts) {
 console.log(JSON.stringify({
   geometry: { file: '_work/e1-drive/geometry.json', sha256: 'sha256:' + sha256(geometryBytes) },
   coursePath: { file: LONG_COURSE_PATH.file, sha256: coursePathSha, hash: coursePath.hash },
+  loops: { file: LAP_LOOPS_PATH.file, sha256: loopsFileSha, hash: loopsDoc.hash, loopId: LAP_LOOPS_PATH.loopId },
   layouts: summary
 }, null, 2));

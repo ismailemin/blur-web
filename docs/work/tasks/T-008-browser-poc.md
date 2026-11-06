@@ -55,6 +55,9 @@ sürüşü deneyebileceği PoC.
 | Ghost/rival replay | P63 | ✅ 678/678, upload 0 |
 | Prop collision verisi | P66 | ✅ 468 collider, 52/52 resolver |
 | Free-roam alanı | P65 | ✅ R04 9.689,5 m², %100 çizili |
+| 3 turluk kapalı tur | P67 | ✅ loop-01 86,1 s, 766/766 |
+| PoC kontrolü (lap) | P67 | ✅ 21/21 |
+| Free-roam prop manifesti | P68b | ✅ 431 collider, %100 kapsama |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

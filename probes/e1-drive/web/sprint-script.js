@@ -26,7 +26,7 @@
 // it with `?sprintfall=1`.
 
 import { COUNTDOWN_TICKS } from './sprint-layout.js';
-import { bandHalfWidthAt, coursePosition, isPathLayout } from './sprint-rules.js';
+import { bandHalfWidthAt, coursePosition, isLapLayout, isPathLayout } from './sprint-rules.js';
 
 /**
  * Longest scripted sprint run: 60 s (3600 ticks). The 310.395 m course with a
@@ -34,6 +34,19 @@ import { bandHalfWidthAt, coursePosition, isPathLayout } from './sprint-rules.js
  * bound that the verifier checks, not a silent truncation.
  */
 export const SPRINT_SCRIPT_TICKS = 3600;
+
+/**
+ * Longest scripted lap run: 120 s (7200 ticks). Three 222.040 m laps at the
+ * loop controller's speed take roughly 45-60 s; 120 s is a hard bound the
+ * verifier checks, not a silent truncation.
+ */
+export const LAP_SCRIPT_TICKS = 7200;
+
+/** Packet diagnostics label for a three-lap timeline. */
+export const LAP_PACKET_SCRIPT =
+  'lap: 3-2-1 countdown (1.5 s), Stanley path follower on the P61 loop-01 222.040 m closed loop, ' +
+  'three forward crossings of the start/finish line, brake after lap 3 ' +
+  '(probes/e1-drive/web/sprint-script.js)';
 
 /** Packet diagnostics label for a sprint timeline (the legacy drive keeps its own). */
 export const SPRINT_PACKET_SCRIPT =
@@ -66,6 +79,61 @@ export const SPRINT_CONTROL = Object.freeze({
   finishSpeed: 13,
   finishSlowdownMetres: 18
 });
+
+/**
+ * Controller constants for the 222.040 m closed loop. Only the constants the loop
+ * needs differ from the 310 m sprint: a shorter lookahead, lower cruise and a
+ * lower declared lateral acceleration for the tighter oval. Physics is untouched.
+ * `narrowBandMetres: 0` disables the 310 m band-derived speed cap: the lap's
+ * 0.8 m band is a declared respawn rule for the tight face clearance, not the
+ * physical road width (P61 measured an 11.75 m flat band).
+ */
+export const LAP_CONTROL = Object.freeze({
+  cruiseSpeed: 10,
+  headingLookahead: 8,
+  steerGain: 4.0,
+  steerRatePerTick: 0.08,
+  speedSteerCeiling: 3,
+  lateralGain: 2.0,
+  yawDamping: 0.8,
+  narrowBandMetres: 0,
+  narrowSpeed: 7,
+  minSpeed: 5,
+  launchHeadingError: 0.5,
+  launchSpeed: 6,
+  launchArcMetres: 15,
+  brakeGain: 0.55,
+  throttleDeadband: 0.6,
+  anticipationSeconds: 1.8,
+  anticipationMetres: 25,
+  lateralAccel: 1.5,
+  finishSpeed: 13,
+  finishSlowdownMetres: 0,
+  // Lap steering uses pure pursuit on a short speed-scaled lookahead: the loop's
+  // hairpins are ~10 m radius and the Stanley lateral term saturates at low speed.
+  lapPurePursuit: true,
+  lapLookaheadBase: 2.5,
+  lapLookaheadSpeed: 0.3,
+  lapLookaheadMax: 7
+});
+
+const wrapArc = (arc, length) => {
+  let value = arc % length;
+  if (value < 0) value += length;
+  return value;
+};
+
+/** Point on the closed lap at an arc (wraps across the seam). */
+function lapPointAtArc(samples, arc, length) {
+  return coursePointAtArc(samples, wrapArc(arc, length));
+}
+
+/** Heading on the closed lap at an arc, across the seam, over a window. */
+function lapHeadingAt(samples, arc, length, windowMetres = 12) {
+  const a = lapPointAtArc(samples, arc - windowMetres / 2, length);
+  const b = lapPointAtArc(samples, arc + windowMetres / 2, length);
+  return Math.atan2(b.x - a.x, b.z - a.z);
+}
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 const wrapAngle = (value) => {
@@ -106,94 +174,128 @@ export function courseHeadingAt(samples, arc, windowMetres = 12) {
  * sprint layout. Only path layouts use this: the 29 m regression course keeps
  * the P37 throttle hold.
  */
-export function sprintControl(state, layout, constants = SPRINT_CONTROL) {
+export function sprintControl(state, layout, constants = null) {
   const terms = sprintControlTerms(state, layout, constants);
   return terms.input;
 }
 
 /** The controller terms, for the verifier and diagnostics (no physics effect). */
-export function sprintControlTerms(state, layout, constants = SPRINT_CONTROL) {
+export function sprintControlTerms(state, layout, constants = null) {
+  const control = constants ?? (isLapLayout(layout) ? LAP_CONTROL : SPRINT_CONTROL);
+  const lap = isLapLayout(layout);
+  const lapLength = lap ? layout.course.span.finishArc : null;
   const samples = layout.course.reference?.points ?? layout.course.samples;
   const finishArc = layout.course.span.finishArc;
   const position = state.position;
   const speed = state.speed ?? 0;
   const course = coursePosition(layout.course.samples, position);
   const bandHalfWidth = bandHalfWidthAt(layout, course.arc);
+  // Arc-addressed helpers: the sprint clamps at the measured end, the lap wraps
+  // across its seam so the lookahead and curvature scan are continuous.
+  const pointAt = (arc) => lap
+    ? lapPointAtArc(samples, arc, lapLength)
+    : coursePointAtArc(samples, Math.min(finishArc, arc));
+  const headingAt = (arc, windowMetres = 12) => lap
+    ? lapHeadingAt(samples, arc, lapLength, windowMetres)
+    : courseHeadingAt(samples, Math.min(finishArc, arc), windowMetres);
 
   // Speed target: measured band first (a narrow strip is not a 24 m/s line),
-  // then the reference-line curvature over the braking distance.
-  const scanTo = Math.min(finishArc, course.arc + constants.anticipationMetres + speed * constants.anticipationSeconds);
+  // then the reference-line curvature over the braking distance. The lap band is
+  // a declared respawn rule, not the road width, so the band cap is sprint-only.
+  const scanDistance = lap
+    ? control.anticipationMetres + speed * control.anticipationSeconds
+    : Math.max(0, Math.min(finishArc,
+      course.arc + control.anticipationMetres + speed * control.anticipationSeconds) - course.arc);
   let narrowestBand = bandHalfWidth;
-  for (let arc = course.arc; arc <= scanTo; arc += 1) {
-    const band = bandHalfWidthAt(layout, arc);
-    if (band < narrowestBand) narrowestBand = band;
+  if (!lap) {
+    for (let offset = 0; offset <= scanDistance; offset += 1) {
+      const band = bandHalfWidthAt(layout, course.arc + offset);
+      if (band < narrowestBand) narrowestBand = band;
+    }
   }
-  let curvatureSpeed = constants.cruiseSpeed;
-  const headingStart = courseHeadingAt(samples, course.arc);
-  for (let arc = course.arc + 2; arc <= Math.min(scanTo, course.arc + 30); arc += 2) {
-    const turn = Math.abs(wrapAngle(courseHeadingAt(samples, arc) - headingStart));
-    const distance = Math.max(2, arc - course.arc);
+  let curvatureSpeed = control.cruiseSpeed;
+  const headingStart = headingAt(course.arc);
+  for (let offset = 2; offset <= Math.min(scanDistance, 30); offset += 2) {
+    const turn = Math.abs(wrapAngle(headingAt(course.arc + offset) - headingStart));
+    const distance = Math.max(2, offset);
     const radius = distance / Math.max(1e-3, turn);
-    curvatureSpeed = Math.min(curvatureSpeed, Math.sqrt(constants.lateralAccel * radius));
+    curvatureSpeed = Math.min(curvatureSpeed, Math.sqrt(control.lateralAccel * radius));
   }
-  let speedTarget = Math.min(constants.cruiseSpeed, curvatureSpeed);
-  if (narrowestBand < constants.narrowBandMetres) {
+  let speedTarget = Math.min(control.cruiseSpeed, curvatureSpeed);
+  if (!lap && narrowestBand < control.narrowBandMetres) {
     speedTarget = Math.min(speedTarget,
-      constants.narrowSpeed * clamp(narrowestBand / constants.narrowBandMetres, 0.7, 1));
+      control.narrowSpeed * clamp(narrowestBand / control.narrowBandMetres, 0.7, 1));
   }
-  speedTarget = Math.max(constants.minSpeed, speedTarget);
+  speedTarget = Math.max(control.minSpeed, speedTarget);
 
   // Launch: the committed spawn heading is +X (pi/2) while the measured course
   // leaves the spawn at ~44 degrees, so the first metres are a deliberate turn
   // onto the line. Hold the launch speed only while still near the start; after
   // that the heading controller owns the turn.
   const carHeading = Math.atan2(state.axisZ[0], state.axisZ[2]);
-  const launchError = Math.abs(wrapAngle(courseHeadingAt(samples, course.arc) - carHeading));
-  if (course.arc < constants.launchArcMetres && launchError > constants.launchHeadingError) {
-    speedTarget = Math.min(speedTarget, constants.launchSpeed);
+  const launchError = Math.abs(wrapAngle(headingAt(course.arc) - carHeading));
+  if (course.arc < control.launchArcMetres && launchError > control.launchHeadingError) {
+    speedTarget = Math.min(speedTarget, control.launchSpeed);
   }
 
   // Finish: approach slowly enough that the post-finish brake stops the car
   // before the measured surface narrows to 2.0 m at +4 m past the course end.
-  if (course.arc > finishArc - constants.finishSlowdownMetres) {
-    speedTarget = Math.min(speedTarget, constants.finishSpeed);
+  // The lap has no such narrowing: its line is crossed at speed on every lap.
+  if (!lap && course.arc > finishArc - control.finishSlowdownMetres) {
+    speedTarget = Math.min(speedTarget, control.finishSpeed);
   }
 
-  // Stanley steering: heading term + lateral term.
-  const lookaheadHeading = courseHeadingAt(samples, Math.min(finishArc, course.arc + constants.headingLookahead));
-  const headingError = wrapAngle(lookaheadHeading - carHeading);
-  const nearest = coursePointAtArc(layout.course.samples, course.arc);
-  const tangentHeading = courseHeadingAt(layout.course.samples, course.arc, 2);
+  // Steering. The sprint keeps the Stanley heading + lateral form; the lap uses
+  // pure pursuit on a short speed-scaled lookahead, which tracks the ~10 m
+  // hairpins without the low-speed lateral-term saturation.
+  const yawRate = state.angular?.[1] ?? 0;
+  const previousSteer = Number.isFinite(state.input?.[2]) ? state.input[2] : 0;
+  const nearest = pointAt(course.arc);
+  const tangentHeading = headingAt(course.arc, 2);
   const tangentX = Math.sin(tangentHeading);
   const tangentZ = Math.cos(tangentHeading);
   const offsetX = position[0] - nearest.x;
   const offsetZ = position[2] - nearest.z;
   const lateral = tangentX * offsetZ - tangentZ * offsetX;
-  // Lateral term (Stanley): for a signed lateral offset L measured along the
-  // left normal, the lateral velocity is v*sin(pathHeading - carHeading), so a
-  // positive L needs a positive heading correction. +atan(k*L/v) is that term.
-  const lateralTerm = Math.atan(constants.lateralGain * lateral / Math.max(2, speed));
-  const yawRate = state.angular?.[1] ?? 0;
-  // The engine's steering authority falls sharply with speed: at 24 m/s a 0.3
-  // request produces ~0.08 rad/s of yaw, while 1.0 produces ~1.3 rad/s. The
-  // controller therefore scales its gain with speed (measured on this car family
-  // by _work/e1-drive/p50-steer.mjs) and relies on the rate limit for stability.
-  const speedFactor = clamp(speed / 6, 1, constants.speedSteerCeiling);
-  const desired = clamp(constants.steerGain * speedFactor * headingError + lateralTerm -
-    constants.yawDamping * yawRate, -1, 1);
+  let headingError;
+  let lateralTerm = 0;
+  let desired;
+  let lookaheadMetres = 0;
+  if (lap && control.lapPurePursuit) {
+    lookaheadMetres = clamp(control.lapLookaheadBase + control.lapLookaheadSpeed * speed,
+      control.lapLookaheadBase, control.lapLookaheadMax);
+    const target = pointAt(course.arc + lookaheadMetres);
+    const targetHeading = Math.atan2(target.x - position[0], target.z - position[2]);
+    headingError = wrapAngle(targetHeading - carHeading);
+    desired = clamp(control.steerGain * headingError - control.yawDamping * yawRate, -1, 1);
+  } else {
+    const lookaheadHeading = headingAt(course.arc + control.headingLookahead);
+    headingError = wrapAngle(lookaheadHeading - carHeading);
+    // Lateral term (Stanley): for a signed lateral offset L measured along the
+    // left normal, the lateral velocity is v*sin(pathHeading - carHeading), so a
+    // positive L needs a positive heading correction. +atan(k*L/v) is that term.
+    lateralTerm = Math.atan(control.lateralGain * lateral / Math.max(2, speed));
+    // The engine's steering authority falls sharply with speed: at 24 m/s a 0.3
+    // request produces ~0.08 rad/s of yaw, while 1.0 produces ~1.3 rad/s. The
+    // controller therefore scales its gain with speed (measured on this car family
+    // by _work/e1-drive/p50-steer.mjs) and relies on the rate limit for stability.
+    const speedFactor = clamp(speed / 6, 1, control.speedSteerCeiling);
+    desired = clamp(control.steerGain * speedFactor * headingError + lateralTerm -
+      control.yawDamping * yawRate, -1, 1);
+  }
+  const speedFactor = clamp(speed / 6, 1, control.speedSteerCeiling);
   // Steering rate limit: a driver cannot move the wheel from lock to lock in one
   // 60 Hz tick. `state.input` is the input applied on the previous tick, so this
   // stays a pure function of the engine state (no controller memory).
-  const previousSteer = Number.isFinite(state.input?.[2]) ? state.input[2] : 0;
-  const steer = clamp(desired, previousSteer - constants.steerRatePerTick,
-    previousSteer + constants.steerRatePerTick);
+  const steer = clamp(desired, previousSteer - control.steerRatePerTick,
+    previousSteer + control.steerRatePerTick);
 
   // Longitudinal: throttle below the target, brake above it.
   let throttle = 1;
   let brake = 0;
-  if (speed > speedTarget + constants.throttleDeadband) {
+  if (speed > speedTarget + control.throttleDeadband) {
     throttle = 0;
-    brake = clamp(constants.brakeGain * (speed - speedTarget), 0, 1);
+    brake = clamp(control.brakeGain * (speed - speedTarget), 0, 1);
   } else if (speed > speedTarget) {
     throttle = clamp(1 - (speed - speedTarget), 0, 1);
   }

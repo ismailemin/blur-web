@@ -43,11 +43,14 @@ import { createSession, resolveCarBody } from '../web/packet-adapter.js';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from '../web/drive-script.js';
 import {
-  CHECKPOINT_FRACTIONS, COLUMN_STEP, GATE_SAMPLE_STEP, LONG_COURSE_PATH, SHORT_COURSE_ID,
-  deriveLongCourseLayout, deriveSprintLayout, layoutStartHeading, validateSprintLayout
+  CHECKPOINT_FRACTIONS, COLUMN_STEP, GATE_SAMPLE_STEP, LAP_LOOPS_PATH, LONG_COURSE_PATH, SHORT_COURSE_ID,
+  deriveLapCourseLayout, deriveLongCourseLayout, deriveSprintLayout, isLapLayout, layoutStartHeading,
+  layoutStartPosition, validateSprintLayout
 } from '../web/sprint-layout.js';
-import { SPRINT_EVENT, createSprintRules, coursePosition } from '../web/sprint-rules.js';
-import { SPRINT_SCRIPT_TICKS, SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput } from '../web/sprint-script.js';
+import { SPRINT_EVENT, courseGroundAt, createSprintRules, coursePosition } from '../web/sprint-rules.js';
+import { LAP_PACKET_SCRIPT, LAP_SCRIPT_TICKS, SPRINT_SCRIPT_TICKS, SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput } from '../web/sprint-script.js';
+import { PROP_MANIFEST, PROP_PROFILE, createPropLayer, propYawFromHeading } from '../web/prop-layer.js';
+import { createWorld as createPropWorld } from '../../prop-collision/lib/resolver.mjs';
 import { createBestTimes } from '../web/sprint-best.js';
 import {
   GHOST_CORNERS, GHOST_INDEX_KIND, GHOST_KEY_PREFIX, GHOST_SOURCE, buildGhostArcTable, createGhostStore,
@@ -59,6 +62,7 @@ import {
   TELEMETRY_MANOEUVRE, TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_SPEC, tickAtSpeedKph
 } from '../web/telemetry.js';
 import { buildCorridorSurvey } from '../web/corridor-survey.js';
+import { runPropLayerTests } from './prop_layer_tests.mjs';
 import { LIMIT_STATIONS, runLimitStation, stationPose, writeCorridorProbe } from './corridor_probe.mjs';
 import { TICK0_LIMITS } from './spawn.mjs';
 
@@ -83,6 +87,9 @@ const option = (name, fallback) => {
   return index >= 0 && index + 1 < args.length ? args[index + 1] : fallback;
 };
 const ONLY_CAR = option('--car', null);
+// Set before the lap runs: createWorld(manifest, {profile:'all-visible'}).
+let lapPropWorld = null;
+let lapPropManifest = null;
 
 const failures = [];
 const checks = [];
@@ -742,7 +749,8 @@ for (const car of cars) {
 // point-in-triangle code (not the layout module's plane-lambda form).
 const SPRINT_FILE = path.join(OUT, 'sprint.json');
 const SPRINT_SHORT_FILE = path.join(OUT, 'sprint-short.json');
-for (const file of [SPRINT_FILE, SPRINT_SHORT_FILE]) {
+const SPRINT_LAP_FILE = path.join(OUT, 'sprint-lap.json');
+for (const file of [SPRINT_FILE, SPRINT_SHORT_FILE, SPRINT_LAP_FILE]) {
   if (!existsSync(file)) {
     throw new Error(path.basename(file) + ' missing — run `node probes/e1-drive/tools/build_sprint.mjs` first');
   }
@@ -751,6 +759,8 @@ const sprintFileBytes = readFileSync(SPRINT_FILE);
 const sprintFile = JSON.parse(sprintFileBytes.toString('utf8'));
 const sprintShortBytes = readFileSync(SPRINT_SHORT_FILE);
 const sprintShortFile = JSON.parse(sprintShortBytes.toString('utf8'));
+const sprintLapBytes = readFileSync(SPRINT_LAP_FILE);
+const sprintLapFile = JSON.parse(sprintLapBytes.toString('utf8'));
 const layoutSpawn = { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, heading: TICK0_LIMITS.heading, source: TICK0_LIMITS.source };
 
 const LONG_PATH_FILE = path.join(ROOT, LONG_COURSE_PATH.file);
@@ -763,6 +773,65 @@ if (longPathFileSha !== LONG_COURSE_PATH.fileSha256) {
 const longPath = JSON.parse(longPathBytes.toString('utf8'));
 const derivedLayout = deriveLongCourseLayout(geometry, layoutSpawn, longPath);
 const shortLayout = deriveSprintLayout(geometry, layoutSpawn, { courseId: SHORT_COURSE_ID });
+
+const LAP_LOOPS_FILE = path.join(ROOT, LAP_LOOPS_PATH.file);
+const lapLoopsBytes = readFileSync(LAP_LOOPS_FILE);
+const lapLoopsFileSha = 'sha256:' + sha256(lapLoopsBytes);
+if (lapLoopsFileSha !== LAP_LOOPS_PATH.fileSha256) {
+  throw new Error('the P61 loops artifact is not the recorded file: ' + lapLoopsFileSha +
+    ' (expected ' + LAP_LOOPS_PATH.fileSha256 + ')');
+}
+const lapLoops = JSON.parse(lapLoopsBytes.toString('utf8'));
+const lapLayout = deriveLapCourseLayout(geometry, lapLoops);
+const lapSpan = lapLayout.course.span;
+const lapGates = lapLayout.gates;
+
+// P66 visible-prop manifest (read-only). The lap enables the all-visible profile
+// only if loop-01 is clear; the scan below is the measured decision.
+const PROP_FILE = path.join(ROOT, PROP_MANIFEST);
+const propBytes = readFileSync(PROP_FILE);
+const propFileSha = 'sha256:' + sha256(propBytes);
+if (propFileSha !== 'sha256:a98fb8eb7e7a6f6851e0c6b5671d40be2c346d0c28a2442df0fe6ab497317af4') {
+  throw new Error('the P66 collider manifest is not the recorded file: ' + propFileSha);
+}
+const propManifest = JSON.parse(propBytes.toString('utf8'));
+lapPropManifest = propManifest;
+lapPropWorld = createPropWorld(propManifest, { profile: PROP_PROFILE });
+const loopPropRing = lapLayout.course.samples.length - 1;
+let loopPropSamples = 0;
+let loopPropBlocked = 0;
+const loopPropContacts = new Map();
+const loopPropBlockedArcs = [];
+const nearestCollider = { distanceMetres: Infinity, colliderId: null, classification: null, arc: null };
+for (let index = 0; index < loopPropRing; index++) {
+  const sample = lapLayout.course.samples[index];
+  const previous = lapLayout.course.samples[(index - 1 + loopPropRing) % loopPropRing];
+  const next = lapLayout.course.samples[(index + 1) % loopPropRing];
+  const heading = Math.atan2(next.x - previous.x, next.z - previous.z);
+  const contacts = lapPropWorld.contactsAll(sample.x, sample.z, propYawFromHeading(heading),
+    sample.groundY, propManifest.carEnvelope);
+  loopPropSamples++;
+  if (contacts.length) {
+    loopPropBlocked++;
+    loopPropBlockedArcs.push({ arc: sample.arc, colliders: contacts.map((contact) => contact.colliderId) });
+    for (const contact of contacts) {
+      loopPropContacts.set(contact.colliderId, (loopPropContacts.get(contact.colliderId) ?? 0) + 1);
+    }
+  }
+  for (const collider of propManifest.colliders) {
+    const aabb = collider.worldAabb;
+    const dx = Math.max(aabb.min[0] - sample.x, 0, sample.x - aabb.max[0]);
+    const dz = Math.max(aabb.min[2] - sample.z, 0, sample.z - aabb.max[2]);
+    const distance = Math.hypot(dx, dz);
+    if (distance < nearestCollider.distanceMetres) {
+      nearestCollider.distanceMetres = distance;
+      nearestCollider.colliderId = collider.id;
+      nearestCollider.classification = collider.classification;
+      nearestCollider.arc = sample.arc;
+    }
+  }
+}
+
 const sprintSpan = derivedLayout.course.span;
 const sprintGates = derivedLayout.gates;
 const shortSpan = shortLayout.course.span;
@@ -824,6 +893,99 @@ check('the 29 m regression course keeps its P37 start, two checkpoints, finish a
       shortGates[shortGates.length - 1].x === shortSpan.finishX &&
       shortSpan.finishX <= shortSpan.lastFullyCoveredX - shortSpan.finishClearanceMetres + 1e-9,
       `start ${shortSpan.startX}, finish ${shortSpan.finishX}, last fully covered ${shortSpan.lastFullyCoveredX}`);
+
+// --------------------------------------------------------- lap layout (P61 loop-01)
+const lapLoop = lapLoops.loops.find((entry) => entry.id === LAP_LOOPS_PATH.loopId);
+check('the P61 loops artifact is the recorded one and loop-01 is closed, 222.040 m and in component 5',
+      lapLoopsFileSha === LAP_LOOPS_PATH.fileSha256 && lapLoops.hash === LAP_LOOPS_PATH.canonicalHash &&
+      lapLoops.kind === 'lap-search.loops' && lapLoops.version === 1 &&
+      lapLoop !== undefined && lapLoop.closed === true && lapLoop.component === LAP_LOOPS_PATH.component &&
+      Math.abs(lapLoop.length - LAP_LOOPS_PATH.lengthMetres) < 1e-3 &&
+      lapLoop.points.length === LAP_LOOPS_PATH.sampleCount &&
+      lapLoop.points[0][0] === LAP_LOOPS_PATH.start[0] && lapLoop.points[0][1] === LAP_LOOPS_PATH.start[1],
+      `${lapLoopsFileSha} / ${lapLoops.hash} / ${lapLoop?.length} m / ${lapLoop?.points.length} samples`);
+check('the lap layout is exactly the one derived from P61 loop-01 and this geometry (no hand-edited gate)',
+      canonicalJson(sprintLapFile) === canonicalJson(lapLayout), sprintLapFile.hash ?? 'no layout hash');
+check('the lap layout passes its own structural validation',
+      validateSprintLayout(lapLayout, geometry, layoutSpawn).ok === true,
+      validateSprintLayout(lapLayout, geometry, layoutSpawn).errors.join(' | '));
+check('the lap course is the measured 222.040 m loop-01 with 902 samples and three laps',
+      lapLayout.courseId === 'lap' && Math.abs(lapLayout.course.lengthMetres - 222.0402) < 1e-3 &&
+      lapLayout.course.sampleCount === 902 && lapLayout.course.laps === 3 &&
+      Math.abs(lapSpan.finishArc - lapSpan.measuredLengthMetres) < 1e-9 &&
+      lapLayout.course.samples[0].arc === 0 &&
+      Math.abs(lapLayout.course.samples[lapLayout.course.samples.length - 1].arc - lapLayout.course.lengthMetres) < 1e-9 &&
+      lapLayout.course.samples[0].x === lapLayout.course.samples[lapLayout.course.samples.length - 1].x &&
+      lapLayout.course.samples[0].z === lapLayout.course.samples[lapLayout.course.samples.length - 1].z,
+      `${lapLayout.course.lengthMetres} m, ${lapLayout.course.sampleCount} samples, ${lapLayout.course.laps} laps`);
+check('the lap starts on loop-01 at its tangent heading and the line is the start/finish point',
+      lapGates.length === 2 && lapGates[0].kind === 'start' && lapGates[1].kind === 'finish' &&
+      lapGates[0].arc === 0 && lapGates[1].arc === lapSpan.finishArc &&
+      lapGates[0].x === LAP_LOOPS_PATH.start[0] && lapGates[0].z === LAP_LOOPS_PATH.start[1] &&
+      lapGates.every((gate) => gate.x === lapGates[0].x && gate.z === lapGates[0].z) &&
+      lapLayout.course.lap.line.x === lapGates[0].x && lapLayout.course.lap.line.z === lapGates[0].z &&
+      Math.abs(lapGates[0].headingRad - lapLayout.course.lap.line.headingRad) < 1e-12 &&
+      Math.abs(lapGates[0].tangent.tx * (lapGates[0].b[0] - lapGates[0].a[0]) +
+        lapGates[0].tangent.tz * (lapGates[0].b[1] - lapGates[0].a[1])) < 0.02,
+      `start ${lapGates[0].x},${lapGates[0].z} heading ${lapGates[0].headingRad}, line ${lapGates[0].widthMetres} m`);
+check('the lap line is fully drawn and physical at 4 m (41/41 samples) and three laps are declared',
+      lapGates.every((gate) => gate.coverage.covered === true &&
+        gate.coverage.drawnSamples === gate.coverage.samples &&
+        gate.coverage.collisionSamples === gate.coverage.samples) &&
+      lapLayout.course.lap.laps === 3 && lapLayout.rules.finishRequiresAllCheckpoints === false,
+      lapGates.map((gate) => `${gate.id}:${gate.coverage.drawnSamples}/${gate.coverage.samples}`).join(' '));
+check('the lap declares the P61 centre-line and car-width draw coverage',
+      lapLayout.course.coverage.samples === 902 && lapLayout.course.coverage.coveredSamples === 902 &&
+      lapLayout.course.coverage.coverageFraction === 1 && lapLayout.course.coverage.gaps.length === 0 &&
+      lapLayout.course.coverage.band.samples === 6307 && lapLayout.course.coverage.band.drawnSamples === 6286 &&
+      lapLayout.course.coverage.band.coverageFraction === 0.99667,
+      `${lapLayout.course.coverage.coveredSamples}/${lapLayout.course.coverage.samples} centre, ` +
+      `${lapLayout.course.coverage.band.drawnSamples}/${lapLayout.course.coverage.band.samples} band (` +
+      (lapLayout.course.coverage.band.coverageFraction * 100).toFixed(3) + '%)');
+
+// P66 visible-prop colliders: the lap uses the all-visible profile only because
+// the measured loop is clear. The nearest mapped collider must stay outside the
+// car envelope for every one of the 901 unique loop poses.
+check('the P66 all-visible collider manifest is the recorded one (468 colliders)',
+      propFileSha === 'sha256:a98fb8eb7e7a6f6851e0c6b5671d40be2c346d0c28a2442df0fe6ab497317af4' &&
+      propManifest.kind === 'prop-collision-colliders' && propManifest.version === 1 &&
+      propManifest.colliders.length === 468 && propManifest.profiles['all-visible'].colliders === 468 &&
+      propManifest.profiles.roadside.colliders === 373,
+      `${propFileSha}, ${propManifest.colliders.length} colliders, all-visible ${lapPropWorld.colliders.length}`);
+check('loop-01 is clear under the all-visible profile: 0 of 901 car poses blocked',
+      loopPropSamples === 901 && loopPropBlocked === 0 && loopPropContacts.size === 0,
+      `${loopPropBlocked}/${loopPropSamples} blocked, ${loopPropContacts.size} collider ids`);
+check('the nearest visible-prop collider is 69.5 m from loop-01 (outside the manifest region)',
+      nearestCollider.distanceMetres > 69 && nearestCollider.colliderId !== null,
+      `${nearestCollider.distanceMetres.toFixed(3)} m at arc ${nearestCollider.arc}, ` +
+      `${nearestCollider.colliderId} (${nearestCollider.classification})`);
+check('the lap keeps the 310 m sprint prop policy unchanged (lap all-visible, sprint roadside)',
+      PROP_PROFILE === 'all-visible' && lapPropWorld.profile === 'all-visible' &&
+      propManifest.profiles.roadside.active === true,
+      `lap ${PROP_PROFILE}, roadside ${propManifest.profiles.roadside.colliders} active`);
+
+// The additive layer itself: real P66 colliders, a synthetic engine pose sequence.
+const propLayerTests = runPropLayerTests({
+  world: lapPropWorld, manifest: propManifest, createPropLayer, propYawFromHeading
+});
+check('prop layer: 31 m/s head-on into the 5.39 m truck stops on the near face without tunnelling',
+      propLayerTests.headOn.blockedTicks > 0 && propLayerTests.headOn.side > 0 &&
+      propLayerTests.headOn.residual === 0 && propLayerTests.headOn.inputUnchanged === true,
+      JSON.stringify({ side: propLayerTests.headOn.side, residual: propLayerTests.headOn.residual,
+        contacts: propLayerTests.headOn.contacts, final: propLayerTests.headOn.final }));
+check('prop layer: 31 m/s into a 0.02 m fence component does not tunnel (8 cm substeps)',
+      propLayerTests.thinAt31.blockedTicks > 0 && propLayerTests.thinAt31.side > 0 &&
+      propLayerTests.thinAt31.residual === 0 && propLayerTests.thinAt31.substeps >= 7,
+      JSON.stringify({ side: propLayerTests.thinAt31.side, residual: propLayerTests.thinAt31.residual,
+        substeps: propLayerTests.thinAt31.substeps, final: propLayerTests.thinAt31.final }));
+check('prop layer: a 5 degree glancing hit keeps most of its travel and does not overlap',
+      propLayerTests.glancing.blockedTicks > 0 && propLayerTests.glancing.residual === 0 &&
+      propLayerTests.glancing.resolvedTravel > propLayerTests.glancing.freeTravel * 0.6,
+      JSON.stringify({ free: propLayerTests.glancing.freeTravel,
+        resolved: propLayerTests.glancing.resolvedTravel, residual: propLayerTests.glancing.residual }));
+check('prop layer: the engine state object is never mutated (additive post-tick layer)',
+      propLayerTests.headOn.inputUnchanged && propLayerTests.thinAt31.inputUnchanged &&
+      propLayerTests.glancing.inputUnchanged);
 
 // Independent measurement: barycentric area signs (not the tool's plane-lambda
 // form) and a plane height from the triangle normal. Every 0.1 m sample across
@@ -923,6 +1085,129 @@ class IndependentTriangleIndex {
 }
 const independentDrawn = new IndependentTriangleIndex(g56Triangles);
 const independentCollision = new IndependentTriangleIndex(collisionTriangleList);
+
+// The lap lies outside block56/node289: measure its draw coverage against every
+// committed track draw (the loop is covered by block71/node209 and block64/node209).
+const allTrackTriangles = [];
+for (const draw of geometry.trackVisual.draws) {
+  for (let offset = draw.indexOffset; offset < draw.indexOffset + draw.indexCount; offset += 3) {
+    allTrackTriangles.push([0, 1, 2].map((corner) => {
+      const vertex = g56Mesh.indices[offset + corner];
+      return [g56Mesh.positions[vertex * 3], g56Mesh.positions[vertex * 3 + 1], g56Mesh.positions[vertex * 3 + 2]];
+    }));
+  }
+}
+const independentAllTrack = new IndependentTriangleIndex(allTrackTriangles);
+
+let lapCentreSamples = 0;
+let lapCentreDrawn = 0;
+let lapCentreCollision = 0;
+let lapCentreMaxDelta = 0;
+let lapBandSamples = 0;
+let lapBandDrawn = 0;
+let lapBandCollision = 0;
+let lapBandMaxDelta = 0;
+const lapBandMisses = [];
+const lapSamples = lapLayout.course.samples;
+for (const sample of lapSamples) {
+  lapCentreSamples++;
+  const height = independentCollision.highest(sample.x, sample.z);
+  if (height === null) continue;
+  lapCentreCollision++;
+  const delta = independentAllTrack.nearestTo(sample.x, sample.z, height);
+  if (delta !== null && delta <= 0.5) {
+    lapCentreDrawn++;
+    if (delta > lapCentreMaxDelta) lapCentreMaxDelta = delta;
+  }
+}
+const LAP_BAND_STATIONS = [0, -0.419, 0.419, -0.838, 0.838, -1.138, 1.138];
+const lapRing = lapSamples.length - 1;
+for (let index = 0; index < lapRing; index++) {
+  const previous = lapSamples[(index - 1 + lapRing) % lapRing];
+  const next = lapSamples[(index + 1) % lapRing];
+  const tx = next.x - previous.x;
+  const tz = next.z - previous.z;
+  const length = Math.hypot(tx, tz);
+  const nx = -tz / length;
+  const nz = tx / length;
+  for (const station of LAP_BAND_STATIONS) {
+    lapBandSamples++;
+    const x = lapSamples[index].x + nx * station;
+    const z = lapSamples[index].z + nz * station;
+    const height = independentCollision.highest(x, z);
+    if (height === null) { lapBandMisses.push({ arc: lapSamples[index].arc, station, missing: 'collision' }); continue; }
+    lapBandCollision++;
+    const delta = independentAllTrack.nearestTo(x, z, height);
+    if (delta === null || delta > 0.5) {
+      lapBandMisses.push({ arc: lapSamples[index].arc, station, missing: 'drawn',
+        nearestDeltaMetres: delta === null ? null : round6Local(delta) });
+      continue;
+    }
+    lapBandDrawn++;
+    if (delta > lapBandMaxDelta) lapBandMaxDelta = delta;
+  }
+}
+check('the whole loop-01 centre line is drawn and physical (independent, every committed draw)',
+      lapCentreDrawn === lapCentreSamples && lapCentreCollision === lapCentreSamples,
+      `${lapCentreDrawn}/${lapCentreSamples} drawn, ${lapCentreCollision}/${lapCentreSamples} collision, ` +
+      `max delta ${round6Local(lapCentreMaxDelta)} m`);
+check('the loop-01 car-width band is drawn and physical over 6,286 of 6,307 stations (independent)',
+      lapBandSamples === 6307 && lapBandDrawn === 6286 && lapBandCollision === 6307 &&
+      lapBandMisses.every((miss) => miss.station === -1.138 || miss.station === -0.838),
+      `${lapBandDrawn}/${lapBandSamples} drawn, ${lapBandCollision}/${lapBandSamples} collision, ` +
+      `${lapBandMisses.length} edge misses, max delta ${round6Local(lapBandMaxDelta)} m`);
+
+// Exact steep-face clearance for the driven lap: the same triangle distance P61
+// measured, applied to the recorded car centre every fifth tick. The 2.981 x
+// 1.676 m car's circumradius is 1.710 m, so a centre distance above 1.710 m
+// proves the whole footprint stays outside every steep face.
+const lapSteepTriangles = [];
+for (let offset = 0; offset < collisionMesh.indices.length; offset += 3) {
+  const triangle = [0, 1, 2].map((corner) => {
+    const vertex = collisionMesh.indices[offset + corner];
+    return [collisionMesh.positions[vertex * 3], collisionMesh.positions[vertex * 3 + 1],
+      collisionMesh.positions[vertex * 3 + 2]];
+  });
+  const ux = triangle[1][0] - triangle[0][0], uy = triangle[1][1] - triangle[0][1], uz = triangle[1][2] - triangle[0][2];
+  const wx = triangle[2][0] - triangle[0][0], wy = triangle[2][1] - triangle[0][1], wz = triangle[2][2] - triangle[0][2];
+  const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+  const length = Math.hypot(nx, ny, nz);
+  if (length > 1e-9 && Math.abs(ny / length) < 0.5) {
+    lapSteepTriangles.push({
+      triangle,
+      ymin: Math.min(triangle[0][1], triangle[1][1], triangle[2][1]),
+      ymax: Math.max(triangle[0][1], triangle[1][1], triangle[2][1])
+    });
+  }
+}
+function segmentDistance2d(px, pz, ax, az, bx, bz) {
+  const dx = bx - ax, dz = bz - az;
+  const lengthSquared = dx * dx + dz * dz;
+  let t = lengthSquared > 0 ? ((px - ax) * dx + (pz - az) * dz) / lengthSquared : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+}
+function insideTriangle2d(px, pz, triangle) {
+  const side = (a, b, c) => (b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2]);
+  const d1 = side(triangle[0], triangle[1], [px, 0, pz]);
+  const d2 = side(triangle[1], triangle[2], [px, 0, pz]);
+  const d3 = side(triangle[2], triangle[0], [px, 0, pz]);
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+}
+function lapSteepDistance(px, pz, groundY) {
+  let best = Infinity;
+  for (const entry of lapSteepTriangles) {
+    if (entry.ymax < groundY + 0.05 || entry.ymin > groundY + 2.0) continue;
+    if (insideTriangle2d(px, pz, entry.triangle)) return 0;
+    const triangle = entry.triangle;
+    best = Math.min(best,
+      segmentDistance2d(px, pz, triangle[0][0], triangle[0][2], triangle[1][0], triangle[1][2]),
+      segmentDistance2d(px, pz, triangle[1][0], triangle[1][2], triangle[2][0], triangle[2][2]),
+      segmentDistance2d(px, pz, triangle[2][0], triangle[2][2], triangle[0][0], triangle[0][2]));
+  }
+  return best;
+}
+const LAP_CAR_CIRCUMRADIUS = Math.hypot(2.981, 1.676) / 2;
 
 /** Independent gate-line re-measure: 0.1 m samples, nearest draw to the surface. */
 function independentGateMeasure(gate) {
@@ -1046,6 +1331,30 @@ check('the 310 m course ground matches the engine ground probe at every gate and
       groundFailures === 0 && groundMaxDelta < 0.01,
       `${groundChecks} probes, max delta ${round6Local(groundMaxDelta)} m, ${groundFailures} failures`);
 
+let lapGroundChecks = 0;
+let lapGroundMaxDelta = 0;
+let lapGroundFailures = 0;
+for (let index = 0; index < lapSamples.length; index += 10) {
+  const sample = lapSamples[index];
+  const probe = collisionProbe.ground(sample.x, sample.z);
+  lapGroundChecks++;
+  if (!probe || probe.hit !== 1) { lapGroundFailures++; continue; }
+  const delta = Math.abs(probe.y - sample.groundY);
+  if (delta > lapGroundMaxDelta) lapGroundMaxDelta = delta;
+  if (delta > 0.01) lapGroundFailures++;
+}
+for (const gate of lapGates) {
+  const probe = collisionProbe.ground(gate.x, gate.z);
+  lapGroundChecks++;
+  if (!probe || probe.hit !== 1) { lapGroundFailures++; continue; }
+  const delta = Math.abs(probe.y - gate.height);
+  if (delta > lapGroundMaxDelta) lapGroundMaxDelta = delta;
+  if (delta > 0.01) lapGroundFailures++;
+}
+check('the lap ground matches the engine ground probe every tenth sample and on the line',
+      lapGroundFailures === 0 && lapGroundMaxDelta < 0.01,
+      `${lapGroundChecks} probes, max delta ${round6Local(lapGroundMaxDelta)} m, ${lapGroundFailures} failures`);
+
 const sprintLayoutCheck = {
   hash: derivedLayout.hash,
   courseId: derivedLayout.courseId,
@@ -1096,6 +1405,62 @@ const sprintShortLayoutCheck = {
   coveredColumnsPastEnd: coveredPastEnd,
   countdown: shortLayout.countdown,
   rules: shortLayout.rules
+};
+const lapLayoutCheck = {
+  hash: lapLayout.hash,
+  courseId: lapLayout.courseId,
+  file: path.relative(ROOT, SPRINT_LAP_FILE).split(path.sep).join('/'),
+  fileSha256: 'sha256:' + sha256(sprintLapBytes),
+  loop: {
+    file: LAP_LOOPS_PATH.file,
+    fileSha256: lapLoopsFileSha,
+    canonicalHash: lapLoops.hash,
+    loopId: LAP_LOOPS_PATH.loopId,
+    component: LAP_LOOPS_PATH.component,
+    lengthMetres: lapLoop.length,
+    samples: lapLoop.points.length,
+    closureSeamMetres: lapLoop.closureSeam
+  },
+  spawn: lapLayout.course.spawn,
+  startHeadingRad: lapGates[0].headingRad,
+  spawnGroundY: lapLayout.course.spawnGroundY,
+  span: lapSpan,
+  lap: {
+    laps: lapLayout.course.lap.laps,
+    lengthMetres: lapLayout.course.lap.lengthMetres,
+    minLapMetres: lapLayout.course.lap.minLapMetres,
+    line: {
+      x: lapLayout.course.lap.line.x,
+      z: lapLayout.course.lap.line.z,
+      headingRad: lapLayout.course.lap.line.headingRad,
+      widthMetres: lapLayout.course.lap.line.widthMetres,
+      a: lapLayout.course.lap.line.a,
+      b: lapLayout.course.lap.line.b
+    }
+  },
+  gates: lapGates.map((gate) => ({
+    id: gate.id, kind: gate.kind, arc: gate.arc, x: gate.x, z: gate.z, headingRad: gate.headingRad,
+    widthMetres: gate.widthMetres,
+    drawnSamples: gate.coverage.drawnSamples, collisionSamples: gate.coverage.collisionSamples,
+    samples: gate.coverage.samples, heightRange: gate.coverage.drawnHeightRange
+  })),
+  coverage: {
+    centre: {
+      samples: lapCentreSamples, drawn: lapCentreDrawn, collision: lapCentreCollision,
+      maxDeltaMetres: round6Local(lapCentreMaxDelta)
+    },
+    band: {
+      stations: LAP_BAND_STATIONS.length, samples: lapBandSamples, drawn: lapBandDrawn,
+      collision: lapBandCollision, missCount: lapBandMisses.length,
+      coverageFraction: round6Local(lapBandDrawn / lapBandSamples),
+      maxDeltaMetres: round6Local(lapBandMaxDelta),
+      misses: lapBandMisses.slice(0, 16)
+    },
+    declared: lapLayout.course.coverage
+  },
+  engineGround: { probes: lapGroundChecks, maxDeltaMetres: round6Local(lapGroundMaxDelta), failures: lapGroundFailures },
+  countdown: lapLayout.countdown,
+  rules: lapLayout.rules
 };
 
 /** One full scripted run of one car in a fresh wasm module instance. */
@@ -1189,6 +1554,7 @@ async function runOnce(car, fieldBytes) {  const factory = (await import(pathToF
 
 /** Replay a recorded input sequence without sprint rules: physics must not know. */
 async function replaySprintInputs(car, fieldBytes, inputs, layout = derivedLayout) {
+  const start = layoutStartPosition(layout, layoutSpawn);
   const factory = (await import(pathToFileURL(MODULE).href)).default;
   const module = await factory();
   const levelPtr = module._malloc(levelBytes.length);
@@ -1196,7 +1562,7 @@ async function replaySprintInputs(car, fieldBytes, inputs, layout = derivedLayou
   module.HEAPU8.set(levelBytes, levelPtr);
   module.HEAPU8.set(fieldBytes, fieldsPtr);
   const created = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
-                                    TICK0_LIMITS.x, TICK0_LIMITS.z, layoutStartHeading(layout, layoutSpawn));
+                                    start.x, start.z, start.heading);
   if (!created) throw new Error('sprint replay create failed for ' + car.name);
   const hashes = [hashOfLocal(JSON.parse(module.UTF8ToString(module._e1_get_state())))];
   for (const input of inputs) {
@@ -1209,6 +1575,9 @@ async function replaySprintInputs(car, fieldBytes, inputs, layout = derivedLayou
 
 /** One deterministic sprint run of one car in a fresh wasm module instance. */
 async function runSprint(car, fieldBytes, layout = derivedLayout) {
+  const start = layoutStartPosition(layout, layoutSpawn);
+  const maxTicks = isLapLayout(layout) ? LAP_SCRIPT_TICKS : SPRINT_SCRIPT_TICKS;
+  const packetScript = isLapLayout(layout) ? LAP_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT;
   const factory = (await import(pathToFileURL(MODULE).href)).default;
   const module = await factory();
   const levelPtr = module._malloc(levelBytes.length);
@@ -1218,15 +1587,24 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
   module.HEAPU8.set(fieldBytes, fieldsPtr);
   const t0 = Date.now();
   const created = module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
-                                    TICK0_LIMITS.x, TICK0_LIMITS.z, layoutStartHeading(layout, layoutSpawn));
+                                    start.x, start.z, start.heading);
   if (!created) throw new Error(`sprint e1_create failed for ${car.name}: ` + module.UTF8ToString(module._e1_last_error()));
   const createMs = Date.now() - t0;
 
   const rules = createSprintRules(layout);
+  const propLayer = isLapLayout(layout) && lapPropWorld
+    ? createPropLayer({ world: lapPropWorld, carEnvelope: lapPropManifest.carEnvelope })
+    : null;
+  const groundYFor = (state) => {
+    if (!isLapLayout(layout)) return state.position[1] - 0.35;
+    const arc = coursePosition(layout.course.samples, state.position).arc;
+    return courseGroundAt(layout, arc);
+  };
   const state0 = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+  if (propLayer) propLayer.begin(state0, groundYFor(state0));
   const session = createSession(geometry, state0, {
-    spawn: { x: TICK0_LIMITS.x, z: TICK0_LIMITS.z, headingRad: layoutStartHeading(layout, layoutSpawn), source: TICK0_LIMITS.source },
-    script: SPRINT_PACKET_SCRIPT,
+    spawn: { x: start.x, z: start.z, headingRad: start.heading, source: TICK0_LIMITS.source },
+    script: packetScript,
     car: {
       slug: car.slug, name: car.name, recordIndex: car.record.index, recordId: car.record.id,
       drivetrain: car.drivetrain, mass: car.values.mass, fieldsSha256: car.fields.sha256
@@ -1243,20 +1621,24 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
   }];
   const startMs = Date.now();
   let previous = state0;
-  for (let tick = 1; tick <= SPRINT_SCRIPT_TICKS; tick++) {
+  for (let tick = 1; tick <= maxTicks; tick++) {
     const input = sprintScriptInput(rules, previous);
     inputs.push(input);
     module._e1_set_input(input[0], input[1], input[2], input[3]);
     if (!module._e1_step()) throw new Error(`sprint e1_step failed for ${car.name} at tick ${tick}`);
-    const state = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+    const rawState = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+    const state = propLayer ? propLayer.afterTick(rawState, groundYFor(rawState)) : rawState;
     session.appendState(state);
-    states.push(state);
+    states.push(rawState);
     const tickEvents = rules.step(state);
     events.push(...tickEvents);
     const snapshot = rules.snapshot(state);
     rows.push({
       tick, phase: rules.phase, elapsedTicks: rules.elapsedTicks, elapsedSeconds: rules.elapsedSeconds,
-      speed: state.speed, position: state.position, progress: snapshot.progress, stateHash: hashOfLocal(state)
+      speed: state.speed, position: state.position, progress: snapshot.progress, stateHash: hashOfLocal(state),
+      lap: snapshot.lap ?? null, laps: snapshot.laps ?? null,
+      lapTimes: snapshot.lapTimes ? snapshot.lapTimes.slice() : null,
+      bestLapSeconds: snapshot.bestLapSeconds ?? null
     });
     previous = state;
     if (rules.phase === 'finished' && state.tick - rules.finishTick >= 120) break;
@@ -1270,11 +1652,12 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
     wheelAnglesByTick: session.wheelAnglesByTick,
     finish: events.find((event) => event.type === SPRINT_EVENT.FINISH) ?? null,
     checkpoints: events.filter((event) => event.type === SPRINT_EVENT.CHECKPOINT),
+    lapEvents: events.filter((event) => event.type === SPRINT_EVENT.LAP || event.type === SPRINT_EVENT.FINISH),
     go: events.find((event) => event.type === SPRINT_EVENT.GO) ?? null,
-    respawns: events.filter((event) => event.type === SPRINT_EVENT.RESPAWN)
+    respawns: events.filter((event) => event.type === SPRINT_EVENT.RESPAWN),
+    prop: propLayer ? propLayer.snapshot() : null
   };
 }
-
 /**
  * The ghost record of one completed deterministic sprint. `source` is the
  * committed reference trace (the page uses the same builder for the user's own
@@ -2157,7 +2540,195 @@ for (const car of cars) {
   });
 }
 
-// ------------------------------------------------------------- ghost replay
+// ------------------------------------------------------------- 3-lap race (?course=lap)
+// The P61 loop-01 layout is a closed 222.040 m circuit in collision component 5.
+// Each roster car drives three laps with the same deterministic rules-gated
+// follower; lap times are race-clock times from GO, and the run must be replay
+// identical, restart identical and anchor identical.
+const LAP_ANCHORS = Object.freeze({
+  'corvette-zr1-stock': 'sha256:96094fd474df161837e37d5263b2f31287287c8e11a4ff994d684d7726d29094',
+  'lotus-exige-cup260-stock': 'sha256:cc837eca88cdb533af7d7bf1c16e2064ab5e6f075ac9d0cde015509002beb291',
+  'dodge-challenger-stock': 'sha256:5dafaf94701047727d6263ced1acf336d20820282bde35dfb8d917f63f051099',
+  'ford-focusrs-stock': 'sha256:3ae7599e00f0c2418d1823e9f47a501eb8848562605abb96353e81c5c9ea53cb',
+  'audi-r8v10-stock': 'sha256:d2e2eadd8642df6dddae200f25590e5c7951b3ab7b929f10a3c603e35dadc129'
+});
+const lapResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const run = await runSprint(car, fieldBytes, lapLayout);
+  const hashes = run.states.map((state) => hashOfLocal(state));
+  const stateSequenceHash = aggregate(hashes);
+  const replayHashes = await replaySprintInputs(car, fieldBytes, run.inputs, lapLayout);
+  const replayMatches = replayHashes.length === hashes.length &&
+    replayHashes.every((hash, index) => hash === hashes[index]);
+  const lapEvents = run.lapEvents;
+  const lapTimes = lapEvents.map((event) => event.lapSeconds);
+  const bestLapSeconds = lapTimes.length ? Math.min(...lapTimes) : null;
+  let minSteepFaceDistance = Infinity;
+  let minSteepFaceTick = null;
+  const raceEndTick = run.finish?.tick ?? Infinity;
+  for (let index = 0; index < run.states.length; index += 5) {
+    const state = run.states[index];
+    if (state.tick > raceEndTick) break;
+    const arc = coursePosition(lapLayout.course.samples, state.position).arc;
+    const distance = lapSteepDistance(state.position[0], state.position[2], courseGroundAt(lapLayout, arc));
+    if (distance < minSteepFaceDistance) {
+      minSteepFaceDistance = distance;
+      minSteepFaceTick = state.tick;
+    }
+  }
+  const finish = run.finish;
+  const countdownStates = run.states.slice(0, lapLayout.countdown.ticks + 1);
+  const countdownRest = Math.max(...countdownStates.map((state) =>
+    Math.hypot(state.position[0] - run.states[0].position[0], state.position[2] - run.states[0].position[2])));
+  const lapCaptureTicks = [
+    { label: 'start', tick: 0 },
+    { label: 'lap1', tick: lapEvents[0]?.tick ?? null, eventTick: lapEvents[0]?.tick ?? null },
+    { label: 'lap2', tick: lapEvents[1]?.tick ?? null, eventTick: lapEvents[1]?.tick ?? null },
+    { label: 'finish', tick: finish?.tick ?? null, eventTick: finish?.tick ?? null }
+  ].filter((entry) => entry.tick !== null);
+  const lapCaptures = lapCaptureTicks.map(({ label, tick, eventTick }) => {
+    const update = run.packet.updates.find((entry) => entry.tick === tick);
+    const row = run.rows.find((entry) => entry.tick === tick);
+    return {
+      label, tick, eventTick: eventTick ?? null,
+      stateHash: row?.stateHash ?? null, updateHash: update?.hash ?? null,
+      matrix: update?.matrices?.[0]?.world ?? null, matrices: update?.matrices ?? null,
+      camera: update?.camera ?? null, position: row?.position ?? null,
+      speed: row?.speed ?? null, progress: row?.progress ?? null,
+      elapsedSeconds: row?.elapsedSeconds ?? null,
+      lap: row?.lap ?? null, laps: row?.laps ?? null,
+      lapTimes: row?.lapTimes ?? null, bestLapSeconds: row?.bestLapSeconds ?? null
+    };
+  });
+
+  check(`${car.name}: the lap countdown holds the car at rest on the loop line`,
+        countdownRest < 0.05 && countdownStates.every((state) => Math.abs(state.speed) < 0.05),
+        `${countdownRest.toFixed(4)} m over ${countdownStates.length} ticks`);
+  check(`${car.name}: three forward line crossings complete laps 1, 2 and 3 in order`,
+        lapEvents.length === 3 &&
+        lapEvents[0].type === SPRINT_EVENT.LAP && lapEvents[0].lap === 1 &&
+        lapEvents[1].type === SPRINT_EVENT.LAP && lapEvents[1].lap === 2 &&
+        lapEvents[2].type === SPRINT_EVENT.FINISH && lapEvents[2].lap === 3 &&
+        lapEvents.every((event, index) => index === 0 || event.tick > lapEvents[index - 1].tick) &&
+        lapEvents.every((event, index) => index === 0 || event.timeSeconds > lapEvents[index - 1].timeSeconds) &&
+        lapEvents.every((event, index) => Math.abs(event.lapSeconds - (event.timeSeconds - (index === 0 ? 0 : lapEvents[index - 1].timeSeconds))) < 2e-6),
+        lapEvents.map((event) => `${event.type}:lap${event.lap}@${event.tick}:${event.lapSeconds}s`).join(' '));
+  check(`${car.name}: the three lap times add up to the finish time and the best lap is the minimum`,
+        finish !== null && lapTimes.length === 3 && lapTimes.every((seconds) => seconds > 1) &&
+        Math.abs(finish.timeSeconds - lapTimes.reduce((sum, seconds) => sum + seconds, 0)) < 2e-5 &&
+        bestLapSeconds === Math.min(...lapTimes) &&
+        finish.bestLapSeconds === bestLapSeconds,
+        `${lapTimes.join(' + ')} = ${finish?.timeSeconds} s, best ${bestLapSeconds} s`);
+  check(`${car.name}: the 3-lap race finishes on the line after more than two laps of real driving`,
+        finish !== null && finish.timeSeconds > 20 && finish.tick > 1200 &&
+        run.states[finish.tick].speed > 3 && run.rules.snapshot().progress === 1,
+        finish ? `${finish.timeSeconds} s at tick ${finish.tick}, ` +
+          `${run.states[finish.tick].speed.toFixed(2)} m/s` : 'no finish');
+  check(`${car.name}: the lap race keeps wheel contact, no NaN and no respawn`,
+        run.states.every((state) => state.anyContact === 1) &&
+        run.states.every((state) => state.finite === 1) && run.respawns.length === 0,
+        `${run.states.filter((state) => state.anyContact === 1).length}/${run.states.length} contact, ` +
+        `${run.states.filter((state) => state.finite !== 1).length} non-finite, ${run.respawns.length} respawns`);
+  check(`${car.name}: the car stays inside the declared lap band for the whole race`,
+        finish !== null && run.rules.maxLateralRunning <= lapLayout.course.lap.bandHalfWidthMetres + 1e-9,
+        finish ? `max running lateral ${run.rules.maxLateralRunning.toFixed(3)} m of ` +
+          `${lapLayout.course.lap.bandHalfWidthMetres} m` : 'no finish');
+  check(`${car.name}: the all-visible prop layer is active and inert on the clear loop`,
+        run.prop !== null && run.prop.profile === 'all-visible' && run.prop.colliders === 468 &&
+        run.prop.contacts === 0 && run.prop.blockedTicks === 0 && run.prop.substeps > 0,
+        run.prop ? `${run.prop.colliders} colliders, ${run.prop.contacts} contacts, ` +
+          `${run.prop.substeps} substeps` : 'no prop layer');
+  check(`${car.name}: the driven car centre clears every steep collision face by more than the car circumradius`,
+        minSteepFaceDistance > LAP_CAR_CIRCUMRADIUS + 0.1,
+        `min centre-to-face ${minSteepFaceDistance.toFixed(3)} m at tick ${minSteepFaceTick}, ` +
+        `car circumradius ${round6Local(LAP_CAR_CIRCUMRADIUS)} m`);
+  check(`${car.name}: replaying the lap inputs without the rules reproduces every state hash`,
+        replayMatches, replayMatches ? `${hashes.length} ticks` : 'state sequence differs');
+  check(`${car.name}: the lap run matches its deterministic state-sequence anchor`,
+        LAP_ANCHORS[car.slug] === null || LAP_ANCHORS[car.slug] === stateSequenceHash,
+        `${stateSequenceHash}`);
+  const lapValidation = validatePacket(run.packet);
+  check(`${car.name}: the lap produces a valid packet v1.1 timeline with the lap script label`,
+        lapValidation.ok === true && run.packet.updates.length === run.states.length &&
+        run.packet.diagnostics.extras.drive.script === LAP_PACKET_SCRIPT &&
+        run.packet.updates.every((update) => update.matrices.length === 9),
+        lapValidation.errors.slice(0, 4).join(' | '));
+
+  const lapRunPath = path.join(OUT, `sprint-lap-${car.slug}.json`);
+  writeFileSync(lapRunPath, JSON.stringify({
+    kind: 'e1-drive.sprint-run',
+    version: 1,
+    courseId: lapLayout.courseId,
+    car: { slug: car.slug, name: car.name, record: car.record, drivetrain: car.drivetrain, fields: car.fields },
+    layoutHash: lapLayout.hash,
+    layoutFile: path.relative(ROOT, SPRINT_LAP_FILE).split(path.sep).join('/'),
+    tickHz: TICK_HZ,
+    countdownTicks: lapLayout.countdown.ticks,
+    stateSequenceHash,
+    lapTimes,
+    bestLapSeconds,
+    maxLateralMetres: run.rules.maxLateralRunning,
+    events: run.events,
+    finish,
+    laps: lapEvents,
+    respawns: run.respawns,
+    ticks: run.rows,
+    inputs: run.inputs,
+    captures: lapCaptures
+  }, null, 2) + '\n', 'utf8');
+
+  lapResults.push({
+    slug: car.slug,
+    name: car.name,
+    drivetrain: car.drivetrain,
+    default: car.slug === defaultCar.slug,
+    layoutHash: lapLayout.hash,
+    courseId: lapLayout.courseId,
+    laps: lapLayout.course.lap.laps,
+    lapLengthMetres: lapLayout.course.lap.lengthMetres,
+    goTick: run.go?.tick ?? null,    finish: finish ? {
+      timeSeconds: finish.timeSeconds,
+      tick: finish.tick,
+      position: finish.position,
+      speed: run.states[finish.tick].speed,
+      laps: finish.laps
+    } : null,
+    lapTimes,
+    bestLapSeconds,
+    minSteepFaceDistanceMetres: round6Local(minSteepFaceDistance),
+    minSteepFaceTick,
+    carCircumradiusMetres: round6Local(LAP_CAR_CIRCUMRADIUS),
+    lapEvents: lapEvents.map((event) => ({
+      type: event.type, lap: event.lap, tick: event.tick,
+      timeSeconds: event.timeSeconds, lapSeconds: event.lapSeconds,
+      bestLapSeconds: event.bestLapSeconds, position: event.position
+    })),
+    respawns: run.respawns.length,
+    ticks: run.states.length,
+    contactTicks: run.states.filter((state) => state.anyContact === 1).length,
+    nanTicks: run.states.filter((state) => state.finite !== 1).length,
+    maxLateralMetres: run.rules.maxLateralRunning,
+    maxPostFinishLateralMetres: run.rules.maxLateral,
+    progress: run.rules.snapshot().progress,
+    stateSequenceHash,
+    replayMatches,
+    packet: {
+      hash: run.packet.hash,
+      updates: run.packet.updates.length,
+      draws: run.packet.draws.length,
+      nodes: run.packet.nodes.length,
+      bytes: formatPacket(run.packet).length,
+      validationErrors: lapValidation.errors.length
+    },
+    runPath: path.relative(ROOT, lapRunPath).split(path.sep).join('/'),
+    prop: run.prop,
+    captures: lapCaptures
+  });
+  log.push(`${car.slug}: lap ${lapTimes.map((seconds) => seconds.toFixed(3)).join('/')} s, ` +
+           `total ${finish?.timeSeconds} s, ${run.states.length} ticks`);
+}
+
 // The ghost is a recording of the sprint runs above, not a second simulation.
 // The committed reference set under probes/e1-drive/ghosts/ is regenerated from
 // these exact runs: `--write-ghosts` writes it and a normal run compares the
@@ -2634,6 +3205,8 @@ async function runTelemetryResetSeries(car, fieldBytes, reference) {
  * same per-tick state hashes and the same finish.
  */
 async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
+  const start = layoutStartPosition(layout, layoutSpawn);
+  const maxTicks = isLapLayout(layout) ? LAP_SCRIPT_TICKS : SPRINT_SCRIPT_TICKS;
   const factory = (await import(pathToFileURL(MODULE).href)).default;
   const module = await factory();
   const levelPtr = module._malloc(levelBytes.length);
@@ -2646,7 +3219,7 @@ async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
     const ok = restart
       ? module._e1_reset()
       : module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
-                          TICK0_LIMITS.x, TICK0_LIMITS.z, layoutStartHeading(layout, layoutSpawn));
+                          start.x, start.z, start.heading);
     if (!ok) throw new Error(`${car.name}: sprint ${restart ? 'restart' : 'create'} failed: ` +
                              module.UTF8ToString(module._e1_last_error()));
     const rules = createSprintRules(layout);
@@ -2656,7 +3229,7 @@ async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
     const inputs = [];
     const events = [];
     let previous = state0;
-    for (let tick = 1; tick <= SPRINT_SCRIPT_TICKS; tick++) {
+    for (let tick = 1; tick <= maxTicks; tick++) {
       const input = sprintScriptInput(rules, previous);
       inputs.push(input);
       module._e1_set_input(input[0], input[1], input[2], input[3]);
@@ -2674,6 +3247,7 @@ async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
       events,
       finish: events.find((event) => event.type === SPRINT_EVENT.FINISH) ?? null,
       checkpoints: events.filter((event) => event.type === SPRINT_EVENT.CHECKPOINT).length,
+      lapEvents: events.filter((event) => event.type === SPRINT_EVENT.LAP || event.type === SPRINT_EVENT.FINISH),
       respawns: events.filter((event) => event.type === SPRINT_EVENT.RESPAWN).length,
       traceHash: hashOfLocal(hashes),
       inputHash: hashOfLocal(inputs)
@@ -3116,6 +3690,41 @@ for (const car of cars) {
            `identical ${run.restartMatches}`);
 }
 
+// Lap restart: the same 3-lap run after e1_reset() in one instance. The lap times
+// and every state hash must be identical; the loop's own start point is re-used.
+const lapRestartResults = [];
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const run = await runSprintRestart(car, fieldBytes, lapLayout);
+  check(`${car.name}: the 3-lap restart completes after e1_reset() with three laps`,
+        run.second.finish !== null && run.second.lapEvents.length === 3 && run.second.respawns === 0,
+        run.second.finish ? `${run.second.finish.timeSeconds} s, ${run.second.lapEvents.length} lap events`
+          : 'no finish');
+  check(`${car.name}: the restarted lap race replays the same inputs, state hashes, lap times and finish`,
+        run.restartMatches &&
+        run.first.lapEvents.every((event, index) =>
+          event.lapSeconds === run.second.lapEvents[index]?.lapSeconds),
+        `${run.first.traceHash.slice(0, 12)} vs ${run.second.traceHash.slice(0, 12)}, ` +
+        `${run.first.finish?.timeSeconds} vs ${run.second.finish?.timeSeconds} s`);
+  lapRestartResults.push({
+    slug: car.slug,
+    name: car.name,
+    finishSeconds: run.first.finish?.timeSeconds ?? null,
+    finishTick: run.first.finish?.tick ?? null,
+    lapTimes: run.first.lapEvents.map((event) => event.lapSeconds),
+    ticks: run.first.hashes.length,
+    traceHash: run.first.traceHash,
+    inputHash: run.first.inputHash,
+    restartTraceHash: run.second.traceHash,
+    restartFinishSeconds: run.second.finish?.timeSeconds ?? null,
+    restartMatches: run.restartMatches,
+    heapBytes: run.heapBytes,
+    scheduler: run.scheduler
+  });
+  log.push(`${car.slug}: lap restart ${run.first.finish?.timeSeconds} s -> ` +
+           `${run.second.finish?.timeSeconds} s, identical ${run.restartMatches}`);
+}
+
 
 // ------------------------------------------------------------- sprint rules tests
 // Synthetic states exercise the order and respawn decisions without an engine;
@@ -3287,6 +3896,91 @@ check('sprint rules: a 310 m respawn targets the last passed gate point and its 
       pathTarget.heading === derivedLayout.gates[1].headingRad &&
       Math.abs(layoutStartHeading(derivedLayout, layoutSpawn) - sprintGates[0].headingRad) < 1e-12,
       `${pathTarget.gateId} @ ${pathTarget.heading}`);
+
+// ---- lap rules on P61 loop-01 ------------------------------------------------
+// Synthetic states walk the measured loop; the line is crossed three times. This
+// proves lap counting/order and the respawn target without an engine.
+const lapRuleSamples = lapLayout.course.samples;
+const lapRuleRing = lapRuleSamples.length - 1;
+function lapRuleState(tick, arc, lateral = 0, options = {}) {
+  let index = 0;
+  for (let cursor = 0; cursor < lapRuleRing; cursor++) {
+    if (Math.abs(lapRuleSamples[cursor].arc - arc) < Math.abs(lapRuleSamples[index].arc - arc)) index = cursor;
+  }
+  const sample = lapRuleSamples[index];
+  const previous = lapRuleSamples[(index - 1 + lapRuleRing) % lapRuleRing];
+  const next = lapRuleSamples[(index + 1) % lapRuleRing];
+  const tx = next.x - previous.x;
+  const tz = next.z - previous.z;
+  const length = Math.hypot(tx, tz);
+  const nx = -tz / length;
+  const nz = tx / length;
+  const contact = options.contact ?? 1;
+  return {
+    tick,
+    position: [sample.x + nx * lateral, options.y ?? sample.groundY + 0.35, sample.z + nz * lateral],
+    speed: options.speed ?? 12,
+    contacts: [contact, contact, contact, contact],
+    anyContact: contact,
+    finite: options.finite ?? 1,
+    wheels: [],
+    input: [0, 0, 0, 0]
+  };
+}
+const lapRulesTest = createSprintRules(lapLayout);
+let lapRuleTick = 0;
+lapRulesTest.prime(lapRuleState(0, 0));
+while (lapRulesTest.phase === 'countdown') { lapRuleTick++; lapRulesTest.step(lapRuleState(lapRuleTick, 0)); }
+const lapRuleEvents = [];
+for (let lap = 0; lap < 3; lap++) {
+  for (let arc = 2; arc < lapLayout.course.lap.lengthMetres - 1; arc += 2) {
+    lapRuleTick++;
+    for (const event of lapRulesTest.step(lapRuleState(lapRuleTick, arc))) lapRuleEvents.push(event);
+  }
+  lapRuleTick++;
+  for (const event of lapRulesTest.step(lapRuleState(lapRuleTick, 0.1))) lapRuleEvents.push(event);
+}
+const lapRuleLines = lapRuleEvents.filter((event) => event.type === SPRINT_EVENT.LAP || event.type === SPRINT_EVENT.FINISH);
+check('lap rules: three forward line crossings count laps 1, 2 and finish lap 3 in order',
+      lapRuleLines.length === 3 && lapRuleLines[0].lap === 1 && lapRuleLines[1].lap === 2 &&
+      lapRuleLines[2].lap === 3 && lapRuleLines[2].type === SPRINT_EVENT.FINISH &&
+      lapRulesTest.phase === 'finished' && lapRulesTest.lapTimes.length === 3 &&
+      lapRuleLines.every((event, index) => index === 0 || event.tick > lapRuleLines[index - 1].tick),
+      lapRuleLines.map((event) => `${event.type}:${event.lap}@${event.tick}`).join(' '));
+check('lap rules: the synthetic three laps record positive lap times and the best is the minimum',
+      lapRulesTest.lapTimes.every((seconds) => seconds > 0) &&
+      lapRulesTest.snapshot().bestLapSeconds === Math.min(...lapRulesTest.lapTimes) &&
+      lapRulesTest.finishTimeSeconds === lapRuleLines[2].timeSeconds,
+      lapRulesTest.lapTimes.join('/'));
+check('lap rules: the lap respawn target is the start/finish line and its measured heading',
+      (() => {
+        const target = lapRulesTest.respawnTarget();
+        return target.gateId === 'lap-line' &&
+          target.x === lapLayout.course.lap.line.x && target.z === lapLayout.course.lap.line.z &&
+          target.heading === lapLayout.course.lap.line.headingRad;
+      })());
+const lapOutsideRules = createSprintRules(lapLayout);
+let lapOutsideTick = 0;
+lapOutsideRules.prime(lapRuleState(0, 0));
+while (lapOutsideRules.phase === 'countdown') { lapOutsideTick++; lapOutsideRules.step(lapRuleState(lapOutsideTick, 0)); }
+const lapOutsideEvents = lapOutsideRules.step(lapRuleState(lapOutsideTick + 1, 100,
+  lapLayout.course.lap.bandHalfWidthMetres + 1));
+check('lap rules: leaving the declared band triggers an outside-corridor respawn at the line',
+      lapOutsideEvents.some((event) => event.type === SPRINT_EVENT.RESPAWN &&
+        event.reasons.includes('outside-corridor') && event.target.gateId === 'lap-line') &&
+      lapOutsideRules.awaitingRejoin === true,
+      lapOutsideEvents.map((event) => event.type + ':' + (event.reasons ?? []).join('+')).join(','));
+const lapResetRules = createSprintRules(lapLayout);
+lapResetRules.lapIndex = 2;
+lapResetRules.lapTimes = [20, 21];
+lapResetRules.phase = 'finished';
+lapResetRules.finishTimeSeconds = 60;
+lapResetRules.reset();
+check('lap rules: R restart resets laps, lap times, timer and finish state',
+      lapResetRules.phase === 'countdown' && lapResetRules.elapsedTicks === 0 &&
+      lapResetRules.lapIndex === 0 && lapResetRules.lapTimes.length === 0 &&
+      lapResetRules.finishTimeSeconds === null && lapResetRules.lapDistance === 0,
+      lapResetRules.phase);
 
 // Best-time store: localStorage-shaped, including hostile storages.
 function fakeStorage(initial = null) {
@@ -3597,6 +4291,35 @@ const report = {
       file: '_work/e1-drive/sprint-short.json',
       cars: sprintShortResults
     },
+    lapCourse: {
+      courseId: lapLayout.courseId,
+      layout: lapLayoutCheck,
+      file: '_work/e1-drive/sprint-lap.json',
+      laps: lapLayout.course.lap.laps,
+      prop: {
+        profile: PROP_PROFILE,
+        manifest: PROP_MANIFEST,
+        fileSha256: propFileSha,
+        contentSha256: propManifest.contentSha256,
+        colliders: propManifest.colliders.length,
+        activeAllVisible: lapPropWorld.colliders.length,
+        loopSamples: loopPropSamples,
+        loopBlockedSamples: loopPropBlocked,
+        loopBlockedArcs: loopPropBlockedArcs,
+        loopContactIds: [...loopPropContacts.keys()],
+        nearestCollider: {
+          distanceMetres: round6Local(nearestCollider.distanceMetres),
+          colliderId: nearestCollider.colliderId,
+          classification: nearestCollider.classification,
+          arc: nearestCollider.arc
+        },
+        note: 'the P66 manifest covers visible props within 30 m of the 310 m course; loop-01 is 69.5 m ' +
+          'outside that region, so all-visible is safe on the loop but has no collider to hit there'
+      },
+      rules: lapLayout.rules,
+      cars: lapResults,
+      restartCars: lapRestartResults
+    },
     restartCars: sprintRestartResults
   },
   ghost: {
@@ -3788,6 +4511,24 @@ console.log(JSON.stringify({
       reasons: respawnEvent?.reasons ?? null,
       target: respawnRebuild?.target.gateId ?? null,
       elapsedAfter: respawnRun.post?.elapsed ?? null
+    },
+    lap: {
+      layoutHash: lapLayout.hash,
+      lengthMetres: lapLayout.course.lap.lengthMetres,
+      laps: lapLayout.course.lap.laps,
+      blockedArcs: loopPropBlockedArcs.length,
+      cars: lapResults.map((entry) => ({
+        car: entry.name,
+        slug: entry.slug,
+        lapTimes: entry.lapTimes,
+        bestLapSeconds: entry.bestLapSeconds,
+        totalSeconds: entry.finish?.timeSeconds ?? null,
+        respawns: entry.respawns,
+        maxLateral: entry.maxLateralMetres,
+        minSteepFace: entry.minSteepFaceDistanceMetres,
+        replayMatches: entry.replayMatches,
+        packetHash: entry.packet.hash
+      }))
     }
   },
   ghost: {

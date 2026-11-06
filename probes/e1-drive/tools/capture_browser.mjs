@@ -55,7 +55,7 @@ if (!edge) throw new Error('msedge.exe not found; pass --edge <path>');
 
 const PORT = Number(option('--port', '8801'));
 const DEBUG_PORT = Number(option('--debug-port', '9341'));
-const PROFILE = path.join(OUT, 'edge-profile');
+const PROFILE = path.join(OUT, 'edge-profile-' + PORT);
 const VIEWPORT = { width: 1600, height: 900 };
 const TICKS = option('--ticks', '0,150,240,300').split(',').map(Number);
 const ONLY_CAR = option('--car', null);
@@ -63,18 +63,21 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, respawn, telemetry, restart, telemetry-restart, survey or ghost)');
+    ' (drive, sprint, lap, respawn, telemetry, restart, telemetry-restart, survey or ghost)');
 }
-// Course selection: 310 (default, `_work/e1-drive/sprint.json`) or short
-// (`?course=short`, `_work/e1-drive/sprint-short.json`).
-const COURSE = option('--course', '310');
-if (!['310', 'short'].includes(COURSE)) {
-  throw new Error('unknown --course ' + JSON.stringify(COURSE) + ' (use 310 or short)');
+// Course selection: 310 (default, `_work/e1-drive/sprint.json`), short
+// (`?course=short`, `_work/e1-drive/sprint-short.json`) or lap (`?course=lap`,
+// `_work/e1-drive/sprint-lap.json`). `--mode lap` always selects the lap.
+let COURSE = option('--course', '310');
+if (!['310', 'short', 'lap'].includes(COURSE)) {
+  throw new Error('unknown --course ' + JSON.stringify(COURSE) + ' (use 310, short or lap)');
 }
-const COURSE_QUERY = COURSE === 'short' ? 'course=short' : '';
-const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' + (COURSE === 'short' ? 'short' : '310m');
+if (MODE === 'lap') COURSE = 'lap';
+const COURSE_QUERY = COURSE === 'short' ? 'course=short' : COURSE === 'lap' ? 'course=lap' : '';
+const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' +
+  (COURSE === 'short' ? 'short' : COURSE === 'lap' ? 'lap' : '310m');
 const DIAGNOSTIC_CAMERA = /(^|&)cam(dist|height)=/.test(EXTRA_QUERY);
 const MID_TICK = 150;
 
@@ -148,7 +151,19 @@ function expectedFor(car) {
 
 mkdirSync(OUT, { recursive: true });
 mkdirSync(LOGS, { recursive: true });
-rmSync(PROFILE, { recursive: true, force: true });
+// A previous run's headless Edge can hold the profile directory for a moment
+// after the process is killed. Retry the reset instead of failing the whole
+// capture with EPERM; a stale profile must never be reused silently.
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+for (let attempt = 0; ; attempt++) {
+  try {
+    rmSync(PROFILE, { recursive: true, force: true });
+    break;
+  } catch (error) {
+    if (attempt >= 19 || (error.code !== 'EPERM' && error.code !== 'EBUSY')) throw error;
+    sleepSync(250);
+  }
+}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -254,10 +269,14 @@ async function capture(car, label, tick, options = {}) {
     (options.extraQuery ? '&' + options.extraQuery : '');
   await send('Page.navigate', { url });
   let probe = null;
-  for (let attempt = 0; attempt < 400; attempt++) {
-    probe = await evaluate(`(()=>{const p=window.e1DriveProbe;return p?{state:p.consumer,error:p.error,engineTick:p.engineTick,displayTick:p.displayTick,frames:p.frames,holdReached:p.holdReached,draws:p.draws,car:p.car}:null})()`).catch(() => null);
-    if (probe && probe.state === 'error') break;
-    if (probe && probe.state === 'running' && probe.holdReached && probe.frames >= 12) break;
+  // A scripted run advances at the fixed-step 60 Hz in real time. The 3-lap
+  // finish capture sits at ~88 s of simulated time, so the default 80 s poll
+  // window is too short; long runs get a proportionally longer window.
+  const pollAttempts = options.longRun ? 1200 : 400;
+  for (let attempt = 0; attempt < pollAttempts; attempt++) {
+    probe = await evaluate(`(()=>{const p=window.e1DriveProbe;return p?{state:p.consumer,error:p.error,engineTick:p.engineTick,displayTick:p.displayTick,frames:p.frames,holdReached:p.holdReached,draws:p.draws,car:p.car,url:location.href}:null})()`).catch(() => null);
+    if (probe && probe.url === url && probe.state === 'error') break;
+    if (probe && probe.url === url && probe.state === 'running' && probe.holdReached && probe.frames >= 12) break;
     await sleep(200);
   }
   if (!probe) throw new Error(label + ': page never published state');
@@ -302,6 +321,7 @@ async function capture(car, label, tick, options = {}) {
       sprintResult: p.sprintResult ?? null,
       sprintBest: p.sprintBest ?? null,
       ghost: p.ghost ?? null,
+      props: p.props ?? null,
       overlays: {
         countdownHidden: document.getElementById('countdown')?.hidden ?? null,
         countdownText: document.getElementById('countdown')?.textContent ?? null,
@@ -392,6 +412,7 @@ function cameraMaxDelta(a, b) {
 
 if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
+    : MODE === 'lap' ? await lapCapturePass()
     : MODE === 'ghost' ? await ghostCapturePass()
     : MODE === 'survey' ? await surveyCapturePass()
     : MODE === 'respawn' ? await respawnCapturePass()
@@ -602,6 +623,203 @@ async function sprintCapturePass() {
         messages: row.messages.length
       }))
     }
+  };
+}
+
+/**
+ * Start / lap 1 / lap 2 / finish captures of the 3-lap P61 loop-01 race, using
+ * run.json → lapCourse.cars[].captures as the expected state. The page runs the
+ * same layout and the same deterministic follower; the prop layer is active.
+ */
+async function lapCapturePass() {
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  const lapRun = runDocument.sprint?.lapCourse;
+  if (!lapRun?.cars) {
+    throw new Error('run.json has no lap results — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const lapLayout = JSON.parse(readFileSync(path.join(OUT, 'sprint-lap.json'), 'utf8'));
+  const rows = [];
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+
+  for (const car of cars) {
+    const entry = lapRun.cars.find((candidate) => candidate.slug === car.slug);
+    if (!entry) throw new Error('run.json has no lap result for ' + car.slug);
+    const body = geometry.carBodies[car.slug];
+    if (!body) throw new Error('geometry has no body for ' + car.slug);
+    const uploadBytes = meshBytes(levelMesh) + meshBytes(body.mesh) + meshBytes(trackMesh);
+    const draws = 22 + geometry.trackVisual.drawCount + body.carDraws.length;
+    const finishSeconds = entry.finish.timeSeconds;
+
+    for (const spec of entry.captures) {
+      const label = 'sprint-lap-' + spec.label;
+      const shot = await capture(car, label, spec.tick, { script: 'sprint', course: 'course=lap', longRun: true });
+      const probe = shot.probe;
+      const state = probe.sprint;
+      const overlay = probe.overlays ?? {};
+      const cameraDelta = probe.render && spec.camera ? cameraMaxDelta(probe.render.camera, spec.camera) : null;
+      const matrixDelta = probe.render && Array.isArray(spec.matrices)
+        ? Math.max(...probe.render.matrices.map((entryMatrix, index) => {
+          const expected = spec.matrices[index]?.world;
+          if (!expected || expected.length !== entryMatrix.world.length) return Infinity;
+          return Math.max(...entryMatrix.world.map((value, axis) => Math.abs(value - expected[axis])));
+        }))
+        : null;
+
+      passCheck(`${car.slug}/${label}: held at tick ${spec.tick} with the update the page built`,
+        probe.holdReached === true && probe.displayTick === spec.tick && probe.render?.tick === spec.tick,
+        `display ${probe.displayTick}, render ${probe.render?.tick}`);
+      passCheck(`${car.slug}/${label}: the page drove the requested car on the lap layout`,
+        probe.car?.name === car.name && probe.sprintLayoutHash === lapLayout.hash,
+        JSON.stringify({ car: probe.car?.name, layout: probe.sprintLayoutHash }));
+      passCheck(`${car.slug}/${label}: browser state hash equals the node lap state`,
+        probe.tickHashes[spec.tick]?.stateHash === spec.stateHash,
+        (probe.tickHashes[spec.tick]?.stateHash ?? 'none') + ' vs ' + spec.stateHash);
+      passCheck(`${car.slug}/${label}: the car matrix is bit-identical to the node lap packet`,
+        probe.render && spec.matrix &&
+        probe.render.matrix.every((value, index) => Object.is(value, spec.matrix[index])),
+        'matrix differs');
+      passCheck(`${car.slug}/${label}: every node matrix matches the node lap packet within 1e-12`,
+        matrixDelta !== null && matrixDelta <= 1e-12,
+        'max |matrix delta| ' + (matrixDelta === null ? 'n/a' : matrixDelta.toExponential(3)));
+      passCheck(`${car.slug}/${label}: the browser camera matches the node lap camera within 1e-6`,
+        cameraDelta !== null && cameraDelta <= 1e-6,
+        'max |delta| ' + (cameraDelta === null ? 'n/a' : cameraDelta.toExponential(3)));
+      passCheck(`${car.slug}/${label}: geometry uploads equal the level + own body + track meshes`,
+        probe.geometryUploads === MESH_COUNT && probe.geometryUploadBytes === uploadBytes,
+        probe.geometryUploads + ' uploads / ' + probe.geometryUploadBytes + ' B');
+      passCheck(`${car.slug}/${label}: one draw per draw per frame`,
+        probe.draws === draws && probe.drawsIssued === probe.frames * probe.draws,
+        probe.drawsIssued + ' draws / ' + probe.frames + ' frames * ' + probe.draws);
+      passCheck(`${car.slug}/${label}: nine matrices per rendered tick`,
+        probe.render?.matrices?.length === 9, String(probe.render?.matrices?.length));
+      passCheck(`${car.slug}/${label}: the all-visible prop layer is active`,
+        probe.props?.profile === 'all-visible' && probe.props?.colliders === 468,
+        JSON.stringify({ profile: probe.props?.profile, colliders: probe.props?.colliders }));
+
+      if (spec.label === 'start') {
+        passCheck(`${car.slug}/${label}: the countdown is on screen on lap 1`,
+          state?.phase === 'countdown' && state.elapsedTicks === 0 && state.lap === 1 &&
+          state.laps === 3 && state.checkpointsPassed === 0 && state.countdownLabel === '3' &&
+          state.progress < 0.01 && overlay.countdownHidden === false && overlay.resultsHidden === true,
+          JSON.stringify({ phase: state?.phase, lap: state?.lap, label: overlay.countdownText }));
+      } else if (spec.label === 'lap1' || spec.label === 'lap2') {
+        const completed = spec.label === 'lap1' ? 1 : 2;
+        passCheck(`${car.slug}/${label}: lap ${completed} is complete and lap ${completed + 1} is running`,
+          state?.phase === 'running' && state.checkpointsPassed === completed &&
+          state.lap === completed + 1 && Math.abs(state.elapsedSeconds - spec.elapsedSeconds) < 1e-6 &&
+          spec.lapTimes?.length === completed && overlay.resultsHidden === true &&
+          overlay.eventVisible === '1' && new RegExp('lap ' + completed + '/3', 'i').test(overlay.eventText ?? ''),
+          JSON.stringify({ phase: state?.phase, done: state?.checkpointsPassed, lap: state?.lap,
+            elapsed: state?.elapsedSeconds, banner: overlay.eventText }));
+        passCheck(`${car.slug}/${label}: the completed lap time equals the node lap`,
+          spec.lapTimes?.[completed - 1] === state?.lapTimes?.[completed - 1] &&
+          Math.abs((state?.bestLapSeconds ?? 0) - Math.min(...(state?.lapTimes ?? [0]))) < 1e-6,
+          JSON.stringify({ browser: state?.lapTimes, node: spec.lapTimes }));
+      } else if (spec.label === 'finish') {
+        passCheck(`${car.slug}/${label}: lap 3 finishes with the node total and three lap times`,
+          state?.finished === true && state.checkpointsPassed === 3 &&
+          Math.abs(state.finishTimeSeconds - finishSeconds) < 1e-6 &&
+          Math.abs(state.elapsedSeconds - finishSeconds) < 1e-6 && state.progress > 0.9999 &&
+          state.lapTimes.length === 3 &&
+          state.lapTimes.every((seconds, index) =>
+            Math.abs(seconds - entry.lapTimes[index]) < 1e-6),
+          JSON.stringify({ finished: state?.finished, time: state?.finishTimeSeconds, node: finishSeconds,
+            laps: state?.lapTimes, done: state?.checkpointsPassed, elapsed: state?.elapsedSeconds,
+            progress: state?.progress }));
+        passCheck(`${car.slug}/${label}: the results overlay shows the total, lap list and best lap`,
+          overlay.resultsHidden === false &&
+          (overlay.resultsTime ?? '').includes(finishSeconds.toFixed(3)) &&
+          (overlay.resultsTime ?? '').includes(car.name) &&
+          (overlay.resultsBest ?? '').includes('best lap ' + entry.bestLapSeconds.toFixed(3)),
+          JSON.stringify({ time: overlay.resultsTime, best: overlay.resultsBest }));
+        let stored = null;
+        try { stored = probe.bestStored ? JSON.parse(probe.bestStored) : null; } catch { stored = null; }
+        passCheck(`${car.slug}/${label}: the race best is persisted in the lap namespace`,
+          stored?.cars?.[car.slug]?.seconds !== undefined &&
+          Math.abs(stored.cars[car.slug].seconds - Number(finishSeconds.toFixed(3))) < 1e-6 &&
+          probe.sprintResult?.improved === true,
+          JSON.stringify({ stored: stored?.cars?.[car.slug] ?? null, best: probe.sprintBest }));
+      } else {
+        passCheck(`${car.slug}/${label}: unknown lap capture label`, false, spec.label);
+      }
+
+      rows.push({
+        car: car.name,
+        slug: car.slug,
+        label,
+        tick: spec.tick,
+        url: shot.url,
+        screenshot: shot.screenshot,
+        carCrop: shot.carCrop,
+        phase: state?.phase ?? null,
+        lap: state?.lap ?? null,
+        laps: state?.laps ?? null,
+        elapsedSeconds: state?.elapsedSeconds ?? null,
+        lapTimes: state?.lapTimes ?? null,
+        bestLapSeconds: state?.bestLapSeconds ?? null,
+        checkpointsPassed: state?.checkpointsPassed ?? null,
+        finished: state?.finished ?? null,
+        finishTimeSeconds: state?.finishTimeSeconds ?? null,
+        progress: state?.progress ?? null,
+        position: probe.position,
+        speed: probe.speed,
+        props: probe.props ?? null,
+        sprintResult: probe.sprintResult,
+        overlays: overlay,
+        stateHash: probe.tickHashes[spec.tick]?.stateHash ?? null,
+        nodeStateHash: spec.stateHash,
+        updateHash: probe.render?.hash ?? null,
+        nodeUpdateHash: spec.updateHash,
+        pageRender: probe.render,
+        packetHashExact: probe.render?.hash === spec.updateHash,
+        carMatrixExact: !!probe.render && !!spec.matrix &&
+          probe.render.matrix.every((value, index) => Object.is(value, spec.matrix[index])),
+        cameraMaxDelta: cameraDelta,
+        matrixMaxDelta: matrixDelta,
+        frames: probe.frames,
+        geometryUploads: probe.geometryUploads,
+        geometryUploadBytes: probe.geometryUploadBytes,
+        drawsIssued: probe.drawsIssued,
+        canvas: probe.canvas,
+        messages: shot.messages
+      });
+    }
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages);
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  passCheck('console is clean in every lap capture', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  const exact = rows.filter((row) => row.packetHashExact).length;
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'lap',
+    courseId: 'lap',
+    layout: { hash: lapLayout.hash, span: lapLayout.course.span, lap: lapLayout.course.lap },
+    prop: { profile: 'all-visible', colliders: 468 },
+    cars: rows,
+    packetHashAgreement: { exact, total: rows.length, note:
+      'a mismatch is a documented last-bit transcendental difference between Node 24 and Edge 156; the state ' +
+      'hash, the car matrix and the 1e-12 matrix/camera tolerances are checked separately' },
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-lap.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-lap.log'), browserLog, 'utf8');
+  const summary = {
+    mode: 'lap',
+    cars: rows.length,
+    exact,
+    console: allMessages.length,
+    assertions: passFailures.length,
+    screenshots: rows.map((row) => row.screenshot)
+  };
+  return {
+    ok: blocking.length === 0 && passFailures.length === 0,
+    summary,
+    evidence
   };
 }
 

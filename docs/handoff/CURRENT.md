@@ -1,10 +1,10 @@
 # CURRENT — buradan devam
 
 **Güncelleme:** 6 Kasım 2026
-**Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, 5 dokulu araç, ghost, tarayıcıda test edilebilir.
+**Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, **loop-01 3 tur**, 5 dokulu araç, ghost, tarayıcıda test edilebilir.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
 **Son commit'ler:** `39bd1b6` free-roam, `ff8a336` prop colliders, `8ac0109` ghost, `c63d4a4` audio, `777748c` steering.
-**KAPANMA/RESUME:** [`RESUME_2026-11-06.md`](RESUME_2026-11-06.md) — **P67 lap+collision commit edilmedi ve kırmızı; önce buradan devam.**
+**KAPANMA/RESUME:** [`RESUME_2026-11-06.md`](RESUME_2026-11-06.md) — kapanış kaydı; P67 sonradan düzeltildi ve commit edildi. Sıradaki: `?course=free`.
 
 ## Şu an neredeyiz?
 
@@ -44,13 +44,12 @@
 
 ## Sıradaki iş
 
-**P67 — loop-01 3 tur + prop collision (YARIM, KIRMIZI, COMMIT YOK):**
-`?course=lap` için loop-01 (222,04 m) üzerinde spawn/lap sayacı/bitiş ve
-prop collision entegrasyonu `probes/e1-drive/` içinde yazıldı ama doğrulama
-geçmiyor: Audi `lap times undefined`, `best null`, `no finish`, 1 respawn;
-verifier `TypeError: reading '310m'`. Ayrıntı ve kurtarma:
-[`RESUME_2026-11-06.md`](RESUME_2026-11-06.md). Bilinen yeşil durum:
-`39bd1b6` (310 m sprint, 678/678, checker 19/19).
+**P67 — loop-01 3 tur + prop collision (TAMAM, doğrulandı):**
+`?course=lap` P61 `loop-01` (222,04 m) üzerinde 3 turluk yarış. 5 araç
+**85,47–86,28 s**, tur süreleri ~28,4–29,2 s, **0 respawn**, replay/restart
+birebir; `verify_e1_drive` **766/766**, suite 30/30, checker 21/21. `all-visible` prop katmanı
+tur modunda aktif ve inert (loop-01'de prop yok, 0 temas). Kanıt:
+`docs/work/verification/T-007-lap-mode.md`. Sıradaki: `?course=free` (R04).
 
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /

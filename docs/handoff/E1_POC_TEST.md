@@ -46,13 +46,13 @@ accelerated). Konsolu F12 ile açın; test boyunca **0 mesaj** beklenir.
 
 ## 3. Araçlar ve beklenen 310 m süreleri
 
-| Araç | `?car=` | 310 m (scripted) | 29 m `?course=short` |
-|---|---|---:|---:|
-| Audi R8 V10 (AWD) | `audi-r8v10-stock` | **14,150 s** | 2,283 s |
-| Corvette ZR1 (RWD) | `corvette-zr1-stock` | 14,650 s | 2,800 s |
-| Lotus Exige Cup260 (RWD) | `lotus-exige-cup260-stock` | 14,767 s | 2,850 s |
-| Dodge Challenger (RWD) | `dodge-challenger-stock` | 14,917 s | 3,000 s |
-| Ford Focus RS (FWD) | `ford-focusrs-stock` | 15,217 s | 3,267 s |
+| Araç | `?car=` | 310 m (scripted) | 29 m `?course=short` | 3 tur `?course=lap` |
+|---|---|---|---:|---:|
+| Audi R8 V10 (AWD) | `audi-r8v10-stock` | **14,150 s** | 2,283 s | **85,467 s** |
+| Corvette ZR1 (RWD) | `corvette-zr1-stock` | 14,650 s | 2,800 s | 86,100 s |
+| Lotus Exige Cup260 (RWD) | `lotus-exige-cup260-stock` | 14,767 s | 2,850 s | 86,283 s |
+| Dodge Challenger (RWD) | `dodge-challenger-stock` | 14,917 s | 3,000 s | 86,117 s |
+| Ford Focus RS (FWD) | `ford-focusrs-stock` | 15,217 s | 3,267 s | 86,250 s |
 
 Sıralama sabittir: AWD en hızlı, FWD en yavaş. Klavyeyle sürüşte süre daha
 uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
@@ -76,7 +76,9 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 | `/` | Serbest sürüş + 310 m sprint (countdown, 2 checkpoint, finish) |
 | `/?car=audi-r8v10-stock` | Araç seçimi (üstteki CAR listesi de çalışır) |
 | `/?course=short` | 29 m regresyon parkuru |
+| `/?course=lap` | **3 turluk kapalı tur** (loop-01 222,04 m, ayrı spawn) |
 | `/?script=sprint` | Deterministik sprint (aynı Stanley sürücü, araç başına ayrı girdi) |
+| `/?script=sprint&course=lap` | Deterministik 3 tur |
 | `/?script=drive` | Kuralsız 300 tick sürüş (eski kanıt modu) |
 | `/?telemetry=1&car=<slug>` | 0–100, 80–0 fren, yanal grip tablosu + 3 grafik |
 | `/?survey=1` | 539,81 m River koridoru etiketi — **parkur değil** |
@@ -87,6 +89,8 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 - [ ] Sayfa WebGPU canvas ile açıldı; hata kutusu yok, 404 yok.
 - [ ] **Console 0 mesaj** (log/warn/error).
 - [ ] 3-2-1 countdown → timer → 2/2 checkpoint → finish; sonuç ekranı süre + araç.
+- [ ] `?course=lap`: 3 tur → start/finish çizgisi 3 kez → finish; tur süreleri ve en iyi tur görünür.
+- [ ] Tur modunda truck/bina prop'ları solid; loop-01'de temas yok (HUD: 468 colliders).
 - [ ] Süre tablodaki değere ±0,01 s (scripted) veya makul (klavye).
 - [ ] `R`: aynı sayfada yeniden countdown; süre sıfırlanır, en iyi süre korunur.
 - [ ] Beş araç seçilebilir; her biri kendi gövdesi/tekerleriyle görünür.
