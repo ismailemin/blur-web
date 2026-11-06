@@ -211,17 +211,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Sınır: tek V8 graph, RPM-only; decel/throttle/induction/mixer yok.
 - Kanıt: `docs/work/verification/T-007-audio.md`, `_work/e1-drive/browser-audio-running.png`.
 
-### E1p — Prop dokuları (P72a)  ✅ fizibilite
-- Görünür yapısal prop'ların **tamamı zaten dokulu**: 460 P66 / 423 P68
-  track-visual bileşeni `bound-static-albedo` (çit, boru, rack, duvar, konteyner).
-- 97 diagnostic track draw'ın 95'i block88 (kamera 230 m far plane dışında,
-  ekran kapsaması **0**), 2'si runtime-only albedo.
-- Gerçek eksik: **22 level-instance draw** (8 yerleşim, 10.308 üçgen; 6 wreck +
-  2 truck) — level instance reader UV0/material yaymıyor.
-- Reader uzatması `expand_instance`: UV0 (usage5/type8) + material zinciri →
-  **18 draw / 10.212 üçgen** (14 görünür / 8.222) BC1 albedo kazanır; 4 BC3
-  cab draw alfa kararına kadar diagnostic kalır.
-- Kanıt: `docs/work/analysis/prop-textures.md`; adaylar 49/49 doğrulandı.
+### E1p — Prop dokuları (P72a/P73a)  ✅ reader hazır
+- Görünür yapısal prop'lar zaten dokulu (460 P66 / 423 P68 bileşen).
+- 97 diagnostic track draw'ın 95'i block88 (ekran 0), 2'si runtime-only.
+- **Reader uzatıldı:** 22 level-instance draw'ın **22/22** UV0'si (F16_2,
+  usage5 @16) + material/albedo zinciri export edildi; UV stream
+  **26.324 float / 105.296 B**, hash `158a3ac8…`.
+- **18 draw / 10.212 üçgen** BC1 bindable; **4 draw / 96 üçgen** BC3 alfa
+  kuralı gelene kadar `bc3-alpha-rule-missing`.
+- Native `/W4` temiz, **CTest 15/15**, suite **31/31**, artifact **558/558**.
+- Kanıt: `docs/work/analysis/level-instance-textures.md`,
+  `_work/asset-reader/level-instance-textures.json`.
+- Sıradaki (P73b): 5 texture + UV stream'i E1'e aktarıp 18 draw'ı bind etmek.
 
 ## Pipeline (bağımlılık sırası)
 

@@ -79,14 +79,14 @@ struct Stream{int32_t vb,index,offset,frequency,material,material_list;};
 struct MaterialRef{int32_t index=0,list=0;};
 struct Primitive{int32_t effect,declaration,topology,ib;MaterialRef base,instance;bool has_instance=false;std::vector<Lod> lods;std::vector<Stream> streams;};
 struct MaterialField {std::string name;int32_t type;uint32_t count;};
-struct MaterialType{std::vector<MaterialField> fields;};
+struct MaterialType{std::string name;std::vector<MaterialField> fields;};
 enum class MaterialActionKind {Texture,Runtime,Nested};
 struct MaterialAction{MaterialActionKind kind;std::string name;int32_t value,list=0;};
-struct MaterialRow {std::vector<MaterialAction> actions;};
-struct AlbedoState{bool seen=false,known=false;int32_t value=-1;std::string reason;};
+struct MaterialRow {std::string type_name;std::vector<MaterialAction> actions;};
+struct AlbedoState{bool seen=false,known=false;int32_t value=-1,row=-1;std::string reason;};
 struct MaterialState{AlbedoState prop,vehicle;};
 struct Resource {int32_t block,index;};
-struct Draw {uint32_t first,count;int32_t albedo=-1;std::string binding;bool uv_available=false;std::string albedo_parameter;int32_t resource_block=-1,resource_index=-1;};
+struct Draw {uint32_t first,count;int32_t albedo=-1;std::string binding;bool uv_available=false;std::string albedo_parameter;int32_t resource_block=-1,resource_index=-1;int32_t material_row=-1;std::string material;};
 struct Texture {std::string name;uint32_t hash;size_t offset,bytes;};
 struct TextureLodInfo {
     int32_t lod=-1;bool present=false;uint16_t version=0;size_t archive_offset=0;
@@ -105,11 +105,12 @@ struct ResourceTextureInfo {
 struct ResourceBlockInfo {int32_t index=-1;uint32_t lod_count=0;std::vector<ResourceTextureInfo> textures;};
 struct InstanceInfo {int32_t primitive_index=0;MaterialRef material;std::vector<Stream> streams;uint32_t flags=0;};
 struct TransformField {std::string name;int32_t type=0;uint32_t count=0;std::vector<float> floats;std::vector<MaterialRef> nested;bool runtime=false;};
-struct TransformRow {std::vector<TransformField> fields;};
+struct TransformRow {int32_t type_index=-1;std::string type_name;std::vector<TransformField> fields;};
 struct RenderListInfo {
     std::vector<Primitive> primitives,base_primitives;
     std::vector<InstanceInfo> instances;
     std::vector<TransformRow> constants;
+    std::vector<MaterialRow> material_rows;
     std::vector<Resource> index_sources,vertex_sources,texture_sources;
     std::vector<std::array<float,8>> instance_bounds;
 };
@@ -144,14 +145,14 @@ struct Decoder {
     std::vector<RenderListInfo> render_lists;
     uint32_t valid_uv_vertices=0,placeholder_uv_vertices=0,material_steps=0;
     MaterialType material_type(){
-        r.ar();r.str();auto n=r.vec(4096);MaterialType t;
+        r.ar();auto name=r.str();auto n=r.vec(4096);MaterialType t;t.name=name;
         for(uint32_t i=0;i<n;i++){r.ar();auto name=r.str();auto type=r.s32();auto count=r.count(4096);if(type<0||type>10)r.fail("Unsupported material element type");t.fields.push_back({name,type,count});}
         r.skip(8);auto offsets=r.vec(4096);r.skip(size_t(offsets)*2);r.skip(8);return t;
     }
     std::vector<MaterialRow> material_data(const std::vector<MaterialType>& types){
         auto count=r.count(10000);r.count(max_input);
         std::vector<MaterialRow> rows;
-        for(uint32_t i=0;i<count;i++){auto index=r.count();if(index>=types.size())r.fail("Material type reference out of bounds");MaterialRow row;bool has_prop=false,has_vehicle=false;
+        for(uint32_t i=0;i<count;i++){auto index=r.count();if(index>=types.size())r.fail("Material type reference out of bounds");MaterialRow row;row.type_name=types[size_t(index)].name;bool has_prop=false,has_vehicle=false;
             for(const auto& f:types[index].fields){size_t size=f.type<2?1:f.type<4?2:4;
                 const bool albedo=f.name=="g_tAlbedo"||f.name=="g_MeshTexture";
                 if(albedo){bool& seen=f.name=="g_tAlbedo"?has_prop:has_vehicle;if(seen)r.fail("Ambiguous albedo material parameter");seen=true;}
@@ -228,20 +229,31 @@ struct Decoder {
         auto n=r.vec(32);for(uint32_t i=0;i<n;i++)result.streams.push_back(primitive_stream());
         result.flags=r.u32();return result;
     }
-    std::vector<TransformRow> transform_material_data(const std::vector<MaterialType>& types){
+    std::vector<TransformRow> transform_material_data(const std::vector<MaterialType>& types,std::vector<MaterialRow>* material_rows=nullptr){
         auto count=r.count(10000);r.count(max_input);std::vector<TransformRow> rows;
         for(uint32_t i=0;i<count;i++){
-            auto index=r.count();if(index>=types.size())r.fail("Material type reference out of bounds");TransformRow row;
+            auto index=r.count();if(index>=types.size())r.fail("Material type reference out of bounds");TransformRow row;row.type_index=int32_t(index);row.type_name=types[size_t(index)].name;
+            MaterialRow actions;actions.type_name=row.type_name;bool has_prop=false,has_vehicle=false;
             for(const auto& f:types[index].fields){
                 TransformField field;field.name=f.name;field.type=f.type;field.count=f.count;
                 const size_t size=f.type<2?1:f.type<4?2:4;
+                const bool albedo=f.name=="g_tAlbedo"||f.name=="g_MeshTexture";
+                if(material_rows&&albedo){bool& seen=f.name=="g_tAlbedo"?has_prop:has_vehicle;if(seen)r.fail("Ambiguous albedo material parameter");seen=true;}
                 if(f.type==8||f.type==9){
-                    for(uint32_t j=0;j<f.count;j++){r.ar();const MaterialRef ref{r.s32(),r.s32()};if(f.type==8)field.nested.push_back(ref);else field.runtime=true;}
+                    for(uint32_t j=0;j<f.count;j++){r.ar();const MaterialRef ref{r.s32(),r.s32()};if(f.type==8){field.nested.push_back(ref);actions.actions.push_back({MaterialActionKind::Nested,"",ref.index,ref.list});}else field.runtime=true;}
+                    if(albedo&&f.type==9)actions.actions.push_back({MaterialActionKind::Runtime,f.name,-1,0});
                 }else if(f.type==6){
                     for(uint32_t j=0;j<f.count;j++)field.floats.push_back(r.f32_bits());
-                }else r.skip(size*f.count);
+                    if(albedo)actions.actions.push_back({MaterialActionKind::Runtime,f.name,-1,0});
+                }else if(albedo&&f.type==7&&f.count==1){
+                    actions.actions.push_back({MaterialActionKind::Texture,f.name,r.s32(),0});
+                }else{
+                    r.skip(size*f.count);
+                    if(albedo)actions.actions.push_back({MaterialActionKind::Runtime,f.name,-1,0});
+                }
                 row.fields.push_back(std::move(field));
             }
+            if(material_rows)material_rows->push_back(std::move(actions));
             rows.push_back(std::move(row));
         }
         return rows;
@@ -268,7 +280,7 @@ struct Decoder {
         n=r.vec(10000);for(uint32_t i=0;i<n;i++)info.instances.push_back(parse_instance());
         n=r.vec(10000);for(uint32_t i=0;i<n;i++){r.ar();parse_instance();primitive_stream();}
         n=r.vec(10000);for(uint32_t i=0;i<n;i++)info.base_primitives.push_back(primitive());
-        info.constants=transform_material_data(types);
+        info.constants=transform_material_data(types,&info.material_rows);
         n=r.vec(10000);for(uint32_t i=0;i<n;i++){r.ar();r.skip(24);}
         for(int group=0;group<3;group++){
             n=r.vec();for(uint32_t i=0;i<n;i++){r.ar();if(group==1){std::array<float,8> bounds{};for(int k=0;k<8;k++)bounds[size_t(k)]=r.f32_bits();info.instance_bounds.push_back(bounds);}else r.skip(32);}
@@ -480,7 +492,7 @@ struct Decoder {
     }
     void apply_material(const MaterialRef& ref,MaterialState& state,std::vector<MaterialRef>& stack){
         if(++material_steps>1000000)r.fail("Material evaluation limit");
-        const auto unknown=[&](const char* reason){state.prop={true,false,-1,reason};state.vehicle={true,false,-1,reason};};
+        const auto unknown=[&](const char* reason){state.prop={true,false,-1,-1,reason};state.vehicle={true,false,-1,-1,reason};};
         if(ref.list!=0){unknown("Dynamic material list is rebuilt at runtime; albedo value unavailable");return;}
         if(ref.index<0||size_t(ref.index)>=constants.size()){unknown("Constant material index out of bounds");return;}
         if(stack.size()>=32)r.fail("Constant material recursion depth limit");
@@ -490,8 +502,8 @@ struct Decoder {
             if(++material_steps>1000000)r.fail("Material evaluation limit");
             if(action.kind==MaterialActionKind::Nested){apply_material({action.value,action.list},state,stack);continue;}
             auto& value=action.name=="g_tAlbedo"?state.prop:state.vehicle;
-            if(action.kind==MaterialActionKind::Texture)value={true,true,action.value,""};
-            else value={true,false,-1,"Albedo parameter depends on unsupported scalar shape or runtime material data"};
+            if(action.kind==MaterialActionKind::Texture)value={true,true,action.value,ref.index,""};
+            else value={true,false,-1,ref.index,"Albedo parameter depends on unsupported scalar shape or runtime material data"};
         }
         stack.pop_back();
     }
@@ -508,7 +520,7 @@ struct Decoder {
         if(stored->type!=uv.type||stored->method!=uv.method||stored->offset!=uv.offset)r.fail("UV0 declaration does not match bound vertex format");
         return true;
     }
-    void bind_albedo(const Primitive& p,Draw& draw){
+    void bind_albedo(const Primitive& p,Draw& draw,bool expose_resource_parameter=false){
         if(p.effect<0||size_t(p.effect)>=effect_names.size())r.fail("Primitive effect index out of bounds");
         std::string effect=effect_names[size_t(p.effect)];for(auto& c:effect)if(c>='A'&&c<='Z')c=char(c-'A'+'a');
         const auto slash=effect.find_last_of("\\/");if(slash!=std::string::npos)effect=effect.substr(slash+1);
@@ -530,6 +542,8 @@ struct Decoder {
         for(const auto& stream:p.streams)if(stream.index!=-1)apply_material({stream.material,stream.material_list},state,stack);
         const auto& value=vehicle?state.vehicle:(state.prop.seen?state.prop:state.vehicle);
         const char* parameter=vehicle||!state.prop.seen?"g_MeshTexture":"g_tAlbedo";
+        draw.material_row=value.row;
+        if(value.row>=0&&size_t(value.row)<constants.size())draw.material=constants[size_t(value.row)].type_name;
         if(!value.seen){draw.binding=std::string("No supported scalar ")+parameter+" TEXTURE_INDEX";return;}
         if(!value.known){draw.binding=value.reason;return;}
         if(value.value<0||size_t(value.value)>=texture_sources.size()){draw.binding="Node texture index out of bounds";return;}
@@ -537,6 +551,7 @@ struct Decoder {
         if(source.block!=-1){
             if(source.block<0||uint32_t(source.block)>=resource_blocks||source.index<0){draw.binding="Resource texture block/index out of bounds";return;}
             draw.resource_block=source.block;draw.resource_index=source.index;
+            if(expose_resource_parameter)draw.albedo_parameter=parameter;
             draw.binding=draw.uv_available?"Original resource-block texture input; payload metadata required":"Original UV0 unavailable for this draw; placeholder UVs are not a material mapping";
             return;
         }
@@ -748,6 +763,28 @@ std::string level_mesh(const unsigned char* level,size_t level_size,const unsign
     return out.str();
 }
 std::string escape(const char* text){std::string out;for(const unsigned char* p=reinterpret_cast<const unsigned char*>(text);*p;p++){if(*p=='"'||*p=='\\')out+='\\';if(*p>=32)out+=char(*p);else out+=' ';}return out;}
+std::string hex16(uint64_t value){static const char digits[]="0123456789abcdef";std::string out(16,'0');for(int i=15;i>=0;i--){out[size_t(i)]=digits[value&15];value>>=4;}return out;}
+// P45/P47 UV0 hash: FNV-1a 64 over the little-endian float32 bit patterns,
+// repeated for every index in the draw's referenced range (duplicates included).
+uint64_t uv_range_hash(const std::vector<float>& uv,const std::vector<uint32_t>& indices,uint32_t first,uint32_t count){
+    uint64_t digest=0xCBF29CE484222325ull;
+    for(uint32_t j=first;j<first+count;j++){
+        const uint32_t vertex=indices[size_t(j)];
+        for(int axis=0;axis<2;axis++){
+            uint32_t bits;std::memcpy(&bits,&uv[size_t(vertex)*2+size_t(axis)],4);
+            for(int byte=0;byte<4;byte++){digest^=uint8_t(bits>>(byte*8));digest*=0x100000001B3ull;}
+        }
+    }
+    return digest;
+}
+uint64_t uv_stream_hash(const std::vector<float>& uv){
+    uint64_t digest=0xCBF29CE484222325ull;
+    for(const float value:uv){
+        uint32_t bits;std::memcpy(&bits,&value,4);
+        for(int byte=0;byte<4;byte++){digest^=uint8_t(bits>>(byte*8));digest*=0x100000001B3ull;}
+    }
+    return digest;
+}
 char* copy(const std::string& s){auto* p=static_cast<char*>(std::malloc(s.size()+1));if(p)std::memcpy(p,s.c_str(),s.size()+1);return p;}
 }
 struct InstanceGeometryTarget {
@@ -826,17 +863,32 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
     const auto& list=nodes.render_lists[0];
     if(list.instances.empty())throw std::runtime_error("First RenderList contains no instances");
     if(list.base_primitives.empty())throw std::runtime_error("First RenderList contains no base primitives");
+    // The source node chunk does not carry the scene-wide shared texture names or
+    // resource-block table. Bind the instance material stack against the level
+    // Scene header's effect list while keeping the node's own render-list rows and
+    // texture source table. Every value stays traceable to the original archive.
+    nodes.constants=list.material_rows;
+    nodes.texture_sources=list.texture_sources;
+    nodes.effect_names=header.effect_names;
+    nodes.textures=header.textures;
+    nodes.resource_blocks=header.resource_blocks;
 
     struct Proof {
         int32_t index=0,base=0,vbBlock=0,ibBlock=0;
         std::array<float,16> matrix{};
         std::array<double,3> low{},high{};
-        double error=0;uint32_t first=0,count=0;
+        double error=0;uint32_t first=0,count=0,vertexCount=0;
+        bool uv_available=false,uv_hashed=false;uint64_t uv_hash=0;std::string uv_reason;
+        int32_t uv_type=-1,uv_offset=-1,uv_stride=-1;
+        int32_t material_row=-1;std::string material;
+        int32_t albedo_index=-1;
+        std::string albedo_parameter;int32_t resource_block=-1,resource_index=-1;
+        std::string binding_status="blocked",binding_reason,binding;
     };
     struct SourceInfo {int32_t index=0,vbBlock=0,vbIndex=0,ibBlock=0,ibIndex=0;};
     struct Meta {
         size_t index=0;int32_t base=0;
-        const Primitive* primitive=nullptr;const Stream* selected=nullptr;const DeclarationElement* position=nullptr;
+        const Primitive* primitive=nullptr;const Stream* selected=nullptr;const DeclarationElement* position=nullptr;const DeclarationElement* uv=nullptr;
         SourceInfo source;
         bool in_scope=false;
         std::array<float,8> archived{};
@@ -867,6 +919,8 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
         const DeclarationElement* position=nullptr;
         for(const auto& element:header.declaration_elements[size_t(primitive.declaration)])if(element.value.usage==0&&element.value.index==0){if(position)throw std::runtime_error("Multiple POSITION0 declarations");position=&element;}
         if(!position||position->stream<0||position->stream>15||position->value.method!=0)throw std::runtime_error("Unsupported POSITION0 declaration");
+        const DeclarationElement* uv=nullptr;
+        for(const auto& element:header.declaration_elements[size_t(primitive.declaration)])if(element.value.usage==5&&element.value.index==0){if(uv)throw std::runtime_error("Multiple UV0 declarations");uv=&element;}
         std::array<const Stream*,16> streams{};
         for(const auto& stream:instance.streams)if(stream.index!=-1){if(stream.index<0||stream.index>15)throw std::runtime_error("Instance stream index out of bounds");streams[size_t(stream.index)]=&stream;}
         for(const auto& stream:primitive.streams)if(stream.index!=-1){if(stream.index<0||stream.index>15)throw std::runtime_error("Primitive stream index out of bounds");streams[size_t(stream.index)]=&stream;}
@@ -876,7 +930,7 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
         if(selected->vb<0||size_t(selected->vb)>=list.vertex_sources.size()||primitive.ib<0||size_t(primitive.ib)>=list.index_sources.size())throw std::runtime_error("Instance resource source index out of bounds");
         const auto& vertex_source=list.vertex_sources[size_t(selected->vb)];
         const auto& index_source=list.index_sources[size_t(primitive.ib)];
-        Meta meta;meta.index=instance_index;meta.base=instance.primitive_index;meta.primitive=&primitive;meta.selected=selected;meta.position=position;
+        Meta meta;meta.index=instance_index;meta.base=instance.primitive_index;meta.primitive=&primitive;meta.selected=selected;meta.position=position;meta.uv=uv;
         meta.source={int32_t(instance_index),vertex_source.block,vertex_source.index,index_source.block,index_source.index};
         meta.in_scope=target_by_block.count(vertex_source.block)&&target_by_block.count(index_source.block);
         if(!all_instances&&!meta.in_scope)throw std::runtime_error("Instance VB/IB do not bind the selected geometry block");
@@ -910,7 +964,7 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
         group.row=metas[0].row;group.archived=metas[0].archived;groups.push_back(group);
     }
 
-    std::vector<float> positions;std::vector<uint32_t> indices;std::vector<Proof> proofs;
+    std::vector<float> positions,uvs;std::vector<uint32_t> indices;std::vector<Proof> proofs;
     size_t omitted=0,unsupported=0,incomplete_instances=0,incomplete_groups=0;
     double maximum_error=0;
 
@@ -932,6 +986,21 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
         if(!stored||stored->type!=meta.position->value.type||stored->method!=meta.position->value.method||stored->offset!=meta.position->value.offset)throw std::runtime_error("Instance POSITION0 declaration does not match bound vertex format");
         if(stored->type!=6&&stored->type!=9)throw std::runtime_error("Unsupported instance position vertex format");
         if(uint32_t(stored->offset)+(stored->type==9?8u:12u)>vb.stride)throw std::runtime_error("Instance position exceeds vertex stride");
+        // UV0 is exported only when the base primitive declaration, the selected
+        // stream and the bound vertex format all agree on one F16_2 (type 8)
+        // semantic. Anything else stays explicitly unavailable; no value is inferred.
+        const Element* uv_stored=nullptr;bool uv_ok=false;std::string uv_reason;
+        if(!meta.uv)uv_reason="No UV0 declaration on instance base primitive";
+        else if(meta.uv->value.method!=0||meta.uv->value.type!=8)uv_reason="Unsupported instance UV0 declaration type/method";
+        else if(meta.uv->stream!=meta.position->stream)uv_reason="UV0 is declared in a separate vertex stream; not merged";
+        else{
+            for(const auto& element:vb.elements)if(element.usage==5&&element.index==0){if(uv_stored)throw std::runtime_error("Duplicate UV0 semantic");uv_stored=&element;}
+            if(!uv_stored)uv_reason="UV0 declaration has no bound vertex-buffer element";
+            else if(uv_stored->type!=meta.uv->value.type||uv_stored->method!=meta.uv->value.method||uv_stored->offset!=meta.uv->value.offset)throw std::runtime_error("Instance UV0 declaration does not match bound vertex format");
+            else if(uint32_t(uv_stored->offset)+4u>vb.stride)throw std::runtime_error("Instance UV0 exceeds vertex stride");
+            else uv_ok=true;
+        }
+        proof.uv_type=meta.uv?meta.uv->value.type:-1;proof.uv_offset=meta.uv?int32_t(meta.uv->value.offset):-1;proof.uv_stride=int32_t(vb.stride);
         if(primitive.lods.empty())throw std::runtime_error("Instance base primitive has no LOD0");
         const auto& lod=primitive.lods[0];
         if(lod.offset>ib.count||lod.count>ib.count-lod.offset||lod.min>vb.count||lod.vertices>vb.count-lod.min||vertex_shift>vb.count)throw std::runtime_error("Instance primitive range exceeds buffer");
@@ -957,6 +1026,7 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
         std::vector<uint32_t> used=source_indices;std::sort(used.begin(),used.end());used.erase(std::unique(used.begin(),used.end()),used.end());
         const uint32_t base_vertex=uint32_t(positions.size()/3);
         std::map<uint32_t,uint32_t> compact;std::vector<double> instance_world;
+        std::vector<float> instance_uvs;instance_uvs.reserve(used.size()*2);
         for(size_t i=0;i<used.size();i++){
             const uint32_t vertex=used[i]+vertex_shift;
             if(vertex>=vb.count)throw std::runtime_error("Instance vertex outside bound buffer");
@@ -974,14 +1044,44 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
                 if(!std::isfinite(value))throw std::runtime_error("Nonfinite transformed instance position");
                 instance_world.push_back(value);positions.push_back(float(value));
             }
+            if(uv_ok){
+                const size_t uv_at=vb.data+size_t(vertex)*vb.stride+size_t(uv_stored->offset);
+                const auto uv_bits=[&](size_t offset){return uint16_t(vb_chunk.data[uv_at+offset])|uint16_t(vb_chunk.data[uv_at+offset+1])<<8;};
+                const uint16_t hu=uv_bits(0),hv=uv_bits(2);
+                if(((hu>>10)&31)==31||((hv>>10)&31)==31){uv_ok=false;uv_reason="Nonfinite instance UV0";}
+                else{const float u=half(hu),v=half(hv);instance_uvs.push_back(u);instance_uvs.push_back(v);}
+            }
             compact[used[i]]=base_vertex+uint32_t(i);
         }
+        if(!uv_ok)instance_uvs.assign(used.size()*2,0.0f);
+        uvs.insert(uvs.end(),instance_uvs.begin(),instance_uvs.end());
         proof.index=int32_t(meta.index);proof.base=meta.base;proof.vbBlock=meta.source.vbBlock;proof.ibBlock=meta.source.ibBlock;
         proof.matrix=meta.matrix;proof.first=uint32_t(indices.size());
         proof.low={INFINITY,INFINITY,INFINITY};proof.high={-INFINITY,-INFINITY,-INFINITY};
         for(size_t i=0;i<instance_world.size();i++){proof.low[i%3]=std::min(proof.low[i%3],instance_world[i]);proof.high[i%3]=std::max(proof.high[i%3],instance_world[i]);}
         for(const auto v:triangles)indices.push_back(compact.at(v));
         proof.count=uint32_t(indices.size())-proof.first;
+        proof.vertexCount=uint32_t(used.size());
+        proof.uv_available=uv_ok;proof.uv_reason=uv_ok?std::string():uv_reason;
+        if(uv_ok){proof.uv_hash=uv_range_hash(uvs,indices,proof.first,proof.count);proof.uv_hashed=true;}
+        Draw material_draw;material_draw.uv_available=proof.uv_available;
+        nodes.bind_albedo(primitive,material_draw,true);
+        proof.albedo_index=material_draw.albedo;
+        proof.albedo_parameter=material_draw.albedo_parameter;
+        proof.resource_block=material_draw.resource_block;proof.resource_index=material_draw.resource_index;
+        proof.material_row=material_draw.material_row;proof.material=material_draw.material;
+        proof.binding=material_draw.binding;
+        if(proof.albedo_index>=0){
+            proof.binding_status=proof.uv_available?"static-shared-albedo-resolved":"blocked";
+            if(proof.uv_available)proof.binding="g_tAlbedo static shared image resolved through the ordered instance/base/stream material stack";
+            else proof.binding_reason=material_draw.binding;
+        }else if(proof.resource_block>=0&&proof.resource_index>=0){
+            proof.binding_status=proof.uv_available?"static-resource-albedo-resolved":"blocked";
+            if(proof.uv_available)proof.binding="g_tAlbedo static resource texture identity resolved; texture name, format, alpha, blend and sampler state are not applied by this reader";
+            else proof.binding_reason=material_draw.binding;
+        }else{
+            proof.binding_status="blocked";proof.binding_reason=material_draw.binding;
+        }
     };
 
     for(auto& group:groups){
@@ -1064,9 +1164,10 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
     if(proofs.empty()){
         if(!all_instances)throw std::runtime_error("No supported instance binds the selected geometry block; omittedOtherBlock="+std::to_string(omitted)+" unsupportedBounds="+std::to_string(unsupported));
         std::ostringstream out;out.imbue(std::locale::classic());
-        out<<"{\"status\":\"ok\",\"positions\":[],\"indices\":[],\"draws\":[],\"bounds\":{\"min\":[0,0,0],\"max\":[0,0,0]},\"metadata\":{\"instancesApplied\":true,\"nodeTransformsApplied\":true,\"coordinateSpace\":\"world\",\"instanceIndex\":0,\"instanceCount\":"<<list.instances.size()
+        out<<"{\"status\":\"ok\",\"positions\":[],\"indices\":[],\"uv0\":[],\"draws\":[],\"bounds\":{\"min\":[0,0,0],\"max\":[0,0,0]},\"metadata\":{\"instancesApplied\":true,\"nodeTransformsApplied\":true,\"coordinateSpace\":\"world\",\"instanceIndex\":0,\"instanceCount\":"<<list.instances.size()
            <<",\"emittedInstanceCount\":0,\"omittedOtherBlockInstances\":"<<omitted<<",\"unsupportedBoundsInstances\":"<<unsupported
-           <<",\"vertexCount\":0,\"triangleCount\":0,\"boundsMaxAbsoluteDifference\":0,\"boundsAvailable\":false,\"boundsGrouping\":"
+           <<",\"vertexCount\":0,\"triangleCount\":0,\"uv0Exported\":true,\"uv0Values\":0,\"uv0Bytes\":0,\"uv0AvailableDraws\":0,\"uv0HashedDraws\":0,\"uv0ValidVertices\":0,\"uv0PlaceholderVertices\":0"
+           <<",\"boundsMaxAbsoluteDifference\":0,\"boundsAvailable\":false,\"boundsGrouping\":"
            <<(bundled?"\"contiguous instances sharing an identical archived CullNode bounds record and resolved constant transform row; member geometry is resolved from the supplied chunks by VB/IB block and a group with any unsupplied member is withheld\"":"\"contiguous instances sharing an identical archived CullNode bounds record and resolved constant transform row; member draw AABB union compared to the shared record\"")
            <<",\"boundsGroups\":"<<(all_instances?groups.size():size_t(0));
         if(!bundled)out<<",\"geometryBlock\":"<<targets[0].block;
@@ -1076,24 +1177,54 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
         for(size_t i=0;i<required_blocks.size();i++){if(i)out<<',';out<<required_blocks[i];}
         out<<']';write_group_meta(out);
         out<<",\"instanceSources\":[";for(size_t i=0;i<sources.size();i++){if(i)out<<',';const auto&s=sources[i];out<<"{\"instanceIndex\":"<<s.index<<",\"vertexBlock\":"<<s.vbBlock<<",\"vertexIndex\":"<<s.vbIndex<<",\"indexBlock\":"<<s.ibBlock<<",\"indexIndex\":"<<s.ibIndex<<'}';}
-        out<<"],\"integrityValidated\":false,\"material\":\"diagnostic-only\",\"scope\":\"no instance bound to the supplied geometry chunk(s) passed the grouped constant affine bounds check\"}}";
+        out<<"],\"integrityValidated\":false,\"material\":\"static-albedo-identity-only\",\"materialAlbedoResolved\":true,\"materialColourApplied\":false,\"blendStateApplied\":false,\"alphaRuleApplied\":false,\"shaderStagesApplied\":false,\"samplerStateApplied\":false,\"scope\":\"no instance bound to the supplied geometry chunk(s) passed the grouped constant affine bounds check; static g_tAlbedo identity only, alpha/blend/shader/sampler not applied\"}}";
         return out.str();
     }
 
     std::array<double,3> world_min{INFINITY,INFINITY,INFINITY},world_max{-INFINITY,-INFINITY,-INFINITY};
     for(const auto& proof:proofs)for(int a=0;a<3;a++){world_min[size_t(a)]=std::min(world_min[size_t(a)],proof.low[size_t(a)]);world_max[size_t(a)]=std::max(world_max[size_t(a)],proof.high[size_t(a)]);}
 
+    size_t uv_valid_vertices=0,uv_available_draws=0,uv_hashed_draws=0;
+    for(const auto& proof:proofs){if(proof.uv_available){++uv_available_draws;uv_valid_vertices+=proof.vertexCount;}if(proof.uv_hashed)++uv_hashed_draws;}
+    const size_t uv_placeholder_vertices=positions.size()/3-uv_valid_vertices;
+
     std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<float>::max_digits10);
     out<<"{\"status\":\"ok\",\"positions\":[";for(size_t i=0;i<positions.size();i++){if(i)out<<',';out<<positions[i];}
     out<<"],\"indices\":[";for(size_t i=0;i<indices.size();i++){if(i)out<<',';out<<indices[i];}
+    out<<"],\"uv0\":[";for(size_t i=0;i<uvs.size();i++){if(i)out<<',';out<<uvs[i];}
     out<<"],\"draws\":[";
-    for(size_t i=0;i<proofs.size();i++){if(i)out<<',';const auto&p=proofs[i];out<<"{\"firstIndex\":"<<p.first<<",\"indexCount\":"<<p.count<<",\"albedoTexture\":null,\"binding\":\"Level instance diagnostic; materials not applied\",\"uv0Available\":false,\"albedoParameter\":null,\"resourceBlock\":null,\"resourceIndex\":null,\"instanceIndex\":"<<p.index<<",\"basePrimitiveIndex\":"<<p.base<<'}';}
+    const auto write_nullable_string=[&](const std::string& value){if(value.empty())out<<"null";else out<<'"'<<escape(value.c_str())<<'"';};
+    for(size_t i=0;i<proofs.size();i++){if(i)out<<',';const auto&p=proofs[i];
+        out<<"{\"firstIndex\":"<<p.first<<",\"indexCount\":"<<p.count<<",\"albedoTexture\":";
+        if(p.albedo_index<0)out<<"null";else out<<p.albedo_index;
+        out<<",\"binding\":\""<<escape(p.binding.c_str())<<"\",\"uv0Available\":"<<(p.uv_available?"true":"false")<<",\"albedoParameter\":";
+        write_nullable_string(p.albedo_parameter);
+        out<<",\"resourceBlock\":";if(p.resource_block<0)out<<"null";else out<<p.resource_block;
+        out<<",\"resourceIndex\":";if(p.resource_index<0)out<<"null";else out<<p.resource_index;
+        out<<",\"instanceIndex\":"<<p.index<<",\"basePrimitiveIndex\":"<<p.base<<",\"material\":";
+        write_nullable_string(p.material);
+        out<<",\"materialRow\":"<<p.material_row<<",\"albedoTextureId\":";
+        if(p.resource_block>=0&&p.resource_index>=0)out<<'"'<<"level.albedo."<<p.resource_block<<'.'<<p.resource_index<<'"';else out<<"null";
+        out<<",\"bindingStatus\":\""<<p.binding_status<<"\",\"bindingReason\":";
+        write_nullable_string(p.binding_reason);
+        out<<",\"uvHash\":";
+        if(p.uv_hashed)out<<'"'<<"0x"<<hex16(p.uv_hash)<<'"';else out<<"null";
+        out<<",\"uvReason\":";
+        write_nullable_string(p.uv_reason);
+        out<<",\"uvType\":"<<p.uv_type<<",\"uvOffset\":"<<p.uv_offset<<",\"uvStride\":"<<p.uv_stride<<'}';
+    }
     out<<"],\"bounds\":{\"min\":["<<world_min[0]<<','<<world_min[1]<<','<<world_min[2]<<"],\"max\":["<<world_max[0]<<','<<world_max[1]<<','<<world_max[2]<<"]},"
        <<"\"metadata\":{\"instancesApplied\":true,\"nodeTransformsApplied\":true,\"coordinateSpace\":\"world\",\"instanceIndex\":0,\"instanceCount\":"<<list.instances.size()
        <<",\"emittedInstanceCount\":"<<proofs.size()<<",\"omittedOtherBlockInstances\":"<<omitted<<",\"unsupportedBoundsInstances\":"<<unsupported
        <<",\"boundsGrouping\":"<<(bundled?"\"contiguous instances sharing an identical archived CullNode bounds record and resolved constant transform row; member geometry is resolved from the supplied chunks by VB/IB block and a group with any unsupplied member is withheld\"":(all_instances?"\"contiguous instances sharing an identical archived CullNode bounds record and resolved constant transform row; member draw AABB union compared to the shared record\"":"\"none; first instance only\""))<<",\"boundsGroups\":"<<(all_instances?groups.size():size_t(0))
        <<",\"basePrimitiveIndex\":"<<proofs[0].base<<",\"basePrimitiveCount\":"<<list.base_primitives.size()
-       <<",\"vertexCount\":"<<positions.size()/3<<",\"triangleCount\":"<<indices.size()/3<<",\"matrix\":[";
+       <<",\"vertexCount\":"<<positions.size()/3<<",\"triangleCount\":"<<indices.size()/3
+       <<",\"uv0Exported\":true,\"uv0Values\":"<<uvs.size()<<",\"uv0Bytes\":"<<uvs.size()*4
+       <<",\"uv0AvailableDraws\":"<<uv_available_draws<<",\"uv0HashedDraws\":"<<uv_hashed_draws
+       <<",\"uv0ValidVertices\":"<<uv_valid_vertices<<",\"uv0PlaceholderVertices\":"<<uv_placeholder_vertices
+       <<",\"uv0Aggregate\":\"0x"<<hex16(uv_stream_hash(uvs))<<"\""
+       <<",\"uv0PlaceholderPolicy\":\"zero pairs for unavailable draws; placeholder UVs cannot bind albedo\""
+       <<",\"matrix\":[";
     for(int i=0;i<16;i++){if(i)out<<',';out<<proofs[0].matrix[size_t(i)];}
     out<<"],\"matrixSemantics\":\"row vector: out[a]=x*m[a]+y*m[4+a]+z*m[8+a]+m[12+a]\",\"archivedInstanceBounds\":[";
     if(!list.instance_bounds.empty())for(int i=0;i<8;i++){if(i)out<<',';out<<list.instance_bounds[0][size_t(i)];}
@@ -1119,9 +1250,9 @@ std::string level_instances_core(const unsigned char* level,size_t level_size,
         for(int k=0;k<8;k++){if(k)out<<',';out<<list.instance_bounds[p.index][size_t(k)];}
         out<<"],\"boundsMaxAbsoluteDifference\":"<<p.error<<'}';
     }
-    out<<"],\"integrityValidated\":false,\"material\":\"diagnostic-only\",\"scope\":\"";
-    if(all_instances)out<<"all instances whose VB/IB bind a supplied geometry block and whose contiguous CullNode group matches its archived bounds; groups with unsupplied members and bounds-mismatched groups are counted as incomplete/unsupported; materials omitted";
-    else out<<"first RenderList instance0, constant affine row-vector world transform, direct LOD0 base primitive; other instances, materials and higher LODs omitted";
+    out<<"],\"integrityValidated\":false,\"material\":\"static-albedo-identity-only\",\"materialAlbedoResolved\":true,\"materialColourApplied\":false,\"blendStateApplied\":false,\"alphaRuleApplied\":false,\"shaderStagesApplied\":false,\"samplerStateApplied\":false,\"scope\":\"";
+    if(all_instances)out<<"all instances whose VB/IB bind a supplied geometry block and whose contiguous CullNode group matches its archived bounds; UV0 and the static g_tAlbedo resource identity are exported; texture name/format, alpha, blend, shader stages, sampler state and higher LODs are not applied";
+    else out<<"first RenderList instance0, constant affine row-vector world transform, direct LOD0 base primitive; UV0 and the static g_tAlbedo resource identity are exported; other instances, texture format/alpha/blend/shader/sampler and higher LODs omitted";
     out<<"\"}}";
     return out.str();
 }

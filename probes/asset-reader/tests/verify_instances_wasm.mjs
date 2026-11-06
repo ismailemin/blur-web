@@ -76,6 +76,68 @@ assert.ok(wasmAll.metadata.boundsMaxAbsoluteDifference<=0.0001);
 assert.equal(wasmAll.draws.length,22);
 assert.deepEqual(wasmAll.metadata.instances.map(item=>item.instanceIndex),[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]);
 
+const python=path.join(process.env.USERPROFILE,'.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe');
+const uvReference=JSON.parse(execFileSync(python,[path.join(root,'probes/asset-reader/tests/verify_instance_textures_reference.py'),'--json'],
+  {encoding:'utf8',maxBuffer:32*1024*1024}));
+const uvBuffer=Buffer.alloc(wasmAll.uv0.length*4);
+wasmAll.uv0.forEach((value,index)=>uvBuffer.writeFloatLE(value,index*4));
+assert.equal(wasmAll.metadata.uv0Exported,true);
+assert.equal(wasmAll.metadata.uv0Values,26324);
+assert.equal(wasmAll.metadata.uv0Bytes,105296);
+assert.equal(wasmAll.metadata.uv0AvailableDraws,22);
+assert.equal(wasmAll.metadata.uv0HashedDraws,22);
+assert.equal(wasmAll.metadata.uv0ValidVertices,13162);
+assert.equal(wasmAll.metadata.uv0PlaceholderVertices,0);
+assert.equal(wasmAll.uv0.length,26324);
+assert.equal(uvBuffer.length,105296);
+assert.equal(hash(uvBuffer),uvReference.uvSha256,'WASM UV0 stream differs from the independent Python stream');
+assert.equal(hash(uvBuffer),'158a3ac81b4cf7a5b1b92d327d8dfcd97ab29100387eb72d3b84f1f333962c83');
+assert.equal(wasmAll.metadata.uv0Aggregate,uvReference.uvAggregate,'WASM UV0 aggregate differs from Python');
+assert.equal(wasmAll.metadata.uv0Aggregate,'0xb07310e198de4c19');
+assert.equal(uvReference.instanceCount,22);
+assert.equal(uvReference.vertexCount,13162);
+assert.equal(uvReference.triangleCount,10308);
+assert.equal(uvReference.uvValues,26324);
+assert.equal(uvReference.uvBytes,105296);
+assert.equal(uvReference.textureSources.length,5);
+assert.equal(wasmAll.draws.length,uvReference.draws.length);
+for(const [index,draw] of wasmAll.draws.entries()){
+  const source=uvReference.draws[index];
+  assert.equal(draw.instanceIndex,source.instanceIndex,`Draw ${index}: instance index differs`);
+  assert.equal(draw.basePrimitiveIndex,source.basePrimitiveIndex,`Draw ${index}: base primitive differs`);
+  assert.equal(draw.firstIndex,source.firstIndex,`Draw ${index}: first index differs`);
+  assert.equal(draw.indexCount,source.indexCount,`Draw ${index}: index count differs`);
+  assert.equal(draw.uv0Available,true,`Draw ${index}: source UV0 unavailable`);
+  assert.equal(draw.uvHash,source.uvHash,`Draw ${index}: UV0 hash differs from Python`);
+  assert.equal(draw.uvType,source.uvType,`Draw ${index}: UV0 type differs`);
+  assert.equal(draw.uvOffset,source.uvOffset,`Draw ${index}: UV0 offset differs`);
+  assert.equal(draw.uvStride,source.uvStride,`Draw ${index}: UV0 stride differs`);
+  assert.equal(draw.materialRow,source.materialRow,`Draw ${index}: material row differs`);
+  assert.equal(draw.material,source.material,`Draw ${index}: material name differs`);
+  assert.equal(draw.albedoParameter,'g_tAlbedo',`Draw ${index}: albedo parameter differs`);
+  assert.equal(draw.resourceBlock,source.resourceBlock,`Draw ${index}: texture block differs`);
+  assert.equal(draw.resourceIndex,source.resourceIndex,`Draw ${index}: texture index differs`);
+  assert.equal(draw.albedoTextureId,`level.albedo.${source.resourceBlock}.${source.resourceIndex}`,`Draw ${index}: texture identity differs`);
+  assert.equal(draw.bindingStatus,'static-resource-albedo-resolved',`Draw ${index}: binding status differs`);
+  assert.equal(draw.bindingReason,null,`Draw ${index}: resolved static albedo has a blocker`);
+}
+const registry=JSON.parse(await readFile(path.join(root,'_work/logs/engine-stream-spike/engine-textures.json'),'utf8'));
+const formatBySource=new Map(registry.textures.map(texture=>[`${texture.block}:${texture.index}`,texture]));
+let bc1={draws:0,triangles:0},bc3={draws:0,triangles:0};
+for(const source of uvReference.textureSources){
+  const texture=formatBySource.get(`${source.block}:${source.index}`);
+  assert.ok(texture,`Missing P34 registry texture ${source.block}:${source.index}`);
+  if(texture.format===827611204){bc1.draws+=source.draws.length;bc1.triangles+=source.triangles;}
+  else if(texture.format===894720068){bc3.draws+=source.draws.length;bc3.triangles+=source.triangles;}
+  else throw new Error(`Unsupported level albedo format ${texture.format}`);
+}
+assert.deepEqual(bc1,{draws:18,triangles:10212},'BC1-bindable level split changed');
+assert.deepEqual(bc3,{draws:4,triangles:96},'BC3-alpha-blocked level split changed');
+for(const source of uvReference.textureSources){
+  const texture=formatBySource.get(`${source.block}:${source.index}`);
+  assert.equal(texture.name,{1073:'car01_lic_diff',1112:'car02_lic_diff',1118:'car03_lic_diff',1074:'bigtruck02_diff',1205:'cab01alphas_diff'}[source.block]);
+}
+
 const block15=await readFile(path.join(root,'_work/level-instances/block15.chunk'));
 const block17=await readFile(path.join(root,'_work/level-instances/block17.chunk'));
 const block26=await readFile(path.join(root,'_work/level-instances/block26.chunk'));
@@ -200,6 +262,21 @@ try{
   mod._free(levelB);mod._free(nodeB);
 }
 
-const evidence={nativeWasmEqual:true,independentPythonEqual:true,vertexCount:805,triangleCount:726,instanceIndex:0,instanceCount:57,basePrimitiveIndex:0,worldPositionsSha256:hash(positions),indicesSha256:hash(indices),boundsMaxAbsoluteDifference:wasm.metadata.boundsMaxAbsoluteDifference,matrix:wasm.metadata.matrix,worldBounds:wasm.bounds,archivedInstanceBounds:wasm.metadata.archivedInstanceBounds,allInstances:{nativeWasmEqual:true,emittedInstanceCount:wasmAll.metadata.emittedInstanceCount,omittedOtherBlockInstances:wasmAll.metadata.omittedOtherBlockInstances,unsupportedBoundsInstances:wasmAll.metadata.unsupportedBoundsInstances,vertexCount:wasmAll.metadata.vertexCount,triangleCount:wasmAll.metadata.triangleCount,boundsMaxAbsoluteDifference:wasmAll.metadata.boundsMaxAbsoluteDifference,instanceIndices:wasmAll.metadata.instances.map(item=>item.instanceIndex)},bundle:bundleEvidence,scope:wasm.metadata.scope};
+const artifactBuild=JSON.parse(execFileSync(python,[path.join(root,'probes/asset-reader/tools/build_level_instance_textures.py')],
+  {encoding:'utf8',maxBuffer:32*1024*1024}));
+assert.equal(artifactBuild.draws,22);
+assert.equal(artifactBuild.uvValues,26324);
+assert.equal(artifactBuild.uvBytes,105296);
+assert.deepEqual(artifactBuild.bindableBc1,{draws:18,triangles:10212});
+assert.deepEqual(artifactBuild.blockedBc3.draws,4);
+assert.equal(artifactBuild.blockedBc3.triangles,96);
+assert.equal(artifactBuild.blockedBc3.reason,'bc3-alpha-rule-missing');
+assert.equal(artifactBuild.textures.length,5);
+assert.equal(artifactBuild.deterministic,true);
+const artifactVerify=JSON.parse(execFileSync(python,[path.join(root,'probes/asset-reader/tools/verify_level_instance_textures.py')],
+  {encoding:'utf8',maxBuffer:32*1024*1024}));
+assert.equal(artifactVerify.status,'PASS',JSON.stringify(artifactVerify));
+
+const evidence={nativeWasmEqual:true,independentPythonEqual:true,vertexCount:805,triangleCount:726,instanceIndex:0,instanceCount:57,basePrimitiveIndex:0,worldPositionsSha256:hash(positions),indicesSha256:hash(indices),boundsMaxAbsoluteDifference:wasm.metadata.boundsMaxAbsoluteDifference,matrix:wasm.metadata.matrix,worldBounds:wasm.bounds,archivedInstanceBounds:wasm.metadata.archivedInstanceBounds,allInstances:{nativeWasmEqual:true,emittedInstanceCount:wasmAll.metadata.emittedInstanceCount,omittedOtherBlockInstances:wasmAll.metadata.omittedOtherBlockInstances,unsupportedBoundsInstances:wasmAll.metadata.unsupportedBoundsInstances,vertexCount:wasmAll.metadata.vertexCount,triangleCount:wasmAll.metadata.triangleCount,boundsMaxAbsoluteDifference:wasmAll.metadata.boundsMaxAbsoluteDifference,instanceIndices:wasmAll.metadata.instances.map(item=>item.instanceIndex),uv0Exported:wasmAll.metadata.uv0Exported,uv0Values:wasmAll.metadata.uv0Values,uv0Bytes:wasmAll.metadata.uv0Bytes,uv0Sha256:hash(uvBuffer),uv0Aggregate:wasmAll.metadata.uv0Aggregate,uv0AvailableDraws:wasmAll.metadata.uv0AvailableDraws,uv0HashedDraws:wasmAll.metadata.uv0HashedDraws,uv0ValidVertices:wasmAll.metadata.uv0ValidVertices,uv0PlaceholderVertices:wasmAll.metadata.uv0PlaceholderVertices,uvHashes:wasmAll.draws.map(draw=>draw.uvHash),textureSources:uvReference.textureSources,bc1Bindable:bc1,bc3AlphaBlocked:bc3,artifact:{sha256:artifactBuild.sha256,uvSha256:artifactBuild.uvSha256,uvAggregate:artifactBuild.uvAggregate,verifier:artifactVerify}},bundle:bundleEvidence,scope:wasm.metadata.scope};
 await writeFile(path.join(root,'_work/verification/level-instances-native-wasm.json'),JSON.stringify(evidence,null,2));
 console.log(JSON.stringify(evidence,null,2));

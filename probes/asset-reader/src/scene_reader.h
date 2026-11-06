@@ -30,7 +30,10 @@ char* level_instances_inspect(const unsigned char* level_bytes, size_t level_siz
                               const unsigned char* node_bytes, size_t node_size,
                               int32_t geometry_block, int32_t node_block);
 // Additive variant: emits every instance whose VB/IB bind the selected geometry
-// block. Other-block instances are counted as omitted, not guessed.
+// block. Other-block instances are counted as omitted, not guessed. Instance
+// UV0 (usage5/type8 on the POSITION stream) and the resolved static g_tAlbedo
+// resource identity are exported with a per-draw FNV-1a 64 UV hash; texture
+// format, alpha, blend, shader, sampler and higher LODs remain unapplied.
 char* level_instances_all_inspect(const unsigned char* level_bytes, size_t level_size,
                                   const unsigned char* geometry_bytes, size_t geometry_size,
                                   const unsigned char* node_bytes, size_t node_size,

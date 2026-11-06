@@ -12,6 +12,7 @@
 namespace {
 using Bytes=std::vector<unsigned char>;
 void check(bool value,const char* error){if(!value)throw std::runtime_error(error);}
+size_t count_text(const std::string& text,const std::string& needle){size_t count=0,at=0;while((at=text.find(needle,at))!=std::string::npos){++count;at+=needle.size();}return count;}
 void byte(Bytes& b,uint8_t n){b.push_back(n);}
 void word(Bytes& b,uint16_t n){byte(b,uint8_t(n));byte(b,uint8_t(n>>8));}
 void integer(Bytes& b,uint32_t n){for(int i=0;i<4;i++)byte(b,uint8_t(n>>(i*8)));}
@@ -164,6 +165,15 @@ void real_instance_tests(const char* level_path,const char* geometry_path,const 
     check(ok(all),all.c_str());
     check(has(all,"\"emittedInstanceCount\":22")&&has(all,"\"omittedOtherBlockInstances\":35")&&has(all,"\"unsupportedBoundsInstances\":0"),"All-instance block27 counts changed");
     check(has(all,"\"vertexCount\":13162,\"triangleCount\":10308"),"All-instance block27 geometry counts changed");
+    check(has(all,"\"uv0Exported\":true,\"uv0Values\":26324,\"uv0Bytes\":105296"),"Instance UV0 stream size changed");
+    check(has(all,"\"uv0AvailableDraws\":22,\"uv0HashedDraws\":22,\"uv0ValidVertices\":13162,\"uv0PlaceholderVertices\":0"),"Instance UV0 availability counts changed");
+    check(has(all,"\"uv0Aggregate\":\"0xb07310e198de4c19\""),"Instance UV0 stream aggregate changed");
+    check(count_text(all,"\"uv0Available\":true")==22&&count_text(all,"\"uvHash\":\"0x")==22,"Instance draw UV0 coverage changed");
+    check(count_text(all,"\"bindingStatus\":\"static-resource-albedo-resolved\"")==22,"Instance static albedo identity coverage changed");
+    check(count_text(all,"\"albedoTextureId\":\"level.albedo.")==22,"Instance albedo texture identity coverage changed");
+    check(has(all,"\"instanceIndex\":0,\"basePrimitiveIndex\":0,\"material\":\"default_LN_NB_NL_NV.fx\",\"materialRow\":9,\"albedoTextureId\":\"level.albedo.1073.0\",\"bindingStatus\":\"static-resource-albedo-resolved\",\"bindingReason\":null,\"uvHash\":\"0xefa29d38b989ce85\""),"Instance0 UV/material binding changed");
+    check(has(all,"\"uvType\":8,\"uvOffset\":16,\"uvStride\":20"),"Instance0 UV0 source layout changed");
+    check(all.find("\"uv0Available\":false")==std::string::npos,"A block27 instance draw lost its source UV0");
     check(has(all,"\"boundsMaxAbsoluteDifference\":6.02443715e-05"),"All-instance bounds agreement changed");
     std::cout<<"Actual River block27/node253 instance0: 805 vertices/726 triangles, archived bounds 3.86511e-05 passed\n";
     std::cout<<"Block27 all supported instances: 22 emitted/0 unsupported/35 other-block, 13162 vertices/10308 triangles passed\n";

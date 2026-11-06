@@ -737,6 +737,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_e1_drive` **826/826**; `--mode audio` **16/16**, console **0**; 1500/3015/6000 RPM gain/rate farkı ≤6e-8; mute RMS 0, unmute 0,133.
 - Kanıt: `docs/work/verification/T-007-audio.md`, `_work/e1-drive/browser-audio-running.png`.
 
+## 6 Kasım 2026 — level-instance UV0 reader
+
+- `scene_reader.cpp`: 22 level-instance draw → **22/22 UV0** (F16_2), material/albedo zinciri; UV stream **105.296 B**, hash `158a3ac8…`.
+- **18 draw / 10.212 tri** BC1 bindable; **4 draw / 96 tri** `bc3-alpha-rule-missing`.
+- Native MSVC `/W4` temiz, **CTest 15/15**, suite **31/31**, artifact **558/558**, iki build byte-identical.
+- Kanıt: `docs/work/analysis/level-instance-textures.md`, `_work/asset-reader/level-instance-textures.json`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

@@ -76,6 +76,12 @@ instance draw** (10.308 üçgen): reader UV0/material yaymıyor. `expand_instanc
 uzatması **18 draw / 10.212 üçgen** için BC1 albedo açabilir (14 görünür).
 Kanıt: `docs/work/analysis/prop-textures.md`.
 
+**P73a — level-instance UV0 (reader hazır):** `scene_reader.cpp` 22 draw'ın
+**22/22** UV0'sini (F16_2) ve albedo zincirini export ediyor; **18 draw /
+10.212 üçgen** BC1 bindable, 4 BC3 draw alfasız. Native `/W4` + CTest 15/15,
+suite 31/31, artifact 558/558. Kanıt:
+`docs/work/analysis/level-instance-textures.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56
