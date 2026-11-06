@@ -51,6 +51,13 @@ birebir; `verify_e1_drive` **766/766**, suite 30/30, checker 21/21. `all-visible
 tur modunda aktif ve inert (loop-01'de prop yok, 0 temas). Kanıt:
 `docs/work/verification/T-007-lap-mode.md`. Sıradaki: `?course=free` (R04).
 
+**P68 — free-roam prop ölçümü (veri hazır):** P66 `all-visible` collider'ları
+R04'te ölçüldü: spawn **5,803 m** açık; doğu kanalı (1.321 m²) C03 boru/çit
+duvarı yüzünden erişilemez; erişilebilir spawn bileşeni **7.702,25 m²**.
+`_work/free-roam-prop/colliders-r04.json` (**431 collider**, %100 kapsama)
+üretildi; 29/29 doğrulama, deterministik. Kanıt:
+`docs/work/analysis/free-roam-props.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

@@ -702,6 +702,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_e1_drive` **766/766**, suite **30/30**, checker **21/21**; 20/20 browser capture, console **0**. Kanıt: `docs/work/verification/T-007-lap-mode.md`.
 - Seam projeksiyonu lap 2/3'ü düşürüyordu; yarım-tur koşulu kaldırıldı, `lapDistance` tek ölçüt.
 
+## 6 Kasım 2026 — free-roam prop ölçümü
+
+- `all-visible` R04'te: spawn **5,803 m** açık (24 yön); erişilebilir spawn bileşeni **7.702,25 m²**.
+- Doğu kanalı **1.321,25 m²** C03 boru/çit duvarı (86 bileşen) yüzünden erişilemez; bu bir ölçüm, uydurma değil.
+- `_work/free-roam-prop/colliders-r04.json`: **431 collider**, kapsama %64,6 → **%100**; head-on 0,001 m, 0 tunneling.
+- Doğrulama **25/25 + 29/29**, deterministik. Kanıt: `docs/work/analysis/free-roam-props.md`, `_work/free-roam-prop/map.png`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).
