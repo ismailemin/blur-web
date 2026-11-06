@@ -1134,6 +1134,113 @@ def check_lap_runs(report, layout):
     return report.ok(item, label, "5 cars, 3 laps each, no respawn: " + " / ".join(summary), [])
 
 
+FREE_LAYOUT_HASH = "sha256:c512ad733959903878ed805367c4b3112a0976a12f484da3c1d5813c7f865f87"
+FREE_MANIFEST_FILE = "sha256:5c7bba74fd9c978b4ff9e729287c9a7935d827f4d353c2c918da9d1788a49805"
+FREE_MANIFEST_CONTENT = "sha256:932e0f871e46b073d359c7a9549477e136fb56e58202b477ebc11fac53915b42"
+FREE_BOUNDS = (-108.5, 5.0, 1027.5, 1164.0)
+
+
+def check_sprint_free(report):
+    item = "sprint-free"
+    label = "sprint-free.json (P65/P68 free-roam basin)"
+    path = WORK / "sprint-free.json"
+    if not path.is_file():
+        return report.fail(item, label, "missing " + rel(path), [rel(path)], True), None
+    try:
+        layout = load_json(path)
+    except Exception as exc:  # noqa: BLE001
+        return report.fail(item, label, "unreadable JSON: " + str(exc), [rel(path)]), None
+
+    problems = []
+    if layout.get("kind") != "e1-drive.sprint":
+        problems.append("kind is not e1-drive.sprint")
+    if layout.get("courseId") != "free":
+        problems.append("courseId is not free")
+    if layout.get("hash") != FREE_LAYOUT_HASH:
+        problems.append("free layout hash " + repr(layout.get("hash")))
+    if layout.get("gates") != []:
+        problems.append("free mode must have no gates")
+    course = layout.get("course") or {}
+    if "lap" in course or "finishArc" in course:
+        problems.append("free course carries lap/finish fields")
+    spawn = course.get("spawn") or {}
+    if abs((spawn.get("x") or 0) + 88) > 1e-9 or abs((spawn.get("z") or 0) - 1050) > 1e-9:
+        problems.append("free spawn is not (-88, 1050)")
+    if abs((spawn.get("headingRad") or 0) - 1.5707963267948966) > 1e-9:
+        problems.append("free spawn heading is not pi/2")
+    bounds = course.get("bounds") or {}
+    if (bounds.get("minX"), bounds.get("maxX"), bounds.get("minZ"), bounds.get("maxZ")) != FREE_BOUNDS:
+        problems.append("free bounds " + repr(bounds))
+    containment = course.get("containment") or {}
+    if containment.get("noCorridorRespawn") is not True or containment.get("noInvisibleWall") is not True:
+        problems.append("free containment flags are not set")
+    if containment.get("marginMetres") != 2 or containment.get("fallBelowGroundMetres") != 1:
+        problems.append("free containment margin/fall mismatch")
+    if abs((containment.get("spawnComponentAreaM2") or 0) - 7702.25) > 1e-6:
+        problems.append("free spawn component area is not 7702.25 m2")
+    coverage = course.get("coverage") or {}
+    if coverage.get("region") != "R04" or coverage.get("samples") != 9687 or coverage.get("covered") != 9687:
+        problems.append("free draw coverage is not R04 9687/9687")
+    prop = course.get("prop") or {}
+    if (prop.get("profile") != "all-visible" or prop.get("colliders") != 431 or
+            prop.get("manifestFileSha256") != FREE_MANIFEST_FILE or
+            prop.get("manifestContentSha256") != FREE_MANIFEST_CONTENT):
+        problems.append("free prop pins mismatch")
+
+    if problems:
+        return report.fail(item, label, "; ".join(problems), [rel(path)]), layout
+    return report.ok(
+        item, label,
+        "spawn (-88, 1050), no gates/finish, bounds x -108.5..5 z 1027.5..1164, "
+        "7702.25 m2, 431 colliders, hash " + layout["hash"].split(":")[1][:16] + "...",
+        [rel(path)],
+    ), layout
+
+
+def check_free_runs(report, layout):
+    item = "runs-free"
+    label = "per-car free-roam runs (401 ticks, 431 colliders, no contact)"
+    if layout is None:
+        return report.fail(item, label, "free layout unavailable", [])
+    problems = []
+    summary = []
+    for car in CARS:
+        path = WORK / ("sprint-free-" + car["slug"] + ".json")
+        if not path.is_file():
+            problems.append(rel(path) + ": missing")
+            continue
+        try:
+            run = load_json(path)
+        except Exception as exc:  # noqa: BLE001
+            problems.append(rel(path) + ": unreadable JSON (" + str(exc) + ")")
+            continue
+        if run.get("courseId") != "free":
+            problems.append(rel(path) + ": courseId is not free")
+        if run.get("layoutHash") != layout.get("hash"):
+            problems.append(rel(path) + ": layoutHash != current free layout hash")
+        if len(run.get("ticks") or []) != 401:
+            problems.append(rel(path) + ": tick count is not 401")
+        if not str(run.get("stateSequenceHash") or "").startswith("sha256:"):
+            problems.append(rel(path) + ": stateSequenceHash is not a sha256")
+        prop = run.get("prop") or {}
+        if (prop.get("colliders") != 431 or prop.get("profile") != "all-visible" or
+                prop.get("contacts") != 0 or prop.get("blockedTicks") != 0):
+            problems.append(rel(path) + ": prop layer mismatch " + repr(
+                {k: prop.get(k) for k in ("colliders", "profile", "contacts", "blockedTicks")}))
+        if (prop.get("manifestFileSha256") != FREE_MANIFEST_FILE or
+                prop.get("manifestContentSha256") != FREE_MANIFEST_CONTENT):
+            problems.append(rel(path) + ": free manifest pins mismatch")
+        if run.get("finish") or run.get("lapTimes") or run.get("respawns"):
+            problems.append(rel(path) + ": free run carries finish/lap/respawn state")
+        if not run.get("containment") or not run.get("bounds"):
+            problems.append(rel(path) + ": containment/bounds missing")
+        if not problems:
+            summary.append("{} {} ticks".format(car["slug"], len(run["ticks"])))
+    if problems:
+        return report.fail(item, label, "; ".join(problems), [])
+    return report.ok(item, label, "5 cars, 401 ticks each, 431 colliders, 0 contacts", [])
+
+
 def run_checks():
     report = Report(ROOT)
     check_library(report)
@@ -1147,6 +1254,8 @@ def run_checks():
     check_per_car(report, short_layout, "short", "sprint-short-", "short", "per-car 29 m regression runs")
     _item, lap_layout = check_sprint_lap(report)
     check_lap_runs(report, lap_layout)
+    _item, free_layout = check_sprint_free(report)
+    check_free_runs(report, free_layout)
     _item, roster = check_roster(report)
     check_fields(report, roster)
     check_textures(report)
@@ -1165,6 +1274,7 @@ def hash_targets():
         WORK / "sprint.json",
         WORK / "sprint-short.json",
         WORK / "sprint-lap.json",
+        WORK / "sprint-free.json",
         WORK / "cars.json",
         WORK / "track-textures.json",
         WORK / "track-uv.bin",

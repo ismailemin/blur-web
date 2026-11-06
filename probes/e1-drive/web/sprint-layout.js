@@ -23,6 +23,7 @@
 // coverage).
 
 import { hashOf } from './packet-hash.js';
+import { FREE_PROP_PINS } from './prop-layer.js';
 
 export const SPRINT_LAYOUT_KIND = 'e1-drive.sprint';
 export const SPRINT_LAYOUT_VERSION = 1;
@@ -33,6 +34,8 @@ export const LONG_COURSE_ID = '310m';
 export const SHORT_COURSE_ID = 'short';
 /** Three-lap course on the P61 loop-01 closed collision loop (222.040 m). */
 export const LAP_COURSE_ID = 'lap';
+/** Free-roam mode on the P65/P68 measured spawn basin (no gates, no finish). */
+export const FREE_COURSE_ID = 'free';
 
 /**
  * P48 course artifact pins. The long layout may only be built from this exact
@@ -1301,6 +1304,327 @@ export function deriveSprintLayout(geometry, spawn, options = {}) {
 }
 
 /**
+ * P65 regions artifact pins. The free-roam layout may only be built from this
+ * exact `_work/free-roam/regions.json`: a different basin artifact is a hard
+ * failure, never a silently different spawn region.
+ */
+export const FREE_REGIONS_PATH = Object.freeze({
+  file: '_work/free-roam/regions.json',
+  fileSha256: 'sha256:e875c541c19c4d635ac4f236198648be1223e2c62e1dab9f8fba30f817294746',
+  canonicalHash: 'sha256:e04ace8931f7bcddb1c19139ab41745afcb31fc1cfa33dd7a78c0d48a6bb263e',
+  regionId: 'R04',
+  areaM2: 9689.5,
+  bounds: Object.freeze([-108.5, 104.0, 1012.5, 1293.0]),
+  spawnRegionDrawFraction: 1.0
+});
+
+/** The committed free-roam spawn: the E1 spawn, heading pi/2 (see spawn.mjs). */
+export const FREE_SPAWN = Object.freeze({ x: -88.0, z: 1050.0, headingRad: Math.PI / 2 });
+
+/**
+ * P68b spawn-component containment box. `spawnComponentBounds` is the measured
+ * bbox of the free cell component that contains the spawn under the extended
+ * 431-collider `all-visible` layer (P68a measured the same component at
+ * 7,702.25 m2 with the committed manifest and 7,415.00 m2 with the extended one;
+ * the eastern channel is cut off by the C03 prop wall and is *not* in the box).
+ * The reset boundary is this box expanded by `marginMetres`.
+ */
+export const FREE_BOUNDS = Object.freeze({
+  spawnComponentBounds: Object.freeze({ minX: -108.5, maxX: 5.0, minZ: 1027.5, maxZ: 1164.0 }),
+  spawnComponentAreaM2: 7702.25,
+  extendedComponentAreaM2: 7415.0,
+  easternChannelAreaM2: 1321.25,
+  marginMetres: 2.0,
+  fallBelowGroundMetres: 1.0,
+  airborneTicks: 30
+});
+
+/** Ground-lattice spacing over the containment box (collision mesh, measured). */
+export const FREE_GROUND_STEP_METRES = 2.0;
+/** Probe line spacing for the derived containment test lane. */
+export const FREE_PROBE_STEP_METRES = 1.0;
+
+/**
+ * Measured collision ground over the containment box, on a 2 m lattice. Cells
+ * with a collision triangle keep that height; cells without one (the box also
+ * covers void/pocket corners that are not part of the component) are filled
+ * from the nearest measured cell by a deterministic 8-connected BFS, and the
+ * count is recorded. `null` therefore never reaches the rules.
+ */
+export function freeGroundGrid(collision, bounds, step = FREE_GROUND_STEP_METRES) {
+  const columns = Math.floor((bounds.maxX - bounds.minX) / step) + 1;
+  const rows = Math.floor((bounds.maxZ - bounds.minZ) / step) + 1;
+  const heights = new Array(columns * rows).fill(null);
+  let measuredCells = 0;
+  for (let iz = 0; iz < rows; iz++) {
+    for (let ix = 0; ix < columns; ix++) {
+      const x = round6(bounds.minX + ix * step);
+      const z = round6(bounds.minZ + iz * step);
+      const height = collision.heightAt(x, z);
+      if (height === null) continue;
+      heights[iz * columns + ix] = round6(height);
+      measuredCells++;
+    }
+  }
+  const missing = columns * rows - measuredCells;
+  // Deterministic multi-source BFS: sources in row-major order, neighbours in
+  // fixed order. A filled cell takes the height of the source that reached it.
+  let filledCells = 0;
+  if (missing > 0) {
+    const queue = [];
+    for (let index = 0; index < heights.length; index++) if (heights[index] !== null) queue.push(index);
+    const NEIGHBOURS = [-1, 1, -columns, columns, -columns - 1, -columns + 1, columns - 1, columns + 1];
+    for (let head = 0; head < queue.length; head++) {
+      const index = queue[head];
+      const ix = index % columns;
+      const iz = (index - ix) / columns;
+      for (const offset of NEIGHBOURS) {
+        const next = index + offset;
+        if (next < 0 || next >= heights.length) continue;
+        const nx = next % columns;
+        const nz = (next - nx) / columns;
+        if (Math.abs(nx - ix) > 1 || Math.abs(nz - iz) > 1) continue;
+        if (heights[next] !== null) continue;
+        heights[next] = heights[index];
+        filledCells++;
+        queue.push(next);
+      }
+    }
+  }
+  return { stepMetres: step, origin: [round6(bounds.minX), round6(bounds.minZ)],
+    columns, rows, measuredCells, filledCells, missingBeforeFill: missing, heights };
+}
+
+/** True for the free-roam layout. */
+export function isFreeLayout(layout) {
+  return layout?.courseId === FREE_COURSE_ID;
+}
+
+/**
+ * Derive the containment test lane from measured data: the easternmost lattice
+ * cell whose straight run east reaches the reset boundary with a collision
+ * surface under every 1 m sample and no P68b all-visible contact. This is the
+ * shortest useful lane to the boundary (the test wants to leave the box, not to
+ * cross the whole basin). No coordinate is typed in: the lane, its length and
+ * its ground are the measurement.
+ */
+function deriveContainmentProbe(grid, bounds, propContacts, groundAt, envelope, yaw, headingRad) {
+  const targetX = bounds.maxX + FREE_BOUNDS.marginMetres;
+  const MIN_CLEAR_RUN_METRES = 30;
+  // The lane must be drivable in the same sense as the P48 mask: at most 5 cm of
+  // ground change per 1 m sample (the P48 5 cm / 5 % calibration).
+  const MAX_GROUND_STEP_METRES = 0.05;
+  let best = null;
+  for (let iz = 0; iz < grid.rows; iz++) {
+    for (let ix = 0; ix < grid.columns; ix++) {
+      const x = round6(grid.origin[0] + ix * grid.stepMetres);
+      const z = round6(grid.origin[1] + iz * grid.stepMetres);
+      if (x >= targetX - MIN_CLEAR_RUN_METRES) continue;
+      let clear = 0;
+      let supported = true;
+      let previousGround = null;
+      let maxGroundStep = 0;
+      for (let distance = 0; x + distance <= targetX + 1e-9; distance += FREE_PROBE_STEP_METRES) {
+        const sampleX = round6(x + distance);
+        const ground = groundAt(sampleX, z);
+        if (ground === null) { supported = false; break; }
+        if (previousGround !== null) {
+          const step = Math.abs(ground - previousGround);
+          if (step > maxGroundStep) maxGroundStep = step;
+          if (step > MAX_GROUND_STEP_METRES) { supported = false; break; }
+        }
+        previousGround = ground;
+        const contacts = propContacts(sampleX, z, yaw, ground);
+        if (contacts.length) break;
+        clear = distance;
+      }
+      if (!supported || clear < MIN_CLEAR_RUN_METRES) continue;
+      // The samples are 1 m apart and the last one lands at or before targetX;
+      // the lane reaches the boundary when its final step reaches it.
+      const qualifiesBoundary = x + clear + FREE_PROBE_STEP_METRES >= targetX - 1e-6;
+      if (!qualifiesBoundary) continue;
+      if (best === null || x > best.x ||
+          (Math.abs(x - best.x) < 1e-9 && maxGroundStep < best.maxGroundStep - 1e-12) ||
+          (Math.abs(x - best.x) < 1e-9 && Math.abs(maxGroundStep - best.maxGroundStep) < 1e-12 && z < best.z)) {
+        best = { x, z, groundY: grid.heights[iz * grid.columns + ix],
+          clearRunMetres: round6(clear), maxGroundStepMetres: round6(maxGroundStep) };
+      }
+    }
+  }
+  if (best === null) throw new Error('no containment probe lane could be measured');
+  return {
+    x: best.x, z: best.z, headingRad, groundY: round6(best.groundY),
+    clearRunToBoundaryMetres: round6(targetX - best.x),
+    sampledStepMetres: FREE_PROBE_STEP_METRES,
+    maxGroundStepMetres: best.maxGroundStepMetres,
+    stepLimitMetres: MAX_GROUND_STEP_METRES,
+    envelope: { length: envelope.length, width: envelope.width, height: envelope.height },
+    rule: 'the shortest (easternmost) measured lattice lane whose 1 m samples reach the reset boundary over a ' +
+      'collision surface with no step above 5 cm per metre and no P68b all-visible contact; used only by the ' +
+      'containment test, not by the spawn'
+  };
+}
+
+/**
+ * Derive the free-roam layout. `regionsDoc` is the parsed P65
+ * `_work/free-roam/regions.json` (pinned by the caller); `options.propContacts`
+ * is `(x, z, yaw, baseY) => contacts[]` against the P68b extended all-visible
+ * world. Nothing here is typed in: the spawn, the box, the basin area and the
+ * draw coverage are the committed measurements, the ground grid is re-sampled
+ * from the collision mesh and the containment lane is measured.
+ */
+export function deriveFreeRoamLayout(geometry, spawn, regionsDoc, options = {}) {
+  if (!regionsDoc || regionsDoc.kind !== 'free-roam.regions' || regionsDoc.version !== 1) {
+    throw new Error('the free-roam layout needs the measured free-roam.regions v1 artifact');
+  }
+  if (regionsDoc.hash !== FREE_REGIONS_PATH.canonicalHash) {
+    throw new Error('the free-roam regions artifact is not the recorded one: ' + regionsDoc.hash +
+      ' (expected ' + FREE_REGIONS_PATH.canonicalHash + ')');
+  }
+  const basin = regionsDoc.regions?.find((entry) => entry.id === FREE_REGIONS_PATH.regionId);
+  if (!basin) throw new Error('the free-roam regions artifact has no ' + FREE_REGIONS_PATH.regionId);
+  if (basin.containsSpawn !== true) throw new Error(FREE_REGIONS_PATH.regionId + ' does not contain the spawn');
+  if (Math.abs(basin.areaM2 - FREE_REGIONS_PATH.areaM2) > 1e-9) {
+    throw new Error('the measured basin area ' + basin.areaM2 + ' m2 is not ' + FREE_REGIONS_PATH.areaM2);
+  }
+  const basinBounds = basin.bounds;
+  if (!Array.isArray(basinBounds) || basinBounds.some((value, index) =>
+    Math.abs(value - FREE_REGIONS_PATH.bounds[index]) > 1e-9)) {
+    throw new Error('the measured basin bounds ' + JSON.stringify(basinBounds) + ' are not the recorded ones');
+  }
+  if (!spawn || spawn.x !== FREE_SPAWN.x || spawn.z !== FREE_SPAWN.z ||
+      Math.abs(spawn.heading - FREE_SPAWN.headingRad) > 1e-12) {
+    throw new Error('the free-roam mode starts at the committed spawn (-88, 1050, pi/2); got ' +
+      JSON.stringify({ x: spawn?.x, z: spawn?.z, heading: spawn?.heading }));
+  }
+  if (typeof options.propContacts !== 'function' || !options.carEnvelope) {
+    throw new Error('the free-roam layout needs the P68b all-visible prop world for its containment measurement');
+  }
+
+  const collision = options.collision ?? new TriangleIndex(collisionTriangles(geometry));
+  const spawnGroundY = collision.heightAt(spawn.x, spawn.z);
+  if (spawnGroundY === null) throw new Error('no collision triangle under the free-roam spawn');
+  const grid = freeGroundGrid(collision, FREE_BOUNDS.spawnComponentBounds);
+  const heading = FREE_SPAWN.headingRad;
+  const yaw = Math.PI / 2 - heading;
+  const groundAt = typeof options.groundAt === 'function'
+    ? options.groundAt : (x, z) => collision.heightAt(x, z);
+  const probe = deriveContainmentProbe(grid, FREE_BOUNDS.spawnComponentBounds,
+    (x, z, probeYaw, baseY) => options.propContacts(x, z, probeYaw, baseY),
+    groundAt, options.carEnvelope, yaw, heading);
+  void yaw;
+
+  const coverage = basin.coverage;
+  if (!coverage || Math.abs(coverage.fraction - FREE_REGIONS_PATH.spawnRegionDrawFraction) > 1e-9) {
+    throw new Error('the measured spawn basin is not fully drawn in regions.json');
+  }
+
+  const bounds = FREE_BOUNDS.spawnComponentBounds;
+  const layout = {
+    kind: SPRINT_LAYOUT_KIND,
+    version: SPRINT_LAYOUT_VERSION,
+    courseId: FREE_COURSE_ID,
+    source: {
+      geometry: '_work/e1-drive/geometry.json',
+      geometryVersion: geometry.version,
+      regions: FREE_REGIONS_PATH.file,
+      regionsFileSha256: FREE_REGIONS_PATH.fileSha256,
+      regionsCanonicalHash: regionsDoc.hash,
+      basinRegion: FREE_REGIONS_PATH.regionId,
+      basinAreaM2: basin.areaM2,
+      basinDrawFraction: coverage.fraction,
+      basinDrawSamples: coverage.samples,
+      basinDrawSection: basin.sections?.[0]?.key ?? null,
+      trackVisual: geometry.trackVisual.label,
+      spawn: { x: spawn.x, z: spawn.z, headingRad: heading },
+      spawnSource: spawn.source ?? null
+    },
+    course: {
+      rule:
+        'free roam on the P65/P68 measured spawn basin: the committed spawn (-88, 1050, pi/2), no gates, no ' +
+        'finish, no lap counter and no corridor band; the P68b all-visible prop layer makes every visible prop ' +
+        'in the extended region solid',
+      name: 'usa_la_river R04 free-roam spawn basin',
+      spawn: { x: round6(spawn.x), z: round6(spawn.z), headingRad: heading },
+      spawnGroundY: round6(spawnGroundY),
+      bounds: {
+        minX: bounds.minX, maxX: bounds.maxX, minZ: bounds.minZ, maxZ: bounds.maxZ,
+        source:
+          'P68a/P68b spawn-component bbox of the P48 2-cell free mask under the all-visible prop footprint; the ' +
+          'eastern channel (1,321.25 m2, C03 prop wall) is outside it and is not spawned into'
+      },
+      containment: {
+        marginMetres: FREE_BOUNDS.marginMetres,
+        fallBelowGroundMetres: FREE_BOUNDS.fallBelowGroundMetres,
+        airborneTicks: FREE_BOUNDS.airborneTicks,
+        spawnComponentAreaM2: FREE_BOUNDS.spawnComponentAreaM2,
+        extendedComponentAreaM2: FREE_BOUNDS.extendedComponentAreaM2,
+        easternChannelAreaM2: FREE_BOUNDS.easternChannelAreaM2,
+        rule:
+          'reset to the spawn only when the car leaves the measured spawn-component box expanded by the ' +
+          'documented margin, falls more than 1 m below the local measured ground, or stays airborne for 30 ' +
+          'ticks; there is no invisible wall, no corridor band and no finish',
+        noCorridorRespawn: true,
+        noInvisibleWall: true,
+        probe
+      },
+      groundGrid: grid,
+      coverage: {
+        region: FREE_REGIONS_PATH.regionId,
+        sampleStepMetres: coverage.sampleStepMetres,
+        samples: coverage.samples,
+        covered: coverage.covered,
+        fraction: coverage.fraction,
+        coveredAreaM2: coverage.coveredAreaM2,
+        section: basin.sections?.[0]?.key ?? null,
+        rule: 'P65 measured the spawn basin 100 % drawn at 1 m; this layout consumes that measurement read-only ' +
+          'and does not re-sample it'
+      },
+      prop: {
+        profile: FREE_PROP_PINS.profile,
+        manifest: FREE_PROP_PINS.manifest,
+        manifestFileSha256: FREE_PROP_PINS.manifestFileSha256,
+        manifestContentSha256: FREE_PROP_PINS.manifestContentSha256,
+        variant: FREE_PROP_PINS.variant,
+        colliders: FREE_PROP_PINS.colliders,
+        resolver: FREE_PROP_PINS.resolver,
+        rule: 'the P68b extended all-visible manifest is a region replacement for this mode only; the timed ' +
+          '310 m course keeps the committed 468-collider manifest'
+      }
+    },
+    gates: [],
+    countdown: {
+      ticks: 0,
+      stepTicks: 0,
+      labels: [],
+      goLabel: 'GO',
+      rule: 'free roam has no countdown: the car is drivable on the settled spawn tick'
+    },
+    rules: {
+      tickHz: 60,
+      timer: 'elapsed engine ticks from the settled spawn (a session clock, not a race time)',
+      gateOrder: 'none: free roam has no gates, checkpoints, finish or lap counter',
+      finishRequiresAllCheckpoints: false,
+      progress: 'none: progress is not tracked in free roam',
+      containment: {
+        marginMetres: FREE_BOUNDS.marginMetres,
+        fallBelowGroundMetres: FREE_BOUNDS.fallBelowGroundMetres,
+        airborneTicks: FREE_BOUNDS.airborneTicks,
+        target: 'the committed spawn (-88, 1050) at pi/2',
+        rule: 'reset only on out-of-box, below-ground or airborne; R returns to the spawn'
+      },
+      limits: [
+        'this is free roam on one measured basin (R04), not a lap, a race or a second route',
+        'the eastern channel behind the C03 prop wall is not reachable and is not spawned into',
+        'the prop layer is a visible-mesh kinematic approximation, not retail collision'
+      ]
+    }
+  };
+  layout.hash = hashOf(layout);
+  return layout;
+}
+
+/**
  * Heading the car is created with on the start line. The 310 m course starts on
  * a measured tangent (the committed drive spawn heading pi/2 points across that
  * road); the 29 m regression course keeps the committed spawn heading. This is a
@@ -1375,6 +1699,56 @@ export function validateSprintLayout(layout, geometry, spawn) {
     if (Math.abs(layout.source.spawn.headingRad - referenceHeading) > 1e-12) {
       fail('layout spawn heading differs from the ' + (lap ? 'lap start tangent' : 'page spawn'));
     }
+  }
+  if (isFreeLayout(layout)) {
+    // Free roam has no gates, no finish and no lap: its structure is the
+    // measured basin, the P68b prop pins and the containment rule.
+    const course = layout.course ?? {};
+    const bounds = course.bounds ?? {};
+    for (const key of ['minX', 'maxX', 'minZ', 'maxZ']) {
+      if (Math.abs((bounds[key] ?? NaN) - FREE_BOUNDS.spawnComponentBounds[key]) > 1e-9) {
+        fail('free-roam bounds.' + key + ' is not the measured spawn-component value');
+      }
+    }
+    if (!Array.isArray(layout.gates) || layout.gates.length !== 0) {
+      fail('the free-roam layout must not have gates');
+    }
+    if (course.lap !== undefined || course.samples !== undefined || course.span !== undefined) {
+      fail('the free-roam layout must not carry a lap, course samples or a sprint span');
+    }
+    const containment = course.containment ?? {};
+    if (containment.marginMetres !== FREE_BOUNDS.marginMetres ||
+        containment.fallBelowGroundMetres !== FREE_BOUNDS.fallBelowGroundMetres ||
+        containment.airborneTicks !== FREE_BOUNDS.airborneTicks ||
+        containment.noCorridorRespawn !== true || containment.noInvisibleWall !== true) {
+      fail('the free-roam containment rule is not the declared out-of-box/below-ground/airborne rule');
+    }
+    if (Math.abs((course.coverage?.fraction ?? -1) - FREE_REGIONS_PATH.spawnRegionDrawFraction) > 1e-9) {
+      fail('the free-roam draw coverage is not the measured P65 basin coverage');
+    }
+    if (layout?.countdown?.ticks !== 0) fail('the free-roam layout must not have a countdown');
+    const grid = course.groundGrid ?? {};
+    const step = grid.stepMetres;
+    const columns = step ? Math.floor((bounds.maxX - bounds.minX) / step) + 1 : 0;
+    const rows = step ? Math.floor((bounds.maxZ - bounds.minZ) / step) + 1 : 0;
+    if (grid.origin?.[0] !== bounds.minX || grid.origin?.[1] !== bounds.minZ ||
+        grid.columns !== columns || grid.rows !== rows ||
+        !Array.isArray(grid.heights) || grid.heights.length !== columns * rows ||
+        grid.heights.some((height) => !Number.isFinite(height)) ||
+        grid.measuredCells + grid.filledCells !== columns * rows || !(grid.measuredCells > 0)) {
+      fail('the free-roam ground grid is not the declared measured lattice');
+    }
+    const probe = containment.probe ?? {};
+    if (!Number.isFinite(probe.x) || !Number.isFinite(probe.z) ||
+        probe.x < bounds.minX || probe.x > bounds.maxX || probe.z < bounds.minZ || probe.z > bounds.maxZ ||
+        !(probe.clearRunToBoundaryMetres >= 10)) {
+      fail('the free-roam containment probe is not inside the measured box with a usable lane');
+    }
+    const prop = course.prop ?? {};
+    for (const key of ['profile', 'manifest', 'manifestFileSha256', 'manifestContentSha256', 'variant', 'colliders']) {
+      if (prop[key] !== FREE_PROP_PINS[key]) fail('the free-roam prop pin ' + key + ' is not the P68b value');
+    }
+    return { ok: errors.length === 0, errors };
   }
   const gates = layout?.gates;
   const lapCourse = isLapLayout(layout);

@@ -34,7 +34,7 @@ function colliderById(manifest, id) {
  * does not know the prop), the layer's returned pose is the resolved one.
  */
 function driveCase({ world, manifest, createPropLayer, propYawFromHeading, collider,
-  speed, lateral = 0, ticks = 240, startDistance = 12, axisIndex = 0, angleDeg = 0 }) {
+  speed, lateral = 0, ticks = 240, startDistance = 12, axisIndex = 0, angleDeg = 0, pins = null }) {
   const axis = collider.axes[axisIndex];
   const axisLength = Math.hypot(axis[0], axis[2]) || 1;
   const outward = [axis[0] / axisLength, axis[2] / axisLength];
@@ -52,7 +52,7 @@ function driveCase({ world, manifest, createPropLayer, propYawFromHeading, colli
   const groundY = collider.vertical.groundY ?? (collider.vertical.bottom ?? 0);
   const heading = Math.atan2(dir[0], dir[1]);
   const dt = 1 / 60;
-  const layer = createPropLayer({ world, carEnvelope: manifest.carEnvelope });
+  const layer = createPropLayer({ world, carEnvelope: manifest.carEnvelope, ...(pins ? { pins } : {}) });
   let engine = fakeState(start[0], groundY + 0.35, start[1], heading, 0);
   layer.begin(engine, groundY);
   const freeStart = { x: engine.position[0], z: engine.position[2] };
@@ -169,4 +169,22 @@ export function runPropLayerTests({ world, manifest, createPropLayer, propYawFro
     collider: colliderById(manifest, 'river.block56.node289.draw.102.component.005'),
     speed: 19.9, ticks: 180, angleDeg: 5 });
   return { truck: truck.id, thin: thin.id, headOn, thinAt31, glancing };
+}
+
+/**
+ * The free-roam (P68b extended manifest) version of the layer tests: a real R04
+ * truck and a real 0.02 m container panel, both first contacts along the
+ * approach. The targets are named manifest records, not synthetic boxes.
+ */
+export function runFreePropLayerTests({ world, manifest, createPropLayer, propYawFromHeading, pins }) {
+  const truck = colliderById(manifest, 'level.instance.00');
+  const thin = colliderById(manifest, 'river.block56.node289.draw.143.component.072');
+  if (Math.min(thin.half[0], thin.half[2]) > 0.02 + 1e-9) {
+    throw new Error('the free-roam thin panel is not a 0.02 m component: ' + thin.id);
+  }
+  const truckHeadOn = driveCase({ world, manifest, createPropLayer, propYawFromHeading, collider: truck,
+    speed: 31, ticks: 180, axisIndex: 0, pins });
+  const thinAt31 = driveCase({ world, manifest, createPropLayer, propYawFromHeading, collider: thin,
+    speed: 31, ticks: 180, axisIndex: 2, pins });
+  return { truck: truck.id, thin: thin.id, truckHeadOn, thinAt31 };
 }

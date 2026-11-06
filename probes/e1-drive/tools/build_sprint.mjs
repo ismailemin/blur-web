@@ -21,9 +21,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  LAP_LOOPS_PATH, LONG_COURSE_PATH, SHORT_COURSE_ID, deriveLapCourseLayout, deriveLongCourseLayout,
-  deriveSprintLayout
+  FREE_REGIONS_PATH, LAP_LOOPS_PATH, LONG_COURSE_PATH, SHORT_COURSE_ID, deriveFreeRoamLayout,
+  deriveLapCourseLayout, deriveLongCourseLayout, deriveSprintLayout
 } from '../web/sprint-layout.js';
+import { FREE_PROP_PINS, checkPropManifest } from '../web/prop-layer.js';
+import { createWorld } from '../../prop-collision/lib/resolver.mjs';
 import { TICK0_LIMITS } from './spawn.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -32,9 +34,12 @@ const GEOMETRY = path.join(WORK, 'geometry.json');
 const SPAWN = path.join(WORK, 'spawn.json');
 const COURSE_PATH = path.join(ROOT, LONG_COURSE_PATH.file);
 const LOOPS_PATH = path.join(ROOT, LAP_LOOPS_PATH.file);
+const REGIONS_PATH = path.join(ROOT, FREE_REGIONS_PATH.file);
+const FREE_PROP_PATH = path.join(ROOT, FREE_PROP_PINS.manifest);
 const OUT = path.join(WORK, 'sprint.json');
 const OUT_SHORT = path.join(WORK, 'sprint-short.json');
 const OUT_LAP = path.join(WORK, 'sprint-lap.json');
+const OUT_FREE = path.join(WORK, 'sprint-free.json');
 
 if (!existsSync(GEOMETRY)) {
   throw new Error('missing _work/e1-drive/geometry.json — run `node probes/e1-drive/tools/build_geometry.mjs` first');
@@ -44,6 +49,12 @@ if (!existsSync(COURSE_PATH)) {
 }
 if (!existsSync(LOOPS_PATH)) {
   throw new Error('missing ' + LAP_LOOPS_PATH.file + ' — the P61 loop-01 course is required for the lap layout');
+}
+if (!existsSync(REGIONS_PATH)) {
+  throw new Error('missing ' + FREE_REGIONS_PATH.file + ' — the P65 spawn basin is required for free roam');
+}
+if (!existsSync(FREE_PROP_PATH)) {
+  throw new Error('missing ' + FREE_PROP_PINS.manifest + ' — the P68b collider manifest is required for free roam');
 }
 const geometryBytes = readFileSync(GEOMETRY);
 const geometry = JSON.parse(geometryBytes.toString('utf8'));
@@ -68,10 +79,39 @@ if (loopsFileSha !== LAP_LOOPS_PATH.fileSha256) {
 }
 const loopsDoc = JSON.parse(loopsBytes.toString('utf8'));
 
+const regionsBytes = readFileSync(REGIONS_PATH);
+const regionsFileSha = 'sha256:' + sha256(regionsBytes);
+if (regionsFileSha !== FREE_REGIONS_PATH.fileSha256) {
+  throw new Error('the P65 regions artifact is not the recorded file: ' + regionsFileSha +
+    ' (expected ' + FREE_REGIONS_PATH.fileSha256 + ')');
+}
+const regionsDoc = JSON.parse(regionsBytes.toString('utf8'));
+
+const freePropBytes = readFileSync(FREE_PROP_PATH);
+const freePropFileSha = 'sha256:' + sha256(freePropBytes);
+if (freePropFileSha !== FREE_PROP_PINS.manifestFileSha256) {
+  throw new Error('the P68b collider manifest is not the recorded file: ' + freePropFileSha +
+    ' (expected ' + FREE_PROP_PINS.manifestFileSha256 + ')');
+}
+const freePropManifest = JSON.parse(freePropBytes.toString('utf8'));
+const freePropCheck = checkPropManifest(freePropManifest, FREE_PROP_PINS);
+if (!freePropCheck.ok) {
+  throw new Error('the P68b collider manifest was rejected: ' + freePropCheck.errors.join('; '));
+}
+const freePropWorld = createWorld(freePropManifest, { profile: FREE_PROP_PINS.profile });
+const freePropContacts = (x, z, yaw, baseY) =>
+  freePropWorld.contactsAll(x, z, yaw, baseY, freePropManifest.carEnvelope);
+
 const layouts = [
   { file: OUT, layout: deriveLongCourseLayout(geometry, spawn, coursePath) },
   { file: OUT_SHORT, layout: deriveSprintLayout(geometry, spawn, { courseId: SHORT_COURSE_ID }) },
-  { file: OUT_LAP, layout: deriveLapCourseLayout(geometry, loopsDoc) }
+  { file: OUT_LAP, layout: deriveLapCourseLayout(geometry, loopsDoc) },
+  {
+    file: OUT_FREE,
+    layout: deriveFreeRoamLayout(geometry, spawn, regionsDoc, {
+      propContacts: freePropContacts, carEnvelope: freePropManifest.carEnvelope
+    })
+  }
 ];
 
 const summary = [];
@@ -85,12 +125,14 @@ for (const { file, layout } of layouts) {
     fileSha256: 'sha256:' + sha256(Buffer.from(text, 'utf8')),
     layoutHash: layout.hash,
     span: layout.course.span,
+    bounds: layout.course.bounds ?? null,
+    containment: layout.course.containment ?? null,
     coverage: layout.course.coverage
       ? {
         samples: layout.course.coverage.samples,
-        coveredSamples: layout.course.coverage.coveredSamples,
-        coverageFraction: layout.course.coverage.coverageFraction,
-        gaps: layout.course.coverage.gaps.length
+        coveredSamples: layout.course.coverage.coveredSamples ?? layout.course.coverage.covered,
+        coverageFraction: layout.course.coverage.coverageFraction ?? layout.course.coverage.fraction,
+        gaps: layout.course.coverage.gaps?.length ?? 0
       }
       : null,
     gates: layout.gates.map((gate) => ({
@@ -112,5 +154,7 @@ console.log(JSON.stringify({
   geometry: { file: '_work/e1-drive/geometry.json', sha256: 'sha256:' + sha256(geometryBytes) },
   coursePath: { file: LONG_COURSE_PATH.file, sha256: coursePathSha, hash: coursePath.hash },
   loops: { file: LAP_LOOPS_PATH.file, sha256: loopsFileSha, hash: loopsDoc.hash, loopId: LAP_LOOPS_PATH.loopId },
+  regions: { file: FREE_REGIONS_PATH.file, sha256: regionsFileSha, hash: regionsDoc.hash },
+  freeProp: { file: FREE_PROP_PINS.manifest, sha256: freePropFileSha, contentSha256: freePropManifest.contentSha256 },
   layouts: summary
 }, null, 2));

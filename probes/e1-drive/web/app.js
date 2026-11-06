@@ -48,15 +48,20 @@ import { hashOf } from './packet-hash.js';
 import { sha256Hex } from './sha256.js';
 import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
-import { isLapLayout, layoutStartHeading, layoutStartPosition, validateSprintLayout } from './sprint-layout.js';
-import { SPRINT_EVENT, courseGroundAt, coursePosition, createSprintRules } from './sprint-rules.js';
+import { isFreeLayout, layoutStartHeading, layoutStartPosition, validateSprintLayout } from './sprint-layout.js';
+import { SPRINT_EVENT, courseGroundAt, coursePosition, createSprintRules, freeGroundAt } from './sprint-rules.js';
 import { createBestTimes } from './sprint-best.js';
 import {
   GHOST_CORNERS, GHOST_SOURCE, buildGhostArcTable, createGhostStore, decodeGhost, ghostFromRun,
   ghostGap, ghostMatrices, referenceGhostFileName, validateGhostRecord
 } from './ghost-replay.js';
-import { LAP_PACKET_SCRIPT, LAP_SCRIPT_TICKS, respawnScriptInput, sprintScriptInput, SPRINT_PACKET_SCRIPT } from './sprint-script.js';
-import { PROP_MANIFEST, PROP_PROFILE, createPropLayer } from './prop-layer.js';
+import {
+  FREE_PACKET_SCRIPT, FREE_SCRIPT_TICKS, LAP_PACKET_SCRIPT, LAP_SCRIPT_TICKS, respawnScriptInput,
+  sprintScriptInput, SPRINT_PACKET_SCRIPT
+} from './sprint-script.js';
+import {
+  FREE_PROP_PINS, LAP_PROP_PINS, checkPropManifest, createPropLayer
+} from './prop-layer.js';
 import {
   createWasmResetEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
   TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_PACKET_SCRIPT, TELEMETRY_SPEC
@@ -106,15 +111,17 @@ if (HOLD !== null && (!Number.isInteger(HOLD) || HOLD < 0)) throw new Error('hol
 const INTERPOLATE = params.get('interpolate') !== '0';
 const REQUESTED_CAR = params.get('car');
 // Course selection: the default is the measured 310.395 m P48 course; `?course=short`
-// loads the original 29 m straight regression course, and `?course=lap` loads the
-// P61 loop-01 three-lap layout. Each course has its own best-time namespace.
+// loads the original 29 m straight regression course, `?course=lap` loads the
+// P61 loop-01 three-lap layout and `?course=free` loads the P65/P68 free-roam
+// basin. Each course has its own best-time namespace.
 const COURSE_PARAM = params.get('course') ?? '310';
-if (COURSE_PARAM !== '310' && COURSE_PARAM !== 'short' && COURSE_PARAM !== 'lap') {
-  throw new Error('unknown course ' + JSON.stringify(COURSE_PARAM) + ' (use 310, short or lap)');
+if (COURSE_PARAM !== '310' && COURSE_PARAM !== 'short' && COURSE_PARAM !== 'lap' && COURSE_PARAM !== 'free') {
+  throw new Error('unknown course ' + JSON.stringify(COURSE_PARAM) + ' (use 310, short, lap or free)');
 }
 const COURSE_IS_SHORT = COURSE_PARAM === 'short';
 const COURSE_IS_LAP = COURSE_PARAM === 'lap';
-const COURSE_KEY = COURSE_IS_SHORT ? 'short' : COURSE_IS_LAP ? 'lap' : '310m';
+const COURSE_IS_FREE = COURSE_PARAM === 'free';
+const COURSE_KEY = COURSE_IS_SHORT ? 'short' : COURSE_IS_LAP ? 'lap' : COURSE_IS_FREE ? 'free' : '310m';
 // Ghost / rival replay (P63): `G` toggles it, `?ghost=1` shows it from the start.
 // The ghost is a *recording of one completed run* (your fastest clean run, or the
 // committed deterministic reference trace), replayed through the same car mesh.
@@ -143,8 +150,10 @@ const GEOMETRY_URL = '/_work/e1-drive/geometry.json';
 const LEVEL_URL = '/_work/e1-drive/Level.levelphysics';
 const SPAWN_URL = '/_work/e1-drive/spawn.json';
 const SPRINT_URL = COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
-  : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json' : '/_work/e1-drive/sprint.json';
+  : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json'
+    : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json';
 const PROP_MANIFEST_URL = '/_work/prop-collision/colliders.json';
+const FREE_PROP_MANIFEST_URL = '/_work/free-roam-prop/colliders-r04.json';
 const PROP_RESOLVER_URL = '/prop-collision/lib/resolver.mjs';
 
 /** Best-time storage key: one record per course, never mixed. */
@@ -318,35 +327,55 @@ function publish() {
     const sprint = state.sprint;
     const timer = sprint.finished ? sprint.finishTimeSeconds : sprint.elapsedSeconds;
     const course = sprint.course;
-    rows.push(['course', COURSE_IS_LAP
-      ? 'loop-01 P61 · 3 laps · ' + course.lengthMetres.toFixed(1) + ' m · ?course=lap'
-      : COURSE_IS_SHORT
-        ? '29 m straight (regression) · ' + course.lengthMetres.toFixed(1) + ' m · ?course=short'
-        : '310 m P48 (default) · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(1) +
-          ' m measured · finish ' + (course.finishArc ?? course.lengthMetres).toFixed(1) + ' m']);
-    rows.push(['sprint', sprint.phase + ' · ' + Number(timer).toFixed(3) + ' s' +
-      (sprint.finished ? ' · FINISHED' : '') +
-      (COURSE_IS_LAP ? ' · lap ' + sprint.lap + '/' + sprint.laps : '') +
-      (sprint.respawns ? ' · ' + sprint.respawns + ' respawn' : '')]);
-    if (COURSE_IS_LAP) {
-      rows.push(['laps', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' done · ' +
-        'current ' + Number(sprint.currentLapSeconds).toFixed(3) + ' s · ' +
-        'last ' + (sprint.lastLapSeconds === null ? '—' : sprint.lastLapSeconds.toFixed(3) + ' s') + ' · ' +
-        'best ' + (sprint.bestLapSeconds === null ? '—' : sprint.bestLapSeconds.toFixed(3) + ' s') + ' · ' +
-        Math.round(sprint.progress * 100) + '%']);
+    if (COURSE_IS_FREE) {
+      const free = sprint.free;
+      rows.push(['course', 'FREE ROAM · R04 spawn basin ' +
+        free.spawnComponentAreaM2.toFixed(1) + ' m² · no gates/finish/lap · ?course=free']);
+      rows.push(['free', 'session ' + Number(timer).toFixed(3) + ' s · ' +
+        (free.contained ? 'inside the basin' : 'OUTSIDE the basin') + ' · ' +
+        free.distanceFromSpawnMetres.toFixed(1) + ' m from spawn' +
+        (sprint.respawns ? ' · ' + sprint.respawns + ' reset' : '')]);
+      rows.push(['contain', 'box x ' + course.bounds.minX.toFixed(1) + '…' + course.bounds.maxX.toFixed(1) +
+        ' z ' + course.bounds.minZ.toFixed(1) + '…' + course.bounds.maxZ.toFixed(1) +
+        ' · +' + course.marginMetres.toFixed(1) + ' m margin · ground ' + free.localGroundY.toFixed(2) +
+        ' m · ' + free.groundGrid.measuredCells + '/' +
+        (free.groundGrid.measuredCells + free.groundGrid.filledCells) + ' measured']);
+      rows.push(['props', state.props
+        ? 'all-visible · ' + state.props.colliders + ' colliders · ' +
+          state.props.contacts + ' contacts · ' + state.props.blockedTicks + ' blocked ticks · ' +
+          state.props.substeps + ' substeps'
+        : 'all-visible · loading']);
     } else {
-      rows.push(['gates', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' cp · ' +
-        (sprint.nextGate
-          ? 'next ' + sprint.nextGate.id + ' in ' + Math.max(0, sprint.nextGate.distanceMetres).toFixed(1) + ' m'
-          : 'finish crossed') +
-        ' · ' + Math.round(sprint.progress * 100) + '%']);
-    }
-    rows.push(['best', state.sprintBest === null ? '—' :
-      state.sprintBest.toFixed(3) + ' s' + (state.sprintResult?.improved ? ' (new)' : '')]);
-    if (state.props) {
-      rows.push(['props', state.props.profile + ' · ' + state.props.colliders + ' colliders · ' +
-        state.props.contacts + ' contacts · ' + state.props.blockedTicks + ' blocked ticks · ' +
-        state.props.substeps + ' substeps']);
+      rows.push(['course', COURSE_IS_LAP
+        ? 'loop-01 P61 · 3 laps · ' + course.lengthMetres.toFixed(1) + ' m · ?course=lap'
+        : COURSE_IS_SHORT
+          ? '29 m straight (regression) · ' + course.lengthMetres.toFixed(1) + ' m · ?course=short'
+          : '310 m P48 (default) · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(1) +
+            ' m measured · finish ' + (course.finishArc ?? course.lengthMetres).toFixed(1) + ' m']);
+      rows.push(['sprint', sprint.phase + ' · ' + Number(timer).toFixed(3) + ' s' +
+        (sprint.finished ? ' · FINISHED' : '') +
+        (COURSE_IS_LAP ? ' · lap ' + sprint.lap + '/' + sprint.laps : '') +
+        (sprint.respawns ? ' · ' + sprint.respawns + ' respawn' : '')]);
+      if (COURSE_IS_LAP) {
+        rows.push(['laps', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' done · ' +
+          'current ' + Number(sprint.currentLapSeconds).toFixed(3) + ' s · ' +
+          'last ' + (sprint.lastLapSeconds === null ? '—' : sprint.lastLapSeconds.toFixed(3) + ' s') + ' · ' +
+          'best ' + (sprint.bestLapSeconds === null ? '—' : sprint.bestLapSeconds.toFixed(3) + ' s') + ' · ' +
+          Math.round(sprint.progress * 100) + '%']);
+      } else {
+        rows.push(['gates', sprint.checkpointsPassed + '/' + sprint.totalCheckpoints + ' cp · ' +
+          (sprint.nextGate
+            ? 'next ' + sprint.nextGate.id + ' in ' + Math.max(0, sprint.nextGate.distanceMetres).toFixed(1) + ' m'
+            : 'finish crossed') +
+          ' · ' + Math.round(sprint.progress * 100) + '%']);
+      }
+      rows.push(['best', state.sprintBest === null ? '—' :
+        state.sprintBest.toFixed(3) + ' s' + (state.sprintResult?.improved ? ' (new)' : '')]);
+      if (state.props) {
+        rows.push(['props', state.props.profile + ' · ' + state.props.colliders + ' colliders · ' +
+          state.props.contacts + ' contacts · ' + state.props.blockedTicks + ' blocked ticks · ' +
+          state.props.substeps + ' substeps']);
+      }
     }
   }
   if (state.ghost) {
@@ -452,7 +481,7 @@ function publishSprintOverlays() {
     return;
   }
   const sprint = state.sprint;
-  const countdownLabel = sprint.phase === 'countdown'
+  const countdownLabel = COURSE_IS_FREE ? null : sprint.phase === 'countdown'
     ? sprint.countdownLabel
     : (sprint.phase === 'running' && sprint.elapsedTicks <= 30 ? 'GO' : null);
   countdown.textContent = countdownLabel ?? '';
@@ -607,6 +636,7 @@ function readState() {
 /** Course progress axis used by the ghost delta: measured arc or straight x. */
 function ghostArcOf(position) {
   if (COURSE_IS_SHORT) return position[0];
+  if (COURSE_IS_FREE) return position[0];
   return coursePosition(sprintRules.layout.course.samples, position).arc;
 }
 /** Select the active ghost record and build its playback + delta tables. */
@@ -674,6 +704,12 @@ async function loadGhost(storage) {
     // committed lap reference exists, so the lap mode states the reason instead
     // of replaying a mismatched clock. `G` stays inert in this mode.
     ghost.reason = 'ghost replay is not available on the three-lap loop';
+    return;
+  }
+  if (COURSE_IS_FREE) {
+    // Free roam has no finish and no progress axis: a committed sprint trace is
+    // not a reference for it, so `G` states the reason instead of replaying one.
+    ghost.reason = 'ghost replay is not available in free-roam';
     return;
   }
   const body = geometry.carBodies[car.slug];
@@ -798,36 +834,57 @@ async function loadEngine() {
     sprintRules = createSprintRules(layout);
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
-    state.sprintCourseId = layout.courseId ?? null;    state.sprintLayout = {
+    state.sprintCourseId = layout.courseId ?? null;
+    state.sprintLayout = {
       hash: layout.hash,
       courseId: layout.courseId ?? null,
       gates: layout.gates.map((gate) => ({
         id: gate.id, kind: gate.kind, index: gate.index,
         x: gate.x, z: gate.z, arc: gate.arc ?? null
       })),
-      span: layout.course.span,
+      span: layout.course.span ?? null,
+      bounds: layout.course.bounds ?? null,
+      containment: layout.course.containment
+        ? {
+          marginMetres: layout.course.containment.marginMetres,
+          fallBelowGroundMetres: layout.course.containment.fallBelowGroundMetres,
+          airborneTicks: layout.course.containment.airborneTicks,
+          spawnComponentAreaM2: layout.course.containment.spawnComponentAreaM2,
+          extendedComponentAreaM2: layout.course.containment.extendedComponentAreaM2
+        }
+        : null,
+      prop: layout.course.prop ?? null,
       band: layout.course.band ?? null,
       corridor: layout.course.corridor ?? null,
       coverage: layout.course.coverage ?? null,
       countdownTicks: layout.countdown.ticks,
       rules: layout.rules
     };
-    // P66 visible-prop layer: enabled on the lap only, all-visible profile. The
-    // resolver is consumed read-only; the engine remains the physics authority.
-    if (COURSE_IS_LAP) {
+    // Visible-prop layer: the lap (P66 468-collider manifest) and free roam
+    // (P68b extended 431-collider manifest) both use the committed resolver
+    // read-only, with their own manifest/profile/hash pins. The engine remains
+    // the physics authority; the layer only resolves the pose after the tick.
+    if (COURSE_IS_LAP || COURSE_IS_FREE) {
+      const pins = COURSE_IS_FREE ? FREE_PROP_PINS : LAP_PROP_PINS;
+      const manifestUrl = COURSE_IS_FREE ? FREE_PROP_MANIFEST_URL : PROP_MANIFEST_URL;
       const [manifestResponse, resolver] = await Promise.all([
-        fetch(PROP_MANIFEST_URL, { cache: 'no-store' }),
+        fetch(manifestUrl, { cache: 'no-store' }),
         import(PROP_RESOLVER_URL)
       ]);
       if (!manifestResponse.ok) {
-        throw new Error('prop manifest fetch failed: HTTP ' + manifestResponse.status + ' (' + PROP_MANIFEST + ')');
+        throw new Error('prop manifest fetch failed: HTTP ' + manifestResponse.status + ' (' + pins.manifest + ')');
       }
-      const manifest = await manifestResponse.json();
-      if (manifest.kind !== 'prop-collision-colliders' || manifest.version !== 1) {
-        throw new Error('prop manifest is not prop-collision-colliders v1');
+      const text = await manifestResponse.text();
+      if ('sha256:' + sha256Hex(text) !== pins.manifestFileSha256) {
+        throw new Error('prop manifest file does not match its pinned SHA-256 (' + pins.manifest + ')');
       }
-      const world = resolver.createWorld(manifest, { profile: PROP_PROFILE });
-      propLayer = createPropLayer({ world, carEnvelope: manifest.carEnvelope });
+      const manifest = JSON.parse(text);
+      const pinCheck = checkPropManifest(manifest, pins);
+      if (!pinCheck.ok) {
+        throw new Error('prop manifest rejected: ' + pinCheck.errors.join('; '));
+      }
+      const world = resolver.createWorld(manifest, { profile: pins.profile });
+      propLayer = createPropLayer({ world, carEnvelope: manifest.carEnvelope, pins });
       state.props = propLayer.snapshot();
     }
     let storage = null;
@@ -873,6 +930,7 @@ async function loadEngine() {
 /** Local measured ground under a state (the prop layer's vertical reference). */
 function groundYForState(state) {
   if (!sprintRules) return state.position[1] - 0.35;
+  if (isFreeLayout(sprintRules.layout)) return freeGroundAt(sprintRules.layout, state.position);
   const arc = coursePosition(sprintRules.layout.course.samples, state.position).arc;
   return courseGroundAt(sprintRules.layout, arc);
 }
@@ -1003,7 +1061,9 @@ async function respawnAt(target, nowUs) {
 /** Rebuild the world and restart the packet timeline from the settled tick. */
 async function startTimeline(tick0, {
   reload = false, rejoin = false,
-  packetScript = SPRINT_MODE ? (COURSE_IS_LAP ? LAP_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT) : undefined
+  packetScript = SPRINT_MODE
+    ? (COURSE_IS_LAP ? LAP_PACKET_SCRIPT : COURSE_IS_FREE ? FREE_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT)
+    : undefined
 } = {}) {
   const start = sprintRules ? layoutStartPosition(sprintRules.layout, spawn) : spawn;
   session = createSession(geometry, tick0, {
@@ -2078,9 +2138,10 @@ async function main() {
   if (HOLD !== null && LEGACY_DRIVE && HOLD > SCRIPT_TICKS) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sequence (' + SCRIPT_TICKS + ')');
   }
-  if (HOLD !== null && SCRIPTED_SPRINT && HOLD > (COURSE_IS_LAP ? LAP_SCRIPT_TICKS : 3600)) {
+  if (HOLD !== null && SCRIPTED_SPRINT && HOLD > (COURSE_IS_LAP ? LAP_SCRIPT_TICKS
+    : COURSE_IS_FREE ? FREE_SCRIPT_TICKS : 3600)) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sprint (' +
-      (COURSE_IS_LAP ? LAP_SCRIPT_TICKS : 3600) + ')');
+      (COURSE_IS_LAP ? LAP_SCRIPT_TICKS : COURSE_IS_FREE ? FREE_SCRIPT_TICKS : 3600) + ')');
   }
 
   state.consumer = 'running';

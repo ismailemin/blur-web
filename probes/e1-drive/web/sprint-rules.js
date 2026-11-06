@@ -150,10 +150,41 @@ export function isLapLayout(layout) {
   return layout?.courseId === 'lap';
 }
 
+/** True for the P65/P68 free-roam basin. */
+export function isFreeLayout(layout) {
+  return layout?.courseId === 'free';
+}
+
+/**
+ * Nearest measured lattice ground of the free-roam layout (the same 2 m
+ * collision-mesh lattice the layout carries; never null after the fill).
+ */
+export function freeGroundAt(layout, position) {
+  const grid = layout?.course?.groundGrid;
+  if (!grid) throw new Error('the free-roam layout has no measured ground grid');
+  const ix = Math.max(0, Math.min(grid.columns - 1,
+    Math.round((position[0] - grid.origin[0]) / grid.stepMetres)));
+  const iz = Math.max(0, Math.min(grid.rows - 1,
+    Math.round((position[2] - grid.origin[1]) / grid.stepMetres)));
+  return grid.heights[iz * grid.columns + ix];
+}
+
 /** Why a position is off the measured course, or null when it is on it. */
 export function outsideCourseReason(position, layout) {
   const span = layout.course.span;
   const respawn = layout.rules.respawn;
+  if (isFreeLayout(layout)) {
+    const bounds = layout.course.bounds;
+    const margin = layout.course.containment?.marginMetres ?? 0;
+    const x = position[0];
+    const z = position[2];
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return { reason: 'out-of-bounds' };
+    if (x < bounds.minX - margin) return { reason: 'outside-bounds', axis: 'x', value: round6(x), limit: bounds.minX - margin };
+    if (x > bounds.maxX + margin) return { reason: 'outside-bounds', axis: 'x', value: round6(x), limit: bounds.maxX + margin };
+    if (z < bounds.minZ - margin) return { reason: 'outside-bounds', axis: 'z', value: round6(z), limit: bounds.minZ - margin };
+    if (z > bounds.maxZ + margin) return { reason: 'outside-bounds', axis: 'z', value: round6(z), limit: bounds.maxZ + margin };
+    return null;
+  }
   if (isLapLayout(layout)) {
     const course = coursePosition(layout.course.samples, position);
     const halfWidth = bandHalfWidthAt(layout, course.arc);
@@ -801,7 +832,214 @@ export class LapRules {
   }
 }
 
+/**
+ * Free-roam rules for the P65/P68 measured spawn basin. It has the same public
+ * surface as SprintRules (reset/prime/rejoin/step/gateInput/snapshot/
+ * respawnTarget) so the page's loop, capture probe and verifier use one shape,
+ * but there is no countdown, gate, checkpoint, finish or lap. The only reset is
+ * the declared containment rule: outside the measured spawn-component box
+ * (expanded by the documented margin), more than 1 m below the local measured
+ * ground, or airborne for 30 ticks. The target is always the committed spawn.
+ */
+export class FreeRoamRules {
+  constructor(layout, options = {}) {
+    if (!isFreeLayout(layout) || !layout?.course?.bounds || !layout?.course?.groundGrid) {
+      throw new Error('free-roam rules need the derived free-roam layout');
+    }
+    this.layout = layout;
+    this.options = options;
+    this.reset();
+  }
+
+  reset() {
+    this.phase = SPRINT_PHASE.RUNNING;
+    this.countdownTicks = 0;
+    this.elapsedTicks = 0;
+    this.respawns = 0;
+    this.respawnLog = [];
+    this.events = [];
+    this.contactTicks = 0;
+    this.nanTicks = 0;
+    this.respawnTicks = 0;
+    this.airborneTicks = 0;
+    this.contained = true;
+    this.localGround = this.layout.course.spawnGroundY;
+    this.distanceFromSpawn = 0;
+    this.prevState = null;
+    this.awaitingRejoin = false;
+    this.lastEvent = null;
+    // Compatibility surface with SprintRules (the page and tooling read it).
+    this.gateIndex = 0;
+    this.passedGates = [];
+    this.arc = 0;
+    this.maxArc = 0;
+    this.lateral = 0;
+    this.maxLateral = 0;
+    this.maxX = this.layout.course.spawn.x;
+  }
+
+  prime(state) {
+    if (!state) throw new Error('free-roam rules need a state');
+    this.prevState = state;
+    this.awaitingRejoin = false;
+    this.observe(state);
+  }
+
+  rejoin(state) {
+    this.prevState = state;
+    this.awaitingRejoin = false;
+    this.airborneTicks = 0;
+    this.observe(state);
+  }
+
+  observe(state) {
+    if (state.finite !== 1) this.nanTicks++;
+    if (state.anyContact === 1) { this.contactTicks++; this.airborneTicks = 0; }
+    else this.airborneTicks++;
+    if (Array.isArray(state.position) && Number.isFinite(state.position[0]) && Number.isFinite(state.position[2])) {
+      this.localGround = freeGroundAt(this.layout, state.position);
+      this.contained = outsideCourseReason(state.position, this.layout) === null &&
+        !(state.position[1] < this.localGround - this.layout.course.containment.fallBelowGroundMetres);
+      const spawn = this.layout.course.spawn;
+      this.distanceFromSpawn = round6(Math.hypot(state.position[0] - spawn.x, state.position[2] - spawn.z));
+      if (state.position[0] > this.maxX) this.maxX = state.position[0];
+    }
+  }
+
+  /** Free roam never gates the driver: no countdown, no finish brake. */
+  gateInput(input) {
+    return input.slice();
+  }
+
+  step(state) {
+    if (!state) throw new Error('free-roam rules need a state');
+    const events = [];
+    const seconds = (ticks) => round6(ticks / TICK_HZ);
+    this.observe(state);
+    this.elapsedTicks++;
+    if (this.prevState && !this.awaitingRejoin) {
+      const reason = this.respawnReason(state);
+      if (reason) {
+        this.respawns++;
+        const target = this.respawnTarget();
+        this.airborneTicks = 0;
+        this.respawnTicks++;
+        this.awaitingRejoin = true;
+        const record = {
+          type: SPRINT_EVENT.RESPAWN,
+          tick: state.tick,
+          timeSeconds: seconds(this.elapsedTicks),
+          reasons: reason.reasons,
+          position: state.position.slice(),
+          target: { x: target.x, z: target.z, heading: target.heading, gateId: target.gateId, gateIndex: target.gateIndex }
+        };
+        this.respawnLog.push(record);
+        events.push(record);
+      }
+    }
+    this.prevState = state;
+    this.events = events;
+    if (events.length) this.lastEvent = events[events.length - 1];
+    return events;
+  }
+
+  respawnReason(state) {
+    const containment = this.layout.course.containment;
+    const reasons = [];
+    if (Number.isFinite(state.position?.[1]) &&
+        state.position[1] < this.localGround - containment.fallBelowGroundMetres) {
+      reasons.push('below-ground');
+    }
+    if (this.airborneTicks >= containment.airborneTicks) reasons.push('airborne');
+    const outside = outsideCourseReason(state.position ?? [0, 0, 0], this.layout);
+    if (outside) reasons.push(typeof outside === 'string' ? outside : outside.reason);
+    return reasons.length ? { reasons } : null;
+  }
+
+  /** The committed spawn and heading: the only reset target in free roam. */
+  respawnTarget() {
+    const spawn = this.layout.course.spawn;
+    return { x: spawn.x, z: spawn.z, heading: spawn.headingRad, gateId: 'spawn', gateIndex: 0 };
+  }
+
+  get totalCheckpoints() {
+    return 0;
+  }
+
+  get checkpointsPassed() {
+    return 0;
+  }
+
+  get elapsedSeconds() {
+    return round6(this.elapsedTicks / TICK_HZ);
+  }
+
+  get nextGate() {
+    return null;
+  }
+
+  snapshot(state = this.prevState) {
+    const course = this.layout.course;
+    const bounds = course.bounds;
+    const position = state?.position ?? [course.spawn.x, course.spawnGroundY, course.spawn.z];
+    return {
+      phase: this.phase,
+      countdownTicks: 0,
+      countdownLabel: null,
+      elapsedTicks: this.elapsedTicks,
+      elapsedSeconds: this.elapsedSeconds,
+      finished: false,
+      finishTimeSeconds: null,
+      finishTick: null,
+      finishPosition: null,
+      checkpointsPassed: 0,
+      totalCheckpoints: 0,
+      nextGate: null,
+      passedGates: [],
+      progress: 0,
+      maxX: round6(this.maxX),
+      maxArc: 0,
+      arc: 0,
+      lateralMetres: 0,
+      maxLateralMetres: 0,
+      respawns: this.respawns,
+      respawnLog: this.respawnLog.map((entry) => ({ ...entry })),
+      contactTicks: this.contactTicks,
+      nanTicks: this.nanTicks,
+      offCourseTicks: this.respawnTicks,
+      lastEvent: this.lastEvent ? { ...this.lastEvent } : null,
+      layoutHash: this.layout.hash,
+      courseId: 'free',
+      free: {
+        contained: this.contained,
+        spawn: { x: course.spawn.x, z: course.spawn.z, headingRad: course.spawn.headingRad },
+        position: Array.isArray(position) ? position.slice(0, 3) : null,
+        distanceFromSpawnMetres: this.distanceFromSpawn,
+        localGroundY: round6(this.localGround),
+        airborneTicks: this.airborneTicks,
+        bounds: { minX: bounds.minX, maxX: bounds.maxX, minZ: bounds.minZ, maxZ: bounds.maxZ },
+        marginMetres: course.containment.marginMetres,
+        fallBelowGroundMetres: course.containment.fallBelowGroundMetres,
+        airborneLimitTicks: course.containment.airborneTicks,
+        spawnComponentAreaM2: course.containment.spawnComponentAreaM2,
+        extendedComponentAreaM2: course.containment.extendedComponentAreaM2,
+        groundGrid: { stepMetres: course.groundGrid.stepMetres,
+          measuredCells: course.groundGrid.measuredCells, filledCells: course.groundGrid.filledCells }
+      },
+      course: {
+        bounds: { minX: bounds.minX, maxX: bounds.maxX, minZ: bounds.minZ, maxZ: bounds.maxZ },
+        marginMetres: course.containment.marginMetres,
+        spawnGroundY: course.spawnGroundY,
+        noGates: true,
+        noFinish: true,
+        noLap: true
+      }
+    };
+  }
+}
+
 export function createSprintRules(layout, options = {}) {
+  if (isFreeLayout(layout)) return new FreeRoamRules(layout, options);
   if (isLapLayout(layout)) return new LapRules(layout, options);
   return new SprintRules(layout, options);
 }

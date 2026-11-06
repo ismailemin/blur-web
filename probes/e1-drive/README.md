@@ -12,10 +12,12 @@ the real River draw: a 3-2-1 countdown, a running timer, two checkpoints that mu
 be crossed in order, a finish gate before the drawn road ends, a results overlay
 with a per-car best time in `localStorage`, `R` restart and a respawn at the last
 checkpoint when the car leaves the surface. Behind **`?course=lap`** it also runs
-a **3-lap race** on the P61 `loop-01` closed collision loop (222.040 m). The
-rules are presentation/bookkeeping only and do not change the physics (the
-verifier replays every scripted sprint's input sequence into a fresh module and
-gets identical state hashes).
+a **3-lap race** on the P61 `loop-01` closed collision loop (222.040 m), and
+behind **`?course=free`** a **free-roam mode** on the P65/P68 measured spawn
+basin (`R04`, 7,702.25 m²) with no gates, no finish and the P68b extended
+431-collider `all-visible` prop layer. The rules are presentation/bookkeeping
+only and do not change the physics (the verifier replays every scripted sprint's
+input sequence into a fresh module and gets identical state hashes).
 
 `G` replays a completed run as a **ghost** (your fastest clean run for this car and
 course, else the committed deterministic reference trace) with a labelled
@@ -191,17 +193,17 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/build_corridor_survey.mjs           # survey.json + survey.html
 & $node probes/e1-drive/tools/corridor_probe.mjs                   # per-car physical limit
 
-# 5. derive both sprint layouts from the measured data:
+# 5. derive all four sprint layouts from the measured data:
 #    sprint.json = the default 310 m P48 course, sprint-short.json = the 29 m regression,
-#    sprint-lap.json = the P61 loop-01 3-lap race
+#    sprint-lap.json = the P61 loop-01 3-lap race, sprint-free.json = the P65/P68 free-roam basin
 & $node probes/e1-drive/tools/build_sprint.mjs
 
 # 6. scripted drive of every roster car twice, both sprint courses + respawn +
 #    layout/band checks, telemetry series twice + input replay, 10 create/reset
 #    rebuilds per car in one instance, one-instance telemetry and sprint restart,
 #    packet validation, the extended-corridor survey/limit checks, the per-car
-#    albedo/UV checks and the ghost replay reconstruction/store/delta checks
-#    (678 checks)
+#    albedo/UV checks, the ghost replay reconstruction/store/delta checks and the
+#    free-roam layout/run/containment/restart/prop checks (818 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 & $node probes/e1-drive/tools/verify_e1_drive.mjs --write-ghosts  # regenerate the committed reference ghosts
 
@@ -210,6 +212,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint    # 310 m: start/mid/checkpoint/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint --course short  # 29 m regression
 & $node probes/e1-drive/tools/capture_browser.mjs --mode lap       # ?course=lap: start/lap1/lap2/finish per car
+& $node probes/e1-drive/tools/capture_browser.mjs --mode free      # ?course=free: spawn/mid/prop/reset per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode survey    # ?survey=1 corridor label
 & $node probes/e1-drive/tools/capture_browser.mjs --mode ghost     # 5-car ghost-visible frames + G toggle
 & $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
@@ -427,17 +430,66 @@ anchor and a valid packet timeline. The `all-visible` prop layer is active and
 inert on the clear loop (0 contacts). The page checks the same run in the browser
 (`capture_browser.mjs --mode lap`).
 
+## Free roam (`?course=free`)
+
+A fourth layout on the **P65/P68 measured spawn basin**: the committed spawn
+`(-88, 1050)` at heading `pi/2`, no countdown, no gates, no finish, no lap
+counter and no corridor band. `_work/e1-drive/sprint-free.json` is derived from
+the pinned P65 `regions.json` (R04, 9,689.5 m², 100 % drawn) and the P68b
+spawn-component box; a different basin artifact is a hard failure.
+
+| rule | value |
+| --- | --- |
+| containment box | `x -108.5…5.0, z 1027.5…1164.0` (measured spawn component) + 2.0 m documented margin |
+| reset reasons | outside the box, > 1 m below the local measured ground, or 30 airborne ticks |
+| reset target | the committed spawn `(-88, 1050)` at `pi/2` — never a corridor point |
+| timer | a session clock (engine ticks / 60); no finish, no best time, no ghost |
+| props | **P68b extended `all-visible` manifest, 431 colliders** (file + content SHA-256 pinned) |
+| restart | `R` rebuilds at the spawn and restarts the clock |
+| ground | 2 m collision-mesh lattice over the box: 3,418 measured + 515 filled cells (recorded) |
+
+The visible-prop layer now takes a **manifest/profile/hash pin set**: the lap
+keeps the committed **468-collider `colliders.json`** pins, free roam uses
+`_work/free-roam-prop/colliders-r04.json` (variant `free-roam-r04`, 431
+colliders, content `sha256:932e0f87…`). Neither manifest was regenerated. The
+spawn is clear (0 contacts); a 31 m/s head-on into the R04 wreck
+`level.instance.00` stops on the near face (max penetration 0.073 m, residual 0)
+and a 31 m/s hit on a 0.02 m container panel does not tunnel.
+
+The scripted free drive (`?script=sprint&course=free`) is a speed-capped,
+tick-only diagnostic manoeuvre (no path follower, no route file). Five roster
+cars, 401 ticks each:
+
+| car | travel | max speed | prop contacts | respawns | state sequence hash |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | 24.635 m | 7.067 m/s | 0 | 0 | `bede912e…05a3b920` |
+| Lotus Exige Cup260 | 22.710 m | 6.273 m/s | 0 | 0 | `f198bd7b…8f383f8e` |
+| Dodge Challenger | 25.594 m | 7.044 m/s | 0 | 0 | `ee6018bf…6a0f2369` |
+| Ford Focus RS (FWD) | 23.344 m | 6.795 m/s | 0 | 0 | `f590e4ad…bc27390b` |
+| Audi R8 V10 (AWD) | 29.198 m | 7.076 m/s | 0 | 0 | `4d4a4323…79ade5ca` |
+
+All five: contained, wheel contact on every tick, 0 NaN, replay-identical, a
+pinned anchor and a valid packet. The real-engine containment test drives the
+derived lane `(-24.5, 1037.5)` east and resets at `x = 7.076` on tick 199
+(`outside-bounds`), rebuilding **0.0053 m** from the spawn; `R` after 200 ticks
+returns to the same spawn. The browser capture (`capture_browser.mjs --mode
+free`) is 5 cars × spawn / mid / prop approach / reset, console 0, 0 assertions,
+20/20 state hashes. Details, the 52 new checks and the limits are in
+`docs/work/verification/T-007-free-roam.md`.
+
 Modes: `/` = keyboard sprint on the 310 m course, `?course=lap` = keyboard
-three-lap race on loop-01, `?script=sprint` = deterministic scripted sprint
-(Stanley path follower while running, brake after the finish),
-`?script=sprint&course=lap` = scripted lap race, `?course=short` = the 29 m
-regression course, `?script=sprint&sprintfall=1` = diagnostic driver that steers
-off the course to exercise respawn, `?script=drive` = the original 300-tick drive
-with no rules (kept for the P23/P31/P36 evidence), and `?survey=1` = the label for
-the drawn extended corridor (below; it changes no gate, timer or result). Rules
-never touch physics: the verifier records each scripted sprint's input sequence,
-replays it into a fresh module with the rules switched off, and requires every
-state hash to match.
+three-lap race on loop-01, `?course=free` = keyboard free roam on the R04 basin,
+`?script=sprint` = deterministic scripted sprint (Stanley path follower while
+running, brake after the finish), `?script=sprint&course=lap` = scripted lap
+race, `?script=sprint&course=free` = scripted free drive,
+`?course=short` = the 29 m regression course, `?script=sprint&sprintfall=1` =
+diagnostic driver that steers off the course to exercise respawn,
+`?script=drive` = the original 300-tick drive with no rules (kept for the
+P23/P31/P36 evidence), and `?survey=1` = the label for the drawn extended
+corridor (below; it changes no gate, timer or result). Rules never touch
+physics: the verifier records each scripted sprint's input sequence, replays it
+into a fresh module with the rules switched off, and requires every state hash
+to match.
 
 Measured scripted sprints on the default course (`_work/e1-drive/run.json` →
 `sprint.cars`):
@@ -677,7 +729,6 @@ blocked/near-field counts), `state-<slug>.json`, `packet-<slug>.json`,
 `sprint.json` (the default 310 m layout), `sprint-short.json` (the 29 m regression
 layout), `sprint-<slug>.json` / `sprint-short-<slug>.json` (per-car sprint ticks,
 events, inputs and the start/mid/checkpoint/finish capture updates),
-`telemetry.json` (all cars' measured metrics, hashes and rank comparison),
 `telemetry-<slug>.json` (full 60 Hz traces, metrics, hash aggregates and unit
 definitions),
 `geometry.json` (level packet + real track visual + one real body per car with
@@ -710,6 +761,10 @@ deterministic reference ghost per car and course),
 (per-car three-lap ticks, lap times, inputs and start/lap1/lap2/finish updates),
 `browser-evidence-lap.json` + `browser-<slug>-sprint-lap-{start,lap1,lap2,finish}.png`
 (5-car lap race, console and prop-layer gates),
+`sprint-free.json` (the P65/P68 free-roam layout), `sprint-free-<slug>.json`
+(per-car free-roam ticks, inputs, containment and the four capture updates),
+`browser-evidence-free.json` + `browser-<slug>-free-{spawn,mid,prop,reset}.png`
+(5-car free roam, console and 431-collider layer gates),
 `browser-<slug>-sprint-restart-{before,countdown,finish}.png`,
 `browser-<slug>-sprint-respawn.png`,
 `browser-<slug>-sprint-ghost.png` + `browser-<slug>-sprint-ghost-off.png` (G toggle),
@@ -882,5 +937,20 @@ per-car metrics and plausibility comparison are recorded in
   7–9 car = 143–145, exactly one packet; 580 created − 435 destroyed = 145 live in
   the 1-minute run). Five simulated minutes = 18,000 ticks; a one-tick-per-frame run
   completed in ~70 s here because headless rAF is not throttled to 60 Hz.
+- **Free roam is one measured basin, contained by a box.** `?course=free` is the
+  P65 R04 basin at the committed spawn. The reset box is the P68a/P68b
+  spawn-component rectangle (+2 m), not the exact free mask: it includes
+  void/pocket corners, and the ground lattice fills those cells from the nearest
+  measured one (515 of 3,933, recorded). The rule is an out-of-box / below-ground /
+  airborne reset, not an invisible wall; the real-engine test leaves through a
+  measured sub-cell slot at the C03 clearance ring and is reset at x = 7.076.
+  Draw coverage is the P65 100 % measurement consumed read-only. The scripted
+  free drive is a speed-capped tick-only diagnostic of 23–29 m, not a racing line
+  or a lap, and there is no free-roam ghost or best time.
+- **The free-roam prop manifest is a region replacement.** It is the P68b
+  extended `all-visible` manifest (431 colliders, variant `free-roam-r04`) for
+  this mode only; the timed 310 m/29 m courses and the lap keep the committed
+  468-collider manifest. The layer is still a visible-mesh kinematic
+  approximation, not retail collision.
 - **Native parity** is blocked by the DirectX SDK, as recorded in
   `T-007-vehicle-physics.md`.

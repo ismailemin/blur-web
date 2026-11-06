@@ -30,8 +30,8 @@
 <div id="telemetry" hidden aria-label="per-car telemetry and validation metrics"></div>
 <div id="legend">
   <strong>E1 sprint slice</strong> — wasm RacingPhysics on the River collision mesh → render packet v1.1 → WebGPU<br>
-  default: the measured <strong>310 m P48 course</strong> (310.395 m measured, finish at 300.160 m) · <code>?course=short</code> = the 29 m regression straight · <code>?course=lap</code> = the <strong>P61 loop-01 3-lap race</strong> (222.040 m, component 5)<br>
-  point-to-point sprint or 3-lap race · timer · lap times/best lap · respawn · <strong>G</strong> ghost replay on the sprint courses · physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · static albedo textures on real UV0 · material colour/blend/mips/sRGB not applied · rest-pose wheel placement · lap mode adds the P66 visible-prop layer (<code>all-visible</code>, read-only)
+  default: the measured <strong>310 m P48 course</strong> (310.395 m measured, finish at 300.160 m) · <code>?course=short</code> = the 29 m regression straight · <code>?course=lap</code> = the <strong>P61 loop-01 3-lap race</strong> (222.040 m, component 5) · <code>?course=free</code> = <strong>free roam</strong> on the P65/P68 spawn basin (7,702 m², no gates/finish/lap)<br>
+  point-to-point sprint, 3-lap race or free roam · timer/lap times/best lap · respawn/containment · <strong>G</strong> ghost replay on the sprint courses · physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · static albedo textures on real UV0 · material colour/blend/mips/sRGB not applied · rest-pose wheel placement · lap and free-roam modes add a read-only visible-prop layer (<code>all-visible</code>)
 </div>
 <div id="keys">
   <strong>W</strong>/<strong>↑</strong> throttle · <strong>S</strong>/<strong>↓</strong> brake ·

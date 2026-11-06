@@ -2088,3 +2088,105 @@ bridge the wall. The P66 manifest has no collider on loop-01, so the enabled
 tests elsewhere in the manifest. There is no AI, no traffic, no lap ghost (the
 sprint/regression ghosts are unchanged) and no full-game claim. The ±1.25 m band
 is a declared respawn rule, not a measured lane.
+
+## 27. Free roam on the P65/P68 spawn basin (T-007/free, P69)
+
+### 27.1 What was added
+
+`?course=free` is a fourth playable layout next to the unchanged 310 m sprint,
+the 29 m regression and the P61 three-lap race: the committed spawn
+`(-88, 1050)` at heading `pi/2` on the P65 `R04` basin (9,689.5 m², 100 %
+drawn), with **no countdown, no gates, no finish, no lap counter and no
+corridor respawn**. The page shows a free-roam HUD (course, session clock,
+contained/distance, box, speed, position, prop layer); `R` returns to the
+spawn. The layout is `_work/e1-drive/sprint-free.json`
+(file `sha256:3accd653…236d3e`, canonical
+`sha256:c512ad733959903878ed805367c4b3112a0976a12f484da3c1d5813c7f865f87`),
+derived from the pinned P65 `regions.json`, the committed spawn and the P68b
+spawn-component box. The three existing layouts are not touched.
+
+### 27.2 Containment
+
+The box is the measured P68b spawn component `x -108.5…5.0, z 1027.5…1164.0`
+(P68a area 7,702.25 m²; the C03 wall cuts the 1,321.25 m² eastern channel out)
+expanded by a declared 2.0 m. `FreeRoamRules` resets only when the car leaves
+that box, falls more than 1 m below the local measured ground, or stays
+airborne for 30 ticks; the target is always the committed spawn. There is no
+invisible wall and no corridor band.
+
+The local ground is a 2 m lattice re-sampled from the collision mesh over the
+box (57 × 69 cells: 3,418 measured, 515 void/pocket corners filled from the
+nearest measured cell by a deterministic BFS, recorded). The 2 m lattice is an
+estimate between cells; the fall rule is a defensive reset, not a terrain
+solver.
+
+The containment test lane is measured, not typed in: the easternmost lattice
+cell whose 1 m samples east reach the reset boundary over a collision surface
+with no step above 5 cm/m and no P68b all-visible contact. It is
+`(-24.5, 1037.5)`, 31.5 m to the boundary. On the real engine at full throttle
+the rules fire `outside-bounds` at tick 199, at `x = 7.076`; the world rebuilds
+`0.0053 m` from the spawn, and 30 further ticks produce no event. That also
+records the honest reason for the rule: the extended visible-prop boxes leave a
+sub-cell slot at the C03 clearance ring (wider than the 1.68 m car while the
+0.5 m raster + 1.0 m erosion closes it), so the box reset is what keeps the car
+in the measured component.
+
+### 27.3 Visible-prop layer with parameters
+
+`web/prop-layer.js` now takes a manifest/profile/hash pin set. The lap keeps
+the committed P66 `colliders.json` (468, `sha256:a98fb8eb…`) and free roam uses
+the P68b extended manifest `_work/free-roam-prop/colliders-r04.json` (variant
+`free-roam-r04`, 431 colliders, file `sha256:5c7bba74…`, content
+`sha256:932e0f87…`). A world whose profile or collider count disagrees with its
+pins throws; the page hashes the manifest bytes before parsing. No manifest was
+regenerated or modified, and the 310 m/29 m manifests/policies are unchanged.
+
+Measured on the real R04 colliders: the spawn pose has 0 contacts; a 31 m/s
+head-on into the 5.386 × 2.219 m wreck `level.instance.00` stops on the near
+face (165 ticks, max penetration 0.0728 m — one 8 cm substep, residual 0); a
+31 m/s hit on the 0.02 m panel `…draw.143.component.072` blocks after 160 ticks
+with residual 0 and no pass-through.
+
+### 27.4 Scripted free run
+
+`freeScriptInput(tick, speed)` is a tick-only, speed-capped diagnostic
+manoeuvre (throttle, tight left turn in the bowl, run west, brake), not a path
+follower and not a route file. Five roster cars, 401 ticks each:
+
+| car | travel | max speed | contacts | respawns | state sequence hash |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Corvette ZR1 | 24.635 m | 7.067 m/s | 0 | 0 | `bede912e…05a3b920` |
+| Lotus Exige Cup260 | 22.710 m | 6.273 m/s | 0 | 0 | `f198bd7b…8f383f8e` |
+| Dodge Challenger | 25.594 m | 7.044 m/s | 0 | 0 | `ee6018bf…6a0f2369` |
+| Ford Focus RS (FWD) | 23.344 m | 6.795 m/s | 0 | 0 | `f590e4ad…bc27390b` |
+| Audi R8 V10 (AWD) | 29.198 m | 7.076 m/s | 0 | 0 | `4d4a4323…79ade5ca` |
+
+Every car: contained, wheel contact on every tick, 0 NaN, 0 prop contacts,
+0 resets, an input replay that reproduces every raw state hash, a pinned anchor
+and a valid packet v1.1 timeline. `R` after 200 ticks returns to `0.0053 m`
+from the spawn with the session clock at 0.
+
+### 27.5 Verification
+
+`verify_e1_drive.mjs` — PASS (**818 checks**, 766 existing + 52 free-roam). New
+checks cover the P65 artifact/R04, the P68b pins and 431-collider world, the
+derived layout and its validation, no gates/finish/lap/countdown, spawn and
+heading, box/margin, ground lattice, measured lane, spawn clearance, truck
+head-on, 0.02 m no-tunnelling, per-car spawn/contained/no-respawn/contacts/NaN/
+replay/anchor/packet, synthetic out-of-box/below-ground/airborne cases, the
+real-engine boundary reset and the `R` restart. Two runs produce identical
+anchors. `verify_asset_probe.py --skip-build` is 30/30, `check_e1_poc.py` 21/21
+with the server up, and `capture_browser.mjs --mode free` is 20 captures
+(5 × spawn/mid/prop/reset) with console 0, 0 assertions, 20/20 state hashes,
+max camera delta 4.55e-13 and 14/20 byte-exact packet hashes (the six are the
+documented Node/Edge last-bit transcendental cases).
+
+### 27.6 Limits
+
+One basin, one spawn: free roam is not a route, a lap or the eastern channel.
+The box is a bounding rectangle, not the exact free mask; the ground fills 515
+void/pocket cells. Draw coverage is P65's 100 % measurement consumed read-only.
+The prop layer is a visible-mesh kinematic approximation. The scripted run is a
+23–29 m diagnostic manoeuvre, not a racing line. There is no free-roam ghost,
+best time, AI, traffic or full-game claim (details and evidence:
+`docs/work/verification/T-007-free-roam.md`).

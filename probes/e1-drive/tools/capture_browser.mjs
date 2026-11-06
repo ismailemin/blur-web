@@ -63,21 +63,24 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, respawn, telemetry, restart, telemetry-restart, survey or ghost)');
+    ' (drive, sprint, lap, free, respawn, telemetry, restart, telemetry-restart, survey or ghost)');
 }
 // Course selection: 310 (default, `_work/e1-drive/sprint.json`), short
-// (`?course=short`, `_work/e1-drive/sprint-short.json`) or lap (`?course=lap`,
-// `_work/e1-drive/sprint-lap.json`). `--mode lap` always selects the lap.
+// (`?course=short`, `_work/e1-drive/sprint-short.json`), lap (`?course=lap`,
+// `_work/e1-drive/sprint-lap.json`) or free (`?course=free`,
+// `_work/e1-drive/sprint-free.json`). `--mode lap|free` selects its course.
 let COURSE = option('--course', '310');
-if (!['310', 'short', 'lap'].includes(COURSE)) {
-  throw new Error('unknown --course ' + JSON.stringify(COURSE) + ' (use 310, short or lap)');
+if (!['310', 'short', 'lap', 'free'].includes(COURSE)) {
+  throw new Error('unknown --course ' + JSON.stringify(COURSE) + ' (use 310, short, lap or free)');
 }
 if (MODE === 'lap') COURSE = 'lap';
-const COURSE_QUERY = COURSE === 'short' ? 'course=short' : COURSE === 'lap' ? 'course=lap' : '';
+if (MODE === 'free') COURSE = 'free';
+const COURSE_QUERY = COURSE === 'short' ? 'course=short'
+  : COURSE === 'lap' ? 'course=lap' : COURSE === 'free' ? 'course=free' : '';
 const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' +
-  (COURSE === 'short' ? 'short' : COURSE === 'lap' ? 'lap' : '310m');
+  (COURSE === 'short' ? 'short' : COURSE === 'lap' ? 'lap' : COURSE === 'free' ? 'free' : '310m');
 const DIAGNOSTIC_CAMERA = /(^|&)cam(dist|height)=/.test(EXTRA_QUERY);
 const MID_TICK = 150;
 
@@ -284,6 +287,27 @@ async function capture(car, label, tick, options = {}) {
   if (!probe.holdReached) throw new Error(label + ': driver did not reach tick ' + tick);
   if (probe.displayTick !== tick) throw new Error(label + ': displayed tick is ' + probe.displayTick + ', wanted ' + tick);
 
+  // Optional in-place restart before the screenshot: `R` rebuilds the world and
+  // the timeline without a page reload (the free-roam reset frame uses this).
+  if (options.triggerReset) {
+    const restartsBefore = probe.restarts ?? 0;
+    await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'R' })); true`);
+    for (let attempt = 0; attempt < 200; attempt++) {
+      probe = await evaluate(`(()=>{const p=window.e1DriveProbe;return p?{state:p.consumer,error:p.error,` +
+        `restarts:p.restarts,holdReached:p.holdReached,displayTick:p.displayTick,frames:p.frames}:null})()`)
+        .catch(() => null);
+      if (probe && probe.state === 'error') break;
+      if (probe && probe.state === 'running' && (probe.restarts ?? 0) > restartsBefore &&
+          probe.holdReached && probe.frames >= 12) break;
+      await sleep(100);
+    }
+    if (!probe) throw new Error(label + ': page never republished after R');
+    if (probe.state === 'error') throw new Error(label + ': page error after R: ' + probe.error);
+    if (!((probe.restarts ?? 0) > restartsBefore)) throw new Error(label + ': R did not rebuild the world');
+    if (!probe.holdReached) throw new Error(label + ': R did not hold tick ' + tick);
+    if (probe.displayTick !== tick) throw new Error(label + ': reset displayed tick is ' + probe.displayTick);
+  }
+
   const full = await evaluate(`(()=>{
     const p = window.e1DriveProbe;
     const canvas = document.getElementById('scene');
@@ -291,7 +315,7 @@ async function capture(car, label, tick, options = {}) {
     const update = p.updates ? p.updates[${tick}] : null;
     return {
       mode: p.mode, engineTick: p.engineTick, displayTick: p.displayTick, phase: p.phase, speed: p.speed, position: p.position,
-      holdReached: p.holdReached,
+      holdReached: p.holdReached, restarts: p.restarts,
       contacts: p.contacts, input: p.input, car: p.car, roster: p.roster ? p.roster.counts : null,
       selector: select ? { options: select.options.length, value: select.value, text: select.options[select.selectedIndex]?.textContent } : null,
       frames: p.frames, ticksExecuted: p.ticksExecuted, cappedFrames: p.cappedFrames,
@@ -413,6 +437,7 @@ function cameraMaxDelta(a, b) {
 if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
     : MODE === 'lap' ? await lapCapturePass()
+    : MODE === 'free' ? await freeCapturePass()
     : MODE === 'ghost' ? await ghostCapturePass()
     : MODE === 'survey' ? await surveyCapturePass()
     : MODE === 'respawn' ? await respawnCapturePass()
@@ -623,6 +648,215 @@ async function sprintCapturePass() {
         messages: row.messages.length
       }))
     }
+  };
+}
+
+/**
+ * Free-roam capture (`--mode free`): 5 cars x spawn / mid-basin / prop approach /
+ * reset. The page runs `?script=sprint&course=free` (the deterministic,
+ * speed-capped free drive); the reset frame presses R in place and must return
+ * to the committed spawn with the same tick-0 state hash. Console must be clean.
+ */
+async function freeCapturePass() {
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  const freeRun = runDocument.sprint?.freeRoam;
+  if (!freeRun?.cars) {
+    throw new Error('run.json has no free-roam results — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const freeLayout = JSON.parse(readFileSync(path.join(OUT, 'sprint-free.json'), 'utf8'));
+  const rows = [];
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+
+  for (const car of cars) {
+    const entry = freeRun.cars.find((candidate) => candidate.slug === car.slug);
+    if (!entry) throw new Error('run.json has no free-roam result for ' + car.slug);
+    const body = geometry.carBodies[car.slug];
+    if (!body) throw new Error('geometry has no body for ' + car.slug);
+    const uploadBytes = meshBytes(levelMesh) + meshBytes(body.mesh) + meshBytes(trackMesh);
+    const draws = 22 + geometry.trackVisual.drawCount + body.carDraws.length;
+
+    for (const spec of entry.captures) {
+      const label = spec.label;
+      const shot = await capture(car, label, spec.tick,
+        { script: 'sprint', course: 'course=free', triggerReset: spec.afterReset === true });
+      const probe = shot.probe;
+      const state = probe.sprint;
+      const free = state?.free;
+      const overlay = probe.overlays ?? {};
+      const cameraDelta = probe.render && spec.camera ? cameraMaxDelta(probe.render.camera, spec.camera) : null;
+      const matrixDelta = probe.render && Array.isArray(spec.matrices)
+        ? Math.max(...probe.render.matrices.map((entryMatrix, index) => {
+          const expected = spec.matrices[index]?.world;
+          if (!expected || expected.length !== entryMatrix.world.length) return Infinity;
+          return Math.max(...entryMatrix.world.map((value, axis) => Math.abs(value - expected[axis])));
+        }))
+        : null;
+
+      passCheck(`${car.slug}/${label}: held at tick ${spec.tick} with the update the page built`,
+        probe.holdReached === true && probe.displayTick === spec.tick && probe.render?.tick === spec.tick,
+        `display ${probe.displayTick}, render ${probe.render?.tick}`);
+      passCheck(`${car.slug}/${label}: the page drove the requested car on the free-roam layout`,
+        probe.car?.name === car.name && probe.sprintLayoutHash === freeLayout.hash,
+        JSON.stringify({ car: probe.car?.name, layout: probe.sprintLayoutHash }));
+      passCheck(`${car.slug}/${label}: browser state hash equals the node free-roam state`,
+        probe.tickHashes[spec.tick]?.stateHash === spec.stateHash,
+        (probe.tickHashes[spec.tick]?.stateHash ?? 'none') + ' vs ' + spec.stateHash);
+      passCheck(`${car.slug}/${label}: the car matrix is bit-identical to the node free-roam packet`,
+        probe.render && spec.matrix &&
+        probe.render.matrix.every((value, index) => Object.is(value, spec.matrix[index])),
+        'matrix differs');
+      passCheck(`${car.slug}/${label}: every node matrix matches the node free-roam packet within 1e-12`,
+        matrixDelta !== null && matrixDelta <= 1e-12,
+        'max |matrix delta| ' + (matrixDelta === null ? 'n/a' : matrixDelta.toExponential(3)));
+      passCheck(`${car.slug}/${label}: the browser camera matches the node free-roam camera within 1e-6`,
+        cameraDelta !== null && cameraDelta <= 1e-6,
+        'max |delta| ' + (cameraDelta === null ? 'n/a' : cameraDelta.toExponential(3)));
+      passCheck(`${car.slug}/${label}: geometry uploads equal the level + own body + track meshes`,
+        probe.geometryUploads === (spec.afterReset === true ? MESH_COUNT * 2 : MESH_COUNT) &&
+        probe.geometryUploadBytes === (spec.afterReset === true ? uploadBytes * 2 : uploadBytes),
+        probe.geometryUploads + ' uploads / ' + probe.geometryUploadBytes + ' B' +
+        (spec.afterReset === true ? ' (initial load + R reload)' : ''));
+      passCheck(`${car.slug}/${label}: one draw per draw per frame`,
+        probe.draws === draws && probe.drawsIssued === probe.frames * probe.draws,
+        probe.drawsIssued + ' draws / ' + probe.frames + ' frames * ' + probe.draws);
+      passCheck(`${car.slug}/${label}: nine matrices per rendered tick`,
+        probe.render?.matrices?.length === 9, String(probe.render?.matrices?.length));
+      passCheck(`${car.slug}/${label}: the free-roam layout carries no gates, finish or lap`,
+        probe.sprintLayout?.gates?.length === 0 && probe.sprintLayout?.bounds?.minX === -108.5 &&
+        probe.sprintLayout?.bounds?.maxX === 5 &&
+        probe.sprintLayout?.containment?.marginMetres === 2,
+        JSON.stringify({ gates: probe.sprintLayout?.gates?.length, bounds: probe.sprintLayout?.bounds }));
+      passCheck(`${car.slug}/${label}: the 431-collider P68b all-visible layer is active`,
+        probe.props?.profile === 'all-visible' && probe.props?.colliders === 431 &&
+        probe.props?.manifest === '_work/free-roam-prop/colliders-r04.json' &&
+        probe.props?.contacts === 0,
+        JSON.stringify({ profile: probe.props?.profile, colliders: probe.props?.colliders,
+          manifest: probe.props?.manifest, contacts: probe.props?.contacts }));
+      passCheck(`${car.slug}/${label}: the HUD shows free roam, speed, position and the prop layer`,
+        (overlay.hudText ?? '').includes('FREE ROAM') &&
+        (overlay.hudText ?? '').includes('R04 spawn basin') &&
+        (overlay.hudText ?? '').includes('no gates/finish/lap') &&
+        (overlay.hudText ?? '').includes('speed') &&
+        (overlay.hudText ?? '').includes('position') &&
+        (overlay.hudText ?? '').includes('all-visible'),
+        (overlay.hudText ?? '').split('\n').filter((line) =>
+          /FREE ROAM|free|contain|props|speed|position/.test(line)).join(' | '));
+      passCheck(`${car.slug}/${label}: no countdown and no results overlay in free roam`,
+        overlay.countdownHidden === true && overlay.resultsHidden === true &&
+        state?.phase === 'running' && state?.finished === false && state?.totalCheckpoints === 0,
+        JSON.stringify({ phase: state?.phase, countdownHidden: overlay.countdownHidden,
+          resultsHidden: overlay.resultsHidden }));
+
+      if (spec.label === 'free-spawn') {
+        passCheck(`${car.slug}/${label}: free roam starts on the committed spawn inside the measured basin`,
+          state?.elapsedTicks <= 1 && free?.contained === true &&
+          free?.distanceFromSpawnMetres < 0.05 &&
+          Math.abs(free?.spawn.x + 88) < 1e-9 && Math.abs(free?.spawn.z - 1050) < 1e-9 &&
+          Math.abs(free?.spawn.headingRad - Math.PI / 2) < 1e-12 &&
+          overlay.eventVisible === '0',
+          JSON.stringify({ elapsed: state?.elapsedTicks, distance: free?.distanceFromSpawnMetres,
+            spawn: free?.spawn, event: overlay.eventVisible }));
+      } else if (spec.label === 'free-mid') {
+        passCheck(`${car.slug}/${label}: the mid-basin frame is running, contained and on the node tick`,
+          state?.elapsedTicks === spec.tick && free?.contained === true &&
+          Math.abs(state?.elapsedSeconds - spec.tick / 60) < 1e-6,
+          JSON.stringify({ elapsed: state?.elapsedTicks, contained: free?.contained,
+            seconds: state?.elapsedSeconds }));
+      } else if (spec.label === 'free-prop') {
+        passCheck(`${car.slug}/${label}: the prop-approach frame is still contained with 0 prop contacts`,
+          free?.contained === true && probe.props?.contacts === 0 &&
+          state?.respawns === 0 && state?.elapsedTicks === spec.tick,
+          JSON.stringify({ contained: free?.contained, contacts: probe.props?.contacts,
+            respawns: state?.respawns, elapsed: state?.elapsedTicks }));
+      } else if (spec.label === 'free-reset') {
+        passCheck(`${car.slug}/${label}: R rebuilt the world in place and returned to the spawn`,
+          probe.restarts === 1 && free?.contained === true &&
+          free?.distanceFromSpawnMetres < 0.05 && state?.elapsedTicks <= 1 &&
+          probe.tickHashes[0]?.stateHash === spec.stateHash,
+          JSON.stringify({ restarts: probe.restarts, distance: free?.distanceFromSpawnMetres,
+            elapsed: state?.elapsedTicks,
+            stateHash: probe.tickHashes[0]?.stateHash, node: spec.stateHash }));
+      } else {
+        passCheck(`${car.slug}/${label}: unknown free-roam capture label`, false, spec.label);
+      }
+
+      rows.push({
+        car: car.name,
+        slug: car.slug,
+        label,
+        tick: spec.tick,
+        url: shot.url,
+        screenshot: shot.screenshot,
+        carCrop: shot.carCrop,
+        phase: state?.phase ?? null,
+        elapsedTicks: state?.elapsedTicks ?? null,
+        elapsedSeconds: state?.elapsedSeconds ?? null,
+        respawns: state?.respawns ?? null,
+        contained: free?.contained ?? null,
+        distanceFromSpawnMetres: free?.distanceFromSpawnMetres ?? null,
+        position: probe.position,
+        speed: probe.speed,
+        props: probe.props ?? null,
+        sprintLayout: probe.sprintLayout ?? null,
+        restarts: probe.restarts ?? null,
+        overlays: overlay,
+        stateHash: probe.tickHashes[spec.tick]?.stateHash ?? null,
+        nodeStateHash: spec.stateHash,
+        updateHash: probe.render?.hash ?? null,
+        nodeUpdateHash: spec.updateHash,
+        pageRender: probe.render,
+        packetHashExact: probe.render?.hash === spec.updateHash,
+        carMatrixExact: !!probe.render && !!spec.matrix &&
+          probe.render.matrix.every((value, index) => Object.is(value, spec.matrix[index])),
+        cameraMaxDelta: cameraDelta,
+        matrixMaxDelta: matrixDelta,
+        frames: probe.frames,
+        geometryUploads: probe.geometryUploads,
+        geometryUploadBytes: probe.geometryUploadBytes,
+        drawsIssued: probe.drawsIssued,
+        canvas: probe.canvas,
+        messages: shot.messages
+      });
+    }
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages);
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  passCheck('console is clean in every free-roam capture', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  const exact = rows.filter((row) => row.packetHashExact).length;
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'free',
+    courseId: 'free',
+    layout: { hash: freeLayout.hash, spawn: freeLayout.course.spawn, bounds: freeLayout.course.bounds,
+      containment: freeLayout.course.containment, coverage: freeLayout.course.coverage },
+    prop: { profile: 'all-visible', manifest: '_work/free-roam-prop/colliders-r04.json', colliders: 431,
+      contentSha256: 'sha256:932e0f871e46b073d359c7a9549477e136fb56e58202b477ebc11fac53915b42' },
+    cars: rows,
+    packetHashAgreement: { exact, total: rows.length, note:
+      'a mismatch is a documented last-bit transcendental difference between Node 24 and Edge 156; the state ' +
+      'hash, the car matrix and the 1e-12 matrix/camera tolerances are checked separately' },
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-free.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-free.log'), browserLog, 'utf8');
+  const summary = {
+    mode: 'free',
+    cars: rows.length,
+    exact,
+    console: allMessages.length,
+    assertions: passFailures.length,
+    failures: passFailures,
+    screenshots: rows.map((row) => row.screenshot)
+  };
+  return {
+    ok: blocking.length === 0 && passFailures.length === 0,
+    summary,
+    evidence
   };
 }
 

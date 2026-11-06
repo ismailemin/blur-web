@@ -77,6 +77,7 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 | `/?car=audi-r8v10-stock` | Araç seçimi (üstteki CAR listesi de çalışır) |
 | `/?course=short` | 29 m regresyon parkuru |
 | `/?course=lap` | **3 turluk kapalı tur** (loop-01 222,04 m, ayrı spawn) |
+| `/?course=free` | **Free-roam** (7.702 m², 431 solid prop, finish yok) |
 | `/?script=sprint` | Deterministik sprint (aynı Stanley sürücü, araç başına ayrı girdi) |
 | `/?script=sprint&course=lap` | Deterministik 3 tur |
 | `/?script=drive` | Kuralsız 300 tick sürüş (eski kanıt modu) |
@@ -91,6 +92,7 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 - [ ] 3-2-1 countdown → timer → 2/2 checkpoint → finish; sonuç ekranı süre + araç.
 - [ ] `?course=lap`: 3 tur → start/finish çizgisi 3 kez → finish; tur süreleri ve en iyi tur görünür.
 - [ ] Tur modunda truck/bina prop'ları solid; loop-01'de temas yok (HUD: 468 colliders).
+- [ ] `?course=free`: 431 collider solid; truck/bina içinden geçilmiyor; HUD `free roam`; `R` spawn'a dönüyor.
 - [ ] Süre tablodaki değere ±0,01 s (scripted) veya makul (klavye).
 - [ ] `R`: aynı sayfada yeniden countdown; süre sıfırlanır, en iyi süre korunur.
 - [ ] Beş araç seçilebilir; her biri kendi gövdesi/tekerleriyle görünür.

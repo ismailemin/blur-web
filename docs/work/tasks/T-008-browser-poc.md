@@ -56,8 +56,9 @@ sürüşü deneyebileceği PoC.
 | Prop collision verisi | P66 | ✅ 468 collider, 52/52 resolver |
 | Free-roam alanı | P65 | ✅ R04 9.689,5 m², %100 çizili |
 | 3 turluk kapalı tur | P67 | ✅ loop-01 86,1 s, 766/766 |
-| PoC kontrolü (lap) | P67 | ✅ 21/21 |
+| PoC kontrolü (lap) | P67 | ✅ 23/23 |
 | Free-roam prop manifesti | P68b | ✅ 431 collider, %100 kapsama |
+| Free-roam modu | P69 | ✅ 818/818, 20/20 capture |
 | Motor sesi modülü | P70 | ✅ 6 loop, 0 console |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |

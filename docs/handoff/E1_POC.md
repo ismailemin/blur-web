@@ -25,6 +25,7 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 |---|---|
 | `/` | Serbest sürüş + sprint kuralları (310 m parkur) |
 | `/?course=lap` | **3 turluk kapalı tur** (P61 loop-01, 222,04 m) |
+| `/?course=free` | **Free-roam** (P65/P68 spawn havzası 7.702 m², truck/bina solid) |
 | `/?script=drive` | Deterministik 300 tick sürüş |
 | `/?script=sprint` | Deterministik sprint (5 araç) |
 | `/?script=sprint&course=lap` | Deterministik 3 tur (5 araç) |
@@ -59,6 +60,16 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 Tur modu loop-01 üzerinde **ayrı spawn** kullanır (eski spawn bileşeninden
 1,118 m duvarla ayrık). Görünür truck/bina prop'ları tur modunda **solid**
 (`all-visible`, 468 collider); loop-01 temiz olduğu için çarpışma yok.
+
+**Free-roam** — `?course=free`:
+
+- Spawn `(-88, 1050)`, **7.702 m²** açık havza; checkpoint/finish/countdown yok.
+- **431 solid collider** (`colliders-r04.json`): truck, wreck, bina ve çitler
+  geçilmez; spawn açıklığı 5,803 m.
+- `R` spawn'a döner; havza kutusu dışına çıkınca veya zeminden 1 m düşünce
+  otomatik spawn reset. Görünmez duvar yok.
+- Doğu kanalı (1.321 m²) C03 boru/çit duvarı yüzünden **erişilemez**; oraya
+  spawn/respawn yok.
 
 Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
 Dodge 4,633 → Focus 5,133 s.

@@ -26,6 +26,63 @@ export const PROP_MANIFEST_CONTENT_SHA256 =
 export const PROP_RESOLVER =
   'probes/prop-collision/lib/resolver.mjs (read-only; createWorld/deepestContact/step)';
 
+/**
+ * Manifest/profile/hash pins are parameters, not module constants: the layer is
+ * shared by the lap (the committed P66 manifest) and free roam (the P68b extended
+ * manifest). A world whose profile or collider count disagrees with the pins is
+ * a hard failure, never a silently different layer.
+ */
+export const LAP_PROP_PINS = Object.freeze({
+  label: 'lap',
+  profile: PROP_PROFILE,
+  manifest: PROP_MANIFEST,
+  manifestFileSha256: PROP_MANIFEST_FILE_SHA256,
+  manifestContentSha256: PROP_MANIFEST_CONTENT_SHA256,
+  variant: null,
+  colliders: 468,
+  resolver: PROP_RESOLVER
+});
+
+/** P68b extended free-roam manifest (region: reachable component + 30 m). */
+export const FREE_PROP_PINS = Object.freeze({
+  label: 'free-roam',
+  profile: PROP_PROFILE,
+  manifest: '_work/free-roam-prop/colliders-r04.json',
+  manifestFileSha256: 'sha256:5c7bba74fd9c978b4ff9e729287c9a7935d827f4d353c2c918da9d1788a49805',
+  manifestContentSha256: 'sha256:932e0f871e46b073d359c7a9549477e136fb56e58202b477ebc11fac53915b42',
+  variant: 'free-roam-r04',
+  colliders: 431,
+  resolver: PROP_RESOLVER
+});
+
+/**
+ * Validate a parsed manifest against a pin set. The caller has already hashed
+ * the file bytes; this checks the declared identity and content hash so a
+ * swapped or hand-edited manifest cannot masquerade as the pinned one.
+ */
+export function checkPropManifest(manifest, pins) {
+  const errors = [];
+  if (manifest?.kind !== 'prop-collision-colliders' || manifest?.version !== 1) {
+    errors.push('manifest is not prop-collision-colliders v1');
+  }
+  if (pins.variant !== null && manifest?.variant !== pins.variant) {
+    errors.push('manifest variant is ' + JSON.stringify(manifest?.variant) + ', expected ' + pins.variant);
+  }
+  if (!Array.isArray(manifest?.colliders) || manifest.colliders.length !== pins.colliders) {
+    errors.push('manifest has ' + (manifest?.colliders?.length ?? 'no') + ' colliders, expected ' + pins.colliders);
+  }
+  const contentHash = String(manifest?.contentSha256 ?? '').replace(/^sha256:/, '');
+  const pinnedContentHash = String(pins.manifestContentSha256 ?? '').replace(/^sha256:/, '');
+  if (contentHash !== pinnedContentHash) {
+    errors.push('manifest content hash is ' + JSON.stringify(manifest?.contentSha256) +
+      ', expected ' + pins.manifestContentSha256);
+  }
+  if (pins.variant !== null && manifest?.profiles?.[pins.profile]?.colliders !== pins.colliders) {
+    errors.push('manifest profile ' + pins.profile + ' does not declare ' + pins.colliders + ' colliders');
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 /** The resolver's length axis is (cos yaw, sin yaw); the engine forward is (sin h, cos h). */
 export function propYawFromHeading(headingRad) {
   return Math.PI / 2 - headingRad;
@@ -34,11 +91,21 @@ export function propYawFromHeading(headingRad) {
 /**
  * Wrap one resolver world as a per-tick pose layer.
  *
- * `world` is `createWorld(manifest, { profile: 'all-visible' })`. `carEnvelope`
- * defaults to the manifest's documented 2.98 x 1.68 x 1.35 m envelope.
+ * `world` is `createWorld(manifest, { profile: 'all-visible' })`. `pins` defaults
+ * to the committed P66 lap layer; free roam passes `FREE_PROP_PINS`.
+ * `carEnvelope` defaults to the manifest's documented 2.98 x 1.68 x 1.35 m
+ * envelope.
  */
-export function createPropLayer({ world, carEnvelope, dt = 1 / 60 }) {
+export function createPropLayer({ world, carEnvelope, dt = 1 / 60, pins = LAP_PROP_PINS }) {
   if (!world || typeof world.step !== 'function') throw new Error('prop layer needs the P66 resolver world');
+  if (!pins || typeof world.colliders?.length !== 'number') throw new Error('prop layer needs its manifest pins');
+  if (world.profile !== pins.profile) {
+    throw new Error('prop layer world profile ' + world.profile + ' is not the pinned ' + pins.profile);
+  }
+  if (world.colliders.length !== pins.colliders) {
+    throw new Error('prop layer world has ' + world.colliders.length + ' colliders, pinned ' + pins.colliders +
+      ' (' + pins.manifest + ')');
+  }
   const envelope = carEnvelope ?? world.manifest?.carEnvelope ?? { length: 2.98, width: 1.68, height: 1.35 };
   let render = null;
   let previous = null;
@@ -110,7 +177,7 @@ export function createPropLayer({ world, carEnvelope, dt = 1 / 60 }) {
       ...state,
       position: [render.x, state.position[1], render.z],
       props: {
-        profile: PROP_PROFILE,
+        profile: pins.profile,
         blockedTicks,
         contactTicks,
         contacts,
@@ -121,13 +188,16 @@ export function createPropLayer({ world, carEnvelope, dt = 1 / 60 }) {
 
   function snapshot() {
     return {
-      profile: PROP_PROFILE,
-      manifest: PROP_MANIFEST,
-      manifestFileSha256: PROP_MANIFEST_FILE_SHA256,
-      manifestContentSha256: PROP_MANIFEST_CONTENT_SHA256,
-      resolver: PROP_RESOLVER,
+      label: pins.label,
+      profile: pins.profile,
+      manifest: pins.manifest,
+      manifestFileSha256: pins.manifestFileSha256,
+      manifestContentSha256: pins.manifestContentSha256,
+      variant: pins.variant,
+      resolver: pins.resolver,
       carEnvelope: { ...envelope },
       colliders: world.colliders.length,
+      pinnedColliders: pins.colliders,
       blockedTicks,
       contactTicks,
       contacts,

@@ -190,20 +190,17 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Not: ilk uygulamada seam projeksiyonu lap 2/3'ü düşürüyordu; yarım-tur
   koşulu kaldırıldı (ayrıntı verification doc §2).
 
-### E1n — Free-roam + solid prop'lar (P68/P69)  ⏳ veri hazır
-- `?course=free`: committed spawn `(-88, 1050)`, **7.415 m²** erişilebilir spawn
-  bileşeni (P68a/P68b ölçümü); checkpoint/finish yok, koridor respawn'ı yok.
-- **P68b manifesti:** `_work/free-roam-prop/colliders-r04.json` — **431 collider**
-  (8 instance + 423 track component), `all-visible`; kapsama %64,6 → **%100**
-  (7.702,25 m² referans bileşen). Spawn açıklığı **5,803 m**, head-on 0,001 m,
-  0 tunneling, 29/29 PASS.
-- `all-visible` doğu kanalını (1.321 m²) C03 boru/çit duvarı yüzünden kesiyor;
-  bu cep **erişilemez** ve oraya spawn/respawn yok. Bu, uydurma değil ölçüm.
-- Uygulama: `prop-layer.js` free modda bu manifesti + kendi SHA pinlerini
-  kullanmalı; 310 m/lap mevcut `colliders.json` pinlerinde kalmalı.
-- HUD: free-roam etiketi, hız, konum; `R` spawn'a döner; bölge dışı/zeminden
-  düşme reseti.
-- Kanıt: `verify_e1_drive` free-roam blokları + 5 araç capture, console 0.
+### E1n — Free-roam + solid prop'lar (P68/P69)  ✅
+- `?course=free`: committed spawn `(-88, 1050)`, **7.702 m²** erişilebilir spawn
+  bileşeni; checkpoint/finish yok, koridor respawn'ı yok, countdown yok.
+- **431 collider** `all-visible` (`colliders-r04.json`, %100 kapsama); truck,
+  wreck ve binalar solid; spawn açıklığı 5,803 m; 0 temas.
+- Containment: `x −108.5…5.0, z 1027.5…1164.0` + 2 m marj, zeminden 1 m düşme,
+  30 havada tick; reset her zaman spawn. Görünmez duvar yok.
+- 5 araç 401 tick: 22,7–29,2 m, 0 temas, 0 respawn, replay birebir.
+- Doğu kanalı (1.321 m²) C03 prop duvarı yüzünden erişilemez ve oraya spawn yok.
+- Kanıt: `docs/work/verification/T-007-free-roam.md`,
+  `_work/e1-drive/browser-<slug>-free-*.png`.
 
 ### E1o — Motor sesi (P70)  ✅ modül hazır
 - `probes/audio/web/engine-audio.js`: 6 `RaceV8_Engine_*` loop'u, retail

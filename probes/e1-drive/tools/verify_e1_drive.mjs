@@ -43,13 +43,20 @@ import { createSession, resolveCarBody } from '../web/packet-adapter.js';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from '../web/drive-script.js';
 import {
-  CHECKPOINT_FRACTIONS, COLUMN_STEP, GATE_SAMPLE_STEP, LAP_LOOPS_PATH, LONG_COURSE_PATH, SHORT_COURSE_ID,
-  deriveLapCourseLayout, deriveLongCourseLayout, deriveSprintLayout, isLapLayout, layoutStartHeading,
-  layoutStartPosition, validateSprintLayout
+  CHECKPOINT_FRACTIONS, COLUMN_STEP, FREE_REGIONS_PATH, GATE_SAMPLE_STEP, LAP_LOOPS_PATH,
+  LONG_COURSE_PATH, SHORT_COURSE_ID, deriveFreeRoamLayout, deriveLapCourseLayout, deriveLongCourseLayout,
+  deriveSprintLayout, isFreeLayout, isLapLayout, layoutStartHeading, layoutStartPosition,
+  validateSprintLayout
 } from '../web/sprint-layout.js';
-import { SPRINT_EVENT, courseGroundAt, createSprintRules, coursePosition } from '../web/sprint-rules.js';
-import { LAP_PACKET_SCRIPT, LAP_SCRIPT_TICKS, SPRINT_SCRIPT_TICKS, SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput } from '../web/sprint-script.js';
-import { PROP_MANIFEST, PROP_PROFILE, createPropLayer, propYawFromHeading } from '../web/prop-layer.js';
+import { SPRINT_EVENT, courseGroundAt, createSprintRules, coursePosition, freeGroundAt } from '../web/sprint-rules.js';
+import {
+  FREE_PACKET_SCRIPT, FREE_SCRIPT_TICKS, LAP_PACKET_SCRIPT, LAP_SCRIPT_TICKS, SPRINT_SCRIPT_TICKS,
+  SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput
+} from '../web/sprint-script.js';
+import {
+  FREE_PROP_PINS, LAP_PROP_PINS, PROP_MANIFEST, PROP_PROFILE, checkPropManifest, createPropLayer,
+  propYawFromHeading
+} from '../web/prop-layer.js';
 import { createWorld as createPropWorld } from '../../prop-collision/lib/resolver.mjs';
 import { createBestTimes } from '../web/sprint-best.js';
 import {
@@ -62,7 +69,7 @@ import {
   TELEMETRY_MANOEUVRE, TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_SPEC, tickAtSpeedKph
 } from '../web/telemetry.js';
 import { buildCorridorSurvey } from '../web/corridor-survey.js';
-import { runPropLayerTests } from './prop_layer_tests.mjs';
+import { runFreePropLayerTests, runPropLayerTests } from './prop_layer_tests.mjs';
 import { LIMIT_STATIONS, runLimitStation, stationPose, writeCorridorProbe } from './corridor_probe.mjs';
 import { TICK0_LIMITS } from './spawn.mjs';
 
@@ -90,6 +97,9 @@ const ONLY_CAR = option('--car', null);
 // Set before the lap runs: createWorld(manifest, {profile:'all-visible'}).
 let lapPropWorld = null;
 let lapPropManifest = null;
+// Set before the free-roam block: the P68b extended world and its manifest.
+let freePropWorld = null;
+let freePropManifest = null;
 
 const failures = [];
 const checks = [];
@@ -987,6 +997,122 @@ check('prop layer: the engine state object is never mutated (additive post-tick 
       propLayerTests.headOn.inputUnchanged && propLayerTests.thinAt31.inputUnchanged &&
       propLayerTests.glancing.inputUnchanged);
 
+// ------------------------------------------------- free roam (P65/P68 basin)
+// `?course=free` is the picked free-roam mode: the committed spawn on the P65
+// R04 basin, contained by the P68b spawn component, with the P68b extended
+// 431-collider all-visible manifest. It has no gates, no finish and no lap; the
+// timed 310 m/29 m courses and the 3-lap race above are untouched.
+const SPRINT_FREE_FILE = path.join(OUT, 'sprint-free.json');
+if (!existsSync(SPRINT_FREE_FILE)) {
+  throw new Error('sprint-free.json missing — run `node probes/e1-drive/tools/build_sprint.mjs` first');
+}
+const freeRegionsFile = path.join(ROOT, FREE_REGIONS_PATH.file);
+const freeRegionsBytes = readFileSync(freeRegionsFile);
+const freeRegionsFileSha = 'sha256:' + sha256(freeRegionsBytes);
+if (freeRegionsFileSha !== FREE_REGIONS_PATH.fileSha256) {
+  throw new Error('the P65 regions artifact is not the recorded file: ' + freeRegionsFileSha);
+}
+const freeRegions = JSON.parse(freeRegionsBytes.toString('utf8'));
+const freeBasin = freeRegions.regions.find((region) => region.id === FREE_REGIONS_PATH.regionId);
+const freePropFile = path.join(ROOT, FREE_PROP_PINS.manifest);
+const freePropBytes = readFileSync(freePropFile);
+const freePropFileSha = 'sha256:' + sha256(freePropBytes);
+if (freePropFileSha !== FREE_PROP_PINS.manifestFileSha256) {
+  throw new Error('the P68b collider manifest is not the recorded file: ' + freePropFileSha);
+}
+freePropManifest = JSON.parse(freePropBytes.toString('utf8'));
+const freePropCheck = checkPropManifest(freePropManifest, FREE_PROP_PINS);
+if (!freePropCheck.ok) throw new Error('the P68b collider manifest was rejected: ' + freePropCheck.errors.join('; '));
+freePropWorld = createPropWorld(freePropManifest, { profile: FREE_PROP_PINS.profile });
+const freePropContacts = (x, z, yaw, baseY) =>
+  freePropWorld.contactsAll(x, z, yaw, baseY, freePropManifest.carEnvelope);
+const freeLayout = deriveFreeRoamLayout(geometry, layoutSpawn, freeRegions, {
+  propContacts: freePropContacts, carEnvelope: freePropManifest.carEnvelope
+});
+const freeFileBytes = readFileSync(SPRINT_FREE_FILE);
+const freeFile = JSON.parse(freeFileBytes.toString('utf8'));
+const freeLayoutCheck = validateSprintLayout(freeLayout, geometry, layoutSpawn);
+const freeBounds = freeLayout.course.bounds;
+const freeProbe = freeLayout.course.containment.probe;
+
+check('the P65 spawn basin artifact is the recorded one and R04 is the spawn region',
+      freeRegionsFileSha === FREE_REGIONS_PATH.fileSha256 &&
+      freeRegions.hash === FREE_REGIONS_PATH.canonicalHash &&
+      freeRegions.kind === 'free-roam.regions' && freeRegions.version === 1 &&
+      freeBasin !== undefined && freeBasin.containsSpawn === true &&
+      Math.abs(freeBasin.areaM2 - FREE_REGIONS_PATH.areaM2) < 1e-9 &&
+      freeBasin.bounds.every((value, index) => Math.abs(value - FREE_REGIONS_PATH.bounds[index]) < 1e-9),
+      `${freeRegionsFileSha} / ${freeRegions.hash} / R04 ${freeBasin?.areaM2} m2 ` +
+      `[${freeBasin?.bounds?.join(', ')}]`);
+check('the P68b extended all-visible manifest is the recorded one (431 colliders, variant free-roam-r04)',
+      freePropFileSha === FREE_PROP_PINS.manifestFileSha256 &&
+      freePropManifest.variant === 'free-roam-r04' &&
+      freePropManifest.colliders.length === 431 &&
+      freePropManifest.profiles['all-visible'].colliders === 431 &&
+      freePropWorld.profile === 'all-visible' && freePropWorld.colliders.length === 431,
+      `${freePropFileSha}, ${freePropManifest.colliders.length} colliders, world ${freePropWorld.colliders.length}`);
+check('the free-roam layout is exactly the one derived from the P65 basin and this geometry (no hand-edited basin)',
+      canonicalJson(freeFile) === canonicalJson(freeLayout),
+      freeFile.hash ?? 'no layout hash');
+check('the free-roam layout passes its own structural validation',
+      freeLayoutCheck.ok === true, freeLayoutCheck.errors.join(' | '));
+check('free roam has no gates, no finish gate, no lap counter and no countdown',
+      freeLayout.courseId === 'free' && freeLayout.gates.length === 0 &&
+      freeLayout.course.lap === undefined && freeLayout.course.span === undefined &&
+      freeLayout.rules.finishRequiresAllCheckpoints === false &&
+      freeLayout.countdown.ticks === 0 && freeLayout.course.containment.noCorridorRespawn === true &&
+      freeLayout.course.containment.noInvisibleWall === true,
+      `gates ${freeLayout.gates.length}, countdown ${freeLayout.countdown.ticks}`);
+check('free roam spawns at the committed spawn (-88, 1050) with the committed heading pi/2',
+      freeLayout.course.spawn.x === -88 && freeLayout.course.spawn.z === 1050 &&
+      Math.abs(freeLayout.course.spawn.headingRad - Math.PI / 2) < 1e-12 &&
+      freeLayout.course.spawnGroundY === round6Local(freeLayout.course.spawnGroundY),
+      `${freeLayout.course.spawn.x}, ${freeLayout.course.spawn.z}, ${freeLayout.course.spawn.headingRad} rad`);
+check('free roam is bounded by the measured P68b spawn-component box (x -108.5..5.0, z 1027.5..1164.0)',
+      freeBounds.minX === -108.5 && freeBounds.maxX === 5.0 &&
+      freeBounds.minZ === 1027.5 && freeBounds.maxZ === 1164.0 &&
+      freeLayout.course.containment.marginMetres === 2.0 &&
+      freeLayout.course.containment.fallBelowGroundMetres === 1.0 &&
+      freeLayout.course.containment.airborneTicks === 30,
+      `x ${freeBounds.minX}..${freeBounds.maxX} z ${freeBounds.minZ}..${freeBounds.maxZ}, ` +
+      `+${freeLayout.course.containment.marginMetres} m margin`);
+check('the free-roam ground grid is the measured collision lattice over the box',
+      freeLayout.course.groundGrid.measuredCells === 3418 &&
+      freeLayout.course.groundGrid.filledCells === 515 &&
+      freeLayout.course.groundGrid.heights.every((height) => Number.isFinite(height)),
+      `${freeLayout.course.groundGrid.measuredCells} measured + ${freeLayout.course.groundGrid.filledCells} filled ` +
+      `of ${freeLayout.course.groundGrid.columns}x${freeLayout.course.groundGrid.rows}`);
+check('the containment test lane is measured, not typed in: ground-supported, <=5 cm/m, prop-clear to the boundary',
+      freeProbe.x === -24.5 && freeProbe.z === 1037.5 &&
+      Math.abs(freeProbe.headingRad - Math.PI / 2) < 1e-12 &&
+      freeProbe.clearRunToBoundaryMetres === 31.5 &&
+      freeProbe.maxGroundStepMetres <= freeProbe.stepLimitMetres,
+      `(${freeProbe.x}, ${freeProbe.z}) ${freeProbe.clearRunToBoundaryMetres} m, max step ` +
+      `${freeProbe.maxGroundStepMetres} m/m`);
+check('the free-roam spawn is clear under the 431-collider all-visible layer (0 contacts)',
+      freePropContacts(freeLayout.course.spawn.x, freeLayout.course.spawn.z,
+        propYawFromHeading(freeLayout.course.spawn.headingRad), freeLayout.course.spawnGroundY).length === 0,
+      `${freePropWorld.colliders.length} colliders, spawn ground ${freeLayout.course.spawnGroundY} m`);
+const freePropLayerTests = runFreePropLayerTests({
+  world: freePropWorld, manifest: freePropManifest, createPropLayer, propYawFromHeading, pins: FREE_PROP_PINS
+});
+check('free-roam prop layer: 31 m/s head-on into the R04 truck level.instance.00 stops on the near face',
+      freePropLayerTests.truckHeadOn.blockedTicks > 0 &&
+      freePropLayerTests.truckHeadOn.contactIds.includes('level.instance.00') &&
+      freePropLayerTests.truckHeadOn.side > 0 && freePropLayerTests.truckHeadOn.residual === 0 &&
+      freePropLayerTests.truckHeadOn.inputUnchanged === true,
+      JSON.stringify({ side: freePropLayerTests.truckHeadOn.side,
+        residual: freePropLayerTests.truckHeadOn.residual,
+        contacts: freePropLayerTests.truckHeadOn.contacts, maxPen: freePropLayerTests.truckHeadOn.maxPenetrationMetres }));
+check('free-roam prop layer: 31 m/s into a 0.02 m container panel does not tunnel',
+      freePropLayerTests.thinAt31.blockedTicks > 0 &&
+      freePropLayerTests.thinAt31.contactIds.includes(freePropLayerTests.thin) &&
+      freePropLayerTests.thinAt31.side > 0 && freePropLayerTests.thinAt31.residual === 0 &&
+      freePropLayerTests.thinAt31.maxPenetrationMetres <= 0.08 + 1e-6,
+      JSON.stringify({ id: freePropLayerTests.thin, side: freePropLayerTests.thinAt31.side,
+        residual: freePropLayerTests.thinAt31.residual,
+        maxPen: freePropLayerTests.thinAt31.maxPenetrationMetres }));
+
 // Independent measurement: barycentric area signs (not the tool's plane-lambda
 // form) and a plane height from the triangle normal. Every 0.1 m sample across
 // every gate of both layouts must be over a real block56/node289 triangle within
@@ -1576,8 +1702,10 @@ async function replaySprintInputs(car, fieldBytes, inputs, layout = derivedLayou
 /** One deterministic sprint run of one car in a fresh wasm module instance. */
 async function runSprint(car, fieldBytes, layout = derivedLayout) {
   const start = layoutStartPosition(layout, layoutSpawn);
-  const maxTicks = isLapLayout(layout) ? LAP_SCRIPT_TICKS : SPRINT_SCRIPT_TICKS;
-  const packetScript = isLapLayout(layout) ? LAP_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT;
+  const maxTicks = isFreeLayout(layout) ? FREE_SCRIPT_TICKS
+    : isLapLayout(layout) ? LAP_SCRIPT_TICKS : SPRINT_SCRIPT_TICKS;
+  const packetScript = isFreeLayout(layout) ? FREE_PACKET_SCRIPT
+    : isLapLayout(layout) ? LAP_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT;
   const factory = (await import(pathToFileURL(MODULE).href)).default;
   const module = await factory();
   const levelPtr = module._malloc(levelBytes.length);
@@ -1593,9 +1721,12 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
 
   const rules = createSprintRules(layout);
   const propLayer = isLapLayout(layout) && lapPropWorld
-    ? createPropLayer({ world: lapPropWorld, carEnvelope: lapPropManifest.carEnvelope })
-    : null;
+    ? createPropLayer({ world: lapPropWorld, carEnvelope: lapPropManifest.carEnvelope, pins: LAP_PROP_PINS })
+    : isFreeLayout(layout) && freePropWorld
+      ? createPropLayer({ world: freePropWorld, carEnvelope: freePropManifest.carEnvelope, pins: FREE_PROP_PINS })
+      : null;
   const groundYFor = (state) => {
+    if (isFreeLayout(layout)) return freeGroundAt(layout, state.position);
     if (!isLapLayout(layout)) return state.position[1] - 0.35;
     const arc = coursePosition(layout.course.samples, state.position).arc;
     return courseGroundAt(layout, arc);
@@ -1642,6 +1773,9 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
     });
     previous = state;
     if (rules.phase === 'finished' && state.tick - rules.finishTick >= 120) break;
+    // A free-roam containment reset ends the scripted run: the run must be
+    // contained (the verifier fails if a clean free drive leaves the basin).
+    if (isFreeLayout(layout) && rules.awaitingRejoin) break;
   }
   const simMs = Date.now() - startMs;
   const packet = session.finalise();
@@ -2539,6 +2673,340 @@ for (const car of cars) {
     } : null
   });
 }
+
+// ------------------------------------------------------------- free roam (?course=free)
+// The free-roam mode is a separate layout on the P65 R04 basin: no countdown,
+// no gates, no finish and no lap. Its only reset is the declared containment
+// rule, and its visible-prop layer is the P68b extended manifest (431
+// colliders). The five roster cars drive the same deterministic, speed-capped
+// script; the state sequence is the raw engine sequence, so replaying the
+// recorded inputs without the rules/layer must reproduce every hash.
+const FREE_ANCHORS = Object.freeze({
+  'corvette-zr1-stock': 'sha256:bede912eb7f1817d50eafd606c962b47ad774d06272f66d268688b7905a3b920',
+  'lotus-exige-cup260-stock': 'sha256:f198bd7bcb2041b320e8e58a819694b61a92495c2b8ac36c500da4038f383f8e',
+  'dodge-challenger-stock': 'sha256:ee6018bff7421836facfc36e4ba1f497b4ed0bfe2902d123548f0a556a0f2369',
+  'ford-focusrs-stock': 'sha256:f590e4adcfb040168c6f4912f0d692678aa1ca8d334624a8dc1aac26bc27390b',
+  'audi-r8v10-stock': 'sha256:4d4a43234c6853bfc65385741bfbd5bdad5f1577fe01c5552fcbdd2a79ade5ca'
+});
+const freeResults = [];
+const freeSpawn = freeLayout.course.spawn;
+const freeMargin = freeLayout.course.containment.marginMetres;
+const freeBox = freeLayout.course.bounds;
+
+for (const car of cars) {
+  const fieldBytes = readFileSync(path.join(ROOT, car.fields.path));
+  const run = await runSprint(car, fieldBytes, freeLayout);
+  const hashes = run.states.map((state) => hashOfLocal(state));
+  const stateSequenceHash = aggregate(hashes);
+  const replayHashes = await replaySprintInputs(car, fieldBytes, run.inputs, freeLayout);
+  const replayMatches = replayHashes.length === hashes.length &&
+    replayHashes.every((hash, index) => hash === hashes[index]);
+  const prop = run.prop;
+  const spawnState = run.states[0];
+  const spawnDistance = Math.hypot(spawnState.position[0] - freeSpawn.x, spawnState.position[2] - freeSpawn.z);
+  const contained = run.states.every((state) =>
+    state.position[0] >= freeBox.minX - freeMargin && state.position[0] <= freeBox.maxX + freeMargin &&
+    state.position[2] >= freeBox.minZ - freeMargin && state.position[2] <= freeBox.maxZ + freeMargin);
+  const nonFinite = run.states.filter((state) => state.finite !== 1).length;
+  const contactTicks = run.states.filter((state) => state.anyContact === 1).length;
+  const travel = run.states.reduce((sum, state, index) => index === 0 ? 0 :
+    sum + Math.hypot(state.position[0] - run.states[index - 1].position[0],
+      state.position[2] - run.states[index - 1].position[2]), 0);
+  const maxSpeed = Math.max(...run.states.map((state) => state.speed));
+  // "Prop approach" capture frame: the tick (after the spawn) with the smallest
+  // upper bound on the car-to-collider clearance, measured by growing the car
+  // envelope until the 431-collider world reports a contact. It is a frame
+  // choice, not a contact: the run itself has 0 contacts.
+  let propApproach = { tick: null, clearanceUpperBoundMetres: Infinity, colliderId: null };
+  for (const state of run.states) {
+    if (state.tick < 20) continue;
+    const heading = Math.atan2(state.axisZ[0], state.axisZ[2]);
+    const ground = freeGroundAt(freeLayout, state.position);
+    for (let inflation = 0.25; inflation <= 8; inflation += 0.25) {
+      const probeEnvelope = {
+        length: freePropManifest.carEnvelope.length + 2 * inflation,
+        width: freePropManifest.carEnvelope.width + 2 * inflation,
+        height: freePropManifest.carEnvelope.height
+      };
+      const contacts = freePropWorld.contactsAll(state.position[0], state.position[2],
+        propYawFromHeading(heading), ground, probeEnvelope);
+      if (contacts.length) {
+        if (inflation < propApproach.clearanceUpperBoundMetres) {
+          propApproach = { tick: state.tick, clearanceUpperBoundMetres: round6Local(inflation),
+            colliderId: contacts[0].colliderId };
+        }
+        break;
+      }
+    }
+  }
+  const midTick = run.states[Math.floor(run.states.length / 2)]?.tick ?? 0;
+  const captureSpecs = [
+    { label: 'free-spawn', tick: 0 },
+    { label: 'free-mid', tick: midTick },
+    { label: 'free-prop', tick: propApproach.tick },
+    { label: 'free-reset', tick: 0, afterReset: true }
+  ].filter((entry) => entry.tick !== null);
+  const captures = captureSpecs.map(({ label, tick, afterReset }) => {
+    const update = run.packet.updates.find((entry) => entry.tick === tick);
+    const row = run.rows.find((entry) => entry.tick === tick);
+    return {
+      label, tick, afterReset: afterReset === true,
+      stateHash: row?.stateHash ?? null, updateHash: update?.hash ?? null,
+      matrix: update?.matrices?.[0]?.world ?? null, matrices: update?.matrices ?? null,
+      camera: update?.camera ?? null, position: row?.position ?? null,
+      speed: row?.speed ?? null
+    };
+  });
+
+  check(`${car.name}: free roam starts on the committed spawn within 5 cm and with 0 prop contacts`,
+        spawnDistance < 0.05 && run.prop !== null && run.prop.contacts === 0 && run.prop.blockedTicks === 0,
+        `spawn delta ${spawnDistance.toFixed(4)} m, ${run.prop?.contacts ?? 'no'} contacts, ` +
+        `${run.prop?.blockedTicks ?? 'no'} blocked ticks`);
+  check(`${car.name}: free roam drives the measured basin with no respawn and stays inside the box`,
+        run.respawns.length === 0 && contained &&
+        travel > 15 && maxSpeed > 3,
+        `${travel.toFixed(1)} m, max ${maxSpeed.toFixed(2)} m/s, ${run.respawns.length} respawns, contained ${contained}`);
+  check(`${car.name}: free roam keeps wheel contact on every tick and no NaN`,
+        contactTicks === run.states.length && nonFinite === 0,
+        `${contactTicks}/${run.states.length} contact, ${nonFinite} non-finite`);
+  check(`${car.name}: the 431-collider all-visible layer is active and inert on the free drive`,
+        prop !== null && prop.profile === 'all-visible' && prop.colliders === 431 &&
+        prop.pinnedColliders === 431 && prop.manifest === FREE_PROP_PINS.manifest &&
+        prop.contacts === 0 && prop.blockedTicks === 0 && prop.substeps > 0,
+        prop ? `${prop.colliders} colliders, ${prop.contacts} contacts, ${prop.substeps} substeps` : 'no layer');
+  check(`${car.name}: replaying the free-drive inputs without the rules reproduces every state hash`,
+        replayMatches, replayMatches ? `${hashes.length} ticks` : 'state sequence differs');
+  check(`${car.name}: the free run matches its deterministic state-sequence anchor`,
+        FREE_ANCHORS[car.slug] === null || FREE_ANCHORS[car.slug] === stateSequenceHash,
+        stateSequenceHash);
+  const freeValidation = validatePacket(run.packet);
+  check(`${car.name}: the free-roam run produces a valid packet v1.1 timeline with the free script label`,
+        freeValidation.ok === true && run.packet.updates.length === run.states.length &&
+        run.packet.diagnostics.extras.drive.script === FREE_PACKET_SCRIPT &&
+        run.packet.updates.every((update) => update.matrices.length === 9),
+        freeValidation.errors.slice(0, 4).join(' | '));
+
+  const freeRunPath = path.join(OUT, `sprint-free-${car.slug}.json`);
+  writeFileSync(freeRunPath, JSON.stringify({
+    kind: 'e1-drive.sprint-run',
+    version: 1,
+    courseId: freeLayout.courseId,
+    car: { slug: car.slug, name: car.name, record: car.record, drivetrain: car.drivetrain, fields: car.fields },
+    layoutHash: freeLayout.hash,
+    layoutFile: path.relative(ROOT, SPRINT_FREE_FILE).split(path.sep).join('/'),
+    tickHz: TICK_HZ,
+    countdownTicks: 0,
+    stateSequenceHash,
+    bounds: freeBox,
+    containment: freeLayout.course.containment,
+    prop: prop,
+    ticks: run.rows,
+    inputs: run.inputs,
+    captures
+  }, null, 2) + '\n', 'utf8');
+
+  freeResults.push({
+    slug: car.slug, name: car.name, drivetrain: car.drivetrain, default: car.slug === defaultCar.slug,
+    layoutHash: freeLayout.hash, courseId: freeLayout.courseId,
+    spawn: { x: freeSpawn.x, z: freeSpawn.z, headingRad: freeSpawn.headingRad, groundY: freeLayout.course.spawnGroundY },
+    spawnDistanceMetres: round6Local(spawnDistance),
+    bounds: freeBox, marginMetres: freeMargin,
+    ticks: run.states.length,
+    travelMetres: round6Local(travel),
+    maxSpeedMetresPerSecond: round6Local(maxSpeed),
+    contactTicks, nanTicks: nonFinite, respawns: run.respawns.length, contained,
+    propApproach,
+    prop: prop ? { profile: prop.profile, manifest: prop.manifest, colliders: prop.colliders,
+      contacts: prop.contacts, blockedTicks: prop.blockedTicks, substeps: prop.substeps } : null,
+    stateSequenceHash, replayMatches,
+    packet: { hash: run.packet.hash, updates: run.packet.updates.length,
+      draws: run.packet.draws.length, nodes: run.packet.nodes.length,
+      bytes: formatPacket(run.packet).length, validationErrors: freeValidation.errors.length },
+    runPath: path.relative(ROOT, freeRunPath).split(path.sep).join('/'),
+    captures
+  });
+  log.push(`${car.slug}: free roam ${travel.toFixed(1)} m, max ${maxSpeed.toFixed(2)} m/s, ` +
+    `${run.prop?.contacts ?? 'no'} contacts, ${run.states.length} ticks`);
+}
+
+// Containment: the rule is an observer, so it is tested synthetically at the
+// boundary and on the real engine down the measured lane. A reset must rebuild
+// at the committed spawn, never at a corridor point.
+function freeSyntheticState(position, options = {}) {
+  return {
+    tick: options.tick ?? 1,
+    position,
+    axisX: [0, 0, -1],
+    axisY: [0, 1, 0],
+    axisZ: [1, 0, 0],
+    velocity: [0, 0, 0],
+    speed: 0,
+    contacts: options.contact === false ? [0, 0, 0, 0] : [1, 1, 1, 1],
+    anyContact: options.contact === false ? 0 : 1,
+    finite: 1,
+    wheels: [],
+    input: [0, 0, 0, 0]
+  };
+}
+const freeSpawnGround = freeLayout.course.spawnGroundY;
+const freeRuleCases = {};
+for (const [name, position] of Object.entries({
+  'outside-x': [freeBox.maxX + freeMargin + 0.5, freeSpawnGround, freeSpawn.z],
+  'outside-z': [freeSpawn.x, freeSpawnGround, freeBox.maxZ + freeMargin + 0.5],
+  'inside-margin': [freeBox.maxX + freeMargin - 0.5, freeSpawnGround, freeSpawn.z],
+  inside: [freeSpawn.x + 1, freeSpawnGround, freeSpawn.z]
+})) {
+  const rules = createSprintRules(freeLayout);
+  rules.prime(freeSyntheticState([freeSpawn.x, freeSpawnGround, freeSpawn.z], { tick: 0 }));
+  const events = rules.step(freeSyntheticState(position));
+  freeRuleCases[name] = { events: events.map((event) => ({ type: event.type, reasons: event.reasons ?? null,
+    target: event.target ?? null })), respawns: rules.respawns };
+}
+const freeBelowRules = createSprintRules(freeLayout);
+freeBelowRules.prime(freeSyntheticState([freeSpawn.x, freeSpawnGround, freeSpawn.z], { tick: 0 }));
+const freeBelowEvents = freeBelowRules.step(freeSyntheticState(
+  [freeSpawn.x + 1, freeSpawnGround - freeLayout.course.containment.fallBelowGroundMetres - 0.2, freeSpawn.z]));
+const freeAirborneRules = createSprintRules(freeLayout);
+freeAirborneRules.prime(freeSyntheticState([freeSpawn.x, freeSpawnGround, freeSpawn.z], { tick: 0 }));
+let freeAirborneEvents = [];
+for (let tick = 1; tick <= freeLayout.course.containment.airborneTicks; tick++) {
+  freeAirborneEvents = freeAirborneRules.step(
+    freeSyntheticState([freeSpawn.x, freeSpawnGround + 0.5, freeSpawn.z], { tick, contact: false }));
+}
+check('free-roam containment fires on the measured box boundary and not inside the margin band',
+      freeRuleCases['outside-x'].events.length === 1 && freeRuleCases['outside-x'].events[0].type === SPRINT_EVENT.RESPAWN &&
+      freeRuleCases['outside-x'].events[0].reasons.includes('outside-bounds') &&
+      freeRuleCases['outside-z'].events.length === 1 &&
+      freeRuleCases['outside-z'].events[0].reasons.includes('outside-bounds') &&
+      freeRuleCases['inside-margin'].events.length === 0 && freeRuleCases.inside.events.length === 0,
+      JSON.stringify(freeRuleCases));
+check('free-roam containment fires below the local measured ground and after 30 airborne ticks',
+      freeBelowEvents.length === 1 && freeBelowEvents[0].reasons.includes('below-ground') &&
+      freeAirborneEvents.length === 1 && freeAirborneEvents[0].reasons.includes('airborne'),
+      JSON.stringify({ below: freeBelowEvents.map((event) => event.reasons),
+        airborne: freeAirborneEvents.map((event) => event.reasons),
+        airborneTicks: freeLayout.course.containment.airborneTicks }));
+check('every free-roam reset targets the committed spawn, never a corridor point',
+      [...freeRuleCases['outside-x'].events, ...freeRuleCases['outside-z'].events,
+        ...freeBelowEvents, ...freeAirborneEvents].every((event) =>
+        event.target.x === freeSpawn.x && event.target.z === freeSpawn.z &&
+        Math.abs(event.target.heading - freeSpawn.headingRad) < 1e-12) &&
+      freeLayout.course.containment.noCorridorRespawn === true,
+      JSON.stringify([...freeRuleCases['outside-x'].events].map((event) => event.target)));
+
+/** Drive the measured containment lane on the real engine and rebuild at the spawn. */
+async function runFreeContainmentScenario(car, fieldBytes) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const module = await factory();
+  const levelPtr = module._malloc(levelBytes.length);
+  const fieldsPtr = module._malloc(fieldBytes.length + 1);
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const create = (x, z, heading) => {
+    if (!module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length, x, z, heading)) {
+      throw new Error('free containment create failed: ' + module.UTF8ToString(module._e1_last_error()));
+    }
+    return JSON.parse(module.UTF8ToString(module._e1_get_state()));
+  };
+  const probeGround = () => JSON.parse(module.UTF8ToString(module._e1_ground_probe(freeProbe.x, freeProbe.z)));
+  const rules = createSprintRules(freeLayout);
+  const world = createPropWorld(freePropManifest, { profile: FREE_PROP_PINS.profile });
+  const layer = createPropLayer({ world, carEnvelope: freePropManifest.carEnvelope, pins: FREE_PROP_PINS });
+  let state0 = create(freeProbe.x, freeProbe.z, freeProbe.headingRad);
+  const groundProbe = probeGround();
+  layer.begin(state0, freeGroundAt(freeLayout, state0.position));
+  rules.prime(state0);
+  let respawnEvent = null;
+  let rebuild = null;
+  let state = state0;
+  let ticks = 0;
+  for (let tick = 1; tick <= 900 && !respawnEvent; tick++) {
+    module._e1_set_input(1, 0, 0, 0);
+    module._e1_step();
+    ticks = tick;
+    const raw = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+    state = layer.afterTick(raw, freeGroundAt(freeLayout, raw.position));
+    const events = rules.step(state);
+    respawnEvent = events.find((event) => event.type === SPRINT_EVENT.RESPAWN) ?? null;
+  }
+  if (!respawnEvent) throw new Error('free containment: the lane never left the box');
+  const target = rules.respawnTarget();
+  const tick0 = create(target.x, target.z, target.heading);
+  layer.begin(tick0, freeGroundAt(freeLayout, tick0.position));
+  rules.rejoin(tick0);
+  const distanceAfter = Math.hypot(tick0.position[0] - freeSpawn.x, tick0.position[2] - freeSpawn.z);
+  // 30 more ticks must not reset again on the spawn.
+  let extraEvents = [];
+  for (let tick = 1; tick <= 30; tick++) {
+    module._e1_set_input(0, 0, 0, 0);
+    module._e1_step();
+    const raw = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+    extraEvents.push(...rules.step(layer.afterTick(raw, freeGroundAt(freeLayout, raw.position))));
+  }
+  rebuild = { tick: ticks, target, distanceAfterMetres: round6Local(distanceAfter),
+    positionAfter: tick0.position.slice(0, 3) };
+  return { probeGround: { hit: groundProbe.hit, height: groundProbe.y },
+    probe: { x: freeProbe.x, z: freeProbe.z, headingRad: freeProbe.headingRad },
+    respawnEvent, rebuild, extraEvents: extraEvents.length, respawns: rules.respawns };
+}
+const freeContainmentCar = cars[0];
+const freeContainment = await runFreeContainmentScenario(freeContainmentCar,
+  readFileSync(path.join(ROOT, freeContainmentCar.fields.path)));
+check('free-roam containment resets the real engine at the box boundary and rebuilds at the spawn',
+      freeContainment.probeGround.hit === 1 &&
+      freeContainment.respawnEvent.reasons.includes('outside-bounds') &&
+      freeContainment.respawnEvent.position[0] > freeBox.maxX + freeMargin &&
+      freeContainment.rebuild.distanceAfterMetres < 0.05 &&
+      freeContainment.respawns === 1 &&
+      freeContainment.extraEvents === 0,
+      JSON.stringify({ reasons: freeContainment.respawnEvent.reasons,
+        boundary: freeContainment.respawnEvent.position.slice(0, 3),
+        after: freeContainment.rebuild.positionAfter,
+        distanceAfter: freeContainment.rebuild.distanceAfterMetres }));
+
+/** R (e1_reset) in free roam returns to the committed spawn and restarts the session. */
+async function runFreeRestart(car, fieldBytes) {
+  const factory = (await import(pathToFileURL(MODULE).href)).default;
+  const module = await factory();
+  const levelPtr = module._malloc(levelBytes.length);
+  const fieldsPtr = module._malloc(fieldBytes.length + 1);
+  module.HEAPU8.set(levelBytes, levelPtr);
+  module.HEAPU8.set(fieldBytes, fieldsPtr);
+  const start = layoutStartPosition(freeLayout, layoutSpawn);
+  if (!module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length,
+    start.x, start.z, start.heading)) {
+    throw new Error('free restart create failed: ' + module.UTF8ToString(module._e1_last_error()));
+  }
+  const rules = createSprintRules(freeLayout);
+  let state = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+  rules.prime(state);
+  for (let tick = 1; tick <= 200; tick++) {
+    const input = sprintScriptInput(rules, state);
+    module._e1_set_input(input[0], input[1], input[2], input[3]);
+    module._e1_step();
+    state = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+    rules.step(state);
+  }
+  const before = { position: state.position.slice(0, 3), elapsedTicks: rules.elapsedTicks };
+  if (!module._e1_reset()) throw new Error('free restart e1_reset failed');
+  const resetState = JSON.parse(module.UTF8ToString(module._e1_get_state()));
+  rules.reset();
+  rules.prime(resetState);
+  return {
+    before, after: resetState.position.slice(0, 3),
+    distanceFromSpawnMetres: round6Local(Math.hypot(resetState.position[0] - freeSpawn.x,
+      resetState.position[2] - freeSpawn.z)),
+    elapsedTicks: rules.elapsedTicks, respawns: rules.respawns, phase: rules.phase,
+    tick: resetState.tick
+  };
+}
+const freeRestart = await runFreeRestart(freeContainmentCar,
+  readFileSync(path.join(ROOT, freeContainmentCar.fields.path)));
+check('R in free roam rebuilds at the committed spawn and restarts the session clock',
+      freeRestart.distanceFromSpawnMetres < 0.05 && freeRestart.tick === 0 &&
+      freeRestart.elapsedTicks === 0 && freeRestart.respawns === 0 && freeRestart.phase === 'running',
+      JSON.stringify(freeRestart));
+
 
 // ------------------------------------------------------------- 3-lap race (?course=lap)
 // The P61 loop-01 layout is a closed 222.040 m circuit in collision component 5.
@@ -4320,6 +4788,68 @@ const report = {
       cars: lapResults,
       restartCars: lapRestartResults
     },
+    freeRoam: {
+      courseId: freeLayout.courseId,
+      layout: freeLayoutCheck,
+      file: '_work/e1-drive/sprint-free.json',
+      fileSha256: 'sha256:' + sha256(freeFileBytes),
+      layoutHash: freeLayout.hash,
+      spawn: freeLayout.course.spawn,
+      spawnGroundY: freeLayout.course.spawnGroundY,
+      bounds: freeBox,
+      containment: freeLayout.course.containment,
+      groundGrid: {
+        stepMetres: freeLayout.course.groundGrid.stepMetres,
+        columns: freeLayout.course.groundGrid.columns,
+        rows: freeLayout.course.groundGrid.rows,
+        measuredCells: freeLayout.course.groundGrid.measuredCells,
+        filledCells: freeLayout.course.groundGrid.filledCells
+      },
+      coverage: freeLayout.course.coverage,
+      regions: {
+        file: FREE_REGIONS_PATH.file,
+        fileSha256: freeRegionsFileSha,
+        canonicalHash: freeRegions.hash,
+        region: FREE_REGIONS_PATH.regionId,
+        areaM2: freeBasin.areaM2,
+        bounds: freeBasin.bounds
+      },
+      prop: {
+        profile: FREE_PROP_PINS.profile,
+        manifest: FREE_PROP_PINS.manifest,
+        fileSha256: freePropFileSha,
+        contentSha256: FREE_PROP_PINS.manifestContentSha256,
+        variant: freePropManifest.variant,
+        colliders: freePropManifest.colliders.length,
+        activeAllVisible: freePropWorld.colliders.length,
+        spawnContacts: freePropContacts(freeLayout.course.spawn.x, freeLayout.course.spawn.z,
+          propYawFromHeading(freeLayout.course.spawn.headingRad), freeLayout.course.spawnGroundY).length,
+        truck: freePropLayerTests.truck,
+        thin: freePropLayerTests.thin,
+        truckHeadOn: {
+          blockedTicks: freePropLayerTests.truckHeadOn.blockedTicks,
+          contacts: freePropLayerTests.truckHeadOn.contacts,
+          residual: freePropLayerTests.truckHeadOn.residual,
+          maxPenetrationMetres: freePropLayerTests.truckHeadOn.maxPenetrationMetres,
+          side: freePropLayerTests.truckHeadOn.side
+        },
+        thinNoTunnel: {
+          blockedTicks: freePropLayerTests.thinAt31.blockedTicks,
+          contacts: freePropLayerTests.thinAt31.contacts,
+          residual: freePropLayerTests.thinAt31.residual,
+          maxPenetrationMetres: freePropLayerTests.thinAt31.maxPenetrationMetres,
+          side: freePropLayerTests.thinAt31.side
+        },
+        note: 'the P68b extended manifest is a region replacement for free roam; the timed 310 m course keeps ' +
+          'the committed 468-collider manifest'
+      },
+      rules: freeLayout.rules,
+      containsNamedGates: freeLayout.gates.length !== 0,
+      cars: freeResults,
+      ruleCases: freeRuleCases,
+      containmentScenario: freeContainment,
+      restart: freeRestart
+    },
     restartCars: sprintRestartResults
   },
   ghost: {
@@ -4527,6 +5057,29 @@ console.log(JSON.stringify({
         maxLateral: entry.maxLateralMetres,
         minSteepFace: entry.minSteepFaceDistanceMetres,
         replayMatches: entry.replayMatches,
+        packetHash: entry.packet.hash
+      }))
+    },
+    free: {
+      layoutHash: freeLayout.hash,
+      spawn: freeLayout.course.spawn,
+      bounds: freeBox,
+      marginMetres: freeMargin,
+      colliders: freePropWorld.colliders.length,
+      spawnContacts: freePropContacts(freeLayout.course.spawn.x, freeLayout.course.spawn.z,
+        propYawFromHeading(freeLayout.course.spawn.headingRad), freeLayout.course.spawnGroundY).length,
+      containmentRespawn: freeContainment.respawnEvent.reasons,
+      containmentAfterMetres: freeContainment.rebuild.distanceAfterMetres,
+      cars: freeResults.map((entry) => ({
+        car: entry.name,
+        slug: entry.slug,
+        travelMetres: entry.travelMetres,
+        maxSpeed: entry.maxSpeedMetresPerSecond,
+        contacts: entry.prop?.contacts ?? null,
+        respawns: entry.respawns,
+        contained: entry.contained,
+        replayMatches: entry.replayMatches,
+        stateSequenceHash: entry.stateSequenceHash,
         packetHash: entry.packet.hash
       }))
     }

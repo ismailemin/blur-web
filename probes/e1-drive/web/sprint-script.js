@@ -26,7 +26,7 @@
 // it with `?sprintfall=1`.
 
 import { COUNTDOWN_TICKS } from './sprint-layout.js';
-import { bandHalfWidthAt, coursePosition, isLapLayout, isPathLayout } from './sprint-rules.js';
+import { bandHalfWidthAt, coursePosition, isFreeLayout, isLapLayout, isPathLayout } from './sprint-rules.js';
 
 /**
  * Longest scripted sprint run: 60 s (3600 ticks). The 310.395 m course with a
@@ -52,6 +52,47 @@ export const LAP_PACKET_SCRIPT =
 export const SPRINT_PACKET_SCRIPT =
   'sprint: 3-2-1 countdown (1.5 s), Stanley path follower on the measured 310.395 m P48 course, ' +
   'brake after the finish (probes/e1-drive/web/sprint-script.js)';
+
+/**
+ * Free-roam script: a tick-only diagnostic drive through the measured spawn
+ * basin. It has no path follower and no route: the input is a fixed function of
+ * the tick, so two runs are identical by construction, and the verifier records
+ * the resulting trajectory, its containment and its prop contacts. The phase
+ * lengths were chosen by measurement on the P68b all-visible layer, not from a
+ * route file: throttle, a tight left turn in the spawn bowl, a run west along
+ * the bowl, and a stop before the west boundary. No physics value is involved.
+ */
+export const FREE_SCRIPT_TICKS = 400;
+export const FREE_PACKET_SCRIPT =
+  'free-roam: committed spawn (-88, 1050, pi/2), speed-capped tick-only diagnostic drive on the measured spawn ' +
+  'basin, no gates/finish/lap, P68b all-visible prop layer ' +
+  '(probes/e1-drive/web/sprint-script.js)';
+export const FREE_SCENARIO = Object.freeze({
+  driveTicks: FREE_SCRIPT_TICKS,
+  phases: Object.freeze([
+    Object.freeze({ untilTick: 15, steer: -0.1, throttle: 0.6, speedLimit: null }),
+    Object.freeze({ untilTick: 150, steer: -0.9, throttle: 0.45, speedLimit: 6 }),
+    Object.freeze({ untilTick: 260, steer: -0.2, throttle: 0.5, speedLimit: 7 }),
+    Object.freeze({ untilTick: 330, steer: 0.35, throttle: 0.4, speedLimit: 6 }),
+    Object.freeze({ untilTick: 380, steer: 0, throttle: 0, speedLimit: 0 })
+  ]),
+  note:
+    'input is a pure function of the engine tick and the measured speed (a speed cap): throttle below the phase ' +
+    'limit, brake above it; the phases are a throttle/steer/brake sequence, never wall time. The cap keeps the ' +
+    'five roster cars on the same measured line so the run is contained and prop-clear for all of them'
+});
+
+/** Input for the free-roam diagnostic drive on the step that reaches `tick`. */
+export function freeScriptInput(tick, speed = 0) {
+  for (const phase of FREE_SCENARIO.phases) {
+    if (tick <= phase.untilTick) {
+      if (phase.speedLimit === null) return [phase.throttle, 0, phase.steer, 0];
+      const braking = !(speed < phase.speedLimit);
+      return [braking ? 0 : phase.throttle, braking ? 1 : 0, phase.steer, 0];
+    }
+  }
+  return [0, 0, 0, 0];
+}
 
 /** What the short-course sprint driver asks for while running. */
 export const SPRINT_DESIRED_INPUT = Object.freeze([1, 0, 0, 0]);
@@ -325,6 +366,10 @@ export function sprintControlTerms(state, layout, constants = null) {
  * still a pure function of the rules state, the engine state and the tick order.
  */
 export function sprintScriptInput(rules, state) {
+  if (isFreeLayout(rules.layout)) {
+    if (rules.phase !== 'running') return [0, 0, 0, 0];
+    return rules.gateInput(freeScriptInput(rules.elapsedTicks + 1, state?.speed ?? 0));
+  }
   if (!isPathLayout(rules.layout)) return rules.gateInput(SPRINT_DESIRED_INPUT);
   if (!state) throw new Error('the scripted long-course sprint needs the engine state');
   if (rules.phase !== 'running') return rules.gateInput(SPRINT_DESIRED_INPUT);

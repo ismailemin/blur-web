@@ -715,6 +715,14 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Headless Edge **engine-audio-module-verified**: 6/6 decode, gain/rate farkı ≤5,9e-8, RMS 0,041–0,137, console 0; fetch/decode hataları tipli.
 - Sıradaki: E1'de `Engine().RPM()` → `setRpm` + gesture. Kanıt: `docs/work/analysis/audio-engine-module.md`.
 
+## 6 Kasım 2026 — free-roam modu
+
+- `?course=free`: spawn `(-88, 1050)`, **7.702 m²** erişilebilir bileşen; gate/finish/countdown yok, koridor respawn'ı yok.
+- **431 solid collider** (`colliders-r04.json`, `all-visible`): truck, wreck ve binalar geçilmez; spawn açıklığı 5,803 m, 0 temas.
+- Containment: `x −108.5…5.0, z 1027.5…1164.0` + 2 m marj; zeminden 1 m düşme / 30 havada tick → spawn reset. Görünmez duvar yok.
+- 5 araç 401 tick, 0 temas, 0 respawn; `verify_e1_drive` **818/818**, capture **20/20 console 0**, checker **23/23**, suite 30/30.
+- Doğu kanalı (1.321 m²) C03 prop duvarı yüzünden erişilemez. Kanıt: `docs/work/verification/T-007-free-roam.md`.
+
 ## 5 Kasım 2026 — wire layout probe (T-006b)
 
 - Native MSVC x64 vs wasm32: `Datagram*`/`NetRaceSettings`/`NetVehicleData` aynı; `SysProfile::BaseProfile` 56→80 B, `NetStartRacePacket` 2104→2584 B (`wchar_t` 2→4, +480 B).

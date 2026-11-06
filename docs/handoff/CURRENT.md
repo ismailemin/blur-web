@@ -1,7 +1,7 @@
 # CURRENT — buradan devam
 
 **Güncelleme:** 6 Kasım 2026
-**Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, **loop-01 3 tur**, 5 dokulu araç, ghost, tarayıcıda test edilebilir.
+**Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, **loop-01 3 tur**, **free-roam**, 5 dokulu araç, ghost, tarayıcıda test edilebilir.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
 **Son commit'ler:** `39bd1b6` free-roam, `ff8a336` prop colliders, `8ac0109` ghost, `c63d4a4` audio, `777748c` steering.
 **KAPANMA/RESUME:** [`RESUME_2026-11-06.md`](RESUME_2026-11-06.md) — kapanış kaydı; P67 sonradan düzeltildi ve commit edildi. Sıradaki: `?course=free`.
@@ -47,7 +47,7 @@
 **P67 — loop-01 3 tur + prop collision (TAMAM, doğrulandı):**
 `?course=lap` P61 `loop-01` (222,04 m) üzerinde 3 turluk yarış. 5 araç
 **85,47–86,28 s**, tur süreleri ~28,4–29,2 s, **0 respawn**, replay/restart
-birebir; `verify_e1_drive` **766/766**, suite 30/30, checker 21/21. `all-visible` prop katmanı
+birebir; `verify_e1_drive` **818/818**, suite 30/30, checker 23/23. `all-visible` prop katmanı
 tur modunda aktif ve inert (loop-01'de prop yok, 0 temas). Kanıt:
 `docs/work/verification/T-007-lap-mode.md`. Sıradaki: `?course=free` (R04).
 
@@ -57,6 +57,12 @@ duvarı yüzünden erişilemez; erişilebilir spawn bileşeni **7.702,25 m²**.
 `_work/free-roam-prop/colliders-r04.json` (**431 collider**, %100 kapsama)
 üretildi; 29/29 doğrulama, deterministik. Kanıt:
 `docs/work/analysis/free-roam-props.md`.
+
+**P69 — free-roam (TAMAM):** `?course=free` — spawn `(-88, 1050)`, **7.702 m²**
+bileşen, **431 solid collider** (`colliders-r04.json`, `all-visible`), no
+gate/finish/countdown, box containment + spawn reset. 5 araç 401 tick, 0 temas,
+0 respawn; `verify_e1_drive` **818/818**, capture **20/20 console 0**, checker
+**23/23**. Kanıt: `docs/work/verification/T-007-free-roam.md`.
 
 **P70 — motor sesi modülü (hazır):** `probes/audio/web/engine-audio.js` altı
 motor loop'unu retail RPM→gain/pitch eğrileriyle çalıyor; gesture-only start,
