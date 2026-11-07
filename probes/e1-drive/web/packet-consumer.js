@@ -457,6 +457,13 @@ export class PacketConsumer {
     this.ghostDraws = [];
     this.ghostMatrices = null;
     this.ghostEnabled = false;
+    // Multi-slot remote rendering (M4): the ghost pipeline can draw N cars
+    // (one human peer + 0-3 AI). Each slot reuses the same car mesh and reserves
+    // its own per-draw uniforms; `ghostSlotCount` defaults to 1 so the
+    // single-player ghost and the M1 two-player page are unchanged.
+    this.ghostSlotCount = 1;
+    this.ghostDrawsPerCar = 0;
+    this.ghostFrames = [];
     // Power-up diagnostics (M2/PWR2): a small marker mesh injected by the page,
     // drawn in a separate translucent pass. Presentation only; never in updates,
     // the packet hash or the physics.
@@ -478,6 +485,8 @@ export class PacketConsumer {
       ghostDrawsIssued: 0,
       ghostFrames: 0,
       ghostEnabled: false,
+      ghostSlotCount: 1,
+      ghostActiveSlots: 0,
       // Power-up diagnostic marker pass (separate from packet draws).
       powerupSlots: 0,
       powerupDrawsIssued: 0,
@@ -702,8 +711,13 @@ export class PacketConsumer {
     this.ghostDraws = [];
     this.ghostMatrices = null;
     this.ghostEnabled = false;
+    this.ghostSlotCount = 1;
+    this.ghostDrawsPerCar = 0;
+    this.ghostFrames = [];
     this.stats.ghostDraws = 0;
     this.stats.ghostEnabled = false;
+    this.stats.ghostSlotCount = 1;
+    this.stats.ghostActiveSlots = 0;
     this.powerupDraws = [];
     this.powerupMarkers = null;
     this.powerupEnabled = false;
@@ -886,6 +900,16 @@ export class PacketConsumer {
       ? packet.draws.filter((draw) => draw.meshId === carBodyMeshId && draw.visible !== false).length
       : 0;
     const drawCount = packet.draws.length;
+    // Multi-slot remotes: the page declares the number of remote car slots it
+    // will draw through the ghost pipeline (one human peer + 0-3 AI). The
+    // default is one slot, which is the P63/M1 path.
+    const remoteConfig = packet.diagnostics?.extras?.remotes ?? null;
+    const ghostSlotCount = remoteConfig && Number.isInteger(remoteConfig.slots) && remoteConfig.slots > 0
+      ? Math.min(8, remoteConfig.slots) : 1;
+    this.ghostSlotCount = ghostSlotCount;
+    this.ghostDrawsPerCar = ghostDrawCount;
+    this.ghostFrames = [];
+    this.stats.ghostSlotCount = ghostSlotCount;
     // Power-up diagnostic marker slots: injected mesh + a fixed number of
     // translucent draw slots. They are not packet draws and never enter the
     // packet hash or the physics. `?powerups=0` (the default) leaves this at 0.
@@ -895,7 +919,7 @@ export class PacketConsumer {
     this.ghostDraws = [];
     this.stats.ghostDraws = ghostDrawCount;
     this.uniformBuffer = this.device.createBuffer({
-      size: (drawCount + ghostDrawCount + powerupSlots) * DRAW_UNIFORM_STRIDE,
+      size: (drawCount + ghostDrawCount * ghostSlotCount + powerupSlots) * DRAW_UNIFORM_STRIDE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
     this.buffers.push(this.uniformBuffer);
@@ -1077,7 +1101,9 @@ export class PacketConsumer {
     if (!nodeMatrices) {
       this.ghostMatrices = null;
       this.ghostEnabled = false;
+      this.ghostFrames = [];
       this.stats.ghostEnabled = false;
+      this.stats.ghostActiveSlots = 0;
       return;
     }
     if (!(nodeMatrices instanceof Map)) throw new Error('ghost frame needs a Map of node matrices');
@@ -1086,7 +1112,38 @@ export class PacketConsumer {
     }
     this.ghostMatrices = nodeMatrices;
     this.ghostEnabled = true;
+    this.ghostFrames = [{ nodeMatrices, tint: null }];
     this.stats.ghostEnabled = true;
+    this.stats.ghostActiveSlots = 1;
+  }
+
+  /**
+   * N-slot remote rendering (M4): supply one frame per remote car, in slot
+   * order. Each frame is `{ nodeMatrices, tint }` (tint is an optional
+   * presentation colour), or null to leave that slot hidden. Slots are reserved
+   * from `packet.diagnostics.extras.remotes.slots`; a page without that field
+   * keeps the single P63 slot.
+   */
+  setGhostFrames(frames) {
+    if (!Array.isArray(frames)) throw new Error('ghost frames need an array');
+    const slots = [];
+    let active = 0;
+    for (let index = 0; index < this.ghostSlotCount; index++) {
+      const frame = frames[index] ?? null;
+      if (!frame) { slots.push(null); continue; }
+      const nodeMatrices = frame.nodeMatrices ?? frame;
+      if (!(nodeMatrices instanceof Map)) throw new Error('ghost slot ' + index + ' needs a Map of node matrices');
+      for (const [nodeId, world] of nodeMatrices) {
+        if (!isRigid(world)) throw new Error('ghost matrix for ' + nodeId + ' is not rigid');
+      }
+      slots.push({ nodeMatrices, tint: Array.isArray(frame.tint) && frame.tint.length >= 3 ? frame.tint : null });
+      active++;
+    }
+    this.ghostFrames = slots;
+    this.ghostMatrices = slots.find((slot) => slot !== null)?.nodeMatrices ?? null;
+    this.ghostEnabled = active > 0;
+    this.stats.ghostEnabled = this.ghostEnabled;
+    this.stats.ghostActiveSlots = active;
   }
 
   /**
@@ -1243,12 +1300,18 @@ export class PacketConsumer {
     }
 
     const viewProjection = multiply(frame.projection, frame.view);
-    const ghostActive = this.ghostEnabled && this.ghostMatrices !== null && this.ghostDraws.length > 0;
+    const ghostFrames = this.ghostEnabled
+      ? this.ghostFrames.map((entry) => entry ?? null)
+      : [];
+    const activeGhostSlots = ghostFrames.filter((entry) => entry !== null).length;
+    const ghostActive = activeGhostSlots > 0 && this.ghostDrawsPerCar > 0;
+    const ghostDrawCount = this.ghostDrawsPerCar;
     const powerupActive = this.powerupEnabled && Array.isArray(this.powerupMarkers) &&
       this.powerupMarkers.length > 0 && this.powerupDraws.length > 0;
     // Ghost and marker slots are reserved at load; offsets are stable even when
     // one of the passes is inactive.
-    const slotCount = this.draws.length + this.ghostDraws.length + this.powerupSlotCount;
+    const ghostSlotStride = ghostDrawCount * (this.ghostSlotCount ?? 1);
+    const slotCount = this.draws.length + ghostSlotStride + this.powerupSlotCount;
     const bytes = new Float32Array(slotCount * (DRAW_UNIFORM_STRIDE / 4));
     for (let index = 0; index < this.draws.length; index++) {
       const draw = this.draws[index];
@@ -1277,21 +1340,27 @@ export class PacketConsumer {
     }
     if (ghostActive) {
       // Ghost slots follow the packet's own draw uniforms in the same buffer.
+      // Each remote slot has its own reserved band (ghostSlotCount × car draws).
       // The tint is the labelled diagnostic colour; texParams stays 0 because the
       // ghost shader does not sample a texture.
-      for (let index = 0; index < this.ghostDraws.length; index++) {
-        const draw = this.ghostDraws[index];
-        const base = (this.draws.length + index) * (DRAW_UNIFORM_STRIDE / 4);
-        bytes.set(viewProjection, base);
-        bytes.set(this.ghostMatrices.get(draw.nodeId) ?? draw.world, base + 16);
-        bytes.set([GHOST_TINT[0], GHOST_TINT[1], GHOST_TINT[2], draw.spins ? 0.85 : 0], base + 32);
-        bytes.set([0, 0, 0, 0], base + 36);
+      for (let slot = 0; slot < ghostFrames.length; slot++) {
+        const frameEntry = ghostFrames[slot];
+        if (!frameEntry) continue;
+        const tint = frameEntry.tint ?? GHOST_TINT;
+        for (let index = 0; index < ghostDrawCount; index++) {
+          const draw = this.ghostDraws[index];
+          const base = (this.draws.length + slot * ghostDrawCount + index) * (DRAW_UNIFORM_STRIDE / 4);
+          bytes.set(viewProjection, base);
+          bytes.set(frameEntry.nodeMatrices.get(draw.nodeId) ?? draw.world, base + 16);
+          bytes.set([tint[0], tint[1], tint[2], draw.spins ? 0.85 : 0], base + 32);
+          bytes.set([0, 0, 0, 0], base + 36);
+        }
       }
     }
     if (powerupActive) {
       // Diagnostic marker slots follow the ghost slots. Colour is presentation
       // only; the marker mesh/scale never enters the packet or the physics.
-      const markerBase = this.draws.length + this.ghostDraws.length;
+      const markerBase = this.draws.length + ghostSlotStride;
       const activeMarkers = this.powerupMarkers.slice(0, this.powerupDraws.length);
       for (let index = 0; index < activeMarkers.length; index++) {
         const marker = activeMarkers[index];
@@ -1336,24 +1405,28 @@ export class PacketConsumer {
       pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
     }
     if (ghostActive) {
-      // Second pass over the same vertex/index/UV buffers: the ghost car with the
-      // translucent diagnostic tint. No geometry is uploaded; the ghost shader
-      // samples no texture, so the placeholder bind group is enough.
+      // Second pass over the same vertex/index/UV buffers: each remote car with
+      // the translucent diagnostic tint. No geometry is uploaded; the ghost
+      // shader samples no texture, so the placeholder bind group is enough.
       pass.setPipeline(this.ghostPipeline);
       pass.setBindGroup(2, this.placeholderGroup);
       let ghostMesh = null;
-      for (let index = 0; index < this.ghostDraws.length; index++) {
-        const draw = this.ghostDraws[index];
-        if (ghostMesh !== draw.meshId) {
-          pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
-          pass.setVertexBuffer(1, draw.mesh.uvBuffer);
-          pass.setIndexBuffer(draw.mesh.indexBuffer, 'uint32');
-          ghostMesh = draw.meshId;
+      for (let slot = 0; slot < ghostFrames.length; slot++) {
+        if (!ghostFrames[slot]) continue;
+        for (let index = 0; index < ghostDrawCount; index++) {
+          const draw = this.ghostDraws[index];
+          if (ghostMesh !== draw.meshId) {
+            pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
+            pass.setVertexBuffer(1, draw.mesh.uvBuffer);
+            pass.setIndexBuffer(draw.mesh.indexBuffer, 'uint32');
+            ghostMesh = draw.meshId;
+          }
+          pass.setBindGroup(0, this.drawBindGroup,
+            [(this.draws.length + slot * ghostDrawCount + index) * DRAW_UNIFORM_STRIDE]);
+          pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
         }
-        pass.setBindGroup(0, this.drawBindGroup, [(this.draws.length + index) * DRAW_UNIFORM_STRIDE]);
-        pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
       }
-      this.stats.ghostDrawsIssued += this.ghostDraws.length;
+      this.stats.ghostDrawsIssued += ghostDrawCount * activeGhostSlots;
       this.stats.ghostFrames++;
     }
     if (powerupActive) {
@@ -1361,7 +1434,7 @@ export class PacketConsumer {
       // pipeline. Draw slots are capped at load; no buffer or texture is created.
       pass.setPipeline(this.ghostPipeline);
       pass.setBindGroup(2, this.placeholderGroup);
-      const markerBase = this.draws.length + this.ghostDraws.length;
+      const markerBase = this.draws.length + ghostSlotStride;
       const marker = this.powerupDraws[0];
       pass.setVertexBuffer(0, marker.mesh.vertexBuffer);
       pass.setVertexBuffer(1, marker.mesh.uvBuffer);
@@ -1381,9 +1454,10 @@ export class PacketConsumer {
     this.stats.renders++;
     this.stats.uniformWrites++;
     this.stats.uniformBytes += bytes.byteLength;
-    this.stats.drawsIssued += this.visibleDraws.length + (ghostActive ? this.ghostDraws.length : 0) +
+    this.stats.drawsIssued += this.visibleDraws.length + (ghostActive ? ghostDrawCount * activeGhostSlots : 0) +
       (powerupActive ? Math.min(this.powerupMarkers.length, this.powerupDraws.length) : 0);
     this.stats.ghostEnabled = ghostActive;
+    this.stats.ghostActiveSlots = ghostActive ? activeGhostSlots : 0;
     this.stats.powerupEnabled = powerupActive;
     this.stats.cursor = frame.cursor;
     this.stats.renderTick = frame.tickFloor;

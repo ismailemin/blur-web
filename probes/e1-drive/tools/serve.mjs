@@ -20,6 +20,10 @@
 // intents (the host validates them). It is not a retail protocol and it does not
 // touch `probes/net-mvp/**`.
 //
+// `/_mp-ai/relay` is the equivalent ordered channel for the host's AI roster,
+// 20 Hz AI poses and AI result rows. Only the host page publishes; guests poll.
+// It carries no AI simulation to a client and is not a retail protocol either.
+//
 // No directory listing, no writes, no path escapes. Callable as a module
 // (`startServer({port})`) or directly
 // (`node probes/e1-drive/tools/serve.mjs [--port 8801] [--with-room] [--room-port 8811]`).
@@ -58,9 +62,11 @@ const MAP_DATA_LEVELS = path.join(ROOT, 'game-data/Blur/levels');
 const NET_MVP_MODULES = new Set(['client.mjs', 'protocol.mjs', 'hash.mjs', 'race.mjs']);
 
 const RELAY_ROOM_LIMIT = 512;
+const AI_RELAY_ROOM_LIMIT = 1500;
 const RELAY_BODY_LIMIT = 512 * 1024;
 const RELAY_ROOM = /^[A-Za-z0-9_-]{1,32}$/;
 const RELAY_FROM = /^[A-Za-z0-9_.:-]{1,64}$/;
+const AI_RELAY_KINDS = new Set(['roster', 'pose', 'result']);
 
 /** In-memory, ordered power-up control relay (project-specific, not retail). */
 function createPowerupRelay() {
@@ -98,6 +104,66 @@ function createPowerupRelay() {
       }
       if (kind === 'event') state.stats.events += 1;
       else state.stats.intents += 1;
+      state.stats.lastAt = Date.now();
+      return { seq: state.seq };
+    },
+    poll({ room, after = 0, exclude = null }) {
+      if (!RELAY_ROOM.test(room ?? '')) throw new Error('invalid relay room');
+      const state = roomState(room);
+      const cursor = Number.isFinite(after) && after >= 0 ? after : 0;
+      state.stats.polls += 1;
+      const messages = state.messages.filter((message) =>
+        message.seq > cursor && (exclude === null || message.from !== exclude));
+      state.stats.delivered += messages.length;
+      return {
+        messages,
+        next: state.messages.length ? state.messages[state.messages.length - 1].seq : cursor,
+        now: Date.now()
+      };
+    },
+    stats(room) {
+      const state = rooms.get(room);
+      if (!state) return { room, seq: 0, pending: 0, stats: null };
+      return { room, seq: state.seq, pending: state.messages.length, stats: { ...state.stats } };
+    },
+    clear(room) {
+      rooms.delete(room);
+    }
+  };
+}
+
+/**
+ * Ordered host→guest AI relay: roster (lobby), 20 Hz poses (race) and the final
+ * AI result rows. The room code is the key; the host is the only publisher in
+ * the page. Poses are latest-state traffic and the ring is bounded.
+ */
+function createMpAiRelay() {
+  const rooms = new Map();
+  const roomState = (code) => {
+    let state = rooms.get(code);
+    if (!state) {
+      state = {
+        seq: 0,
+        messages: [],
+        stats: { roster: 0, pose: 0, result: 0, polls: 0, delivered: 0, dropped: 0, lastAt: null }
+      };
+      rooms.set(code, state);
+    }
+    return state;
+  };
+  return {
+    post({ room, from, kind, payload }) {
+      if (!RELAY_ROOM.test(room ?? '')) throw new Error('invalid relay room');
+      if (!RELAY_FROM.test(from ?? '')) throw new Error('invalid relay sender');
+      if (!AI_RELAY_KINDS.has(kind)) throw new Error('AI relay kind must be roster, pose or result');
+      const state = roomState(room);
+      state.seq += 1;
+      state.messages.push({ seq: state.seq, from, kind, payload, at: Date.now() });
+      if (state.messages.length > AI_RELAY_ROOM_LIMIT) {
+        const removed = state.messages.splice(0, state.messages.length - AI_RELAY_ROOM_LIMIT);
+        state.stats.dropped += removed.length;
+      }
+      state.stats[kind] += 1;
       state.stats.lastAt = Date.now();
       return { seq: state.seq };
     },
@@ -178,9 +244,41 @@ function safeJoin(base, relative) {
 
 export function startServer({ port = 8801 } = {}) {
   const relay = createPowerupRelay();
+  const aiRelay = createMpAiRelay();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     const pathname = decodeURIComponent(url.pathname);
+    // Host→guest AI relay (M4): roster, 20 Hz poses and the final AI rows. It is
+    // a project-specific ordered channel beside the unchanged room service; the
+    // host page publishes, guests poll, and no client ever receives AI inputs or
+    // runs an AI simulation.
+    if (pathname === '/_mp-ai/relay' || pathname === '/_mp-ai/relay/stats') {
+      try {
+        if (pathname === '/_mp-ai/relay' && request.method === 'POST') {
+          const body = await readJsonBody(request);
+          const result = aiRelay.post(body ?? {});
+          sendJson(response, 200, { ok: true, seq: result.seq });
+          return;
+        }
+        if (pathname === '/_mp-ai/relay' && request.method === 'GET') {
+          const result = aiRelay.poll({
+            room: url.searchParams.get('room'),
+            after: Number(url.searchParams.get('after') ?? 0),
+            exclude: url.searchParams.get('exclude')
+          });
+          sendJson(response, 200, result);
+          return;
+        }
+        if (pathname === '/_mp-ai/relay/stats' && request.method === 'GET') {
+          sendJson(response, 200, aiRelay.stats(url.searchParams.get('room')));
+          return;
+        }
+        sendJson(response, 405, { ok: false, error: 'method not allowed' });
+      } catch (error) {
+        sendJson(response, 400, { ok: false, error: error.message });
+      }
+      return;
+    }
     // Power-up control relay: a project-specific ordered channel beside the
     // unchanged room service. Host posts events, guest posts use intents; the
     // host remains the only authority that validates and emits events.
@@ -253,7 +351,7 @@ export function startServer({ port = 8801 } = {}) {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', () => {
       const actualPort = server.address().port;
-      resolve({ server, origin: 'http://127.0.0.1:' + actualPort, port: actualPort, relay });
+      resolve({ server, origin: 'http://127.0.0.1:' + actualPort, port: actualPort, relay, aiRelay });
     });
   });
 }

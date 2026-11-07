@@ -98,7 +98,19 @@ makine için 8811 portu açık olmalı.
 
 **MP harita seçimi (MP8):** Lobby'de host **River / Amboy / Gracia** seçebilir;
 guest seçimi görür. Paket/layout/physics hash'i uyuşmazsa başlatma reddedilir.
-Amboy/Gracia'da power-up ve AI yok; tek harita/oda.
+Amboy/Gracia'da power-up yok; AI artık üç haritada da var; tek harita/oda.
+
+### Online AI rakipler (AI2)
+
+```text
+?mp=1&host=1&ai=2&aiCars=audi-r8v10-stock,dodge-challenger-stock
+             &aiProfiles=reference,cautious
+```
+
+- Host 2 insan + **0–3 AI**; guest AI seçemez.
+- Profiller: cautious 0.85 / standard 0.95 / reference 1.0.
+- AI ayrı wasm instance, 20 Hz relay; uzak araçlar cyan insan / amber AI.
+- Gracia Dodge AI reddedilir (`ai-spawn-unsupported`).
 
 ### Aynı ağda iki makine
 

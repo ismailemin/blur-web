@@ -242,6 +242,13 @@ fizik 61/61. Doğrulama 9.480 + 9.967 + 13.534; suite 57/57. Sınır: draw
 kapsaması %47,3, 2 section, 7.476 instance. Kanıt:
 `docs/work/analysis/map-slice-longbeach.md`.
 
+**AI2 — online AI rakipler:** 2 insan + **0–3 AI**; `?ai=` veya lobby
+`setAi`; profiller cautious/standard/reference; her AI ayrı wasm instance.
+River/Amboy/Gracia AI finish 0 respawn; Gracia Dodge `ai-spawn-unsupported`.
+Uzak araçlar N slot (cyan insan, amber AI), 20 Hz relay, reconnect devam.
+**2281/2281** (16 MP-AI), capture console 0/0. Kanıt:
+`docs/work/verification/T-007-mp-ai.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

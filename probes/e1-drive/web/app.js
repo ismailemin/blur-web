@@ -69,6 +69,12 @@ import {
 } from './mp-client.js';
 import { RemoteDisplay, remoteNodeMatrixMap } from './mp-remote.js';
 import {
+  AiRemoteSet, MP_AI_MAX, MP_AI_POSE_EVERY_TICKS, MP_AI_PROFILE_IDS, MP_AI_RELAY_PATH,
+  MP_AI_RELAY_POLL_MS, aiControlOverrides, aiLabel,
+  aiParticipants, aiResultRows, aiRosterReady, aiSummary, buildAiRoster, isAiPlayerId
+} from './mp-ai.js';
+import { createAiDriver, SKILL_PROFILES as AI_SKILL_PROFILES } from './ai-driver-browser.js';
+import {
   POWERUP_DEFERRED, POWERUP_SCHEMA, POWERUP_SLICE_LABELS, POWERUP_SLICE_TYPES, applyPowerupBatch,
   createPowerupModel, createPowerupView, forwardFromQuaternion, powerupEventText, powerupViewSummary, shieldFor
 } from './powerups.js';
@@ -242,6 +248,29 @@ if (MP) {
     throw new Error('mpPace must be a number in [0.5, 1.2]');
   }
   if (!/^wss?:\/\//.test(MP_URL)) throw new Error('mpServer must be a ws:// or wss:// URL');
+}
+// M4 AI opponents: the host may add 0-3 host-simulated cars to the room. The
+// roster is a lobby setting (count + per-AI car + skill profile); guests see it
+// read-only and never simulate it. `?ai=` is the host URL form; the lobby
+// controls and `window.__mp.setAi()` use the same validator.
+const MP_AI_REQUEST = {
+  count: MP_HOST && params.has('ai') ? Number(params.get('ai')) : 0,
+  cars: MP_HOST ? (params.get('aiCars') ?? '') : '',
+  profiles: MP_HOST ? (params.get('aiProfiles') ?? '') : ''
+};
+if (MP && !MP_HOST && (params.has('ai') || params.has('aiCars') || params.has('aiProfiles'))) {
+  throw new Error('AI opponents are host-configured; a guest inherits them from the room');
+}
+if (MP && (!Number.isInteger(MP_AI_REQUEST.count) ||
+    MP_AI_REQUEST.count < 0 || MP_AI_REQUEST.count > MP_AI_MAX)) {
+  throw new Error('ai must be an integer in [0, ' + MP_AI_MAX + ']');
+}
+if (MP && MP_AI_REQUEST.profiles) {
+  for (const profile of String(MP_AI_REQUEST.profiles).split(',').map((entry) => entry.trim()).filter(Boolean)) {
+    if (!MP_AI_PROFILE_IDS.includes(profile)) {
+      throw new Error('aiProfiles must use ' + MP_AI_PROFILE_IDS.join(', ') + ' (got ' + profile + ')');
+    }
+  }
 }
 // M2/PWR2 power-up slice. Default off; it is a multiplayer-only mode and the
 // first slice integrates Mine/Shield/Repair only (see POWERUP_DEFERRED).
@@ -480,6 +509,37 @@ const state = {
     resultSource: null,
     validation: null,
     hostSession: null,
+    // M4 AI opponents (host-controlled). Null-ish outside `?mp=1`; the count is
+    // 0 by default so every M1 capture/regression keeps its exact two-player
+    // path. `players` is the host's built roster, `remotePlayers` the guest's
+    // relay copy; `remotes` is the interpolated display state for the HUD.
+    ai: MP ? {
+      enabled: true,
+      host: MP_HOST,
+      count: MP_AI_REQUEST.count,
+      cars: MP_AI_REQUEST.cars,
+      profiles: MP_AI_REQUEST.profiles,
+      max: MP_AI_MAX,
+      mapId: MAP.id,
+      players: [],
+      remotePlayers: [],
+      built: MP_AI_REQUEST.count === 0,
+      ready: MP_AI_REQUEST.count === 0,
+      errors: [],
+      errorCodes: [],
+      remotes: [],
+      relay: null,
+      relayError: null,
+      relayCursor: 0,
+      relayPolling: false,
+      relayTimer: null,
+      poseTick: null,
+      poseCount: 0,
+      result: null,
+      resultHash: null,
+      allTerminal: null,
+      hostSim: null
+    } : null,
     finishReported: false,
     finishTick: null,
     finishTimeSeconds: null,
@@ -968,12 +1028,51 @@ function publishMpOverlays() {
     readyButton.disabled = mp.phase !== 'lobby' || !mp.engineReady || !mp.mapReady;
     readyButton.dataset.ready = ready ? '1' : '0';
   }
+  // AI roster (M4): the host edits count + per-AI car/profile; the guest sees the
+  // same records read-only. Labels are `AI · profile`.
+  const ai = mp.ai;
+  const aiCountSelect = document.getElementById('mp-ai-count');
+  const aiList = document.getElementById('mp-ai-list');
+  const aiRecords = ai?.host ? (ai.players ?? []) : (ai?.remotePlayers ?? []);
+  if (aiCountSelect) {
+    aiCountSelect.value = String(ai?.count ?? 0);
+    aiCountSelect.disabled = !mp.host || mp.phase !== 'lobby' || mp.started;
+  }
+  if (aiList) {
+    for (let index = 0; index < MP_AI_MAX; index++) {
+      const row = document.getElementById('mp-ai-row-' + (index + 1));
+      if (!row) continue;
+      const record = aiRecords[index] ?? null;
+      row.hidden = index >= (ai?.count ?? 0);
+      const carSelect = document.getElementById('mp-ai-car-' + (index + 1));
+      const profileSelect = document.getElementById('mp-ai-profile-' + (index + 1));
+      const name = document.getElementById('mp-ai-name-' + (index + 1));
+      if (carSelect && record) carSelect.value = record.car;
+      if (profileSelect && record) profileSelect.value = record.profile;
+      if (name) {
+        name.textContent = record
+          ? 'AI ' + (index + 1) + ' · ' + record.profile + (record.carName ? ' · ' + record.carName : '')
+          : 'AI ' + (index + 1);
+      }
+      if (carSelect) carSelect.disabled = !mp.host || mp.phase !== 'lobby' || mp.started;
+      if (profileSelect) profileSelect.disabled = !mp.host || mp.phase !== 'lobby' || mp.started;
+    }
+  }
+  setText('mp-ai-status', ai && ai.count > 0
+    ? (ai.errors?.length
+      ? 'AI refused' + (ai.errorCodes?.length ? ' (' + ai.errorCodes.map((entry) => entry.code).join(',') + ')' : '') +
+        ': ' + ai.errors.join('; ')
+      : ai.relayError
+        ? 'AI relay error: ' + ai.relayError
+        : ai.count + ' AI · ' + (aiRosterReady(ai) ? 'records built · host simulates' : 'waiting for the host records'))
+    : ai?.relayError ? 'AI relay error: ' + ai.relayError : 'AI off');
   const startButton = document.getElementById('mp-start');
   if (startButton) {
     const players = mp.room?.players ?? [];
     const allReady = players.length >= 2 && players.every((player) => player.ready && player.connected !== false);
     startButton.hidden = !mp.host;
-    startButton.disabled = !(mp.phase === 'lobby' && mp.engineReady && mp.mapReady && allReady);
+    startButton.disabled = !(mp.phase === 'lobby' && mp.engineReady && mp.mapReady && allReady &&
+      aiRosterReady(mp.ai));
     startButton.dataset.enabled = startButton.disabled ? '0' : '1';
   }
   setText('mp-server-note', 'room service ' + mp.url + ' · ' +
@@ -985,13 +1084,41 @@ function publishMpOverlays() {
   const tag = document.getElementById('remote-tag');
   if (tag) {
     const visible = mp.remote.latest !== null && mp.phase !== 'connecting' && mp.phase !== 'lobby' && mp.phase !== 'error';
-    tag.hidden = !visible;
+    // With AI in the room the multi-line `#mp-remotes` list labels every remote
+    // car, including the human peer; the single M1 tag would overlap it.
+    tag.hidden = !visible || (ai?.count ?? 0) > 0;
     tag.dataset.state = mp.remote.connected === false ? 'reconnecting' : 'connected';
     tag.textContent = visible
       ? 'REMOTE · ' + (mp.remote.name ?? 'other player') +
         (mp.remote.connected === false ? ' · RECONNECTING (labelled, no guessed pose)' : '') +
         ' · 20 Hz snapshot · no collision'
       : '';
+  }
+  const remotes = document.getElementById('mp-remotes');
+  if (remotes) {
+    const show = mp.phase === 'running' || mp.phase === 'finished' || mp.phase === 'finished-local';
+    const lines = [];
+    if (show && mp.remote.latest && (ai?.count ?? 0) > 0) {
+      lines.push('REMOTE · ' + (mp.remote.name ?? 'other player') +
+        (mp.remote.connected === false ? ' · RECONNECTING' : '') + ' · 20 Hz snapshot · no collision');
+    }
+    if (show && ai?.count > 0) {
+      const entries = ai.remotes ?? [];
+      if (entries.length) {
+        for (const entry of entries) {
+          lines.push((entry.label ?? aiLabel(entry)) + ' · ' + (entry.name ?? entry.id) +
+            (entry.car ? ' · ' + entry.car : '') +
+            (entry.latestTick === null ? ' · waiting for the 20 Hz pose' : ' · 20 Hz host relay · no collision'));
+        }
+      } else {
+        for (const record of aiRecords) {
+          lines.push((record.profile ? 'AI · ' + record.profile : aiLabel(record)) + ' · ' + record.name +
+            ' · ' + (record.car ?? '') + ' · waiting for the host relay');
+        }
+      }
+    }
+    remotes.hidden = lines.length === 0;
+    remotes.textContent = lines.join('\n');
   }
 
   const results = document.getElementById('results');
@@ -1023,7 +1150,10 @@ function publishMpOverlays() {
         line.dataset.player = row.playerId;
         line.innerHTML = '<span class="mp-result-pos">' + row.positionNumber + '</span>' +
           '<span class="mp-result-name">' + escapeHtml(row.name) +
-          (row.host ? ' <span class="mp-result-host">HOST</span>' : '') + '</span>' +
+          (row.host ? ' <span class="mp-result-host">HOST</span>' : '') +
+          (row.ai ? ' <span class="mp-result-ai">AI</span>' +
+            (row.profile ? ' <span class="mp-result-profile">' + escapeHtml(row.profile) + '</span>' : '') : '') +
+          '</span>' +
           '<span class="mp-result-time' + (row.status === 'dnf' ? ' mp-result-dnf' : '') + '">' +
           (row.status === 'dnf' ? 'DNF' : row.timeSeconds.toFixed(3) + ' s') + '</span>';
         mpResults.append(line);
@@ -1133,6 +1263,7 @@ window.addEventListener('pointerdown', startEngineAudio);
 // Dispose the context (and its six sources) when the page is hidden/unloaded.
 window.addEventListener('pagehide', () => {
   mpPowerupRelayStop();
+  mpAiRelayStop();
   if (mpNet) { try { mpNet.close(); } catch {} }
   if (!engineAudio) return;
   engineAudio.dispose();
@@ -1233,6 +1364,16 @@ let mpResult = null;
 let mpFinishHash = null;
 let mpLastStatsAt = 0;
 let mpRemoteFinished = null;
+// M4 AI opponents: host simulation (one wasm instance per AI) and guest remote
+// display set. `mpAiSim` is host-only; a guest never creates an AI engine.
+let mpAiSim = null;
+let mpAiRemoteSet = null;
+let mpAiRelayState = null;
+let mpAiResultPosted = false;
+let mpAiFinishPending = null;
+let mpInterpolationBuffer = null;
+const MP_AI_TINT = Object.freeze([0.95, 0.66, 0.18]);
+const mpAiFieldCache = new Map();
 // Room map agreement: one serialized load per room map, so a host switch cannot
 // interleave two wasm/world loads. `mpRequestedMapId` is the latest target.
 let mpMapLoadState = null;
@@ -2398,6 +2539,21 @@ async function startTimeline(tick0, {
     camera: Object.keys(CAMERA_OVERRIDE).length ? CAMERA_OVERRIDE : undefined
   });
   if (POWERUPS) attachPowerupMarkerGeometry(session.packet);
+  if (MP) {
+    // Reserve one ghost-pipeline slot per remote car (human peer + AI). With no
+    // AI this block is absent, so the M1 packet/rendering path is unchanged.
+    const aiSlots = Math.max(0, Math.min(MP_AI_MAX,
+      state.mp?.ai?.count ?? state.mp?.ai?.remotePlayers?.length ?? 0));
+    if (aiSlots > 0) {
+      session.packet.diagnostics = session.packet.diagnostics ?? {};
+      session.packet.diagnostics.extras = session.packet.diagnostics.extras ?? {};
+      session.packet.diagnostics.extras.remotes = {
+        slots: 1 + aiSlots,
+        source: 'host-relayed poses; clients never simulate AI',
+        aiSlots
+      };
+    }
+  }
   state.cameraOverride = Object.keys(CAMERA_OVERRIDE).length ? { ...CAMERA_OVERRIDE } : null;
   const partsInfo = session.packet.diagnostics.extras.parts;
   state.parts = partsInfo?.partCount ?? 0;
@@ -3386,11 +3542,598 @@ function mpUpdateStats(force = false) {
   }
 }
 
+// ------------------------------------------------------------------ AI opponents
+// The host owns the AI roster and simulation. Each AI is a separate wasm module
+// instance (the module has one global world), stepped by the committed AI
+// driver at the same fixed 60 Hz tick as the human cars. The guest receives only
+// the host's 20 Hz poses and final rows through `/_mp-ai/relay`; it never runs an
+// AI engine.
+
+function mpAiRelayReady() {
+  return Boolean(mpAiRelayState && mpAiRelayState.room && mpAiRelayState.playerId);
+}
+
+function mpAiRelayPost(kind, payload) {
+  if (!mpAiRelayReady()) return Promise.reject(new Error('AI relay is not ready'));
+  return fetch(MP_AI_RELAY_PATH, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      room: mpAiRelayState.room,
+      from: mpAiRelayState.playerId,
+      kind,
+      payload
+    })
+  }).then(async (response) => {
+    if (!response.ok) throw new Error('AI relay HTTP ' + response.status + ': ' + (await response.text()).slice(0, 160));
+    return response.json();
+  });
+}
+
+function mpAiRelayStart(room, playerId) {
+  if (!state.mp?.ai) return;
+  mpAiRelayState = { room, playerId, cursor: 0, polling: false, host: MP_HOST };
+  state.mp.ai.relay = { room, playerId, role: MP_HOST ? 'host' : 'guest',
+    pollMs: MP_AI_RELAY_POLL_MS, endpoint: MP_AI_RELAY_PATH };
+  if (MP_HOST) return;
+  if (!state.mp.ai.relayTimer) {
+    state.mp.ai.relayTimer = setInterval(() => { void mpAiRelayPoll(); }, MP_AI_RELAY_POLL_MS);
+    void mpAiRelayPoll();
+  }
+}
+
+function mpAiRelayStop() {
+  if (state.mp?.ai?.relayTimer) clearInterval(state.mp.ai.relayTimer);
+  if (state.mp?.ai) state.mp.ai.relayTimer = null;
+}
+
+async function mpAiRelayPoll() {
+  if (!mpAiRelayState || mpAiRelayState.host || mpAiRelayState.polling) return;
+  mpAiRelayState.polling = true;
+  if (state.mp?.ai) state.mp.ai.relayPolling = true;
+  try {
+    const params = new URLSearchParams({
+      room: mpAiRelayState.room,
+      after: String(mpAiRelayState.cursor ?? 0),
+      exclude: mpAiRelayState.playerId
+    });
+    const response = await fetch(MP_AI_RELAY_PATH + '?' + params.toString(), { cache: 'no-store' });
+    if (!response.ok) throw new Error('AI relay HTTP ' + response.status);
+    const data = await response.json();
+    if (Number.isInteger(data.next) && data.next > mpAiRelayState.cursor) mpAiRelayState.cursor = data.next;
+    if (state.mp?.ai) state.mp.ai.relayCursor = mpAiRelayState.cursor;
+    for (const message of data.messages ?? []) {
+      if (message.kind === 'roster') mpAiApplyRoster(message.payload);
+      else if (message.kind === 'pose') mpAiApplyPoses(message.payload);
+      else if (message.kind === 'result') mpAiApplyResult(message.payload);
+    }
+    if (state.mp?.ai) state.mp.ai.relayError = null;
+  } catch (error) {
+    if (state.mp?.ai) state.mp.ai.relayError = error.message;
+  } finally {
+    mpAiRelayState.polling = false;
+    if (state.mp?.ai) state.mp.ai.relayPolling = false;
+  }
+}
+
+/** Build the host's AI records from the committed roster. */
+function mpBuildAiRecords() {
+  if (!state.mp?.ai || !MP_HOST) return state.mp?.ai ?? null;
+  const ai = state.mp.ai;
+  const built = buildAiRoster(state.roster, {
+    count: ai.count,
+    cars: ai.cars,
+    profiles: ai.profiles,
+    firstSlot: 3,
+    mapId: MAP.id
+  });
+  ai.mapId = MAP.id;
+  ai.players = built.players;
+  ai.built = built.built;
+  ai.ready = aiRosterReady(built);
+  ai.errors = built.errors;
+  ai.errorCodes = built.errorCodes ?? [];
+  if (!built.built) {
+    ai.status = 'AI roster rejected: ' + built.errors.join('; ');
+  }
+  return ai;
+}
+
+/** Host-only lobby mutation; guests can read the roster but not change it. */
+function mpSetAi(config = {}) {
+  if (!state.mp?.ai) throw new Error('AI opponents are a multiplayer setting');
+  if (!MP_HOST) throw new Error('only the host configures AI opponents');
+  if (mpStarted) throw new Error('AI opponents are fixed when the race starts');
+  const ai = state.mp.ai;
+  if (config.count !== undefined) ai.count = Number(config.count);
+  if (config.cars !== undefined) ai.cars = Array.isArray(config.cars) ? config.cars.join(',') : String(config.cars);
+  if (config.profiles !== undefined) {
+    ai.profiles = Array.isArray(config.profiles) ? config.profiles.join(',') : String(config.profiles);
+  }
+  mpBuildAiRecords();
+  mpAiPublishRoster();
+  publish();
+  return aiSummary(ai);
+}
+
+function mpAiPublishRoster() {
+  if (!MP_HOST || !state.mp?.ai || !mpAiRelayReady()) return Promise.resolve(null);
+  const payload = { ai: aiSummary(state.mp.ai), tick: state.engineTick ?? 0 };
+  return mpAiRelayPost('roster', payload).catch((error) => {
+    if (state.mp.ai) state.mp.ai.relayError = error.message;
+    return null;
+  });
+}
+
+function mpAiApplyRoster(payload) {
+  if (!state.mp?.ai || !payload?.ai) return;
+  const incoming = payload.ai;
+  const count = Number(incoming.count);
+  if (!Number.isInteger(count) || count < 0 || count > MP_AI_MAX) return;
+  const records = Array.isArray(incoming.records) ? incoming.records : [];
+  if (records.length !== count) return;
+  const ai = state.mp.ai;
+  ai.count = count;
+  ai.mapId = incoming.mapId ?? ai.mapId ?? null;
+  ai.errorCodes = incoming.errorCodes ?? [];
+  ai.errors = incoming.errors ?? [];
+  ai.remotePlayers = records.map((record) => ({
+    id: record.id,
+    slot: record.slot,
+    name: record.name,
+    car: record.car,
+    carName: record.carName ?? null,
+    profile: record.profile,
+    speedScale: record.speedScale ?? null,
+    ai: true
+  }));
+  ai.players = ai.remotePlayers;
+  ai.built = incoming.built === true;
+  ai.ready = incoming.ready === true;
+  if (mpStarted && state.mp.ai.count > 0) mpEnsureAiRemoteSet();
+  publish();
+}
+
+function mpAiApplyPoses(payload) {
+  if (!state.mp?.ai || !payload) return;
+  if (mpStarted && !mpAiRemoteSet) mpEnsureAiRemoteSet();
+  const applied = mpAiRemoteSet ? mpAiRemoteSet.applyPose(payload) : 0;
+  if (state.mp.ai) {
+    state.mp.ai.poseTick = payload.tick ?? null;
+    state.mp.ai.poseCount += applied;
+  }
+}
+
+function mpAiApplyResult(payload) {
+  if (!state.mp?.ai || !payload || !Array.isArray(payload.rows)) return;
+  state.mp.ai.result = payload;
+  state.mp.ai.resultHash = payload.hash ?? null;
+  if (Array.isArray(payload.players) && payload.players.length) {
+    state.mp.ai.remotePlayers = payload.players.map((player) => ({ ...player, ai: true }));
+  }
+  mpTryApplyResult();
+}
+
+function mpEnsureAiRemoteSet() {
+  if (!state.mp?.ai || !state.mp.ai.count) return;
+  const players = state.mp.ai.remotePlayers.length
+    ? state.mp.ai.remotePlayers : state.mp.ai.players;
+  if (!players.length) return;
+  const key = players.map((player) => player.id + ':' + player.car + ':' + player.profile).join('|');
+  if (mpAiRemoteSet && mpAiRemoteSet.rosterKey === key) return;
+  const InterpolationBuffer = mpInterpolationBuffer;
+  if (!InterpolationBuffer) return;
+  mpAiRemoteSet = new AiRemoteSet({
+    players,
+    InterpolationBuffer,
+    delayTicks: MP_REMOTE_DELAY_TICKS
+  });
+  mpAiRemoteSet.rosterKey = key;
+  state.mp.ai.remotes = mpAiRemoteSet.snapshot();
+}
+
+/** Fetch one AI car's decoded field bytes once per page. */
+async function mpAiFieldsFor(car) {
+  if (mpAiFieldCache.has(car.slug)) return mpAiFieldCache.get(car.slug);
+  const response = await fetch(fieldsUrl(car), { cache: 'no-store' });
+  if (!response.ok) throw new Error('AI car fields fetch failed for ' + car.slug + ': HTTP ' + response.status);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  mpAiFieldCache.set(car.slug, bytes);
+  return bytes;
+}
+
+function mpAiReadState(mod) {
+  return JSON.parse(mod.UTF8ToString(mod._e1_get_state()));
+}
+
+function mpAiCreateWorld(mod, fields, slot) {
+  const levelPtr = mod._malloc(levelBytes.byteLength);
+  const fieldsPtr = mod._malloc(fields.byteLength + 1);
+  if (!levelPtr || !fieldsPtr) throw new Error('AI wasm malloc failed');
+  mod.HEAPU8.set(levelBytes, levelPtr);
+  mod.HEAPU8.set(fields, fieldsPtr);
+  const ok = mod._e1_create(levelPtr, levelBytes.byteLength, fieldsPtr, fields.byteLength,
+    slot.x, slot.z, slot.headingRad ?? slot.heading ?? 0);
+  mod._free(levelPtr);
+  mod._free(fieldsPtr);
+  if (!ok) throw new Error('AI e1_create failed at ' + slot.x + ',' + slot.z + ': ' +
+    mod.UTF8ToString(mod._e1_last_error()));
+  return mpAiReadState(mod);
+}
+
+function mpAiPathSlot(layout, offset, slot) {
+  const spawn = layout.course.spawn;
+  const tangent = mpGridTangent(layout);
+  return {
+    slot,
+    x: Math.round((spawn.x + tangent.tx * offset) * 1e6) / 1e6,
+    z: Math.round((spawn.z + tangent.tz * offset) * 1e6) / 1e6,
+    y: courseGroundAt(layout, Math.max(0, offset)),
+    headingRad: spawn.headingRad,
+    offsetMetres: offset,
+    source: 'measured spawn + path tangent (AI longitudinal)'
+  };
+}
+
+/** Spawn-row lateral candidate (Gracia: forward/right of spawn has no ground). */
+function mpAiPathLateralSlot(layout, offset, lateral, slot) {
+  const spawn = layout.course.spawn;
+  const tangent = mpGridTangent(layout);
+  const nx = tangent.tz;
+  const nz = -tangent.tx;
+  return {
+    slot,
+    x: Math.round((spawn.x + tangent.tx * offset + nx * lateral) * 1e6) / 1e6,
+    z: Math.round((spawn.z + tangent.tz * offset + nz * lateral) * 1e6) / 1e6,
+    y: courseGroundAt(layout, Math.max(0, offset)),
+    headingRad: spawn.headingRad,
+    offsetMetres: offset,
+    lateralMetres: lateral,
+    source: 'measured spawn row lateral (AI grid)'
+  };
+}
+
+/** Candidate AI poses, deterministic: the race-rules row first, then measured path offsets. */
+function mpAiGridCandidates(layout, aiIndex, count, occupied = []) {
+  const candidates = [];
+  const nearOccupied = (slot) => occupied.some((row) =>
+    Math.hypot((row.x ?? 0) - slot.x, (row.z ?? 0) - slot.z) < 2.0);
+  const base = state.mp?.grid;
+  if (base?.source && !base.source.includes('longitudinal')) {
+    try {
+      const model = new mpRaceRules.CourseModel(mpRulesLayout(layout), { verifyLayoutHash: false });
+      const slots = model.startGrid(Math.max(2, 2 + count), MP_GRID_OPTIONS);
+      const slot = slots[2 + aiIndex];
+      if (slot && !nearOccupied(slot)) candidates.push({ ...slot, source: 'race-rules provisional lateral grid' });
+    } catch { /* fall through to the measured path offsets */ }
+  }
+  // Start-row lateral slots. Gracia's measured spawn is the path start: behind
+  // it has no ground, and starting far ahead (>=4.4 m) badly degrades the path
+  // controller. A 2-2.8 m lateral offset on the spawn row is grounded and keeps
+  // the AI on the same start line without sharing a human pose.
+  for (const [offset, lateral] of [[2.2, -2.8], [0, -2.8], [2.2, 2.8], [0, 2.8],
+    [2.2, -2.0], [0, -2.0], [2.2, 2.0], [0, 2.0]]) {
+    const candidate = mpAiPathLateralSlot(layout, offset, lateral, 3 + aiIndex);
+    if (nearOccupied(candidate)) continue;
+    if (!candidates.some((row) => Math.abs(row.x - candidate.x) < 1e-6 && Math.abs(row.z - candidate.z) < 1e-6)) {
+      candidates.push(candidate);
+    }
+  }
+  // Forward/behind longitudinal rows are the last resort.
+  const offsets = [2.2, 4.4, 8.8, 0, -2.2, -4.4, 11.0, 13.2];
+  for (const offset of offsets) {
+    const candidate = mpAiPathSlot(layout, offset, 3 + aiIndex);
+    if (nearOccupied(candidate)) continue;
+    if (!candidates.some((row) => Math.abs(row.x - candidate.x) < 1e-6 && Math.abs(row.z - candidate.z) < 1e-6)) {
+      candidates.push(candidate);
+    }
+  }
+  if (!candidates.length) {
+    const fallback = mpAiPathSlot(layout, 2.2, 3 + aiIndex);
+    candidates.push(fallback);
+  }
+  return candidates;
+}
+
+/** Real-engine probe of one AI slot (140 ticks, zero input, sprint rules). */
+function mpAiProbeSlot(mod, layout, slot) {
+  const rules = createSprintRules(layout);
+  let state0;
+  try {
+    if (!(slot.fields instanceof Uint8Array)) throw new Error('AI probe slot has no field bytes');
+    state0 = mpAiCreateWorld(mod, slot.fields, slot);
+  } catch (error) {
+    return { ok: false, reason: 'no-ground', error: error.message, slot };
+  }
+  rules.prime(state0);
+  let current = state0;
+  for (let tick = 1; tick <= 140; tick++) {
+    mod._e1_set_input(0, 0, 0, 0);
+    if (!mod._e1_step()) return { ok: false, reason: 'step-failed', slot };
+    current = mpAiReadState(mod);
+    const events = rules.step(current);
+    const respawn = events.find((event) => event.type === SPRINT_EVENT.RESPAWN);
+    if (respawn) return { ok: false, reason: (respawn.reasons ?? ['respawn']).join(','),
+      tick: current.tick, y: current.position[1], slot };
+    if (rules.awaitingRejoin) return { ok: false, reason: 'awaiting-rejoin', tick: current.tick, slot };
+  }
+  return { ok: true, tick: current.tick, contacts: current.contacts.join(''), slot };
+}
+
+/**
+ * Create one wasm instance per AI at a grounded start pose. The page's own
+ * module is untouched; `engineFactory()` returns an independent instance with
+ * its own global world. Called by the host only, after the room start.
+ */
+async function mpAiStartHost() {
+  if (!MP_HOST || !state.mp?.ai) return;
+  const ai = state.mp.ai;
+  mpBuildAiRecords();
+  if (!aiRosterReady(ai)) {
+    throw new Error('AI start refused: ' + (ai.errors.join('; ') || 'AI roster is not built'));
+  }
+  if (ai.count === 0) {
+    ai.hostSim = { count: 0, sims: [] };
+    return;
+  }
+  mpEnsureAiRemoteSet();
+  const sims = [];
+  const diagnostics = [];
+  const occupied = (state.mp.grid?.slots ?? []).map((slot) => ({ x: slot.x, z: slot.z }));
+  for (let index = 0; index < ai.players.length; index++) {
+    const player = ai.players[index];
+    const carEntry = resolveCar(state.roster, player.car);
+    const fields = await mpAiFieldsFor(carEntry);
+    const mod = await engineFactory();
+    const candidates = mpAiGridCandidates(sprintRules.layout, index, ai.players.length, occupied);
+    let chosen = null;
+    let probe = null;
+    for (const candidate of candidates) {
+      // The probe helper reads the field bytes from the temporary slot handle.
+      probe = mpAiProbeSlot(mod, sprintRules.layout, { ...candidate, fields });
+      diagnostics.push({ id: player.id, candidate, ok: probe.ok, reason: probe.reason ?? null });
+      if (probe.ok) { chosen = candidate; break; }
+    }
+    if (!chosen) {
+      throw new Error('AI ' + player.id + ' has no grounded start slot; tried ' +
+        candidates.length + ' candidates (' + diagnostics.filter((row) => row.id === player.id)
+          .map((row) => row.reason ?? 'ok').join('/') + ')');
+    }
+    occupied.push({ x: chosen.x, z: chosen.z });
+    const state0 = mpAiCreateWorld(mod, fields, chosen);
+    const driver = createAiDriver({
+      layout: sprintRules.layout,
+      profile: player.profile,
+      controlOverrides: aiControlOverrides(MAP.id)
+    });
+    driver.prime(state0);
+    sims.push({
+      player,
+      car: carEntry,
+      module: mod,
+      fields,
+      driver,
+      state: state0,
+      startSlot: chosen,
+      ticks: 0,
+      raceTicks: 0,
+      hashes: [],
+      finished: false,
+      dnf: false,
+      dnfReason: null,
+      finish: null,
+      finishRaceTick: null,
+      stopped: false,
+      respawns: 0,
+      observerRespawns: 0,
+      events: []
+    });
+  }
+  mpAiSim = {
+    count: sims.length,
+    sims,
+    grid: diagnostics,
+    startedTick: state.engineTick,
+    maxRaceTicks: (MAP_IS_PACKAGE ? 20000 : 3600)
+  };
+  ai.hostSim = mpAiSimSummary();
+  mpAiPublishRoster();
+  return mpAiSim;
+}
+
+function mpAiSimSummary(includeHashes = false) {
+  if (!mpAiSim) return null;
+  return {
+    count: mpAiSim.count,
+    grid: mpAiSim.grid,
+    maxRaceTicks: mpAiSim.maxRaceTicks,
+    sims: mpAiSim.sims.map((sim) => ({
+      id: sim.player.id,
+      profile: sim.player.profile,
+      car: sim.player.car,
+      startSlot: sim.startSlot ? { x: sim.startSlot.x, z: sim.startSlot.z,
+        headingRad: sim.startSlot.headingRad, source: sim.startSlot.source } : null,
+      ticks: sim.ticks,
+      finished: sim.finished,
+      finishRaceTick: sim.finishRaceTick,
+      finishTimeSeconds: sim.finish?.timeSeconds ?? null,
+      dnf: sim.dnf,
+      dnfReason: sim.dnfReason,
+      respawns: sim.respawns,
+      observerRespawns: sim.observerRespawns,
+      stateHashCount: sim.hashes.length,
+      stateSequenceHash: includeHashes && sim.hashes.length
+        ? 'sha256:' + sha256Hex(sim.hashes.join('\n')) : null
+    }))
+  };
+}
+
+/** Give one AI the race tick's input and step its own module once. */
+function mpAiAdvanceOne(sim, hostTick) {
+  const countdownTicks = sprintRules?.layout?.countdown?.ticks ?? 0;
+  const raceTick = hostTick - countdownTicks;
+  let input = [0, 0, 0, 0];
+  if (raceTick > 0) {
+    if (sim.finished || sim.dnf) input = [0, 1, 0, 0];
+    else input = sim.driver.step(sim.state).input;
+  }
+  sim.module._e1_set_input(input[0], input[1], input[2], input[3]);
+  if (!sim.module._e1_step()) {
+    sim.dnf = true;
+    sim.dnfReason = 'e1_step failed: ' + sim.module.UTF8ToString(sim.module._e1_last_error());
+    return;
+  }
+  const next = mpAiReadState(sim.module);
+  sim.state = next;
+  sim.ticks++;
+  sim.hashes.push(hashOf(next));
+  if (raceTick > 0) {
+    sim.raceTicks = raceTick;
+    if (!sim.finished && !sim.dnf) {
+      const events = sim.driver.observe(next, raceTick);
+      if (events.length) sim.events.push(...events.slice(-4));
+      const finish = events.find((event) => event.type === 'finish');
+      if (finish) {
+        sim.finished = true;
+        sim.finish = finish;
+        sim.finishRaceTick = raceTick;
+      }
+      const respawn = events.find((event) => event.type === 'respawn');
+      if (respawn) sim.observerRespawns++;
+    }
+    if (!sim.finished && raceTick > mpAiSim.maxRaceTicks) {
+      sim.dnf = true;
+      sim.dnfReason = 'ai-tick-cap:' + mpAiSim.maxRaceTicks;
+    }
+    if (sim.finished && raceTick - sim.finishRaceTick >= 120) sim.stopped = true;
+  }
+  if (!sim.stopped) {
+    mpAiRemoteSet?.applyPose({
+      tick: hostTick,
+      cars: [{
+        id: sim.player.id,
+        tick: hostTick,
+        position: next.position.slice(),
+        quaternion: quaternionFromAxes(next.axisX, next.axisY, next.axisZ),
+        speed: next.speed
+      }]
+    });
+  }
+}
+
+/** Host: advance every AI by one host tick, then broadcast the 20 Hz poses. */
+function mpAiStep(hostTick) {
+  if (!MP_HOST || !mpAiSim) return;
+  for (const sim of mpAiSim.sims) {
+    if (sim.stopped) continue;
+    mpAiAdvanceOne(sim, hostTick);
+  }
+  if (state.mp?.ai) {
+    state.mp.ai.hostSim = mpAiSimSummary();
+    state.mp.ai.remotes = mpAiRemoteSet ? mpAiRemoteSet.snapshot() : [];
+  }
+  if (hostTick % MP_AI_POSE_EVERY_TICKS === 0) mpAiBroadcastPoses(hostTick);
+}
+
+function mpAiBroadcastPoses(hostTick) {
+  if (!MP_HOST || !mpAiSim || !mpAiRelayReady() || !state.mp?.ai?.count) return;
+  const cars = mpAiSim.sims.filter((sim) => !sim.stopped).map((sim) => ({
+    id: sim.player.id,
+    tick: hostTick,
+    position: sim.state.position.map((value) => Math.round(value * 1e6) / 1e6),
+    quaternion: quaternionFromAxes(sim.state.axisX, sim.state.axisY, sim.state.axisZ)
+      .map((value) => Math.round(value * 1e6) / 1e6),
+    speed: Math.round(sim.state.speed * 1e6) / 1e6
+  }));
+  if (!cars.length) return;
+  mpAiRelayPost('pose', { tick: hostTick, cars }).catch((error) => {
+    if (state.mp.ai) state.mp.ai.relayError = error.message;
+  });
+}
+
+/** Rebuild one AI at a RaceSession respawn target and rejoin its progress row. */
+function mpAiRespawn(sim, target) {
+  const slot = {
+    x: target?.x ?? sim.startSlot.x,
+    z: target?.z ?? sim.startSlot.z,
+    headingRad: target?.headingRad ?? sim.startSlot.headingRad
+  };
+  sim.state = mpAiCreateWorld(sim.module, sim.fields, slot);
+  sim.driver.reprime(sim.state);
+  sim.respawns++;
+  sim.stopped = false;
+  sim.finished = false;
+  sim.finishRaceTick = null;
+  try {
+    mpRace.progress.rejoin(sim.player.id, mpRulesState(sim.player.id, sim.state), mpRace.raceTick);
+  } catch { /* the progress row owns the contract; a typed failure is surfaced below */ }
+  mpAiRemoteSet?.reset(sim.player.id);
+  if (state.mp?.ai) {
+    state.mp.ai.hostSim = mpAiSimSummary();
+    state.mp.ai.remotes = mpAiRemoteSet ? mpAiRemoteSet.snapshot() : [];
+  }
+  return sim;
+}
+
+function mpAiAllTerminal() {
+  const ai = state.mp?.ai;
+  if (!ai || ai.count === 0) return true;
+  if (!mpRace) return false;
+  const rows = mpRace.snapshot().results.rows;
+  return ai.players.every((player) => {
+    const row = rows.find((entry) => entry.id === player.id);
+    return row && ['finished', 'dnf', 'disconnected', 'left'].includes(row.status);
+  });
+}
+
+function mpAiResultPayload() {
+  const ai = state.mp?.ai;
+  if (!ai || ai.count === 0 || !mpRace) return null;
+  const countdownTicks = sprintRules?.layout?.countdown?.ticks ?? 0;
+  // The page's RaceSession consumes one zero-tick loading step before the
+  // engine timeline starts, so its race tick is the engine race tick minus one
+  // (the same -1 diagnostic the M1 guest validation records). AI rows use the
+  // human convention: engine tick includes the committed countdown.
+  const rows = aiResultRows(mpRace.snapshot().results.rows, ai.players, countdownTicks, MP_TICK_HZ, 1);
+  const payload = {
+    kind: 'e1-drive.mp.ai-result',
+    version: 1,
+    count: ai.count,
+    countdownTicks,
+    players: ai.players.map((player) => ({
+      playerId: player.id, slot: player.slot, name: player.name, car: player.car,
+      profile: player.profile
+    })),
+    rows,
+    sim: mpAiSimSummary(true)
+  };
+  return { ...payload, hash: hashOf(payload) };
+}
+
+/** Host: post the final AI rows once all AI are finished or DNF. */
+function mpAiPostResultIfTerminal() {
+  if (!MP_HOST || !state.mp?.ai || !state.mp.ai.count || mpAiResultPosted) return false;
+  if (!mpAiAllTerminal()) return false;
+  const payload = mpAiResultPayload();
+  if (!payload) return false;
+  mpAiResultPosted = true;
+  state.mp.ai.result = payload;
+  state.mp.ai.resultHash = payload.hash;
+  state.mp.ai.allTerminal = true;
+  mpAiRelayPost('result', payload).catch((error) => {
+    if (state.mp.ai) state.mp.ai.relayError = error.message;
+  });
+  return true;
+}
+
 /** Per-tick MP work after the local engine/rules step. */
 function mpAfterLocalTick(snapshot) {
   if (!mpNet || !state.mp) return;
   mpLastState = snapshot;
   mpRememberState(snapshot);
+  // Host: advance the AI instances before the authoritative rules consume their
+  // post-step states, so AI checkpoints/finishes land on the same tick.
+  if (MP_HOST) mpAiStep(snapshot.tick);
   if (MP_HOST) mpHostRulesStep(snapshot);
   if (POWERUPS) mpPowerupHostTick(snapshot);
   if (POWERUPS && state.powerups?.boost) {
@@ -3454,56 +4197,95 @@ function mpHostRulesStep(snapshot) {
   const states = {};
   states[mpNet.playerId] = hostState;
   states[guestId] = guestState;
+  if (mpAiSim) {
+    for (const sim of mpAiSim.sims) states[sim.player.id] = mpRulesState(sim.player.id, sim.state);
+  }
   const events = mpRace.step(states);
   if (events.length) {
     state.mp.hostEvents = (state.mp.hostEvents ?? []).concat(events).slice(-64);
   }
+  // AI respawns are owned by the authoritative rules; rebuild the host's AI
+  // instance at the event target and rejoin the progress row before the next tick.
+  for (const event of events) {
+    if (event.type !== 'respawn' || !isAiPlayerId(event.participantId) || !mpAiSim) continue;
+    const sim = mpAiSim.sims.find((entry) => entry.player.id === event.participantId);
+    if (sim) mpAiRespawn(sim, event.target);
+  }
+  if (mpAiSim) {
+    for (const sim of mpAiSim.sims) {
+      if (sim.dnf && !sim.dnfPosted) {
+        sim.dnfPosted = true;
+        try {
+          mpRace.command({ type: 'dnf', id: sim.player.id, reason: sim.dnfReason ?? 'ai-dnf',
+            tick: mpRace.director.raceTick });
+        } catch { /* typed rejection stays in the host event log */ }
+      }
+    }
+    state.mp.ai.allTerminal = mpAiAllTerminal();
+  }
+  mpAiPostResultIfTerminal();
+  if (mpAiFinishPending && mpAiAllTerminal()) mpFlushPendingFinish();
   if (state.mp.result && !state.mp.validation) mpComputeHostValidation();
   else if (state.mp.validation) mpRefreshHostValidation();
 }
 
-/** Compose/refresh the remote display from the interpolation buffer. */
+/** Compose/refresh the remote display from the interpolation buffer(s). */
 function mpUpdateRemoteFrame(renderTick) {
-  if (!mpNet || !mpRemotePlayerId) {
-    consumer.setGhostFrame(null);
+  if (!mpNet || !state.mp) { consumer.setGhostFrames([]); return; }
+  const frames = [];
+  // 1. The human peer (M1): the net-mvp interpolation buffer + bounded corrector.
+  if (mpRemotePlayerId && ghostWheelRest) {
+    const latest = mpNet.latestRemote(mpRemotePlayerId);
+    if (latest) {
+      state.mp.remote.latest = latest;
+      state.mp.remote.tick = latest.tick;
+      state.mp.remote.authority = latest.authority === true;
+      const sampleTick = Math.max(0, renderTick + mpEngineTickOffset - MP_REMOTE_DELAY_TICKS);
+      const target = mpNet.sampleRemote(mpRemotePlayerId, sampleTick);
+      if (target) {
+        if (!mpRemoteDisplay) mpRemoteDisplay = new RemoteDisplay();
+        const display = mpRemoteDisplay.update(target);
+        if (display) {
+          state.mp.remote.sample = {
+            tick: target.tick,
+            position: [target.position[0], target.position[1], target.position[2]],
+            interpolated: target.interpolated === true,
+            clamped: target.clamped === true,
+            alpha: target.alpha ?? 0,
+            from: target.from ?? null,
+            to: target.to ?? null
+          };
+          state.mp.remote.display = { position: display.position.slice(), quaternion: display.quaternion.slice() };
+          state.mp.remote.distance = display.errorMetres;
+          state.mp.remote.corrections = display.corrections;
+          state.mp.remote.hardSets = display.hardSets;
+          state.mp.remote.blends = display.blends;
+          const { map } = remoteNodeMatrixMap({ position: display.position, quaternion: display.quaternion }, ghostWheelRest);
+          frames.push({ nodeMatrices: map, tint: null });
+        }
+      }
+    }
+  }
+  // 2. The host's AI cars (0-3): the guest samples only host-relayed poses; the
+  //    host samples its own simulation through the same interpolation path.
+  if (state.mp.ai?.count > 0) {
+    if (!mpAiRemoteSet) mpEnsureAiRemoteSet();
+    if (mpAiRemoteSet && ghostWheelRest) {
+      const sampleTick = Math.max(0, renderTick + mpEngineTickOffset - MP_REMOTE_DELAY_TICKS);
+      const entries = mpAiRemoteSet.sample(sampleTick);
+      state.mp.ai.remotes = mpAiRemoteSet.snapshot();
+      for (const entry of entries) {
+        if (!entry.pose) continue;
+        const { map } = remoteNodeMatrixMap(entry.pose, ghostWheelRest);
+        frames.push({ nodeMatrices: map, tint: MP_AI_TINT });
+      }
+    }
+  }
+  if (!frames.length) {
+    consumer.setGhostFrames([]);
     return;
   }
-  const latest = mpNet.latestRemote(mpRemotePlayerId);
-  if (!latest) {
-    consumer.setGhostFrame(null);
-    return;
-  }
-  state.mp.remote.latest = latest;
-  state.mp.remote.tick = latest.tick;
-  state.mp.remote.authority = latest.authority === true;
-  const sampleTick = Math.max(0, renderTick + mpEngineTickOffset - MP_REMOTE_DELAY_TICKS);
-  const target = mpNet.sampleRemote(mpRemotePlayerId, sampleTick);
-  if (!target) {
-    consumer.setGhostFrame(null);
-    return;
-  }
-  if (!mpRemoteDisplay) mpRemoteDisplay = new RemoteDisplay();
-  const display = mpRemoteDisplay.update(target);
-  if (!display || !ghostWheelRest) {
-    consumer.setGhostFrame(null);
-    return;
-  }
-  state.mp.remote.sample = {
-    tick: target.tick,
-    position: [target.position[0], target.position[1], target.position[2]],
-    interpolated: target.interpolated === true,
-    clamped: target.clamped === true,
-    alpha: target.alpha ?? 0,
-    from: target.from ?? null,
-    to: target.to ?? null
-  };
-  state.mp.remote.display = { position: display.position.slice(), quaternion: display.quaternion.slice() };
-  state.mp.remote.distance = display.errorMetres;
-  state.mp.remote.corrections = display.corrections;
-  state.mp.remote.hardSets = display.hardSets;
-  state.mp.remote.blends = display.blends;
-  const { map } = remoteNodeMatrixMap({ position: display.position, quaternion: display.quaternion }, ghostWheelRest);
-  consumer.setGhostFrame(map);
+  consumer.setGhostFrames(frames);
 }
 
 /** Local finish: one canonical finish report; the shared table arrives later. */
@@ -3544,21 +4326,85 @@ function mpLocalFinish(event) {
   }
   state.mp.phase = 'finished-local';
   state.mp.status = 'finish reported; waiting for the shared result';
+  if (MP_HOST && state.mp.ai?.count > 0 && !mpAiAllTerminal()) {
+    // Hold the human report until the host's AI have finished or been marked
+    // DNF, so the room closes only when the AI rows exist for both pages.
+    mpAiFinishPending = { tick: logicalTick, hash: mpFinishHash };
+    state.mp.status = 'finish recorded; waiting for the host AI to finish';
+    publish();
+    return;
+  }
   mpNet.reportFinished({ tick: logicalTick, hash: mpFinishHash })
     .then(() => { state.mp.status = 'finish reported; waiting for the shared result'; publish(); })
     .catch((error) => { state.mp.lastError = error.message; state.mp.status = 'finish report failed: ' + error.message; publish(); });
   publish();
 }
 
+/** Report the human finish once the host AI are terminal (or capped DNF). */
+function mpFlushPendingFinish() {
+  if (!mpAiFinishPending || !mpNet) return;
+  const pending = mpAiFinishPending;
+  mpAiFinishPending = null;
+  mpAiPostResultIfTerminal();
+  mpNet.reportFinished(pending)
+    .then(() => { if (state.mp) state.mp.status = 'finish reported; waiting for the shared result'; publish(); })
+    .catch((error) => {
+      if (state.mp) {
+        state.mp.lastError = error.message;
+        state.mp.status = 'finish report failed: ' + error.message;
+      }
+      publish();
+    });
+}
+
 /** Shared result table from the room's finish broadcast (host and guest). */
 function mpApplyResult(message) {
   if (!state.mp || !sprintRules) return;
+  if (!Array.isArray(message.results)) return;
+  // With AI in the room the host also broadcasts their rows. Both pages build
+  // the same merged table from the same bytes; a guest waits for that message
+  // instead of rendering a table without the AI participants.
+  if (state.mp.ai?.count > 0 && !state.mp.ai.result) {
+    state.mp.pendingResult = message;
+    state.mp.status = 'room result received; waiting for the host AI result';
+    publish();
+    return;
+  }
+  mpBuildAndApplyResult(message);
+}
+
+function mpTryApplyResult() {
+  const pending = state.mp?.pendingResult;
+  if (!pending) return;
+  if (state.mp.ai?.count > 0 && !state.mp.ai.result) return;
+  state.mp.pendingResult = null;
+  mpBuildAndApplyResult(pending);
+}
+
+function mpBuildAndApplyResult(message) {
   const room = message.room ?? mpNet?.room ?? null;
-  if (!Array.isArray(message.results) || !room) return;
-  const table = buildMpResult({ layout: sprintRules.layout, room, results: message.results });
+  if (!room) return;
+  const ai = state.mp.ai;
+  const aiPlayers = ai && ai.count > 0
+    ? (ai.host ? ai.players : (ai.result?.players ?? ai.remotePlayers))
+    : [];
+  const aiResults = ai && ai.count > 0 ? (ai.result?.rows ?? []) : [];
+  const table = buildMpResult({
+    layout: sprintRules.layout,
+    room,
+    results: message.results,
+    aiPlayers: aiPlayers.map((player) => ({
+      id: player.id ?? player.playerId,
+      slot: player.slot,
+      name: player.name,
+      car: player.car,
+      profile: player.profile
+    })),
+    aiResults
+  });
   mpResult = table;
   state.mp.result = table;
-  state.mp.resultSource = 'room.finished';
+  state.mp.resultSource = 'room.finished + host AI result';
   state.mp.phase = 'finished';
   state.mp.status = 'shared result received';
   state.mp.players = [...room.players];
@@ -3677,10 +4523,19 @@ function handleMpEvent(type, payload) {
       if (!mpStarted) state.mp.phase = 'lobby';
       if (!state.mp.engineReady) state.mp.status = 'in the lobby; loading the engine…';
       else if (!state.mp.started) state.mp.status = state.mp.mapReady ? (state.mp.ready ? 'ready' : 'map verified; press READY') : 'verifying the room map…';
+      // Re-publish the host AI roster on every roster change so a joining guest
+      // sees the AI list immediately (and the empty list when AI is off).
+      if (MP_HOST && mpAiRelayReady()) void mpAiPublishRoster();
       // Host map selection broadcasts a room update; every client reloads and
       // re-verifies the package before it may set READY. The initial load is
       // owned by startMultiplayer so it can use the room's session car.
       if (state.mp.map) mpMapChangedInLobby(normalizeMpMapId(room.map));
+      // The AI roster depends on the room map (Gracia's Dodge spawn refusal and
+      // the Amboy control floor), so rebuild it when the selected map changes.
+      if (MP_HOST && state.mp.ai) {
+        mpBuildAiRecords();
+        if (mpAiRelayReady()) void mpAiPublishRoster();
+      }
       publish();
       break;
     }
@@ -3759,8 +4614,76 @@ function handleMpEvent(type, payload) {
   }
 }
 
+/** Populate the host AI count/per-slot selects once the roster is known. */
+function mpSetupAiLobbyControls() {
+  const count = document.getElementById('mp-ai-count');
+  if (count && !count.dataset.bound) {
+    count.dataset.bound = '1';
+    if (!count.options.length) {
+      for (let value = 0; value <= MP_AI_MAX; value++) {
+        const option = document.createElement('option');
+        option.value = String(value);
+        option.textContent = String(value);
+        count.append(option);
+      }
+    }
+    count.addEventListener('change', () => {
+      if (!MP_HOST || mpStarted) return;
+      const current = state.mp.ai?.players ?? [];
+      const cars = current.map((player) => player.car);
+      const profiles = current.map((player) => player.profile);
+      mpSetAi({ count: Number(count.value), cars, profiles });
+    });
+  }
+  const cars = state.roster?.roster?.cars ?? [];
+  for (let index = 0; index < MP_AI_MAX; index++) {
+    const carSelect = document.getElementById('mp-ai-car-' + (index + 1));
+    if (carSelect && !carSelect.dataset.bound) {
+      carSelect.dataset.bound = '1';
+      carSelect.textContent = '';
+      for (const entry of cars) {
+        const option = document.createElement('option');
+        option.value = entry.slug;
+        option.textContent = carLabel(entry);
+        carSelect.append(option);
+      }
+    }
+    const profileSelect = document.getElementById('mp-ai-profile-' + (index + 1));
+    if (profileSelect && !profileSelect.dataset.bound) {
+      profileSelect.dataset.bound = '1';
+      profileSelect.textContent = '';
+      for (const id of MP_AI_PROFILE_IDS) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = id;
+        profileSelect.append(option);
+      }
+    }
+    const apply = () => {
+      if (!MP_HOST || mpStarted || !state.mp?.ai) return;
+      const records = state.mp.ai.players ?? [];
+      const nextCars = records.map((player) => player.car);
+      const nextProfiles = records.map((player) => player.profile);
+      const car = document.getElementById('mp-ai-car-' + (index + 1))?.value;
+      const profile = document.getElementById('mp-ai-profile-' + (index + 1))?.value;
+      if (car) nextCars[index] = car;
+      if (profile) nextProfiles[index] = profile;
+      mpSetAi({ count: state.mp.ai.count, cars: nextCars, profiles: nextProfiles });
+    };
+    if (carSelect && !carSelect.dataset.changeBound) {
+      carSelect.dataset.changeBound = '1';
+      carSelect.addEventListener('change', apply);
+    }
+    if (profileSelect && !profileSelect.dataset.changeBound) {
+      profileSelect.dataset.changeBound = '1';
+      profileSelect.addEventListener('change', apply);
+    }
+  }
+}
+
 /** Bind the lobby controls once the room and engine are ready. */
 function mpBindUi() {
+  mpSetupAiLobbyControls();
   const ready = document.getElementById('mp-ready');
   if (ready && !ready.dataset.bound) {
     ready.dataset.bound = '1';
@@ -3827,6 +4750,16 @@ async function mpStartRace() {
     publish();
     return;
   }
+  if (!aiRosterReady(state.mp.ai)) {
+    const codes = (state.mp.ai?.errorCodes ?? []).map((entry) => entry.code).join(',');
+    state.mp.status = 'start refused' + (codes ? ' (' + codes + ')' : '') + ': ' +
+      (state.mp.ai?.errors?.join('; ') || 'invalid AI records');
+    publish();
+    return;
+  }
+  // Freeze the host AI roster in the lobby and make it visible to the guest
+  // before the start broadcast.
+  if (MP_HOST) await mpAiPublishRoster();
   const roomMapId = normalizeMpMapId(mpNet.room?.map);
   try {
     assertMpMapAgreement(mpMapRecord(roomMapId), mpActualMapRecord(), 'room start');
@@ -3886,15 +4819,16 @@ async function beginMultiplayerRace() {
   try {
     if (MP_HOST) {
       const players = [...(mpNet?.room?.players ?? [])].sort((a, b) => a.slot - b.slot);
-      const participants = players.map((player) => ({ id: player.id, slot: player.slot }));
+      const aiPlayers = state.mp.ai?.count > 0 ? state.mp.ai.players : [];
+      const participants = aiParticipants(players, aiPlayers);
       mpRace = new mpRaceRules.RaceSession({
         layout: mpRulesLayout(sprintRules.layout),
         participants,
-        config: { hostId: mpNet.playerId, minParticipants: 2, maxParticipants: 2, verifyLayoutHash: false }
+        config: { hostId: mpNet.playerId, minParticipants: 2, maxParticipants: 2 + MP_AI_MAX, verifyLayoutHash: false }
       });
       state.mp.hostRuleCourseId = sprintRules.layout?.courseId ?? null;
       state.mp.hostRuleMode = 'sprint (package layout projected to the released 310m allow-list)';
-      for (const player of players) mpRace.command({ type: 'ready', from: player.id, ready: true });
+      for (const participant of participants) mpRace.command({ type: 'ready', from: participant.id, ready: true });
       mpRace.command({ type: 'start', from: mpNet.playerId });
       // Consume the zero-tick loading phase so the session countdown starts on
       // the same engine tick as the local SprintRules countdown.
@@ -3906,13 +4840,30 @@ async function beginMultiplayerRace() {
         if (!slot) throw new Error('multiplayer start grid has no slot for guest P' + guest.slot);
         state.mp.guestSpawnState = { position: [slot.x, slot.y ?? 0, slot.z], contact: null };
       }
-      state.mp.hostSession = { created: true, participants: participants.map((row) => row.id),
-        config: { hostId: mpNet.playerId, countdownTicks: sprintRules.layout.countdown?.ticks ?? 0 } };
+      state.mp.hostSession = {
+        created: true,
+        participants: participants.map((row) => row.id),
+        aiParticipants: aiPlayers.map((player) => player.id),
+        config: { hostId: mpNet.playerId, countdownTicks: sprintRules.layout.countdown?.ticks ?? 0,
+          maxParticipants: 2 + MP_AI_MAX }
+      };
     }
     const tick1 = await startTimeline(mpSettledTick0, { reload: true });
     applyState(tick1);
     state.consumer = 'running';
     state.mp.status = 'running';
+    if (MP_HOST && state.mp.ai?.count > 0) {
+      await mpAiStartHost();
+      // Align every AI instance with the host's tick 1 (its world was created at
+      // tick 0; one zero-input step consumes the same tick).
+      for (const sim of mpAiSim?.sims ?? []) {
+        if (sim.ticks === 0) mpAiAdvanceOne(sim, tick1.tick);
+      }
+      state.mp.ai.hostSim = mpAiSimSummary();
+      mpAiPublishRoster();
+    } else if (!MP_HOST) {
+      mpEnsureAiRemoteSet();
+    }
     if (POWERUPS) {
       if (MP_HOST) mpPowerupHostStart();
       else if (state.powerups) {
@@ -4715,6 +5666,23 @@ function mpCaptureSnapshot() {
     validation: mp.validation,
     hostSession: mp.hostSession,
     powerups: mpPowerupCapture(),
+    ai: {
+      ...aiSummary(mp.ai),
+      players: (mp.ai?.players ?? []).map((player) => ({ ...player })),
+      remotePlayers: (mp.ai?.remotePlayers ?? []).map((player) => ({ ...player })),
+      poseTick: mp.ai?.poseTick ?? null,
+      poseCount: mp.ai?.poseCount ?? 0,
+      allTerminal: mp.ai?.allTerminal ?? null,
+      resultHash: mp.ai?.resultHash ?? null,
+      result: mp.ai?.result ? {
+        hash: mp.ai.result.hash,
+        countdownTicks: mp.ai.result.countdownTicks,
+        rows: mp.ai.result.rows,
+        sim: mp.ai.result.sim ?? null
+      } : null,
+      remotes: mp.ai?.remotes ?? [],
+      hostSim: mp.ai?.hostSim ?? null
+    },
     remote: {
       id: mp.remote.id,
       name: mp.remote.name,
@@ -4756,6 +5724,12 @@ function mpCaptureSnapshot() {
       startDisabled: overlay('mp-start')?.disabled ?? null,
       remoteTagHidden: overlay('remote-tag')?.hidden ?? null,
       remoteTagText: overlay('remote-tag')?.textContent ?? null,
+      remotesText: overlay('mp-remotes')?.textContent ?? null,
+      aiCountText: overlay('mp-ai-count')?.value ?? null,
+      aiCountDisabled: overlay('mp-ai-count')?.disabled ?? null,
+      aiCar1Disabled: overlay('mp-ai-car-1')?.disabled ?? null,
+      aiProfile1Disabled: overlay('mp-ai-profile-1')?.disabled ?? null,
+      aiListText: overlay('mp-ai-list')?.textContent ?? null,
       resultsHidden: overlay('results')?.hidden ?? null,
       resultsTime: overlay('results-time')?.textContent ?? null,
       resultsBest: overlay('results-best')?.textContent ?? null,
@@ -4781,6 +5755,12 @@ function mpInstallDebugApi() {
     mapExpected: (map) => mpMapRecord(map),
     verifyMap: (actual, expected) => compareMpMapRecords(expected ?? mpMapRecord(state.mp?.map?.id), actual ?? mpActualMapRecord()),
     start: () => mpStartRace(),
+    setAi: (config = {}) => {
+      try { return Promise.resolve(mpSetAi(config)); }
+      catch (error) { return Promise.reject(error); }
+    },
+    ai: () => aiSummary(state.mp?.ai),
+    aiSim: () => mpAiSimSummary(),
     drop: (options = {}) => (mpNet ? mpNet.net.simulateDrop(options) : Promise.reject(new Error('no room'))),
     snapshot: () => mpCaptureSnapshot(),
     stateAt: (tick) => mpHistoryAt(Number(tick)),
@@ -4799,7 +5779,15 @@ function mpInstallDebugApi() {
         types: POWERUP_SLICE_TYPES,
         markerSlots: POWERUP_MARKER_SLOTS,
         relayPollMs: POWERUP_RELAY_POLL_MS
-      } : null
+      } : null,
+      ai: {
+        max: MP_AI_MAX,
+        profiles: MP_AI_PROFILE_IDS,
+        poseEveryTicks: MP_AI_POSE_EVERY_TICKS,
+        relayPollMs: MP_AI_RELAY_POLL_MS,
+        relayPath: MP_AI_RELAY_PATH,
+        powerups: false
+      }
     }
   };
 }
@@ -4822,6 +5810,7 @@ async function startMultiplayer() {
     state.mp.sessionCar = requestedCar.slug;
 
     const netModule = await import('/net-mvp/client.mjs');
+    mpInterpolationBuffer = netModule.InterpolationBuffer;
     mpNet = new MpSession({
       NetClient: netModule.NetClient,
       url: MP_URL,
@@ -4866,6 +5855,13 @@ async function startMultiplayer() {
     }
     // Load and verify the room's map before the lobby allows READY.
     await mpEnsureRoomMap(roomMapId, { carSlug: roomCar ?? requestedCar.slug, force: true });
+    // AI opponents: the host builds the records from the committed roster; the
+    // guest receives the same read-only list through the ordered AI relay.
+    mpAiRelayStart(joined.room.code, joined.you.id);
+    if (MP_HOST) {
+      mpBuildAiRecords();
+      await mpAiPublishRoster();
+    }
     if (POWERUPS) await initPowerups();
     state.mp.phase = 'lobby';
     state.mp.status = state.mp.mapReady
@@ -4971,11 +5967,14 @@ function frame(nowMs) {
           // may hold once its own brake tail is done. Package maps are up to
           // 2,060 m, so a slower guest can finish tens of seconds later.
           const tail = snapshot.tick - sprintRules.finishTick;
-          const tailCap = MAP_IS_PACKAGE ? 4800 : 600;
+          const hasAi = state.mp?.ai?.count > 0;
+          const tailCap = hasAi ? (MAP_IS_PACKAGE ? 20000 : 4200)
+            : (MAP_IS_PACKAGE ? 4800 : 600);
           const hostRulesRow = MP_HOST && mpRace ? mpRace.progress?.byId?.get(mpNet?.playerId) : null;
           const hostRulesFinished = hostRulesRow?.status === 'finished';
           const keepHostRunning = MP && MP_HOST &&
-            (!hostRulesFinished || state.mp?.validation?.guestValidated !== true) && tail < tailCap;
+            ((!hostRulesFinished || state.mp?.validation?.guestValidated !== true ||
+              (state.mp?.ai?.count > 0 && !mpAiAllTerminal())) && tail < tailCap);
           if (!keepHostRunning) {
             holdReached = true;
             state.holdReached = true;

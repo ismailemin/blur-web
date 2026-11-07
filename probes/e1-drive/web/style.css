@@ -298,7 +298,55 @@ html[data-telemetry] #legend { display: none; }
   border-radius: 4px;
   font: inherit;
 }
+#mp-lobby .mp-ai {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(242, 208, 111, 0.28);
+  border-radius: 6px;
+}
+#mp-lobby .mp-ai-list { margin-top: 4px; }
+#mp-lobby .mp-ai-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+#mp-lobby .mp-ai-row[hidden] { display: none; }
+#mp-lobby .mp-ai-name {
+  width: 30ch;
+  color: #f2d06f;
+}
+#mp-lobby #mp-ai-count, #mp-lobby .mp-ai-row select {
+  max-width: 34ch;
+  padding: 2px 6px;
+  background: #0f1a22;
+  color: var(--ink);
+  border: 1px solid rgba(242, 208, 111, 0.35);
+  border-radius: 4px;
+  font: inherit;
+}
 html[data-mp] #cars { display: none; }
+
+/* Remote/AI car labels. The cars themselves are the existing car mesh drawn
+   through the ghost pipeline (cyan = human peer, amber = AI). */
+#mp-remotes {
+  position: fixed;
+  left: 50%;
+  bottom: 118px;
+  transform: translateX(-50%);
+  padding: 3px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  white-space: pre-line;
+  text-align: center;
+  color: #ffd28a;
+  background: rgba(8, 20, 30, 0.82);
+  border: 1px solid rgba(242, 208, 111, 0.4);
+  border-radius: 6px;
+  pointer-events: none;
+}
+#mp-remotes[hidden] { display: none; }
 
 /* Remote car tag. The car itself is the existing car mesh drawn through the
    ghost pipeline with a translucent diagnostic tint. */
@@ -436,5 +484,11 @@ html[data-mp] #cars { display: none; }
 #mp-results .mp-result-name { color: var(--ink); }
 #mp-results .mp-result-time { color: var(--accent); text-align: right; }
 #mp-results .mp-result-host { color: #8fe3b0; }
+#mp-results .mp-result-ai { color: #ffd28a; }
+#mp-results .mp-result-profile {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
 #mp-results .mp-result-dnf { color: #e88a8a; }
 

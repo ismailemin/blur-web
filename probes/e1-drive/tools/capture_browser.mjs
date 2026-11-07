@@ -57,12 +57,12 @@ const edge = EDGE_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!edge) throw new Error('msedge.exe not found; pass --edge <path>');
 
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp', 'mp-powerups', 'map'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp', 'mp-ai', 'mp-powerups', 'map'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality, mp, mp-powerups or map)');
+    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality, mp, mp-ai, mp-powerups or map)');
 }
-// `--mode mp`/`mp-powerups` use the documented M1 capture ports: game 8802, room 8811.
-const PORT = Number(option('--port', MODE === 'mp' || MODE === 'mp-powerups' ? '8802' : '8801'));
+// `--mode mp`/`mp-ai`/`mp-powerups` use the documented capture ports: game 8802, room 8811.
+const PORT = Number(option('--port', MODE === 'mp' || MODE === 'mp-ai' || MODE === 'mp-powerups' ? '8802' : '8801'));
 const ROOM_PORT = Number(option('--room-port', '8811'));
 const DEBUG_PORT = Number(option('--debug-port', '9341'));
 const PROFILE = path.join(OUT, 'edge-profile-' + PORT);
@@ -70,16 +70,24 @@ const VIEWPORT = { width: 1600, height: 900 };
 const TICKS = option('--ticks', '0,150,240,300').split(',').map(Number);
 const ONLY_CAR = option('--car', null);
 const MAP_OPTION = option('--map', null);
-const MAP_ID = MAP_OPTION ?? (MODE === 'mp' ? 'river' : 'amboy');
+const MAP_ID = MAP_OPTION ?? (MODE === 'mp' || MODE === 'mp-ai' ? 'river' : 'amboy');
 const MAP_ENTRY = MAPS[MAP_ID];
-if (MODE === 'mp') {
+if (MODE === 'mp' || MODE === 'mp-ai') {
   if (!MAP_ENTRY || MAP_ENTRY.multiplayer !== true) {
-    throw new Error('--map for --mode mp must name a multiplayer map (' + Object.values(MAPS).filter((entry) => entry.multiplayer).map((entry) => entry.id).join(', ') + '), got ' + JSON.stringify(MAP_ID));
+    throw new Error('--map for --mode ' + MODE + ' must name a multiplayer map (' + Object.values(MAPS).filter((entry) => entry.multiplayer).map((entry) => entry.id).join(', ') + '), got ' + JSON.stringify(MAP_ID));
   }
 } else if (!MAP_ENTRY || MAP_ENTRY.kind !== 'map-package') {
   throw new Error('--map must name a map package (' + Object.values(MAPS).filter((entry) => entry.kind === 'map-package').map((entry) => entry.id).join(', ') + '), got ' + JSON.stringify(MAP_ID));
 }
 const EXTRA_QUERY = option('--extra-query', '');
+const AI_COUNT = Number(option('--ai-count', '2'));
+const AI_CARS = option('--ai-cars', MAP_ID === 'gracia'
+  ? 'audi-r8v10-stock,corvette-zr1-stock,lotus-exige-cup260-stock'
+  : 'audi-r8v10-stock,dodge-challenger-stock,nissan-skyliner34ztune-stock');
+const AI_PROFILES = option('--ai-profiles', 'reference,cautious,standard');
+if (MODE === 'mp-ai' && (!Number.isInteger(AI_COUNT) || AI_COUNT < 1 || AI_COUNT > 3)) {
+  throw new Error('--ai-count for --mode mp-ai must be an integer in [1, 3]');
+}
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 // Course selection: 310 (default, `_work/e1-drive/sprint.json`), short
@@ -1245,6 +1253,352 @@ async function mpCapturePass() {
 }
 
 /**
+ * M4 AI-opponent capture (`--mode mp-ai`): the same two real pages plus 2 host
+ * AI cars. The guest never simulates AI; it renders the host's 20 Hz poses and
+ * merges the host's AI rows into the shared result.
+ */
+async function mpAiCapturePass() {
+  const passFailures = [];
+  const mpAiTag = MAP_ID === 'river' ? '' : '-' + MAP_ID;
+  const passCheck = (label, ok, detail = '') => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const distance3 = (a, b) => (Array.isArray(a) && Array.isArray(b)
+    ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : null);
+  const hostPage = { send, evaluate, messages };
+  messages.length = 0;
+  let guestPage = null;
+  let roomServer = null;
+  const shots = {};
+  let hostLobby = null;
+  let guestLobby = null;
+  let hostFinal = null;
+  let guestFinal = null;
+  let fatal = null;
+  let midShotAt = null;
+  let aiRemoteSamples = 0;
+  const aiRemoteErrors = [];
+
+  const snapshotOf = async (handle) => {
+    try { return await handle.evaluate('window.__mp ? window.__mp.snapshot() : null'); } catch { return null; }
+  };
+  const snapshotText = (snapshot) => {
+    if (!snapshot) return 'null';
+    return JSON.stringify({ phase: snapshot.phase, status: snapshot.status, error: snapshot.error,
+      engineTick: snapshot.engineTick, engineReady: snapshot.engineReady, roomCode: snapshot.roomCode,
+      ai: snapshot.ai ? { count: snapshot.ai.count, built: snapshot.ai.built, ready: snapshot.ai.ready,
+        errors: snapshot.ai.errors, relayError: snapshot.ai.relayError } : null,
+      result: snapshot.result?.hash ?? null });
+  };
+  const waitSnapshot = async (handle, predicate, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await snapshotOf(handle);
+      if (last && predicate(last)) return last;
+      await sleep(150);
+    }
+    throw new Error(label + ' timed out; last ' + snapshotText(last));
+  };
+  const shot = async (handle, name) => {
+    const result = await handle.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const file = name.replace('.png', mpAiTag + '.png');
+    const relative = '_work/e1-drive/' + file;
+    writeFileSync(path.join(OUT, file), Buffer.from(result.data, 'base64'));
+    shots[name] = relative;
+    return relative;
+  };
+
+  try {
+    roomServer = await startRoomServer({ port: ROOM_PORT, log: () => {} });
+    guestPage = await openSecondPage();
+    guestPage.messages.length = 0;
+    const car = defaultSlug;
+    const roomQuery = '&mpServer=' + encodeURIComponent(roomServer.wsUrl) + '&audio=0';
+    const aiQuery = '&ai=' + AI_COUNT + '&aiCars=' + encodeURIComponent(AI_CARS) +
+      '&aiProfiles=' + encodeURIComponent(AI_PROFILES);
+    const hostUrl = origin + '/?mp=1&host=1&script=sprint&car=' + encodeURIComponent(car) +
+      '&map=' + encodeURIComponent(MAP_ID) + '&name=Host' + aiQuery + roomQuery;
+    await hostPage.send('Page.navigate', { url: hostUrl });
+    hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.phase === 'lobby' &&
+      snapshot.engineReady && snapshot.ai?.count === AI_COUNT && snapshot.ai.built === true &&
+      snapshot.ai.players.length === AI_COUNT, 120000, 'host lobby + AI records');
+    const code = hostLobby.roomCode;
+    passCheck('host allocated a room code', typeof code === 'string' && /^[A-Z2-9]{5}$/.test(code), code);
+
+    const guestUrl = origin + '/?mp=1&room=' + encodeURIComponent(code) + '&script=sprint&car=' +
+      encodeURIComponent(car) + '&mpPace=0.8&name=Guest' + roomQuery;
+    await guestPage.send('Page.navigate', { url: guestUrl });
+    guestLobby = await waitSnapshot(guestPage, (snapshot) => snapshot.phase === 'lobby' &&
+      snapshot.engineReady && snapshot.ai?.count === AI_COUNT &&
+      snapshot.ai.remotePlayers.length === AI_COUNT, 120000, 'guest lobby + relayed AI list');
+    hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.players.length === 2, 15000,
+      'host roster has the guest');
+
+    const hostAi = hostLobby.ai.records ?? [];
+    const guestAi = guestLobby.ai.records ?? [];
+    passCheck('host builds 0-3 AI records with ai-1... participant ids',
+      hostAi.length === AI_COUNT && hostAi.every((record, index) =>
+        record.id === 'ai-' + (index + 1) && record.slot === 3 + index),
+      JSON.stringify(hostAi));
+    passCheck('the guest sees the same AI list read-only (ids, cars, profiles)',
+      guestLobby.ai.host === false && guestLobby.ai.records.length === AI_COUNT &&
+      JSON.stringify(guestAi.map((row) => [row.id, row.slot, row.car, row.profile])) ===
+        JSON.stringify(hostAi.map((row) => [row.id, row.slot, row.car, row.profile])),
+      JSON.stringify({ host: hostAi, guest: guestAi }));
+    passCheck('the AI roster uses only supported profiles and distinct cars',
+      hostAi.every((record) => ['cautious', 'standard', 'reference'].includes(record.profile)) &&
+      hostAi.every((record) => typeof record.car === 'string' && record.car.length > 0),
+      JSON.stringify(hostAi.map((row) => [row.car, row.profile])));
+    passCheck('lobby start is host-only and disabled before the humans are ready',
+      hostLobby.overlays.startHidden === false && hostLobby.overlays.startDisabled === true &&
+      guestLobby.overlays.startHidden === true,
+      JSON.stringify({ host: hostLobby.overlays.startHidden, hostDisabled: hostLobby.overlays.startDisabled,
+        guest: guestLobby.overlays.startHidden }));
+    passCheck('guest AI selects are read-only',
+      hostLobby.overlays.aiCountDisabled === false &&
+      guestLobby.overlays.aiCountDisabled === true &&
+      guestLobby.overlays.aiCar1Disabled === true &&
+      guestLobby.overlays.aiProfile1Disabled === true &&
+      /AI 1/.test(guestLobby.overlays.aiListText ?? ''),
+      JSON.stringify({ hostCount: hostLobby.overlays.aiCountDisabled,
+        guestCount: guestLobby.overlays.aiCountDisabled,
+        guestCar: guestLobby.overlays.aiCar1Disabled,
+        guestProfile: guestLobby.overlays.aiProfile1Disabled }));
+
+    await hostPage.evaluate('window.__mp.setReady(true)');
+    await guestPage.evaluate('window.__mp.setReady(true)');
+    hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.players.length === 2 &&
+      snapshot.players.every((player) => player.ready), 15000, 'host all ready');
+    passCheck('host start becomes enabled with all humans ready and the AI records built',
+      hostLobby.overlays.startDisabled === false && hostLobby.ai.ready === true,
+      JSON.stringify(hostLobby.overlays));
+    await shot(hostPage, 'browser-mp-ai-lobby-host.png');
+    await shot(guestPage, 'browser-mp-ai-lobby-guest.png');
+
+    await hostPage.evaluate('window.__mp.start()');
+    hostFinal = await waitSnapshot(hostPage, (snapshot) => snapshot.started && snapshot.engineTick >= 2,
+      30000, 'host race start');
+    guestFinal = await waitSnapshot(guestPage, (snapshot) => snapshot.started && snapshot.engineTick >= 2,
+      30000, 'guest race start');
+    passCheck('host start broadcasts room.started to both pages', hostFinal.started && guestFinal.started);
+    passCheck('the host created one wasm instance per AI with grounded start slots',
+      hostFinal.ai.hostSim?.count === AI_COUNT && hostFinal.ai.hostSim.sims.length === AI_COUNT &&
+      hostFinal.ai.hostSim.sims.every((sim) => sim.startSlot !== null),
+      JSON.stringify(hostFinal.ai.hostSim));
+
+    const raceDeadline = Date.now() + (MAP_ID === 'amboy' ? 600000 : MAP_ID === 'gracia' ? 240000 : 240000);
+    let hostView = hostFinal;
+    let guestView = guestFinal;
+    let reconnect = null;
+    let reconnectChecked = false;
+    while (Date.now() < raceDeadline) {
+      hostView = await snapshotOf(hostPage) ?? hostView;
+      guestView = await snapshotOf(guestPage) ?? guestView;
+      const guestRemotes = guestView.ai?.remotes ?? [];
+      for (const entry of guestRemotes) {
+        if (entry.sampleTick !== null && entry.displayPosition) {
+          aiRemoteSamples++;
+          if (entry.samplePosition) {
+            const delta = distance3(entry.displayPosition, entry.samplePosition);
+            if (!Number.isFinite(delta) || delta > 0.5) aiRemoteErrors.push({ id: entry.id, delta });
+          }
+        }
+      }
+      if (!midShotAt && hostView.engineTick >= 400 && hostView.engineTick < 1400 &&
+          hostView.sprint?.phase === 'running' && guestView.sprint?.phase === 'running' &&
+          guestRemotes.some((entry) => entry.sampleTick !== null)) {
+        midShotAt = { hostTick: hostView.engineTick, guestTick: guestView.engineTick,
+          guestAiSamples: guestRemotes.map((entry) => entry.sampleTick) };
+        await shot(hostPage, 'browser-mp-ai-mid-host.png');
+        await shot(guestPage, 'browser-mp-ai-mid-guest.png');
+      }
+      // M4 reconnect check (River): the host keeps simulating AI while the
+      // guest's socket resumes; the guest re-receives poses after the resume.
+      if (MAP_ID === 'river' && midShotAt && !reconnectChecked &&
+          hostView.sprint?.phase === 'running' && guestView.sprint?.phase === 'running') {
+        reconnectChecked = true;
+        const beforeTicks = hostView.ai.hostSim.sims.map((sim) => sim.ticks);
+        const beforeSamples = guestRemotes.reduce((sum, entry) => sum + (entry.samples ?? 0), 0);
+        let dropError = null;
+        try { await guestPage.evaluate('window.__mp.drop()'); }
+        catch (error) { dropError = error.message; }
+        const resumed = await waitSnapshot(guestPage,
+          (snapshot) => snapshot.resumeCount > 0 && snapshot.phase !== 'reconnecting', 30000,
+          'guest reconnect with host AI');
+        await sleep(900);
+        const hostAfter = await snapshotOf(hostPage);
+        const guestAfter = await snapshotOf(guestPage);
+        reconnect = {
+          dropError,
+          beforeTicks,
+          afterTicks: hostAfter.ai.hostSim.sims.map((sim) => sim.ticks),
+          resumeCount: resumed.resumeCount,
+          beforeSamples,
+          afterSamples: (guestAfter.ai.remotes ?? []).reduce((sum, entry) => sum + (entry.samples ?? 0), 0),
+          guestAiRemotes: guestAfter.ai.remotes?.length ?? 0
+        };
+        passCheck('a guest reconnect does not stop the host AI simulation',
+          dropError === null &&
+          hostAfter.ai.hostSim.sims.every((sim, index) => sim.ticks > beforeTicks[index]),
+          JSON.stringify(reconnect));
+        passCheck('the resumed guest keeps receiving the 20 Hz AI poses',
+          guestAfter.ai.remotes?.length === AI_COUNT &&
+          reconnect.afterSamples > beforeSamples,
+          JSON.stringify(reconnect));
+      }
+      if (hostView.result && guestView.result) break;
+      await sleep(120);
+    }
+    hostFinal = hostView;
+    guestFinal = guestView;
+    if (!hostFinal.result || !guestFinal.result) {
+      throw new Error('both pages did not reach the shared result; host phase ' + hostFinal.phase +
+        ', guest phase ' + guestFinal.phase + ', AI ' + JSON.stringify(guestFinal.ai ?? null));
+    }
+    await shot(hostPage, 'browser-mp-ai-finish-host.png');
+    await shot(guestPage, 'browser-mp-ai-finish-guest.png');
+
+    const rows = hostFinal.result.rows;
+    const aiRows = rows.filter((row) => row.ai === true);
+    const hostRow = rows.find((row) => row.playerId === hostFinal.you.id);
+    const guestRow = rows.find((row) => row.playerId === guestFinal.you.id);
+    passCheck('the shared table has 2 human + ' + AI_COUNT + ' AI rows',
+      rows.length === 2 + AI_COUNT && aiRows.length === AI_COUNT,
+      JSON.stringify(rows.map((row) => [row.positionNumber, row.playerId, row.ai ?? false, row.status])));
+    passCheck('host and guest render the same result hash and identical rows',
+      hostFinal.result.hash === guestFinal.result.hash &&
+      JSON.stringify(hostFinal.result.rows) === JSON.stringify(guestFinal.result.rows),
+      hostFinal.result.hash + ' / ' + guestFinal.result.hash);
+    passCheck('every participant (including AI) finished; no DNF',
+      rows.every((row) => row.status === 'finished'),
+      rows.map((row) => row.status).join(','));
+    passCheck('AI rows carry ai-1... ids, profiles and the host finish ticks',
+      aiRows.every((row, index) => row.playerId === 'ai-' + (index + 1) &&
+        ['cautious', 'standard', 'reference'].includes(row.profile) &&
+        Number.isInteger(row.tick) && row.tick > 90),
+      JSON.stringify(aiRows.map((row) => [row.playerId, row.profile, row.tick, row.timeSeconds])));
+    passCheck('the AI order matches the committed reference expectations',
+      aiRows.every((row, index) => {
+        if (MAP_ID === 'amboy') return row.timeSeconds > 200 && row.timeSeconds < 300;
+        if (MAP_ID === 'gracia') return row.timeSeconds > 55 && row.timeSeconds < 200;
+        const record = hostAi[index];
+        const expected = record?.profile === 'reference' && record?.car === 'audi-r8v10-stock' ? 14.15
+          : record?.profile === 'cautious' && record?.car === 'dodge-challenger-stock' ? 16.90
+            : null;
+        return expected === null || Math.abs(row.timeSeconds - expected) <= 0.5;
+      }),
+      JSON.stringify(aiRows.map((row) => [row.car, row.profile, row.timeSeconds])));
+    passCheck('the shared rows are ordered by finish tick',
+      rows.every((row, index, list) => index === 0 || list[index - 1].tick <= row.tick),
+      JSON.stringify(rows.map((row) => [row.positionNumber, row.tick])));
+    passCheck('human rows still equal their local finish within one tick',
+      Number.isInteger(hostFinal.finishTick) && Math.abs(hostFinal.finishTick - hostRow.tick) <= 1 &&
+      Number.isInteger(guestFinal.finishTick) && Math.abs(guestFinal.finishTick - guestRow.tick) <= 1,
+      JSON.stringify({ host: [hostFinal.finishTick, hostRow.tick], guest: [guestFinal.finishTick, guestRow.tick] }));
+    passCheck('the guest rendered AI poses without simulating them',
+      aiRemoteSamples > 0 && aiRemoteErrors.length === 0 &&
+      (guestFinal.ai.remotes ?? []).length === AI_COUNT &&
+      (guestFinal.ai.hostSim ?? null) === null,
+      JSON.stringify({ samples: aiRemoteSamples, errors: aiRemoteErrors.slice(0, 3),
+        remotes: guestFinal.ai.remotes?.length ?? 0 }));
+    const aiSimRows = hostFinal.ai.result?.sim?.sims ?? hostFinal.ai.hostSim.sims;
+    passCheck('the host state-sequence hashes exist for every AI',
+      aiSimRows.every((sim) => sim.stateSequenceHash && sim.stateHashCount > 500),
+      JSON.stringify(aiSimRows.map((sim) => [sim.id, sim.stateHashCount, sim.stateSequenceHash])));
+    passCheck('AI labels are visible on the guest as AI · profile',
+      /AI · reference/.test(guestFinal.overlays.remotesText ?? '') &&
+      /AI · cautious/.test(guestFinal.overlays.remotesText ?? ''),
+      JSON.stringify(guestFinal.overlays.remotesText));
+    passCheck('no AI used power-ups (power-up slice is off in this gate)',
+      guestFinal.powerups?.enabled !== true && hostFinal.powerups?.enabled !== true,
+      JSON.stringify({ host: hostFinal.powerups?.enabled ?? null, guest: guestFinal.powerups?.enabled ?? null }));
+
+    const roomStats = roomServer.stats();
+    passCheck('room service finished exactly one two-human room',
+      roomStats.roomsCreated === 1 && roomStats.roomsFinished === 1 &&
+      hostFinal.players.length === 2 && guestFinal.players.length === 2,
+      JSON.stringify(roomStats));
+    passCheck('console is clean on both pages',
+      hostPage.messages.length === 0 && guestPage.messages.length === 0,
+      [...hostPage.messages, ...guestPage.messages].slice(0, 6).map((entry) => entry.source + ' ' + entry.text).join(' | '));
+
+    const evidence = {
+      kind: 'e1-drive.mp-ai-browser',
+      version: 1,
+      browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT, pages: 2 },
+      ports: { game: PORT, room: ROOM_PORT },
+      map: { id: MAP_ID, pins: MAP_ENTRY.mpPins ?? null },
+      room: { code, wsUrl: roomServer.wsUrl, stats: roomStats },
+      lobby: { host: hostLobby, guest: guestLobby,
+        screenshots: { host: shots['browser-mp-ai-lobby-host.png'],
+          guest: shots['browser-mp-ai-lobby-guest.png'] } },
+      race: { midShotAt, aiRemoteSamples, aiRemoteErrors, reconnect,
+        screenshots: { host: shots['browser-mp-ai-mid-host.png'],
+          guest: shots['browser-mp-ai-mid-guest.png'] } },
+      finish: { host: hostFinal, guest: guestFinal, sharedHash: hostFinal.result.hash,
+        aiRows, screenshots: { host: shots['browser-mp-ai-finish-host.png'],
+          guest: shots['browser-mp-ai-finish-guest.png'] } },
+      console: {
+        host: { totalMessages: hostPage.messages.length, messages: hostPage.messages },
+        guest: { totalMessages: guestPage.messages.length, messages: guestPage.messages }
+      },
+      assertions: { ok: passFailures.length === 0, failures: passFailures },
+      verdict: passFailures.length === 0 && hostPage.messages.length === 0 && guestPage.messages.length === 0
+        ? 'clean-console-and-gates' : 'failed'
+    };
+    writeFileSync(path.join(OUT, 'browser-evidence-mp-ai' + mpAiTag + '.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+    writeFileSync(path.join(LOGS, 'edge-mp-ai' + mpAiTag + '.log'), browserLog +
+      '\nroom: ' + JSON.stringify(roomStats) + '\n', 'utf8');
+    return {
+      ok: evidence.verdict === 'clean-console-and-gates',
+      summary: {
+        verdict: evidence.verdict,
+        room: code,
+        ai: hostAi,
+        sharedHash: hostFinal.result.hash,
+        rows: rows.map((row) => ({ position: row.positionNumber, id: row.playerId,
+          ai: row.ai === true, profile: row.profile ?? null, tick: row.tick, timeSeconds: row.timeSeconds })),
+        aiRemoteSamples,
+        reconnect,
+        sequences: hostFinal.ai.hostSim?.sims ?? null,
+        console: { host: hostPage.messages.length, guest: guestPage.messages.length },
+        screenshots: shots,
+        failures: passFailures
+      }
+    };
+  } catch (error) {
+    fatal = error;
+    const evidence = {
+      kind: 'e1-drive.mp-ai-browser',
+      version: 1,
+      browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT, pages: 2 },
+      ports: { game: PORT, room: ROOM_PORT },
+      room: roomServer ? { stats: roomServer.stats() } : null,
+      lobby: { host: hostLobby, guest: guestLobby },
+      race: { midShotAt, aiRemoteSamples, aiRemoteErrors },
+      finish: { host: hostFinal, guest: guestFinal },
+      console: {
+        host: { totalMessages: hostPage.messages.length, messages: hostPage.messages },
+        guest: { totalMessages: guestPage?.messages?.length ?? 0, messages: guestPage?.messages ?? [] }
+      },
+      assertions: { ok: false, failures: [error.message, ...passFailures] },
+      verdict: 'failed',
+      error: error.message
+    };
+    writeFileSync(path.join(OUT, 'browser-evidence-mp-ai' + mpAiTag + '.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+    writeFileSync(path.join(LOGS, 'edge-mp-ai' + mpAiTag + '.log'), browserLog + '\nERROR: ' + error.message + '\n', 'utf8');
+    return {
+      ok: false,
+      summary: { verdict: 'failed', error: error.message, failures: passFailures,
+        screenshots: shots, console: { host: hostPage.messages.length, guest: guestPage?.messages?.length ?? 0 } }
+    };
+  } finally {
+    try { guestPage?.close(); } catch {}
+    try { await roomServer?.close(); } catch {}
+    if (fatal) console.error('mp-ai capture failed:', fatal.message);
+  }
+}
+
+/**
  * M2/PWR2 power-up capture (`--mode mp-powerups`): two real pages, the real
  * 310 m race, the host-authoritative Mine/Shield/Repair slice. The host grants a
  * mine, the guest hits it and is wrecked/respawned; the guest uses a shield and
@@ -1818,8 +2172,9 @@ if (MODE !== 'drive') {
         : MODE === 'telemetry-restart' ? await telemetryRestartCapturePass()
           : MODE === 'audio' ? await audioCapturePass()
             : MODE === 'mp' ? await mpCapturePass()
-              : MODE === 'mp-powerups' ? await mpPowerupsCapturePass()
-                : await telemetryCapturePass();
+              : MODE === 'mp-ai' ? await mpAiCapturePass()
+                : MODE === 'mp-powerups' ? await mpPowerupsCapturePass()
+                  : await telemetryCapturePass();
   await shutdown();
   await sleep(400);
   console.log(JSON.stringify(result.summary, null, 2));

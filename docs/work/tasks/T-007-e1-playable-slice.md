@@ -541,6 +541,19 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   fluid mesh hariç, 93 alfa + 2 boyut + 1 no-albedo engelli.
 - Kanıt: `docs/work/analysis/map-slice-longbeach.md`.
 
+### E1ar — Online AI rakipler (AI2)  ✅
+- Host 2 insan + **0–3 AI**: `?mp=1&host=1&ai=2&aiCars=…&aiProfiles=…` veya
+  lobby `setAi`; guest salt-okunur, `?ai=` reddedilir.
+- Profiller: cautious 0.85 / standard 0.95 / reference 1.0; her AI ayrı wasm
+  instance, 60 Hz host tick, R1 participant `ai-1…`.
+- River/Amboy/Gracia: AI finish 14,38–17,30 / 221,07–258,78 / 63,67–76,65 s,
+  **0 respawn**; Gracia Dodge `ai-spawn-unsupported` (dürüst ret).
+- Uzak araçlar ghost hattıyla N slot (cyan insan, amber AI), 20 Hz relay,
+  interpolation; console **0/0**; reconnect'te AI devam ediyor.
+- `verify_e1_drive` **2281/2281** (16 MP-AI); suite 57/57; checker 23/23.
+- Kanıt: `docs/work/verification/T-007-mp-ai.md`,
+  `_work/e1-drive/browser-mp-ai-mid-guest-amboy.png`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

@@ -3158,3 +3158,103 @@ Amboy keep the lateral grid because both slots probe clean. Evidence:
    status; there is no streaming, progressive upload or map download.
 6. No full-game claim.
 
+---
+
+## 38. M4 - host-simulated AI opponents (0-3) in the online room
+
+Status: implementation + evidence, 7 November 2026. `?ai=0..3` (host URL or lobby
+controls) adds host-controlled AI to the existing two-human room on River,
+Amboy and Gracia. The AI is the committed original centre-line driver, not
+retail AI.
+
+### 38.1 Contract
+
+- Host-only lobby: AI count 0-3, one roster car and one skill profile per AI.
+  Guests see the list read-only; guest `?ai=` parameters are rejected.
+- `window.__mp.setAi({count, cars, profiles})` is the same host-only mutation;
+  the start gate requires all humans ready and the AI records built.
+- Participant ids are `ai-1`...`ai-3` in slots after the humans (3-5). The room
+  roster is unchanged: AI is not a room player.
+- The AI relay (project-specific HTTP beside the unchanged room service) carries
+  `roster`, 20 Hz `pose` and final `result` messages. The room's `input`/`state`
+  relay is untouched.
+- Typed refusals: invalid count/car/profile, and Gracia + Dodge Challenger
+  (`ai-spawn-unsupported`; the driver owner measured the front axle unloaded at
+  the committed spawn).
+
+### 38.2 Host simulation
+
+- One wasm module instance per AI (the module has one global world), created at
+  a grounded slot with that car's committed `.fields`; the host steps it once per
+  60 Hz host tick, zero input during the countdown, then the committed
+  `ai-driver-browser.js` input.
+- `web/ai-driver-browser.js` is a verbatim copy of `probes/ai-driver/ai-driver.mjs`
+  with only the crypto import/hash helper swapped. The Node gate compares the
+  controller source and drives both copies on the real wasm: identical inputs
+  and the AI1 reference finish ticks (Audi 849, Dodge cautious 1014).
+- Map control follows the driver owner: `MAP_CONTROL` on Amboy/Gracia, Amboy
+  `{minSpeed:3.5}`; River keeps `SPRINT_CONTROL`. Gracia's AI start uses the
+  measured spawn-row lateral grid (2.2/-2.8 m and 0/-2.8 m) because the released
+  lateral rows and behind-spawn candidates have no ground; every AI slot is
+  probed with the real engine for 140 ticks before the final world is created.
+- `RaceSession` owns AI checkpoint/finish/respawn. On `respawn` the host rebuilds
+  the AI world, `reprime`s the driver and `rejoin`s the progress row. A stuck AI
+  is a tick-capped DNF with a typed reason, never a guessed time.
+- AI is not added to the power-up model, so it cannot pick up, use or be hit by
+  power-ups in this gate.
+- The host delays its own `client.finished` report until all AI are terminal, so
+  `room.finished` and the AI result reach both pages together.
+
+### 38.3 Client rendering and result
+
+- `PacketConsumer.setGhostFrames()` reserves one ghost-pipeline car slot per
+  remote (human peer + AI). The host renders its own AI through the same
+  interpolation buffer; the guest renders only relayed poses. Cyan = human,
+  amber = AI; 3-tick delay, position/quaternion interpolation, bounded
+  correction, static wheel spin (the E1 snapshot has no wheel angle), no
+  collision.
+- `#mp-remotes` labels every remote as `AI · <profile> · AI n · <car> · 20 Hz
+  host relay · no collision`; the M1 single tag is hidden only when AI is
+  present.
+- `buildMpResult` merges human and AI rows with the same tick/time convention
+  and orders by finish tick then slot. With zero AI the object/hash are
+  byte-identical to M1.
+
+### 38.4 Measured result
+
+River (host + guest + 2 AI, console 0/0, shared hash `sha256:110d4f21…`):
+
+| P | Participant | Car / profile | Tick | Time |
+|---:|---|---|---:|---:|
+| 1 | `ai-1` | Audi R8 V10 / reference | 953 | 14.383333 s |
+| 2 | Host | Corvette ZR1 | 970 | 14.666667 s |
+| 3 | Guest | Corvette ZR1 | 1120 | 17.166667 s |
+| 4 | `ai-2` | Dodge Challenger / cautious | 1128 | 17.300000 s |
+
+Amboy (`sha256:6b304d0b…`): ai-1 13,354 / 221.066667 s, host 13,410 / 222.000000 s,
+guest 14,684 / 243.233333 s, ai-2 15,617 / 258.783333 s. Gracia
+(`sha256:4a60b2c5…`): ai-1 3,910 / 63.666667 s, host 4,065 / 66.250000 s, guest
+4,347 / 70.950000 s, ai-2 4,689 / 76.650000 s. All AI had 0 respawns and a
+per-AI state-sequence hash. The River AI times differ from the AI1 start-pose
+anchors by the grid row offset (~0.23 / 0.40 s), not a controller change.
+
+Guest reconnect (River): the guest's socket was dropped and resumed; the host AI
+kept ticking (403 → 489 ticks) and the guest's AI pose samples continued
+(264 → 324), with the same player id/slot.
+
+### 38.5 Verification
+
+- `verify_e1_drive.mjs`: **2281/2281** (16 MP AI checks;
+  `mp-ai-node-report.json`).
+- Browser `--mode mp-ai`: River/Amboy/Gracia **clean-console-and-gates**, console
+  **0/0**; River includes the reconnect check.
+- Regressions: River M1 rows unchanged (970 / 1074), Gracia M3 MP unchanged
+  (4065 / 4253), M2 power-up capture clean, suite **57/57**, checker exit 0.
+- Full record: `docs/work/verification/T-007-mp-ai.md`.
+
+### 38.6 Limits
+
+Host-only simulation; no client AI simulation, no car-to-car physics, no
+rubber-banding/traffic, no AI power-ups, no mid-race AI change; Gracia + Dodge
+refused; only River/Amboy/Gracia; loopback HTTP relay; no retail AI or full-game
+claim.

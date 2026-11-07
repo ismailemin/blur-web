@@ -202,18 +202,28 @@ export function rosterForResult(room) {
 }
 
 /**
- * Build the shared M1 result table from the room's `room.finished` payload.
+ * Build the shared result table from the room's `room.finished` payload.
  *
  * Both clients call this with the same `room` and `results`, so the rows,
  * positions, times and hash are identical. A finish tick is an engine tick that
  * includes the countdown; the reported race time subtracts the committed layout
  * countdown. A missing/invalid tick is an explicit DNF row, never a guessed
  * time.
+ *
+ * AI opponents (M4) are host-controlled participants that never appear on the
+ * room wire as players. The host broadcasts their finished/DNF rows through the
+ * AI relay; both pages merge the same `aiPlayers` + `aiResults` into this table.
+ * With zero AI the output object and hash are byte-identical to the M1 builder.
  */
-export function buildMpResult({ layout, room, results, tickHz = MP_TICK_HZ, note = MP_RESULT_NOTE } = {}) {
+export function buildMpResult({
+  layout, room, results, aiPlayers = [], aiResults = [],
+  tickHz = MP_TICK_HZ, note = MP_RESULT_NOTE
+} = {}) {
   if (!layout?.gates?.length) throw new Error('mp result needs the committed sprint layout');
   if (!room?.players?.length) throw new Error('mp result needs the room roster');
   if (!Array.isArray(results)) throw new Error('mp result needs the room finish results');
+  if (!Array.isArray(aiPlayers) || !Array.isArray(aiResults)) throw new Error('mp AI result needs arrays');
+  const withAi = aiPlayers.length > 0;
   const countdownTicks = layout.countdown?.ticks ?? 0;
   const finishGate = layout.gates[layout.gates.length - 1];
   const finishPosition = [
@@ -231,6 +241,7 @@ export function buildMpResult({ layout, room, results, tickHz = MP_TICK_HZ, note
       name: player.name,
       car: player.car,
       host: player.host,
+      ...(withAi ? { ai: false, profile: null } : {}),
       status: tick === null ? 'dnf' : 'finished',
       tick,
       raceTicks,
@@ -240,6 +251,31 @@ export function buildMpResult({ layout, room, results, tickHz = MP_TICK_HZ, note
       note: tick === null ? (result ? 'finish tick is not after the countdown' : 'no finish broadcast for this player') : null
     };
   });
+  for (const player of withAi ? aiPlayers : []) {
+    const result = aiResults.find((entry) => entry?.playerId === player.id) ?? null;
+    const tick = Number.isInteger(result?.tick) && result.tick > countdownTicks ? result.tick : null;
+    const raceTicks = tick === null ? null : tick - countdownTicks;
+    rows.push({
+      playerId: player.id,
+      slot: player.slot,
+      name: player.name ?? player.id,
+      car: player.car ?? null,
+      host: false,
+      ai: true,
+      profile: player.profile ?? null,
+      status: tick === null ? 'dnf' : 'finished',
+      tick,
+      raceTicks,
+      timeSeconds: raceTicks === null ? null : round6(raceTicks / tickHz),
+      position: tick === null ? null : finishPosition.slice(),
+      finishHash: typeof result?.hash === 'string' ? result.hash : null,
+      note: tick === null
+        ? (result
+          ? (result.reason ?? 'AI finish tick is not after the countdown')
+          : 'no host AI result for this participant')
+        : null
+    });
+  }
   const finished = rows.filter((row) => row.status === 'finished')
     .sort((a, b) => a.tick - b.tick || a.slot - b.slot);
   const dnf = rows.filter((row) => row.status === 'dnf').sort((a, b) => a.slot - b.slot);
@@ -271,6 +307,15 @@ export function buildMpResult({ layout, room, results, tickHz = MP_TICK_HZ, note
     finishers: finished.map((row) => row.playerId),
     dnf: dnf.map((row) => row.playerId),
     winnerId: finished[0]?.playerId ?? null,
+    ...(withAi ? {
+      ai: aiPlayers.map((player) => ({
+        playerId: player.id,
+        slot: player.slot,
+        name: player.name ?? player.id,
+        car: player.car ?? null,
+        profile: player.profile ?? null
+      }))
+    } : {}),
     note
   };
   return { ...body, hash: hashOf(body) };

@@ -926,6 +926,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Paketler: slice 25,4 MB, textures 21,4 MB, render 26,1 MB; doğrulama **9.480 + 9.967 + 13.534**; suite **57/57**.
 - Sınır: draw kapsaması %47,3 (195 component), 2 section, 7.476 instance, 96 engelli draw. Kanıt: `docs/work/analysis/map-slice-longbeach.md`.
 
+## 8 Kasım 2026 — online AI rakipler
+
+- 2 insan + **0–3 AI**; `?ai=` veya lobby `setAi`; profiller cautious/standard/reference; her AI ayrı wasm instance.
+- River 14,38–17,30 s, Amboy 221,07–258,78 s, Gracia 63,67–76,65 s; **0 respawn**; Gracia Dodge tipli ret.
+- Uzak araçlar N slot (cyan insan, amber AI), 20 Hz relay, reconnect'te AI devam; console **0/0**.
+- `verify_e1_drive` **2281/2281** (16 MP-AI), suite 57/57, checker 23/23. Kanıt: `docs/work/verification/T-007-mp-ai.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

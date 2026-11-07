@@ -1455,3 +1455,47 @@ per-car metrics and plausibility comparison are recorded in
   approximation, not retail collision.
 - **Native parity** is blocked by the DirectX SDK, as recorded in
   `T-007-vehicle-physics.md`.
+
+## AI opponents (M4) - host-simulated, 0-3 per room
+
+Status: implementation + evidence, 7 November 2026. Full record:
+`docs/work/verification/T-007-mp-ai.md`.
+
+- **Lobby.** Host-only `?ai=0..3` (or `window.__mp.setAi({count,cars,profiles})`)
+  plus the lobby count/car/profile selects. Guests get the relayed list
+  read-only; guest `?ai=` parameters are rejected. Start requires all humans
+  ready **and** the AI records built. Skill profiles are `cautious` (0.85),
+  `standard` (0.95) and `reference` (1.0), speed target only.
+- **Ids and authority.** AI participants are `ai-1`…`ai-3` in slots 3…5; they are
+  not room players and never appear on the net-mvp wire. The host runs one wasm
+  instance per AI (the module has one global world), steps the committed
+  `probes/ai-driver/ai-driver.mjs` controller once per 60 Hz host tick, and feeds
+  the AI state into the same authoritative `RaceSession`.
+- **Driver copy.** `web/ai-driver-browser.js` is the committed driver verbatim
+  with only the `node:crypto` import replaced by `web/sha256.js`. The Node gate
+  compares the controller source and drives both copies on the real wasm:
+  identical inputs and finish ticks.
+- **Map control.** Amboy passes the driver owner's `{minSpeed:3.5}` override;
+  Gracia uses `MAP_CONTROL` unchanged. Gracia's AI starts on the measured
+  spawn-row lateral grid (2.2/−2.8 m and 0/−2.8 m) because the released lateral
+  rows and behind-spawn poses have no ground; every AI slot is probed with the
+  real engine for 140 ticks before the final world is created. Gracia + Dodge
+  Challenger is a typed `ai-spawn-unsupported` refusal.
+- **Relay.** New project-specific HTTP endpoint `/_mp-ai/relay` in
+  `tools/serve.mjs` (ordered/bounded; room service untouched) carries the lobby
+  roster, 20 Hz AI poses and the final AI rows. Clients never simulate AI.
+- **Rendering.** `PacketConsumer.setGhostFrames()` draws one ghost-pipeline car
+  per remote (human + AI) with per-slot tint (cyan/amber). The guest interpolates
+  only relayed poses with the existing 3-tick delay and bounded corrector; no
+  collision, static wheel spin. `#mp-remotes` labels every car
+  `AI · <profile> · AI n · <car> · 20 Hz host relay · no collision`.
+- **Result.** `buildMpResult` merges human and AI rows with the same tick/time
+  convention and orders by finish tick; zero-AI output/hash is byte-identical to
+  M1. The host delays its own finish report until all AI are finished or a
+  tick-capped DNF, so `room.finished` and the AI rows arrive together.
+- **Evidence.** `verify_e1_drive` **2281/2281**, 16 MP AI checks; River/Amboy/
+  Gracia `--mode mp-ai` captures clean with console **0/0**; River reconnect
+  keeps the host AI running; M1/M3/M2 regressions unchanged; suite **57/57**.
+- **Limits.** Host-only AI, no car-to-car physics, no traffic/rubber-banding, no
+  AI power-ups, no mid-race AI change, River/Amboy/Gracia only, no retail AI or
+  full-game claim.
