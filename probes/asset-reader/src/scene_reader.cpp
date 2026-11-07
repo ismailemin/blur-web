@@ -24,6 +24,8 @@ constexpr size_t max_input=64*1024*1024;
 constexpr size_t level_input_limit=16u*1024u*1024u;
 constexpr uint32_t max_count=100000;
 std::string escape(const char* text);
+std::string hex16(uint64_t value);
+uint64_t uv_range_hash(const std::vector<float>& uv,const std::vector<uint32_t>& indices,uint32_t first,uint32_t count);
 struct Reader {
     const unsigned char* b;size_t end,p=0,origin=0;uint32_t objects=0;
     [[noreturn]] void fail(const std::string& message) const {throw std::runtime_error(message+" at byte "+std::to_string(p));}
@@ -86,7 +88,23 @@ struct MaterialRow {std::string type_name;std::vector<MaterialAction> actions;};
 struct AlbedoState{bool seen=false,known=false;int32_t value=-1,row=-1;std::string reason;};
 struct MaterialState{AlbedoState prop,vehicle;};
 struct Resource {int32_t block,index;};
-struct Draw {uint32_t first,count;int32_t albedo=-1;std::string binding;bool uv_available=false;std::string albedo_parameter;int32_t resource_block=-1,resource_index=-1;int32_t material_row=-1;std::string material;};
+struct Draw {uint32_t first,count;int32_t albedo=-1;std::string binding;bool uv_available=false;std::string albedo_parameter;int32_t resource_block=-1,resource_index=-1;int32_t material_row=-1;std::string material;uint64_t uv_hash=0;bool uv_hashed=false;std::string binding_status;std::string binding_reason;};
+// Direct-draw and instance exports share this field set. Identity resolution is
+// reported as-is; blocked draws keep an explicit reason and no invented texture.
+void write_draw_json(std::ostringstream& out,const Draw& d){
+    out<<"{\"firstIndex\":"<<d.first<<",\"indexCount\":"<<d.count<<",\"albedoTexture\":";
+    if(d.albedo<0)out<<"null";else out<<d.albedo;
+    out<<",\"binding\":\""<<escape(d.binding.c_str())<<"\",\"uv0Available\":"<<(d.uv_available?"true":"false")<<",\"albedoParameter\":";
+    if(d.albedo_parameter.empty())out<<"null";else out<<'"'<<escape(d.albedo_parameter.c_str())<<'"';
+    out<<",\"resourceBlock\":";if(d.resource_block<0)out<<"null";else out<<d.resource_block;
+    out<<",\"resourceIndex\":";if(d.resource_index<0)out<<"null";else out<<d.resource_index;
+    out<<",\"material\":";if(d.material.empty())out<<"null";else out<<'"'<<escape(d.material.c_str())<<'"';
+    out<<",\"materialRow\":"<<d.material_row<<",\"uvHash\":";
+    if(d.uv_hashed)out<<'"'<<"0x"<<hex16(d.uv_hash)<<'"';else out<<"null";
+    out<<",\"bindingStatus\":\""<<d.binding_status<<"\",\"bindingReason\":";
+    if(d.binding_reason.empty())out<<"null";else out<<'"'<<escape(d.binding_reason.c_str())<<'"';
+    out<<'}';
+}
 struct Texture {std::string name;uint32_t hash;size_t offset,bytes;};
 struct TextureLodInfo {
     int32_t lod=-1;bool present=false;uint16_t version=0;size_t archive_offset=0;
@@ -560,7 +578,7 @@ struct Decoder {
         draw.albedo=source.index;draw.albedo_parameter=parameter;
         draw.binding=std::string(parameter)+" via ordered instance/base/stream materials and shared texture resource";
     }
-    void geometry(){
+    void geometry(bool expose_resource_parameter=false){
         if(!binding_tail)r.fail("Resource source mapping unavailable: "+binding_error);
         // Buffers are concatenated once; primitive references retain their source VB.
         std::vector<uint32_t> bases(vbs.size());
@@ -589,7 +607,12 @@ struct Decoder {
             for(uint32_t j=0;j<lod.count;j++){r.p=ib.data+size_t(lod.offset+j)*ib.width;auto index=ib.width==2?r.u16():r.u32();if(index<lod.min||index>=lod.min+lod.vertices||index>=vb.count-vertex_shift)r.fail("Index outside primitive vertex range");values.push_back(index+bases[size_t(vr.index)]+vertex_shift);}r.p=saved;
             const uint32_t step=p.topology==0?3u:1u;for(uint32_t j=2;j<values.size();j+=step){auto a=values[j-2],b=values[j-1],c=values[j];if(p.topology==1&&j%2)std::swap(a,b);if(a==b||b==c||a==c)continue;if(triangles.size()>6000000-3)r.fail("Output triangle limit");triangles.insert(triangles.end(),{a,b,c});}
             Draw draw{first,static_cast<uint32_t>(triangles.size())-first,-1,""};
-            draw.uv_available=draw_uv_available(p,s,vb);bind_albedo(p,draw);
+            draw.uv_available=draw_uv_available(p,s,vb);bind_albedo(p,draw,expose_resource_parameter);
+            if(draw.uv_available){draw.uv_hash=uv_range_hash(uvs,triangles,draw.first,draw.count);draw.uv_hashed=true;}
+            if(draw.albedo>=0)draw.binding_status=draw.uv_available?"static-shared-albedo-resolved":"blocked";
+            else if(draw.resource_block>=0&&draw.resource_index>=0)draw.binding_status=draw.uv_available?"static-resource-albedo-resolved":"blocked";
+            else draw.binding_status="blocked";
+            if(draw.binding_status=="blocked")draw.binding_reason=draw.binding;
             draws.push_back(draw);
         }
         if(triangles.empty())r.fail("No nondegenerate triangles");
@@ -735,6 +758,11 @@ std::string level_mesh(const unsigned char* level,size_t level_size,const unsign
     mesh.declarations=header.declarations;mesh.declaration_elements=std::move(header.declaration_elements);mesh.effect_names=std::move(header.effect_names);
     mesh.expected_resource_block=geometry_block;mesh.vertex_sources=std::move(nodes.vertex_sources);mesh.index_sources=std::move(nodes.index_sources);
     mesh.texture_sources=std::move(nodes.texture_sources);mesh.constants=std::move(nodes.constants);mesh.binding_tail=true;
+    // Shared texture identities resolve against the levelrender Scene list that
+    // the node chunk references; the node chunk itself carries no shared list.
+    // The geometry decoder performs the binding, so it needs the level Scene
+    // block count for the resource-block range check as well.
+    mesh.textures=header.textures;mesh.resource_blocks=header.resource_blocks;
     uint32_t omitted=0;
     for(const auto& p:nodes.primitives){
         const auto& stream=mesh.position_stream(p,false);
@@ -743,23 +771,23 @@ std::string level_mesh(const unsigned char* level,size_t level_size,const unsign
         mesh.primitives.push_back(p);
     }
     if(mesh.primitives.empty())mesh.r.fail("No direct primitive binds selected level geometry block");
-    mesh.geometry();
+    mesh.geometry(true);
     std::array<float,3> lo{INFINITY,INFINITY,INFINITY},hi{-INFINITY,-INFINITY,-INFINITY};
     for(size_t i=0;i<mesh.positions.size();++i){lo[i%3]=std::min(lo[i%3],mesh.positions[i]);hi[i%3]=std::max(hi[i%3],mesh.positions[i]);}
     std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<float>::max_digits10);
     out<<"{\"status\":\"ok\",\"positions\":[";
     for(size_t i=0;i<mesh.positions.size();++i){if(i)out<<',';out<<mesh.positions[i];}out<<"],\"indices\":[";
     for(size_t i=0;i<mesh.triangles.size();++i){if(i)out<<',';out<<mesh.triangles[i];}out<<"],\"uv0\":[";
-    for(size_t i=0;i<mesh.uvs.size();++i){if(i)out<<',';out<<mesh.uvs[i];}out<<"],\"sharedTextures\":[],\"draws\":[";
-    for(size_t i=0;i<mesh.draws.size();++i){if(i)out<<',';const auto& draw=mesh.draws[i];out<<"{\"firstIndex\":"<<draw.first<<",\"indexCount\":"<<draw.count<<",\"albedoTexture\":null,\"binding\":\"Level materials not applied in diagnostic preview\",\"uv0Available\":"<<(draw.uv_available?"true":"false")<<",\"albedoParameter\":null}";}
+    for(size_t i=0;i<mesh.uvs.size();++i){if(i)out<<',';out<<mesh.uvs[i];}out<<"],\"sharedTextures\":[";for(size_t i=0;i<mesh.textures.size();++i){if(i)out<<',';const auto&t=mesh.textures[i];out<<"{\"name\":\""<<escape(t.name.c_str())<<"\",\"hash\":"<<t.hash<<",\"dataOffset\":"<<t.offset<<",\"dataBytes\":"<<t.bytes<<'}';}out<<"],\"draws\":[";
+    for(size_t i=0;i<mesh.draws.size();++i){if(i)out<<',';write_draw_json(out,mesh.draws[i]);}
     out<<"],\"bounds\":{\"min\":["<<lo[0]<<','<<lo[1]<<','<<lo[2]<<"],\"max\":["<<hi[0]<<','<<hi[1]<<','<<hi[2]<<"]},\"metadata\":{\"fixtureOnly\":false,\"partialSceneTraversal\":true,"
        <<"\"geometryBlock\":"<<geometry_block<<",\"nodeBlock\":"<<node_block<<",\"nodeIndex\":"<<nodes.node_index
        <<",\"vertexCount\":"<<mesh.positions.size()/3<<",\"triangleCount\":"<<mesh.triangles.size()/3<<",\"primitiveCount\":"<<mesh.primitives.size()
        <<",\"omittedOtherBlockPrimitives\":"<<omitted<<",\"instanceDescriptionsSkipped\":"<<nodes.instance_count<<",\"instanceBatchDescriptionsSkipped\":"<<nodes.instance_batch_count
-       <<",\"instanceBasePrimitivesSkipped\":"<<nodes.base_primitive_count<<",\"instancesApplied\":false,\"nodeTransformsApplied\":false,\"coordinateSpace\":\"source-level\",\"material\":\"diagnostic-only\","
+       <<",\"instanceBasePrimitivesSkipped\":"<<nodes.base_primitive_count<<",\"instancesApplied\":false,\"nodeTransformsApplied\":false,\"coordinateSpace\":\"source-level\",\"material\":\"static-albedo-identity-only\",\"materialAlbedoResolved\":true,\"materialColourApplied\":false,\"blendStateApplied\":false,\"alphaRuleApplied\":false,\"shaderStagesApplied\":false,\"samplerStateApplied\":false,"
        <<"\"sceneHeaderParsedUntilOffset\":"<<header.r.p<<",\"geometryParsedUntilOffset\":"<<geometry_parsed<<",\"nodeParsedUntilOffset\":"<<nodes.r.p
        <<",\"geometryStreamOffset\":"<<geometry_record.offset<<",\"nodeStreamOffset\":"<<node_record.offset
-       <<",\"integrityValidated\":false,\"scope\":\"first node-chunk RenderList direct LOD0 primitives bound to selected geometry block; instances and later resource items omitted\"}}";
+       <<",\"integrityValidated\":false,\"scope\":\"first node-chunk RenderList direct LOD0 primitives bound to selected geometry block; static g_tAlbedo identity and UV0 are exported; texture format, alpha, blend, shader stages, sampler state, instances and later resource items are not applied\"}}";
     return out.str();
 }
 std::string escape(const char* text){std::string out;for(const unsigned char* p=reinterpret_cast<const unsigned char*>(text);*p;p++){if(*p=='"'||*p=='\\')out+='\\';if(*p>=32)out+=char(*p);else out+=' ';}return out;}

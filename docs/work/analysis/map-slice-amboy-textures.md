@@ -32,9 +32,11 @@ browser, playable-game or full-game claim, and no invented texture.**
 **Answer:** yes — 1,201 of the 1,606 direct draws can bind a real static albedo
 image with the committed BC decoder and their original UV0 today. The remaining
 405 are blocked for four distinct, labelled reasons, none of which is a missing
-UV0 stream. This is **data-level bindability**: the native JSON export currently
-discards the resolved identity, so the renderer must either consume this
-manifest or the reader export must be extended (Section 8).
+UV0 stream. This is **data-level bindability**. At the time of MAP3 the native
+JSON export discarded the resolved identity; **READ1 has since replaced that
+hard-coded diagnostic output with the real per-draw identity and UV0 hash
+(§11)**. The renderer can now consume either this manifest or the extended
+reader export.
 
 ---
 
@@ -47,12 +49,14 @@ printer discards the result.
 |---|---|
 | `probes/asset-reader/src/scene_reader.cpp` `geometry()` (lines 564–601) | calls `draw.uv_available = draw_uv_available(...)` and `bind_albedo(p, draw)` for every emitted direct primitive |
 | `bind_albedo()` (lines 523–562) | applies instance → base → every active stream material, follows nested type-8 rows, last `g_tAlbedo`/`g_MeshTexture` wins; for a shared texture it sets `draw.albedo`; for a resource-block texture it sets `draw.resource_block` / `draw.resource_index`; it also sets `material_row` and `material` |
-| `level_mesh()` JSON printer (lines 753–754) | emits the literal `"albedoTexture":null` and `"binding":"Level materials not applied in diagnostic preview"` for every draw and never prints `draw.albedo`, `draw.resource_block`, `draw.resource_index`, `draw.material_row` or `draw.material` |
+| `level_mesh()` JSON printer (lines 753–754, before READ1) | emitted the literal `"albedoTexture":null` and `"binding":"Level materials not applied in diagnostic preview"` for every draw and never printed `draw.albedo`, `draw.resource_block`, `draw.resource_index`, `draw.material_row` or `draw.material` |
 
-So the correct statement is: **the material-binding path exists in the committed
-reader code, but the direct-draw export hard-codes the diagnostic values.** This
-supersedes the sentence “the direct-draw reader has no committed material-binding
-path for base primitives” in `map-slice-amboy.md` §3.1.
+So the correct statement at MAP3 time was: **the material-binding path existed in
+the committed reader code, but the direct-draw export hard-coded the diagnostic
+values.** READ1 removed that hard-coding and also supplied the level Scene shared
+texture list and block count to the binding check; §11 records the before/after
+evidence. This supersedes the sentence “the direct-draw reader has no committed
+material-binding path for base primitives” in `map-slice-amboy.md` §3.1.
 
 The other MAP2 attempts failed for unrelated, non-material reasons:
 
@@ -324,12 +328,12 @@ draws only, with the same `diagnosticFallback` marker.
 
 ## 8. Next concrete binding step for the renderer
 
-1. **Export the fields the reader already computes.** In a separate reader task,
-   replace the hard-coded `albedoTexture:null` block in
-   `scene_reader.cpp:753-754` with `draw.albedo`, `resourceBlock`,
-   `resourceIndex`, `albedoParameter`, `materialRow` and `material`, plus a
-   `bindingStatus`/`uvHash` pair. No new format work is needed for the 1,201
-   draws.
+1. **Export the fields the reader already computes — implemented by READ1
+   (§11).** The hard-coded `albedoTexture:null` block in
+   `scene_reader.cpp:753-754` is replaced by `draw.albedo`, `resourceBlock`,
+   `resourceIndex`, `albedoParameter`, `materialRow`, `material`, `uvHash`,
+   `bindingStatus` and `bindingReason`, and the level Scene `sharedTextures`
+   list is exported. No new format work was needed for the 1,201 draws.
 2. **Packet producer.** For `?map=amboy`, consume the manifest or the extended
    reader output: upload the 186 RGBA8 mip0 images, select the per-draw
    `textureId`, and reuse the existing `draws.uv0.f32.bin` stream and the
@@ -413,3 +417,158 @@ Repository gate: `python tools/verify_asset_probe.py --skip-build` →
 **39 checks PASS**, including `map-slice-amboy`.
 
 **No renderer/GPU/browser claim, no invented texture, no e1-drive change.**
+
+---
+
+## 11. READ1 export fix (7 November 2026)
+
+**Owner:** READ1 (sub-agent). **Scope:** `probes/asset-reader/**` and this
+document. No change to `probes/e1-drive`, `probes/map-slice`,
+`probes/map-pipeline`, `tools/`, `upstream/` or `game-data/`. No renderer, GPU,
+browser or full-game claim.
+
+### 11.1 What changed
+
+`probes/asset-reader/src/scene_reader.cpp`:
+
+- the direct level path (`level_mesh()` → `geometry(true)` → `write_draw_json()`)
+  now prints the identity that `bind_albedo()` already resolved:
+  `albedoTexture`, `albedoParameter`, `material`, `materialRow`,
+  `resourceBlock`, `resourceIndex`, `uv0Available`, `uvHash`,
+  `bindingStatus` and `bindingReason`;
+- the level Scene `sharedTextures` list (name/hash/dataOffset/dataBytes) is
+  exported instead of the literal `[]`, and the geometry decoder receives the
+  level Scene `resource_blocks` count so the existing range check can resolve
+  resource-block sources;
+- `uvHash` is the same P45/P47 FNV-1a 64 over the draw's referenced float32 UV
+  bits that P73a uses for instances;
+- `bindingStatus` is `static-resource-albedo-resolved`,
+  `static-shared-albedo-resolved` or `blocked`; a blocked draw carries the
+  existing `binding` text as `bindingReason`; no texture is invented;
+- level metadata changes from `material:"diagnostic-only"` to
+  `material:"static-albedo-identity-only"` with
+  `materialAlbedoResolved:true` and explicit `materialColourApplied:false`,
+  `blendStateApplied:false`, `alphaRuleApplied:false`,
+  `shaderStagesApplied:false`, `samplerStateApplied:false`.
+
+The model `scene_inspect()` field set is intentionally unchanged so the
+vehicle-pipeline scene hashes stay stable. The instance path already exported
+the same identity fields from P73a and was not modified.
+
+### 11.2 Before / after (all 48 supported Amboy sections)
+
+| measure | before READ1 | after READ1 |
+|---|---:|---:|
+| direct draws | 1,606 | 1,606 |
+| printed `albedoTexture:null` + `"Level materials not applied"` | **1,606 / 1,606** | 338 blocked draws only |
+| reader identity resolved | not printed | **1,268** (1,163 resource + 105 shared) |
+| reader identity blocked | not printed | **338** |
+| joined with MAP3 decoder/alpha evidence | — | **1,201 bindable / 405 blocked** |
+| UV0 hashes printed and matching MAP3 | 0 | **1,606 / 1,606** |
+| material name + row printed | 0 | **1,606 / 1,606** |
+
+The join is exact:
+
+| MAP3 status | reader status | draws |
+|---|---|---:|
+| `bindable-static-albedo` | resolved (1,144 resource + 57 shared) | 1,201 |
+| `blocked-effect-not-static-albedo` | blocked | 334 |
+| `blocked-decoder-size-limit` | resolved (2 resource + 48 shared) | 50 |
+| `blocked-alpha-rule-missing` | resolved | 17 |
+| `blocked-runtime-albedo-parameter` | blocked | 4 |
+
+The reader cannot classify decoder-size or BC3-alpha blockers because the node
+chunk has no texture descriptor; it reports identity resolution. Joining that
+identity to the MAP3 manifest gives the 1,201/405 split without a new binding
+algorithm and without guessing.
+
+Bounded sample (5 sections, one per blocker class plus one wholly bindable
+section): `g44-n290`, `g54-n184`, `g79-n288`, `g143-n284`, `g74-n234` →
+**135 draws, 108 bindable / 27 blocked**; the reader itself reports
+**114 identity-resolved / 21 identity-blocked**.
+
+### 11.3 River regression
+
+`level_inspect levelrender geometry.chunk node-53.chunk 252 253`:
+
+- positions, indices and UV0 hashes are byte-identical before/after
+  (`8e00a620…`, `7ad84d31…`, `f6f91400…`);
+- 5/5 draws now print identity: `1073:0`, `1112:0`, `1118:0`, `936:0`, `829:0`,
+  material rows `2, 3, 4, 6, 8`, and UV0 hashes
+  `0x375983999801eddb`, `0xc61907b7d7ca2607`, `0xf1054bd6f9343891`,
+  `0xce7c32cd9dcc6a60`, `0x5be01c6c8deb31ae`;
+- the level Scene shared texture list is now 10 entries instead of 0;
+- the P73a instance artifact is unchanged:
+  `_work/asset-reader/level-instance-textures.json` 25,724 B,
+  SHA-256 `1a33893026887f0e022eeec782791cbedf9153146d389b7c076f9d0b84f47fb4`,
+  UV stream 105,296 B,
+  SHA-256 `158a3ac81b4cf7a5b1b92d327d8dfcd97ab29100387eb72d3b84f1f333962c83`;
+- native `--instances-all` output is byte-identical,
+  SHA-256 `2543128a5a299e454e34980b4e2f465022788a27849267cfdadd08d9cfd1acbb`.
+
+### 11.4 Geometry blockers remain geometry
+
+- The 27 unsupported sections still fail at
+  `Unsupported position vertex format` (POSITION0 type 7, `BillBoard_LN`,
+  stride 28). `blockers.json.unsupportedSections.summary.textureSideResolved`
+  is 27/27.
+- The 366 instance descriptions are still omitted as other-block geometry:
+  `--instances-all` reports 262 / 40 / 64 descriptions, **0 emitted**, 366
+  `omittedOtherBlockInstances`, 0 bounds failures. `blockers.json` records
+  static `g_tAlbedo` 366/366 and UV0 declaration 366/366. These are not texture
+  blockers.
+
+### 11.5 Verification
+
+| gate | result |
+|---|---|
+| native MSVC `/W4` | clean |
+| CTest | **15/15 PASS** |
+| Amboy full direct export verifier | **14,294 checks, 0 failures** |
+| Amboy native/WASM sample | 135 draws + 366 instances, deep-equal, PASS |
+| P73a artifact verifier | **558 checks, 0 failures** |
+| River native/WASM/Python | `verify_level_wasm.mjs` PASS, Python geometry equal |
+| full `verify_asset_probe.py` | 38 PASS then `map-slice-amboy` FAIL; `ai-driver` and `amboy-textures` run manually and PASS |
+
+The single suite failure is **not** a content regression: `_work/map-slice/amboy/slice.json`
+records the pre-fix `level_inspect.exe` byte count/hash
+(`247808` / `63ee2801…`); the rebuilt reader is `249856` / `a633a030…`.
+Re-verifying a copy of the package with only that cached tool record and its
+content hash refreshed gives **12,367 checks, 0 failures**. The map-slice
+package owner must refresh that record; READ1 did not modify map-slice files.
+`probes/map-slice/tools/extract_slice.py` also still asserts that every direct
+draw has a null albedo, so that extractor needs its assertion updated before the
+package is regenerated with this reader.
+
+Evidence:
+
+| path | bytes | SHA-256 |
+|---|---:|---|
+| `_work/asset-reader/amboy-direct-bindings.json` | 2,799 | `a4b58c7f3a0d3461f8593e5e5f14750776bf74d5a16bf484e2a84f1e94817444` |
+| `_work/verification/amboy-reader-native-wasm.json` | 1,602 | `6ea446f298f5b7b43ad75a294fb2d1fe4b16af7ac51d2eedcce4673d3750301f` |
+| `_work/asset-reader/amboy-package-refresh/verify.json` | 2,067 | `630d6108420cf69e5c88676bb1dc47c07429ffc61c8f0ee5e686215aa650cd46` (refreshed copy `PASS 12367`) |
+
+Commands:
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py probes/asset-reader/tests/verify_amboy_direct_bindings.py
+node probes/asset-reader/tests/verify_amboy_wasm.mjs
+node probes/asset-reader/tests/verify_level_wasm.mjs
+```
+
+### 11.6 Limits
+
+1. No pixel was decoded, uploaded or rendered; no GPU/browser/playable-game
+   claim. The reader exports static identity and UV0 only.
+2. Texture format, alpha, blend, shader stages, sampler wrap/filter, mips and
+   sRGB are not applied, exactly as in MAP3/P73a.
+3. The decoder remains bounded to ≤512×512; six source images (50 draws) and
+   three BC3 imposters (17 draws) stay blocked at the texture stage even though
+   the reader prints their identity.
+4. Four `Advert_LN_NV` draws (136 tri) remain runtime-only `DATA_INDEX`; the
+   `Racification*` 334 draws expose `g_tTexture`, not an albedo, and remain
+   blocked.
+5. The 27 billboard sections and 366 instances are geometry-reader blockers, not
+   texture blockers.
+6. `_work/` artifacts and the generated WASM are not committed.

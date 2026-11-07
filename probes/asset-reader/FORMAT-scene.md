@@ -206,7 +206,21 @@ and material tail to resolve real node VB/IB source mappings. Only direct
 primitive LOD0 draws whose POSITION/index sources bind the selected geometry
 block are emitted. Other-block direct draws are counted as omitted; instances,
 batches, instance base primitives, later resource items/LODs and transforms are
-not rendered. Materials remain diagnostic-only and albedo bindings are null.
+not rendered. The resolved static `g_tAlbedo`/`g_MeshTexture` identity and UV0
+hash are exported per draw; texture format, alpha, blend, shader stages and
+sampler state are not applied.
+
+`level_mesh_inspect` draws contain
+`{firstIndex,indexCount,albedoTexture,binding,uv0Available,albedoParameter,
+resourceBlock,resourceIndex,material,materialRow,uvHash,bindingStatus,
+bindingReason}`. `albedoTexture` is an index into the exported
+`sharedTextures` list or `null`; a resource-block source keeps
+`resourceBlock`/`resourceIndex` and no shared index. `uvHash` is the P45/P47
+FNV-1a 64 over the draw's referenced float32 UV bits. `bindingStatus` is
+`static-resource-albedo-resolved`, `static-shared-albedo-resolved` or
+`blocked`; blocked draws keep the exact `binding` text in `bindingReason`.
+The reader reports identity only: decoder size, BC3 alpha, blend and sampler
+policy are deliberately outside this export.
 
 Metadata includes `instancesApplied:false`, `nodeTransformsApplied:false`,
 `coordinateSpace:"source-level"`, skipped description counts, both source stream

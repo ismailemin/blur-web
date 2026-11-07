@@ -302,3 +302,38 @@ Evidence paths: `_work/verification/level-instances-native-wasm.json`,
    upscale, mip chain or invented detail is used.
 7. **No game-data modification.** The retail level render/stream, `upstream/`,
    e1-drive and every texture remain read-only; all new data is under `_work/`.
+
+---
+
+## 7. READ1 addendum: shared export contract (7 November 2026)
+
+READ1 extended the **direct level** path (`level_mesh_inspect`) to print the same
+identity fields that P73a already exported for instances:
+`albedoTexture`, `albedoParameter`, `material`, `materialRow`, `resourceBlock`,
+`resourceIndex`, `uv0Available`, `uvHash`, `bindingStatus` and `bindingReason`,
+plus the level Scene `sharedTextures` list. The instance path was not modified.
+
+- **P73a artifact unchanged.** `_work/asset-reader/level-instance-textures.json`
+  is still 25,724 B / SHA-256
+  `1a33893026887f0e022eeec782791cbedf9153146d389b7c076f9d0b84f47fb4`;
+  the UV stream is still 105,296 B / SHA-256
+  `158a3ac81b4cf7a5b1b92d327d8dfcd97ab29100387eb72d3b84f1f333962c83`;
+  native `--instances-all` is byte-identical
+  (`2543128a5a299e454e34980b4e2f465022788a27849267cfdadd08d9cfd1acbb`).
+  The artifact verifier still passes **558 checks / 0 failures**.
+- **River direct draws** now print `1073:0`, `1112:0`, `1118:0`, `936:0`,
+  `829:0` with material rows `2, 3, 4, 6, 8`; positions/indices/UV0 are
+  byte-identical to the pre-change output.
+- **Amboy** is covered by
+  `probes/asset-reader/tests/verify_amboy_direct_bindings.py`
+  (14,294 checks / 0 failures) and `verify_amboy_wasm.mjs`. Full evidence and
+  the remaining decoder/alpha/effect/runtime blockers are in
+  `docs/work/analysis/map-slice-amboy-textures.md` §11.
+- **Gates:** native `/W4` clean, CTest **15/15**, P73a verifier PASS, Amboy
+  native/WASM/Python agreement PASS. The full suite has one cached-package
+  failure: `_work/map-slice/amboy/slice.json` records the pre-fix
+  `level_inspect.exe` bytes/hash; a copy re-verified with that one record
+  refreshed passes 12,367 checks. READ1 did not edit map-slice files.
+- **Limits unchanged:** static `g_tAlbedo` identity and UV0 only; BC3 alpha,
+  >512 px decode, runtime albedo and effect layers remain blocked, and no
+  renderer/GPU/browser claim is made.

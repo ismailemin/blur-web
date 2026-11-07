@@ -128,6 +128,10 @@ void real_level_tests(const char* level_path,const char* geometry_path,const cha
     check(has(result,"\"vertexCount\":344")&&has(result,"\"triangleCount\":208")&&has(result,"\"primitiveCount\":5"),"Actual streamed level geometry count wrong");
     check(has(result,"\"instancesApplied\":false")&&has(result,"\"instanceDescriptionsSkipped\":57")&&has(result,"\"instanceBasePrimitivesSkipped\":36"),"Level instance scope misrepresented");
     check(has(result,"\"firstIndex\":0,\"indexCount\":90")&&has(result,"\"firstIndex\":570,\"indexCount\":54"),"Actual level draw boundaries changed");
+    const auto level_draws=draw_objects(result);check(level_draws.size()==5,"Actual level draw count changed");
+    for(const auto& draw:level_draws)check(has(draw,"\"uvHash\":\"0x")&&has(draw,"\"bindingStatus\":\"")&&has(draw,"\"material\":\"")&&has(draw,"\"materialRow\":"),"Direct level draw identity fields missing");
+    check(has(level_draws[0],"\"resourceBlock\":1073,\"resourceIndex\":0,\"material\":\"default_LN_NB_NL.fx\",\"materialRow\":2,\"uvHash\":\"0x375983999801eddb\",\"bindingStatus\":\"static-resource-albedo-resolved\",\"bindingReason\":null"),"Direct level draw albedo/material identity changed");
+    check(has(result,"\"sharedTextures\":[{\"name\":\"")&&!has(result,"\"sharedTextures\":[]"),"Level shared texture list not exported");
     check(!ok(inspect_level(level,geometry,nodes,-1,253)),"Negative level geometry block accepted");
     check(!ok(inspect_level(level,geometry,nodes,252,1227)),"Out-of-range level node block accepted");
     check(!ok(inspect_level(level,geometry,nodes,252,252)),"Same node/geometry block accepted");
