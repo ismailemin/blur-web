@@ -464,6 +464,10 @@ export class PacketConsumer {
     this.ghostSlotCount = 1;
     this.ghostDrawsPerCar = 0;
     this.ghostFrames = [];
+    // Chunked remote cars (M1.1): one uploaded body per distinct peer car. The
+    // ghost pipeline draws the peer's own mesh/draw set; textures are not sampled
+    // by that diagnostic pass, so only vertex/index/UV buffers are created.
+    this.remoteCars = new Map();
     // Power-up diagnostics (M2/PWR2): a small marker mesh injected by the page,
     // drawn in a separate translucent pass. Presentation only; never in updates,
     // the packet hash or the physics.
@@ -489,6 +493,10 @@ export class PacketConsumer {
       ghostEnabled: false,
       ghostSlotCount: 1,
       ghostActiveSlots: 0,
+      ghostLocalDraws: 0,
+      ghostDrawBand: 0,
+      remoteCars: 0,
+      remoteCarDraws: 0,
       // Power-up diagnostic marker pass (separate from packet draws).
       powerupSlots: 0,
       powerupMarkerSlots: 0,
@@ -719,10 +727,13 @@ export class PacketConsumer {
     this.ghostSlotCount = 1;
     this.ghostDrawsPerCar = 0;
     this.ghostFrames = [];
+    this.remoteCars = new Map();
     this.stats.ghostDraws = 0;
     this.stats.ghostEnabled = false;
     this.stats.ghostSlotCount = 1;
     this.stats.ghostActiveSlots = 0;
+    this.stats.remoteCars = 0;
+    this.stats.remoteCarDraws = 0;
     this.powerupDraws = [];
     this.powerupRingDraws = [];
     this.powerupMarkers = null;
@@ -905,9 +916,16 @@ export class PacketConsumer {
     // buffer count is unchanged (the soak gate stays at 11) and enabling the ghost
     // uploads nothing.
     const carBodyMeshId = packet.diagnostics?.extras?.drive?.car?.bodyMesh ?? null;
-    const ghostDrawCount = carBodyMeshId
+    const localGhostDraws = carBodyMeshId
       ? packet.draws.filter((draw) => draw.meshId === carBodyMeshId && draw.visible !== false).length
       : 0;
+    // M1.1: a peer car has its own draw count. The page declares the band size
+    // (`extras.remotes.drawSlots` = the roster maximum); without it the band is
+    // exactly the local car, which keeps the single-player/ghost path unchanged.
+    const remoteConfigEarly = packet.diagnostics?.extras?.remotes ?? null;
+    const declaredDrawSlots = remoteConfigEarly && Number.isInteger(remoteConfigEarly.drawSlots) &&
+      remoteConfigEarly.drawSlots > 0 ? remoteConfigEarly.drawSlots : 0;
+    const ghostDrawCount = Math.max(localGhostDraws, declaredDrawSlots);
     const drawCount = packet.draws.length;
     // Multi-slot remotes: the page declares the number of remote car slots it
     // will draw through the ghost pipeline (one human peer + 0-3 AI). The
@@ -919,6 +937,8 @@ export class PacketConsumer {
     this.ghostDrawsPerCar = ghostDrawCount;
     this.ghostFrames = [];
     this.stats.ghostSlotCount = ghostSlotCount;
+    this.stats.ghostLocalDraws = localGhostDraws;
+    this.stats.ghostDrawBand = ghostDrawCount;
     // Power-up diagnostic marker slots: injected mesh + a fixed number of
     // translucent draw slots. They are not packet draws and never enter the
     // packet hash or the physics. `?powerups=0` (the default) leaves this at 0.
@@ -1024,8 +1044,12 @@ export class PacketConsumer {
     // live car. Nothing is uploaded; only the per-frame node matrix differs.
     if (ghostDrawCount > 0) {
       this.ghostDraws = this.draws.filter((draw) => draw.meshId === carBodyMeshId && draw.visible !== false);
-      if (this.ghostDraws.length !== ghostDrawCount) {
-        throw new Error('ghost draw slots ' + ghostDrawCount + ' but ' + this.ghostDraws.length + ' car draws');
+      if (this.ghostDraws.length !== localGhostDraws) {
+        throw new Error('ghost draw slots ' + localGhostDraws + ' but ' + this.ghostDraws.length + ' car draws');
+      }
+      if (this.ghostDraws.length > ghostDrawCount) {
+        throw new Error('ghost draw band ' + ghostDrawCount + ' is smaller than the local car (' +
+          this.ghostDraws.length + ')');
       }
       for (const draw of this.ghostDraws) {
         if (!draw.nodeId) throw new Error('ghost draw ' + draw.id + ' has no node id');
@@ -1124,6 +1148,96 @@ export class PacketConsumer {
   }
 
   /**
+   * Upload one peer car body for the remote/ghost pass (M1.1 chunking). The ghost
+   * shader samples no texture, so only the mesh buffers and the body's own draw
+   * list are needed. Calling it twice with the same key returns the existing
+   * handle; two different peer cars stay resident together (one level + 1-2 cars).
+   */
+  ensureRemoteCar(key, body) {
+    if (!this.device) throw new Error('cannot upload a remote car before the consumer is initialised');
+    if (typeof key !== 'string' || !key) throw new Error('remote car needs a key');
+    if (this.remoteCars.has(key)) return this.remoteCars.get(key);
+    const mesh = body?.mesh;
+    if (!mesh || typeof mesh.id !== 'string' || !Array.isArray(body.carDraws)) {
+      throw new Error('remote car ' + key + ' has no mesh/carDraws');
+    }
+    let meshRecord = this.meshes.get(mesh.id);
+    if (!meshRecord) {
+      if (mesh.positions.length !== mesh.vertexCount * 3 || mesh.indices.length !== mesh.indexCount) {
+        throw new Error('remote car ' + key + ' mesh counts do not match its arrays');
+      }
+      const positions = Float32Array.from(mesh.positions);
+      const indices = Uint32Array.from(mesh.indices);
+      const vertexBuffer = this.device.createBuffer({
+        size: Math.ceil(positions.byteLength / 4) * 4,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+      });
+      this.device.queue.writeBuffer(vertexBuffer, 0, positions);
+      const indexBuffer = this.device.createBuffer({
+        size: Math.max(4, Math.ceil(indices.byteLength / 4) * 4),
+        usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
+      });
+      this.device.queue.writeBuffer(indexBuffer, 0, indices);
+      let uvs;
+      if (mesh.uv) {
+        if (mesh.uv.storage !== 'base64-float32le' || mesh.uv.components !== 2 ||
+            typeof mesh.uv.data !== 'string') {
+          throw new Error('remote car ' + key + ' has an unsupported uv stream');
+        }
+        const binary = atob(mesh.uv.data);
+        if (binary.length !== mesh.uv.bytes || binary.length !== mesh.vertexCount * 8) {
+          throw new Error('remote car ' + key + ' uv byte length does not match its vertex count');
+        }
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+        uvs = new Float32Array(bytes.buffer);
+      } else {
+        uvs = new Float32Array(mesh.vertexCount * 2);
+      }
+      const uvBuffer = this.device.createBuffer({
+        size: Math.max(16, Math.ceil(uvs.byteLength / 4) * 4),
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+      });
+      this.device.queue.writeBuffer(uvBuffer, 0, uvs);
+      this.buffers.push(vertexBuffer, indexBuffer, uvBuffer);
+      this.stats.buffersCreated += 3;
+      this.stats.uvUploadBytes += uvs.byteLength;
+      this.stats.geometryUploads++;
+      this.stats.geometryUploadBytes += positions.byteLength + indices.byteLength + uvs.byteLength;
+      meshRecord = {
+        vertexBuffer,
+        indexBuffer,
+        uvBuffer,
+        vertexCount: mesh.vertexCount,
+        indexCount: mesh.indexCount
+      };
+      this.meshes.set(mesh.id, meshRecord);
+    }
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const draws = body.carDraws.map((draw) => {
+      if (!Number.isInteger(draw.indexOffset) || !Number.isInteger(draw.indexCount) ||
+          draw.indexCount % 3 || draw.indexOffset < 0 ||
+          draw.indexOffset + draw.indexCount > meshRecord.indexCount) {
+        throw new Error('remote car ' + key + ' draw ' + draw.id + ' has an invalid index range');
+      }
+      if (typeof draw.nodeId !== 'string') throw new Error('remote car draw ' + draw.id + ' has no node id');
+      return { ...draw, mesh: meshRecord, world: identity.slice(), worldKind: 'packet-transform' };
+    });
+    const handle = {
+      key,
+      slug: body.slug ?? key,
+      meshId: mesh.id,
+      mesh: meshRecord,
+      draws,
+      drawCount: draws.length
+    };
+    this.remoteCars.set(key, handle);
+    this.stats.remoteCars = this.remoteCars.size;
+    this.stats.remoteCarDraws = draws.length;
+    return handle;
+  }
+
+  /**
    * Ghost replay (P63): supply the ghost's node matrices for the next frame.
    *
    * `nodeMatrices` is a Map of nodeId -> column-major 16-float world matrix (the
@@ -1172,7 +1286,26 @@ export class PacketConsumer {
       for (const [nodeId, world] of nodeMatrices) {
         if (!isRigid(world)) throw new Error('ghost matrix for ' + nodeId + ' is not rigid');
       }
-      slots.push({ nodeMatrices, tint: Array.isArray(frame.tint) && frame.tint.length >= 3 ? frame.tint : null });
+      const remoteCar = frame.car ?? null;
+      if (remoteCar) {
+        if (!this.remoteCars.has(remoteCar.key)) {
+          throw new Error('ghost slot ' + index + ' names an unloaded remote car ' + remoteCar.key);
+        }
+        if (remoteCar.drawCount > this.ghostDrawsPerCar) {
+          throw new Error('ghost slot ' + index + ' remote car ' + remoteCar.key + ' has ' +
+            remoteCar.drawCount + ' draws, the band reserves ' + this.ghostDrawsPerCar);
+        }
+        for (const draw of remoteCar.draws) {
+          if (!nodeMatrices.has(draw.nodeId)) {
+            throw new Error('ghost slot ' + index + ' remote car draw ' + draw.id + ' has no matrix for ' + draw.nodeId);
+          }
+        }
+      }
+      slots.push({
+        nodeMatrices,
+        tint: Array.isArray(frame.tint) && frame.tint.length >= 3 ? frame.tint : null,
+        car: remoteCar
+      });
       active++;
     }
     this.ghostFrames = slots;
@@ -1396,8 +1529,10 @@ export class PacketConsumer {
         const frameEntry = ghostFrames[slot];
         if (!frameEntry) continue;
         const tint = frameEntry.tint ?? GHOST_TINT;
-        for (let index = 0; index < ghostDrawCount; index++) {
-          const draw = this.ghostDraws[index];
+        const drawList = frameEntry.car?.draws ?? this.ghostDraws;
+        const frameDrawCount = frameEntry.car?.drawCount ?? this.ghostDraws.length;
+        for (let index = 0; index < frameDrawCount; index++) {
+          const draw = drawList[index];
           const base = (this.draws.length + slot * ghostDrawCount + index) * (DRAW_UNIFORM_STRIDE / 4);
           bytes.set(viewProjection, base);
           bytes.set(frameEntry.nodeMatrices.get(draw.nodeId) ?? draw.world, base + 16);
@@ -1472,8 +1607,11 @@ export class PacketConsumer {
       let ghostMesh = null;
       for (let slot = 0; slot < ghostFrames.length; slot++) {
         if (!ghostFrames[slot]) continue;
-        for (let index = 0; index < ghostDrawCount; index++) {
-          const draw = this.ghostDraws[index];
+        const frameEntry = ghostFrames[slot];
+        const drawList = frameEntry.car?.draws ?? this.ghostDraws;
+        const frameDrawCount = frameEntry.car?.drawCount ?? this.ghostDraws.length;
+        for (let index = 0; index < frameDrawCount; index++) {
+          const draw = drawList[index];
           if (ghostMesh !== draw.meshId) {
             pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
             pass.setVertexBuffer(1, draw.mesh.uvBuffer);
@@ -1484,8 +1622,8 @@ export class PacketConsumer {
             [(this.draws.length + slot * ghostDrawCount + index) * DRAW_UNIFORM_STRIDE]);
           pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
         }
+        this.stats.ghostDrawsIssued += frameDrawCount;
       }
-      this.stats.ghostDrawsIssued += ghostDrawCount * activeGhostSlots;
       this.stats.ghostFrames++;
     }
     if (powerupActive) {

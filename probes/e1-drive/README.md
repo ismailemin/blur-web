@@ -298,8 +298,35 @@ in the same wasm instance. The 15-car build and verification record is
 The single geometry document grew from 45,374,377 B to **106,864,802 B**
 (+135.5 %, ≈6.15 MB per added car). It is inside the declared 128 MiB batch-1
 budget and the 15-car sprint capture passes, but the next ten cars would exceed
-it; batch 2 must split one car chunk per slug before it ships (plan in the batch
-record, §2.1).
+it; batch 2 splits one car chunk per slug before it ships.
+
+### Chunked geometry (batch-2 prerequisite)
+
+`build_geometry.mjs` now writes the loadable chunks and keeps the combined file
+only as a debug artifact:
+
+| file | bytes | role | page fetch |
+| --- | ---: | --- | --- |
+| `level.geometry.json` | 9,662,959 | collision provenance, track visual, level props, materials/light/camera | always |
+| `base.geometry.json` | 10,778 | map-mode base (materials/light/camera/roster) | map packages only |
+| `cars/<slug>.geometry.json` | 5.47–9.02 MB | one body/wheels/parts + its UV0/albedo pack | selected car |
+| `car-bodies.index.json` | 16,858 | per-chunk SHA-256, bytes, draws, textures/UV | always |
+| `geometry.json` | 106,864,802 | combined debug/pre-chunking artifact | **never** |
+
+The River page therefore fetches ≈20.5 MB (level + one car + physics + layout +
+fields) instead of ≈119.2 MB; the level is fetched once and a car switch fetches
+only the next car chunk. `web/geometry-chunks.js` is the shared contract: a
+missing, short, oversized or hash-mismatched chunk is a typed `ChunkLoadError`
+(`CHUNK_CAR_MISSING`, `CHUNK_CAR_SHA256`, …), never another car body. The packet
+adapter still receives exactly one entry in `carBodies`, so the packet schema,
+per-car state anchors, ghosts and per-tick hashes are unchanged.
+
+In `?mp=1` each player loads its own roster car (the room roster records it); the
+peer's chunk is loaded once and drawn through the ghost pipeline. A
+failed peer chunk is recorded in `state.mp.remote.carChunk` with its typed code
+and the remote car is not drawn. Limits: one level plus 1–2 cars resident, no
+streaming/eviction in this pass. Full record:
+`docs/work/verification/T-007-chunking.md`.
 
 External pins at report time: the portable suite is **44/45** (the one failure is
 `prop-collision-v2` pinning the whole geometry file; its collider data is
@@ -1239,8 +1266,11 @@ layout), `sprint-<slug>.json` / `sprint-short-<slug>.json` (per-car sprint ticks
 events, inputs and the start/mid/checkpoint/finish capture updates),
 `telemetry-<slug>.json` (full 60 Hz traces, metrics, hash aggregates and unit
 definitions),
-`geometry.json` (level packet + real track visual + one real body per car with
-its own UV0 and albedo textures + hidden collision), `car-textures.json` (the
+`geometry.json` (combined debug artifact: level + real track visual + one real body
+per car with its own UV0 and albedo textures + hidden collision; not fetched by
+the page), `level.geometry.json`, `base.geometry.json`,
+`cars/<slug>.geometry.json`, `car-bodies.index.json` (the loadable chunk set and
+its SHA-256/byte/draw pins), `car-textures.json` (the
 P52 draw/material/texture resolution, the UV convention and per-car coverage),
 `car-uv-<slug>.bin` (the fifteen committed UV0 streams), `track-textures.json` (UV0
 stream, sampler, 136 texture records and 394 per-draw bindings), `track-uv.bin` +

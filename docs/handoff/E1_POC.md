@@ -112,6 +112,21 @@ Amboy/Gracia'da power-up yok; AI artık üç haritada da var; tek harita/oda.
 - AI ayrı wasm instance, 20 Hz relay; uzak araçlar cyan insan / amber AI.
 - Gracia Dodge AI reddedilir (`ai-spawn-unsupported`).
 
+### Tek başına AI ile yarış
+
+İkinci insan gerekmez: host **READY**'ye basıp **START** diyebilir.
+
+```text
+?mp=1&host=1&ai=2&aiCars=audi-r8v10-stock,dodge-challenger-stock
+```
+
+- Lobby'de AI sayısı/araç/profil seçilir (0–3).
+- Tek insan + en az 1 AI başlatılabilir; 1 insan + 0 AI başlatılamaz.
+- Sonuç tablosunda AI satırları görünür (ör. P1 AI 14,383 / P2 Host 14,667).
+
+Chunking sayesinde sayfa artık tüm 15 aracı değil, seviye + seçili aracı
+yükler (~20,47 MB; araç değişimi reload'suz).
+
 ### Aynı ağda iki makine
 
 Host makinede:

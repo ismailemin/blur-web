@@ -1001,8 +1001,11 @@ export class NetClient {
     return this._request('player.select', { car, map }, 'ok');
   }
 
-  async start({ seed } = {}) {
-    const message = await this._request('room.start', seed === undefined ? {} : { seed }, 'room.started');
+  async start({ seed, solo } = {}) {
+    const payload = {};
+    if (seed !== undefined) payload.seed = seed;
+    if (solo === true) payload.solo = true;
+    const message = await this._request('room.start', payload, 'room.started');
     return { room: message.room, startTick: message.startTick, seed: message.seed, tickHz: message.tickHz };
   }
 

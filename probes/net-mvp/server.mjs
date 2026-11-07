@@ -703,7 +703,11 @@ export async function startRoomServer({
           if (room.hostId !== player.id) throw new NetError(ERROR_CODES.NET_NOT_HOST, 'only the host can start');
           if (room.phase !== 'lobby') throw new NetError(ERROR_CODES.NET_ROOM_NOT_RUNNING, 'room is not in the lobby phase');
           const connected = [...room.players.values()].filter((entry) => entry.connected);
-          if (connected.length < MIN_PLAYERS_TO_START) throw new NetError(ERROR_CODES.NET_NOT_ENOUGH_PLAYERS, 'need at least ' + MIN_PLAYERS_TO_START + ' connected players');
+          // A host + host-simulated AI room has one human; the page sends
+          // `solo:true` only when it has AI participants. Two-human rooms keep
+          // the original minimum.
+          const minPlayers = message.solo === true ? 1 : MIN_PLAYERS_TO_START;
+          if (connected.length < minPlayers) throw new NetError(ERROR_CODES.NET_NOT_ENOUGH_PLAYERS, 'need at least ' + minPlayers + ' connected players');
           const notReady = connected.filter((entry) => !entry.ready);
           if (notReady.length) {
             throw new NetError(ERROR_CODES.NET_NOT_READY, 'players not ready', { players: notReady.map((entry) => entry.id) });

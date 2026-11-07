@@ -40,6 +40,9 @@ import { isRigid } from '../../render-packet/web/interpolate.js';
 import { canonicalJson, hashOf as hashOfLocal } from '../web/packet-hash.js';
 import { sha256Hex } from '../web/sha256.js';
 import { createSession, resolveCarBody } from '../web/packet-adapter.js';
+import {
+  assembleGeometry, parseCarChunk, parseChunkIndex, parseLevelChunk, verifyChunkBytes, verifyChunkSha
+} from '../web/geometry-chunks.js';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from '../web/drive-script.js';
 import {
@@ -98,6 +101,9 @@ const LOGS = path.join(ROOT, '_work/logs/e1-drive');
 const MODULE = path.join(OUT, 'module/e1_drive.mjs');
 const BUILD = path.join(OUT, 'module/build.json');
 const GEOMETRY = path.join(OUT, 'geometry.json');
+const LEVEL_GEOMETRY = path.join(OUT, 'level.geometry.json');
+const BASE_GEOMETRY = path.join(OUT, 'base.geometry.json');
+const CHUNK_INDEX = path.join(OUT, 'car-bodies.index.json');
 const TRACK_TEXTURE_MANIFEST = path.join(OUT, 'track-textures.json');
 const ROSTER = path.join(OUT, 'cars.json');
 const LEVEL = path.join(ROOT, 'game-data/Blur/levels/usa_la_river/Level.levelphysics');
@@ -190,6 +196,84 @@ check('wasm object count is the T-005d closure (185 + 1 harness)',
 const geometry = JSON.parse(readFileSync(GEOMETRY, 'utf8'));
 const roster = JSON.parse(readFileSync(ROSTER, 'utf8'));
 const levelBytes = readFileSync(LEVEL);
+
+// ------------------------------------------------------- chunked geometry
+// The page loads `level.geometry.json` + one `cars/<slug>.geometry.json`; the
+// combined `geometry.json` is a debug artifact. These checks pin every chunk,
+// prove the split did not change the level/body data, and feed the packet
+// producer below through the same assembly the page uses.
+const chunkIndexBytes = readFileSync(CHUNK_INDEX);
+const chunkIndex = parseChunkIndex(chunkIndexBytes.toString('utf8'));
+const chunkSha = (bytes) => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
+const levelChunkBytes = readFileSync(LEVEL_GEOMETRY);
+const levelChunk = parseLevelChunk(levelChunkBytes.toString('utf8'));
+const baseChunkBytes = readFileSync(BASE_GEOMETRY);
+const baseChunk = JSON.parse(baseChunkBytes.toString('utf8'));
+const chunkBodies = new Map();
+const chunkBodyErrors = [];
+const chunkRosterSlugs = roster.roster.cars.map((car) => car.slug);
+function chunkDiff(a, b, ignore, pathName, out) {
+  if (a === b) return;
+  if (typeof a !== typeof b || a === null || b === null || typeof a !== 'object') {
+    out.push(pathName);
+    return;
+  }
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if (ignore.has(key)) continue;
+    chunkDiff(a[key], b[key], ignore, pathName + '.' + key, out);
+  }
+}
+for (const slug of chunkRosterSlugs) {
+  const entry = chunkIndex.cars?.[slug];
+  if (!entry) { chunkBodyErrors.push(slug + ': not in index'); continue; }
+  const file = path.join(OUT, entry.file);
+  if (!existsSync(file)) { chunkBodyErrors.push(slug + ': missing ' + entry.file); continue; }
+  const bytes = readFileSync(file);
+  if (bytes.length !== entry.bytes || chunkSha(bytes) !== entry.sha256) {
+    chunkBodyErrors.push(slug + ': byte/hash mismatch'); continue;
+  }
+  let body;
+  try { body = parseCarChunk(bytes.toString('utf8'), chunkIndex, slug); }
+  catch (error) { chunkBodyErrors.push(slug + ': ' + error.message); continue; }
+  const diff = [];
+  chunkDiff(geometry.carBodies?.[slug], body,
+    new Set(['kind', 'version', 'geometryVersion', 'chunk']), 'body', diff);
+  if (diff.length) chunkBodyErrors.push(slug + ': differs at ' + diff.slice(0, 3).join(', '));
+  chunkBodies.set(slug, { body, bytes, sha256: entry.sha256, file: entry.file });
+}
+const levelDiff = [];
+chunkDiff(geometry, levelChunk,
+  new Set(['carBodies', 'fallbackBodies', 'fallbackBodyCount', 'chunk']), 'level', levelDiff);
+check('chunk index pins the level/base/debug files and covers the roster in order',
+      chunkIndex.kind === 'e1-drive.car-bodies-index' && chunkIndex.version === 1 &&
+      chunkIndex.geometryVersion === geometry.version &&
+      chunkIndex.level.sha256 === chunkSha(levelChunkBytes) &&
+      chunkIndex.level.bytes === levelChunkBytes.length &&
+      chunkIndex.base.sha256 === chunkSha(baseChunkBytes) &&
+      chunkIndex.base.bytes === baseChunkBytes.length &&
+      chunkIndex.debug.sha256 === chunkSha(readFileSync(GEOMETRY)) &&
+      chunkIndex.debug.bytes === readFileSync(GEOMETRY).length &&
+      chunkIndex.defaultCar === geometry.defaultCar &&
+      chunkRosterSlugs.every((slug) => chunkIndex.cars[slug] && !chunkIndex.cars[slug].fallback),
+      JSON.stringify({ level: chunkIndex.level, base: chunkIndex.base, cars: Object.keys(chunkIndex.cars).length }));
+check('the level chunk carries only the level half (two static meshes, no car bodies)',
+      levelChunk.meshes.length === 2 && Object.keys(levelChunk.carBodies).length === 0 &&
+      levelChunk.levelDraws.length === 22 && levelChunk.trackVisual.draws.length === 394 &&
+      levelDiff.length === 0,
+      levelDiff.slice(0, 3).join(', ') || 'level fields identical to the combined artifact');
+check('every car chunk is byte-pinned and identical to its combined body',
+      chunkBodyErrors.length === 0 && chunkBodies.size === chunkRosterSlugs.length,
+      chunkBodyErrors.slice(0, 3).join('; ') || `${chunkBodies.size} car chunks, metadata-only diff`);
+check('the map-mode base chunk carries only metadata and no car bodies',
+      baseChunk.kind === 'e1-drive.geometry' && baseChunk.chunk?.kind === 'base' &&
+      Object.keys(baseChunk.carBodies ?? {}).length === 0 && baseChunk.meshes === undefined &&
+      baseChunk.light && baseChunk.materials && baseChunk.cameraIntrinsics && baseChunk.roster,
+      `${baseChunkBytes.length} B`);
+const chunkGeometryFor = (slug) => {
+  const record = chunkBodies.get(slug);
+  if (!record) throw new Error('no validated chunk body for ' + slug);
+  return assembleGeometry(levelChunk, record.body, { index: chunkIndex });
+};
 
 if (ONLY_CAR === '--list' || args.includes('--list')) {
   for (const car of roster.roster.cars) {
@@ -1973,7 +2057,7 @@ async function runOnce(car, fieldBytes) {  const factory = (await import(pathToF
   const info = JSON.parse(module.UTF8ToString(module._e1_info()));
   const ground = JSON.parse(module.UTF8ToString(module._e1_ground_probe(TICK0_LIMITS.x, TICK0_LIMITS.z)));
 
-  const session = createSession(geometry, JSON.parse(module.UTF8ToString(module._e1_get_state())), {
+  const session = createSession(chunkGeometryFor(car.slug), JSON.parse(module.UTF8ToString(module._e1_get_state())), {
     spawn: {
       x: TICK0_LIMITS.x,
       z: TICK0_LIMITS.z,
@@ -2102,7 +2186,7 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
   };
   const state0 = JSON.parse(module.UTF8ToString(module._e1_get_state()));
   if (propLayer) propLayer.begin(state0, groundYFor(state0));
-  const session = createSession(geometry, state0, {
+  const session = createSession(chunkGeometryFor(car.slug), state0, {
     spawn: { x: start.x, z: start.z, headingRad: start.heading, source: TICK0_LIMITS.source },
     script: packetScript,
     car: {
@@ -5628,12 +5712,16 @@ let mpNodeReport = null;
 // refusal. This block never loads the 49–73 MB map documents into memory; it
 // pins their file bytes (the content hashes are verified by verify_e1_map on
 // both maps) and verifies the layout/physics bytes the room actually compares.
+// River's wire package is the always-loaded level chunk, not the combined debug
+// geometry.
 let mpMapReport = null;
 {
   const mpMapChecksBefore = checks.length;
   const mapFiles = {
     river: {
-      package: path.join(OUT, 'geometry.json'),
+      // The wire identity of the chunked River route is the always-loaded level
+      // chunk, not the combined debug artifact the page never fetches.
+      package: LEVEL_GEOMETRY,
       layout: path.join(OUT, 'sprint.json'),
       physics: path.join(ROOT, 'game-data/Blur/levels/usa_la_river/Level.levelphysics')
     },

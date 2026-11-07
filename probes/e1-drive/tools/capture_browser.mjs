@@ -28,7 +28,7 @@
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
@@ -57,25 +57,30 @@ const edge = EDGE_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!edge) throw new Error('msedge.exe not found; pass --edge <path>');
 
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp', 'mp-ai', 'mp-powerups', 'map'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp', 'mp-ai', 'mp-solo-ai', 'mp-powerups', 'map', 'chunk'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality, mp, mp-ai, mp-powerups or map)');
+    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality, mp, mp-ai, mp-powerups, map or chunk)');
 }
 // `--mode mp`/`mp-ai`/`mp-powerups` use the documented capture ports: game 8802, room 8811.
-const PORT = Number(option('--port', MODE === 'mp' || MODE === 'mp-ai' || MODE === 'mp-powerups' ? '8802' : '8801'));
+const PORT = Number(option('--port', MODE === 'mp' || MODE === 'mp-ai' || MODE === 'mp-solo-ai' || MODE === 'mp-powerups' ? '8802' : '8801'));
 const ROOM_PORT = Number(option('--room-port', '8811'));
 const DEBUG_PORT = Number(option('--debug-port', '9341'));
 const PROFILE = path.join(OUT, 'edge-profile-' + PORT);
 const VIEWPORT = { width: 1600, height: 900 };
 const TICKS = option('--ticks', '0,150,240,300').split(',').map(Number);
 const ONLY_CAR = option('--car', null);
+// `--mode mp` drives two different roster cars by default (M1.1 chunking): the
+// host uses the default car, the guest a different chunk. `--guest-car` overrides.
+const GUEST_CAR = option('--guest-car', null);
 const MAP_OPTION = option('--map', null);
-const MAP_ID = MAP_OPTION ?? (MODE === 'mp' || MODE === 'mp-ai' ? 'river' : 'amboy');
+const MAP_ID = MAP_OPTION ?? (MODE === 'mp' || MODE === 'mp-ai' || MODE === 'mp-solo-ai' ? 'river' : MODE === 'chunk' ? 'river' : 'amboy');
 const MAP_ENTRY = MAPS[MAP_ID];
-if (MODE === 'mp' || MODE === 'mp-ai') {
+if (MODE === 'mp' || MODE === 'mp-ai' || MODE === 'mp-solo-ai') {
   if (!MAP_ENTRY || MAP_ENTRY.multiplayer !== true) {
     throw new Error('--map for --mode ' + MODE + ' must name a multiplayer map (' + Object.values(MAPS).filter((entry) => entry.multiplayer).map((entry) => entry.id).join(', ') + '), got ' + JSON.stringify(MAP_ID));
   }
+} else if (MODE === 'chunk') {
+  if (!MAP_ENTRY) throw new Error('--map for --mode chunk must name a known map, got ' + JSON.stringify(MAP_ID));
 } else if (!MAP_ENTRY || MAP_ENTRY.kind !== 'map-package') {
   throw new Error('--map must name a map package (' + Object.values(MAPS).filter((entry) => entry.kind === 'map-package').map((entry) => entry.id).join(', ') + '), got ' + JSON.stringify(MAP_ID));
 }
@@ -804,6 +809,176 @@ async function audioCapturePass() {
  * lobby/ready/start, both finishes, equal shared result, remote pose tolerance,
  * sequences/authority, console 0 and screenshots.
  */
+/**
+ * `--mode chunk`: proves the chunked load path in the browser. It records the
+ * level/selected-car requests and bytes, switches car in place (same document,
+ * same navigation entry, no reload), then removes a car chunk from disk and
+ * checks that the switch fails with the typed CHUNK_CAR_MISSING code while the
+ * current car keeps running. The removed file is restored in a finally block.
+ */
+async function chunkCapturePass() {
+  const failures = [];
+  const passCheck = (label, ok, detail = '') => { if (!ok) failures.push(label + (detail ? ': ' + detail : '')); };
+  const evidence = { map: MAP_ID, generatedAt: new Date().toISOString(), checks: [], failures };
+  const readProbe = () => evaluate(`(()=>{
+    const p = window.e1DriveProbe;
+    const c = window.__e1Chunks;
+    const resources = performance.getEntriesByType('resource')
+      .filter((r) => r.name.includes('/_work/e1-drive/') || r.name.includes('/audio/'))
+      .map((r) => ({ name: r.name.replace(location.origin, ''), transferSize: r.transferSize,
+        encodedBodySize: r.encodedBodySize, decodedBodySize: r.decodedBodySize,
+        duration: r.duration, startTime: r.startTime }));
+    return p && c ? {
+      consumer: p.consumer, error: p.error, href: location.href,
+      navigationEntries: performance.getEntriesByType('navigation').length,
+      marker: window.__chunkMarker ?? null,
+      car: p.car ? p.car.slug : null,
+      chunk: c.state(), carSwitch: p.carSwitch ?? null,
+      map: p.map ? { id: p.map.id, bytes: p.map.bytes, loadMs: p.map.loadMs, carChunk: p.map.carChunk } : null,
+      geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
+      draws: p.draws, resources
+    } : null;
+  })()`).catch(() => null);
+  const waitProbe = async (predicate, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await readProbe();
+      if (last && predicate(last)) return last;
+      await sleep(150);
+    }
+    throw new Error(label + ' timed out; last ' + JSON.stringify({ car: last?.car, consumer: last?.consumer,
+      switch: last?.carSwitch, error: last?.error }));
+  };
+
+  const first = defaultSlug;
+  const second = ONLY_CAR && ONLY_CAR !== first ? ONLY_CAR : (first === 'audi-r8v10-stock' ? 'corvette-zr1-stock' : 'audi-r8v10-stock');
+  const missing = ['audi-tt-stock', 'ford-fr100-stock', 'nissan-skyliner34ztune-stock']
+    .find((slug) => slug !== first && slug !== second) ?? 'dodge-challenger-stock';
+  const missingFile = path.join(OUT, 'cars', missing + '.geometry.json');
+  let renamed = false;
+  const url = origin + '/?script=sprint&hold=0&car=' + encodeURIComponent(first) +
+    (MAP_ID === 'river' ? '' : '&map=' + encodeURIComponent(MAP_ID));
+  try {
+    await send('Page.navigate', { url });
+    await waitProbe((probe) => probe.consumer === 'running' && probe.car === first &&
+      (probe.chunk?.level ?? probe.chunk?.base)?.bytes > 0,
+      120000, 'initial chunked page load');
+    const before = await readProbe();
+    await evaluate('window.__chunkMarker = 4242; true');
+    const markerBefore = await evaluate('window.__chunkMarker');
+    const switchStartedAt = Date.now();
+    const switched = await evaluate('window.__e1Chunks.switchCar(' + JSON.stringify(second) + ').then(()=>true, (e)=>({code:e.code??null, name:e.name, message:e.message}))');
+    const after = await waitProbe((probe) => probe.consumer === 'running' && probe.car === second &&
+      probe.carSwitch?.status === 'ready', 120000, 'in-place car switch');
+    const switchMs = Date.now() - switchStartedAt;
+    const markerAfter = await evaluate('window.__chunkMarker');
+    const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const shotFile = '_work/e1-drive/browser-chunk-switch' + (MAP_ID === 'river' ? '' : '-' + MAP_ID) + '.png';
+    writeFileSync(path.join(ROOT, shotFile), Buffer.from(shot.data, 'base64'));
+
+    passCheck('initial page fetch is level + selected car (not the combined file)',
+      (before.chunk?.level ?? before.chunk?.base)?.bytes > 0 && before.chunk?.car?.slug === first &&
+      before.resources.every((entry) => !entry.name.endsWith('/geometry.json')),
+      JSON.stringify({ level: before.chunk?.level, base: before.chunk?.base, car: before.chunk?.car,
+        geometry: before.resources.filter((entry) => entry.name.endsWith('/geometry.json')) }));
+    passCheck('the level chunk is fetched once and the car chunk only for the selected car',
+      before.resources.filter((entry) => entry.name.endsWith('/level.geometry.json') ||
+        entry.name.endsWith('/base.geometry.json')).length === 1 &&
+      before.resources.filter((entry) => entry.name.endsWith('.geometry.json') &&
+        entry.name.includes('/cars/')).length === 1,
+      JSON.stringify(before.resources.filter((entry) => entry.name.includes('_work/e1-drive'))));
+    passCheck('car switch happens in the same document (no reload/navigation)',
+      switched === true && markerBefore === 4242 && markerAfter === 4242 &&
+      before.navigationEntries === after.navigationEntries && before.href !== after.href &&
+      after.href.includes('car=' + second),
+      JSON.stringify({ switched, markerBefore, markerAfter, before: before.href, after: after.href }));
+    passCheck('car switch fetches only the next car chunk (no level re-fetch)',
+      after.resources.filter((entry) => entry.name.endsWith('/level.geometry.json') ||
+        entry.name.endsWith('/base.geometry.json')).length === 1 &&
+      after.resources.filter((entry) => entry.name.endsWith('.geometry.json') &&
+        entry.name.includes('/cars/')).length === 2 &&
+      after.carSwitch?.carChunk?.slug === second && after.carSwitch?.carChunk?.bytes > 0,
+      JSON.stringify({ switch: after.carSwitch, resources: after.resources.filter((entry) => entry.name.includes('/cars/')) }));
+    passCheck('the switched car uploads its own mesh and keeps the level mesh',
+      after.geometryUploads > before.geometryUploads && after.draws !== before.draws,
+      JSON.stringify({ before: { uploads: before.geometryUploads, draws: before.draws },
+        after: { uploads: after.geometryUploads, draws: after.draws } }));
+
+    // Missing-chunk gate: remove the next car file, ask for it, and require the
+    // typed error with the current car still running and drawn.
+    renameSync(missingFile, missingFile + '.missing-test');
+    renamed = true;
+    const missingResult = await evaluate('window.__e1Chunks.switchCar(' + JSON.stringify(missing) + ').then(()=>null, (e)=>({code:e.code??null, name:e.name, message:e.message}))');
+    const afterMissing = await readProbe();
+    passCheck('a missing car chunk is a typed CHUNK_CAR_MISSING error, not a fallback body',
+      missingResult?.code === 'CHUNK_CAR_MISSING' && afterMissing.car === second &&
+      afterMissing.consumer === 'running' && afterMissing.carSwitch?.status === 'error' &&
+      afterMissing.carSwitch?.code === 'CHUNK_CAR_MISSING',
+      JSON.stringify({ missingResult, car: afterMissing.car, switch: afterMissing.carSwitch }));
+
+    evidence.load = {
+      before: {
+        href: before.href,
+        level: before.chunk?.level,
+        base: before.chunk?.base,
+        car: before.chunk?.car,
+        mapBytes: before.map?.bytes,
+        loadMs: before.map?.loadMs,
+        requests: before.resources
+      },
+      after: {
+        href: after.href,
+        level: after.chunk?.level,
+        base: after.chunk?.base,
+        car: after.chunk?.car,
+        mapBytes: after.map?.bytes,
+        carSwitch: after.carSwitch,
+        switchMs,
+        requests: after.resources
+      }
+    };
+    evidence.missingChunk = { slug: missing, result: missingResult, carAfter: afterMissing.car };
+    evidence.screenshot = shotFile;
+    evidence.checks = [
+      { label: 'initial load bytes', ok: true,
+        level: before.chunk?.level?.bytes ?? before.chunk?.base?.bytes ?? null,
+        base: before.chunk?.base?.bytes ?? null,
+        car: before.chunk?.car?.bytes ?? null },
+      { label: 'switch bytes', ok: true, car: after.carSwitch?.carChunk?.bytes ?? null, switchMs },
+      { label: 'missing chunk', ok: missingResult?.code === 'CHUNK_CAR_MISSING',
+        code: missingResult?.code ?? null }
+    ];
+  } catch (error) {
+    failures.push('chunk capture: ' + (error?.stack ?? String(error)));
+  } finally {
+    if (renamed && existsSync(missingFile + '.missing-test')) {
+      renameSync(missingFile + '.missing-test', missingFile);
+    }
+    evidence.console = messages.filter((message) => message.level === 'error' || message.level === 'warning');
+    writeFileSync(path.join(OUT, 'chunk-evidence' + (MAP_ID === 'river' ? '' : '-' + MAP_ID) + '.json'),
+      JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  }
+  return {
+    ok: failures.length === 0,
+    summary: {
+      mode: 'chunk',
+      status: failures.length === 0 ? 'PASS' : 'FAIL',
+      map: MAP_ID,
+      levelBytes: evidence.load?.before?.level?.bytes ?? evidence.load?.before?.base?.bytes ?? null,
+      baseBytes: evidence.load?.before?.base?.bytes ?? null,
+      firstCarBytes: evidence.load?.before?.car?.bytes ?? null,
+      secondCarBytes: evidence.load?.after?.car?.bytes ?? null,
+      switchMs: evidence.load?.after?.switchMs ?? null,
+      missingChunk: evidence.missingChunk?.result?.code ?? null,
+      screenshots: evidence.screenshot ? [evidence.screenshot] : [],
+      console: { messages: evidence.console?.length ?? 0 },
+      failures,
+      evidence: '_work/e1-drive/chunk-evidence.json'
+    }
+  };
+}
+
 async function mpCapturePass() {
   const passFailures = [];
   const mpMapId = MAP_ID;
@@ -861,6 +1036,7 @@ async function mpCapturePass() {
     guestPage = await openSecondPage();
     guestPage.messages.length = 0;
     const car = defaultSlug;
+    const guestCar = GUEST_CAR ?? (car === 'audi-r8v10-stock' ? 'corvette-zr1-stock' : 'audi-r8v10-stock');
     const roomQuery = '&mpServer=' + encodeURIComponent(roomServer.wsUrl) + '&audio=0';
     const hostUrl = origin + '/?mp=1&host=1&script=sprint&car=' + encodeURIComponent(car) +
       '&map=' + encodeURIComponent(mpMapId) + '&name=Host' + roomQuery;
@@ -870,7 +1046,7 @@ async function mpCapturePass() {
     const code = hostLobby.roomCode;
     passCheck('host allocated a 5-character room code', typeof code === 'string' && /^[A-Z2-9]{5}$/.test(code), code);
 
-    const guestUrl = origin + '/?mp=1&room=' + encodeURIComponent(code) + '&script=sprint&car=' + encodeURIComponent(car) +
+    const guestUrl = origin + '/?mp=1&room=' + encodeURIComponent(code) + '&script=sprint&car=' + encodeURIComponent(guestCar) +
       '&mpPace=0.85&name=Guest' + roomQuery;
     await guestPage.send('Page.navigate', { url: guestUrl });
     guestLobby = await waitSnapshot(guestPage, (snapshot) => snapshot.phase === 'lobby' && snapshot.engineReady,
@@ -889,8 +1065,9 @@ async function mpCapturePass() {
       hostSelf?.slot === 1 && hostSelf?.host === true && hostOther?.slot === 2 && hostOther?.host === false &&
       guestSelf?.slot === 2 && guestSelf?.host === false,
       JSON.stringify({ hostSelf, guestSelf }));
-    passCheck('M1 uses one session car for both players',
-      hostLobby.sessionCar !== null && hostLobby.sessionCar === guestLobby.sessionCar,
+    passCheck('M1.1 loads each player\'s own car chunk (host and guest differ)',
+      hostLobby.sessionCar === car && guestLobby.sessionCar === guestCar &&
+      hostLobby.sessionCar !== guestLobby.sessionCar,
       `${hostLobby.sessionCar} / ${guestLobby.sessionCar}`);
     // Exercise the host-only lobby switch and the per-client map reload. Start
     // from the room's current map, switch to River and back to the captured map,
@@ -1029,13 +1206,32 @@ async function mpCapturePass() {
     guestFinal = guestView;
     if (!hostFinal.result || !guestFinal.result) {
       throw new Error('both pages did not reach the shared result; host phase ' + hostFinal.phase +
-        ', guest phase ' + guestFinal.phase + ', ticks ' + hostFinal.engineTick + '/' + guestFinal.engineTick);
+        ', guest phase ' + guestFinal.phase + ', ticks ' + hostFinal.engineTick + '/' + guestFinal.engineTick +
+        ', host ' + JSON.stringify({ status: hostFinal.status, consumer: hostFinal.consumer,
+          frames: hostFinal.frames, error: hostFinal.error, stack: hostFinal.renderErrorStack,
+          frameError: hostFinal.frameError, frameStack: hostFinal.frameErrorStack,
+          remote: hostFinal.remote?.carChunk ? { slug: hostFinal.remote.carChunk.slug,
+            status: hostFinal.remote.carChunk.status, error: hostFinal.remote.carChunk.error } : null,
+          capped: hostFinal.cappedFrames }) +
+        ', guest ' + JSON.stringify({ status: guestFinal.status, consumer: guestFinal.consumer,
+          frames: guestFinal.frames, error: guestFinal.error,
+          remote: guestFinal.remote?.carChunk ? { slug: guestFinal.remote.carChunk.slug,
+            status: guestFinal.remote.carChunk.status, error: guestFinal.remote.carChunk.error } : null }));
     }
     const finishHostShot = await shot(hostPage, 'browser-mp-finish-host.png');
     const finishGuestShot = await shot(guestPage, 'browser-mp-finish-guest.png');
 
     passCheck('both pages reached the shared result',
       hostFinal.phase === 'finished' && guestFinal.phase === 'finished');
+    passCheck('each page drew the peer car from its own chunk (no fallback body)',
+      hostFinal.remote.car === guestCar && guestFinal.remote.car === car &&
+      hostFinal.remote.carChunk?.status === 'ready' &&
+      guestFinal.remote.carChunk?.status === 'ready' &&
+      hostFinal.remote.carChunk?.slug === guestCar &&
+      guestFinal.remote.carChunk?.slug === car &&
+      hostFinal.remote.carChunk?.bytes > 0 && guestFinal.remote.carChunk?.bytes > 0 &&
+      hostFinal.remote.carChunk?.error === null && guestFinal.remote.carChunk?.error === null,
+      JSON.stringify({ hostRemote: hostFinal.remote.carChunk, guestRemote: guestFinal.remote.carChunk }));
     passCheck('host and guest render the same result hash',
       hostFinal.result.hash === guestFinal.result.hash,
       hostFinal.result.hash + ' / ' + guestFinal.result.hash);
@@ -1165,6 +1361,10 @@ async function mpCapturePass() {
         hostStarted,
         guestStarted,
         midShotAt,
+        remoteCars: {
+          hostViewOfGuest: hostFinal?.remote?.carChunk ?? null,
+          guestViewOfHost: guestFinal?.remote?.carChunk ?? null
+        },
         screenshots: {
           host: shots['browser-mp-mid-host.png'],
           guest: shots['browser-mp-mid-guest.png']
@@ -1257,6 +1457,76 @@ async function mpCapturePass() {
  * AI cars. The guest never simulates AI; it renders the host's 20 Hz poses and
  * merges the host's AI rows into the shared result.
  */
+/**
+ * Solo host + AI capture (`--mode mp-solo-ai`): one human, host-simulated AI.
+ * This is the flow a player uses when no second human joins.
+ */
+async function mpSoloAiCapturePass() {
+  const failures = [];
+  const check = (label, ok, detail = '') => { if (!ok) failures.push(label + (detail ? ': ' + detail : '')); };
+  messages.length = 0;
+  let roomServer = null;
+  const shots = {};
+  const snap = async () => {
+    try { return await evaluate('window.__mp ? window.__mp.snapshot() : null'); } catch { return null; }
+  };
+  const wait = async (predicate, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await snap();
+      if (last && predicate(last)) return last;
+      await sleep(150);
+    }
+    throw new Error(label + ' timed out; last ' + JSON.stringify(last));
+  };
+  const capture = async (name) => {
+    const result = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync(path.join(OUT, name), Buffer.from(result.data, 'base64'));
+    shots[name] = '_work/e1-drive/' + name;
+  };
+  try {
+    roomServer = await startRoomServer({ port: ROOM_PORT, log: () => {} });
+    const query = '&mpServer=' + encodeURIComponent(roomServer.wsUrl) + '&audio=0';
+    const url = origin + '/?mp=1&host=1&script=sprint&car=' + encodeURIComponent(defaultSlug) +
+      '&ai=' + AI_COUNT + '&aiCars=' + encodeURIComponent(AI_CARS) +
+      '&aiProfiles=' + encodeURIComponent(AI_PROFILES) + '&map=river&name=SoloHost' + query;
+    await send('Page.navigate', { url });
+    let lobby = await wait((s) => s.phase === 'lobby' && s.engineReady &&
+      s.ai?.count === AI_COUNT && s.ai.built === true && s.ai.players?.length === AI_COUNT,
+      120000, 'solo AI lobby');
+    check('solo host builds the AI records', lobby.ai.players.length === AI_COUNT && lobby.ai.ready === true,
+      JSON.stringify(lobby.ai));
+    check('solo lobby has exactly one human', lobby.players?.length === 1, JSON.stringify(lobby.players));
+    await evaluate('window.__mp.setReady(true)');
+    lobby = await wait((s) => s.players?.length === 1 && s.players[0].ready === true &&
+      s.overlays?.startDisabled === false, 20000, 'solo start enabled');
+    check('START enables for one human + AI', lobby.overlays.startDisabled === false,
+      JSON.stringify(lobby.overlays));
+    await capture('browser-mp-solo-ai-lobby.png');
+    await evaluate('window.__mp.start()');
+    const run = await wait((s) => s.started === true && (s.engineTick ?? 0) > 2, 60000, 'solo race start');
+    check('solo race starts', run.started === true,
+      JSON.stringify({ phase: run.phase, tick: run.engineTick }));
+    await sleep(1200);
+    await capture('browser-mp-solo-ai-mid.png');
+    const done = await wait((s) => s.phase === 'finished' || s.result != null, 180000, 'solo race finish');
+    const rows = done.result?.order ?? done.ai?.result?.rows ?? [];
+    check('solo race finishes with the AI rows', rows.length >= 1 + AI_COUNT, JSON.stringify(rows));
+    await capture('browser-mp-solo-ai-finish.png');
+    const blocking = messages.filter((entry) => entry.source !== 'console.log');
+    check('console is clean in the solo AI race', blocking.length === 0,
+      JSON.stringify(blocking.slice(0, 3)));
+  } catch (error) {
+    failures.push('error: ' + error.message);
+  } finally {
+    try { roomServer?.close(); } catch {}
+  }
+  const evidence = { mode: 'mp-solo-ai', aiCount: AI_COUNT, shots, failures };
+  writeFileSync(path.join(OUT, 'browser-evidence-mp-solo-ai.json'), JSON.stringify(evidence, null, 2) + '\n');
+  return { summary: evidence, ok: failures.length === 0 };
+}
+
 async function mpAiCapturePass() {
   const passFailures = [];
   const mpAiTag = MAP_ID === 'river' ? '' : '-' + MAP_ID;
@@ -1312,6 +1582,7 @@ async function mpAiCapturePass() {
     guestPage = await openSecondPage();
     guestPage.messages.length = 0;
     const car = defaultSlug;
+    const guestCar = GUEST_CAR ?? (car === 'audi-r8v10-stock' ? 'corvette-zr1-stock' : 'audi-r8v10-stock');
     const roomQuery = '&mpServer=' + encodeURIComponent(roomServer.wsUrl) + '&audio=0';
     const aiQuery = '&ai=' + AI_COUNT + '&aiCars=' + encodeURIComponent(AI_CARS) +
       '&aiProfiles=' + encodeURIComponent(AI_PROFILES);
@@ -1689,6 +1960,7 @@ async function mpPowerupsCapturePass() {
     guestPage = await openSecondPage();
     guestPage.messages.length = 0;
     const car = defaultSlug;
+    const guestCar = GUEST_CAR ?? (car === 'audi-r8v10-stock' ? 'corvette-zr1-stock' : 'audi-r8v10-stock');
     const roomQuery = '&mpServer=' + encodeURIComponent(roomServer.wsUrl) + '&audio=0';
     const hostUrl = origin + '/?mp=1&host=1&powerups=1&script=sprint&mpPace=0.55&car=' + encodeURIComponent(car) +
       '&name=Host' + roomQuery;
@@ -2301,7 +2573,8 @@ async function mpPowerupsCapturePass() {
 }
 
 if (MODE !== 'drive') {
-  const result = MODE === 'sprint' ? await sprintCapturePass()
+  const result = MODE === 'chunk' ? await chunkCapturePass()
+    : MODE === 'sprint' ? await sprintCapturePass()
     : MODE === 'lap' ? await lapCapturePass()
     : MODE === 'free' ? await freeCapturePass()
     : MODE === 'props' ? await propsCapturePass()
@@ -2316,6 +2589,7 @@ if (MODE !== 'drive') {
           : MODE === 'audio' ? await audioCapturePass()
             : MODE === 'mp' ? await mpCapturePass()
               : MODE === 'mp-ai' ? await mpAiCapturePass()
+                : MODE === 'mp-solo-ai' ? await mpSoloAiCapturePass()
                 : MODE === 'mp-powerups' ? await mpPowerupsCapturePass()
                   : await telemetryCapturePass();
   await shutdown();

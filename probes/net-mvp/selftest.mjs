@@ -196,6 +196,24 @@ try {
     assert.equal(sent.seq, 1);
     assert.equal(a.sendInput(inputAt('selftest-seed', 1, 1), 1).seq, 1);
   });
+
+  // A host + host-simulated AI has only one human. The page sends solo:true;
+  // the server must still reject a bare one-player start.
+  const solo = new NetClient({ url: server.wsUrl, name: 'SelftestSolo' });
+  clients.push(solo);
+  await solo.connect();
+  await solo.createRoom({ name: 'SelftestSolo', maxPlayers: 4 });
+  solo.on('error', () => {});
+  await solo.setReady(true);
+  await checkAsync('one-human room rejects start without solo:true', async () => {
+    await assert.rejects(solo.start(), expectCode(ERROR_CODES.NET_NOT_ENOUGH_PLAYERS));
+  });
+  const soloStarted = waitEvent(solo, 'started');
+  await solo.start({ solo: true });
+  const soloStartedMessage = await soloStarted;
+  check('one-human room accepts start with solo:true (AI opponents)', () => {
+    assert.equal(soloStartedMessage.room?.phase ?? solo.room?.phase, 'running');
+  });
 } finally {
   for (const client of clients) client.close();
   await server.close();

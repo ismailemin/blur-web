@@ -261,6 +261,12 @@ impulse; Barge 7 m/0.4 s; JINK not-serialized. Node **107/107**, verify
 staged manifest; batch 2 medium. Kanıt:
 `docs/work/analysis/vehicle-c-aliases.md`, `vehicle-hummer-parts.md`.
 
+**CHUNK1 — asset chunking:** level 9,66 MB + car chunk 5,47–9,02 MB; sayfa
+**109,2 → 20,47 MB (−%81,3)**; araç geçişi 535 ms (reload yok); MP peer chunk
+26–33 ms. Verify 2285/2285. **FIX1 — solo AI READY:** tek insan + AI artık
+başlıyor ve bitiyor; `solo:true`, host rules guest'siz; solo capture P1 AI
+14,383 / P2 Host 14,667 / P3 AI 17,300, console 0; selftest 24/24.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

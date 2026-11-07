@@ -588,6 +588,25 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Verifier PASS; Audi R8 present-caliper regression byte-identical.
 - Batch 2'ye medium-confidence girebilir (16 wheel draw preview-only).
 
+### E1av — Asset chunking (CHUNK1)  ✅
+- `level.geometry.json` 9,66 MB + `base.geometry.json` 10,8 KB +
+  `cars/<slug>.geometry.json` 5,47–9,02 MB + `car-bodies.index.json`.
+- Sayfa varlıkları **109,20 MB → 20,47 MB (−%81,3)**; ilk yükleme 75,5 ms;
+  araç değişimi **535 ms**, reload yok; MP peer chunk 26–33 ms.
+- 15 araç chunk'ı combined body ile byte-identical; state/packet anchor'ları sabit.
+- `verify_e1_drive` **2285/2285**; checker 23/23; sprint/MP capture console 0.
+- Sınır: 1 level + 1–2 araç resident; streaming/eviction yok; doku baskın.
+
+### E1aw — Tek başına host + AI READY fix  ✅
+- `allReady` artık insan + AI katılımcı sayısını kullanıyor; tek insan + AI
+  başlatabiliyor. `room.start {solo:true}` sunucuda 1 insanı kabul ediyor.
+- `mpHostRulesStep` guest yokken de AI'ları RaceSession'a besliyor; host
+  bitince AI finish beklenip sonuç flush ediliyor.
+- Solo capture: **P1 AI 14,383 / P2 Host 14,667 / P3 AI 17,300 s**, console 0;
+  2 insan + AI regression PASS. Selftest **24/24**.
+- Kanıt: `_work/e1-drive/browser-mp-solo-ai-finish.png`,
+  `browser-evidence-mp-solo-ai.json`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

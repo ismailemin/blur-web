@@ -20,11 +20,21 @@
 //         stream (build_car_textures.py), plus the committed P52 RGBA files.
 //         Read only; every reference and manifest is pinned by SHA-256 and every
 //         draw range is validated against its mesh before it is used.
-// Output: _work/e1-drive/geometry.json — the level mesh, the real River track
+// Output (chunked, see docs/plan/VEHICLE_CHUNKING.md):
+//   _work/e1-drive/level.geometry.json    the level mesh, the real River track
 //         visual (committed level_inspect direct draws) with its real P45 UV0
-//         stream and static albedo textures, one body per roster car (mesh, real
-//         UV0, static albedo textures, draws, parts, wheel groups and nodes), and
-//         the collision surface kept as hidden physics provenance.
+//         stream and static albedo textures, the level props, and the collision
+//         surface kept as hidden physics provenance. No car bodies.
+//   _work/e1-drive/base.geometry.json     the small map-mode base: materials,
+//         light, camera intrinsics, roster and car-texture metadata only.
+//   _work/e1-drive/cars/<slug>.geometry.json
+//         one roster car body (mesh, real UV0, static albedo textures, draws,
+//         parts, wheel groups and nodes) with its chunk header.
+//   _work/e1-drive/car-bodies.index.json  per-chunk SHA-256, byte size, draw
+//         counts, texture/UV references and the level/base file pins.
+//   _work/e1-drive/geometry.json          debug-only combined document (the
+//         pre-chunking artifact, kept byte-identical for the committed layout,
+//         ghost and MP pins). The page never fetches it.
 //         Nothing is re-derived from the game files here; the packet populates
 //         the level half and the car-parts manifests the vehicle half, and every
 //         input hash is recorded.
@@ -42,6 +52,10 @@ const TRACK = path.join(ROOT, '_work/e1-drive/track.json');
 const CAR_INDEX = path.join(ROOT, '_work/car-parts/cars/index.json');
 const ROSTER = path.join(ROOT, 'probes/e1-drive/cars/roster.json');
 const OUT = path.join(ROOT, '_work/e1-drive/geometry.json');
+const LEVEL_OUT = path.join(ROOT, '_work/e1-drive/level.geometry.json');
+const BASE_OUT = path.join(ROOT, '_work/e1-drive/base.geometry.json');
+const INDEX_OUT = path.join(ROOT, '_work/e1-drive/car-bodies.index.json');
+const CARS_OUT = path.join(ROOT, '_work/e1-drive/cars');
 
 if (!existsSync(SOURCE)) {
   throw new Error('missing ' + path.relative(ROOT, SOURCE) +
@@ -1987,13 +2001,212 @@ const geometry = {
 };
 
 mkdirSync(path.dirname(OUT), { recursive: true });
+mkdirSync(CARS_OUT, { recursive: true });
+
+// The combined document is the pre-chunking artifact and stays byte-identical so
+// every committed layout, ghost and MP pin (which hash it) remains valid. It is
+// a debug/verification artifact only; the page fetches the chunks below.
 const text = JSON.stringify(geometry);
 writeFileSync(OUT, text, 'utf8');
+
+// ---------------------------------------------------------------- level chunk
+const levelDoc = {
+  ...geometry,
+  carBodies: {},
+  fallbackBodies: [],
+  fallbackBodyCount: 0,
+  chunk: {
+    kind: 'level',
+    version: 1,
+    role: 'always loaded: collision provenance, track visual, level props, materials/light/camera',
+    carBodies: 0,
+    carChunkPattern: 'cars/<slug>.geometry.json',
+    index: 'car-bodies.index.json',
+    note: 'the selected car body is merged from its own chunk; the packet schema is unchanged'
+  }
+};
+const levelText = JSON.stringify(levelDoc);
+writeFileSync(LEVEL_OUT, levelText, 'utf8');
+const levelSha = sha256(Buffer.from(levelText, 'utf8'));
+const levelBytes = Buffer.byteLength(levelText, 'utf8');
+
+// ------------------------------------------------------------- base (map mode)
+// Map packages replace the River level half, so they only need the car body,
+// materials, light, camera intrinsics and roster metadata. This keeps the map
+// load path on the same chunk policy instead of re-fetching the full level.
+const baseDoc = {
+  kind: geometry.kind,
+  version: geometry.version,
+  source: {
+    note: 'map-mode base document: materials, light, camera intrinsics, roster and car-texture metadata; ' +
+      'the level is the selected map package and the body is the selected car chunk',
+    packet: geometry.source.packet,
+    packetVersion: geometry.source.packetVersion,
+    packetHash: geometry.source.packetHash,
+    packetSha256: geometry.source.packetSha256,
+    cars: geometry.source.cars
+  },
+  chunk: {
+    kind: 'base',
+    version: 1,
+    role: 'map-package geometry base; the map package supplies meshes/draws/textures/collision',
+    carChunkPattern: 'cars/<slug>.geometry.json',
+    index: 'car-bodies.index.json'
+  },
+  light: geometry.light,
+  materials: geometry.materials,
+  cameraIntrinsics: geometry.cameraIntrinsics,
+  roster: geometry.roster,
+  defaultCar: geometry.defaultCar,
+  carTextures: geometry.carTextures,
+  carBodies: {},
+  fallbackBodies: [],
+  fallbackBodyCount: 0,
+  levelInstances: geometry.levelInstances
+};
+const baseText = JSON.stringify(baseDoc);
+writeFileSync(BASE_OUT, baseText, 'utf8');
+const baseSha = sha256(Buffer.from(baseText, 'utf8'));
+const baseBytes = Buffer.byteLength(baseText, 'utf8');
+
+// ---------------------------------------------------------------- car chunks
+const indexCars = {};
+const summaryBodies = [];
+for (const body of Object.values(bodies)) {
+  const carDoc = {
+    kind: 'e1-drive.car-chunk',
+    version: 1,
+    geometryVersion: geometry.version,
+    slug: body.slug,
+    name: body.name,
+    chunk: {
+      kind: 'car',
+      version: 1,
+      slug: body.slug,
+      level: 'level.geometry.json',
+      levelSha256: levelSha,
+      index: 'car-bodies.index.json',
+      note: 'one roster car body/wheels/parts; merged into the level document by packet-adapter consumers'
+    },
+    ...body
+  };
+  const carText = JSON.stringify(carDoc);
+  const file = 'cars/' + body.slug + '.geometry.json';
+  writeFileSync(path.join(CARS_OUT, body.slug + '.geometry.json'), carText, 'utf8');
+  const bytes = Buffer.byteLength(carText, 'utf8');
+  indexCars[body.slug] = {
+    file,
+    sha256: sha256(Buffer.from(carText, 'utf8')),
+    bytes,
+    geometryVersion: geometry.version,
+    meshId: body.meshId,
+    vertices: body.mesh.vertexCount,
+    triangles: body.mesh.indexCount / 3,
+    positionsSha256: body.manifest.meshValueHashes.positionsFloat32LESha256,
+    indicesSha256: body.manifest.meshValueHashes.indicesUint32LESha256,
+    draws: body.carDraws.length,
+    parts: body.carParts.length,
+    nodes: body.carNodes.length,
+    wheelGroups: body.wheelGroups.length,
+    texturedDraws: body.carDraws.filter((draw) => draw.textureId !== null).length,
+    textures: body.textures.length,
+    rgbaBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    uv: body.mesh.uv
+      ? {
+          bytes: body.mesh.uv.bytes,
+          values: body.mesh.uv.values,
+          vertexCount: body.mesh.uv.vertexCount,
+          sha256: body.mesh.uv.sha256
+        }
+      : null,
+    manifestSha256: body.manifest.sha256,
+    sourceModelPakPath: body.manifest.sourceModelPakPath,
+    sourceModelSha256: body.manifest.sourceModelSha256,
+    fallback: body.manifest.fallback === true
+  };
+  summaryBodies.push({
+    slug: body.slug,
+    file,
+    bytes,
+    sha256: indexCars[body.slug].sha256,
+    draws: body.carDraws.length,
+    texturedDraws: indexCars[body.slug].texturedDraws,
+    textures: body.textures.length,
+    textureBytes: indexCars[body.slug].rgbaBytes,
+    uvBytes: body.mesh.uv?.bytes ?? 0
+  });
+}
+
+const indexDoc = {
+  kind: 'e1-drive.car-bodies-index',
+  version: 1,
+  generator: 'probes/e1-drive/tools/build_geometry.mjs',
+  geometryVersion: geometry.version,
+  policy: {
+    levelChunksLoaded: 1,
+    carChunksResident: 2,
+    carChunks: 'the selected car is loaded on demand and cached; MP loads the remote car once',
+    missingChunk: 'typed load error; never substitute another car body',
+    streaming: 'none in this pass: one level + one/two cars resident'
+  },
+  level: {
+    file: 'level.geometry.json',
+    sha256: levelSha,
+    bytes: levelBytes,
+    meshes: levelDoc.meshes.length,
+    levelDraws: levelDoc.levelDraws.length,
+    trackDraws: levelDoc.trackVisual.draws.length,
+    textures: levelDoc.textures.length + levelDoc.levelTextures.length,
+    rgbaBytes:
+      levelDoc.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0) +
+      levelDoc.levelTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0),
+    uvBytes:
+      (levelDoc.meshes[0]?.uv?.bytes ?? 0) +
+      (levelDoc.meshes.find((mesh) => mesh.id === levelDoc.trackVisual.meshId)?.uv?.bytes ?? 0)
+  },
+  base: {
+    file: 'base.geometry.json',
+    sha256: baseSha,
+    bytes: baseBytes,
+    role: 'map-package base (materials/light/camera/roster); never fetched for the River map'
+  },
+  debug: {
+    file: 'geometry.json',
+    sha256: sha256(Buffer.from(text, 'utf8')),
+    bytes: Buffer.byteLength(text, 'utf8'),
+    role: 'combined pre-chunking artifact, kept for the committed layout/ghost/MP pins and verification; not fetched by the page'
+  },
+  packet: {
+    emitted: false,
+    policy: 'composed by web/packet-adapter.js from the level chunk + one car chunk',
+    note: 'no packet/level.json is shipped: the chase camera, occluder and per-tick updates are built at runtime, ' +
+      'and the packet schema/hash must stay identical to the single-file producer'
+  },
+  roster: {
+    path: path.relative(ROOT, ROSTER).split(path.sep).join('/'),
+    sha256: sha256(rosterBytes),
+    cars: roster.cars.map((car) => ({ slug: car.slug, name: car.name, drivetrain: car.drivetrain }))
+  },
+  defaultCar: defaultSlug,
+  cars: indexCars
+};
+const indexText = JSON.stringify(indexDoc);
+writeFileSync(INDEX_OUT, indexText, 'utf8');
 
 console.log(JSON.stringify({
   output: path.relative(ROOT, OUT).split(path.sep).join('/'),
   bytes: Buffer.byteLength(text, 'utf8'),
   sha256: sha256(Buffer.from(text, 'utf8')),
+  chunks: {
+    index: {
+      file: path.relative(ROOT, INDEX_OUT).split(path.sep).join('/'),
+      bytes: Buffer.byteLength(indexText, 'utf8'),
+      sha256: sha256(Buffer.from(indexText, 'utf8'))
+    },
+    level: { file: path.relative(ROOT, LEVEL_OUT).split(path.sep).join('/'), bytes: levelBytes, sha256: levelSha },
+    base: { file: path.relative(ROOT, BASE_OUT).split(path.sep).join('/'), bytes: baseBytes, sha256: baseSha },
+    cars: summaryBodies
+  },
   levelDraws: geometry.levelDraws.length,
   levelVertices: levelMesh.vertexCount,
   levelTriangles: levelMesh.indexCount / 3,

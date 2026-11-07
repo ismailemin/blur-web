@@ -3377,3 +3377,50 @@ Screenshots: `_work/e1-drive/browser-mp-powerups-blindfire-host.png`,
   deterministically; normal play still uses the host forward-cone target rule.
 - The Barge ring is a presentation proxy, not a retail FX asset.
 - No full-game or retail-parity claim.
+
+## 40. Chunked geometry: level + selected car (T-007/chunking)
+
+### 40.1 What changed
+
+The 106,864,802 B combined `geometry.json` is now a debug artifact. The builder
+writes a 9,662,959 B `level.geometry.json` (collision provenance, 22 level-prop
+draws, 394 track draws, 140 albedo images, hidden collision), a 10,778 B
+`base.geometry.json` for map-package mode, one 5.47–9.02 MB
+`cars/<slug>.geometry.json` per roster car and a 16,858 B
+`car-bodies.index.json` pinning every file by SHA-256, byte size, draw count and
+texture/UV references.
+
+`web/geometry-chunks.js` is the shared browser/Node contract. The page loads the
+index and level once, then only the selected car; `assembleGeometry` puts exactly
+one body into `carBodies`, so `packet-adapter.js` and the packet schema did not
+change. A car switch preflights and caches the next chunk, rebuilds the
+engine/session in place and updates `?car=` with `history.replaceState` (no page
+reload). Missing, short or hash-mismatched chunks raise a typed `ChunkLoadError`
+(`CHUNK_CAR_MISSING`, `CHUNK_CAR_SHA256`, …); there is no fallback body.
+
+The MP room roster now drives per-player cars. Each page loads its own car chunk;
+the peer's chunk is uploaded once as a second ghost-pipeline mesh and drawn with
+the peer's wheel rest matrices. A failed peer chunk appears as
+`state.mp.remote.carChunk {status:"error", code, error}` and is not drawn.
+
+### 40.2 Measured bytes
+
+| page assets | before | after |
+| --- | ---: | ---: |
+| geometry | 106,864,802 B | 9,662,959 + 8,468,680 = 18,131,639 B |
+| physics + layout + fields + spawn | 2,339,419 B | 2,339,419 B |
+| total | ≈109.20 MB | ≈20.47 MB (-81.3 %) |
+
+The largest car chunk (Lotus, 9.02 MB) gives ≈20.9 MB; the debug combined file is
+never fetched. A second car adds only its own chunk and no level bytes.
+
+### 40.3 Verification
+
+`verify_e1_drive.mjs` parses and pins the index/level/base and all 15 car chunks,
+proves each body and the level half are structurally identical to the combined
+artifact and produces every per-car packet from `assembleGeometry(levelChunk,
+carChunk)`. The result is **2285/2285 checks**, including the unchanged per-car
+packet hashes and the 301-tick state anchors.
+
+Full chunk sizes, hashes, load flow and limits:
+`docs/work/verification/T-007-chunking.md`.

@@ -23,6 +23,11 @@ export const MAPS = Object.freeze({
     level: 'usa_la_river',
     kind: 'single-map',
     geometryUrl: '/_work/e1-drive/geometry.json',
+    // Chunked load path (docs/plan/VEHICLE_CHUNKING.md): the page fetches the
+    // level document + the selected car chunk, never the combined debug file.
+    levelGeometryUrl: '/_work/e1-drive/level.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    baseGeometryUrl: null,
     physicsUrl: '/_work/e1-drive/Level.levelphysics',
     spawnUrl: '/_work/e1-drive/spawn.json',
     layoutUrl: null,
@@ -32,18 +37,18 @@ export const MAPS = Object.freeze({
     propLayer: true,
     ghost: true,
     pins: null,
-    // Multiplayer map record pins (M3). The M1 River route has no package
-    // document, so its record pins the committed geometry document, the 310 m
-    // layout and the Level.levelphysics file. They are used only by the room
-    // map-agreement check; the single-player River load path is unchanged.
+    // Multiplayer map record pins (M3/M1.1). The River route has no separate
+    // package document, so its record pins the always-loaded level chunk, the
+    // 310 m layout and the Level.levelphysics file. The combined debug geometry
+    // is not part of the wire identity.
     mpPins: Object.freeze({
-      packageHash: 'sha256:0dcf3e38f5777f1751fedf6960a0f425e3dd1bf5fb3c3e53a974d49675904709',
+      packageHash: 'sha256:53ebe3cfe770f84def5b5f7c7a5d64553a050bd926834894b446fcfead028ef9',
       layoutHash: 'sha256:9240e9c136059ccd209992999b8570860f99f1bedd4b4ec9ff0a56d5cf8cad53',
       physicsHash: 'sha256:1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28',
-      packageFileSha256: 'sha256:0dcf3e38f5777f1751fedf6960a0f425e3dd1bf5fb3c3e53a974d49675904709',
+      packageFileSha256: 'sha256:53ebe3cfe770f84def5b5f7c7a5d64553a050bd926834894b446fcfead028ef9',
       layoutFileSha256: 'sha256:516647664f7ff3590db457f8685a3d4308b030b86fbf962f0e9bfa708da89e49',
       physicsFileSha256: 'sha256:1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28',
-      packageBytes: 106864802,
+      packageBytes: 9662959,
       layoutBytes: 386521,
       physicsBytes: 1945409
     })
@@ -55,10 +60,11 @@ export const MAPS = Object.freeze({
     kind: 'map-package',
     // Generated from the read-only packages; served from `_work/e1-drive/amboy/`.
     geometryUrl: '/_work/e1-drive/amboy/map.json',
-    // The car bodies, materials, light and camera intrinsics stay in the
-    // existing committed geometry document; the Amboy package replaces only the
-    // map half. This avoids copying the 15-car body meshes into a second file.
-    baseGeometryUrl: '/_work/e1-drive/geometry.json',
+    // The car bodies, materials, light and camera intrinsics stay in the small
+    // committed base document; the Amboy package replaces only the map half and
+    // the selected car comes from its own chunk.
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
     physicsUrl: '/map-data/usa_amboy/Level.levelphysics',
     spawnUrl: null,
     layoutUrl: '/_work/e1-drive/amboy/layout.json',
@@ -115,9 +121,10 @@ export const MAPS = Object.freeze({
     kind: 'map-package',
     // Generated from the read-only MAP5 packages; served from `_work/e1-drive/gracia/`.
     geometryUrl: '/_work/e1-drive/gracia/map.json',
-    // Car bodies, materials, light and camera intrinsics stay in the committed
-    // geometry document; the Gracia package replaces only the map half.
-    baseGeometryUrl: '/_work/e1-drive/geometry.json',
+    // Car bodies, materials, light and camera intrinsics stay in the small
+    // committed base document; the Gracia package replaces only the map half.
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
     physicsUrl: '/map-data/spa_barcelona_gracia/Level.levelphysics',
     spawnUrl: null,
     layoutUrl: '/_work/e1-drive/gracia/layout.json',

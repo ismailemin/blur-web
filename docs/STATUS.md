@@ -947,6 +947,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Hummer H2: brake caliper modelde yok (`cali_01` plaka dokusu); tipli `caliper:"absent"`, staged manifest; uydurulmadı.
 - Doğrulama **438/438**; suite **58/58**. Kanıt: `docs/work/analysis/vehicle-c-aliases.md`, `vehicle-hummer-parts.md`.
 
+## 8 Kasım 2026 — asset chunking + solo AI fix
+
+- Chunking: level 9,66 MB + base 10,8 KB + cars 5,47–9,02 MB; sayfa **109,2 → 20,47 MB (−%81,3)**; araç geçişi 535 ms reload'suz; MP peer chunk 26–33 ms.
+- Solo AI: tek insan + AI READY/START çalışıyor; `allReady` AI'ı sayıyor, `room.start {solo:true}` 1 insanı kabul ediyor, host rules guest'siz AI'ları besliyor.
+- Solo capture: P1 AI 14,383 / P2 Host 14,667 / P3 AI 17,300 s, console 0; 2 insan + AI regression PASS; selftest 24/24.
+- Verify **2285/2285**, suite 58/58, checker 23/23.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

@@ -96,6 +96,8 @@ sürüşü deneyebileceği PoC.
 | Silah entegrasyonu | WPN1 | ✅ 8 tip, 107/107, console 0 |
 | C araç alias kanıtı | V3 | ✅ 14/15, 61/62 toplam |
 | Hummer parça fix | V4 | ✅ caliper absent, staged |
+| Asset chunking | CHUNK1 | ✅ 109,2→20,47 MB, araç geçişi 535 ms |
+| Solo host + AI | FIX1 | ✅ READY/START, 3 satır sonuç |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

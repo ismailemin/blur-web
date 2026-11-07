@@ -52,6 +52,10 @@ import { isFreeLayout, layoutStartHeading, layoutStartPosition, validateSprintLa
 import { SPRINT_EVENT, courseGroundAt, coursePosition, createSprintRules, freeGroundAt } from './sprint-rules.js';
 import { MAPS, MP_MAP_IDS, resolveMap } from './map-registry.js';
 import { bytesSha256, mergeMapGeometry, textSha256, validateMapPackage } from './map-package.js';
+import {
+  CHUNK_ERROR, ChunkLoadError, assembleGeometry, parseBaseChunk, parseCarChunk, parseChunkIndex,
+  parseLevelChunk, verifyChunkBytes, verifyChunkSha
+} from './geometry-chunks.js';
 import { createBestTimes } from './sprint-best.js';
 import {
   GHOST_CORNERS, GHOST_SOURCE, buildGhostArcTable, createGhostStore, decodeGhost, ghostFromRun,
@@ -328,6 +332,8 @@ const MP_GRID_OPTIONS = Object.freeze({});
 
 const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
 let GEOMETRY_URL = MAP.geometryUrl;
+let LEVEL_GEOMETRY_URL = MAP.levelGeometryUrl ?? MAP.geometryUrl;
+let CAR_INDEX_URL = MAP.carIndexUrl ?? null;
 let BASE_GEOMETRY_URL = MAP.baseGeometryUrl ?? null;
 let LEVEL_URL = MAP.physicsUrl;
 let SPAWN_URL = MAP.spawnUrl;
@@ -356,6 +362,8 @@ function applyActiveMap(value) {
     ' m path, brake after the finish (probes/e1-drive/web/sprint-script.js)';
   MAX_SPRINT_SCRIPT_TICKS = MAP_IS_PACKAGE ? 20000 : 3600;
   GEOMETRY_URL = map.geometryUrl;
+  LEVEL_GEOMETRY_URL = map.levelGeometryUrl ?? map.geometryUrl;
+  CAR_INDEX_URL = map.carIndexUrl ?? null;
   BASE_GEOMETRY_URL = map.baseGeometryUrl ?? null;
   LEVEL_URL = map.physicsUrl;
   SPAWN_URL = map.spawnUrl;
@@ -503,7 +511,7 @@ const state = {
     grid: null,
     sessionCar: null,
     remote: {
-      id: null, name: null, slot: null, car: null, connected: null,
+      id: null, name: null, slot: null, car: null, carChunk: null, connected: null,
       latest: null, sample: null, display: null, input: null,
       distance: null, authority: false,
       corrections: 0, hardSets: 0, blends: 0, tick: null
@@ -639,6 +647,27 @@ function publish() {
   if (state.sprint) document.documentElement.dataset.sprint = state.sprint.phase;
   if (state.telemetry) document.documentElement.dataset.telemetry = state.telemetry.ready ? 'ready' : 'running';
   state.ghost = ghostSummary();
+  state.chunk = {
+    indexSha256: chunkDocuments.indexSha256 ?? null,
+    level: chunkDocuments.levelBytes
+      ? {
+          file: '_work/e1-drive/level.geometry.json',
+          bytes: chunkDocuments.levelBytes,
+          sha256: chunkDocuments.levelSha256 ?? null
+        }
+      : null,
+    base: chunkDocuments.baseBytes
+      ? {
+          file: '_work/e1-drive/base.geometry.json',
+          bytes: chunkDocuments.baseBytes,
+          sha256: chunkDocuments.baseSha256 ?? null
+        }
+      : null,
+    mapPackage: state.map?.bytes?.package ?? 0,
+    car: state.map?.carChunk ?? null,
+    switch: state.carSwitch ?? null,
+    policy: chunkDocuments.index?.policy ?? null
+  };
   if (state.collisionProbe) {
     state.collisionProbe.resolved = { x: state.position[0], z: state.position[2] };
   }
@@ -646,6 +675,13 @@ function publish() {
   const rows = [
     ['mode', state.mode + (state.hold === null ? '' : ' · hold ' + state.hold + (state.holdReached ? ' reached' : ''))],
     ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—'],
+    ['chunk', (state.chunk?.level ?? state.chunk?.base)?.bytes
+      ? ((state.chunk.level ? 'level ' : 'base ') + (((state.chunk.level ?? state.chunk.base).bytes) / 1048576).toFixed(1) +
+        ' MB' + (state.chunk.mapPackage ? ' + map ' + (state.chunk.mapPackage / 1048576).toFixed(1) + ' MB' : '') +
+        ' + car ' + ((state.chunk.car?.bytes ?? 0) / 1048576).toFixed(2) + ' MB' +
+        (state.chunk.switch ? ' · switch ' + state.chunk.switch.status +
+          (state.chunk.switch.loadMs !== null ? ' ' + state.chunk.switch.loadMs + ' ms' : '') : ''))
+      : 'loading'],
     ['audio', audioHudValue()]
   ];
   if (MAP_IS_PACKAGE && state.map) {
@@ -1072,7 +1108,12 @@ function publishMpOverlays() {
   const startButton = document.getElementById('mp-start');
   if (startButton) {
     const players = mp.room?.players ?? [];
-    const allReady = players.length >= 2 && players.every((player) => player.ready && player.connected !== false);
+    const connected = players.filter((player) => player.connected !== false);
+    const aiCount = mp.ai?.count ?? 0;
+    // A host + AI is a valid race: AI are not room players, so at least one
+    // connected human plus enough participants (humans + AI) is required.
+    const allReady = connected.length >= 1 && connected.length + aiCount >= 2 &&
+      connected.every((player) => player.ready);
     startButton.hidden = !mp.host;
     startButton.disabled = !(mp.phase === 'lobby' && mp.engineReady && mp.mapReady && allReady &&
       aiRosterReady(mp.ai));
@@ -1365,6 +1406,9 @@ let mpLastState = null;
 let mpLocalHistory = new Map();
 let mpRemoteDisplay = null;
 let mpRemotePlayerId = null;
+let mpRemoteCar = null;
+let mpRemoteCarPromise = null;
+let mpRemoteCarSlug = null;
 let mpResult = null;
 let mpFinishHash = null;
 let mpLastStatsAt = 0;
@@ -1847,14 +1891,94 @@ function populateSelector(roster, selected) {
     option.selected = entry.slug === selected.slug;
     select.append(option);
   }
-  select.addEventListener('change', () => {
-    const next = new URLSearchParams(location.search);
-    if (select.value === roster.roster.default) next.delete('car');
-    else next.set('car', select.value);
-    next.delete('hold');
-    const query = next.toString();
-    location.href = location.pathname + (query ? '?' + query : '');
-  });
+  // Switching a car is an in-place reload of the engine/session from the already
+  // cached level and the selected car chunk. The page is not reloaded, and no
+  // other car body is fetched or drawn.
+  select.onchange = () => {
+    switchCarInPlace(select.value).catch((error) => {
+      state.carSwitch = { ...(state.carSwitch ?? {}), status: 'error', error: error.message,
+        code: error.code ?? null };
+      fail(error.message);
+    });
+  };
+}
+
+let carSwitchPromise = null;
+/** Rebuild the engine/session for another roster car without reloading the page. */
+async function switchCarInPlace(slug) {
+  if (!slug || slug === car?.slug) return null;
+  if (MP) {
+    fail('the session car is fixed for an online room; reopen with ?car=' + slug);
+    return null;
+  }
+  if (carSwitchPromise) return carSwitchPromise;
+  const from = car.slug;
+  const startedAt = performance.now();
+  state.consumer = 'loading';
+  state.carSwitch = { from, to: slug, status: 'loading', loadMs: null, error: null, code: null };
+  publish();
+  carSwitchPromise = (async () => {
+    try {
+      // Preflight the selected car chunk before touching the live engine/module:
+      // a missing or mismatched chunk is a typed error and the current car keeps
+      // running unchanged.
+      const index = await loadChunkIndexDocument();
+      const preflight = await loadCarChunkDocument(index, slug);
+      state.carSwitch.carChunk = {
+        slug: preflight.body.slug,
+        file: preflight.file,
+        bytes: preflight.bytes,
+        sha256: preflight.sha256,
+        cached: true
+      };
+      publish();
+      const tick0 = await loadEngine(slug);
+      holdReached = HOLD === null ? false : HOLD === 0;
+      const tick1 = await startTimeline(tick0, { reload: true });
+      applyState(tick1);
+      state.ticksExecuted = 0;
+      state.carSwitches = (state.carSwitches ?? 0) + 1;
+      driver.reset(performance.now() * 1000);
+      const next = new URLSearchParams(location.search);
+      if (slug === state.roster.roster.default) next.delete('car');
+      else next.set('car', slug);
+      next.delete('hold');
+      const query = next.toString();
+      history.replaceState(null, '', location.pathname + (query ? '?' + query : ''));
+      state.carSwitch = {
+        from,
+        to: slug,
+        status: 'ready',
+        loadMs: +(performance.now() - startedAt).toFixed(1),
+        carChunk: state.map?.carChunk ?? null,
+        error: null,
+        code: null
+      };
+      state.consumer = 'running';
+      publish();
+      return tick1;
+    } catch (error) {
+      // A preflight failure happens before the live engine/module is touched, so
+      // the current car is still running; keep reporting it as running and only
+      // the typed switch record changes. A failure after the engine rebuild is a
+      // page error.
+      const liveCarKept = !state.carSwitch?.carChunk;
+      state.carSwitch = {
+        from,
+        to: slug,
+        status: 'error',
+        loadMs: +(performance.now() - startedAt).toFixed(1),
+        carChunk: null,
+        error: error.message,
+        code: error.code ?? null
+      };
+      state.consumer = liveCarKept ? 'running' : 'error';
+      throw error;
+    } finally {
+      carSwitchPromise = null;
+    }
+  })();
+  return carSwitchPromise;
 }
 
 /**
@@ -2009,42 +2133,190 @@ function createWorld(x, z, heading) {
   return readState();
 }
 
+/** Verified chunk documents, cached for the page lifetime (no streaming pass). */
+const chunkDocuments = {
+  index: null,
+  indexSha256: null,
+  level: null,
+  levelBytes: null,
+  levelSha256: null,
+  base: null,
+  baseBytes: null,
+  baseSha256: null,
+  cars: new Map()
+};
+
+// Non-geometry load inputs are also immutable for a page lifetime (and for a
+// car switch): keep the physics bytes, roster, per-car fields and layout text so
+// switching a car fetches only its car chunk plus the fresh wasm instance.
+const assetCache = {
+  roster: null,
+  physicsUrl: null,
+  physicsBytes: null,
+  fields: new Map(),
+  spawn: new Map(),
+  sprint: new Map(),
+  packages: new Map(),
+  sources: new Map()
+};
+
+function cachedResponse(bytes, text) {
+  return {
+    ok: true,
+    status: 200,
+    arrayBuffer: async () => {
+      if (!bytes) throw new Error('cached response has no byte body');
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    },
+    text: async () => text,
+    json: async () => JSON.parse(text)
+  };
+}
+
+async function fetchChunkBytes(url, label, missingCode) {
+  let response;
+  try {
+    response = await fetch(url, { cache: 'no-store' });
+  } catch (error) {
+    throw new ChunkLoadError(missingCode, label + ' fetch failed: ' + error.message, { url });
+  }
+  if (!response.ok) {
+    throw new ChunkLoadError(missingCode, label + ' fetch failed: HTTP ' + response.status, { url, status: response.status });
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function loadChunkIndexDocument() {
+  if (chunkDocuments.index) return chunkDocuments.index;
+  if (!CAR_INDEX_URL) throw new ChunkLoadError(CHUNK_ERROR.INDEX_MISSING, 'this map has no chunk index URL');
+  const bytes = await fetchChunkBytes(CAR_INDEX_URL, 'car-bodies.index.json', CHUNK_ERROR.INDEX_MISSING);
+  const text = new TextDecoder().decode(bytes);
+  const index = parseChunkIndex(text);
+  chunkDocuments.index = index;
+  chunkDocuments.indexSha256 = await bytesSha256(bytes);
+  return index;
+}
+
+async function loadLevelChunkDocument(index) {
+  if (chunkDocuments.level) return chunkDocuments.level;
+  const bytes = await fetchChunkBytes(LEVEL_GEOMETRY_URL, 'level.geometry.json', CHUNK_ERROR.LEVEL_MISSING);
+  verifyChunkBytes(bytes, index.level, 'level', {
+    schema: CHUNK_ERROR.LEVEL_SCHEMA, bytes: CHUNK_ERROR.LEVEL_BYTES
+  });
+  chunkDocuments.levelSha256 = await verifyChunkSha(bytes, index.level, 'level', bytesSha256, {
+    sha: CHUNK_ERROR.LEVEL_SHA
+  });
+  chunkDocuments.levelBytes = bytes.byteLength;
+  chunkDocuments.level = parseLevelChunk(new TextDecoder().decode(bytes));
+  return chunkDocuments.level;
+}
+
+async function loadBaseChunkDocument(index) {
+  if (chunkDocuments.base) return chunkDocuments.base;
+  if (!BASE_GEOMETRY_URL) throw new ChunkLoadError(CHUNK_ERROR.BASE_MISSING, 'this map has no base geometry URL');
+  const bytes = await fetchChunkBytes(BASE_GEOMETRY_URL, 'base.geometry.json', CHUNK_ERROR.BASE_MISSING);
+  verifyChunkBytes(bytes, index.base, 'base', {
+    schema: CHUNK_ERROR.BASE_SCHEMA, bytes: CHUNK_ERROR.BASE_BYTES
+  });
+  chunkDocuments.baseSha256 = await verifyChunkSha(bytes, index.base, 'base', bytesSha256, {
+    sha: CHUNK_ERROR.BASE_SHA
+  });
+  chunkDocuments.baseBytes = bytes.byteLength;
+  chunkDocuments.base = parseBaseChunk(new TextDecoder().decode(bytes));
+  return chunkDocuments.base;
+}
+
+async function loadCarChunkDocument(index, slug) {
+  const entry = index.cars?.[slug];
+  if (!entry) {
+    throw new ChunkLoadError(CHUNK_ERROR.CAR_UNKNOWN,
+      'car ' + JSON.stringify(slug) + ' is not in the chunk index; available: ' +
+      Object.keys(index.cars ?? {}).join(', '));
+  }
+  const cached = chunkDocuments.cars.get(slug);
+  if (cached && cached.sha256 === entry.sha256) return cached;
+  const url = new URL(entry.file, new URL(CAR_INDEX_URL, location.href)).pathname;
+  const bytes = await fetchChunkBytes(url, 'car chunk ' + slug, CHUNK_ERROR.CAR_MISSING);
+  verifyChunkBytes(bytes, entry, 'car ' + slug, {
+    schema: CHUNK_ERROR.CAR_SCHEMA, bytes: CHUNK_ERROR.CAR_BYTES
+  });
+  const sha256 = await verifyChunkSha(bytes, entry, 'car ' + slug, bytesSha256, {
+    sha: CHUNK_ERROR.CAR_SHA
+  });
+  const body = parseCarChunk(new TextDecoder().decode(bytes), index, slug);
+  const record = { body, bytes: bytes.byteLength, sha256, file: entry.file, url };
+  chunkDocuments.cars.set(slug, record);
+  return record;
+}
+
 async function loadEngine(carOverride = null) {
   const loadStartedAt = performance.now();
   const factory = (await import(ENGINE_MODULE)).default;
   engineFactory = factory;
   module = await factory();
-  const roster = await loadRoster();
+  const roster = assetCache.roster ?? await loadRoster();
+  assetCache.roster = roster;
   car = resolveCar(roster, carOverride ?? REQUESTED_CAR);
   state.roster = roster;
   state.car = carIdentity(car);
   populateSelector(roster, car);
 
-  const [geometryResponse, levelResponse, fieldsResponse, spawnResponse, sprintResponse, baseResponse] = await Promise.all([
-    fetch(GEOMETRY_URL, { cache: 'no-store' }),
-    fetch(LEVEL_URL, { cache: 'no-store' }),
-    fetch(fieldsUrl(car), { cache: 'no-store' }),
-    SPAWN_URL ? fetch(SPAWN_URL, { cache: 'no-store' }) : Promise.resolve(null),
-    SPRINT_MODE || SOAK ? fetch(SPRINT_URL, { cache: 'no-store' }) : Promise.resolve(null),
-    BASE_GEOMETRY_URL ? fetch(BASE_GEOMETRY_URL, { cache: 'no-store' }) : Promise.resolve(null)
+  const index = await loadChunkIndexDocument();
+  const carChunkPromise = loadCarChunkDocument(index, car.slug);
+  const cachedPackage = MAP_IS_PACKAGE ? assetCache.packages.get(GEOMETRY_URL) ?? null : null;
+  const packagePromise = MAP_IS_PACKAGE
+    ? (cachedPackage ?? fetchChunkBytes(GEOMETRY_URL, MAP.label + ' map package', CHUNK_ERROR.LEVEL_MISSING))
+    : loadLevelChunkDocument(index);
+  const basePromise = MAP_IS_PACKAGE ? loadBaseChunkDocument(index) : Promise.resolve(null);
+
+  const fieldsKey = fieldsUrl(car);
+  const cachedLevel = assetCache.physicsUrl === LEVEL_URL ? assetCache.physicsBytes : null;
+  const cachedFields = assetCache.fields.get(fieldsKey) ?? null;
+  const cachedSpawn = SPAWN_URL ? assetCache.spawn.get(SPAWN_URL) ?? null : null;
+  const cachedSprint = (SPRINT_MODE || SOAK) ? assetCache.sprint.get(SPRINT_URL) ?? null : null;
+
+  const [packageValue, levelResponse, fieldsResponse, spawnResponse, sprintResponse, baseDocument] = await Promise.all([
+    packagePromise,
+    cachedLevel ? Promise.resolve(cachedResponse(cachedLevel)) : fetch(LEVEL_URL, { cache: 'no-store' }),
+    cachedFields ? Promise.resolve(cachedResponse(cachedFields)) : fetch(fieldsKey, { cache: 'no-store' }),
+    SPAWN_URL
+      ? (cachedSpawn ? Promise.resolve(cachedResponse(cachedSpawn.bytes, cachedSpawn.text)) : fetch(SPAWN_URL, { cache: 'no-store' }))
+      : Promise.resolve(null),
+    (SPRINT_MODE || SOAK)
+      ? (cachedSprint ? Promise.resolve(cachedResponse(cachedSprint.bytes, cachedSprint.text)) : fetch(SPRINT_URL, { cache: 'no-store' }))
+      : Promise.resolve(null),
+    basePromise
   ]);
-  const responses = [['geometry', geometryResponse], ['level', levelResponse],
-    ['car fields (' + car.slug + ')', fieldsResponse]];
+  const responses = [['level', levelResponse], ['car fields (' + car.slug + ')', fieldsResponse]];
   if (spawnResponse) responses.push(['spawn', spawnResponse]);
-  if (baseResponse) responses.push(['base geometry', baseResponse]);
   for (const [label, response] of responses) {
     if (!response.ok) throw new Error(label + ' fetch failed: HTTP ' + response.status);
   }
-  const geometryBytes = new Uint8Array(await geometryResponse.arrayBuffer());
-  const baseGeometryBytes = baseResponse ? new Uint8Array(await baseResponse.arrayBuffer()) : null;
-  // Hash fetched bytes through WebCrypto (native) before decoding them; the
-  // 49–106 MB package documents are far too large for the pure-JS fallback.
-  const geometrySha = await bytesSha256(geometryBytes);
-  const geometryText = new TextDecoder().decode(geometryBytes);
-  const baseGeometryText = baseGeometryBytes ? new TextDecoder().decode(baseGeometryBytes) : null;
-  levelBytes = new Uint8Array(await levelResponse.arrayBuffer());
-  fieldBytes = new Uint8Array(await fieldsResponse.arrayBuffer());
+  // Map mode fetches the map package; the River path fetches the level chunk.
+  // Both are pinned by their committed identity/index entry.
+  if (MAP_IS_PACKAGE && !cachedPackage) assetCache.packages.set(GEOMETRY_URL, packageValue);
+  const packageBytesLength = MAP_IS_PACKAGE ? packageValue.byteLength : chunkDocuments.levelBytes;
+  const packageSha = MAP_IS_PACKAGE ? await bytesSha256(packageValue) : chunkDocuments.levelSha256;
+  const packageText = MAP_IS_PACKAGE ? new TextDecoder().decode(packageValue) : null;
+  levelBytes = cachedLevel ?? new Uint8Array(await levelResponse.arrayBuffer());
+  fieldBytes = cachedFields ?? new Uint8Array(await fieldsResponse.arrayBuffer());
+  if (!cachedLevel) {
+    assetCache.physicsUrl = LEVEL_URL;
+    assetCache.physicsBytes = levelBytes;
+  }
+  if (!cachedFields) assetCache.fields.set(fieldsKey, fieldBytes);
   const physicsSha = await bytesSha256(levelBytes);
+  const carChunk = await carChunkPromise;
+  const sprintTextValue = (SPRINT_MODE || SOAK)
+    ? (cachedSprint?.text ?? await sprintResponse.text())
+    : null;
+  if ((SPRINT_MODE || SOAK) && !cachedSprint) {
+    const bytes = new TextEncoder().encode(sprintTextValue);
+    assetCache.sprint.set(SPRINT_URL, { bytes, text: sprintTextValue });
+  }
+
+  let geometryBytes = packageBytesLength;
+  let baseGeometryBytes = MAP_IS_PACKAGE ? chunkDocuments.baseBytes : 0;
 
   let preloadedLayout = null;
   let layoutText = null;
@@ -2052,12 +2324,12 @@ async function loadEngine(carOverride = null) {
   if (MAP_IS_PACKAGE) {
     // Package pins for the map document, layout, source render/slice and the
     // Level.levelphysics bytes. A mismatch is a hard failure: no fallback map.
-    const mapDocument = JSON.parse(geometryText);
+    const mapDocument = JSON.parse(packageText);
     if (!sprintResponse?.ok) {
       throw new Error(MAP.label + ' layout fetch failed: HTTP ' + (sprintResponse?.status ?? 'missing') +
         ' — run `node probes/e1-drive/tools/build_map_' + MAP.id + '.mjs`');
     }
-    layoutText = await sprintResponse.text();
+    layoutText = sprintTextValue;
     const mapLayout = JSON.parse(layoutText);
     const packageCheck = validateMapPackage(mapDocument, mapLayout, MAP.pins);
     if (!packageCheck.ok) throw new Error(MAP.label + ' map package rejected: ' + packageCheck.errors.join('; '));
@@ -2068,23 +2340,37 @@ async function loadEngine(carOverride = null) {
       throw new Error(MAP.level + ' Level.levelphysics does not match its pinned SHA-256 (' + physicsSha + ')');
     }
     // The map document names its source packages; fetch and hash them so the page
-    // verifies the actual package bytes, not only the recorded identity.
-    const [renderSource, sliceSource] = await Promise.all([
-      fetch('/' + mapDocument.source.render.path, { cache: 'no-store' }),
-      fetch('/' + mapDocument.source.slice.path, { cache: 'no-store' })
-    ]);
-    if (!renderSource.ok || !sliceSource.ok) {
-      throw new Error('map-slice source package fetch failed: HTTP ' + renderSource.status + '/' + sliceSource.status);
+    // verifies the actual package bytes, not only the recorded identity. They are
+    // cached by path: a car switch in the same map does not re-download them.
+    const renderPath = mapDocument.source.render.path;
+    const slicePath = mapDocument.source.slice.path;
+    let renderBytes = assetCache.sources.get(renderPath) ?? null;
+    let sliceBytes = assetCache.sources.get(slicePath) ?? null;
+    if (!renderBytes || !sliceBytes) {
+      const [renderSource, sliceSource] = await Promise.all([
+        renderBytes ? Promise.resolve(null) : fetch('/' + renderPath, { cache: 'no-store' }),
+        sliceBytes ? Promise.resolve(null) : fetch('/' + slicePath, { cache: 'no-store' })
+      ]);
+      if ((renderSource && !renderSource.ok) || (sliceSource && !sliceSource.ok)) {
+        throw new Error('map-slice source package fetch failed: HTTP ' +
+          (renderSource?.status ?? 200) + '/' + (sliceSource?.status ?? 200));
+      }
+      if (renderSource) renderBytes = new Uint8Array(await renderSource.arrayBuffer());
+      if (sliceSource) sliceBytes = new Uint8Array(await sliceSource.arrayBuffer());
+      assetCache.sources.set(renderPath, renderBytes);
+      assetCache.sources.set(slicePath, sliceBytes);
     }
-    const renderBytes = new Uint8Array(await renderSource.arrayBuffer());
-    const sliceBytes = new Uint8Array(await sliceSource.arrayBuffer());
     sourceBytes = renderBytes.byteLength + sliceBytes.byteLength;
     const renderSha = await bytesSha256(renderBytes);
     const sliceSha = await bytesSha256(sliceBytes);
     if (renderSha !== MAP.pins.renderFileSha256) throw new Error('render.json does not match its pinned SHA-256');
     if (sliceSha !== MAP.pins.sliceFileSha256) throw new Error('slice.json does not match its pinned SHA-256');
-    const baseGeometry = JSON.parse(baseGeometryText);
-    geometry = mergeMapGeometry(baseGeometry, mapDocument, { id: MAP.id, label: MAP.label, level: MAP.level });
+    // The base document carries only materials/light/camera/roster; the map
+    // package replaces the level half and the selected car chunk the vehicle.
+    geometry = assembleGeometry(
+      mergeMapGeometry(baseDocument, mapDocument, { id: MAP.id, label: MAP.label, level: MAP.level }),
+      carChunk.body,
+      { index });
     // The committed spawn artifact is River-specific; the map spawn is the
     // measured layout's first point and tangent.
     spawn = {
@@ -2100,41 +2386,57 @@ async function loadEngine(carOverride = null) {
       level: MAP.level,
       hash: mapDocument.hash,
       layoutHash: mapLayout.hash,
-      packageFileSha256: geometrySha,
+      packageFileSha256: packageSha,
       layoutFileSha256: textSha256(layoutText),
       physicsSha256: physicsSha,
+      carChunk: {
+        slug: carChunk.body.slug,
+        file: carChunk.file,
+        sha256: carChunk.sha256,
+        bytes: carChunk.bytes
+      },
       source: mapDocument.source,
       counts: mapDocument.counts,
       limits: mapDocument.mapRender.limits,
       bytes: {
-        package: geometryBytes.byteLength,
-        baseGeometry: baseGeometryBytes?.byteLength ?? 0,
+        package: geometryBytes,
+        baseGeometry: baseGeometryBytes,
+        carChunk: carChunk.bytes,
         layout: layoutText.length,
         physics: levelBytes.byteLength,
         carFields: fieldBytes.byteLength,
         renderSource: sourceBytes,
-        total: geometryBytes.byteLength + (baseGeometryBytes?.byteLength ?? 0) + layoutText.length +
+        total: geometryBytes + baseGeometryBytes + carChunk.bytes + layoutText.length +
           levelBytes.byteLength + fieldBytes.byteLength + sourceBytes
       }
     };
   } else {
-    geometry = JSON.parse(geometryText);
-    spawn = await spawnResponse.json();
+    geometry = assembleGeometry(packageValue, carChunk.body, { index });
+    const spawnText = cachedSpawn?.text ?? await spawnResponse.text();
+    spawn = JSON.parse(spawnText);
+    if (!cachedSpawn) assetCache.spawn.set(SPAWN_URL, { text: spawnText });
     state.map = {
       id: MAP.id,
       label: MAP.label,
       level: MAP.level,
-      hash: geometrySha,
-      packageFileSha256: geometrySha,
+      hash: packageSha,
+      packageFileSha256: packageSha,
       physicsSha256: physicsSha,
+      carChunk: {
+        slug: carChunk.body.slug,
+        file: carChunk.file,
+        sha256: carChunk.sha256,
+        bytes: carChunk.bytes
+      },
       bytes: {
-        package: geometryBytes.byteLength,
+        package: geometryBytes,
         baseGeometry: 0,
+        carChunk: carChunk.bytes,
         layout: 0,
         physics: levelBytes.byteLength,
         carFields: fieldBytes.byteLength,
         renderSource: 0,
-        total: geometryBytes.byteLength + levelBytes.byteLength + fieldBytes.byteLength
+        total: geometryBytes + carChunk.bytes + levelBytes.byteLength + fieldBytes.byteLength
       }
     };
     state.map.layoutFileSha256 = null;
@@ -2148,7 +2450,7 @@ async function loadEngine(carOverride = null) {
         ' — run `node probes/e1-drive/tools/build_sprint.mjs` (or `node tools/verify_e1_drive.mjs` first)');
     }
     const layout = preloadedLayout ?? await (async () => {
-      layoutText = await sprintResponse.text();
+      layoutText = sprintTextValue;
       return JSON.parse(layoutText);
     })();
     if (state.map?.bytes && !state.map.bytes.layout && layoutText) {
@@ -2545,19 +2847,22 @@ async function startTimeline(tick0, {
   });
   if (POWERUPS) attachPowerupMarkerGeometry(session.packet);
   if (MP) {
-    // Reserve one ghost-pipeline slot per remote car (human peer + AI). With no
-    // AI this block is absent, so the M1 packet/rendering path is unchanged.
+    // Reserve one ghost-pipeline slot per remote car (human peer + AI). The peer
+    // may drive a different roster car, so the band is sized for the roster
+    // maximum from the chunk index. With no AI this block still declares the
+    // human slot; the single-player packet is untouched.
     const aiSlots = Math.max(0, Math.min(MP_AI_MAX,
       state.mp?.ai?.count ?? state.mp?.ai?.remotePlayers?.length ?? 0));
-    if (aiSlots > 0) {
-      session.packet.diagnostics = session.packet.diagnostics ?? {};
-      session.packet.diagnostics.extras = session.packet.diagnostics.extras ?? {};
-      session.packet.diagnostics.extras.remotes = {
-        slots: 1 + aiSlots,
-        source: 'host-relayed poses; clients never simulate AI',
-        aiSlots
-      };
-    }
+    session.packet.diagnostics = session.packet.diagnostics ?? {};
+    session.packet.diagnostics.extras = session.packet.diagnostics.extras ?? {};
+    session.packet.diagnostics.extras.remotes = {
+      slots: 1 + aiSlots,
+      drawSlots: geometry.chunk?.carDrawSlots ?? session.packet.diagnostics.extras.parts?.drawCount ?? 0,
+      source: 'host-relayed poses; each peer draws its own car chunk; clients never simulate AI',
+      aiSlots,
+      perPlayerCar: true
+    };
+    state.mp.remotes = { ...session.packet.diagnostics.extras.remotes };
   }
   state.cameraOverride = Object.keys(CAMERA_OVERRIDE).length ? { ...CAMERA_OVERRIDE } : null;
   const partsInfo = session.packet.diagnostics.extras.parts;
@@ -3489,7 +3794,11 @@ function mpNetworkState(snapshot) {
     tick: snapshot.tick + mpEngineTickOffset,
     position: [snapshot.position[0], snapshot.position[1], snapshot.position[2]],
     quaternion: quaternionFromAxes(snapshot.axisX, snapshot.axisY, snapshot.axisZ),
-    speed: snapshot.speed
+    speed: snapshot.speed,
+    // The peer's car is part of the room roster (the committed net-mvp state
+    // quantizer keeps only tick/position/quaternion/speed, so this additive field
+    // is informational; the page reads the roster car for the chunk).
+    car: car?.slug ?? null
   };
 }
 
@@ -4190,18 +4499,19 @@ function mpRulesState(id, snapshotOrState) {
 /** Host: advance the authoritative RaceSession by one engine tick. */
 function mpHostRulesStep(snapshot) {
   if (!MP_HOST || !mpRace || !mpNet) return;
-  const guestId = mpRemotePlayerId;
-  if (!guestId) return;
-  const guestLatest = state.mp.remote.latest;
-  const guestState = mpRulesState(guestId, guestLatest?.state ?? state.mp.guestSpawnState ?? null);
+  const guestId = mpRemotePlayerId ?? null;
+  const guestLatest = guestId ? state.mp.remote.latest : null;
+  const guestState = guestId
+    ? mpRulesState(guestId, guestLatest?.state ?? state.mp.guestSpawnState ?? null)
+    : null;
   const hostState = mpRulesState(mpNet.playerId, snapshot);
-  const progressRow = mpRace.progress.byId.get(guestId);
-  if (guestLatest && progressRow?.awaitingRejoin) {
+  const progressRow = guestId ? mpRace.progress.byId.get(guestId) : null;
+  if (guestId && guestLatest && progressRow?.awaitingRejoin) {
     mpRace.progress.rejoin(guestId, guestState, mpRace.raceTick);
   }
   const states = {};
   states[mpNet.playerId] = hostState;
-  states[guestId] = guestState;
+  if (guestId) states[guestId] = guestState;
   if (mpAiSim) {
     for (const sim of mpAiSim.sims) states[sim.player.id] = mpRulesState(sim.player.id, sim.state);
   }
@@ -4234,39 +4544,138 @@ function mpHostRulesStep(snapshot) {
   else if (state.mp.validation) mpRefreshHostValidation();
 }
 
+/**
+ * Load the peer's car chunk once. A failure is recorded as a typed error and the
+ * remote car is not drawn: never a silent different body.
+ */
+function mpRequestRemoteCar(slug) {
+  if (!slug || slug === car?.slug) {
+    mpRemoteCarSlug = slug ?? null;
+    return null;
+  }
+  if (mpRemoteCar?.slug === slug && mpRemoteCar.status === 'ready') {
+    mpRemoteCarSlug = slug;
+    return mpRemoteCar;
+  }
+  if (mpRemoteCarPromise) return null;
+  const startedAt = performance.now();
+  mpRemoteCarSlug = slug;
+  mpRemoteCar = { slug, status: 'loading', error: null, code: null, bytes: 0, sha256: null, loadMs: null };
+  if (state.mp?.remote) {
+    state.mp.remote.car = slug;
+    state.mp.remote.carChunk = { slug, status: 'loading', error: null, code: null, bytes: 0,
+      sha256: null, loadMs: null, source: 'remote snapshot car field' };
+  }
+  mpRemoteCarPromise = (async () => {
+    try {
+      const index = await loadChunkIndexDocument();
+      const record = await loadCarChunkDocument(index, slug);
+      const body = record.body;
+      if (typeof consumer.ensureRemoteCar !== 'function') {
+        throw new ChunkLoadError(CHUNK_ERROR.CAR_SCHEMA, 'the consumer cannot upload a second car body');
+      }
+      const handle = consumer.ensureRemoteCar(slug, body);
+      const wheelRest = Object.fromEntries(body.wheelGroups.map((group) =>
+        [group.corner, group.matrixColumnMajor]));
+      mpRemoteCar = {
+        slug,
+        status: 'ready',
+        body,
+        handle,
+        wheelRest,
+        error: null,
+        code: null,
+        bytes: record.bytes,
+        sha256: record.sha256,
+        file: record.file,
+        loadMs: +(performance.now() - startedAt).toFixed(1)
+      };
+      if (state.mp?.remote) state.mp.remote.carChunk = {
+        slug, status: 'ready', error: null, code: null, file: record.file,
+        bytes: record.bytes, sha256: record.sha256, loadMs: mpRemoteCar.loadMs,
+        draws: handle.drawCount      };
+      mpRemoteDisplay = null;
+      return mpRemoteCar;
+    } catch (error) {
+      mpRemoteCar = {
+        slug,
+        status: 'error',
+        body: null,
+        handle: null,
+        wheelRest: null,
+        error: error.message,
+        code: error.code ?? 'CHUNK_LOAD_FAILED',
+        bytes: 0,
+        sha256: null,
+        loadMs: +(performance.now() - startedAt).toFixed(1)
+      };
+      if (state.mp?.remote) state.mp.remote.carChunk = {
+        slug, status: 'error', error: error.message, code: error.code ?? 'CHUNK_LOAD_FAILED',
+        file: null, bytes: 0, sha256: null, loadMs: mpRemoteCar.loadMs, draws: null
+      };
+      if (state.mp) state.mp.status = 'remote car chunk failed: ' + error.message;
+      return mpRemoteCar;
+    } finally {
+      mpRemoteCarPromise = null;
+    }
+  })();
+  return null;
+}
+
 /** Compose/refresh the remote display from the interpolation buffer(s). */
 function mpUpdateRemoteFrame(renderTick) {
   if (!mpNet || !state.mp) { consumer.setGhostFrames([]); return; }
   const frames = [];
-  // 1. The human peer (M1): the net-mvp interpolation buffer + bounded corrector.
+  // 1. The human peer (M1/M1.1): the net-mvp interpolation buffer + bounded
+  //    corrector. The peer's own car chunk is loaded once when the snapshot's car
+  //    differs from this page's car; until it is ready the remote car is not
+  //    drawn (a missing/failed chunk is a typed error, never another body).
   if (mpRemotePlayerId && ghostWheelRest) {
     const latest = mpNet.latestRemote(mpRemotePlayerId);
     if (latest) {
       state.mp.remote.latest = latest;
       state.mp.remote.tick = latest.tick;
       state.mp.remote.authority = latest.authority === true;
-      const sampleTick = Math.max(0, renderTick + mpEngineTickOffset - MP_REMOTE_DELAY_TICKS);
-      const target = mpNet.sampleRemote(mpRemotePlayerId, sampleTick);
-      if (target) {
-        if (!mpRemoteDisplay) mpRemoteDisplay = new RemoteDisplay();
-        const display = mpRemoteDisplay.update(target);
-        if (display) {
-          state.mp.remote.sample = {
-            tick: target.tick,
-            position: [target.position[0], target.position[1], target.position[2]],
-            interpolated: target.interpolated === true,
-            clamped: target.clamped === true,
-            alpha: target.alpha ?? 0,
-            from: target.from ?? null,
-            to: target.to ?? null
-          };
-          state.mp.remote.display = { position: display.position.slice(), quaternion: display.quaternion.slice() };
-          state.mp.remote.distance = display.errorMetres;
-          state.mp.remote.corrections = display.corrections;
-          state.mp.remote.hardSets = display.hardSets;
-          state.mp.remote.blends = display.blends;
-          const { map } = remoteNodeMatrixMap({ position: display.position, quaternion: display.quaternion }, ghostWheelRest);
-          frames.push({ nodeMatrices: map, tint: null });
+      const remoteSlug = state.mp.remote.car ?? latest.car ?? latest.state?.car ?? car.slug;
+      let remoteRest = ghostWheelRest;
+      let remoteHandle = null;
+      if (remoteSlug !== car.slug) {
+        if (mpRemoteCarSlug !== remoteSlug) {
+          mpRemoteDisplay = null;
+          mpRequestRemoteCar(remoteSlug);
+        }
+        const entry = mpRemoteCar;
+        if (entry?.slug === remoteSlug && entry.status === 'ready') {
+          remoteRest = entry.wheelRest;
+          remoteHandle = entry.handle;
+        } else {
+          remoteRest = null;
+        }
+      }
+      if (remoteRest) {
+        const sampleTick = Math.max(0, renderTick + mpEngineTickOffset - MP_REMOTE_DELAY_TICKS);
+        const target = mpNet.sampleRemote(mpRemotePlayerId, sampleTick);
+        if (target) {
+          if (!mpRemoteDisplay) mpRemoteDisplay = new RemoteDisplay();
+          const display = mpRemoteDisplay.update(target);
+          if (display) {
+            state.mp.remote.sample = {
+              tick: target.tick,
+              position: [target.position[0], target.position[1], target.position[2]],
+              interpolated: target.interpolated === true,
+              clamped: target.clamped === true,
+              alpha: target.alpha ?? 0,
+              from: target.from ?? null,
+              to: target.to ?? null
+            };
+            state.mp.remote.display = { position: display.position.slice(), quaternion: display.quaternion.slice() };
+            state.mp.remote.distance = display.errorMetres;
+            state.mp.remote.corrections = display.corrections;
+            state.mp.remote.hardSets = display.hardSets;
+            state.mp.remote.blends = display.blends;
+            const { map } = remoteNodeMatrixMap({ position: display.position, quaternion: display.quaternion }, remoteRest);
+            frames.push({ nodeMatrices: map, tint: null, car: remoteHandle });
+          }
         }
       }
     }
@@ -4744,9 +5153,14 @@ function mpBindUi() {
 async function mpStartRace() {
   if (!MP_HOST || !mpNet) return;
   const players = mpNet.room?.players ?? [];
-  const allReady = players.length >= 2 && players.every((player) => player.ready && player.connected !== false);
+  const connected = players.filter((player) => player.connected !== false);
+  const aiCount = state.mp.ai?.count ?? 0;
+  const allReady = connected.length >= 1 && connected.length + aiCount >= 2 &&
+    connected.every((player) => player.ready);
   if (mpNet.phase !== 'lobby' || !allReady) {
-    state.mp.status = 'start needs two connected, ready players';
+    state.mp.status = connected.length + aiCount < 2
+      ? 'start needs a second player or at least one AI (host simulates the AI)'
+      : 'start needs every connected player ready';
     publish();
     return;
   }
@@ -4782,7 +5196,7 @@ async function mpStartRace() {
   state.mp.status = 'starting…';
   publish();
   try {
-    await mpNet.start();
+    await mpNet.start({ solo: connected.length < 2 });
   } catch (error) {
     state.mp.phase = 'lobby';
     state.mp.status = 'start rejected: ' + error.message;
@@ -5766,6 +6180,9 @@ function mpCaptureSnapshot() {
     phase: mp.phase,
     status: mp.status,
     error: mp.error,
+    frameError: state.frameError ?? null,
+    frameErrorStack: state.frameErrorStack ?? null,
+    renderErrorStack: state.renderErrorStack ?? null,
     roomCode: mp.room?.code ?? null,
     requestedCode: mp.requestedCode,
     requestedCodeMismatch: mp.requestedCodeMismatch,
@@ -5855,6 +6272,17 @@ function mpCaptureSnapshot() {
       name: mp.remote.name,
       slot: mp.remote.slot,
       car: mp.remote.car,
+      carChunk: mp.remote.carChunk ? {
+        slug: mp.remote.carChunk.slug,
+        status: mp.remote.carChunk.status,
+        code: mp.remote.carChunk.code ?? null,
+        error: mp.remote.carChunk.error ?? null,
+        file: mp.remote.carChunk.file ?? null,
+        bytes: mp.remote.carChunk.bytes ?? 0,
+        sha256: mp.remote.carChunk.sha256 ?? null,
+        loadMs: mp.remote.carChunk.loadMs ?? null,
+        draws: mp.remote.carChunk.draws ?? null
+      } : null,
       connected: mp.remote.connected,
       latestTick: mp.remote.tick,
       seq: mp.remote.seq ?? null,
@@ -5959,6 +6387,34 @@ function mpInstallDebugApi() {
   };
 }
 
+/** Capture/debug surface for the chunked load path; the page never depends on it. */
+window.__e1Chunks = {
+  switchCar: (slug) => switchCarInPlace(slug),
+  state: () => state.chunk ?? null,
+  car: () => (car ? { slug: car.slug, name: car.name } : null),
+  map: () => state.map ?? null,
+  documents: () => ({
+    index: chunkDocuments.index,
+    levelBytes: chunkDocuments.levelBytes,
+    levelSha256: chunkDocuments.levelSha256,
+    baseBytes: chunkDocuments.baseBytes,
+    baseSha256: chunkDocuments.baseSha256,
+    cars: [...chunkDocuments.cars.entries()].map(([slug, record]) => ({
+      slug, bytes: record.bytes, sha256: record.sha256, file: record.file
+    }))
+  }),
+  remote: () => (mpRemoteCar ? {
+    slug: mpRemoteCar.slug,
+    status: mpRemoteCar.status,
+    error: mpRemoteCar.error,
+    code: mpRemoteCar.code,
+    bytes: mpRemoteCar.bytes,
+    sha256: mpRemoteCar.sha256,
+    loadMs: mpRemoteCar.loadMs,
+    draws: mpRemoteCar.handle?.drawCount ?? null
+  } : null)
+};
+
 /** `?mp=1` entry point: connect/join, load the room map, show the lobby. */
 async function startMultiplayer() {
   state.consumer = 'loading';
@@ -5998,11 +6454,12 @@ async function startMultiplayer() {
     const roomMapId = normalizeMpMapId(joined.room.map);
     if (!roomMapId) throw new Error('the room did not publish a map id');
     const roomCar = sessionCarForRoom(joined.room, requestedCar.slug);
-    if (roomCar && roomCar !== requestedCar.slug) {
-      throw new Error('the online room needs the same car for both players: this page resolved ' +
-        JSON.stringify(requestedCar.slug) + ' but the room host car is ' + JSON.stringify(roomCar) +
-        '; reopen this page with ?car=' + roomCar);
-    }
+    // M1.1: each human loads its own roster car chunk; the room car is only the
+    // fallback when a page did not ask for one. Physics, rules and the grid stay
+    // independent, and the remote page draws the peer's chunk.
+    state.mp.remoteCar = roomCar && roomCar !== requestedCar.slug
+      ? { hostCar: roomCar, localCar: requestedCar.slug, note: 'per-player car chunks (M1.1)' }
+      : null;
     if (joined.you.slot !== mpSlot) {
       throw new Error('the online room expects the host in slot 1 and the guest in slot 2; this page joined slot ' +
         joined.you.slot + (MP_HOST ? ' as host' : ' as guest'));
@@ -6021,7 +6478,7 @@ async function startMultiplayer() {
       state.mp.remote.connected = remote.connected !== false;
     }
     // Load and verify the room's map before the lobby allows READY.
-    await mpEnsureRoomMap(roomMapId, { carSlug: roomCar ?? requestedCar.slug, force: true });
+    await mpEnsureRoomMap(roomMapId, { carSlug: requestedCar.slug, force: true });
     // AI opponents: the host builds the records from the committed roster; the
     // guest receives the same read-only list through the ordered AI relay.
     mpAiRelayStart(joined.room.code, joined.you.id);
@@ -6100,7 +6557,7 @@ const MAX_LIVE_TICKS = 36000; // ~10 minutes of live driving; a spike, not an en
 /** After the finish the rules brake; stop stepping once the car has settled. */
 const FINISH_TAIL_TICKS = 120;
 
-function frame(nowMs) {
+function frameInner(nowMs) {
   const nowUs = Math.round(nowMs * 1000);
 
   if (!state.respawning && !holdReached && session.packet.updates.length < MAX_LIVE_TICKS) {
@@ -6191,7 +6648,19 @@ function frame(nowMs) {
     state.cameraOcclusion = cameraAtDisplay.occlusion ?? null;
   }
 
-  if (MP) mpUpdateRemoteFrame(cursor); else updateGhostFrame();
+  try {
+    if (MP) mpUpdateRemoteFrame(cursor); else updateGhostFrame();
+  } catch (error) {
+    state.renderError = error.message;
+    state.consumer = 'error';
+    if (state.mp) {
+      state.mp.error = error.message;
+      state.mp.status = 'render error: ' + error.message;
+      state.renderErrorStack = error.stack ?? null;
+    }
+    publish();
+    throw error;
+  }
   if (MP && POWERUPS) consumer.setPowerupMarkers(mpPowerupMarkerList());
   consumer.syncTimeline();
   const rendered = consumer.renderFrame({ cursor });
@@ -6212,6 +6681,23 @@ function frame(nowMs) {
     publish();
   }
   requestAnimationFrame(frame);
+}
+
+/** Outer guard: a step/render exception is recorded instead of silently stopping the loop. */
+function frame(nowMs) {
+  try {
+    frameInner(nowMs);
+  } catch (error) {
+    state.frameError = error.message;
+    state.frameErrorStack = error.stack ?? null;
+    state.consumer = 'error';
+    if (state.mp) {
+      state.mp.error = 'frame: ' + error.message;
+      state.mp.status = 'frame error: ' + error.message;
+    }
+    publish();
+    throw error;
+  }
 }
 
 function applyCanvasAspect() {
