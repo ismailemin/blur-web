@@ -803,6 +803,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Dry/offroad/gravel/grass/sand/foliage RMS 0,01–0,145; impact 0,293; mute 0; **console 0**.
 - 18 malzeme→çarpma tablosu; desteklenmeyen malzeme tipli ret. Kanıt: `docs/work/analysis/audio-tyre-collision.md`.
 
+## 7 Kasım 2026 — usa_amboy dilimi
+
+- 63.708 collision tri, 48/75 draw section, 1.606 draw/348.948 tri; **2.060,595 m** draw'lı yol (%97,62).
+- Spawn `(230,1128)`, checkpoint 686,86/1.373,67 m; fizik 61/61 tick 4/4 temas, aynı sequence hash.
+- Eksik: 0/1.606 dokulu, 27 section unsupported, 366 instance, normal yok; E1 hâlâ River-only.
+- Doğrulama **12.367/12.367**. Kanıt: `docs/work/analysis/map-slice-amboy.md`.
+
 ## 7 Kasım 2026 — ana suite 36 kontrol
 
 - `tools/verify_asset_probe.py` artık power-up tanımları + kuralları, 62 araç matrisi, 19 harita matrisi ve V2 collider kapısını da çalıştırıyor.

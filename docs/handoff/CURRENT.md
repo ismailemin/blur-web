@@ -137,6 +137,11 @@ final hash. M1 entegrasyonu için API hazır. Kanıt:
 42 impact); kanıtlanmış PLF eğrileri + 18 malzeme tablosu; harness console 0.
 Kanıt: `docs/work/analysis/audio-tyre-collision.md`.
 
+**MAP2 — usa_amboy dilimi:** 63.708 collision tri, 2.060,6 m draw'lı yol,
+1.606 draw; fizik 61/61 tick 4/4 temas. Dokular 0/1.606, 27 section
+unsupported, instance/normal yok. Doğrulama **12.367/12.367**. Kanıt:
+`docs/work/analysis/map-slice-amboy.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

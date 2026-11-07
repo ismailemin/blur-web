@@ -50,6 +50,7 @@ def main():
         ('prop-collision-v2',['node','probes/prop-collision/tools/verify_v2.mjs']),
         ('race-rules',['node','probes/race-rules/verify.mjs']),
         ('net-mvp-selftest',['node','probes/net-mvp/selftest.mjs']),
+        ('map-slice-amboy',[sys.executable,'probes/map-slice/tools/verify_slice.py','--package','_work/map-slice/amboy']),
     ])
     results=[]
     for name,command in steps:

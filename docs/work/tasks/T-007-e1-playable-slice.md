@@ -324,6 +324,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   `_work/audio/tyre-collision-harness.png`.
 - Sıradaki: E1'de `setSurface`/`setSlip`/`triggerImpact` bağlantısı.
 
+### E1z — İkinci harita dilimi: usa_amboy (MAP2)  ✅ veri
+- 63.708 collision üçgeni, 48/75 draw section, 1.606 draw / 348.948 üçgen.
+- **2.060,595 m** draw'lı yol (%97,62), 8.673 nokta; spawn `(230, 1128)`,
+  checkpoint 686,86 / 1.373,67 m.
+- Fizik Amboy collision'da: 61/61 tick 4/4 temas, sequence hash
+  `d25c4592…`; paket **17,62 MB**.
+- Eksik: **0/1.606 draw dokulu**, 27 section unsupported, 366 instance atlandı,
+  normal yok, basit Box/Cylinder collision pakette değil. E1 hâlâ River-only.
+- Doğrulama **12.367/12.367**. Kanıt: `docs/work/analysis/map-slice-amboy.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

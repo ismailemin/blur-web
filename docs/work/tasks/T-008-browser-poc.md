@@ -73,6 +73,7 @@ sürüşü deneyebileceği PoC.
 | Yarış kural katmanı | R1 | ✅ 67/67, 2/3/4 oyuncu |
 | Oda + transport | N1 | ✅ 21/21, 2 browser console 0 |
 | Tyre+collision sesi | A2 | ✅ 53 wave, console 0 |
+| usa_amboy dilimi | MAP2 | ✅ 2.060,6 m, 12.367/12.367 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |
