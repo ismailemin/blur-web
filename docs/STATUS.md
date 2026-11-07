@@ -912,6 +912,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 550.777 tick + 71.644 race hash; 4 AI Amboy 220,23–234,98 s, Gracia 64,12–68,70 s; deterministik.
 - Verifier **25/25**, River 26/26. Kanıt: `docs/work/analysis/ai-driver.md` §13.
 
+## 7 Kasım 2026 — yeni harita pickup yerleşimleri
+
+- Amboy primary **83** placement (8 tip), Gracia **59** (8 tip); tümü ground'lu, statik.
+- Ölçülmüş alt-parkura yakın yalnız 2 / 1 nokta (min 0,452 / 0,834 m); çoğu retail rotada, 6 m bandı dışında.
+- Provisional 310 m arc'larla 0/6 örtüşme. Doğrulama **3.670** + **4.060**, River 1.415.
+- M2'yi yeni haritalara taşımak için retail rota veya kontrollü araç offset'i gerek. Kanıt: `docs/work/analysis/pickup-placement.md` §11–16.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

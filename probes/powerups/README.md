@@ -67,6 +67,41 @@ course. The manifest also compares against PWR2's provisional 6-slot plan
 recovered position; nearest 73.04 m. Full analysis:
 `docs/work/analysis/pickup-placement.md`.
 
+## Generalized placement (PWR5)
+
+`extract_pickup_placement_levels.py` takes any level id and resolves every
+`racing` MultiplayerRace route; it keeps every raced circuit variant and marks
+one `primary` (most racing races, then most total races, then lowest route
+record id). `verify_pickup_placement_levels.py` is its independent
+direct-offset verifier.
+
+```powershell
+& $py probes/powerups/tools/extract_pickup_placement_levels.py --level usa_amboy
+& $py probes/powerups/tools/extract_pickup_placement_levels.py --level spa_barcelona_gracia
+& $py probes/powerups/tools/verify_pickup_placement_levels.py --level usa_amboy
+& $py probes/powerups/tools/verify_pickup_placement_levels.py --level spa_barcelona_gracia
+
+# Discovery only: all 29 raced routes / 14 cities with a PickupPosition list.
+& $py probes/powerups/tools/extract_pickup_placement_index.py
+```
+
+Outputs (not committed):
+
+- `_work/powerups/placements-amboy.json` — routes 633252245 (83) and
+  2779865848 (52), 2,060.595 m measured-path projection, collision, groups,
+  provisional diff.
+- `_work/powerups/placements-gracia.json` — routes 46220414 (59), 2844032875
+  (45) and 3824353713 (40), 624.914 m measured-path projection.
+- `_work/powerups/placements-{amboy,gracia}.verify.json` — 3,670 and 4,060
+  independent checks, PASS.
+- `_work/powerups/placement-route-index.json` — 29 raced routes / 1,523
+  placements across 14 cities; discovery only.
+
+The retail routes are not the measured e1-drive paths. The primary Amboy route
+has 2 placements within 2.0 m of the measured centreline (nearest 0.45 m); the
+primary Gracia route has 1 (0.83 m). All other placements are off-path but have
+ground. Full contract: `docs/work/analysis/pickup-placement.md` §11–§14.
+
 ## PWR1 definitions
 
 ```powershell

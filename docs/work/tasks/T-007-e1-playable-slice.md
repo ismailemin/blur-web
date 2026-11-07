@@ -520,6 +520,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - 4 AI Amboy 220,23–234,98 s; Gracia 64,12–68,70 s; deterministik sıra.
 - Doğrulama **25/25**; River 26/26. Kanıt: `docs/work/analysis/ai-driver.md` §13.
 
+### E1ap — Amboy/Gracia pickup yerleşimi (PWR5)  ✅ veri
+- Amboy primary rotada **83** placement (8 tip; +52 yedek rota), Gracia **59**
+  (8 tip; +45/+40). Tümü statik, ground var.
+- Ölçülmüş alt-parkura yakın: Amboy **2** (min 0,452 m), Gracia **1** (0,834 m);
+  çoğu retail rotada, 6 m bandı dışında.
+- Provisional 310 m arc'larla **0/6** örtüşme (en yakın 156,56 / 94,67 m).
+- Doğrulama **3.670/3.670** + **4.060/4.060**; River 1.415/1.415.
+- Kanıt: `docs/work/analysis/pickup-placement.md` §11–16.
+- Not: M2'yi Amboy/Gracia'ya taşımak için retail rota veya araç offset'i gerek.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

@@ -46,6 +46,8 @@ def main():
         ('powerups-definitions',[sys.executable,'probes/powerups/tools/verify_powerups.py']),
         ('powerups-rules',['node','probes/powerups/rules/tests.mjs']),
         ('pickup-placements',[sys.executable,'probes/powerups/tools/verify_pickup_placement.py']),
+        ('pickup-amboy',[sys.executable,'probes/powerups/tools/verify_pickup_placement_levels.py','--level','usa_amboy']),
+        ('pickup-gracia',[sys.executable,'probes/powerups/tools/verify_pickup_placement_levels.py','--level','spa_barcelona_gracia']),
         ('powerups-model',['node','probes/e1-drive/tools/powerups_model_tests.mjs']),
         ('projectiles',[sys.executable,'probes/powerups/tools/verify_projectiles.py']),
         ('projectile-rules',['node','probes/powerups/rules/projectiles.test.mjs']),

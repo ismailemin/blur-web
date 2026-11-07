@@ -1,19 +1,52 @@
-# Power-up pickup placement — `usa_la_river` (recovered)
+# Power-up pickup placement — `usa_la_river`, `usa_amboy`, `spa_barcelona_gracia`
 
 **Date:** 7 November 2026
-**Owner:** PWR3 (sub-agent)
+**Owners:** PWR3 (River recovery, §0.1–§10), PWR5 (multi-map generalization,
+`usa_amboy` / `spa_barcelona_gracia`, §0 and §11–§16).
 **Scope:** `probes/powerups/**`, `_work/powerups/**`, `_work/logs/powerups/**`
 and this document only. No change to `probes/e1-drive`, `probes/race-rules`,
 `probes/net-mvp`, `probes/asset-reader`, `tools/`, other probes, `upstream/` or
 `game-data/`. Game data is read-only.
-**Result:** the shipped **54 `PickupPosition` actors** for the raced
-`usa_la_river` multiplayer route are recovered, with types, row/shuffle groups,
-overrides, collision checks and projections to the measured 310 m and loop-01
-arcs. **This is placement data, not a renderer or full-game claim.**
+**Result:** the shipped `PickupPosition` placements for the raced
+`usa_la_river`, `usa_amboy` and `spa_barcelona_gracia` routes are recovered, with
+types, row/shuffle groups, overrides, collision checks and projections to the
+measured e1-drive layouts. **This is placement data, not a renderer or
+full-game claim.**
 
 ---
 
-## 0. TL;DR
+## 0. Multi-map summary (PWR5)
+
+The PWR3 extractor was generalized to `extract_pickup_placement_levels.py`,
+which takes a level id and resolves **every** route referenced by a `racing`
+MultiplayerRace. A level can ship several circuit variants; the manifest keeps
+all of them and marks one `primary` by a documented rule (highest racing-race
+count, then highest total race count, then lowest route record id). Nothing is
+merged or chosen silently.
+
+| map | city | raced routes (racing races) | primary | placements | types | within 2.0 m of measured path | nearest |
+| --- | --- | --- | ---: | ---: | --- | ---: | ---: |
+| `usa_amboy` | USA_Amboy | 633252245 (#3, 11), 2779865848 (#1, 10) | **633252245** | **83** (+52) | all 8 | **2** (+1) | **0.452 m** (+0.578 m) |
+| `spa_barcelona_gracia` | SPA_Barcelona_Gracia | 46220414 (#2, 17), 2844032875 (#5, 11), 3824353713 (#1, 11) | **46220414** | **59** (+45, +40) | all 8 | **1** (+0, +0) | **0.834 m** (+94.278, +2.505 m) |
+
+- Every placement has ground under its XZ on both maps; **0** are over a void.
+- The measured e1-drive paths are draw coverage, **not** retail start lines, and
+  no retail `.aid` spline is decoded. The projections below report distance and
+  arc; they never move a placement.
+- The provisional measured-arc plan does **not** overlap the recovered sets:
+  nearest provisional slot to a recovered placement is **156.56 m** (Amboy
+  primary) and **94.67 m** (Gracia primary); 0/6 slots are within 2.0 m.
+- The generalized index finds **29 raced routes / 1,523 placements across 14
+  cities**; only Amboy and Gracia are verified manifests in this task.
+
+Artifacts: `_work/powerups/placements-amboy.json` (file
+`aa80d8af…695e97`), `placements-gracia.json` (file `da57b89e…8626f65`),
+`placement-route-index.json` (canonical `3be0b4f2…1699bb5`). Details in §11–§16.
+
+---
+
+## 0.1 TL;DR — `usa_la_river` (PWR3)
+
 
 | item | result |
 | --- | --- |
@@ -632,3 +665,430 @@ The verifier:
   `MpPickup` bits only enable/disable classes.
 - **No invented integers, positions or respawn values.** Unknowns are listed in
   §7 and in `placements.json.missing`.
+
+---
+
+## 11. `usa_amboy` placement (PWR5)
+
+### 11.1 Route authority
+
+`usa_amboy` has **two racing multiplayer routes** and two unraced routes in
+`amax.bin`. Both raced routes resolve to exactly one `LevelActorList` with
+`PickupPosition` elements. They are different circuit variants; the manifest
+keeps both.
+
+| route record | `RouteNumber` | racing races | total races | MP pickup list | placements |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| **633252245** | **3** | **11** | **11** | **12510741** (record 1) | **83** |
+| 2779865848 | 1 | 10 | 10 | 3608483955 (record 39) | 52 |
+| 2213074116 | 5 | 0 | 0 | — (unraced, no MP list) | 0 |
+| 2751477814 | 0 | 0 | 0 | — (unraced, no MP list) | 0 |
+
+The primary is **633252245** by the rule in §0. The city is **USA_Amboy**
+(refId 2115846046; River's city is a different record). The separate
+`usa_amboy_multiplayer` destruction arena (city `USA_Amboy_Multiplayer`) is
+**not** this level and ships no MP actor lists.
+
+### 11.2 Primary set: route 633252245 (83)
+
+| type | count |
+| --- | ---: |
+| Blindfire (`Bolt`) | 18 |
+| Nitrous (`Nos`) | 17 |
+| Shunt | 14 |
+| Repair | 9 |
+| Barge | 7 |
+| Bomb (`Mine`) | 7 |
+| Shield | 6 |
+| Shock | 5 |
+
+- **Rows/groups:** 68 groups; 25 placements in **10 row-backed shuffle
+  groups**, 58 fixed-type placements. Nine groups hold the complete allowed
+  set. Group `771609565:7` has **1** member (`Barge`, uid 4231571987) while the
+  row allows Barge/Bolt/Mine/Shunt; that incompleteness is recorded
+  (`serializedTypesEqualAllowedSet:false`) and not filled in.
+- **Overrides:** all 83 are `RotateGraphic false`, `ActivationTimer 0`,
+  `ActivationLap 0`, `RespawnTimerOverride 0`, `ConstantShuffle false`,
+  `ShuffleTypes` bits 0, no excluded types. `PickupActiveLevel` is **1 for 82**
+  and **0 for uid 4231571987**; the value-0 semantics are not decoded, so that
+  slot is flagged inactive rather than silently spawned.
+- **Collision:** 83/83 have an up-facing triangle under their XZ; **0** are
+  over a void. 79 pass the ≤20° drivable rule. The four flagged
+  `drivableSurface:false` are uids **2569061116** (Repair, normal.y 0.9154,
+  +2.64 m), **844266989** (Shock, 0.7531, +2.88 m), **1705750750** (Shunt,
+  0.7556, −21.88 m) and **1529678209** (Shunt, 0.7006, −22.89 m). The negative
+  heights mean the simple "highest up-facing triangle" probe found a steep
+  surface above the slot (bridge/overpass geometry); they are flagged, not
+  claimed groundless.
+- **Spacing:** no duplicate uids and no XZ duplicate at 1 mm; minimum
+  nearest-neighbour distance **5.979 m**.
+
+### 11.3 Alternate set: route 2779865848 (52)
+
+| type | count |
+| --- | ---: |
+| Blindfire | 10 |
+| Shunt | 9 |
+| Barge | 7 |
+| Bomb | 7 |
+| Repair | 6 |
+| Shield | 5 |
+| Nitrous | 4 |
+| Shock | 4 |
+
+**40 groups**; 21 placements in 9 row-backed groups, 31 fixed-type placements.
+All slots are static, all overrides are zero, and all `PickupActiveLevel` values
+are 1. 52/52 have ground; one non-drivable flag (uid **1743038488**, Barge,
+normal.y 0.7088, −22.35 m). No duplicates at 1 mm; minimum nearest-neighbour
+**6.231 m**.
+
+---
+
+## 12. `spa_barcelona_gracia` placement (PWR5)
+
+### 12.1 Route authority
+
+`spa_barcelona_gracia` has **three racing multiplayer routes** plus two unraced
+routes. Each raced route resolves to one `LevelActorList` with
+`PickupPosition` elements.
+
+| route record | `RouteNumber` | racing races | total races | MP pickup list | placements |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| **46220414** | **2** | **17** | **20** | **2129257726** (record 34) | **59** |
+| 2844032875 | 5 | 11 | 17 | 803212761 (record 14) | 45 |
+| 3824353713 | 1 | 11 | 14 | 3665871924 (record 67) | 40 |
+| 307136456 | 0 | 0 | 0 | — (unraced) | 0 |
+| 3491235362 | 6 | 0 | 0 | — (unraced) | 0 |
+
+The primary is **46220414** by the rule in §0. The total-race column includes
+the `hardcore` rows (powerups mask 0, respawn None/Normal); they are not racing
+rows and do not change the primary.
+
+### 12.2 Primary set: route 46220414 (59)
+
+| type | count |
+| --- | ---: |
+| Blindfire | 15 |
+| Shunt | 13 |
+| Bomb | 9 |
+| Barge | 7 |
+| Nitrous | 4 |
+| Repair | 4 |
+| Shield | 4 |
+| Shock | 3 |
+
+- **Rows/groups:** 43 groups; 24 placements in **8 row-backed groups**, 35
+  fixed-type placements. All 8 row groups hold their complete allowed set.
+- **Overrides:** all 59 static, zero activation/respawn/shuffle overrides, no
+  excluded types, `PickupActiveLevel 1`.
+- **Collision:** 59/59 have ground; **0** non-drivable and **0** over a void.
+- **Spacing:** no duplicate uids/XZ at 1 mm; minimum nearest-neighbour
+  **6.881 m**.
+
+### 12.3 Alternate sets
+
+| route | placements | groups | row-backed placements / groups | fixed | ground | non-drivable | min NN |
+| ---: | ---: | ---: | --- | ---: | --- | ---: | ---: |
+| 2844032875 | 45 | 33 | 19 / 7 | 26 | 45/45 | 0 | 7.096 m |
+| 3824353713 | 40 | 25 | 22 / 7 | 18 | 40/40 | 0 | 6.081 m |
+
+Both alternate sets carry all 8 types, are fully static, have zero overrides,
+and have complete row groups. Route 2844032875 is entirely off the measured
+path (nearest 94.278 m); route 3824353713 touches the finish (nearest 2.505 m).
+
+---
+
+## 13. Projection to the measured layouts
+
+The committed e1-drive layouts are **draw-covered point-to-point paths**, not
+retail start lines:
+
+| map | measured length | samples | layout SHA-256 |
+| --- | ---: | ---: | --- |
+| `usa_amboy` | 2,060.595408 m | 8,673 @ 0.25 m | `b89ae430…d364f8d` |
+| `spa_barcelona_gracia` | 624.913781 m | 2,571 @ 0.25 m | `e2f9a111…991a3b8` |
+
+### 13.1 Per-route projection
+
+`distance` is the planar distance from a placement to the measured polyline;
+`arc` is the nearest point's distance along it. `within 2.0 m` is the PWR1
+`PickupRadius` used as a labelled **proximity threshold**, not the trigger.
+
+| map / route | placements | min dist | median | ≤2 m | ≤5 m | ≤10 m | ≤25 m | ≤6 m band | arc range |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| **Amboy 633252245 (primary)** | 83 | **0.452** | 207.505 | **2** | 2 | 5 | 8 | 2 | 0.0–2060.6 |
+| Amboy 2779865848 | 52 | 0.578 | 193.843 | 1 | 1 | 1 | 3 | 1 | 0.0–1771.6 |
+| **Gracia 46220414 (primary)** | 59 | **0.834** | 449.130 | **1** | 2 | 4 | 5 | 2 | 0.0–623.9 |
+| Gracia 2844032875 | 45 | 94.278 | 350.370 | 0 | 0 | 0 | 0 | 0 | 0.0–166.2 |
+| Gracia 3824353713 | 40 | 2.505 | 313.529 | 0 | 1 | 2 | 3 | 1 | 0.0–620.1 |
+
+The median is large because a retail circuit is longer than the measured
+sub-course: most slots project to a nearest point far off the measured line but
+still at a plausible arc. That is a statement about the measured path, not about
+retail reachability.
+
+### 13.2 Placements near the measured path
+
+**Amboy primary, ≤25 m:**
+
+| uid | type | position (x,z) | distance | arc | group |
+| ---: | --- | --- | ---: | ---: | --- |
+| 505192272 | Shunt | (−166.04, 1276.68) | **0.452** | 1050.11 | 379463969:10 |
+| 4245419773 | Blindfire | (−157.15, 1380.70) | **1.734** | 521.76 | fixed |
+| 4158343510 | Repair | (−150.49, 1389.12) | 8.84 | 519.45 | fixed |
+| 953200634 | Shield | (−171.70, 1268.86) | 9.08 | 1051.63 | fixed |
+| 906316855 | Repair | (−160.48, 1284.01) | 9.56 | 1048.85 | fixed |
+| 3362603906 | Barge | (−155.43, 1290.48) | 17.71 | 1047.84 | 379463969:10 |
+| 2200508302 | Shock | (−177.82, 1261.33) | 18.72 | 1052.63 | fixed |
+| 3318541855 | Shield | (−142.40, 1399.39) | 21.74 | 519.45 | fixed |
+
+**Gracia primary, ≤25 m:**
+
+| uid | type | position (x,z) | distance | arc | group |
+| ---: | --- | --- | ---: | ---: | --- |
+| 2287257657 | Blindfire | (654.91, −117.17) | **0.834** | 383.11 | fixed |
+| 5715789 | Bomb | (657.39, −109.54) | 4.99 | 391.17 | fixed |
+| 2234632569 | Shunt | (652.38, −124.93) | 6.93 | 380.58 | fixed |
+| 2161991382 | Barge | (659.98, −101.60) | 8.78 | 398.62 | fixed |
+| 3669525037 | Shunt | (662.62, −93.51) | 13.14 | 402.59 | fixed |
+
+**Gracia alternate 3824353713, ≤25 m:** uid 1893848846 Blindfire at
+(873.75, −138.21), 2.505 m / arc 620.09, group 1594790125:7; uid 1919015716
+Barge, 9.92 m / 619.09; uid 20301895 Bomb, 23.49 m / 616.67.
+
+**Amboy alternate 2779865848, ≤25 m:** uid 462581234 Shock at (−68.25, 1310.43),
+0.578 m / arc 404.23, group 2539227955:8; uid 412561102 Shunt, 11.84 m / 405.94;
+uid 1142454786 Repair, 24.36 m / 407.63.
+
+### 13.3 Start grids
+
+The same raced routes reference a 20-slot `StartPosition` list. None of the
+grids coincides with the measured spawn; two grids lie near the measured path
+at a different arc.
+
+| map / route | start list | slots | measured-path distance |
+| --- | ---: | ---: | ---: |
+| Amboy 633252245 | 885750438 | 20 | 539.96–657.62 m |
+| Amboy 2779865848 | 9585882 | 20 | **6.53–19.65 m** |
+| Gracia 46220414 | 2118532935 | 20 | 957.56–1032.64 m |
+| Gracia 2844032875 | 2424942064 | 20 | 398.36–479.65 m |
+| Gracia 3824353713 | 3851262477 | 20 | **2.23–68.29 m** |
+
+These distances are evidence that the measured coverage crosses a retail start
+area, not proof of a route-to-measured-path binding. No route is relabelled
+"the measured course".
+
+### 13.4 Provisional measured-arc comparison
+
+PWR2's provisional plan (`probes/e1-drive/web/powerups.js`, SHA-256 pinned in
+each manifest) is applied to each map's own measured samples: arcs
+`[40, 90, 140, 190, 240, 280]` m, types cycling `[Bomb, Shield, Repair,
+Nitrous, Shock, Bomb]`, nearest 0.25 m sample, no interpolation. The "310 m"
+name belongs to the River course; on Amboy the same arc values land in the first
+280 m of a 2,060.6 m path.
+
+| map / route | provisional slots covered ≤2 m | recovered covered ≤2 m | nearest slot↔placement |
+| --- | ---: | ---: | ---: |
+| **Amboy 633252245** | **0 / 6** | **0 / 83** | **156.56 m** |
+| Amboy 2779865848 | 0 / 6 | 0 / 52 | 110.53 m |
+| **Gracia 46220414** | **0 / 6** | **0 / 59** | **94.67 m** |
+| Gracia 2844032875 | 0 / 6 | 0 / 45 | 104.17 m |
+| Gracia 3824353713 | 0 / 6 | 0 / 40 | 110.68 m |
+
+**There is no overlap.** The provisional six-slot plan remains a project choice
+for the measured sub-course and must keep its `provisional-measured-arc` label;
+the recovered retail sets are not substitutes for it.
+
+---
+
+## 14. M2 contract for `usa_amboy` and `spa_barcelona_gracia`
+
+### 14.1 Placement list and route binding
+
+- Load `_work/powerups/placements-amboy.json` /
+  `placements-gracia.json`. Read `authority.primaryRouteRecordId` and the
+  matching entry in `authority.routes[]`. Its `placements[]` is the primary
+  recovered set (83 / 59).
+- **The e1-drive map id is not bound to one retail route.** The two Amboy and
+  three Gracia variants are all kept. If the room wants a specific variant, pass
+  its route record id explicitly and label the choice; do not present the
+  primary rule as a decoded retail binding.
+- Spawn once per race from the chosen route's `placements[]`. Use the entry's
+  `uid`, world `position`, `basis.az` facing, `serializedType.refId`, `row`
+  group and `collision`. Do not re-generate positions and do not move a slot to
+  the measured centreline.
+- For the measured e1-drive sub-course only the near-path slots are
+  collectable as-is: **Amboy 505192272** (0.452 m) and **Gracia 2287257657**
+  (0.834 m) are inside the 1.25 m static-box half-width at the centreline.
+  Amboy 4245419773 (1.734 m) and the Gracia 4.99–13.14 m group are within the
+  2.0 m proximity / 6 m band and are collectable only when the car is offset
+  toward them; validate with the box (§14.4), never by snapping.
+- Everything else is **off the measured path** (Amboy primary 81/83, Gracia
+  primary 57/59 beyond the 6 m band). Those slots are usable on the retail
+  route but are blocked for the measured sub-course as currently driven.
+
+### 14.2 Types and shuffle groups (usable vs blocked)
+
+- All eight MP classes are present on both maps: Nitrous, Shock, Shunt,
+  Blindfire (`Bolt`), Barge, Bomb (`Mine`), Repair, Shield. Use the 32-bit
+  `PickupType.refId` from `typeTable` as the wire id; never invent an
+  `E_PICKUP_TYPE` integer.
+- **Usable:** every placement with `collision.surfacePresent:true` and
+  `drivableSurface:true` (Amboy primary **79/83**, Gracia primary **59/59**).
+  One of Amboy's 79 is the inactive slot below, leaving **78** default-spawn
+  candidates on the primary route. A slot in a row group may be assigned any of
+  that row's allowed types at runtime.
+- **Flagged, not spawned blindly:**
+  - Amboy uid **4231571987** has `PickupActiveLevel 0`. The semantics of the
+    value are not decoded; exclude it from the default spawn set or label it
+    `provisional`. Do not guess.
+  - Amboy uids **2569061116, 844266989, 1705750750, 1529678209** and route-1
+    uid **1743038488** are `drivableSurface:false` (normal.y ≤ 0.94, some under
+    a higher steep surface). They have a surface; do not claim them groundless.
+    If used, validate collection with the real car; label them
+    `non-drivable-by-heuristic`.
+- **Blocked:** none have `surfacePresent:false` on either map (0 over a void),
+  so there is no "no ground" placement to special-case.
+- Row groups: maintain one available-type list per `row.shuffleGroup`; pop
+  without replacement and re-initialise from the row mask when empty. Group
+  `771609565:7` on Amboy route 633252245 has only **one** actor for a four-type
+  row; do not invent the three missing actors. When `randomPowerups = Off` the
+  serialized type persists unless a row assignment is executed.
+
+### 14.3 What remains provisional
+
+| item | status | reason |
+| --- | --- | --- |
+| retail route-to-measured-path binding | **not-decoded** | measured layout is draw coverage; the `.aid` spline is not parsed |
+| `Normal` respawn seconds | **not-serialized** | `RespawnTimerOverride` is 0.0 on every slot; PWR1 §6 |
+| runtime RNG order / row draw | **runtime-only** | `AssignPickup` uses the race RNG; the allowed set is serialized, the order is not |
+| probability normalisation | **runtime-only** | no probability list is bound by these routes; `MpPickup` bits enable/disable classes |
+| exact `E_PICKUP_TYPE` integers | **not-serialized** | only labels and ref ids are stored (PWR1 §10) |
+| `PickupActiveLevel` semantics | **raw-only** | value 1 normally; Amboy uid 4231571987 stores 0 |
+| negative-height collision cases | **heuristic-limited** | the "highest up-facing triangle" probe can hit a steep surface above the slot |
+
+Per-race flags are in each route's `races[]`: most Amboy/Gracia racing rows use
+`Normal` / `randomPowerups Off`; Amboy 1788884898 and Gracia 2414556734 use
+`Long` + `On`; Gracia 2442041907 uses `Normal` + `On`; and the Gracia hardcore
+rows use `None` or mask 0. `Long = 5.0 s`, `VeryLong = 20.0 s` come from
+`MultiplayerConfig`; `Normal` still has no serialized seconds.
+
+### 14.4 Collection validation (unchanged box model)
+
+The host validates in the same order as River §8.5, using the **oriented
+Gravity box** created at `WorldMatrix.AW` and oriented by `ax/ay/az`:
+
+- static (`RotateGraphic false`, all recovered slots): half extents
+  **1.25 × 1.25 × 0.25 m**;
+- rotating: 1.25 × 1.25 × 1.25 m (none here);
+- Fan: 2.5 × 2.5 × 0.5 m (none here).
+
+`PickupRadius = 2.0` is `mCollisionRadius` initialisation / AI / debug, **not**
+the collection volume. Do not substitute a 2.0 m sphere or enlarge the box to
+make a near-path slot collectable.
+
+### 14.5 Host authority and events
+
+- **Host-authoritative.** The host owns the chosen route's placement table, each
+  group's available-type list, the RNG, active/deactivated state, respawn
+  timers, and collection validation. Clients send `{pickupUid, playerId, tick}`
+  intents and never roll a type or judge a collection locally.
+- Emit sequenced events with `uid`, `typeRefId`, `group`, `position`, `at`,
+  `authority`, `seq`: `pickup-spawned`, `pickup`, `pickup-rejected` (local),
+  `pickup-respawn`. Include the route record id and map id on every snapshot so
+  a late joiner cannot mix variants.
+- Late join: send the full slot state (active/deactivated, `typeRefId`,
+  `respawnAt`) plus each group's remaining available list, then continue from
+  the next `seq`.
+- The race `powerups` mask is the only serialized enable/disable input. Most
+  racing rows enable 255 (all eight); Amboy rows **245** and **37** and the
+  Gracia hardcore rows **0** are recorded in `races[].powerups`. Filter at
+  spawn and label any re-draw `provisional`; never present an invented re-draw
+  as retail.
+- Determinism: sort slots by `index`, groups by `groupId`; the manifest is
+  canonical (sorted keys, fixed point) and re-verifies byte-stable. Record the
+  host's chosen type per slot at spawn/respawn in the event stream, not just a
+  seed.
+
+### 14.6 Explicit "no placement" cases
+
+- **Neither map lacks placement data.** `usa_amboy` ships 135 `PickupPosition`
+  actors across its two raced routes; `spa_barcelona_gracia` ships 144 across
+  three. Both primary sets are non-empty.
+- The separate `usa_amboy_multiplayer` destruction arena ships **no MP actor
+  list**; it is not a racing placement source for `usa_amboy`.
+- The four unraced Amboy/Gracia routes (records 2213074116, 2751477814,
+  307136456, 3491235362) ship no MP pickup list and are recorded as `unraced`,
+  not as layouts.
+
+---
+
+## 15. Verifier, determinism and regression (PWR5)
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/powerups/tools/extract_pickup_placement_levels.py --level usa_amboy
+& $py probes/powerups/tools/extract_pickup_placement_levels.py --level spa_barcelona_gracia
+& $py probes/powerups/tools/verify_pickup_placement_levels.py --level usa_amboy
+& $py probes/powerups/tools/verify_pickup_placement_levels.py --level spa_barcelona_gracia
+& $py probes/powerups/tools/extract_pickup_placement_index.py
+
+# River regression + suite
+& $py probes/powerups/tools/verify_pickup_placement.py
+& $py tools/verify_asset_probe.py --skip-build
+```
+
+| gate | result |
+| --- | --- |
+| Amboy verifier | **3,670 / 3,670 PASS**, 2 routes / 135 placements |
+| Gracia verifier | **4,060 / 4,060 PASS**, 3 routes / 144 placements |
+| River regression | **1,415 / 1,415 PASS** |
+| `verify_asset_probe.py --skip-build` | **52 / 52 PASS** |
+| Amboy determinism | two builds → `aa80d8af…695e97` (identical) |
+| Gracia determinism | two builds → `da57b89e…8626f65` (identical) |
+
+The verifier re-reads the five PAK entries and their SHA-256/extents, re-derives
+the 8 type ids and all row masks from `pickups.bin`, re-reads every route in the
+manifest, re-decodes every `PickupPosition` element with a direct-offset reader
+that does **not** import `xt_decode`, re-decodes every start grid, recomputes
+every measured-layout projection, every collision ground/normal, every group,
+duplicate, count and provisional diff, and recomputes the canonical hash. It
+also checks its own file SHA against the value recorded in the manifest.
+
+The source hashes agree across the two maps for the shared XT files; only the
+level `actorpack.xt` differs:
+
+| source | SHA-256 (decoded) |
+| --- | --- |
+| `usa_amboy\actorpack.xt` | `b6700f8b…3b5388a` |
+| `spa_barcelona_gracia\actorpack.xt` | `cb6b7dfb…7c8e45880` |
+| `pickups.bin` | `f8e9ba3d…4965ed7` |
+| `multiplayer.bin` | `0dcf60bc…d9ef6ab48` |
+| `amax.bin` | `a833487b…63d1e3c7` |
+| `singleplayer.bin` | `14af6d07…d86d65f19` |
+
+---
+
+## 16. Evidence paths (PWR5)
+
+| artifact | content |
+| --- | --- |
+| `_work/powerups/placements-amboy.json` | 2 raced routes / 135 placements, provenance, groups, projections, collision, provisional diff; file `aa80d8af…695e97`, canonical `57190999…31ff7a8` |
+| `_work/powerups/placements-amboy.verify.json` | 3,670 checks, PASS; file `aa80d8af…695e97` |
+| `_work/powerups/placements-gracia.json` | 3 raced routes / 144 placements; file `da57b89e…8626f65`, canonical `683b5df4…e09863` |
+| `_work/powerups/placements-gracia.verify.json` | 4,060 checks, PASS; file `da57b89e…8626f65` |
+| `_work/powerups/placement-route-index.json` | 29 raced routes / 1,523 placements / 14 cities; canonical `3be0b4f2…1699bb5` |
+| `_work/logs/powerups/pwr5-extract-{amboy,gracia}.log` | build logs |
+| `_work/logs/powerups/pwr5-verify-{amboy,gracia}.log` | verifier output |
+| `_work/logs/powerups/pwr5-river-regression.log` | River regression (1,415 PASS) |
+| `_work/logs/powerups/pwr5-suite-skip-build.log` | 52/52 suite |
+| `probes/powerups/tools/extract_pickup_placement_levels.py` | generalized extractor |
+| `probes/powerups/tools/verify_pickup_placement_levels.py` | independent direct-offset verifier |
+| `probes/powerups/tools/extract_pickup_placement_index.py` | cross-level discovery index |
+
+**Limits:** placement data only; no renderer, GPU, vehicle, race-loop or
+full-game claim. No retail arc is decoded. The measured e1-drive paths are not
+retail start lines. No position, type, row, respawn value or route binding was
+invented; every unknown is listed in §14.3 and in each manifest's `missing`.
+

@@ -231,6 +231,11 @@ Kanıt: `_work/logs/e1-drive/mp-gracia-gridfix.log`.
 550.777 tick hash; 4 AI yarışları deterministik; verifier 25/25. Kanıt:
 `docs/work/analysis/ai-driver.md` §13.
 
+**PWR5 — yeni harita pickup'ları:** Amboy primary **83**, Gracia **59** placement
+(8 tip); ölçülmüş alt-parkurda yalnız 2 / 1 nokta (min 0,45 / 0,83 m); çoğu
+retail rotada. Provisional ile 0/6 örtüşme. 3.670 + 4.060 doğrulama. Kanıt:
+`docs/work/analysis/pickup-placement.md` §11–16.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,
