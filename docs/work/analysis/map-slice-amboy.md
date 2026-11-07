@@ -112,6 +112,27 @@ merged UV0 buffer is 529,624 pairs. No draw has a placeholder UV.
   contains no normals and does not invent geometric normals. The format carries
   normal indices, but no decoded normal vector stream is exposed.
 
+> **MAP3 correction and follow-up (7 November 2026).** The sentence “the
+> direct-draw reader has no committed material-binding path for base
+> primitives” is inaccurate. `scene_reader.cpp` `geometry()` calls
+> `bind_albedo()` for every direct primitive and resolves the ordered
+> instance/base/stream material stack, the static `g_tAlbedo`, and the node
+> texture-source identity. The *export* hard-codes `albedoTexture:null` at
+> `scene_reader.cpp:753-754` and does not print `draw.albedo`,
+> `draw.resource_block`, `draw.resource_index`, `draw.material_row` or
+> `draw.material`. A source-shaped binding pass over all 48 supported sections
+> resolves a static albedo for **1,268 / 1,606 draws**, of which **1,201 /
+> 1,606 draws (269,300 / 348,948 triangles)** are bindable today with real UV0
+> and the committed BC decoder; the other 405 are blocked by labelled effect,
+> 512-px decoder-bound, BC3-alpha and runtime-parameter cases. The 27
+> unsupported sections stop on `BillBoard_LN` `POSITION0` type 7 (geometry
+> blocker) while their texture side resolves 27/27; the 366 instances resolve
+> static albedo 366/366 and UV0 declarations 366/366 but are other-block
+> geometry. Details, manifest and verifier:
+> `docs/work/analysis/map-slice-amboy-textures.md`,
+> `_work/map-slice/amboy-textures/bindings.json`,
+> `_work/map-slice/amboy-textures/blockers.json`.
+
 ### 3.2 Unsupported sections (27)
 
 All 27 stop in the committed native reader on an unsupported position vertex

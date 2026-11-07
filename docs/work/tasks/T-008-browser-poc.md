@@ -76,6 +76,7 @@ sürüşü deneyebileceği PoC.
 | Tyre+collision sesi | A2 | ✅ 53 wave, console 0 |
 | usa_amboy dilimi | MAP2 | ✅ 2.060,6 m, 12.367/12.367 |
 | AI rakip sürücüsü | AI1 | ✅ 26/26, 10/10 temiz |
+| Amboy doku binding | MAP3 | ✅ 1.201/1.606 draw, 13.090/13.090 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

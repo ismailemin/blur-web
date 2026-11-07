@@ -810,6 +810,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Eksik: 0/1.606 dokulu, 27 section unsupported, 366 instance, normal yok; E1 hâlâ River-only.
 - Doğrulama **12.367/12.367**. Kanıt: `docs/work/analysis/map-slice-amboy.md`.
 
+## 7 Kasım 2026 — Amboy doku binding
+
+- **1.201/1.606** draw gerçek albedo + UV0 bağlanabilir (%74,8; 269.300/348.948 tri).
+- Reader binding'i çözüyor ama JSON printer `albedoTexture:null` yazıyor; MAP2 ifadesi düzeltildi.
+- 405 engel: 334 Racification decal, 50 decoder 512 px, 17 BC3 alfa, 4 runtime. 27 section + 366 instance geometri engeli.
+- Doğrulama **13.090/13.090**. Kanıt: `docs/work/analysis/map-slice-amboy-textures.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

@@ -146,6 +146,12 @@ unsupported, instance/normal yok. Doğrulama **12.367/12.367**. Kanıt:
 profil + agresif (1/10 fail); 26/26, 133.068 tick hash; 4 AI sprint/3 AI lap
 deterministik. Kanıt: `docs/work/analysis/ai-driver.md`.
 
+**MAP3 — Amboy dokuları:** **1.201/1.606** draw gerçek albedo + UV0
+bağlanabilir; reader binding'i çözüyor ama printer `albedoTexture:null` yazıyor.
+405 engel: 334 Racification decal, 50 decoder boyutu, 17 BC3 alfa, 4 runtime.
+27 section + 366 instance geometri engeli. Doğrulama **13.090/13.090**.
+Kanıt: `docs/work/analysis/map-slice-amboy-textures.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

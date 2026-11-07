@@ -343,6 +343,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - **26/26**; 133.068 tick hash; 4 AI sprint + 3 AI lap deterministik sıra.
 - Kanıt: `docs/work/analysis/ai-driver.md`, `_work/ai-driver/results.json`.
 
+### E1ab — Amboy doku binding (MAP3)  ✅ veri
+- **1.201 / 1.606** Amboy draw gerçek albedo + UV0 bağlayabilir (%74,8;
+  269.300 / 348.948 tri).
+- Kök neden: reader binding'i çözüyor ama JSON printer `albedoTexture:null`
+  yazıyor; MAP2'nin "path yok" ifadesi düzeltildi.
+- 405 draw engelli: 334 `Racification*` (additive decal, `g_tTexture`),
+  50 decoder 512 px sınırı, 17 BC3 alfa, 4 runtime albedo.
+- 27 section + 366 instance **geometri** engeli (doku 27/27 ve 366/366 çözülüyor).
+- Doğrulama **13.090/13.090**. Kanıt:
+  `docs/work/analysis/map-slice-amboy-textures.md`.
+- Sıradaki: reader printer düzeltmesi + Amboy render binding.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
