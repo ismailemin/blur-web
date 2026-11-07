@@ -56,6 +56,7 @@ def main():
         ('gracia-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','gracia']),
         ('vehicle-pipeline',[sys.executable,'probes/vehicle-pipeline/tools/verify_vehicle_pipeline.py']),
         ('vehicle-c-aliases',[sys.executable,'probes/vehicle-pipeline/tools/verify_c_aliases.py']),
+        ('vehicle-batch3',[sys.executable,'probes/vehicle-pipeline/tools/verify_batch3.py']),
         ('map-pipeline',[sys.executable,'probes/map-pipeline/tools/verify_maps.py']),
         ('prop-collision-v2',['node','probes/prop-collision/tools/verify_v2.mjs']),
         ('race-rules',['node','probes/race-rules/verify.mjs']),

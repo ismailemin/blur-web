@@ -954,6 +954,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Solo capture: P1 AI 14,383 / P2 Host 14,667 / P3 AI 17,300 s, console 0; 2 insan + AI regression PASS; selftest 24/24.
 - Verify **2285/2285**, suite 58/58, checker 23/23.
 
+## 8 Kasım 2026 — batch 3 verisi
+
+- 7 orta C (1,7,23,31,39,48,71) + 3 B (Mégane Trophy, LRX, 350Z Drift) staged.
+- 1.076 body draw / 307 part / 200 wheel draw / 213.062 UV vertex / 83 doku; 30 preview; HUD adları çözüldü.
+- 188/200 wheel draw preview-only, UV placeholder/partial scene/icon vector tipli blocker.
+- Doğrulama **912/912**, iki build identical. Kanıt: `docs/work/analysis/vehicle-batch3-prep.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

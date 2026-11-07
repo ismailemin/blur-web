@@ -267,6 +267,11 @@ staged manifest; batch 2 medium. Kanıt:
 başlıyor ve bitiyor; `solo:true`, host rules guest'siz; solo capture P1 AI
 14,383 / P2 Host 14,667 / P3 AI 17,300, console 0; selftest 24/24.
 
+**V6 — batch 3 verisi:** 7 orta C + 3 B (Mégane Trophy, LRX, 350Z Drift)
+staged: 1.076 body draw, 200 wheel draw, 213.062 UV vertex, 83 doku; 912/912,
+iki build identical. HUD adları/ikon anahtarları hazır. Kanıt:
+`docs/work/analysis/vehicle-batch3-prep.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

@@ -607,6 +607,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `_work/e1-drive/browser-mp-solo-ai-finish.png`,
   `browser-evidence-mp-solo-ai.json`.
 
+### E1ax — Batch 3 verisi (V6)  ✅
+- 10 aday staged: 7 orta C (1,7,23,31,39,48,71) + 3 B (Renault Mégane Trophy,
+  LandRover LRX, Nissan 350Z Drift).
+- 1.076 body draw / 307 part / 200 wheel draw / 213.062 UV vertex / 83 doku;
+  30 preview PNG; HUD adları LocString + 65 ikon sprite'tan çözüldü.
+- Tipli blocker'lar korundu: 188/200 wheel preview-only, UV placeholder,
+  partial scene, icon vector, e1-pending.
+- Doğrulama **912/912**, iki build identical. Kanıt:
+  `docs/work/analysis/vehicle-batch3-prep.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
