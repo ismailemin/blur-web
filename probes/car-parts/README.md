@@ -36,6 +36,21 @@ A car with zero or several exact matches would be reported as unmapped with the
 reason; it would keep the committed Corvette C3 body in the drive slice, labelled.
 All five currently map.
 
+### Typed absent wheel part
+
+A vehicle model may genuinely have no brake-caliper element (for example
+`Hummer_H2_OffRoad`, record 60). The builder accepts that only when the
+DefaultModel has **zero** `e_brakecaliper_*` elements: the wheel group keeps its
+three proven members (`tyre`, `rim`, `brakeDisc`) and records
+`caliper:"absent"` plus an `absentMembers` diagnostic. No caliper mesh is
+invented, borrowed or silently substituted. A renamed, merged or differently
+parented caliper is still rejected.
+
+`dump_model_parts.py` prints the MdlDat element names/parents/bounds for one
+decoded model. `verify_staged_manifest.py` verifies one manifest directory
+(shared schema/accounting checks plus optional body, wheel-group, UV0 and
+material evidence) without touching the committed roster.
+
 ## Commands
 
 ```powershell
@@ -60,6 +75,11 @@ $node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
 
 # 5. two-build determinism + schema + per-car mapping + screenshot verification
 & $py probes/car-parts/tools/verify_manifest.py
+
+# 6. one staged manifest (no roster/browser dependency)
+& $py probes/car-parts/tools/dump_model_parts.py --model <decoded.model> --model-index 0 --out <parts.json>
+& $py probes/car-parts/tools/verify_staged_manifest.py --manifest-dir <dir> --slug <slug> \
+     --materials <corvette-materials.json> --uv0 <corvette-uv0.json> --out <result.json>
 
 # interactive
 & $node probes/car-parts/tools/serve.mjs        # http://127.0.0.1:8806/

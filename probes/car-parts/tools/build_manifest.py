@@ -34,6 +34,10 @@ The manifest adds a source-justified part layer on top of that geometry:
   5. Left/right wheel parts can have identical or nearly identical local
      bounds. A draw whose corner is not provable is emitted as unclassified and
      only paired to a corner for drawing, labelled `previewAssignment`.
+  6. A model that has no brake-caliper element at all is a supported, typed
+     absence: each wheel group keeps its three proven members and records
+     `caliper:"absent"`. A renamed, merged or alternately parented caliper is
+     never inferred.
 
 The tool fails loudly on an unsupported field, an unprovable wheel axis or a
 result that does not account for every draw exactly once. It writes only to the
@@ -739,12 +743,27 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
         if parent is None or parent not in wheel_parents:
             raise Unsupported(f"wheel part {element['name']} is not a direct child of an e_wheel_* element")
         element["corner"] = parent["corner"]
+
+    # A brake caliper may genuinely be absent from a vehicle model. That is a
+    # supported, typed case only when the DefaultModel has no caliper element at
+    # all: the wheel group then keeps its three proven members and records
+    # `caliper:"absent"`. A partially named or alternately parented caliper is
+    # never inferred from geometry.
+    caliper_elements = [element for element in wheel_elements
+                        if wheel_kind(element["name"]) == "brakeCaliper"]
+    caliper_absent = not caliper_elements
     for corner in WHEEL_CORNERS:
         members = [element for element in wheel_elements if element["corner"] == corner]
         kinds = sorted(wheel_kind(element["name"]) for element in members)
         expected = sorted(kind for _, kind in WHEEL_PART_KIND)
-        if kinds != expected:
-            raise Unsupported(f"wheel {corner} members are {kinds}, expected {expected}")
+        if kinds == expected:
+            continue
+        without_caliper = sorted(kind for kind in expected if kind != "brakeCaliper")
+        if caliper_absent and kinds == without_caliper:
+            parent = next(element for element in wheel_parents if element["corner"] == corner)
+            parent["absentMembers"] = ["brakeCaliper"]
+            continue
+        raise Unsupported(f"wheel {corner} members are {kinds}, expected {expected}")
 
     # The wheel axis proof is measured, not assumed: the group's own bounds must
     # be thinnest on X and round on Y/Z.
@@ -875,6 +894,18 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
         kind_elements = sorted([element for element in wheel_elements
                                 if wheel_kind(element["name"]) == kind],
                                key=lambda element: WHEEL_CORNERS.index(element["corner"]))
+        if not kind_elements and kind == "brakeCaliper" and caliper_absent:
+            # Typed absence: no element, no draw, no invented mesh. The wheel
+            # group stays valid with its three proven members.
+            other_rows.append({
+                "kind": kind,
+                "certified": 0,
+                "ambiguous": 0,
+                "absent": True,
+                "reason": "DefaultModel has no e_brakecaliper_* element; the caliper is absent, "
+                          "not renamed or merged by this tool",
+            })
+            continue
         if len(kind_elements) != 4:
             raise Unsupported(f"expected four {kind} elements, found {len(kind_elements)}")
         assignment = assign_kind_by_corner(kind, kind_elements, other_by_kind[kind],
@@ -1016,7 +1047,20 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
             raise Unsupported(
                 f"wheel {element['corner']} translation {translation} is outside the model bounds; "
                 "the serialized element matrix is not model-space")
-        wheel_groups.append({
+        spin = {
+            "axis": [1.0, 0.0, 0.0],
+            "axisSpace": "element-local",
+            "spinMembers": ["tyre", "rim", "brakeDisc"],
+            "staticMembers": [] if element.get("absentMembers") else ["brakeCaliper"],
+            "axisEvidence": element["axisProof"],
+            "evidence":
+                "the group's member local bounds are thinnest on X and round on Y/Z, so X is the "
+                "axle. Upstream VehicleActor.cpp:5158-5167 computes the spin rate about "
+                "wheelMatrix.AX(); lines 5170-5196 store that wheel matrix for Tyre/AlloyRim/BrakeDisc, "
+                "and line 5198 states 'Brake calipers mustn't rotate'.",
+            "source": "upstream/BlurRebuilt 5270304b code/amax/game/Game/GameActors/Vehicles/VehicleActor.cpp",
+        }
+        group = {
             "id": f"wheel.{element['corner']}",
             "partKind": "wheel",
             "name": element["name"],
@@ -1034,19 +1078,7 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
                 "translation": translation,
                 "matrixColumnMajor": column_major_from_rows(element["matrix"]),
             },
-            "spin": {
-                "axis": [1.0, 0.0, 0.0],
-                "axisSpace": "element-local",
-                "spinMembers": ["tyre", "rim", "brakeDisc"],
-                "staticMembers": ["brakeCaliper"],
-                "axisEvidence": element["axisProof"],
-                "evidence":
-                    "the group's member local bounds are thinnest on X and round on Y/Z, so X is the "
-                    "axle. Upstream VehicleActor.cpp:5158-5167 computes the spin rate about "
-                    "wheelMatrix.AX(); lines 5170-5196 store that wheel matrix for Tyre/AlloyRim/BrakeDisc, "
-                    "and line 5198 states 'Brake calipers mustn't rotate'.",
-                "source": "upstream/BlurRebuilt 5270304b code/amax/game/Game/GameActors/Vehicles/VehicleActor.cpp",
-            },
+            "spin": spin,
             "memberParts": [{
                 "name": member["name"],
                 "wheelPart": wheel_kind(member["name"]),
@@ -1064,7 +1096,20 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
                 "assignment": "preview-only deterministic pairing; not a corner proof",
             } for index in ambiguous_draws],
             "draws": member_draws,
-        })
+        }
+        if element.get("absentMembers"):
+            spin["absentMembers"] = list(element["absentMembers"])
+            spin["evidence"] += (
+                " This group has no e_brakecaliper_* element; the caliper is typed absent and no "
+                "mesh is invented or borrowed from another part.")
+            group["caliper"] = "absent"
+            group["absentMembers"] = [{
+                "wheelPart": "brakeCaliper",
+                "reason": "the DefaultModel has no e_brakecaliper_* element at all, so this group "
+                          "keeps its three proven members",
+                "evidence": "MdlDat modelIndex 0 element names and parent links",
+            }]
+        wheel_groups.append(group)
 
     # --- parts (shells + named) -------------------------------------------
     def vertex_span(draw_indices: list[int]) -> dict:
@@ -1312,6 +1357,10 @@ def build(args: argparse.Namespace) -> dict:
     }
     if diagnostics["wheelGroupCount"] != 4:
         raise Unsupported("expected four wheel groups")
+    absent_wheel_parts = sorted({kind for group in classified["wheelGroups"]
+                                 for kind in group.get("spin", {}).get("absentMembers", [])})
+    if absent_wheel_parts:
+        diagnostics["absentWheelParts"] = absent_wheel_parts
     if diagnostics["provenDrawCount"] + diagnostics["unclassifiedDrawCount"] != diagnostics["drawCount"]:
         raise Unsupported("draw proof accounting does not add up")
     if diagnostics["wheelDrawCount"] != sum(diagnostics[key] for key in
@@ -1328,6 +1377,23 @@ def build(args: argparse.Namespace) -> dict:
     except ValueError:
         mesh_path_text = str(mesh_path_for(out_dir, args))
     model_relative = model_path.relative_to(ROOT) if model_path.is_relative_to(ROOT) else None
+
+    limits = [
+        "Geometry is the first RenderList's LOD0 only; later render lists, higher LODs, "
+        "damage, paint and runtime light states are not imported.",
+        "DefaultModel element matrices are translation-only in this asset; a non-identity linear "
+        "part is rejected instead of being transposed or guessed.",
+        "Draw-to-part identity is proven by index-range AABB matching; material/effect names are "
+        "recorded as corroboration, not used as a name source.",
+        "Some left/right wheel parts have identical or nearly identical element-local bounds; their "
+        "corner is not provable and the preview pairing is explicitly presentation-only.",
+        "No game integration, rendering fidelity, collision, physics or shader semantics are claimed.",
+    ]
+    if absent_wheel_parts:
+        limits.append(
+            "The vehicle model has no brake-caliper element. Each wheel group keeps its three proven "
+            "members and records caliper:\"absent\"; no caliper mesh is invented, borrowed from another "
+            "part or silently substituted.")
 
     manifest = {
         "kind": "blur.car-part-manifest",
@@ -1432,7 +1498,7 @@ def build(args: argparse.Namespace) -> dict:
         },
         "parts": classified["parts"],
         "draws": classified["draws"],
-        "wheelGroups": [{
+        "wheelGroups": [dict({
             "id": group["id"],
             "name": group["name"],
             "corner": group["corner"],
@@ -1446,7 +1512,9 @@ def build(args: argparse.Namespace) -> dict:
             "provenDraws": group["provenDraws"],
             "previewDraws": group["previewDraws"],
             "ambiguousDraws": group["ambiguousDraws"],
-        } for group in classified["wheelGroups"]],
+        }, **({"caliper": group["caliper"], "absentMembers": group["absentMembers"]}
+              if group.get("caliper") == "absent" else {}))
+            for group in classified["wheelGroups"]],
         "tyres": classified["tyres"],
         "tyreProofTier": classified["tyreProofTier"],
         "wheelKindCounts": classified["wheelKindCounts"],
@@ -1461,17 +1529,7 @@ def build(args: argparse.Namespace) -> dict:
             "previewAssignment": "deterministic pairing for rendering only; not a corner proof",
         } for item in classified["ambiguousWheelDraws"]],
         "diagnostics": diagnostics,
-        "limits": [
-            "Geometry is the first RenderList's LOD0 only; later render lists, higher LODs, "
-            "damage, paint and runtime light states are not imported.",
-            "DefaultModel element matrices are translation-only in this asset; a non-identity linear "
-            "part is rejected instead of being transposed or guessed.",
-            "Draw-to-part identity is proven by index-range AABB matching; material/effect names are "
-            "recorded as corroboration, not used as a name source.",
-            "Some left/right wheel parts have identical or nearly identical element-local bounds; their "
-            "corner is not provable and the preview pairing is explicitly presentation-only.",
-            "No game integration, rendering fidelity, collision, physics or shader semantics are claimed.",
-        ],
+        "limits": limits,
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -112,17 +112,26 @@ def verify_manifest(manifest: dict, expected: dict, failures: list[str], label: 
           ["backleft", "backright", "frontleft", "frontright"],
           f"{label}: wheel corners are not the four documented names", failures)
     for group in groups:
+        declared_absent = sorted(member["wheelPart"] for member in group.get("absentMembers", []))
         check(group["name"].lower() == "e_wheel_" + group["corner"],
               f"{label}: {group['id']} does not use its e_wheel_* name", failures)
         check(group["spin"]["axis"] == [1.0, 0.0, 0.0],
               f"{label}: {group['id']} spin axis is not +X", failures)
-        check(group["spin"]["staticMembers"] == ["brakeCaliper"],
-              f"{label}: {group['id']} does not mark the caliper static", failures)
+        if "brakeCaliper" in declared_absent:
+            check(group.get("caliper") == "absent",
+                  f"{label}: {group['id']} declares an absent caliper without caliper:\"absent\"", failures)
+            check(group["spin"]["staticMembers"] == [],
+                  f"{label}: {group['id']} still lists a static caliper that is absent", failures)
+        else:
+            check(group["spin"]["staticMembers"] == ["brakeCaliper"],
+                  f"{label}: {group['id']} does not mark the caliper static", failures)
         check(group["spin"]["axisEvidence"]["thinAxis"] == "x" and
               group["spin"]["axisEvidence"]["roundAxes"] == "y/z",
               f"{label}: {group['id']} axis evidence is not measured as thin-X/round-YZ", failures)
         members = sorted(member["wheelPart"] for member in group["memberParts"])
-        check(members == ["brakeCaliper", "brakeDisc", "rim", "tyre"],
+        expected_members = (["brakeDisc", "rim", "tyre"] if "brakeCaliper" in declared_absent
+                            else ["brakeCaliper", "brakeDisc", "rim", "tyre"])
+        check(members == expected_members,
               f"{label}: {group['id']} members are {members}", failures)
         check(len(group["previewDraws"]) == len(group["provenDraws"]) + len(group["ambiguousDraws"]),
               f"{label}: {group['id']} preview draws do not split into proven+ambiguous", failures)
