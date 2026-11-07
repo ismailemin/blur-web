@@ -31,6 +31,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { inflateSync } from 'node:zlib';
 import { startServer } from './serve.mjs';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { buildGhostArcTable, decodeGhost, ghostGap, ghostMatrices } from '../web/ghost-replay.js';
@@ -63,9 +64,9 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'props', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'props', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, props, respawn, telemetry, restart, telemetry-restart, survey, ghost or audio)');
+    ' (drive, sprint, lap, free, props, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio or quality)');
 }
 // Course selection: 310 (default, `_work/e1-drive/sprint.json`), short
 // (`?course=short`, `_work/e1-drive/sprint-short.json`), lap (`?course=lap`,
@@ -83,6 +84,14 @@ const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' +
   (COURSE === 'short' ? 'short' : COURSE === 'lap' ? 'lap' : COURSE === 'free' ? 'free' : '310m');
 const DIAGNOSTIC_CAMERA = /(^|&)cam(dist|height)=/.test(EXTRA_QUERY);
 const MID_TICK = 150;
+// HUD overlay boxes for the `--mode quality` scene-only metrics (viewport px).
+const QUALITY_HUD_BOXES = [
+  { x: 0, y: 0, w: 790, h: 452 },      // left HUD block
+  { x: 1258, y: 0, w: 342, h: 472 },   // top-right info panel
+  { x: 0, y: 790, w: 480, h: 110 },    // bottom-left controls
+  { x: 1230, y: 782, w: 370, h: 118 }, // bottom-right orbit help
+  { x: 680, y: 60, w: 300, h: 250 }    // countdown / event banner (animated DOM)
+];
 
 const run = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
 const geometry = JSON.parse(readFileSync(path.join(OUT, 'geometry.json'), 'utf8'));
@@ -334,6 +343,7 @@ async function capture(car, label, tick, options = {}) {
       pauseDrops: p.pauseDrops, zeroTickFrames: p.zeroTickFrames,
       geometryUploads: p.geometryUploads, geometryUploadBytes: p.geometryUploadBytes,
       textureUploads: p.textureUploads, textureUploadBytes: p.textureUploadBytes, uvUploadBytes: p.uvUploadBytes,
+      textureSampling: window.__e1TextureSampling ?? null,
       trackTexturedDraws: p.trackTexturedDraws, trackTextures: p.trackTextures,
       trackTextureBytes: p.trackTextureBytes, trackUvVertices: p.trackUvVertices,
       levelPropDraws: p.levelPropDraws, levelPropTexturedDraws: p.levelPropTexturedDraws,
@@ -692,6 +702,7 @@ if (MODE !== 'drive') {
     : MODE === 'lap' ? await lapCapturePass()
     : MODE === 'free' ? await freeCapturePass()
     : MODE === 'props' ? await propsCapturePass()
+    : MODE === 'quality' ? await qualityCapturePass()
     : MODE === 'ghost' ? await ghostCapturePass()
     : MODE === 'survey' ? await surveyCapturePass()
     : MODE === 'respawn' ? await respawnCapturePass()
@@ -703,6 +714,347 @@ if (MODE !== 'drive') {
   await sleep(400);
   console.log(JSON.stringify(result.summary, null, 2));
   process.exit(result.ok ? 0 : 1);
+}
+
+/**
+ * Texture-quality capture (`--mode quality`) and its image metrics.
+ *
+ * Four frames are captured with the same URL, tick, camera, viewport and page
+ * code as the existing drive/props passes, so a "before" run (the committed
+ * mip0/raw consumer) and an "after" run (mip chain + trilinear/anisotropy +
+ * sRGB) can be compared pixel for pixel:
+ *
+ *   * `sprint-start` — `?script=sprint&hold=0` (truck cluster ahead),
+ *   * `truck-120`    — `?script=drive&hold=120` (near-field level-prop truck),
+ *   * `free-prop`    — `?script=sprint&course=free&hold=<measured prop tick>`,
+ *   * `lap-start`    — `?script=sprint&course=lap&hold=0` (regression frame).
+ *
+ * `--label before|after` names the PNGs and the evidence file. The metrics are
+ * computed on the scene area only (the fixed HUD overlay boxes are masked):
+ * `sharpness` is the mean absolute 4-neighbour Laplacian of luminance,
+ * `pixelNoise` the mean absolute 3x3 box residual (a pixel-scale aliasing
+ * proxy), `edgeEnergy` the mean central-difference gradient. They are
+ * diagnostics of this headless 1600x900 frame, not a display-quality claim.
+ */
+
+/** Minimal PNG reader for the CDP screenshot stream (8-bit RGB/RGBA, no interlace). */
+function decodeScreenshotPng(buffer) {
+  if (buffer.length < 8 || buffer.readUInt32BE(0) !== 0x89504e47) throw new Error('screenshot is not a PNG');
+  let offset = 8;
+  let width = 0, height = 0, bitDepth = 0, colourType = 0, interlace = 0;
+  const idat = [];
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString('ascii', offset + 4, offset + 8);
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colourType = data[9];
+      interlace = data[12];
+    } else if (type === 'IDAT') {
+      idat.push(data);
+    } else if (type === 'IEND') {
+      break;
+    }
+    offset += 12 + length;
+  }
+  if (bitDepth !== 8 || (colourType !== 2 && colourType !== 6) || interlace !== 0) {
+    throw new Error('unsupported screenshot PNG ' + bitDepth + '/' + colourType + '/interlace ' + interlace);
+  }
+  const channels = colourType === 6 ? 4 : 3;
+  const stride = width * channels;
+  const raw = inflateSync(Buffer.concat(idat));
+  const pixels = Buffer.alloc(width * height * channels);
+  let cursor = 0;
+  for (let y = 0; y < height; y++) {
+    const filter = raw[cursor++];
+    const source = raw.subarray(cursor, cursor + stride);
+    cursor += stride;
+    const row = pixels.subarray(y * stride, (y + 1) * stride);
+    const previous = y > 0 ? pixels.subarray((y - 1) * stride, y * stride) : null;
+    for (let x = 0; x < stride; x++) {
+      const left = x >= channels ? row[x - channels] : 0;
+      const above = previous ? previous[x] : 0;
+      const corner = previous && x >= channels ? previous[x - channels] : 0;
+      let value = source[x];
+      if (filter === 1) value = (value + left) & 255;
+      else if (filter === 2) value = (value + above) & 255;
+      else if (filter === 3) value = (value + ((left + above) >> 1)) & 255;
+      else if (filter === 4) {
+        const estimate = left + above - corner;
+        const da = Math.abs(estimate - left);
+        const db = Math.abs(estimate - above);
+        const dc = Math.abs(estimate - corner);
+        value = (value + (da <= db && da <= dc ? left : db <= dc ? above : corner)) & 255;
+      } else if (filter !== 0) {
+        throw new Error('unsupported screenshot PNG filter ' + filter);
+      }
+      row[x] = value;
+    }
+  }
+  return { width, height, channels, pixels };
+}
+
+function qualityMask(width, height) {
+  const mask = new Uint8Array(width * height);
+  let count = 0;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const inHud = QUALITY_HUD_BOXES.some((box) =>
+        x >= box.x && x < box.x + box.w && y >= box.y && y < box.y + box.h);
+      if (!inHud) {
+        mask[y * width + x] = 1;
+        count++;
+      }
+    }
+  }
+  return { mask, count };
+}
+
+/** Scene-only luminance metrics for one screenshot. */
+function qualityMetrics(image) {
+  const { width, height, channels, pixels } = image;
+  const lum = new Float32Array(width * height);
+  for (let index = 0, offset = 0; index < lum.length; index++, offset += channels) {
+    lum[index] = (0.2126 * pixels[offset] + 0.7152 * pixels[offset + 1] + 0.0722 * pixels[offset + 2]) / 255;
+  }
+  const { mask, count } = qualityMask(width, height);
+  let sharpness = 0, pixelNoise = 0, edgeEnergy = 0, luminance = 0;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const index = y * width + x;
+      if (!mask[index]) continue;
+      const centre = lum[index];
+      luminance += centre;
+      sharpness += Math.abs(4 * centre - lum[index - width] - lum[index + width] - lum[index - 1] - lum[index + 1]);
+      let box = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) box += lum[index + dy * width + dx];
+      pixelNoise += Math.abs(centre - box / 9);
+      edgeEnergy += Math.abs(lum[index + 1] - lum[index - 1]) + Math.abs(lum[index + width] - lum[index - width]);
+    }
+  }
+  const meanLuminance = luminance / count;
+  return {
+    maskedPixels: count,
+    meanLuminance,
+    sharpness: sharpness / count,
+    // Luminance-normalised so a darker (correct sRGB) frame stays comparable:
+    // an absolute Laplacian falls with luminance even when detail is unchanged.
+    sharpnessPerLuminance: sharpness / count / Math.max(meanLuminance, 1e-6),
+    pixelNoise: pixelNoise / count,
+    pixelNoisePerLuminance: pixelNoise / count / Math.max(meanLuminance, 1e-6),
+    // Scale-free pixel-scale noise against medium-scale edge energy.
+    noiseToEdgeRatio: pixelNoise / Math.max(edgeEnergy, 1e-6),
+    edgeEnergy: edgeEnergy / (2 * count)
+  };
+}
+
+/** Before/after pixel diff over the same scene mask. */
+function qualityDiff(before, after) {
+  if (before.width !== after.width || before.height !== after.height) {
+    throw new Error('quality diff needs the same viewport');
+  }
+  const { width, height } = before;
+  const { mask, count } = qualityMask(width, height);
+  let changed = 0, absolute = 0, samples = 0, maxDelta = 0;
+  for (let index = 0; index < mask.length; index++) {
+    if (!mask[index]) continue;
+    let delta = 0;
+    for (let channel = 0; channel < Math.min(before.channels, after.channels); channel++) {
+      const difference = Math.abs(before.pixels[index * before.channels + channel] -
+        after.pixels[index * after.channels + channel]);
+      delta = Math.max(delta, difference);
+    }
+    if (delta > 0) changed++;
+    absolute += delta;
+    maxDelta = Math.max(maxDelta, delta);
+    samples++;
+  }
+  return {
+    maskedPixels: count,
+    changedFraction: samples ? changed / samples : 0,
+    meanAbsDelta: samples ? absolute / samples : 0,
+    maxDelta
+  };
+}
+
+/** Texture-quality before/after capture (see the block comment above). */
+async function qualityCapturePass() {
+  const label = option('--label', 'after');
+  if (!['before', 'after'].includes(label)) throw new Error('--label must be before or after');
+  const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
+  const freeRun = runDocument.sprint?.freeRoam;
+  if (!freeRun?.cars) {
+    throw new Error('run.json has no free-roam block — run `node probes/e1-drive/tools/verify_e1_drive.mjs` first');
+  }
+  const car = ONLY_CAR
+    ? cars[0]
+    : cars.find((candidate) => candidate.slug === runDocument.defaultCar) ?? cars[0];
+  if (!car) throw new Error('unknown car ' + JSON.stringify(ONLY_CAR));
+  const freeEntry = freeRun.cars.find((candidate) => candidate.slug === car.slug);
+  const freeProp = freeEntry?.captures.find((entry) => entry.label === 'free-prop');
+  if (!freeProp) throw new Error(car.slug + ': free-roam run has no free-prop capture');
+
+  const specs = [
+    { frame: 'sprint-start', tick: 0, options: { script: 'sprint', course: '' } },
+    { frame: 'truck-120', tick: 120, options: { script: 'drive' } },
+    { frame: 'free-prop', tick: freeProp.tick, options: { script: 'sprint', course: 'course=free' } },
+    { frame: 'lap-start', tick: 0, options: { script: 'sprint', course: 'course=lap' } }
+  ];
+  const passFailures = [];
+  const passCheck = (name, ok, detail) => { if (!ok) passFailures.push(name + (detail ? ': ' + detail : '')); };
+  const rows = [];
+  const allMessages = [];
+
+  const shoot = async (spec, extraLabel = '') => {
+    const prefix = `quality-${spec.frame}-${label}${extraLabel}`;
+    const shot = await capture(car, prefix, spec.tick, spec.options);
+    const file = path.join(ROOT, shot.screenshot);
+    const bytes = readFileSync(file);
+    const image = decodeScreenshotPng(bytes);
+    const metrics = qualityMetrics(image);
+    // A HUD-free scene crop is byte-comparable between two captures of the same
+    // held tick: the DOM overlays (frame counter) are outside it, so a repeated
+    // capture is either identical or the renderer is not deterministic.
+    const clipped = await send('Page.captureScreenshot', {
+      format: 'png', captureBeyondViewport: false,
+      clip: { x: 800, y: 460, width: 440, height: 330, scale: 1 }
+    });
+    const sceneBytes = Buffer.from(clipped.data, 'base64');
+    const sceneFile = path.join(OUT, `browser-${car.slug}-${prefix}-scene.png`);
+    writeFileSync(sceneFile, sceneBytes);
+    return {
+      ...shot,
+      file,
+      bytes,
+      image,
+      metrics,
+      sha256: 'sha256:' + createHash('sha256').update(bytes).digest('hex'),
+      sceneScreenshot: path.relative(ROOT, sceneFile).split(path.sep).join('/'),
+      sceneSha256: 'sha256:' + createHash('sha256').update(sceneBytes).digest('hex')
+    };
+  };
+
+  const beforePaths = new Map();
+  for (const spec of specs) {
+    const shot = await shoot(spec);
+    const probe = shot.probe;
+    const blocking = shot.messages.filter((entry) => entry.source !== 'console.log');
+    allMessages.push(...shot.messages);
+    passCheck(`${car.slug}/${spec.frame}: held at tick ${spec.tick}`,
+      probe.holdReached === true && probe.displayTick === spec.tick && probe.render?.tick === spec.tick,
+      `display ${probe.displayTick}, render ${probe.render?.tick}`);
+    passCheck(`${car.slug}/${spec.frame}: console is clean`, blocking.length === 0,
+      blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+
+    let diff = null;
+    if (label === 'after') {
+      const beforeFile = path.join(OUT, `browser-${car.slug}-quality-${spec.frame}-before.png`);
+      if (existsSync(beforeFile)) {
+        diff = qualityDiff(decodeScreenshotPng(readFileSync(beforeFile)), shot.image);
+        beforePaths.set(spec.frame, path.relative(ROOT, beforeFile).split(path.sep).join('/'));
+      }
+    }
+    rows.push({
+      frame: spec.frame,
+      tick: spec.tick,
+      url: shot.url,
+      screenshot: shot.screenshot,
+      sha256: shot.sha256,
+      sceneScreenshot: shot.sceneScreenshot,
+      sceneSha256: shot.sceneSha256,
+      camera: probe.render?.camera ?? null,
+      textureSampling: probe.textureSampling ?? null,
+      textureUploads: probe.textureUploads,
+      textureUploadBytes: probe.textureUploadBytes,
+      carTextureBytes: probe.carTextureBytes,
+      trackTextureBytes: probe.trackTextureBytes,
+      levelPropTextureBytes: probe.levelPropTextureBytes,
+      metrics: shot.metrics,
+      diffVsBefore: diff,
+      beforeScreenshot: beforePaths.get(spec.frame) ?? null,
+      messages: shot.messages
+    });
+  }
+
+  // Determinism: repeat the first frame and require byte-identical PNGs, metrics
+  // and the generated mip-chain hash. No wall clock or random input is involved.
+  const repeatSpec = specs[0];
+  const first = rows[0];
+  const repeat = await shoot(repeatSpec, '-repeat');
+  const repeatProbe = repeat.probe;
+  const repeatMetrics = repeat.metrics;
+  const repeatSame = repeat.sceneSha256 === first.sceneSha256 &&
+    JSON.stringify(repeatMetrics) === JSON.stringify(first.metrics) &&
+    (repeatProbe.textureSampling?.mipChainHash ?? null) === (first.textureSampling?.mipChainHash ?? null);
+  passCheck(`${car.slug}/${repeatSpec.frame}: a repeated capture has an identical scene crop`, repeatSame,
+    repeat.sceneSha256 + ' vs ' + first.sceneSha256);
+
+  const sampling = rows.find((row) => row.textureSampling)?.textureSampling ?? null;
+  if (label === 'after') {
+    passCheck('the consumer reports the new sampling policy', sampling !== null,
+      'window.__e1TextureSampling is missing');
+    passCheck('the albedo textures are uploaded as sRGB',
+      sampling?.format === 'rgba8unorm-srgb', String(sampling?.format));
+    passCheck('a full mip chain is generated for every static albedo',
+      (sampling?.textures ?? 0) > 0 && (sampling?.mipLevelsTotal ?? 0) >= (sampling?.textures ?? 1) * 2 &&
+      (sampling?.mipBytes ?? 0) > 0,
+      `${sampling?.textures} textures / ${sampling?.mipLevelsTotal} levels / ${sampling?.mipBytes} B`);
+    passCheck('trilinear sampling is enabled', sampling?.mipmapFilter === 'linear',
+      String(sampling?.mipmapFilter));
+    passCheck('anisotropic filtering is applied where supported',
+      (sampling?.anisotropyApplied ?? 0) >= 1, String(sampling?.anisotropyApplied));
+  }
+
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'quality',
+    label,
+    note: 'identical URL, tick, camera and 1600x900 viewport per frame; the before run uses the committed ' +
+      'mip0/raw consumer and the after run the derived mip chain + trilinear/anisotropy + sRGB consumer. ' +
+      'Metrics are scene-only (HUD boxes masked) diagnostics of this headless frame.',
+    car: { slug: car.slug, name: car.name },
+    frames: rows,
+    repeat: {
+      screenshot: repeat.screenshot,
+      sha256: repeat.sha256,
+      sceneScreenshot: repeat.sceneScreenshot,
+      sceneSha256: repeat.sceneSha256,
+      metrics: repeatMetrics,
+      textureSampling: repeatProbe.textureSampling ?? null,
+      byteIdentical: repeatSame
+    },
+    sampling,
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-metrics' : 'failed'
+  };
+  const evidenceName = `browser-evidence-quality-${label}.json`;
+  writeFileSync(path.join(OUT, evidenceName), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, `edge-quality-${label}.log`), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-metrics',
+    summary: {
+      mode: 'quality',
+      label,
+      car: car.slug,
+      consoleMessages: allMessages.length,
+      failures: passFailures,
+      sampling,
+      evidence: '_work/e1-drive/' + evidenceName,
+      frames: rows.map((row) => ({
+        frame: row.frame,
+        tick: row.tick,
+        screenshot: row.screenshot,
+        sha256: row.sha256,
+        metrics: row.metrics,
+        changedFraction: row.diffVsBefore?.changedFraction ?? null
+      }))
+    }
+  };
 }
 
 /**

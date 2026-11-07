@@ -752,6 +752,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Lap 0/902 (min 3,044 m), free 0/121 (min 3,793 m), 310 roadside 0/1245 bloke; dört on-course arc bilinçli hariç. 8/8 head-on, 4 yön, 0 tunneling; **45/45**; V1 array byte-identical.
 - Kanıt: `probes/prop-collision/README.md` §P74, `_work/prop-collision/colliders-v2.json`, `_work/free-roam-prop/colliders-r04-v2.json`.
 
+## 7 Kasım 2026 — doku kalitesi (sRGB + mip)
+
+- Kök neden: BC1 texelleri sRGB iken `rgba8unorm` + shader `pow(1/2.2)` → çift gamma; tek mip + nearest → aliasing.
+- Düzeltme: `rgba8unorm-srgb`, linear-light 2×2 mip zinciri, trilinear, anisotropy 8 (adapter 1), doğru sRGB output.
+- 4 before/after karede değişim %91–99,6; packet/fizik hash'leri değişmedi; mip build 30–34 ms/yükleme.
+- `verify_e1_drive` 838/838, suite 31/31, checker 23/23, tüm capture'lar console 0. Kanıt: `docs/work/verification/T-007-texture-quality.md`.
+
 ## 7 Kasım 2026 — tam oyun / multiplayer planı
 
 - Hedef: iki tarayıcının oda koduyla aynı yarışı bitirdiği, içerik genişleyen bir sürüm. Plan: `docs/plan/FULL_GAME.md`.

@@ -215,6 +215,20 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   `roadside` **0/1245** bloke; dört on-course arc bilinçli hariç.
 - 8/8 head-on + 4 yön + 0 tunneling; **45/45**; V1 collider array byte-identical.
 - Kanıt: `probes/prop-collision/README.md` §P74, `_work/prop-collision/*-v2.json`.
+- Sıradaki (P74b): V2 manifestlerini sayfaya bağlamak.
+
+### E1r — Doku kalitesi (P75)  ✅
+- Kök neden: BC1 texelleri sRGB iken `rgba8unorm` + shader'da `pow(1/2.2)` →
+  **çift gamma** (soluk görünüm); tek mip + nearest minification → aliasing.
+- Düzeltme: `rgba8unorm-srgb` yükleme, **linear-light 2×2 box mip zinciri**,
+  trilinear + anisotropy 8 (adapter 1'e sınırlı), doğru sRGB output.
+- Kanıt: sRGB 16/16 resource-block sampler kaydı + `trafficcylinder_diff` +
+  asset-viewer; uydurma renk yok.
+- 4 before/after karede değişim **%91–99,6**; packet hash'leri/fizik değişmedi.
+- `verify_e1_drive` **838/838**, suite 31/31, checker 23/23, capture console 0.
+- Kanıt: `docs/work/verification/T-007-texture-quality.md`,
+  `_work/e1-drive/quality-crops/*-before-after.png`.
+- Sınır: kaynak 16×16/32×16; upscale yok. Malzeme rengi/gölge/post yok.
 
 ### E1o — Motor sesi (P70/P71)  ✅ entegre
 - `e1_engine_rpm()` native export (`Engine().RPM()`), wasm A/B deterministik.

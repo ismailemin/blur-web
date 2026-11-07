@@ -65,6 +65,7 @@ sürüşü deneyebileceği PoC.
 | Level-instance UV0 reader | P73a | ✅ 22/22 UV0, 18 BC1 bindable |
 | Prop texture render | P73b | ✅ 18 draw/10.212 tri, 838/838 |
 | Görünür yapı collision V2 | P74 | ✅ 651/447 collider, 45/45 |
+| Doku kalitesi (sRGB+mip) | P75 | ✅ 838/838, %91–99 değişim |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

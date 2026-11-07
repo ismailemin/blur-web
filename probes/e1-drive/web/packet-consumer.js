@@ -11,10 +11,12 @@
 //     collision surface out of `draws` entirely, so this is a safety path);
 //   * a mesh may carry `uv` (base64 float32 LE, 2 components, P45 UV0) and the
 //     packet may carry `textures` (decoded static g_tAlbedo RGBA) + `texturePack`
-//     (sampler and scope metadata). A draw with `textureId` samples that texture
+//     (producer sampler metadata). A draw with `textureId` samples that texture
 //     with its own UV; a draw without one keeps the diagnostic albedo. The
-//     sampler is the explicit `TEXTURE_SAMPLER` choice (repeat + linear on mip0,
-//     rgba8unorm, no sRGB conversion): not recovered retail state;
+//     producer metadata declares the source data as raw mip0 `rgba8unorm`; this
+//     consumer uploads it as `rgba8unorm-srgb` with a deterministic derived mip
+//     chain, trilinear filtering and anisotropy 8 where supported. The sRGB
+//     decision and its evidence are documented on TEXTURE_SAMPLER;
 //   * a draw may set `uvFlipU` / `uvFlipV` (car packs). The car pack declares
 //     `uvFlipU:true, uvFlipV:false`, i.e. it samples (1-u, v): the model U axis
 //     runs opposite to the decoded image's reading direction on every readable
@@ -44,9 +46,10 @@
 // the wheel rotation is visible on rotationally symmetric tyre/rim/disc
 // geometry. Neither is a game material or a texture sample. A draw may also carry
 // `textureId`, which is the P44/P45/P47 static albedo texture measured for that
-// draw: it is sampled with the mesh's real UV0 stream, and still is not the full
-// game material (no colour, blend, shader stages, mips or sRGB transform). A car
-// draw additionally carries `uvFlipU` / `uvFlipV`, the declared per-axis
+// draw: it is sampled with the mesh's real UV0 stream. It is still not the full
+// game material (no material colour, blend state or shader stages); the consumer
+// now adds the proven sRGB decode and a derived mip chain (see TEXTURE_SAMPLER).
+// A car draw additionally carries `uvFlipU` / `uvFlipV`, the declared per-axis
 // sampling direction (the P52 car pack uses u' = 1-u, v' = v).
 
 import { interpolateRigid, isRigid, matrixChecksum } from './interpolate.js';
@@ -92,6 +95,15 @@ struct VertexOut {
   return result;
 }
 
+// Exact sRGB opto-electronic transfer function. The swap chain is non-sRGB, so
+// linear radiance must be encoded here; sRGB is not pow(1/2.2).
+fn linearToSrgb(value: vec3f) -> vec3f {
+  let c = clamp(value, vec3f(0.0), vec3f(1.0));
+  let low = c * 12.92;
+  let high = 1.055 * pow(c, vec3f(1.0 / 2.4)) - 0.055;
+  return select(high, low, c <= vec3f(0.0031308));
+}
+
 @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
   let raw = cross(dpdx(input.world), dpdy(input.world));
   let length = length(raw);
@@ -102,8 +114,10 @@ struct VertexOut {
   // otherwise. The sample is unconditional (a white 1x1 placeholder is bound for
   // untextured draws), so there is no non-uniform control flow around
   // textureSample; mix() then selects the diagnostic albedo. The sampled value is
-  // the raw decoded BC1 texel (rgba8unorm, no sRGB conversion) and is not
-  // multiplied by a material colour, because none is recovered.
+  // the decoded albedo texel: the texture is rgba8unorm-srgb, so the hardware
+  // decodes the stored sRGB texel to linear before filtering; the mip chain is
+  // generated in linear light too. It is not multiplied by a material colour,
+  // because none is recovered.
   let sampled = textureSample(albedoTexture, albedoSampler, input.uv).rgb;
   let base = mix(draw.albedo.rgb, sampled, draw.texParams.x);
   let radiance = scene.lightColour.rgb * scene.lightColour.a * base * brightness;
@@ -113,7 +127,9 @@ struct VertexOut {
   let angle = atan2(input.local.z, input.local.y);
   let band = smoothstep(0.86, 0.98, cos(angle)) * draw.albedo.a;
   let marked = mix(radiance, vec3f(1.0, 0.94, 0.72), band * 0.72);
-  return vec4f(pow(clamp(marked, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), 1.0);
+  // The swap chain is non-sRGB and the lighting above is linear, so this is the
+  // exact sRGB OETF (not a pow(1/2.2) approximation, which is not its inverse).
+  return vec4f(linearToSrgb(marked), 1.0);
 }
 `;
 
@@ -158,6 +174,13 @@ struct VertexOut {
   return result;
 }
 
+fn linearToSrgb(value: vec3f) -> vec3f {
+  let c = clamp(value, vec3f(0.0), vec3f(1.0));
+  let low = c * 12.92;
+  let high = 1.055 * pow(c, vec3f(1.0 / 2.4)) - 0.055;
+  return select(high, low, c <= vec3f(0.0031308));
+}
+
 @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
   let raw = cross(dpdx(input.world), dpdy(input.world));
   let length = length(raw);
@@ -170,7 +193,7 @@ struct VertexOut {
   let angle = atan2(input.local.z, input.local.y);
   let band = smoothstep(0.86, 0.98, cos(angle)) * draw.albedo.a;
   let marked = mix(tint, vec3f(0.92, 0.99, 1.0), band * 0.55);
-  return vec4f(pow(clamp(marked, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2)), 0.34);
+  return vec4f(linearToSrgb(marked), 0.34);
 }
 `;
 
@@ -179,21 +202,135 @@ export const GHOST_TINT = Object.freeze([0.10, 0.62, 0.92]);
 export const GHOST_ALPHA = 0.34;
 
 /**
- * The explicit PoC sampler. P45/P47 record that the engine wrap mode, filter,
- * anisotropy and mip selection are not recovered, so this is one declared choice:
- * repeat (UV0 leaves [0,1]), linear min/mag on the single uploaded mip level.
- * It is the same metadata `geometry.texturePack.sampler` publishes.
+ * The PoC sampling policy, now split into what the source data *is* and what the
+ * consumer does with it on the GPU.
+ *
+ * Source data (unchanged, produced by `build_geometry.mjs`):
+ *   `packet.textures[]` carries the committed BC1/BC2 decode of the stored
+ *   mip0 texel values; `packet.texturePack.sampler` records that the producer
+ *   declares repeat + linear + mip0 + `rgba8unorm` and does not recover the
+ *   engine sampler. That is still true of the data.
+ *
+ * Consumer policy (this file):
+ *   * `rgba8unorm-srgb`: the stored texels are sRGB-encoded. Proof: the committed
+ *     `SamplerState version1` records for the 16 car resource-block albedos are
+ *     `[0,0,0,1,1,1,0,0,0,1]` (address U/V/W = WRAP, mag/min/mip = LINEAR,
+ *     maxAnisotropy 0, maxMipLevel 0, lodBias 0, **sRGB = 1**) in
+ *     `_work/car-materials/roster/cars/<slug>/materials.json`; the same
+ *     `SamplerState version1` for the level scene shared texture
+ *     `trafficcylinder_diff` is `sRGB=1` (`docs/plan/material-binding.md` line 34);
+ *     and the committed asset-reader viewer already uploads decoded textures as
+ *     `rgba8unorm-srgb` (`probes/asset-reader/web/mesh-viewer.js`). The
+ *     per-source sampler records for the 136 track and 4 level sources are not
+ *     in the committed P47/P73a manifests, so that pack is covered by the same
+ *     serialized sampler class, not by a per-source row; the record says so.
+ *   * full deterministic mip chain derived from mip0 (the source descriptors
+ *     record 3-10 levels; a 16x16 source has 5). The kernel is a 2x2 box filter
+ *     in linear light (sRGB decode -> average -> sRGB encode, odd edges clamp the
+ *     last tap), so the derived levels match the sRGB filtering the hardware
+ *     would do. No source detail is invented or upscaled.
+ *   * trilinear minification: `mipmapFilter: 'linear'` (retail mipFilter = LINEAR).
+ *   * `maxAnisotropy` 8 where the adapter supports it. This is a rendering-quality
+ *     choice for this PoC: the recovered sampler record declares maxAnisotropy 0,
+ *     so the value is reported as applied, not as retail state.
  */
 export const TEXTURE_SAMPLER = Object.freeze({
   addressModeU: 'repeat',
   addressModeV: 'repeat',
   magFilter: 'linear',
   minFilter: 'linear',
-  mipmapFilter: 'nearest',
-  mipLevels: 1,
-  format: 'rgba8unorm',
-  colourSpace: 'raw-decoded-texels'
+  mipmapFilter: 'linear',
+  maxAnisotropy: 8,
+  mipLevels: 'full-chain-derived-from-mip0',
+  format: 'rgba8unorm-srgb',
+  colourSpace: 'srgb-decoded-to-linear',
+  sourceFormat: 'rgba8unorm (raw-decoded-texel source data)',
+  mipKernel: '2x2 box in linear light, odd edges clamp'
 });
+
+/** sRGB EOTF table (byte -> linear light). */
+const SRGB_TO_LINEAR = new Float32Array(256);
+for (let code = 0; code < 256; code++) {
+  const value = code / 255;
+  SRGB_TO_LINEAR[code] = value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+}
+
+/** Linear light -> sRGB byte (the inverse of the table above). */
+function linearToSrgbByte(value) {
+  if (!(value > 0)) return 0;
+  if (value >= 1) return 255;
+  const encoded = value <= 0.0031308 ? value * 12.92 : 1.055 * Math.pow(value, 1 / 2.4) - 0.055;
+  const rounded = Math.round(encoded * 255);
+  return rounded < 0 ? 0 : rounded > 255 ? 255 : rounded;
+}
+
+function fnv1a32(hash, bytes) {
+  for (let index = 0; index < bytes.length; index++) {
+    hash ^= bytes[index];
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+/**
+ * Derive the full mip chain from one RGBA8 mip0 image.
+ *
+ * Deterministic: no randomness, no wall clock, no GPU readback. Each level is a
+ * 2x2 box in linear light for RGB (sRGB decode -> average -> sRGB encode) and a
+ * straight byte average for alpha. When a source dimension is odd the last
+ * destination texel samples the last source texel twice (clamped edge), exactly
+ * the documented kernel. Returns every level (level 0 is the original bytes) and
+ * a FNV-1a 32 of the derived levels for the evidence hash.
+ */
+export function buildMipChain(rgba, width, height) {
+  if (!(rgba instanceof Uint8Array) || rgba.length !== width * height * 4) {
+    throw new Error('mip chain needs an RGBA8 mip0 of the declared size');
+  }
+  const levels = [{ width, height, bytes: rgba }];
+  let current = rgba;
+  let currentWidth = width;
+  let currentHeight = height;
+  while (currentWidth > 1 || currentHeight > 1) {
+    const nextWidth = Math.max(1, currentWidth >> 1);
+    const nextHeight = Math.max(1, currentHeight >> 1);
+    const next = new Uint8Array(nextWidth * nextHeight * 4);
+    for (let y = 0; y < nextHeight; y++) {
+      const y0 = Math.min(currentHeight - 1, y * 2);
+      const y1 = Math.min(currentHeight - 1, y * 2 + 1);
+      for (let x = 0; x < nextWidth; x++) {
+        const x0 = Math.min(currentWidth - 1, x * 2);
+        const x1 = Math.min(currentWidth - 1, x * 2 + 1);
+        const taps = [
+          (y0 * currentWidth + x0) * 4,
+          (y0 * currentWidth + x1) * 4,
+          (y1 * currentWidth + x0) * 4,
+          (y1 * currentWidth + x1) * 4
+        ];
+        const out = (y * nextWidth + x) * 4;
+        for (let channel = 0; channel < 3; channel++) {
+          const linear = (SRGB_TO_LINEAR[current[taps[0] + channel]] +
+            SRGB_TO_LINEAR[current[taps[1] + channel]] +
+            SRGB_TO_LINEAR[current[taps[2] + channel]] +
+            SRGB_TO_LINEAR[current[taps[3] + channel]]) / 4;
+          next[out + channel] = linearToSrgbByte(linear);
+        }
+        next[out + 3] = Math.round(
+          (current[taps[0] + 3] + current[taps[1] + 3] + current[taps[2] + 3] + current[taps[3] + 3]) / 4);
+      }
+    }
+    levels.push({ width: nextWidth, height: nextHeight, bytes: next });
+    current = next;
+    currentWidth = nextWidth;
+    currentHeight = nextHeight;
+  }
+  let hash = 0x811c9dc5;
+  let derivedBytes = 0;
+  for (let level = 1; level < levels.length; level++) {
+    hash = fnv1a32(hash, levels[level].bytes);
+    derivedBytes += levels[level].bytes.length;
+  }
+  return { levels, derivedBytes, hash: '0x' + hash.toString(16).padStart(8, '0') };
+}
 
 const PLACEHOLDER_TEXTURE_ID = '__untextured__';
 
@@ -341,7 +478,14 @@ export class PacketConsumer {
       texturesCreated: 0,
       texturesDestroyed: 0,
       texturesUploaded: 0,
+      // `textureUploadBytes` keeps its original meaning (mip0 RGBA bytes), so the
+      // existing capture gates stay comparable; the derived mip chain is counted
+      // separately and `textureTotalBytes` is what the GPU actually receives.
       textureUploadBytes: 0,
+      textureMipLevels: 0,
+      textureMipBytes: 0,
+      textureTotalBytes: 0,
+      mipChainHash: null,
       uvUploadBytes: 0,
       texturedDraws: 0
     };
@@ -376,6 +520,12 @@ export class PacketConsumer {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('no WebGPU adapter');
     this.device = await adapter.requestDevice();
+    // Anisotropy is optional in WebGPU (default limit 1). The policy asks for 8
+    // and the applied value is reported; a 1-limit device stays at 1.
+    this.adapterAnisotropyLimit = adapter.limits?.maxSamplerAnisotropy ?? 1;
+    const anisotropyLimit = this.device.limits?.maxSamplerAnisotropy ?? 1;
+    this.deviceAnisotropyLimit = anisotropyLimit;
+    this.maxAnisotropy = Math.max(1, Math.min(TEXTURE_SAMPLER.maxAnisotropy, anisotropyLimit));
     this.adapterInfo = adapter.info
       ? { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device, description: adapter.info.description }
       : {};
@@ -461,16 +611,20 @@ export class PacketConsumer {
     this.sceneLayout = sceneLayout;
     this.textureLayout = textureLayout;
 
-    // The sampler is one explicit PoC choice (see TEXTURE_SAMPLER). The 1x1 white
-    // placeholder is bound for every draw without a static albedo texture, so the
-    // fragment shader can sample unconditionally and select with mix().
-    this.sampler = this.device.createSampler({
+    // The sampler is the consumer policy documented on TEXTURE_SAMPLER:
+    // repeat/linear/trilinear with anisotropy 8 where the adapter allows it. The
+    // 1x1 white placeholder is bound for every draw without a static albedo
+    // texture, so the fragment shader can sample unconditionally and select with
+    // mix(). It uses the same sRGB format as the real textures.
+    const samplerDescriptor = {
       addressModeU: TEXTURE_SAMPLER.addressModeU,
       addressModeV: TEXTURE_SAMPLER.addressModeV,
       magFilter: TEXTURE_SAMPLER.magFilter,
       minFilter: TEXTURE_SAMPLER.minFilter,
       mipmapFilter: TEXTURE_SAMPLER.mipmapFilter
-    });
+    };
+    if (this.maxAnisotropy > 1) samplerDescriptor.maxAnisotropy = this.maxAnisotropy;
+    this.sampler = this.device.createSampler(samplerDescriptor);
     this.placeholderTexture = this.device.createTexture({
       size: [1, 1, 1],
       format: TEXTURE_SAMPLER.format,
@@ -607,13 +761,20 @@ export class PacketConsumer {
       this.stats.geometryUploadBytes += positions.byteLength + indices.byteLength + uvs.byteLength;
     }
 
-    // Static albedo textures: one rgba8unorm mip0 texture + bind group per P34/P47
-    // source. The bytes are the committed BC1 decode embedded by build_geometry;
-    // no mip chain, sRGB conversion or anisotropy is applied (see TEXTURE_SAMPLER).
+    // Static albedo textures: one rgba8unorm-srgb texture per P34/P47 source,
+    // with a deterministic full mip chain derived from the committed BC1 decode.
+    // The producer still declares the source data as raw mip0 (geometry v6
+    // `texturePack.sampler`); this is the consumer's GPU sampling policy, with the
+    // sRGB decision and its evidence documented on TEXTURE_SAMPLER.
     const textureRecords = Array.isArray(packet.textures) ? packet.textures : [];
     if (textureRecords.length === 0) {
       throw new Error('packet carries no static albedo textures; rebuild geometry with build_geometry.mjs');
     }
+    let loadBaseBytes = 0;
+    let loadMipLevels = 0;
+    let loadMipBytes = 0;
+    let loadMipBuildMs = 0;
+    let aggregateHash = 0x811c9dc5;
     for (const record of textureRecords) {
       if (record.width <= 0 || record.height <= 0 || typeof record.rgbaBase64 !== 'string') {
         throw new Error('texture ' + record.id + ' has no usable RGBA payload');
@@ -624,17 +785,24 @@ export class PacketConsumer {
       }
       const rgba = new Uint8Array(binary.length);
       for (let index = 0; index < binary.length; index++) rgba[index] = binary.charCodeAt(index);
+      const mipStart = globalThis.performance?.now?.() ?? 0;
+      const chain = buildMipChain(rgba, record.width, record.height);
+      loadMipBuildMs += (globalThis.performance?.now?.() ?? 0) - mipStart;
       const texture = this.device.createTexture({
         size: [record.width, record.height, 1],
         format: TEXTURE_SAMPLER.format,
+        mipLevelCount: chain.levels.length,
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
       });
-      this.device.queue.writeTexture(
-        { texture },
-        rgba,
-        { bytesPerRow: record.width * 4, rowsPerImage: record.height },
-        [record.width, record.height, 1]
-      );
+      for (let level = 0; level < chain.levels.length; level++) {
+        const image = chain.levels[level];
+        this.device.queue.writeTexture(
+          { texture, mipLevel: level },
+          image.bytes,
+          { bytesPerRow: image.width * 4, rowsPerImage: image.height },
+          [image.width, image.height, 1]
+        );
+      }
       this.textures.push(texture);
       this.stats.texturesCreated++;
       this.textureGroups.set(record.id, this.device.createBindGroup({
@@ -646,7 +814,38 @@ export class PacketConsumer {
       }));
       this.stats.texturesUploaded++;
       this.stats.textureUploadBytes += rgba.length;
+      loadBaseBytes += rgba.length;
+      loadMipLevels += chain.levels.length;
+      loadMipBytes += chain.derivedBytes;
+      this.stats.textureMipLevels += chain.levels.length;
+      this.stats.textureMipBytes += chain.derivedBytes;
+      this.stats.textureTotalBytes += rgba.length + chain.derivedBytes;
+      // Aggregate over `id` + the derived-level hash, so a changed kernel or a
+      // reordered pack changes the evidence hash instead of hiding in a total.
+      for (let index = 0; index < record.id.length; index++) {
+        aggregateHash = fnv1a32(aggregateHash, [record.id.charCodeAt(index) & 255]);
+      }
+      for (let shift = 24; shift >= 0; shift -= 8) {
+        aggregateHash = fnv1a32(aggregateHash, [(parseInt(chain.hash.slice(2), 16) >>> shift) & 255]);
+      }
     }
+    this.stats.mipChainHash = '0x' + aggregateHash.toString(16).padStart(8, '0');
+    const sampling = Object.freeze({
+      ...TEXTURE_SAMPLER,
+      textures: textureRecords.length,
+      mipLevelsTotal: loadMipLevels,
+      mipBytes: loadMipBytes,
+      baseBytes: loadBaseBytes,
+      totalBytes: loadBaseBytes + loadMipBytes,
+      mipChainHash: this.stats.mipChainHash,
+      mipBuildMs: +loadMipBuildMs.toFixed(2),
+      anisotropyApplied: this.maxAnisotropy,
+      adapterMaxSamplerAnisotropy: this.adapterAnisotropyLimit,
+      deviceMaxSamplerAnisotropy: this.deviceAnisotropyLimit
+    });
+    this.textureSampling = sampling;
+    this.stats.textureSampling = sampling;
+    if (typeof globalThis !== 'undefined') globalThis.__e1TextureSampling = sampling;
 
     // Ghost draw slots (P63): one ghost copy per visible draw of the selected
     // car's body mesh. Slots are reserved in the existing uniform buffer, so the

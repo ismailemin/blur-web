@@ -2320,10 +2320,73 @@ before/after pixel delta is **37.13 %** at the tick-120 near-field truck,
 **5.63 %** on the free-prop frame and **5.35 %** at the sprint start.
 
 Limits: static `g_tAlbedo` pixels only — `g_tMaterial`, material colour, blend
-state, alpha, shader stages, sampler wrap/filter, mips and sRGB remain
-unapplied; the sampler is the same explicit repeat/linear/mip0 `rgba8unorm`
-choice as the track. The committed packet/consumer path carries world-space
-positions + UV0 and lights with screen-space derivative normals, so no vertex
-normal array is invented. The 4 BC3 cab draws stay blocked. No full-game claim.
+state, alpha, shader stages and per-material texture matrices remain unapplied
+(sampling only: mips and sRGB are superseded by §30). The committed packet/consumer
+path carries world-space positions + UV0 and lights with screen-space derivative
+normals, so no vertex normal array is invented. The 4 BC3 cab draws stay blocked.
+No full-game claim.
 Full detail, per-draw hashes, before/after paths and the diff report:
 `docs/work/verification/T-007-prop-textures.md`.
+
+## 30. Texture quality: proven sRGB decode, derived mips, trilinear sampling (T-007/quality, P75)
+
+**Date:** 7 November 2026
+**Scope:** `probes/e1-drive/web/packet-consumer.js`,
+`probes/e1-drive/tools/capture_browser.mjs` (`--mode quality`),
+`_work/e1-drive/**`, `_work/logs/e1-drive/**`, `probes/e1-drive/README.md`, this
+section and `docs/work/verification/T-007-texture-quality.md`. No producer
+manifest, geometry, packet, verifier, asset-reader, engine, tool, prop-collision,
+`upstream/` or `game-data/` change.
+
+### 30.1 What was wrong
+
+The consumer uploaded the committed BC1 decode as `rgba8unorm` (raw stored
+texels), sampled it with one mip level and `mipmapFilter: 'nearest'`, and then
+applied `pow(1/2.2)` on output. The stored texels are sRGB-encoded, so the
+result was gamma-encoded twice — the pale, flat-looking track/trucks/decals —
+and minified pixels sampled mip0 with no mip chain.
+
+### 30.2 What changed
+
+- Upload every static albedo as `rgba8unorm-srgb`.
+- Derive the full mip chain from mip0 in the consumer: 2×2 box **in linear
+  light** (sRGB decode → average → sRGB encode; alpha averaged linearly; odd
+  edges clamp). No source detail is invented or upscaled.
+- Sample trilinearly (`mipmapFilter: 'linear'`) and request anisotropy 8 where
+  the adapter exposes it (this adapter reports `maxSamplerAnisotropy 1`, so 1 is
+  applied).
+- Use the exact sRGB OETF instead of `pow(1/2.2)` on output.
+- Expose the policy, per-packet mip bytes/levels and the aggregate mip hash via
+  `window.__e1TextureSampling`.
+- Add `capture_browser.mjs --mode quality --label before|after` and scene-only
+  sharpness/noise metrics on four identical-camera frames.
+
+### 30.3 sRGB proof
+
+The committed `SamplerState version1` for **16/16** car resource-block albedos is
+`[0,0,0,1,1,1,0,0,0,1]` — WRAP, LINEAR mag/min/mip, maxAnisotropy 0; **sRGB=1**
+(`_work/car-materials/roster/cars/<slug>/materials.json`). The same record for
+the level fixture `trafficcylinder_diff` is `sRGB=1`
+(`docs/plan/material-binding.md`), and the committed asset-reader viewer already
+uploads decoded textures as `rgba8unorm-srgb`
+(`probes/asset-reader/web/mesh-viewer.js`). The BC1 decode is the untransformed
+stored texel, so `sRGB=1` says those bytes are sRGB. The 136 track and 4
+level-prop sources have no per-source sampler row in the committed P47/P73a
+manifests; their application is labelled as the same sampler class, not as
+per-source recovered state.
+
+### 30.4 Results and limits
+
+`verify_e1_drive.mjs` **838/838**; full `verify_asset_probe.py` **31/31**;
+`check_e1_poc.py` **23/23**; drive/sprint/props/free/lap captures all console 0,
+0 assertions. The default packet grows from 4,985,920 B to **6,648,180 B**
+(+1,662,260 B, +33.33 %; 149 textures, 907 levels, hash `0x8942c723`), and mip
+generation costs **30.3–33.6 ms** once per load (no per-frame work). Before/after
+frames differ on **91.1–99.6 %** of the scene (the colour transfer); the
+scale-free noise/edge alias proxy improves on 3/4 frames (−0.17 % to −1.42 %)
+and is +0.70 % on the sprint-start frame. The main remaining limitation is the
+**source resolution**: the ground is a 16×16 baked mud texture magnified across
+metres, so it stays smooth; no upscale or invented detail is applied. Material
+colour/paint, UV transforms, normals, the 4 BC3 cab draws and the 267 non-static
+car draws remain unapplied and labelled. Full tables, paths and hashes:
+`docs/work/verification/T-007-texture-quality.md`.

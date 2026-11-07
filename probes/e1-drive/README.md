@@ -237,6 +237,8 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs --mode lap       # ?course=lap: start/lap1/lap2/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode free      # ?course=free: spawn/mid/prop/reset per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode props     # 5 cars x tick-120/near-field truck/free-prop/sprint/lap
+& $node probes/e1-drive/tools/capture_browser.mjs --mode quality --label before --port 8802  # texture before (committed consumer)
+& $node probes/e1-drive/tools/capture_browser.mjs --mode quality --label after  --port 8802  # texture after (sRGB + mips)
 & $node probes/e1-drive/tools/capture_browser.mjs --mode survey    # ?survey=1 corridor label
 & $node probes/e1-drive/tools/capture_browser.mjs --mode ghost     # 5-car ghost-visible frames + G toggle
 & $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
@@ -319,10 +321,14 @@ packet the browser renders is produced by the same code the verifier validates.
 - `textures[]` / `texturePack`: 136 decoded static track albedo RGBA bitmaps
   (439,360 B), the 4 decoded level-prop BC1 images (8,192 B) and that car's own
   7–9 P52 images (2.58–5.00 MB), their `block:index` / `shared:index` identity
-  and hashes, plus the explicit sampler metadata (`repeat`, linear, mip0,
-  `rgba8unorm`, no sRGB). The car pack also carries `uvConvention`
-  (`u' = 1 − u`, `v' = v`) with its pixel evidence; the track and level packs
-  keep the raw stream.
+  and hashes. The producer metadata still describes the source data (`repeat`,
+  linear, mip0, `rgba8unorm`, raw decoded texels); the consumer's GPU sampling
+  policy is separate and documented on `TEXTURE_SAMPLER`: `rgba8unorm-srgb`,
+  a derived full mip chain, trilinear filtering and anisotropy 8 where the
+  adapter supports it (the capture adapter reports 1). The car pack also carries
+  `uvConvention` (`u' = 1 − u`, `v' = v`) with its pixel evidence; the track and
+  level packs keep the raw stream. See
+  `docs/work/verification/T-007-texture-quality.md`.
 - `physicsSurfaces[]`: one hidden collision surface (`visible:false`,
   `physicsOnly:true`, 230 vertices / 381 triangles) carried for provenance only;
   it is not uploaded and not drawn.
@@ -722,10 +728,15 @@ buffer lifecycle (`releaseGeometry()` + `stats.packetLoads/buffersCreated/
 buffersDestroyed`, invoked at every `load()`) so repeated timeline rebuilds cannot
 grow GPU memory; and the textured delta — a second vertex buffer with the
 mesh's UV0 (track, the level props' real P73a instance stream and car), one
-`rgba8unorm` mip0 texture + bind group per static albedo source, a 1×1 white
-placeholder for untextured draws, and `texParams` in the draw uniform
-(`x` = texture bound, `y`/`z` = the declared U/V flip flags; the car pack uses
-`u' = 1−u`, `v' = v`).
+`rgba8unorm-srgb` texture + bind group per static albedo source with a
+deterministic full mip chain derived from mip0 (2×2 box in linear light),
+trilinear sampling, anisotropy 8 where supported, a 1×1 white placeholder for
+untextured draws, an exact sRGB output encode, and `texParams` in the draw
+uniform (`x` = texture bound, `y`/`z` = the declared U/V flip flags; the car pack
+uses `u' = 1−u`, `v' = v`). The sRGB decision and its evidence are recorded on
+`TEXTURE_SAMPLER` and in
+`docs/work/verification/T-007-texture-quality.md`; the producer manifests and
+geometry/packet pins are unchanged.
 No other render/pipeline logic changed.
 
 `web/fixed-step.js` and `web/interpolate.js` are verbatim copies of the committed
@@ -783,6 +794,9 @@ measured limit),
 `browser-evidence-telemetry.json`, `browser-evidence-restart.json`,
 `browser-evidence-telemetry-restart.json`, `browser-evidence-soak.json`,
 `browser-evidence-texture.json` (close-up texture proof),
+`browser-evidence-quality-{before,after}.json` + `browser-<slug>-quality-<frame>-{before,after}.png`
+(texture-quality before/after: sprint start, tick-120 truck, free prop, lap;
+scene-only sharpness/alias metrics, diff, mip hash, deterministic scene crop),
 `browser-evidence-ghost.json` (ghost replay: 5 cars, G toggle, pose/delta/upload gates),
 `browser-evidence-audio.json` + `browser-audio-{running,muted}.png` (engine audio:
 force-off, gesture gate, 1500/3015/6000 RPM live gains/rates/RMS, mute),
@@ -836,9 +850,13 @@ per-car metrics and plausibility comparison are recorded in
   row 0 = top and V already matches, while the model's U axis runs opposite to
   the image reading direction on every readable island, so the raw stream renders
   plates, badges and emblems horizontally mirrored). Material colour, blend
-  state, shader stages, mip chains, sRGB interpretation and per-material texture
-  matrices are not applied, and the sampler (`repeat` + linear on mip0,
-  `rgba8unorm`) is a declared PoC choice, not recovered engine state. The 267
+  state, shader stages and per-material texture matrices are not applied, and the
+  sampler's anisotropy is a declared quality choice. Mips and sRGB **are** now
+  applied by the consumer: the stored texels are uploaded as `rgba8unorm-srgb`,
+  a full deterministic mip chain is derived from mip0, and filtering is
+  trilinear. The sRGB proof, the per-source gap for the track/level packs and the
+  applied anisotropy (1 on the capture adapter) are in
+  `docs/work/verification/T-007-texture-quality.md`. The 267
   runtime-only car draws (45 paint lookups, 66 light blends, 156 other
   `_NO_ALBEDO`), props and the 97 unbound track draws keep diagnostic colours.
   One directional light, screen-space derivative normals; no shadows, post or

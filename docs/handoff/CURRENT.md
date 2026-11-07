@@ -96,6 +96,12 @@ bileşenin collider'sız olduğu bulundu. V2 manifestleri: `colliders-v2.json`
 yapılar dokusuz olsa da solid, gerçek zemin/overhead hariç. Lap 0/902, free
 0/121, 310 roadside 0/1245 bloke. Entegrasyon (P74b) P75 sonrası.
 
+**P75 — doku kalitesi (TAMAM):** Çift gamma (sRGB texel + shader pow) ve mip0
+aliasing düzeltildi: `rgba8unorm-srgb`, linear-light mip zinciri, trilinear,
+anisotropy 8. 4 karede değişim %91–99,6; packet/fizik hash'leri sabit.
+`verify_e1_drive` **838/838**, capture console 0. Kanıt:
+`docs/work/verification/T-007-texture-quality.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56
