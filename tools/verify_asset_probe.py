@@ -47,6 +47,8 @@ def main():
         ('powerups-rules',['node','probes/powerups/rules/tests.mjs']),
         ('pickup-placements',[sys.executable,'probes/powerups/tools/verify_pickup_placement.py']),
         ('powerups-model',['node','probes/e1-drive/tools/powerups_model_tests.mjs']),
+        ('projectiles',[sys.executable,'probes/powerups/tools/verify_projectiles.py']),
+        ('projectile-rules',['node','probes/powerups/rules/projectiles.test.mjs']),
         ('boost-model',['node','probes/e1-drive/tools/boost_model_tests.mjs']),
         ('vehicle-pipeline',[sys.executable,'probes/vehicle-pipeline/tools/verify_vehicle_pipeline.py']),
         ('map-pipeline',[sys.executable,'probes/map-pipeline/tools/verify_maps.py']),

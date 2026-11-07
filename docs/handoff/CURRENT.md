@@ -199,6 +199,11 @@ m/s; `?powerups=1` içinde pickup/event/HUD; capture host 10,15→48,49, guest
 12,51→48,82 m/s, console 0/0. Boost 31/31, power-up 79/79, suite 48/48.
 Kanıt: `docs/work/verification/T-007-powerups.md`.
 
+**PWR4 — projectile verisi:** `PerkForceEffects` 9 satır; Blindfire/Shunt/Barge/
+Shock alanları çıkarıldı; **Shock gerçek hasar 50** (minor), Barge 100.
+Kural prototipi **19/19**, verifier **888/888**. Eksikler tipli. Kanıt:
+`docs/work/analysis/powerup-projectiles.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

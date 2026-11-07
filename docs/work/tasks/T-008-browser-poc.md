@@ -85,6 +85,7 @@ sürüşü deneyebileceği PoC.
 | 15 araçlık roster | V2 | ✅ 10 yeni araç, 2254/2254 |
 | Gracia harita paketi | MAP5 | ✅ 624,9 m, 2.627 draw, 46 suite |
 | Nitro + Shock | BOOST2 | ✅ 31/31 + 79/79, console 0 |
+| Projectile verisi | PWR4 | ✅ 19/19, 888/888 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

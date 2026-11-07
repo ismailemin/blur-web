@@ -871,6 +871,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Gerçek wasm: Nitro +18,29 m/s (1,3 s), peak +25,53; Shock −14,79. Capture host 10,15→48,49, guest 12,51→48,82, console 0/0.
 - Boost **31/31**, power-up **79/79**, verify 2254/2254, suite 48/48, checker 23/23, CTest 15/15. Shunt/Bolt/Barge/projectile ertelendi.
 
+## 7 Kasım 2026 — projectile power-up verisi
+
+- `PerkForceEffects` tablosu (9 satır) `pickups.bin` record 821; Blindfire speed 300/10 s/3 charge, Shunt radius 0.75/40 s/homing, Barge radius 7/0.4 s, Shock r7/14/1,5 s.
+- Düzeltme: **Shock gerçek hasar 50** (minor kuralı), Barge 100.
+- Kural prototipi **19/19**, verifier **888/888**; mevcut 1.783 değişmedi. Eksikler tipli (runtime charges/lifetime, fake-physics, hedef radius, icon binding).
+- Kanıt: `docs/work/analysis/powerup-projectiles.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

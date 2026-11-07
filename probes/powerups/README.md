@@ -14,6 +14,29 @@ Data-only power-up recovery for the Blur Web project. Nothing here changes
 | `rules/engine.js`, `rules/tests.mjs` | PWR1 | standalone rules prototype driven by recovered values |
 | `tools/extract_pickup_placement.py` | PWR3 | recover `usa_la_river` pickup placement |
 | `tools/verify_pickup_placement.py` | PWR3 | independent direct-offset verifier for `placements.json` |
+| `tools/build_projectiles.py` | PWR4 | projectile/impulse manifest from XT + source |
+| `tools/verify_projectiles.py` | PWR4 | independent direct-offset verifier for `projectiles.json` |
+| `rules/projectiles.js`, `rules/projectiles.test.mjs` | PWR4 | typed projectile/impulse model + 19 tests |
+
+## Projectile / impulse recovery (PWR4)
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/powerups/tools/build_projectiles.py
+& $py probes/powerups/tools/verify_projectiles.py
+node probes/powerups/rules/projectiles.test.mjs
+```
+
+Outputs (not committed):
+
+- `_work/powerups/projectiles.json` — Blindfire/Bolt, Shunt, Barge and Shock
+  projectile/weapon fields, `PerkForceEffects`, AI controller, HUD/audio bindings,
+  runtime source citations and the integration contract.
+- `_work/powerups/projectiles.verify.json` — 888 independent checks.
+- `_work/logs/powerups/pwr4-*.log` — build, verify and test logs.
+
+Full analysis: `docs/work/analysis/powerup-projectiles.md`.
 
 ## Recovered placement (PWR3)
 

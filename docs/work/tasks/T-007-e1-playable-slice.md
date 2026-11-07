@@ -459,6 +459,17 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-powerups.md`,
   `_work/e1-drive/browser-mp-powerups-nitro-*.png`.
 
+### E1ak — Projectile/Shunt/Barge verisi (PWR4)  ✅ veri
+- Yeni `PerkForceEffects` tablosu (9 satır, MaxForce/radius/time) `pickups.bin`
+  record 821; rldatabase System 40 referansı.
+- Blindfire: speed 300, radius 0.2, dmg 50, 10 s, 3 charge; Shunt: radius 0.75,
+  dmg 100, 40 s, homing; Barge: radius 7, dmg 100, 0.4 s; Shock: r7/14, 1,5 s,
+  **gerçek hasar 50** (minor kuralı), 3 dome.
+- Kural prototipi **19/19**; verifier **888/888**; mevcut 1.783 değişmedi.
+- Eksikler tipli: charges/lifetime/homing runtime, fake-physics magnitude,
+  hedef radius/extents, E_PICKUP_TYPE, icon binding.
+- Kanıt: `docs/work/analysis/powerup-projectiles.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
