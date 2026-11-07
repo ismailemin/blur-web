@@ -1,7 +1,7 @@
 # `usa_amboy` map slice package
 
 **Date:** 7 November 2026
-**Owner:** MAP2 (sub-agent)
+**Owner:** MAP2 (sub-agent); package refreshed by MAP4 after READ1 (§11)
 **Scope:** `probes/map-slice/**`, `_work/map-slice/**`,
 `_work/logs/map-slice/**` and this document. No change to `probes/e1-drive`,
 `probes/map-pipeline`, `probes/asset-reader`, the engine, `tools/`, `upstream/`
@@ -27,7 +27,10 @@ read-only. No renderer, GPU, browser, playable-game or full-game claim is made.
 | spawn band | 25/25 hits, all up-facing, 1 m × 5 m, height spread 0.10073 m |
 | physics settle | 60 ticks, zero input, 4/4 wheel contacts on 61/61 states, finite |
 | physics state sequence | `sha256:d25c4592…53491b38` (two independent modules identical) |
-| package bytes | 17,622,497 (payload + `slice.json`); 17,624,545 incl. `verify.json` |
+| native reader (refreshed) | `level_inspect.exe` 249,856 B, `sha256:a633a030…6965b` |
+| reader replay | 48/48 supported sections; positions/UV0/indices/draw ranges identical |
+| material identity | 1,268/1,606 resolved (1,163 resource + 105 shared), 338 blocked; 1,201 bindable after MAP3 join |
+| package bytes | 17,625,578 (payload + `slice.json`); 17,627,626 incl. `verify.json` |
 | verifier | **12,367 checks, 0 errors, PASS**; byte-identical on repeat runs |
 
 The package is a **playable-slice input**, not a playable slice: it has no
@@ -46,7 +49,7 @@ renderer, no e1-drive integration, no UI and no retail start-line record.
 | `_work/map-pipeline/grids/usa_amboy.npz` | 4,030,113 | `4c6f3ef761cbf391c91a56599c2910be506158dd7402b4f8d83aa5366e0283d3` |
 | `_work/map-pipeline/maps.json` | 205,652 | `40878a997c7411c27bb8edbdaf091d3fe1bbf33b8d7b25224dd54d881f16e0ea` |
 | `_work/map-pipeline/inventory.json` | 159,627 | `6ed6b1c2fa0590d6abce567c27b030eb93704e7f0c29eb22022644ed93bf96bd` |
-| native reader `level_inspect.exe` | 247,808 | `63ee2801ac10b7dbafb515b8379bd720c5710593b8576b6f10b00070686a11cd` |
+| native reader `level_inspect.exe` (current, READ1) | 249,856 | `a633a030f530b9939991b4fc5c67aebe60d00cd22d59a6fffb3f74b0fbf6965b` |
 | collision scanner `physics_scan.py` | 18,100 | `a98e699ad43d4cf6b44064870973c3921847cfa2f7e091cefd36a00586776b72` |
 | collision oracle `reference_oracle.py` | 48,842 | `2d7e5aecbff57f2d119e4ca0aa9d6904194ce6c7080ef5c546edb944e75f438a` |
 | E1 module `e1_drive.mjs` | 11,368 | `31bcd0febcb1cca66fc47703cd63dbbb46e9c35a6f425f2f5d5cf358660f957a` |
@@ -64,7 +67,9 @@ No format, offset or triangle is guessed.
 Draw geometry is the committed native `level_inspect` output already recorded by
 the map pipeline (`_work/map-pipeline/probes/usa_amboy-g*/native.json`). The
 package reuses those values byte-for-byte; the verifier re-reads every
-`native.json` and compares the merged buffers.
+`native.json` and compares the merged buffers. Extraction additionally replays
+the current reader on the same staged chunks to record static material identity
+(§11); the replay must match the committed geometry or extraction aborts.
 
 ## 2. Collision
 
@@ -93,14 +98,21 @@ merged UV0 buffer is 529,624 pairs. No draw has a placeholder UV.
 
 ### 3.1 Materials, textures and normals
 
-- **Materials:** every draw reports
+- **Materials (packaged v1 draw records):** every draw reports
   `albedoTexture:null` and
-  `binding:"Level materials not applied in diagnostic preview"`.
-- **Textures bound:** **0**. Texture bytes: **0**. The direct-draw reader has no
-  committed material-binding path for base primitives. Attempts recorded in
-  `slice.json.textures.attempts`:
-  - `level_inspect` direct draws: 1,606/1,606 `albedoTexture:null`,
-    `sharedTextures:[]`.
+  `binding:"Level materials not applied in diagnostic preview"`, because the
+  package draw records are built from the committed **pre-fix** probe doc. The
+  fixed reader replay records identity separately (§11):
+  **1,268/1,606 resolved, 338 blocked**.
+- **Textures bound:** **0**. Texture bytes: **0**. Static albedo identity is
+  not a binding: no format, alpha, blend, shader stage, sampler state or pixel
+  is applied. Attempts recorded in `slice.json.textures.attempts`:
+  - fixed `level_inspect` replay on 48/48 supported sections: 1,268 identities
+    (1,163 resource-block + 105 shared), 338 blocked, 1,606/1,606 UV0 hashes,
+    38 shared texture identities per section, no image bytes
+    (`slice.json.draws.nativeReaderRefresh`).
+  - pre-fix `level_inspect` direct draws (source of the packaged draw records):
+    1,606/1,606 `albedoTexture:null`, `sharedTextures:[]`.
   - `level_inspect --instances-all` on `g100-n234`: error
     `First RenderList contains no instances`.
   - `level_inspect --instances-all` on `g54-n184`: status ok but 0 in-scope
@@ -112,15 +124,17 @@ merged UV0 buffer is 529,624 pairs. No draw has a placeholder UV.
   contains no normals and does not invent geometric normals. The format carries
   normal indices, but no decoded normal vector stream is exposed.
 
-> **MAP3 correction and follow-up (7 November 2026).** The sentence “the
-> direct-draw reader has no committed material-binding path for base
-> primitives” is inaccurate. `scene_reader.cpp` `geometry()` calls
+> **MAP3 correction and follow-up (7 November 2026).** The original §3.1
+> sentence “the direct-draw reader has no committed material-binding path for
+> base primitives” was inaccurate (superseded by the fixed-reader replay above
+> and §11). `scene_reader.cpp` `geometry()` calls
 > `bind_albedo()` for every direct primitive and resolves the ordered
 > instance/base/stream material stack, the static `g_tAlbedo`, and the node
-> texture-source identity. The *export* hard-codes `albedoTexture:null` at
-> `scene_reader.cpp:753-754` and does not print `draw.albedo`,
-> `draw.resource_block`, `draw.resource_index`, `draw.material_row` or
-> `draw.material`. A source-shaped binding pass over all 48 supported sections
+> texture-source identity. At the time of that check the *export* hard-coded
+> `albedoTexture:null` at `scene_reader.cpp:753-754` and did not print
+> `draw.albedo`, `draw.resource_block`, `draw.resource_index`,
+> `draw.material_row` or `draw.material`; READ1 fixed that export (§11). A
+> source-shaped binding pass over all 48 supported sections
 > resolves a static albedo for **1,268 / 1,606 draws**, of which **1,201 /
 > 1,606 draws (269,300 / 348,948 triangles)** are bindable today with real UV0
 > and the committed BC decoder; the other 405 are blocked by labelled effect,
@@ -259,21 +273,23 @@ lap, a race or a rendered frame.
 
 | file | bytes | SHA-256 |
 |---|---:|---|
-| `slice.json` | 1,629,475 | `f6f8ae85970cbc8ffc2559460673872db6e462ead20584cd19db95672bf5cd45` |
+| `slice.json` | 1,632,556 | `d34a33d9a77ccd1eaca34b03b89216a6d0b70b6d8f8c8a555e717ed7796c94f7` |
 | `collision.positions.f32.bin` | 408,684 | `0604bb8ef9062a241fa75dcc5f5bd94456f092efd74d339e3f28d776b147462d` |
 | `collision.indices.u32.bin` | 764,496 | `46f998b321907abac53e71c5f417b35f48ca9361615ede5132ad29793a9765b3` |
 | `draws.positions.f32.bin` | 6,355,488 | `5d85409b9b838227907eca2d53b34a4d7f37cb6d67158dc596b70bc24dbb2755` |
 | `draws.uv0.f32.bin` | 4,236,992 | `200ae62a7c4a3b20c0a0052e5034121c089aa8e52770cb054a22f01f29bffdff` |
 | `draws.indices.u32.bin` | 4,187,376 | `f4d77438b7ce99a809280e71b6cd356dedef784f613faf0147bd447c50b41e66` |
 | `physics-settle.json` | 39,986 | `27a8ec91bdfa0444de2cabc7a31d25a09ce583960381860ebab49c3eb548506b` |
-| `verify.json` | 2,048 | `136c28a58064781cd8f3c30b8de8730f673e8f368d1707b97a08998e6390179d` |
+| `verify.json` | 2,048 | `906dd8845949a2794345913f1f0804826081e11b7f38933dec232c4eafd46392` |
 
 `slice.json` content hash (canonical body excluding `hashes`):
-`4cd85cd89a88c645743c07494f06873512c290c35595e38ef61fbbd7c20d6947`.
+`bbd03a26205ded04ff905b4538d3f9fe15f78ebc895cf39eb1e17c0bb34c14d2`.
 
-Totals: payload + manifest **17,622,497 B**; including `verify.json`
-**17,624,545 B**. `slice.json` pins every payload file's size and SHA-256; the
-verifier recomputes both and the content hash.
+All six payload files are **byte-identical** to the pre-refresh package; only
+`slice.json` grew (+3,081 B) for the reader-identity/replay record and the
+corrected texture identity text. Totals: payload + manifest **17,625,578 B**;
+including `verify.json` **17,627,626 B**. `slice.json` pins every payload file's
+size and SHA-256; the verifier recomputes both and the content hash.
 
 ## 7. Verification
 
@@ -291,9 +307,17 @@ verifier recomputes both and the content hash.
 - re-hashes the E1 module/wasm/build, re-reads all 61 physics states, and
   recomputes the state sequence and determinism claims.
 
-Two full extraction runs produced byte-identical payload and manifest files;
-repeated verifier runs produced a byte-identical `verify.json`
-(`hashes-final.json`). No browser, GPU or renderer gate was run for this task.
+Extraction also replays the current reader on all 48 supported staged chunks
+and aborts unless positions, UV0 bits, indices and draw ranges match the
+committed probe doc; the replay writes
+`_work/logs/map-slice/reader-refresh/usa_amboy/` (48 files, 49,790,010 B) and
+feeds `draws.nativeReaderRefresh`. Two full extraction runs with the final code
+produced byte-identical payload, manifest **and** replay files; repeated verifier runs
+produced a byte-identical `verify.json`. The repository suite
+`python tools/verify_asset_probe.py --skip-build` reported **40/40 PASS** in this
+tree, including `map-slice-amboy` and `amboy-textures` (the task text said 41;
+the committed suite in this checkout defines 40 steps). No browser, GPU or
+renderer gate was run for this task.
 
 ## 8. What the E1 page still needs (integration gaps)
 
@@ -302,9 +326,11 @@ repeated verifier runs produced a byte-identical `verify.json`
    River. This needs a map id, per-map geometry upload and a packet v1.1
    producer; `build_sprint.mjs` / `sprint-layout.js` are River-specific and were
    not pointed at this layout.
-2. **Materials and textures.** 1,606/1,606 direct draws are diagnostic; 0
-   albedo images are bound. A level material/texture binding pass is required
-   before Amboy is more than diagnostic geometry. No texture was invented.
+2. **Materials and textures.** 0 albedo images are bound, so every draw remains
+   diagnostic for rendering. Static albedo identity is resolved for
+   1,268/1,606 draws (1,201 bindable after MAP3's decoder/alpha join), but the
+   page still needs texture upload/decoding and GPU state before Amboy is more
+   than diagnostic geometry. No texture was invented.
 3. **Normals.** The package has no decoded normals; shading needs a reader
    change or an explicit, documented geometric-normal fallback. A silent
    fallback is not acceptable.
@@ -353,10 +379,15 @@ node probes/map-slice/tools/physics_settle.mjs --package _work/map-slice/amboy
 | `_work/map-slice/amboy/*.bin` | collision and draw buffers |
 | `_work/map-slice/amboy/physics-settle.json` | 61 states, 25 ground probes, determinism |
 | `_work/map-slice/amboy/verify.json` | 12,367-check independent verifier |
-| `_work/map-slice/hashes-final.json` | final package hash manifest |
-| `_work/logs/map-slice/extract-final4.log` | final extraction log |
+| `_work/map-slice/hashes-final.json` | refreshed package hash manifest |
+| `_work/logs/map-slice/reader-refresh/usa_amboy/*.json` | 48 fixed-reader replays (identity evidence) |
+| `_work/logs/map-slice/extract-read1-refresh.log` | refreshed extraction log |
+| `_work/logs/map-slice/verify-read1-refresh.log` | 12,367-check verifier log |
+| `_work/logs/map-slice/amboy-textures-verify-read1-refresh.log` | 13,090-check binding verifier log |
+| `_work/logs/map-slice/asset-probe-read1-refresh.log` | 40/40 repository suite log |
+| `_work/logs/map-slice/extract-final4.log` | original MAP2 extraction log (historical) |
 | `_work/logs/map-slice/physics-settle.log` | physics settle log |
-| `_work/logs/map-slice/verify-final4.log` | final verifier log |
+| `_work/logs/map-slice/verify-final4.log` | original MAP2 verifier log (historical) |
 | `probes/map-slice/tools/extract_slice.py` | package builder |
 | `probes/map-slice/tools/physics_settle.mjs` | E1 wasm settle probe |
 | `probes/map-slice/tools/verify_slice.py` | deterministic verifier |
@@ -364,3 +395,120 @@ node probes/map-slice/tools/physics_settle.mjs --package _work/map-slice/amboy
 
 No file under `probes/map-pipeline`, `probes/e1-drive`, `probes/asset-reader`,
 the engine, `tools/`, `upstream/` or `game-data/` was modified by this task.
+
+## 11. READ1 reader refresh (7 November 2026)
+
+**Owner:** MAP4. Scope: `probes/map-slice/**`, `_work/map-slice/**`,
+`_work/logs/map-slice/**` and this document. No asset-reader, map-pipeline,
+e1-drive, tools, upstream or game-data file was modified. No renderer, GPU,
+browser, playable-game or full-game claim is made.
+
+### 11.1 Why the package was refreshed
+
+READ1 changed `level_mesh` to export static albedo identity, material rows,
+UV0 hashes and the level Scene shared-texture list. The committed Amboy package
+still pinned the **pre-fix** reader (`247,808` B / `63ee2801…`), so
+`map-slice-amboy` failed on `source.nativeReader.bytes` and
+`source.nativeReader.sha256` although every content value was valid.
+
+The committed map-pipeline probe doc (`draw-probes-all.json`) was also built by
+the pre-fix reader (`nativeReaderSha256 63ee2801…`); its `native.json` files
+have no identity fields. Map-pipeline is read-only for this task, so the
+extractor now **replays the current reader** on the same staged `geometry.chunk`
+/ `node.chunk` inputs and records the additive fields without replacing the
+committed geometry.
+
+### 11.2 Reader identity and replay
+
+| item | before refresh | after refresh |
+|---|---|---|
+| `level_inspect.exe` | 247,808 B, `63ee2801ac10…` | **249,856 B, `a633a030f530…`** |
+| replay sections | not run | **48/48 supported** |
+| positions / indices / UV0 bits / draw ranges | — | **identical to committed probe doc** |
+| `uvHash` printed | 0 | **1,606/1,606** (all compared to MAP3's manifest, 0 mismatches) |
+| `sharedTextures` list | `[]` | **38 identities per section** |
+| `metadata.material` | `diagnostic-only` | `static-albedo-identity-only` |
+
+Invocation per section:
+
+```text
+level_inspect.exe <levelrender> <geometry.chunk> <node.chunk> <geometryBlock> <nodeBlock>
+```
+
+The replay aborts extraction if any of the four geometry checks fails. The
+exported JSON is parsed with the same negative-zero rule as the committed probe
+builder (`-0` → `-0.0`); without that rule a naive JSON parse collapses 391
+negative-zero UV components to `+0.0`, which is numerically equal but not
+byte-identical. Evidence: `_work/logs/map-slice/reader-refresh/usa_amboy/`
+(48 files, 49,790,010 B, aggregate SHA-256
+`54337e29e1d21f5e86587bff11ad48d35b35d186b3c746573417d9b5c52bf325`).
+
+### 11.3 Additive fields (and what they do not mean)
+
+| field (draw) | observed | meaning |
+|---|---|---|
+| `resourceBlock` / `resourceIndex` | 1,268 draws | static resource-block albedo identity |
+| `material` / `materialRow` | 1,272 named | committed effect name and material row |
+| `uvHash` | 1,606 | FNV-1a 64 over referenced UV0 bits |
+| `bindingStatus` | 1,163 `static-resource-albedo-resolved`, 105 `static-shared-albedo-resolved`, 338 `blocked` | identity resolution only |
+| `bindingReason` | 338 | existing blocked reason text |
+| `albedoTexture` | non-null on **105** draws | **shared-texture index**, not a bound image |
+| `sharedTextures` (section) | 38 per section (1,824 entries) | level Scene identities |
+
+`metadata.materialAlbedoResolved=true`; `materialColourApplied`,
+`blendStateApplied`, `alphaRuleApplied`, `shaderStagesApplied` and
+`samplerStateApplied` are all `false`. MAP3 joins this identity to decoder/alpha
+evidence: **1,201 bindable / 405 blocked** draws, 1,606/1,606 UV0 hashes
+(`docs/work/analysis/map-slice-amboy-textures.md` §11).
+
+The package's own draw records keep the v1 schema (`albedoTexture:null`,
+diagnostic `binding`) because they come from the committed pre-fix probe doc.
+The fixed reader's `albedoTexture` shared-texture index is deliberately **not**
+merged into that schema; blending the two meanings would silently turn identity
+into a false texture-bound claim.
+
+### 11.4 Before / after package diff
+
+| file | before (bytes / sha256) | after (bytes / sha256) |
+|---|---|---|
+| `slice.json` | 1,629,475 / `f6f8ae85…` | **1,632,556 / `d34a33d9…`** |
+| `verify.json` | 2,048 / `136c28a5…` | **2,048 / `906dd884…`** |
+| `collision.positions.f32.bin` | 408,684 / `0604bb8e…` | identical |
+| `collision.indices.u32.bin` | 764,496 / `46f998b3…` | identical |
+| `draws.positions.f32.bin` | 6,355,488 / `5d85409b…` | identical |
+| `draws.uv0.f32.bin` | 4,236,992 / `200ae62a…` | identical |
+| `draws.indices.u32.bin` | 4,187,376 / `f4d77438…` | identical |
+| `physics-settle.json` | 39,986 / `27a8ec91…` | identical |
+
+`slice.json` content hash: `4cd85cd8…` → **`bbd03a26205ded04ff905b4538d3f9fe15f78ebc895cf39eb1e17c0bb34c14d2`**.
+The +3,081 B is the `draws.nativeReaderRefresh` block and the corrected
+`textures` identity text; no geometry, UV, path, spawn or physics byte changed.
+
+### 11.5 Verification
+
+| gate | result |
+|---|---|
+| `verify_slice.py --package _work/map-slice/amboy` | **12,367 checks, 0 errors, PASS** |
+| `verify_amboy_texture_bindings.py` | **13,090 checks, 0 failures, PASS** |
+| binding split / UV hashes | **1,201 bindable / 405 blocked**, **1,606/1,606** |
+| `verify_asset_probe.py --skip-build` | **40/40 PASS**, incl. `map-slice-amboy`, `amboy-textures` |
+| deterministic re-extraction | package **and** 48 replay files byte-identical across two final-code runs |
+| native CTest / `/W4` build | not rebuilt by MAP4 (no asset-reader change in this task) |
+
+The suite in this checkout defines 40 steps, not 41; all 40 pass. The browser/GPU
+visual gates remain separate and were not run.
+
+### 11.6 Limits
+
+1. Identity is not binding: 0 albedo images, 0 texture bytes, no format, alpha,
+   blend, shader stage, sampler wrap/filter, mips, sRGB or pixel.
+2. The 338 reader-blocked draws and the 405 MAP3-blocked draws remain blocked;
+   no fallback texture was invented.
+3. The 27 unsupported sections and 366 skipped instances remain geometry
+   blockers, not texture blockers.
+4. The package draws still come from the committed pre-fix probe doc; the
+   current reader's additive fields are recorded in
+   `draws.nativeReaderRefresh` + the MAP3 manifest, not merged into the draw
+   schema.
+5. No renderer, GPU, browser frame, driven lap, playable-game or full-game
+   claim.

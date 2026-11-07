@@ -59,6 +59,7 @@ CAR_FIELDS = ROOT / "_work/e1-drive/car.fields"
 E1_MODULE = ROOT / "_work/e1-drive/module/e1_drive.mjs"
 E1_BUILD = ROOT / "_work/e1-drive/module/build.json"
 NATIVE_READER = ROOT / "_work/build/asset-reader-native/Release/level_inspect.exe"
+READER_REFRESH_DIR = ROOT / "_work/logs/map-slice/reader-refresh"
 
 BAND_OFFSETS_M = (-0.5, -0.25, 0.0, 0.25, 0.5)
 STATIONS_M = (0.0, 1.0, 2.0, 3.0, 4.0)
@@ -331,6 +332,133 @@ def parse_unsupported(error: str) -> dict:
     return {"reason": text, "byteOffset": offset}
 
 
+def json_floats(text: str):
+    """Parse reader JSON without collapsing the negative-zero token.
+
+    The native reader prints negative zero as ``-0`` (no decimal point). Plain
+    ``json.loads`` parses that as integer 0 and loses the sign; the committed
+    map-pipeline probe builder uses the same ``-0.0`` preservation rule.
+    """
+    return json.loads(text, parse_int=lambda value: -0.0 if value == "-0" else int(value))
+
+
+READER_DRAW_FIELDS = (
+    "firstIndex", "indexCount", "albedoTexture", "binding", "uv0Available",
+    "albedoParameter",
+)
+
+
+def reader_identity_refresh(supported: list[dict], level_path: Path,
+                            draw_probes_path: Path, probe_doc: dict) -> dict:
+    """Replay the current native reader on every supported staged chunk.
+
+    The committed map-pipeline probe doc was produced by the pre-READ1 reader.
+    This replay (a) proves the current reader returns byte-identical positions,
+    indices, UV0 bits and draw ranges for the same chunks, and (b) records the
+    additive material/albedo/UV-hash fields that the pre-fix reader did not
+    print. It never substitutes the fresh draw records into the package: the
+    package draw schema keeps ``albedoTexture:null`` / ``binding`` v1 semantics
+    so existing consumers and the 12,367-check verifier stay valid.
+    """
+    level = level_path.parent.name
+    log_dir = READER_REFRESH_DIR / level
+    log_dir.mkdir(parents=True, exist_ok=True)
+    for stale in log_dir.glob("*.json"):
+        stale.unlink()
+
+    counts = {
+        "draws": 0,
+        "albedoTextureSharedIndexDraws": 0,
+        "albedoParameterDraws": 0,
+        "materialNamedDraws": 0,
+        "uvHashDraws": 0,
+        "sharedTextureEntries": 0,
+    }
+    identity: dict[str, int] = {}
+    field_names: set[str] = set()
+    sections = []
+
+    for probe in supported:
+        stage = ROOT / probe["stage"]
+        committed = load_json(stage / "native.json")
+        proc = subprocess.run(
+            [str(NATIVE_READER), str(level_path), str(stage / "geometry.chunk"),
+             str(stage / "node.chunk"), str(probe["geometryBlock"]),
+             str(probe["nodeBlock"])],
+            cwd=ROOT, text=True, encoding="utf-8", capture_output=True, timeout=300)
+        side = f"g{probe['geometryBlock']}-n{probe['nodeBlock']}"
+        if proc.returncode != 0:
+            raise SystemExit("FAILED: current reader refresh failed at " + side + ": " +
+                             (proc.stderr or proc.stdout)[:300])
+        fresh = json_floats(proc.stdout)
+        if fresh.get("status") != "ok":
+            raise SystemExit("FAILED: current reader refresh status at " + side)
+        (log_dir / (side + ".json")).write_text(
+            json.dumps(fresh, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+
+        pos_ok = sha256_bytes(f32(fresh["positions"]).tobytes()) == \
+            probe["positionsFloat32LESha256"]
+        idx_ok = sha256_bytes(u32(fresh["indices"]).tobytes()) == \
+            probe["indicesUint32LESha256"]
+        uv_ok = f32(fresh["uv0"]).tobytes() == f32(committed["uv0"]).tobytes()
+        ranges_ok = [(int(d["firstIndex"]), int(d["indexCount"])) for d in fresh["draws"]] == \
+                    [(int(d["firstIndex"]), int(d["indexCount"])) for d in committed["draws"]]
+        if not (pos_ok and idx_ok and uv_ok and ranges_ok):
+            raise SystemExit(
+                "FAILED: current reader changed geometry at " + side +
+                " (positions=%s uv0=%s indices=%s ranges=%s)" %
+                (pos_ok, uv_ok, idx_ok, ranges_ok))
+
+        for draw in fresh["draws"]:
+            field_names.update(draw.keys())
+            counts["draws"] += 1
+            counts["albedoTextureSharedIndexDraws"] += int(draw.get("albedoTexture") is not None)
+            counts["albedoParameterDraws"] += int(bool(draw.get("albedoParameter")))
+            counts["materialNamedDraws"] += int(bool(draw.get("material")))
+            counts["uvHashDraws"] += int(bool(draw.get("uvHash")))
+            status = draw.get("bindingStatus")
+            if status:
+                identity[status] = identity.get(status, 0) + 1
+        counts["sharedTextureEntries"] += len(fresh.get("sharedTextures") or [])
+        sections.append(side)
+
+    resolved = identity.get("static-resource-albedo-resolved", 0) + \
+        identity.get("static-shared-albedo-resolved", 0)
+    blocked = identity.get("blocked", 0)
+
+    return {
+        "reader": file_record(NATIVE_READER),
+        "invocation": "level_inspect.exe <levelrender> <geometry.chunk> <node.chunk> "
+                      "<geometryBlock> <nodeBlock>",
+        "sectionsReplayed": len(sections),
+        "geometryIdentical": True,
+        "geometryChecks": ["positionsFloat32LE", "uv0Float32LE", "indicesUint32LE",
+                           "drawRanges"],
+        "committedProbeDoc": {
+            "path": rel(draw_probes_path),
+            "sha256": sha256_file(draw_probes_path),
+            "recordedReaderSha256": probe_doc.get("nativeReaderSha256"),
+            "note": "probe doc was produced by the pre-fix reader; the replay above "
+                    "proves the fixed reader returns identical geometry for the same "
+                    "staged chunks",
+        },
+        "additiveDrawFields": sorted(field_names - set(READER_DRAW_FIELDS)),
+        "counts": counts,
+        "identity": {
+            **{key: identity[key] for key in sorted(identity)},
+            "resolvedDraws": resolved,
+            "blockedDraws": blocked,
+        },
+        "evidence": rel(log_dir) + "/",
+        "limits": [
+            "identity only: no texture format, alpha, blend, shader stage or sampler "
+            "state is applied",
+            "albedoTexture in the fixed reader is a shared-texture index; it is not a "
+            "bound image and is not merged into the package draw schema",
+        ],
+    }
+
+
 def draw_geometry(level_path: Path, draw_probes_path: Path) -> dict:
     probe_doc = load_json(draw_probes_path)
     entry = next((x for x in probe_doc["levels"] if x.get("level") == level_path.parent.name), None)
@@ -389,10 +517,6 @@ def draw_geometry(level_path: Path, draw_probes_path: Path) -> dict:
         draws = []
         for ordinal, draw in enumerate(native["draws"]):
             albedo = draw["albedoTexture"]
-            if albedo is None:
-                diagnostic += 1
-            else:
-                textured += 1
             if not draw["uv0Available"]:
                 uv_missing += 1
             record = {
@@ -467,8 +591,16 @@ def draw_geometry(level_path: Path, draw_probes_path: Path) -> dict:
             "nodeChunk": probe.get("nodeChunkSha256"),
         })
 
-    if textured != 0:
-        raise SystemExit("FAILED: unexpected non-null albedo on a direct draw")
+    # This export carries no texture pixel data. `albedoTexture` is either null
+    # (pre-fix reader) or a shared-texture index used as identity (fixed reader);
+    # neither is a bound image, so every draw stays diagnostic and `textured`
+    # (bound images) is zero. Identity is recorded separately below.
+    diagnostic = len(global_draws)
+    if uv_missing:
+        raise SystemExit("FAILED: direct draw without UV0")
+
+    refresh = reader_identity_refresh(supported, level_path, draw_probes_path,
+                                      probe_doc)
 
     return {
         "sectionsProbed": len(probes),
@@ -491,6 +623,7 @@ def draw_geometry(level_path: Path, draw_probes_path: Path) -> dict:
         "sourceSha256": sha256_file(level_path),
         "probeDocSha256": sha256_file(draw_probes_path),
         "nativeReader": file_record(NATIVE_READER),
+        "nativeReaderRefresh": refresh,
     }
 
 
@@ -699,6 +832,9 @@ def main(argv):
     draw_pos = write_bin(out / "draws.positions.f32.bin", f32(draws["positions"]))
     draw_uv0 = write_bin(out / "draws.uv0.f32.bin", f32(draws["uv0"]))
     draw_idx = write_bin(out / "draws.indices.u32.bin", u32(draws["indices"]))
+    refresh = draws["nativeReaderRefresh"]
+    identity = refresh["identity"]
+    refresh_counts = refresh["counts"]
 
     body = {
         "schema": SCHEMA,
@@ -722,6 +858,7 @@ def main(argv):
             "instancesApplied": False,
             "materialsApplied": False,
             "texturesBound": False,
+            "staticAlbedoIdentityRecorded": True,
             "normalsExported": False,
             "partialSceneTraversal": True,
             "coordinateSpace": "source-level world (draws), world (collision)",
@@ -798,24 +935,54 @@ def main(argv):
             "unsupportedSections": draws["unsupportedSections"],
             "draws": draws["draws"],
             "nativeReader": draws["nativeReader"],
+            "nativeReaderRefresh": draws["nativeReaderRefresh"],
         },
         "textures": {
             "status": "none-bound",
             "boundCount": 0,
             "boundBytes": 0,
             "items": [],
-            "directDrawAlbedo": "unresolved",
-            "reason": "All 1606 supported direct draws report albedoTexture:null and "
-                      "binding 'Level materials not applied in diagnostic preview'. The "
-                      "committed level_mesh_inspect path does not evaluate the level "
-                      "material rows for direct base primitives, and no committed "
-                      "reader path binds a shared/resource albedo image for them.",
+            "directDrawAlbedo": "identity-resolved-not-bound",
+            "identity": identity,
+            "identityCounts": refresh_counts,
+            "reason": "No albedo image bytes are bound: the package has 0 image items "
+                      "and 0 texture bytes. The fixed reader resolves a static albedo "
+                      "identity for %d/%d draws (%d resource-block + %d shared) and "
+                      "reports %d identity-blocked draws; MAP3 joins that identity to "
+                      "decoder/alpha evidence for 1,201 bindable / 405 blocked draws "
+                      "(docs/work/analysis/map-slice-amboy-textures.md). Identity is not "
+                      "binding: texture format, alpha, blend, shader stages, sampler wrap/"
+                      "filter, mips, sRGB and pixels are not applied." % (
+                          identity["resolvedDraws"], draws["drawCount"],
+                          identity.get("static-resource-albedo-resolved", 0),
+                          identity.get("static-shared-albedo-resolved", 0),
+                          identity["blockedDraws"]),
+            "bindingManifest": {
+                "bindings": "_work/map-slice/amboy-textures/bindings.json",
+                "blockers": "_work/map-slice/amboy-textures/blockers.json",
+                "analysis": "docs/work/analysis/map-slice-amboy-textures.md",
+                "bindableDraws": 1201,
+                "blockedDraws": 405,
+                "uvHashesVerified": 1606,
+            },
             "attempts": [
                 {
                     "tool": "_work/build/asset-reader-native/Release/level_inspect.exe "
                             "<levelrender> <geometry.chunk> <node.chunk> <block> <node>",
-                    "result": "1606/1606 draws albedoTexture:null; sharedTextures:[]; "
-                              "metadata.material='diagnostic-only'",
+                    "result": "fixed reader replay on %d/%d supported sections: "
+                              "pos/UV0/index/draw-range identical; %d draws resolve "
+                              "static albedo identity (%d resource + %d shared), "
+                              "%d blocked; %d/%d UV0 hashes printed; %d shared texture "
+                              "identities per section. No image bytes." % (
+                                  refresh["sectionsReplayed"],
+                                  refresh["sectionsReplayed"],
+                                  identity["resolvedDraws"],
+                                  identity.get("static-resource-albedo-resolved", 0),
+                                  identity.get("static-shared-albedo-resolved", 0),
+                                  identity["blockedDraws"],
+                                  refresh_counts["uvHashDraws"], draws["drawCount"],
+                                  refresh_counts["sharedTextureEntries"] //
+                                  max(refresh["sectionsReplayed"], 1)),
                 },
                 {
                     "tool": "level_inspect.exe --instances-all ... 100 234",
@@ -841,8 +1008,10 @@ def main(argv):
         "integrationGaps": [
             "per-map geometry upload and packet producer: the package has buffers and "
             "ranges but e1-drive still builds River only",
-            "materials/textures: 0 bound direct-draw albedo images; the e1 page needs a "
-            "level material/texture binding pass before this is more than diagnostic",
+            "materials/textures: 0 bound direct-draw albedo images; static albedo "
+            "identity is resolved for 1,268/1,606 draws (1,201 bindable after the MAP3 "
+            "decoder/alpha join), but the e1 page still needs a texture upload/decoder "
+            "pass before this is more than diagnostic",
             "normals: absent from the committed direct-draw export; shading needs a "
             "reader change or a documented geometric-normal fallback",
             "instances: instancesApplied:false; 3 supported sections carry skipped "

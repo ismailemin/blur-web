@@ -528,17 +528,16 @@ section): `g44-n290`, `g54-n184`, `g79-n288`, `g143-n284`, `g74-n234` →
 | Amboy native/WASM sample | 135 draws + 366 instances, deep-equal, PASS |
 | P73a artifact verifier | **558 checks, 0 failures** |
 | River native/WASM/Python | `verify_level_wasm.mjs` PASS, Python geometry equal |
-| full `verify_asset_probe.py` | 38 PASS then `map-slice-amboy` FAIL; `ai-driver` and `amboy-textures` run manually and PASS |
+| full `verify_asset_probe.py` | **40/40 PASS** after MAP4 refreshed the package (see below) |
 
-The single suite failure is **not** a content regression: `_work/map-slice/amboy/slice.json`
-records the pre-fix `level_inspect.exe` byte count/hash
-(`247808` / `63ee2801…`); the rebuilt reader is `249856` / `a633a030…`.
-Re-verifying a copy of the package with only that cached tool record and its
-content hash refreshed gives **12,367 checks, 0 failures**. The map-slice
-package owner must refresh that record; READ1 did not modify map-slice files.
-`probes/map-slice/tools/extract_slice.py` also still asserts that every direct
-draw has a null albedo, so that extractor needs its assertion updated before the
-package is regenerated with this reader.
+The earlier suite failure was **not** a content regression: the package recorded
+the pre-fix `level_inspect.exe` byte count/hash (`247808` / `63ee2801…`), while
+the rebuilt reader is `249856` / `a633a030…`. **MAP4 refreshed
+`_work/map-slice/amboy` with the fixed reader**: all six payload files are
+byte-identical, `slice.json` only gains the reader replay record and the
+identity fields, and `verify_slice.py` passes **12,367 checks**.
+`extract_slice.py` no longer asserts a null albedo; it replays the 48 supported
+sections and records the additive fields.
 
 Evidence:
 

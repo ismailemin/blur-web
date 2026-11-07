@@ -276,6 +276,11 @@ def draws_check(slice_doc: dict, package: Path) -> dict:
                     "drawOffset", "drawCount"):
             check("draws.section." + section_id + "." + key,
                   actual[key] == expected[key], f"{actual[key]} != {expected[key]}")
+    # Package draw records keep the v1 schema built from the committed pre-fix
+    # probe doc: albedoTexture is null and every draw is diagnostic. The fixed
+    # reader's static albedo identity (including its shared-texture index in
+    # albedoTexture) is recorded in draws.nativeReaderRefresh and the MAP3
+    # binding manifest, not merged into these records.
     check("draws.allDirectDrawsDiagnostic", textured == 0 and diagnostic == len(draws))
     check("draws.allUv0Present", uv_missing == 0)
     check("draws.noPlaceholderUv", placeholders == 0)
@@ -286,6 +291,7 @@ def draws_check(slice_doc: dict, package: Path) -> dict:
         for key in ("firstIndex", "indexCount", "albedoTexture", "uv0Available",
                     "sectionDrawIndex", "sectionId"):
             check(f"draws.record.{index}.{key}", actual[key] == expected[key])
+        # v1 package schema: null means "no bound image", not "no identity".
         check(f"draws.record.{index}.albedoNull", actual["albedoTexture"] is None)
 
     stored_unsupported = {s["id"]: s for s in record["unsupportedSections"]}
