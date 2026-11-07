@@ -283,6 +283,19 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Aday layout hand-off'ları `_work/map-pipeline/candidates/` altında.
 - Doğrulama **193/193**. Kanıt: `docs/work/analysis/map-pipeline.md`.
 
+### E1v — Power-up tanımları (PWR1)  ✅
+- `gamedata.pak` pickups/multiplayer/ui/audio/dynamiceffects XT'lerinden **11
+  power-up** (8'i MP bayraklı): Nitrous, Shock, Shunt, Blindfire/Bolt, Barge,
+  Bomb/Mine, Repair, Shield + SP Fan, Stopwatch, SuperShield.
+- 7 varyant (Normal, DoubleTap, Reversed, Mini, Modified…), 439 MP race satırı,
+  86 AmaxEvent, 51 olasılık listesi, 18 audio entity.
+- Alanlar: menzil/süre/hasar/onarım/kalkan ömrü gerçek değerlerle; charge/ammo,
+  hedefleme, hit-test, HUD icon binding **unknown** olarak tipli (uydurulmadı).
+- Kurallar prototipi: mine hit/miss, shield absorb/break, Nitrous/Shock expiry,
+  pickup respawn, capacity, event sırası — **9/9**.
+- Doğrulama **1.783/1.783**, native XT schema agreement, iki build byte-identical.
+- Kanıt: `docs/work/analysis/powerups.md`, `_work/powerups/powerups.json`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

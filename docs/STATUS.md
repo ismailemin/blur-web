@@ -779,6 +779,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sıradaki adaylar: **usa_amboy** 2.060,6 m (%97,6), **spa_barcelona_gracia** 624,9 m (%99,6), **usa_la_longbeachdocks** 818,4 m (%47,3, 74/76 section).
 - Aday layout'lar `_work/map-pipeline/candidates/`; doğrulama **193/193**. Kanıt: `docs/work/analysis/map-pipeline.md`.
 
+## 7 Kasım 2026 — power-up tanımları
+
+- 11 power-up (8 MP): Nitrous, Shock, Shunt, Blindfire/Bolt, Barge, Bomb/Mine, Repair, Shield + SP Fan/Stopwatch/SuperShield; 7 varyant.
+- Menzil/süre/hasar/onarım/kalkan gerçek değerler; charge/ammo/hedefleme/HUD binding `unknown` olarak tipli.
+- Kural prototipi **9/9**, doğrulama **1.783/1.783**, native XT schema agreement. Kanıt: `docs/work/analysis/powerups.md`.
+
 ## 7 Kasım 2026 — tam oyun / multiplayer planı
 
 - Hedef: iki tarayıcının oda koduyla aynı yarışı bitirdiği, içerik genişleyen bir sürüm. Plan: `docs/plan/FULL_GAME.md`.

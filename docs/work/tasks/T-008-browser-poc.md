@@ -69,6 +69,7 @@ sürüşü deneyebileceği PoC.
 | 62 araç denetimi | V1 | ✅ 5 A / 42 B / 15 C, 542/542 |
 | Yarış mantığı/AI denetimi | G1 | ✅ 481 dosya, M1 5 modül |
 | 19 harita denetimi | M1 | ✅ 1 A / 16 B / 2 C, 193/193 |
+| Power-up tanımları | PWR1 | ✅ 11 tip / 8 MP, 1783/1783 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |
