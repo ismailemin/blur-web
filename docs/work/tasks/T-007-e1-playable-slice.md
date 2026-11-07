@@ -405,6 +405,19 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Sınır: 100 HP / 1 s wreck / tek slot proje kuralı; mine falloff yok;
   pickup respawn süresi unresolved; placement geçici (PWR3 54 gerçek nokta).
 
+### E1ag — Nitro boost hook (BOOST1)  ✅ fizibilite
+- Mevcut boost hook yok; `CarPerformanceModifiers` ve `C_Body::AddForce`/
+  `AddImpulse` mevcut. Input-only ve post-tick yazımlar reddedildi (zayıf /
+  solver dışı / wheel spin −%30).
+- **Önerilen:** `AddForce` `Simulate` öncesi, 300 m/s² × mass, 0.5 s; Nitro
+  hedefi 55,32 mph'de **52,759 m/s** (A sınıfı), süre 1,3 s; 55 m/s cap.
+- Shock: BRAKE hedefi **19,995 m/s**, 10 mph taban; Shunt: geçici 20 kN·s
+  impulse (provisional).
+- Tüm adaylar deterministik; baseline shipped modülle bit-identical.
+- Kod listesi: `e1_drive_lib.cpp` (`e1_boost_queue`/`e1_boost_state`),
+  `build_module.mjs`, `powerups.js`/`mp-client.js`.
+- Kanıt: `docs/work/analysis/boost-feasibility.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

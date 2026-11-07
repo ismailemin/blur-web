@@ -843,6 +843,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Node **68/68**, iki tarayıcı capture **console 0/0**, suite 44/44, checker 23/23. Nitro/Shock/Shunt/Bolt/Barge tipli ertelendi.
 - Kanıt: `docs/work/verification/T-007-powerups.md`, `_work/e1-drive/browser-mp-powerups-*.png`.
 
+## 7 Kasım 2026 — Nitro boost fizibilitesi
+
+- Boost hook yok; `C_Body::AddForce` `Simulate` öncesi tek güvenli yol. Input-only ve post-tick yazımlar reddedildi.
+- Nitro hedefi 55,32 mph'de **52,759 m/s** (A), 1,3 s, 55 m/s cap; Shock BRAKE 19,995 m/s; Shunt provisional 20 kN·s.
+- 14 aday deterministik; baseline shipped modülle bit-identical. Kod: `e1_drive_lib.cpp` + `build_module.mjs` + `powerups.js`.
+- Kanıt: `docs/work/analysis/boost-feasibility.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

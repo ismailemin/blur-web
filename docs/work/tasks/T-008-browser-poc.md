@@ -81,6 +81,7 @@ sürüşü deneyebileceği PoC.
 | Amboy render paketi | AMB1 | ✅ 1.201 draw/179 doku, 17.813/17.813 |
 | Pickup yerleşimi | PWR3 | ✅ 54 actor, 1415/1415 |
 | M2 power-up dilimi | PWR2 | ✅ Mine/Shield/Repair, 68/68 |
+| Nitro boost fizibilitesi | BOOST1 | ✅ AddForce yolu, hedef 52,759 m/s |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

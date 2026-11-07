@@ -175,6 +175,11 @@ wreck + R1 respawn. Node **68/68**, iki tarayıcı capture PASS, console **0/0**
 suite 44/44. Nitro/Shock/Shunt/Bolt/Barge tipli ertelendi. Kanıt:
 `docs/work/verification/T-007-powerups.md`.
 
+**BOOST1 — Nitro fizibilitesi:** `AddForce` `Simulate` öncesi tek güvenli yol;
+Nitro hedefi **52,759 m/s** (A), 1,3 s, 55 m/s cap; Shock BRAKE **19,995 m/s**;
+Shunt provisional 20 kN·s. Input-only/post-tick reddedildi; baseline shipped
+modülle bit-identical. Kanıt: `docs/work/analysis/boost-feasibility.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,
