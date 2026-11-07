@@ -10,6 +10,9 @@ not modify `probes/e1-drive/`, `probes/race-rules/`, `probes/net-mvp/`,
 car's `.fields`, `_work/e1-drive/sprint.json`, `_work/e1-drive/sprint-lap.json`,
 all read-only.
 **Verifier:** `node probes/ai-driver/verify.mjs` → **26/26 checks passed**.
+**Map addendum (7 November 2026):** `node probes/ai-driver/verify-maps.mjs` →
+**25/25 checks passed** for `usa_amboy` and `spa_barcelona_gracia`; the map
+evidence is in §13. The River evidence above is unchanged and still passes.
 
 This document records what the AI driver implements, how it was proved on the
 real wasm vehicle, what the skill profiles do, how deterministic it is, and how
@@ -455,8 +458,10 @@ audio; those are main-agent integration work.
 - **Same start pose in the race.** All AI entrants use the measured start pose;
   no R1 grid offsets are applied. A production grid should use the R1 grid and
   re-run the start-pose evidence for each slot.
-- **Two courses only.** The 310 m sprint and loop-01 are proved. Other River
-  layouts, the 19-level audit and the free-roam basin are not driven.
+- **Two River courses plus two measured maps.** The 310 m sprint and loop-01
+  are proved in §6–§9; the measured `usa_amboy` and `spa_barcelona_gracia`
+  paths are added in §13. Other River layouts, the 19-level audit and the
+  free-roam basin are still not driven.
 - **The probe duplicates the declared respawn rules** for standalone evidence.
   Production must let `RaceSession`/`RespawnPolicy` own respawn and results.
 - **Not wired to net-mvp.** The recipe above is the integration contract; no
@@ -488,3 +493,241 @@ audio; those are main-agent integration work.
 | Existing follower source (read-only) | `probes/e1-drive/web/sprint-script.js` |
 | Existing rules layer | `probes/race-rules/` |
 | Existing room transport | `probes/net-mvp/` |
+
+---
+
+## 13. Measured M3 maps: `usa_amboy` and `spa_barcelona_gracia`
+
+**Status:** implemented and verified on the real wasm, 7 November 2026.
+**Verifier:** `node probes/ai-driver/verify-maps.mjs` → **25/25 checks passed**.
+**Scope:** the same standalone driver, the same read-only wasm harness. No
+change to `probes/e1-drive/`, `race-rules`, `net-mvp`, `powerups`, `map-slice`,
+`tools`, `upstream` or `game-data/`.
+
+### 13.1 Inputs and control selection
+
+| Artifact | Value |
+|---|---|
+| `_work/e1-drive/amboy/layout.json` | 2,060.595408 m, 8,673 samples, file `sha256:b89ae430dff3aaea3511abc6244687430ec66433055bfbcb4eb63b3a1d364f8d`, content `sha256:bccb6bed853827099e5efb55381cb638fda83690201ade40d80fbb095b08f644` |
+| `game-data/Blur/levels/usa_amboy/Level.levelphysics` | 4,442,528 B, `sha256:18c73e1cca6f13c5bbd4937454f25ec3163a67553fea6842a7797400af2175f2` |
+| `_work/e1-drive/gracia/layout.json` | 624.913781 m, 2,571 samples, file `sha256:e2f9a1114c283ca84838db96286c5482e9b7b6c4fec779b34bbb4a579991a3b8`, content `sha256:1aa622fd77a4637d5b2ddfd9292cc8cd3afd61df197db581db078826133faf30` |
+| `game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics` | 5,569,121 B, `sha256:acfb58a20ff7adced0b2424dc39474509e6b4c4c805729fd9463bdd310a173c0` |
+| `_work/e1-drive/module/e1_drive.wasm` | 1,012,634 B, `sha256:bcdc2d994a499cc399333b44cfc418d6594f8b5182a668c3a9df761d891de265` (the hash recorded in `build.json`) |
+| `_work/e1-drive/cars.json` | 15 active roster cars, each `.fields` hash checked before the run |
+
+The driver selects the measured-path table when `layout.courseId` is `amboy` or
+`gracia`. The table is the committed `AMBOY_CONTROL` from
+`probes/e1-drive/web/sprint-script.js` (read-only reference):
+
+```text
+cruiseSpeed 12 m/s, lateralAccel 2.5 m/s^2, minSpeed 5 m/s,
+pure pursuit lookahead 3 + 0.25*v m (max 6), finish cap 10 m/s over 18 m,
+launch cap 5 m/s, steer rate 0.08/tick, brake gain 0.55
+```
+
+The declared corridor is read from `layout.course.band.halfWidthMetres`
+(6 m on both maps), not from a `corridor` field; the band is a declared
+controller/respawn band, not a measured road width. The finish gate and the
+ordered checkpoints are the committed layout gates. The skill scale still
+multiplies only the longitudinal target.
+
+### 13.2 The Amboy tuning (only controller constant changed)
+
+The committed `AMBOY_CONTROL` has `minSpeed = 5 m/s`. The measured Amboy path
+turns tighter than that floor allows: the minimum curvature radius over the
+controller scan is **6.056 m at arc 82.0 m**, so the raw curvature target there
+is `sqrt(2.5 * 6.056) = 3.89 m/s`. With the floor at 5 m/s, three cars run wide
+at the 78–96 m hairpin and leave the surface:
+
+| Map | Profile | Car | Status | Respawns | First reason |
+|---|---|---|---:|---:|---|
+| amboy | standard | Ford FR100 | DNF | 19 | airborne 30 ticks |
+| amboy | standard | Ford Bronco | DNF | 19 | below-ground 1 m |
+| amboy | reference | Ford FR100 | DNF | 20 | airborne 30 ticks |
+| amboy | reference | VW Golf W12 | DNF | 19 | airborne 30 ticks |
+| amboy | reference | Ford Bronco | DNF | 19 | below-ground 1 m |
+
+The committed-policy matrix is preserved in
+`_work/ai-driver/results-maps-committed.json` (51/60 clean). The tuned policy
+changes **one constant**: Amboy `minSpeed` 5 → **3.5 m/s**. Gracia keeps the
+committed 5 m/s. With that change all **30/30 Amboy runs** (15 cars × reference
+and standard) finish cleanly with 0 respawns, 0 NaN and wheel contact on every
+running tick. The cost is documented in §13.3: the tuned Amboy Corvette
+reference is 225.516667 s instead of the committed 222.050000 s. The
+committed-control anchor below still reproduces 222.050000 s exactly.
+
+Rejected variants (all tested on the real wasm):
+
+| Variant | Amboy | Gracia | Decision |
+|---|---|---|---|
+| committed lookahead 3 m, min 5 | 25/30 Amboy clean | 26/30 Gracia clean | anchor only |
+| lookahead 2.0 / 1.5 m | worse: the Corvette itself leaves the surface and respawns | worse | rejected |
+| min 4 m/s (spot test) | the three reference failures finish in the spot test | Corvette 66.566667 s | rejected (same anchor cost, no benefit) |
+| **min 3.5 m/s (Amboy only)** | **30/30 clean** | unchanged 26/30 | **used** |
+
+### 13.3 Committed-control anchor
+
+The matrix uses the tuned Amboy floor, so the reference Corvette is re-run with
+the committed `MAP_CONTROL` (no override) on both maps. Both runs are exact:
+
+| Map | AI time | Committed time | AI finish hash | Committed hash | Exact |
+|---|---:|---:|---|---|---|
+| amboy | 222.050000 s | 222.050000 s | `sha256:696e5f14e6d9efa19e0610d5afa4a81beb6724b920a599e3f7111102ae9a36d4` | same | time + hash |
+| gracia | 66.266667 s | 66.266667 s | `sha256:cf089202c5ca82327bc068b2a56124f8213443f817c9446fb49c95b8a8e39ce7` | same | time + hash |
+
+The anchor also matches the committed max lateral (1.472246 m Amboy,
+1.276489 m Gracia) and replays every per-tick hash. This is the strongest
+fidelity statement: with the committed controller the AI is the committed
+scripted follower, not an approximation.
+
+### 13.4 Amboy results — 15 cars × 2 profiles (tuned Amboy min 3.5)
+
+All 30 runs: finished, 0 respawns, 0 NaN, contact on every running tick, inside
+the declared 6 m band.
+
+| Car | Ref time | Ref max lat | Std time | Std max lat |
+|---|---:|---:|---:|---:|
+| Corvette ZR1 | 225.516667 | 1.479593 | 235.850000 | 1.447723 |
+| Lotus Exige Cup260 | 224.166667 | 1.394293 | 234.983333 | 1.396616 |
+| Dodge Challenger | 223.616667 | 1.516116 | 233.950000 | 1.499371 |
+| Ford Focus RS | 222.683333 | 1.485086 | 233.550000 | 1.448846 |
+| Audi R8 V10 | 220.233333 | 1.833159 | 230.633333 | 1.738628 |
+| Audi TT | 227.700000 | 1.237860 | 238.400000 | 1.212499 |
+| Ford F100 OffRoad | 223.416667 | 1.507787 | 233.983333 | 1.486952 |
+| Ford FR100 | 227.266667 | 1.596451 | 235.666667 | 1.592252 |
+| VW Golf W12 | 220.516667 | 1.689061 | 230.566667 | 1.623641 |
+| Ford Mustang GTR | 223.483333 | 1.436234 | 233.566667 | 1.364257 |
+| Dodge Viper ACR | 222.966667 | 1.543399 | 233.366667 | 1.489617 |
+| Audi S3 | 226.283333 | 1.316052 | 236.933333 | 1.267080 |
+| Ford Bronco | 228.816667 | 1.457736 | 239.016667 | 1.432669 |
+| Nissan Skyline R34 | 218.383333 | 1.880469 | 228.783333 | 1.820288 |
+| Chevrolet SoCal HHR | 225.766667 | 1.474923 | 236.433333 | 1.415103 |
+
+Mean: **224.054445 s** reference, **234.378889 s** standard. The standard
+profile (0.95 speed scale) is ~4.6 % slower and every car still finishes
+cleanly. The fastest reference car is the Nissan Skyline (218.383333 s); the
+slowest is the Bronco (228.816667 s). The Corvette's tuned reference differs
+from the committed 222.050000 s by **+3.466667 s**, exactly the documented
+min-speed tuning cost.
+
+### 13.5 Gracia results — 15 cars × 2 profiles (committed control)
+
+The Corvette reference is exactly the committed 66.266667 s / hash. Thirteen
+cars are clean in both profiles. Two cars have a **start-pose contact loss**
+unrelated to the path controller:
+
+| Car | Ref time | Ref resp | Ref max lat | Std time | Std resp | Std max lat |
+|---|---:|---:|---:|---:|---:|---:|
+| Corvette ZR1 | 66.266667 | 0 | 1.276489 | 69.316667 | 0 | 1.261246 |
+| Lotus Exige Cup260 | 65.583333 | 0 | 1.222916 | 68.700000 | 0 | 1.213654 |
+| Dodge Challenger | **DNF** | **7** | 1.331321 | **DNF** | **7** | 1.331321 |
+| Ford Focus RS | 65.466667 | 0 | 1.434794 | 68.566667 | 0 | 1.434794 |
+| Audi R8 V10 | 64.116667 | 0 | 1.348366 | 67.300000 | 0 | 1.290352 |
+| Audi TT | 67.133333 | 0 | 1.248466 | 70.266667 | 0 | 1.211632 |
+| Ford F100 OffRoad | 73.050000 | **1** | 1.283773 | 76.066667 | **1** | 1.246414 |
+| Ford FR100 | 66.483333 | 0 | 1.275316 | 69.516667 | 0 | 1.228561 |
+| VW Golf W12 | 64.100000 | 0 | 1.334908 | 67.116667 | 0 | 1.309248 |
+| Ford Mustang GTR | 65.416667 | 0 | 1.441283 | 68.350000 | 0 | 1.269341 |
+| Dodge Viper ACR | 65.000000 | 0 | 1.314339 | 68.116667 | 0 | 1.262070 |
+| Audi S3 | 66.866667 | 0 | 1.262680 | 69.950000 | 0 | 1.205496 |
+| Ford Bronco | 67.283333 | 0 | 1.348794 | 70.333333 | 0 | 1.269737 |
+| Nissan Skyline R34 | 63.550000 | 0 | 1.555522 | 66.683333 | 0 | 1.410780 |
+| Chevrolet SoCal HHR | 66.200000 | 0 | 1.251485 | 69.316667 | 0 | 1.229523 |
+
+Mean over finished runs: **66.179762 s** reference, **69.257143 s** standard
+(the Dodge DNF is excluded from the mean, not from the result). The standard
+profile is ~4.6 % slower here too.
+
+### 13.6 Determinism
+
+- **550,777** per-run state hashes were replayed in fresh wasm instances; every
+  one matched, including the runs with respawns (the replay rebuilds at the
+  same `afterStep` and compares the rebuilt state hash).
+- **71,644** race state hashes were replayed; every one matched.
+- Two process-separated runs produced byte-identical `results-maps.json`:
+  `sha256:cd8f8fbb50a1a5745f0e298a14a57615bda9bbb5fa0061257710c36eb9d12916`,
+  127,832 B.
+- `verify-maps.json` at report time:
+  `sha256:19bf7c1b736fe0bf5aece152cfe3255b3121be7fc7db5960068441a6017f55cc`.
+- The driver source still contains no `Math.random`, `Date.now`,
+  `performance.now`, `new Date`, `setTimeout` or `setInterval` (M24).
+
+### 13.7 Multi-AI races (4 AI per map)
+
+Each AI is a separate wasm module instance, all at the same measured start
+pose. Amboy uses the tuned min speed; Gracia uses the committed control.
+
+**`amboy-4ai`** — race hash
+`sha256:080983ee86ccd2c0190e6d16e6f63b98e886eab813bb4db04cff12d3332ae28c`
+
+| Pos | Car | Profile | Time | Finish tick (from GO) | Respawns | Max lat |
+|---:|---|---|---:|---:|---:|---:|
+| 1 | Audi R8 V10 | reference | 220.233333 | 13,214 | 0 | 1.833159 |
+| 2 | Corvette ZR1 | reference | 225.516667 | 13,531 | 0 | 1.479593 |
+| 3 | Ford Focus RS | standard | 233.550000 | 14,013 | 0 | 1.448846 |
+| 4 | Lotus Exige Cup260 | standard | 234.983333 | 14,099 | 0 | 1.396616 |
+
+**`gracia-4ai`** — race hash
+`sha256:91dab4bdd48364c0ac21fe82a26c0036123b950f89070d6b4c80b566721348f9`
+
+| Pos | Car | Profile | Time | Finish tick (from GO) | Respawns | Max lat |
+|---:|---|---|---:|---:|---:|---:|
+| 1 | Audi R8 V10 | reference | 64.116667 | 3,847 | 0 | 1.348366 |
+| 2 | Corvette ZR1 | reference | 66.266667 | 3,976 | 0 | 1.276489 |
+| 3 | Ford Focus RS | standard | 68.566667 | 4,114 | 0 | 1.434794 |
+| 4 | Lotus Exige Cup260 | standard | 68.700000 | 4,122 | 0 | 1.213654 |
+
+Both races completed twice in fresh instance sets with the same race hash and
+order, and every entrant's per-tick replay matched. The Dodge Challenger is
+deliberately not entered on Gracia (see §13.8). There is still no car-to-car
+physical contact: the order is each participant's independent deterministic
+run.
+
+### 13.8 Profile behaviour and limits
+
+- **Profile behaviour is unchanged.** `reference` is 1.00 of the committed map
+  target and `standard` is 0.95; only the longitudinal target is scaled. The
+  measured means show the expected ~4.6 % slowdown on both maps, with no
+  physics, grip or steering change. No profile changes the start pose, the
+  layout, the gates or the respawn semantics.
+- **Amboy needs the tuned floor.** The committed 5 m/s floor cannot hold the
+  6.056 m minimum-radius hairpin for the FR100, Golf and Bronco. The 3.5 m/s
+  Amboy floor is the only controller constant changed, and its cost is the
+  +3.466667 s Corvette reference time. The committed-control anchor in §13.3
+  preserves the exact 222.050000 s / hash proof.
+- **Gracia Dodge Challenger is a spawn-pose limit, not a controller failure.**
+  After the mandatory 90-tick countdown the car has only rear-wheel contact
+  (`contacts 0110`): the front axle is unloaded at the measured start pose.
+  Zero input, brake, coast, partial throttle, handbrake and full/partial steer
+  launch sequences were tested; none restored front contact. The car creeps
+  ~0.1 m in 500 ticks, then climbs the start surface and goes airborne, so the
+  observer respawns it seven times and it does not finish. It is excluded from
+  the Gracia race. Its `knownLimit` record is in `results-maps.json`.
+- **Gracia Ford F100 OffRoad** has the same start contact loss on its first
+  launch; the observer respawns it once at race tick ~402, after which it drives
+  the path and finishes (73.05 s reference / 76.07 s standard). It is recorded
+  as a one-respawn finish, not as a clean run.
+- **The two maps are measured draw-covered paths**, not retail start lines;
+  the 6 m band is a declared rule, not a measured road width. No prop
+  colliders, opponents, power-ups or race director were added.
+- **No e1-drive integration and no full-game claim.** The maps were driven by
+  the standalone probe only; the R1/N1 integration recipe in §10 is still the
+  contract, not a completed wiring. `probes/e1-drive/` was not modified.
+
+### 13.9 Evidence paths
+
+| Evidence | Path |
+|---|---|
+| Measured-path driver changes | `probes/ai-driver/ai-driver.mjs` (`MAP_CONTROL`, `measuredPath`, `controlOverrides`) |
+| Map evidence harness | `probes/ai-driver/run-maps.mjs` |
+| Map evidence verifier | `probes/ai-driver/verify-maps.mjs` |
+| Tuned matrix (60 runs, anchor, races, hashes) | `_work/ai-driver/results-maps.json` |
+| Identical second process run | `_work/ai-driver/results-maps.previous.json` |
+| Committed-policy matrix (before tuning) | `_work/ai-driver/results-maps-committed.json` |
+| Tuning + failure traces | `_work/ai-driver/tune-maps.mjs`, `_work/ai-driver/trace-failures.mjs`, `_work/ai-driver/dodge-launch.mjs`, `_work/ai-driver/hairpin.mjs` |
+| Check-by-check map verification | `_work/ai-driver/verify-maps.json` |
+| Run logs | `_work/logs/ai-driver/run-maps.log`, `_work/logs/ai-driver/run-maps-second.log` |
+| Committed layouts | `_work/e1-drive/amboy/layout.json`, `_work/e1-drive/gracia/layout.json` |
+| Map physics (read-only) | `game-data/Blur/levels/usa_amboy/Level.levelphysics`, `game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics` |
+| Committed scripted map runs | `_work/e1-drive/map-amboy-run.json`, `_work/e1-drive/map-gracia-run.json` |
+| River regression (unchanged) | `_work/ai-driver/results.json`, `_work/ai-driver/verify.json` (26/26) |

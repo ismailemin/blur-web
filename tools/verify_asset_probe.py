@@ -59,6 +59,7 @@ def main():
         ('net-mvp-selftest',['node','probes/net-mvp/selftest.mjs']),
         ('map-slice-amboy',[sys.executable,'probes/map-slice/tools/verify_slice.py','--package','_work/map-slice/amboy']),
         ('ai-driver',['node','probes/ai-driver/verify.mjs']),
+        ('ai-maps',['node','probes/ai-driver/verify-maps.mjs']),
         ('amboy-textures',[sys.executable,'probes/map-slice/tools/verify_amboy_texture_bindings.py']),
         ('amboy-render',[sys.executable,'probes/map-slice/tools/verify_amboy_render.py','--package','_work/map-slice/amboy-render']),
         ('gracia-slice',[sys.executable,'probes/map-slice/tools/verify_slice.py','--package','_work/map-slice/gracia']),

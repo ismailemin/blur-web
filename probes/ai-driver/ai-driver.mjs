@@ -8,7 +8,7 @@
 //
 //   [throttle, brake, steer, handbrake]
 //
-// Two course families are supported by the same code:
+// Three course families are supported by the same code:
 //
 //   * 310 m sprint (`courseId: "310m"`): Stanley heading + lateral control on
 //     the measured P48 centre line, with a curvature speed target over the
@@ -18,6 +18,11 @@
 //     speed-scaled lookahead (the loop's ~10 m hairpins saturate the Stanley
 //     lateral term at low speed), three forward crossings of the start/finish
 //     line, then the post-finish brake.
+//   * measured point-to-point map paths (`courseId: "amboy"` / `"gracia"`):
+//     the committed M3 `AMBOY_CONTROL` policy (12 m/s cruise, short pure
+//     pursuit, 2.5 m/s^2 lateral acceleration, 10 m/s finish cap). The maps'
+//     declared 6 m band is a rule/respawn band, not a road width, so it is not
+//     used as a narrower speed cap.
 //
 // The controller constants are the committed e1-drive follower constants
 // (`probes/e1-drive/web/sprint-script.js`, read-only reference). The skill
@@ -72,6 +77,39 @@ export const SPRINT_CONTROL = Object.freeze({
   lateralAccel: 4.0,
   finishSpeed: 13,
   finishSlowdownMetres: 18
+});
+
+// Measured point-to-point M3 map paths (usa_amboy 2,060.595 m and
+// spa_barcelona_gracia 624.914 m). These are the committed e1-drive
+// `AMBOY_CONTROL` constants (probes/e1-drive/web/sprint-script.js, read-only
+// reference), not recovered vehicle or map values. The two maps share one
+// policy because the committed scripted follower does the same.
+export const MAP_CONTROL = Object.freeze({
+  cruiseSpeed: 12,
+  headingLookahead: 10,
+  steerGain: 3.0,
+  steerRatePerTick: 0.08,
+  speedSteerCeiling: 3,
+  lateralGain: 2.0,
+  yawDamping: 0.8,
+  narrowBandMetres: 6,
+  narrowSpeed: 7,
+  minSpeed: 5,
+  launchHeadingError: 0.5,
+  launchSpeed: 5,
+  launchArcMetres: 15,
+  brakeGain: 0.55,
+  throttleDeadband: 0.6,
+  anticipationSeconds: 1.8,
+  anticipationMetres: 25,
+  lateralAccel: 2.5,
+  finishSpeed: 10,
+  finishSlowdownMetres: 18,
+  purePursuit: true,
+  lapPurePursuit: false,
+  lapLookaheadBase: 3,
+  lapLookaheadSpeed: 0.25,
+  lapLookaheadMax: 6
 });
 
 export const LAP_CONTROL = Object.freeze({
@@ -195,11 +233,13 @@ class TrackModel {
     this.layout = layout;
     this.samples = samples;
     this.lap = layout.courseId === 'lap';
+    this.measuredPath = layout.courseId === 'amboy' || layout.courseId === 'gracia';
     this.laps = layout.course?.span?.laps ?? layout.course?.laps ?? 1;
     this.length = layout.course?.span?.finishArc ?? layout.course?.finishArc ??
       samples[samples.length - 1].arc;
     this.finishArc = layout.course?.finishArc ?? this.length;
-    this.corridorHalfWidth = layout.course?.corridor?.halfWidthMetres ?? 3;
+    this.corridorHalfWidth = layout.course?.corridor?.halfWidthMetres ??
+      layout.course?.band?.halfWidthMetres ?? 3;
     this.respawnRules = layout.rules?.respawn ?? {};
     this.countdownTicks = layout.countdown?.ticks ?? 0;
     this.gates = Array.isArray(layout.gates) ? layout.gates : [];
@@ -323,11 +363,17 @@ class TrackModel {
 // ---------------------------------------------------------------------------
 
 export class AiDriver {
-  constructor({ layout, profile = 'reference', finishLaps = null } = {}) {
+  constructor({ layout, profile = 'reference', finishLaps = null, controlOverrides = null } = {}) {
     this.layout = layout;
     this.track = new TrackModel(layout);
     this.profile = skillProfile(profile);
-    this.control = this.track.lap ? LAP_CONTROL : SPRINT_CONTROL;
+    const baseControl = this.track.lap ? LAP_CONTROL
+      : this.track.measuredPath ? MAP_CONTROL : SPRINT_CONTROL;
+    // `controlOverrides` exists for tuning diagnostics only. With no override the
+    // driver uses the committed control table unchanged.
+    this.control = controlOverrides
+      ? Object.freeze({ ...baseControl, ...controlOverrides })
+      : baseControl;
     this.finishLaps = finishLaps ?? this.track.laps;
     this.primed = false;
     this.finished = false;
@@ -425,7 +471,7 @@ export class AiDriver {
     let lateralTerm = 0;
     let desired;
     let lookaheadMetres = 0;
-    if (lap && control.lapPurePursuit) {
+    if ((lap && control.lapPurePursuit) || control.purePursuit) {
       lookaheadMetres = clamp(
         control.lapLookaheadBase + control.lapLookaheadSpeed * speed,
         control.lapLookaheadBase, control.lapLookaheadMax);

@@ -226,6 +226,11 @@ River 14,667/16,400; Amboy 222,000/237,567; Gracia 66,317/69,183 s; console
 doğrulanan spawn+tangent grid kullanılıyor; host **0 respawn**, 66,250 s.
 Kanıt: `_work/logs/e1-drive/mp-gracia-gridfix.log`.
 
+**AI3 — AI Amboy/Gracia:** Amboy **30/30 temiz** (minSpeed 3,5), Gracia
+**26/30**; Gracia Dodge spawn-pose limiti (DNF, dışlandı), F100 1 respawn.
+550.777 tick hash; 4 AI yarışları deterministik; verifier 25/25. Kanıt:
+`docs/work/analysis/ai-driver.md` §13.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

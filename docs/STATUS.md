@@ -905,6 +905,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Gracia MP: host **0 respawn**, 66,250 s; guest 69,383 s; console 0/0; sonuçlar birebir. River/Amboy değişmedi.
 - **2265/2265**, suite 51/51, checker 23/23. Kanıt: `_work/logs/e1-drive/mp-gracia-gridfix.log`.
 
+## 7 Kasım 2026 — AI Amboy/Gracia
+
+- Amboy **30/30 temiz** (minSpeed 3,5 m/s, 6,06 m hairpin); Gracia **26/30**.
+- Gracia Dodge spawn-pose limiti (ön aks yüksüz) → 7 respawn/DNF, dışlandı; F100 1 respawn.
+- 550.777 tick + 71.644 race hash; 4 AI Amboy 220,23–234,98 s, Gracia 64,12–68,70 s; deterministik.
+- Verifier **25/25**, River 26/26. Kanıt: `docs/work/analysis/ai-driver.md` §13.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

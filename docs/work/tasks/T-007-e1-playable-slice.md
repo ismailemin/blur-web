@@ -511,6 +511,15 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   kullanılıyor. Gracia host **0 respawn**, 66,250 s; guest 69,383 s; console 0/0.
 - Kalan: Amboy/Gracia'da power-up/AI yok; grid probe sabit 140 tick.
 
+### E1ao — AI sürücü Amboy/Gracia (AI3)  ✅
+- Amboy **30/30 temiz** (minSpeed 3,5 m/s; 6,06 m hairpin için); Gracia
+  **26/30 temiz**. Committed-control anchor iki haritada da birebir.
+- Gracia Dodge Challenger: spawn-pose limiti (ön aks yüksüz) → 7 respawn/DNF;
+  **dışlandı**. F100 bir respawn ile bitiriyor. Bu, harita/spawn/collision işi.
+- 550.777 tick + 71.644 race hash eşleşti; 2 proses byte-identical.
+- 4 AI Amboy 220,23–234,98 s; Gracia 64,12–68,70 s; deterministik sıra.
+- Doğrulama **25/25**; River 26/26. Kanıt: `docs/work/analysis/ai-driver.md` §13.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
