@@ -101,6 +101,35 @@ export function drawComponents(accessor, draw) {
         if (z > max[2]) max[2] = z;
       }
     }
+    // Area-weighted normal census.  The V2 builder uses this to tell a true
+    // ground/terrain surface (mostly horizontal or sloped) from a vertical
+    // structure whose texture happens to match a terrain pattern.  It is
+    // diagnostic metadata only; the V1 manifest ignores it.
+    let area = 0;
+    let upArea = 0;
+    let verticalArea = 0;
+    let slopedArea = 0;
+    for (const t of triList) {
+      const ia = tri[3 * t];
+      const ib = tri[3 * t + 1];
+      const ic = tri[3 * t + 2];
+      const ax = positions[3 * ia], ay = positions[3 * ia + 1], az = positions[3 * ia + 2];
+      const bx = positions[3 * ib], by = positions[3 * ib + 1], bz = positions[3 * ib + 2];
+      const cx = positions[3 * ic], cy = positions[3 * ic + 1], cz = positions[3 * ic + 2];
+      const ux = bx - ax, uy = by - ay, uz = bz - az;
+      const vx = cx - ax, vy = cy - ay, vz = cz - az;
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
+      const len = Math.hypot(nx, ny, nz);
+      if (!(len > 1e-12)) continue;
+      const a = len / 2;
+      const u = Math.abs(ny) / len;
+      area += a;
+      if (u >= 0.7) upArea += a;
+      else if (u <= 0.3) verticalArea += a;
+      else slopedArea += a;
+    }
     comps.push({
       triangles: triList.length,
       min,
@@ -108,6 +137,13 @@ export function drawComponents(accessor, draw) {
       vertices: [...vertexSet].sort((a, b) => a - b),
       vertexCount: vertexSet.size,
       firstTriangle: draw.indexOffset / 3 + triList[0],
+      area,
+      upArea,
+      verticalArea,
+      slopedArea,
+      upRatio: area > 0 ? upArea / area : null,
+      verticalRatio: area > 0 ? verticalArea / area : null,
+      slopedRatio: area > 0 ? slopedArea / area : null,
     });
   }
   comps.sort((a, b) => {

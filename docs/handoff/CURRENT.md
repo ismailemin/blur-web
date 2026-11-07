@@ -82,6 +82,13 @@ export ediyor; **18 draw / 10.212 üçgen** gerçek BC1 albedo + UV0 ile çizili
 `verify_e1_drive` **838/838**, suite 31/31, checker 23/23, `--mode props`
 **25/25 console 0**. Kanıt: `docs/work/verification/T-007-prop-textures.md`.
 
+**P74 — görünür yapı collision açığı (veri hazır):** Kullanıcı geri bildirimi
+üzerine lap koridorunda **56**, free kutuda **6**, 310 bandında **79** dikey
+bileşenin collider'sız olduğu bulundu. V2 manifestleri: `colliders-v2.json`
+**651** (553 roadside), `colliders-r04-v2.json` **447** (371 roadside); dikey
+yapılar dokusuz olsa da solid, gerçek zemin/overhead hariç. Lap 0/902, free
+0/121, 310 roadside 0/1245 bloke. Entegrasyon (P74b) P75 sonrası.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

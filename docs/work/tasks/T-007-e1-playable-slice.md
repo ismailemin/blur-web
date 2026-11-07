@@ -199,8 +199,22 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   30 havada tick; reset her zaman spawn. Görünmez duvar yok.
 - 5 araç 401 tick: 22,7–29,2 m, 0 temas, 0 respawn, replay birebir.
 - Doğu kanalı (1.321 m²) C03 prop duvarı yüzünden erişilemez ve oraya spawn yok.
+- **P74 V2 manifestleri:** `colliders-v2.json` **651** (553 roadside) ve
+  `colliders-r04-v2.json` **447** (371 roadside); lap'te 56 duvar/garaj/kapı,
+  free'de 6 boru/duvar, 310 bandında 79 dikey bileşen artık solid.
 - Kanıt: `docs/work/verification/T-007-free-roam.md`,
   `_work/e1-drive/browser-<slug>-free-*.png`.
+- Sıradaki (P74b): V2 manifestlerini sayfaya bağlamak (yeni pinler).
+
+### E1q — Görünür yapı collision açığı (P74)  ✅ veri
+- Lap koridorunda **56 dikey bileşen** (bina cephesi, garaj duvarı, tabela,
+  alçak duvar) collider'sızdı; free kutuda 6 boru/duvar; 310 bandında 79.
+- V2 kuralı: dokusu/materyali olmasa da **dikey yapı solid**; yalnız gerçek
+  zemin ve tabanı ≥2,5 m olan overhead hariç.
+- Lap **0/902 bloke** (min 3,044 m), free **0/121** (min 3,793 m); 310
+  `roadside` **0/1245** bloke; dört on-course arc bilinçli hariç.
+- 8/8 head-on + 4 yön + 0 tunneling; **45/45**; V1 collider array byte-identical.
+- Kanıt: `probes/prop-collision/README.md` §P74, `_work/prop-collision/*-v2.json`.
 
 ### E1o — Motor sesi (P70/P71)  ✅ entegre
 - `e1_engine_rpm()` native export (`Engine().RPM()`), wasm A/B deterministik.

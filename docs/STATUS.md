@@ -745,6 +745,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_e1_drive` **838/838**, suite **31/31**, checker **23/23**, `--mode props` **25/25 console 0**.
 - Kanıt: `docs/work/verification/T-007-prop-textures.md`, `_work/e1-drive/browser-*-prop-truck.png`.
 
+## 6 Kasım 2026 — görünür yapı collision V2
+
+- Kullanıcı geri bildirimi: silo/boru/duvar içinden geçilebiliyor. Denetimde lap koridorunda **56**, free kutuda **6**, 310 bandında **79** dikey bileşen collider'sız bulundu (materyalsiz/overhead/road-terrain sınıfları).
+- V2: dikey yapılar materyalden bağımsız solid; gerçek zemin + tabanı ≥2,5 m overhead hariç. `colliders-v2.json` **651** (553 roadside), `colliders-r04-v2.json` **447** (371).
+- Lap 0/902 (min 3,044 m), free 0/121 (min 3,793 m), 310 roadside 0/1245 bloke; dört on-course arc bilinçli hariç. 8/8 head-on, 4 yön, 0 tunneling; **45/45**; V1 array byte-identical.
+- Kanıt: `probes/prop-collision/README.md` §P74, `_work/prop-collision/colliders-v2.json`, `_work/free-roam-prop/colliders-r04-v2.json`.
+
 ## 6 Kasım 2026 — level-instance UV0 reader
 
 - `scene_reader.cpp`: 22 level-instance draw → **22/22 UV0** (F16_2), material/albedo zinciri; UV stream **105.296 B**, hash `158a3ac8…`.

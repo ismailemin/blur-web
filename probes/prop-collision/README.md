@@ -210,3 +210,34 @@ ids. `createWorld(manifest, {profile:"all-visible"})` includes all 468.
    collider set; the current manifest is bounded to 30 m.
 5. Add a browser check when the layer is actually integrated (screenshot +
    clean console); this task deliberately makes no browser change.
+
+## P74 V2 — playable-region coverage
+
+`tools/build_colliders_v2.mjs` produces two additional manifests without
+touching the committed files:
+
+| output | region | colliders | profile |
+| --- | --- | ---: | --- |
+| `_work/prop-collision/colliders-v2.json` | 310 m band + free box + loop-01 corridor | 651 (553 active) | `roadside` for 310, `all-visible` for lap |
+| `_work/free-roam-prop/colliders-r04-v2.json` | P68a reachable component + 30 m ring | 447 (371 active) | `all-visible` |
+
+V2 keeps flat/flush and true overhead exclusions, uses a 2.5 m overhead
+threshold and a ground-to-top 2.5D column, and treats a terrain-textured
+component as a structure when its geometry is vertical. See
+`docs/work/analysis/prop-collision.md` §10 for the full pass-through list,
+measurements, resolver results and integration instruction.
+
+Supporting tools:
+
+```text
+tools/diagnose_gaps.mjs       V1 gap inventory
+tools/normal_census.mjs       area-weighted up/vertical ratios
+tools/verify_v2_gaps.mjs      join V2 manifests to the components (0 unresolved)
+tools/pass_through_list.mjs   per-mode before/after list
+tools/measure_v2.mjs          310/lap/free sweeps, connectivity, counts
+tools/corridor_v2.mjs         310 lateral corridor DP
+tools/resolve_v2.mjs          8-candidate resolver proof + determinism
+tools/verify_v2.mjs           45-check V2 gate
+tools/check_v1_regression.mjs V1 output byte-identical to colliders.json
+tools/map_v2.py               map-v2.png
+```

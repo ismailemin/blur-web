@@ -102,6 +102,62 @@ export function classifyLevelShape(size) {
   return { kind: "unclassified", reason: "shape matches neither the vehicle-sized nor the building-sized rule" };
 }
 
+/**
+ * V2 ground test.  A terrain- or ground-surface-textured component is excluded
+ * only when its geometry really is ground: mostly horizontal (upRatio >= 0.5),
+ * or neither vertical nor horizontal (a slope).  A component with a large
+ * vertical-face share and real height is a structure even if its texture name
+ * matches a terrain pattern.  This is what keeps a sand/concrete-textured wall
+ * or silo collidable without turning hillsides and kerbs into walls.
+ */
+export function isGeometryGround(component, heightAboveGround) {
+  if (component.upRatio !== null && component.upRatio >= 0.5) return true;
+  if (component.verticalRatio !== null && component.verticalRatio >= 0.5 && heightAboveGround >= 1.0) {
+    return false;
+  }
+  return true;
+}
+
+function aabbIntersectsBox(min, max, box) {
+  return max[0] >= box.minX && min[0] <= box.maxX && max[2] >= box.minZ && min[2] <= box.maxZ;
+}
+
+function minDistanceToPolyline(points, polyline) {
+  let best = Infinity;
+  for (const p of points) {
+    const d = pointPolylineDistance2D(p[0], p[1], polyline);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+/**
+ * Membership in the V1 course band plus optional V2 regions.  A region is
+ * either `{type:"box", minX,maxX,minZ,maxZ}` or
+ * `{type:"polyline", points:[[x,z],...], radiusM}`.  Returns the hit region
+ * names and the distance to each polyline region (for provenance).
+ */
+function regionMembership({ hullDist, min, max, points, extraRegions, regionDistance }) {
+  const hits = [];
+  if (hullDist <= regionDistance) hits.push("course-band");
+  const distances = {};
+  for (const region of extraRegions) {
+    if (region.type === "box") {
+      if (aabbIntersectsBox(min, max, region)) hits.push(region.name);
+      continue;
+    }
+    if (region.type === "polyline") {
+      const d = minDistanceToPolyline(points, region.points);
+      distances[region.name] = d;
+      if (d <= region.radiusM) hits.push(region.name);
+      continue;
+    }
+    throw new Error(`unknown extra region type "${region.type}"`);
+  }
+  return { inRegion: hits.length > 0, regions: hits, distances };
+}
+
+
 const round6 = (v) => Math.round(v * 1e6) / 1e6;
 const rv = (arr) => arr.map(round6);
 
@@ -157,6 +213,27 @@ function unionAabb(a, b) {
  */
 export function buildColliderManifest(geometry, pathData, options = {}) {
   const opts = { ...DEFAULTS, ...options };
+  const extraRegions = opts.extraRegions ?? [];
+  const materialIndependent = opts.materialIndependent === true;
+  const groundColumn = opts.groundColumn === true;
+  const isV2 = extraRegions.length > 0 || materialIndependent || groundColumn;
+  const extraRegionReport = extraRegions.map((r) => {
+    if (r.type === "box") {
+      return { name: r.name, type: "box", box: { minX: r.minX, maxX: r.maxX, minZ: r.minZ, maxZ: r.maxZ } };
+    }
+    if (r.type === "polyline") {
+      const xs = r.points.map((p) => p[0]);
+      const zs = r.points.map((p) => p[1]);
+      return {
+        name: r.name,
+        type: "polyline",
+        radiusM: r.radiusM,
+        points: r.points.length,
+        bounds: { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) },
+      };
+    }
+    throw new Error(`unknown extra region type "${r.type}"`);
+  });
   const course = pathData.course.points;
   const groundAt = makeGroundSampler(geometry.collisionSurface.mesh);
 
@@ -224,7 +301,15 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
       [fit.half[0], fit.half[2]],
     );
     const courseDistance = Math.min(...corners.map((p) => pointPolylineDistance2D(p[0], p[1], course)));
-    if (courseDistance > opts.regionDistance) {
+    const region = regionMembership({
+      hullDist: courseDistance,
+      min,
+      max,
+      points: corners,
+      extraRegions,
+      regionDistance: opts.regionDistance,
+    });
+    if (!region.inRegion) {
       addOutOfRegion(shape.kind);
       return;
     }
@@ -250,15 +335,25 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
       });
       return;
     }
+    // V2: a non-overhead obstacle occupies a ground-to-top column, so a car
+    // cannot pass under a low body merely because the component's visible
+    // shell starts above the 1.35 m car band.
+    const collisionBottom = groundColumn ? Math.min(bottom, ground.y) : bottom;
+    const collisionCenter = fit.center.slice();
+    const collisionHalf = fit.half.slice();
+    if (groundColumn) {
+      collisionCenter[1] = (collisionBottom + top) / 2;
+      collisionHalf[1] = (top - collisionBottom) / 2;
+    }
     addClass(shape.kind);
     colliders.push(
       obbRecord({
         id: `level.instance.${String(index).padStart(2, "0")}`,
         type: "obb",
         source: "level-instance",
-        center: fit.center,
+        center: collisionCenter,
         axes: fit.axes,
-        half: fit.half,
+        half: collisionHalf,
         classification: shape.kind,
         classReason: shape.reason,
         provenance: {
@@ -273,6 +368,16 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
           instanceMatrixDeterminant: round6(fit.determinant),
           vertexCount: vertices.length,
           size: rv(size),
+          ...(extraRegions.length || materialIndependent || groundColumn
+            ? {
+                region: region.regions,
+                regionDistances: region.distances,
+                verticalRule: groundColumn
+                  ? "non-overhead obstacle: ground-to-top column"
+                  : "component vertical extent",
+                geometryVertical: { bottom: round6(bottom), top: round6(top) },
+              }
+            : {}),
         },
         ground,
         courseDistance,
@@ -294,18 +399,39 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
       // Footprint distance uses the component hull, not the draw AABB.
       const unique = c.vertices.map((v) => [trackAcc.positions[3 * v], trackAcc.positions[3 * v + 2]]);
       const hullDist = Math.min(...unique.map((p) => pointPolylineDistance2D(p[0], p[1], course)));
-      if (hullDist > opts.regionDistance) {
+      const region = regionMembership({
+        hullDist,
+        min: c.min,
+        max: c.max,
+        points: unique,
+        extraRegions,
+        regionDistance: opts.regionDistance,
+      });
+      if (!region.inRegion) {
         addOutOfRegion(cls.kind);
         continue;
       }
+      const centerXZ = [(c.min[0] + c.max[0]) / 2, (c.min[2] + c.max[2]) / 2];
+      const ground = groundAt(centerXZ[0], centerXZ[1]);
+      const heightAboveGround = c.max[1] - ground.y;
       if (cls.kind === "terrain" || cls.kind === "ground-surface") {
-        addExcluded({
-          id, source: "track-visual", drawId: draw.id, meshId: trackMesh.id,
-          reason: cls.kind === "terrain" ? "road-terrain" : "ground-surface",
-          detail: cls.reason, texture: name, classification: cls.kind,
-          size: rv(size), distanceToCourse: round6(hullDist),
-        });
-        continue;
+        const trueGround = !materialIndependent || isGeometryGround(c, heightAboveGround);
+        if (trueGround) {
+          addExcluded({
+            id, source: "track-visual", drawId: draw.id, meshId: trackMesh.id,
+            reason: cls.kind === "terrain" ? "road-terrain" : "ground-surface",
+            detail:
+              cls.reason +
+              (materialIndependent
+                ? `; geometry ground test: upRatio=${c.upRatio?.toFixed(3)} verticalRatio=${c.verticalRatio?.toFixed(3)} height=${heightAboveGround.toFixed(3)} m`
+                : ""),
+            texture: name, classification: cls.kind,
+            size: rv(size), distanceToCourse: round6(hullDist),
+          });
+          continue;
+        }
+        // V2: a vertical structure with a terrain/ground-surface texture name is
+        // still a structure.  It falls through to the normal geometry rules.
       }
       if (size[1] < opts.minVerticalExtent) {
         addExcluded({
@@ -315,8 +441,6 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
         });
         continue;
       }
-      const centerXZ = [(c.min[0] + c.max[0]) / 2, (c.min[2] + c.max[2]) / 2];
-      const ground = groundAt(centerXZ[0], centerXZ[1]);
       if (c.max[1] - ground.y <= opts.flushHeight) {
         addExcluded({
           id, source: "track-visual", drawId: draw.id, meshId: trackMesh.id,
@@ -336,18 +460,30 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
       const rect = minAreaRect2D(unique);
       const minHalf = opts.minColliderThickness / 2;
       const inflated = rect.half[0] < minHalf || rect.half[1] < minHalf;
+      // V2 ground column: non-overhead obstacles block from the ground to their
+      // top, so a pipe whose shell starts at 1.5 m cannot be driven under; only
+      // a true overhead (bottom >= 2.5 m by default in V2) is excluded.
+      const collisionBottom = groundColumn ? Math.min(c.min[1], ground.y) : c.min[1];
+      const collisionTop = c.max[1];
       const half = [
         Math.max(rect.half[0], minHalf),
-        Math.max((c.max[1] - c.min[1]) / 2, minHalf),
+        Math.max((collisionTop - collisionBottom) / 2, minHalf),
         Math.max(rect.half[1], minHalf),
       ];
-      const center = [rect.center[0], (c.min[1] + c.max[1]) / 2, rect.center[1]];
+      const center = [rect.center[0], (collisionBottom + collisionTop) / 2, rect.center[1]];
       const axes = [
         [rect.u[0], 0, rect.u[1]],
         [0, 1, 0],
         [rect.v[0], 0, rect.v[1]],
       ];
-      addClass(cls.kind);
+      const terrainOverride = (cls.kind === "terrain" || cls.kind === "ground-surface") && materialIndependent;
+      const collisionClass = terrainOverride ? "structure" : cls.kind;
+      const collisionReason = terrainOverride
+        ? `${cls.reason}; overridden by geometry: vertical structure ` +
+          `(upRatio ${c.upRatio?.toFixed(3)}, verticalRatio ${c.verticalRatio?.toFixed(3)}, ` +
+          `height ${heightAboveGround.toFixed(3)} m above ground)`
+        : cls.reason;
+      addClass(collisionClass);
       colliders.push(
         obbRecord({
           id,
@@ -356,8 +492,8 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
           center,
           axes,
           half,
-          classification: cls.kind,
-          classReason: cls.reason,
+          classification: collisionClass,
+          classReason: collisionReason,
           provenance: {
             meshId: trackMesh.id,
             drawId: draw.id,
@@ -376,6 +512,19 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
             boxAngleRad: round6(rect.angle),
             minimumThicknessInflated: inflated,
             identityWorld: true,
+            ...(extraRegions.length || materialIndependent || groundColumn
+              ? {
+                  region: region.regions,
+                  regionDistances: region.distances,
+                  textureClassification: cls.kind,
+                  upRatio: c.upRatio === null ? null : round6(c.upRatio),
+                  verticalRatio: c.verticalRatio === null ? null : round6(c.verticalRatio),
+                  verticalRule: groundColumn
+                    ? "non-overhead obstacle: ground-to-top column"
+                    : "component vertical extent",
+                  geometryVertical: { bottom: round6(c.min[1]), top: round6(c.max[1]) },
+                }
+              : {}),
           },
           ground,
           courseDistance: hullDist,
@@ -516,14 +665,39 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
       retailCollision: false,
       collisionSurfaceUsedAsCollider: false,
       gameClaim: false,
-      statement:
-        "Static colliders derived from the visible E1 prop meshes near the measured 310 m course. " +
-        "This is a visible-geometry approximation, not retail collision data, and it proves nothing beyond this PoC slice.",
+      ...(isV2
+        ? {
+            materialIndependentStructures: materialIndependent,
+            groundColumn: groundColumn,
+            overheadClearanceM: opts.overheadClearance,
+            statement:
+              "Static colliders derived from the visible E1 prop meshes in the playable regions " +
+              "(310 m course band, free-roam box, loop-01 corridor). V2 keeps true ground/flat/flush/overhead " +
+              "exclusions but makes visible vertical structures collidable regardless of texture or unresolved " +
+              "material. This is a visible-geometry approximation, not retail collision data, and it proves " +
+              "nothing beyond this PoC slice.",
+          }
+        : {
+            statement:
+              "Static colliders derived from the visible E1 prop meshes near the measured 310 m course. " +
+              "This is a visible-geometry approximation, not retail collision data, and it proves nothing beyond this PoC slice.",
+          }),
     },
     carEnvelope: CAR_ENVELOPE,
     region: {
-      method: "shortest distance from the collider footprint hull to the measured course polyline",
+      method: isV2
+        ? "footprint inside the course band, free-roam box or loop corridor (V2), or within the course band only (V1)"
+        : "shortest distance from the collider footprint hull to the measured course polyline",
       distanceM: opts.regionDistance,
+      ...(isV2
+        ? {
+            extraRegions: extraRegionReport,
+            note:
+              "The base V2 manifest covers the union of the 310 m course band, the free-roam box and the " +
+              "loop-01 corridor. The free-roam V2 manifest is a region replacement in " +
+              "_work/free-roam-prop/colliders-r04-v2.json.",
+          }
+        : {}),
     },
     classification: {
       textureCensus: textureCensusRows,
@@ -532,9 +706,11 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
       unclassifiedComponentsInRegion:
         colliders.filter((c) => c.classification === "unclassified").length +
         excluded.filter((e) => e.classification === "unclassified").length,
-      note:
-        "A texture census is emitted so an unclassified draw is named, not dropped. No unclassified " +
-        "component inside the 30 m region became a collider; the rows above are outside the region.",
+      note: isV2
+        ? "A texture census is emitted so an unclassified draw is named, not dropped. In V2 an unclassified " +
+          "component with real vertical geometry is a collider; only flat/flush/overhead components stay excluded."
+        : "A texture census is emitted so an unclassified draw is named, not dropped. No unclassified " +
+          "component inside the 30 m region became a collider; the rows above are outside the region.",
     },
     rules: {
       sources: [
@@ -544,7 +720,9 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
       excludedSources: [
         "river.collision.surface (hidden physics-only mesh; ground-height reference only)",
         "car body meshes (the player car is not a prop)",
-        "road, kerb, terrain, mud, tarmac, grass, pavement and other ground-surface components",
+        isV2
+          ? "road, kerb, terrain, mud, tarmac, grass, pavement and other ground-surface components whose geometry is actually ground (mostly horizontal or sloped)"
+          : "road, kerb, terrain, mud, tarmac, grass, pavement and other ground-surface components",
       ],
       excludedMeshes: [
         {
@@ -556,19 +734,40 @@ export function buildColliderManifest(geometry, pathData, options = {}) {
           reason: "player car body; excluded from the static prop layer",
         })),
       ],
-      inclusion: [
-        `texture class in {vehicle, building, structure} OR unclassified that passes the geometry rules`,
-        `vertical extent >= ${opts.minVerticalExtent} m`,
-        `top > sampled ground + ${opts.flushHeight} m`,
-        `bottom < sampled ground + ${opts.overheadClearance} m`,
-        `footprint within ${opts.regionDistance} m of the course`,
-      ],
+      inclusion: isV2
+        ? [
+            "visible component with real vertical geometry; no texture/material class is required",
+            "texture-class terrain/ground-surface is excluded only when the geometry is ground (upRatio >= 0.5, or neither vertical nor horizontal)",
+            `vertical extent >= ${opts.minVerticalExtent} m`,
+            `top > sampled ground + ${opts.flushHeight} m`,
+            `bottom < sampled ground + ${opts.overheadClearance} m (only a true overhead is excluded)`,
+            "non-overhead obstacles use a ground-to-top collision column, so a low pipe or container cannot be driven under",
+            `footprint inside the 310 m course band (${opts.regionDistance} m), the free-roam box or the loop-01 corridor`,
+          ]
+        : [
+            `texture class in {vehicle, building, structure} OR unclassified that passes the geometry rules`,
+            `vertical extent >= ${opts.minVerticalExtent} m`,
+            `top > sampled ground + ${opts.flushHeight} m`,
+            `bottom < sampled ground + ${opts.overheadClearance} m`,
+            `footprint within ${opts.regionDistance} m of the course`,
+          ],
       boxFit: {
         level: "oriented box from the source instance matrix; extents from the baked vertices",
         track: "minimum-area rectangle over the component convex hull in XZ; Y from the component extent",
         minimumThicknessM: opts.minColliderThickness,
       },
-      thresholds: { ...opts },
+      thresholds: isV2
+        ? {
+            regionDistance: opts.regionDistance,
+            minVerticalExtent: opts.minVerticalExtent,
+            minColliderThickness: opts.minColliderThickness,
+            overheadClearance: opts.overheadClearance,
+            flushHeight: opts.flushHeight,
+            materialIndependent,
+            groundColumn,
+            extraRegionNames: extraRegions.map((r) => r.name),
+          }
+        : { ...opts },
     },
     road: {
       source: "_work/drivable-path/path.json",
