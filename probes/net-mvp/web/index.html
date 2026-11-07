@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blur net-mvp · two clients</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Blur net-mvp <span>room + two-client state sync (synthetic, no game assets)</span></h1>
+    <div id="gate" class="gate">waiting for host</div>
+  </header>
+  <main>
+    <section class="client"><iframe id="host" title="host client"></iframe></section>
+    <section class="client" id="guest-shell"><div id="guest-wait">guest joins when the host publishes its room code</div></section>
+  </main>
+  <footer>
+    <div>room <b id="sum-code" class="mono">—</b></div>
+    <div>host <b id="sum-host">—</b></div>
+    <div>seed <b id="sum-seed" class="mono">—</b></div>
+    <div>tick <b id="sum-tick">—</b> / <b id="sum-final">—</b></div>
+    <div>hash match <b id="sum-hash">—</b></div>
+    <div>console <b id="sum-console">0</b></div>
+  </footer>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

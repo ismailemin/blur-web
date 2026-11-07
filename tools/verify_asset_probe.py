@@ -49,6 +49,7 @@ def main():
         ('map-pipeline',[sys.executable,'probes/map-pipeline/tools/verify_maps.py']),
         ('prop-collision-v2',['node','probes/prop-collision/tools/verify_v2.mjs']),
         ('race-rules',['node','probes/race-rules/verify.mjs']),
+        ('net-mvp-selftest',['node','probes/net-mvp/selftest.mjs']),
     ])
     results=[]
     for name,command in steps:

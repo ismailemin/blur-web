@@ -791,6 +791,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 310 m + loop-01, 2/3/4 oyuncu: sıralı checkpoint, yanlış yol, off-course/respawn, tur, finish/beraberlik, DNF/disconnect, restart, host otoritesi.
 - **67/67** kontrol, 1.376 per-tick replay hash, iki koşu byte-identical; ana suite'e eklendi. Kanıt: `docs/work/analysis/race-rules.md`.
 
+## 7 Kasım 2026 — oda servisi ve transport
+
+- `probes/net-mvp/`: dependency-free HTTP+RFC6455 WS oda servisi; kısa kod, host, ready/start, 60 Hz input/20 Hz state, ack/sıra, 30 s resume.
+- Harness **21/21** (4 istemci, 30 s, 1% loss + 80 ms, reconnect); browser 2 iframe **console 0**, 600/600 state, aynı final hash. Selftest **22/22**.
+- Ana suite'e eklendi. Kanıt: `docs/work/analysis/net-mvp.md`, `_work/net-mvp/browser-two-clients-finish.png`.
+
 ## 7 Kasım 2026 — ana suite 36 kontrol
 
 - `tools/verify_asset_probe.py` artık power-up tanımları + kuralları, 62 araç matrisi, 19 harita matrisi ve V2 collider kapısını da çalıştırıyor.

@@ -304,6 +304,15 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - **67/67** kontrol, 1.376 per-tick replay hash, iki koşu byte-identical.
 - Kanıt: `docs/work/analysis/race-rules.md`; ana suite'e eklendi.
 
+### E1x — Oda servisi + transport (N1)  ✅
+- `probes/net-mvp/`: dependency-free HTTP + RFC6455 WS oda servisi; kısa kod,
+  host, ready/start, 60 Hz input / 20 Hz state, ack/sıra, 30 s resume.
+- Node harness: 4 istemci, 30 s, 1800 tick; **21/21**; 1% loss + 80 ms gecikme,
+  reconnect; final hash iki koşuda aynı.
+- Browser: 2 iframe, console **0**, 600/600 state, 0 ihlal, aynı final hash.
+- Selftest **22/22**; ana suite'e eklendi. API M1 entegrasyonuna hazır.
+- Kanıt: `docs/work/analysis/net-mvp.md`, `_work/net-mvp/browser-two-clients-finish.png`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

@@ -1,0 +1,32 @@
+:root {
+  color-scheme: dark;
+  --bg: #0c0f14;
+  --panel: #141a22;
+  --line: #2a3440;
+  --text: #dfe7ef;
+  --muted: #8b9aab;
+  --ok: #4ad295;
+  --warn: #e9b949;
+  --bad: #ef6b6b;
+  --accent: #61a8ff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+body { font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line);
+  background: #0f141b;
+}
+h1 { font-size: 15px; margin: 0; letter-spacing: .02em; }
+h1 span { color: var(--muted); font-weight: 400; margin-left: 8px; }
+.gate { font-weight: 600; color: var(--warn); }
+.gate.ok { color: var(--ok); }
+.gate.bad { color: var(--bad); }
+main { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; height: calc(100% - 118px); }
+.client { min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #0a0d11; }
+.client iframe { display: block; width: 100%; height: 100%; border: 0; }
+#guest-wait { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); }
+footer { height: 56px; padding: 6px 16px; border-top: 1px solid var(--line); background: #0f141b; display: flex; gap: 24px; align-items: center; font-size: 12px; color: var(--muted); }
+footer b { color: var(--text); font-weight: 600; }
+.mono { font-family: Consolas, "Cascadia Mono", monospace; }

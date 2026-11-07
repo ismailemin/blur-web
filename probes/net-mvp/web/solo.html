@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>net-mvp client</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #0a0d11; color: #dfe7ef; }
+    body { font: 12px/1.45 "Segoe UI", system-ui, sans-serif; padding: 12px; }
+    h2 { font-size: 14px; margin: 0 0 8px; color: #61a8ff; }
+    .state { font-weight: 700; margin-bottom: 10px; }
+    .state.ok { color: #4ad295; } .state.bad { color: #ef6b6b; } .state.wait { color: #e9b949; }
+    table { border-collapse: collapse; width: 100%; }
+    td { padding: 3px 4px; border-bottom: 1px solid #1c2430; vertical-align: top; }
+    td:first-child { color: #8b9aab; width: 42%; }
+    .mono { font-family: Consolas, "Cascadia Mono", monospace; word-break: break-all; }
+    .hash { color: #4ad295; }
+    .err { color: #ef6b6b; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2 id="title">client</h2>
+  <div id="state" class="state wait">booting</div>
+  <table>
+    <tr><td>room</td><td id="room" class="mono">—</td></tr>
+    <tr><td>player</td><td id="player" class="mono">—</td></tr>
+    <tr><td>host</td><td id="host">—</td></tr>
+    <tr><td>car / map</td><td id="content">—</td></tr>
+    <tr><td>phase</td><td id="phase">—</td></tr>
+    <tr><td>tick</td><td id="tick">0 / 1800</td></tr>
+    <tr><td>seq sent (state/input)</td><td id="sent">0 / 0</td></tr>
+    <tr><td>applied (state/input)</td><td id="applied">0 / 0</td></tr>
+    <tr><td>dedup / out-of-order buffered</td><td id="dedup">0 / 0</td></tr>
+    <tr><td>state RTT p50 / p95</td><td id="rtt">—</td></tr>
+    <tr><td>interp sample</td><td id="interp" class="mono">—</td></tr>
+    <tr><td>final hash</td><td id="hash" class="mono hash">—</td></tr>
+    <tr><td>error</td><td id="error" class="mono err">—</td></tr>
+  </table>
+  <script type="module" src="/solo.js"></script>
+</body>
+</html>
