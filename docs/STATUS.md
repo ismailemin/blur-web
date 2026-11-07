@@ -785,6 +785,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Menzil/süre/hasar/onarım/kalkan gerçek değerler; charge/ammo/hedefleme/HUD binding `unknown` olarak tipli.
 - Kural prototipi **9/9**, doğrulama **1.783/1.783**, native XT schema agreement. Kanıt: `docs/work/analysis/powerups.md`.
 
+## 7 Kasım 2026 — ana suite 36 kontrol
+
+- `tools/verify_asset_probe.py` artık power-up tanımları + kuralları, 62 araç matrisi, 19 harita matrisi ve V2 collider kapısını da çalıştırıyor.
+- Tam build **36/36**, `--skip-build` **35/35**; önceki 30/31 kontrol korunuyor.
+- Kanıt: `_work/verification/suite.json`, `_work/logs/e1-drive/suite-36.log`.
+
 ## 7 Kasım 2026 — tam oyun / multiplayer planı
 
 - Hedef: iki tarayıcının oda koduyla aynı yarışı bitirdiği, içerik genişleyen bir sürüm. Plan: `docs/plan/FULL_GAME.md`.

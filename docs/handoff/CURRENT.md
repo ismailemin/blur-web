@@ -54,7 +54,7 @@ silahlar/mayınlar/kalkanlar) M0 denetimleriyle başlıyor. Paralel akışlar:
 **P67 — loop-01 3 tur + prop collision (TAMAM, doğrulandı):**
 `?course=lap` P61 `loop-01` (222,04 m) üzerinde 3 turluk yarış. 5 araç
 **85,47–86,28 s**, tur süreleri ~28,4–29,2 s, **0 respawn**, replay/restart
-birebir; `verify_e1_drive` **838/838**, suite 31/31, checker 23/23. `all-visible` prop katmanı
+birebir; `verify_e1_drive` **838/838**, suite **36/36**, checker 23/23. `all-visible` prop katmanı
 tur modunda aktif ve inert (loop-01'de prop yok, 0 temas). Kanıt:
 `docs/work/verification/T-007-lap-mode.md`. Sıradaki: `?course=free` (R04).
 
