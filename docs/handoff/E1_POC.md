@@ -88,6 +88,25 @@ Sınırlar: aynı araç (M1), tek harita (River 310 m), WebSocket loopback/LAN;
 WebRTC/TURN/NAT, power-up, AI rakip ve host migration M2/M3'te. Aynı ağda iki
 makine için 8811 portu açık olmalı.
 
+### Aynı ağda iki makine
+
+Host makinede:
+
+```powershell
+ipconfig | Select-String 'IPv4'        # ör. 192.168.1.20
+# Yönetici PowerShell'de bir kez:
+New-NetFirewallRule -DisplayName "Blur Web MP" -Direction Inbound -Protocol TCP -LocalPort 8801,8811 -Action Allow
+```
+
+Guest makinede:
+
+```text
+http://192.168.1.20:8801/?mp=1&room=<CODE>
+```
+
+Sayfa `ws://<sayfa-host>:8811/ws` adresine bağlanır; HTTPS'e geçilirse oda
+servisi `wss://` arkasına alınmalı. Farklı ağlar (NAT/TURN) henüz kapsam dışı.
+
 Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
 Dodge 4,633 → Focus 5,133 s.
 
