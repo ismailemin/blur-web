@@ -267,12 +267,19 @@ def main() -> int:
 
     index = json.loads(CARS_INDEX.read_text(encoding="utf-8"))
     cars = sorted(index["cars"], key=lambda row: row["slug"])
+    if index.get("kind") != "car-parts.car-model-index" or len(index.get("mapped", [])) != len(cars) \
+            or len(cars) < 4:
+        failures.append(
+            f"committed car index does not map its {len(cars)} roster cars"
+        )
     aggregate_path = out_root / "index.json"
     if not aggregate_path.is_file():
         raise SystemExit(f"missing {aggregate_path}")
     aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
-    if aggregate.get("carCount") != 5 or len(aggregate.get("cars", [])) != 5:
-        failures.append("aggregate does not cover five cars")
+    if aggregate.get("carCount") != len(cars) or len(aggregate.get("cars", [])) != len(cars):
+        failures.append(
+            f"aggregate covers {aggregate.get('carCount')} cars, the roster has {len(cars)}"
+        )
 
     car_results = [check_car(car, out_root, failures) for car in cars]
 

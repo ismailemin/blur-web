@@ -48,7 +48,7 @@ Exige Cup260 **23 / 88**, the Dodge Challenger **31 / 104**, the Ford Focus RS
 whose tyre/rim/brake-disc members spin about the proven element-local `+X` axis
 using that car's physics wheel angular velocity. Brake calipers stay static
 (`VehicleActor.cpp:5198`). Each body now samples the **P52 static albedo image on
-its own committed UV0 stream** for **224 of its 491 draws** (40 images, 18.18 MB
+its own committed UV0 stream** for **673 of its 1,378 draws** (112 images, 46.51 MB
 of RGBA); the other 267 draws (45 runtime paint lookups, 66 light off/on blends,
 156 other `_NO_ALBEDO` shaders) keep the diagnostic per-part colour and the
 committed P52 reason. The wheel spin marker remains a debug aid. See
@@ -141,8 +141,10 @@ web/fixed-step.js (1/60, 4-tick cap, pause rule)            ▼
 
 ## Cars
 
-**Five real cars** are selectable at runtime from the 62 `RP_CarDynamics`
-records in `gamedata\xt\racingphysics.bin` (T-007/E1g):
+**Fifteen real cars** are selectable at runtime from the 62 `RP_CarDynamics`
+records in `gamedata\xt\racingphysics.bin` (T-007/E1g): the five original T-007
+reference anchors plus the ten V1-audited batch-1 class-B cars
+(`docs/work/verification/T-007-vehicle-batch1.md`).
 
 | slug | record | id | drivetrain | mass | wheelbase |
 | --- | ---: | ---: | --- | ---: | ---: |
@@ -151,6 +153,16 @@ records in `gamedata\xt\racingphysics.bin` (T-007/E1g):
 | `dodge-challenger-stock` | 9 | 528964602 | RWD | 1700 kg | 2.981 m |
 | `ford-focusrs-stock` | 50 | 2563977008 | FWD | 1400 kg | 2.787 m |
 | `audi-r8v10-stock` | 55 | 2936683857 | AWD | 1600 kg | 2.635 m |
+| `audi-tt-stock` | 10 | 553815980 | AWD | 1400 kg | 2.479 m |
+| `ford-f100-offroad` | 13 | 641771883 | AWD | 1600 kg | 3.051 m |
+| `ford-fr100-stock` | 77 | 4067498883 | RWD | 1350 kg | 3.233 m |
+| `volkswagen-golfw12650-stock` | 17 | 967622623 | RWD | 1600 kg | 2.633 m |
+| `ford-mustanggtr-stock` | 80 | 4248192450 | RWD | 1300 kg | 2.718 m |
+| `dodge-viperacr-stock` | 33 | 1411916496 | RWD | 1500 kg | 2.507 m |
+| `audi-s3-stock` | 2 | 345654945 | AWD | 1400 kg | 2.583 m |
+| `ford-bronco-offroad` | 19 | 1025798142 | AWD | 1650 kg | 2.297 m |
+| `nissan-skyliner34ztune-stock` | 46 | 2352181282 | AWD | 1600 kg | 2.687 m |
+| `chevrolet-socalhhr-stock` | 74 | 3917320611 | RWD | 1350 kg | 2.622 m |
 
 `cars/roster.json` is the committed selection (checked against the decoded
 records: a wrong name/id/index is a hard failure). `tools/car_roster.py` decodes
@@ -167,8 +179,8 @@ Each car also has **its own visual body**: `probes/car-parts/tools/build_all_man
 maps the record name to `\models\vehicles\<lowercased name>.model`, decodes the
 pak entry, and builds a part manifest from it. `_work/car-parts/cars/index.json`
 is the mapping evidence; `build_geometry.mjs` pins every manifest SHA-256, so a
-regenerated or hand-edited manifest is a hard failure. The five models are
-distinct, and so are the five body mesh hashes.
+regenerated or hand-edited manifest is a hard failure. The fifteen models are
+distinct, and so are the fifteen body mesh hashes.
 
 | slug | body model | parts | draws | textured | textures |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -177,6 +189,39 @@ distinct, and so are the five body mesh hashes.
 | `dodge-challenger-stock` | `dodge_challenger_stock.model` | 31 | 104 | 42 | 7 |
 | `ford-focusrs-stock` | `ford_focusrs_stock.model` | 31 | 115 | 37 | 7 |
 | `audi-r8v10-stock` | `audi_r8v10_stock.model` | 29 | 84 | 47 | 8 |
+| `audi-tt-stock` | `audi_tt_stock.model` | 39 | 100 | 52 | 7 |
+| `ford-f100-offroad` | `ford_f100_offroad.model` | 24 | 78 | 34 | 7 |
+| `ford-fr100-stock` | `ford_fr100_stock.model` | 23 | 71 | 33 | 8 |
+| `volkswagen-golfw12650-stock` | `volkswagen_golfw12650_stock.model` | 26 | 92 | 43 | 8 |
+| `ford-mustanggtr-stock` | `ford_mustanggtr_stock.model` | 21 | 101 | 55 | 7 |
+| `dodge-viperacr-stock` | `dodge_viperacr_stock.model` | 30 | 83 | 48 | 7 |
+| `audi-s3-stock` | `audi_s3_stock.model` | 37 | 99 | 49 | 7 |
+| `ford-bronco-offroad` | `ford_bronco_offroad.model` | 23 | 82 | 25 | 6 |
+| `nissan-skyliner34ztune-stock` | `nissan_skyliner34ztune_stock.model` | 32 | 96 | 46 | 7 |
+| `chevrolet-socalhhr-stock` | `chevrolet_socalhhr_stock.model` | 26 | 85 | 64 | 8 |
+
+### Vehicle batch 1 (15 cars)
+
+The first ten V1-audited class-B cars are integrated without moving the five
+original state anchors: Audi TT, Ford F100 OffRoad, Ford FR100, VW Golf W12,
+Ford Mustang GTR, Dodge Viper ACR, Audi S3, Ford Bronco, Nissan Skyline R34 and
+Chevrolet SoCal HHR. Each has its exact `.model` body/wheels, its own P52
+texture pack (or the committed runtime-only reason), a measured 310 m and 29 m
+run, a committed ghost on both courses, a 3-lap and free-roam run, and a restart
+in the same wasm instance. The 15-car build and verification record is
+`docs/work/verification/T-007-vehicle-batch1.md`.
+
+The single geometry document grew from 45,374,377 B to **106,864,802 B**
+(+135.5 %, ≈6.15 MB per added car). It is inside the declared 128 MiB batch-1
+budget and the 15-car sprint capture passes, but the next ten cars would exceed
+it; batch 2 must split one car chunk per slug before it ships (plan in the batch
+record, §2.1).
+
+External pins at report time: the portable suite is **44/45** (the one failure is
+`prop-collision-v2` pinning the whole geometry file; its collider data is
+unchanged) and the PoC checker is **20/23** (three hard-coded five-car totals in
+`tools/check_e1_poc.py`). Both are owned outside this task; the exact pins are in
+`docs/work/verification/T-007-vehicle-batch1.md` §6.
 
 ## Commands
 
@@ -226,7 +271,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 #    packet validation, the extended-corridor survey/limit checks, the per-car
 #    albedo/UV checks, the ghost replay reconstruction/store/delta checks and the
 #    free-roam layout/run/containment/restart/prop checks and the level-prop
-#    UV0/BC1 pack checks (856 checks)
+#    UV0/BC1 pack checks (2254 checks)
 & $node probes/e1-drive/tools/verify_e1_drive.mjs      # --car <slug> for one car
 & $node probes/e1-drive/tools/verify_e1_drive.mjs --write-ghosts  # regenerate the committed reference ghosts
 
@@ -235,8 +280,8 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint    # 310 m: start/mid/checkpoint/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint --course short  # 29 m regression
 & $node probes/e1-drive/tools/capture_browser.mjs --mode lap       # ?course=lap: start/lap1/lap2/finish per car
-& $node probes/e1-drive/tools/capture_browser.mjs --mode free      # ?course=free: spawn/mid/prop/reset per car
-& $node probes/e1-drive/tools/capture_browser.mjs --mode props     # 5 cars x tick-120/near-field truck/free-prop/sprint/lap
+& $node probes/e1-drive/tools/capture_browser.mjs --mode free      # ?course=free: spawn/mid/prop/reset per roster car
+& $node probes/e1-drive/tools/capture_browser.mjs --mode props     # roster cars x tick-120/near-field truck/free-prop/sprint/lap
 & $node probes/e1-drive/tools/capture_browser.mjs --mode collision-v2 --port 8802  # lap sign + free concrete pipe: approach/stopped/settled
 & $node probes/e1-drive/tools/derive_sprint_exclusions.mjs         # measured 9-id 310 m driven-line exclusion artifact
 & $node probes/e1-drive/tools/capture_browser.mjs --mode quality --label before --port 8802  # texture before (committed consumer)
@@ -245,7 +290,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs --mode ghost     # 5-car ghost-visible frames + G toggle
 & $node probes/e1-drive/tools/capture_browser.mjs --mode respawn   # respawn diagnostic
 & $node probes/e1-drive/tools/capture_browser.mjs --mode telemetry # metric panel per car
-& $node probes/e1-drive/tools/capture_browser.mjs --mode restart   # R on a finished sprint, 5 cars
+& $node probes/e1-drive/tools/capture_browser.mjs --mode restart   # R on a finished sprint, roster cars
 & $node probes/e1-drive/tools/capture_browser.mjs --mode telemetry-restart # R in telemetry, no reload
 & $node probes/e1-drive/tools/capture_browser.mjs --mode audio    # gesture, 1500/3015/6000 RPM, mute
 
@@ -693,14 +738,15 @@ cars, 401 ticks each:
 | Ford Focus RS (FWD) | 23.344 m | 6.795 m/s | 0 | 0 | `f590e4ad…bc27390b` |
 | Audi R8 V10 (AWD) | 29.198 m | 7.076 m/s | 0 | 0 | `4d4a4323…79ade5ca` |
 
-All five: contained, wheel contact on every tick, 0 NaN, replay-identical, a
+All five reference cars: contained, wheel contact on every tick, 0 NaN, replay-identical, a
 pinned anchor and a valid packet. The real-engine containment test drives the
 derived lane `(-24.5, 1037.5)` east and resets at `x = 7.076` on tick 199
 (`outside-bounds`), rebuilding **0.0053 m** from the spawn; `R` after 200 ticks
-returns to the same spawn. The browser capture (`capture_browser.mjs --mode
+returns to the same spawn. The committed five-car browser capture (`--mode
 free`) is 5 cars × spawn / mid / prop approach / reset, console 0, 0 assertions,
-20/20 state hashes. Details, the 52 new checks and the limits are in
-`docs/work/verification/T-007-free-roam.md`.
+20/20 state hashes; the batch-1 record re-samples the Corvette on the same mode
+with the 15-car artifacts (`browser-evidence-free.json`). Details, the 52 new
+checks and the limits are in `docs/work/verification/T-007-free-roam.md`.
 
 ### Collision-v2 capture (`--mode collision-v2`, `?collisionprobe=…`)
 
@@ -747,8 +793,17 @@ Measured scripted sprints on the default course (`_work/e1-drive/run.json` →
 
 Every car: 2/2 checkpoints in order, no respawn, wheel contact on every tick, 0
 NaN, a bit-identical replay with the rules off, and a restart in the same wasm
-instance that reproduces the finish tick, time and every state hash. The AWD Audi
-is fastest and the FWD Focus slowest, as the unchanged physics predicts.
+instance that reproduces the finish tick, time and every state hash. Among the
+five reference cars the AWD Audi is fastest and the FWD Focus slowest, as the
+unchanged physics predicts.
+
+The ten batch-1 cars also finish the same 310 m script (finish time / tick):
+Audi TT 15.483 s / 1019, Ford F100 OffRoad 14.817 s / 979, Ford FR100
+14.500 s / 960, VW Golf W12 14.533 s / 962, Ford Mustang GTR 14.800 s / 978,
+Dodge Viper ACR 14.517 s / 961, Audi S3 15.250 s / 1005, Ford Bronco
+15.350 s / 1011, Nissan Skyline R34 14.100 s / 936, Chevrolet SoCal HHR
+14.767 s / 976. Their state hashes, ghost records, lap/free runs and per-car
+proof are in `docs/work/verification/T-007-vehicle-batch1.md`.
 
 The 29 m regression course keeps the P37 values exactly:
 
@@ -801,12 +856,12 @@ never writes a physics value, and is not a packet field.
   the HUD says why and the ghost stays off — there is no guessed pose.
 
 `?ghostoffset=<ticks>` is a **capture-only presentation offset**: it shifts where
-the ghost is drawn (the headless five-car capture uses `+60` ticks so the ghost is
+the ghost is drawn (the headless ghost capture uses `+60` ticks so the ghost is
 visibly ahead of the identical scripted player run). It does not change the
 record, the pose at the reported tick, the delta, the packet or the physics.
 
-`probes/e1-drive/ghosts/index.json` lists the ten committed reference records
-(5 cars × 310 m / 29 m) with their file SHA-256, canonical ghost hash, finish time,
+`probes/e1-drive/ghosts/index.json` lists the thirty committed reference records
+(15 cars × 310 m / 29 m) with their file SHA-256, canonical ghost hash, finish time,
 tick count and the sprint state sequence hash they were recorded from.
 
 
@@ -864,7 +919,7 @@ The 0–100 order (Audi < Corvette < Lotus < Dodge < Focus) is exactly the XT
 Stopping distances follow the same order, but the Lotus is an anomaly: highest XT
 brake-to-mass ratio, third-shortest stop. Full comparison in
 `docs/work/verification/T-007-telemetry.md`. Physics is unchanged: the verifier
-pins all five drive and sprint state sequence hashes and all five drive packet
+pins all fifteen drive and sprint state sequence hashes and all fifteen drive packet
 hashes, and the page recomputes the series itself and matches the node metrics
 and per-tick state hashes exactly.
 
@@ -967,9 +1022,10 @@ input chosen by tick number, never by wall time. Same script, same spawn
 | Ford Focus RS (FWD) | 30.66 m | 12.36 m/s | 11.66 | 5.87 | 1.34 |
 | Audi R8 V10 (AWD) | 69.45 m | 21.54 m/s | 21.22 | 16.91 | 0.93 |
 
-All five: **301/301 ticks with wheel contact**, **0 NaN**, distinct state
+All five reference cars: **301/301 ticks with wheel contact**, **0 NaN**, distinct state
 sequence hash, and the Corvette's sequence hash is exactly the T-007 value
-(`83f76590…`), so the roster did not change the existing car.
+(`83f76590…`), so the roster did not change the existing car. All fifteen roster
+cars run the same 300-tick script in `run.json → cars[].drive`.
 
 ## Evidence
 
@@ -983,7 +1039,7 @@ definitions),
 `geometry.json` (level packet + real track visual + one real body per car with
 its own UV0 and albedo textures + hidden collision), `car-textures.json` (the
 P52 draw/material/texture resolution, the UV convention and per-car coverage),
-`car-uv-<slug>.bin` (the five committed UV0 streams), `track-textures.json` (UV0
+`car-uv-<slug>.bin` (the fifteen committed UV0 streams), `track-textures.json` (UV0
 stream, sampler, 136 texture records and 394 per-draw bindings), `track-uv.bin` +
 `textures/*.rgba` (the exported UV and pixel bytes),
 `level-instance-textures.json` (the 22-draw P73a UV0/BC1 pack, 18/4 split,
@@ -1007,7 +1063,7 @@ measured limit),
 `browser-evidence-quality-{before,after}.json` + `browser-<slug>-quality-<frame>-{before,after}.png`
 (texture-quality before/after: sprint start, tick-120 truck, free prop, lap;
 scene-only sharpness/alias metrics, diff, mip hash, deterministic scene crop),
-`browser-evidence-ghost.json` (ghost replay: 5 cars, G toggle, pose/delta/upload gates),
+`browser-evidence-ghost.json` (ghost replay: roster cars in the committed 5-car reference evidence, G toggle, pose/delta/upload gates),
 `browser-evidence-audio.json` + `browser-audio-{running,muted}.png` (engine audio:
 force-off, gesture gate, 1500/3015/6000 RPM live gains/rates/RMS, mute),
 `probes/e1-drive/ghosts/index.json` + `ghosts/<slug>-{310m,short}.json` (committed

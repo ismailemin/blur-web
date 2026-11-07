@@ -418,6 +418,19 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   `build_module.mjs`, `powerups.js`/`mp-client.js`.
 - Kanıt: `docs/work/analysis/boost-feasibility.md`.
 
+### E1ah — 15 araçlık roster (V2)  ✅
+- 5 mevcut + **10 B araç**: Audi TT, Audi S3, Ford F100 OffRoad, Ford FR100,
+  VW Golf W12, Ford Mustang GTR, Dodge Viper ACR, Ford Bronco, Nissan Skyline
+  R34, Chevrolet SoCal HHR.
+- Her araç kendi `.model` gövdesi/tekerleri, doku paketi (veya P52 runtime
+  gerekçesi), 310 m + 29 m koşusu, lap/free, ghost ve restart ile kanıtlı.
+- `geometry.json` **106.864.802 B** (101,91 MiB; +%135,5) — batch-1 128 MiB
+  bütçesi içinde. Batch 2 öncesi chunking zorunlu (kayıtlı).
+- **2254/2254** verify; 60/60 browser sprint capture console 0; CTest 15/15;
+  suite 44/44; checker 23/23. İlk 5 aracın state anchor'ları değişmedi.
+- Kanıt: `docs/work/verification/T-007-vehicle-batch1.md`,
+  `_work/e1-drive/browser-audi-tt-stock-sprint-finish.png`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

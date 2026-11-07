@@ -850,6 +850,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 14 aday deterministik; baseline shipped modülle bit-identical. Kod: `e1_drive_lib.cpp` + `build_module.mjs` + `powerups.js`.
 - Kanıt: `docs/work/analysis/boost-feasibility.md`.
 
+## 7 Kasım 2026 — 15 araçlık roster
+
+- 5 mevcut + 10 B araç: Audi TT/S3, Ford F100 OffRoad/FR100, VW Golf W12, Ford Mustang GTR, Dodge Viper ACR, Ford Bronco, Nissan Skyline R34, Chevrolet SoCal HHR.
+- Her araç kendi model/doku/ghost/restart; 310 m 14,1–15,5 s; 29 m 2,27–3,40 s.
+- `geometry.json` **106.864.802 B** (101,91 MiB, +%135,5); batch 2 öncesi chunking zorunlu.
+- **2254/2254**; 60/60 sprint capture console 0; CTest 15/15; suite 44/44; checker 23/23. Kanıt: `docs/work/verification/T-007-vehicle-batch1.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

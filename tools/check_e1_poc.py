@@ -92,6 +92,106 @@ CARS = [
         "sprint310": 14.150,
         "short": 2.283333,
     },
+    {
+        "slug": "audi-tt-stock",
+        "name": "Audi_TT_Stock",
+        "record_index": 10,
+        "record_id": 553815980,
+        "drivetrain": "AWD",
+        "mass": 1400.0,
+        "sprint310": 15.483333,
+        "short": 3.316667,
+    },
+    {
+        "slug": "ford-f100-offroad",
+        "name": "Ford_F100_OffRoad",
+        "record_index": 13,
+        "record_id": 641771883,
+        "drivetrain": "AWD",
+        "mass": 1600.0,
+        "sprint310": 14.816667,
+        "short": 2.883333,
+    },
+    {
+        "slug": "ford-fr100-stock",
+        "name": "Ford_FR100_Stock",
+        "record_index": 77,
+        "record_id": 4067498883,
+        "drivetrain": "RWD",
+        "mass": 1350.0,
+        "sprint310": 14.5,
+        "short": 2.633333,
+    },
+    {
+        "slug": "volkswagen-golfw12650-stock",
+        "name": "Volkswagen_GolfW12650_Stock",
+        "record_index": 17,
+        "record_id": 967622623,
+        "drivetrain": "RWD",
+        "mass": 1600.0,
+        "sprint310": 14.533333,
+        "short": 2.65,
+    },
+    {
+        "slug": "ford-mustanggtr-stock",
+        "name": "Ford_MustangGTR_Stock",
+        "record_index": 80,
+        "record_id": 4248192450,
+        "drivetrain": "RWD",
+        "mass": 1300.0,
+        "sprint310": 14.8,
+        "short": 2.966667,
+    },
+    {
+        "slug": "dodge-viperacr-stock",
+        "name": "Dodge_ViperACR_Stock",
+        "record_index": 33,
+        "record_id": 1411916496,
+        "drivetrain": "RWD",
+        "mass": 1500.0,
+        "sprint310": 14.516667,
+        "short": 2.683333,
+    },
+    {
+        "slug": "audi-s3-stock",
+        "name": "Audi_S3_Stock",
+        "record_index": 2,
+        "record_id": 345654945,
+        "drivetrain": "AWD",
+        "mass": 1400.0,
+        "sprint310": 15.25,
+        "short": 3.166667,
+    },
+    {
+        "slug": "ford-bronco-offroad",
+        "name": "Ford_Bronco_OffRoad",
+        "record_index": 19,
+        "record_id": 1025798142,
+        "drivetrain": "AWD",
+        "mass": 1650.0,
+        "sprint310": 15.35,
+        "short": 3.4,
+    },
+    {
+        "slug": "nissan-skyliner34ztune-stock",
+        "name": "Nissan_SkylineR34ZTune_Stock",
+        "record_index": 46,
+        "record_id": 2352181282,
+        "drivetrain": "AWD",
+        "mass": 1600.0,
+        "sprint310": 14.1,
+        "short": 2.266667,
+    },
+    {
+        "slug": "chevrolet-socalhhr-stock",
+        "name": "Chevrolet_SoCalHHR_Stock",
+        "record_index": 74,
+        "record_id": 3917320611,
+        "drivetrain": "RWD",
+        "mass": 1350.0,
+        "sprint310": 14.766667,
+        "short": 2.833333,
+    },
 ]
 
 # Gates of the default 310 m course (T-007-310m-course.md section 1.1).
@@ -507,17 +607,17 @@ def check_textures(report):
             totals = car_doc.get("totals") or {}
             if car_doc.get("kind") != "e1-drive.car-textures":
                 problems.append("kind is not e1-drive.car-textures")
-            if totals.get("cars") != 5 or totals.get("draws") != 491:
-                problems.append("totals are not 5 cars / 491 draws")
-            if totals.get("staticAlbedoDraws") != 224 or totals.get("textures") != 40:
-                problems.append("totals are not 224 textured draws / 40 textures")
-            if len(car_doc.get("cars") or []) != 5:
-                problems.append("per-car list != 5")
+            if totals.get("cars") != 15 or totals.get("draws") != 1378:
+                problems.append("totals are not 15 cars / 1378 draws")
+            if totals.get("staticAlbedoDraws") != 673 or totals.get("textures") != 112:
+                problems.append("totals are not 673 textured draws / 112 textures")
+            if len(car_doc.get("cars") or []) != 15:
+                problems.append("per-car list != 15")
         if problems:
             report.fail("car-manifest", "car texture manifest", "; ".join(problems), [rel(car_manifest)])
         else:
             report.ok("car-manifest", "car texture manifest",
-                      "5 cars / 491 draws / 224 textured / 40 textures, pin matches geometry",
+                      "15 cars / 1378 draws / 673 textured / 112 textures, pin matches geometry",
                       [rel(car_manifest)])
 
     # 3. track UV stream
@@ -582,7 +682,7 @@ def check_textures(report):
     car_textures = []
     for entry in car_doc.get("cars") or []:
         car_textures.extend(entry.get("textures") or [])
-    _check_texture_files(report, "car-textures", "car RGBA bitmaps", car_textures, 18178048)
+    _check_texture_files(report, "car-textures", "car RGBA bitmaps", car_textures, 46505984)
 
 
 def check_levelphysics(report):
@@ -814,7 +914,7 @@ def check_sprint_short(report):
 
 def check_roster(report):
     item = "roster"
-    label = "cars.json roster (62 records, 5 selected)"
+    label = "cars.json roster (62 records, 15 selected)"
     path = WORK / "cars.json"
     if not path.is_file():
         return report.fail(item, label, "missing " + rel(path), [rel(path)], True), None
@@ -833,8 +933,8 @@ def check_roster(report):
     counts = doc.get("counts") or {}
     if counts.get("records") != 62 or counts.get("gatePass") != 62 or counts.get("gateFail") != 0:
         problems.append("counts are not 62 records / 62 pass / 0 fail")
-    if counts.get("selected") != 5:
-        problems.append("selected count != 5")
+    if counts.get("selected") != 15:
+        problems.append("selected count != 15")
     roster = doc.get("roster") or {}
     if roster.get("default") != "corvette-zr1-stock":
         problems.append("roster default is not corvette-zr1-stock")
@@ -858,7 +958,7 @@ def check_roster(report):
             problems.append(car["slug"] + " has no fields path")
     if problems:
         return report.fail(item, label, "; ".join(problems), [rel(path)]), doc
-    return report.ok(item, label, "62/62 gated, 5 selected, default corvette-zr1-stock", [rel(path)]), doc
+    return report.ok(item, label, "62/62 gated, 15 selected, default corvette-zr1-stock", [rel(path)]), doc
 
 
 def check_fields(report, roster):
@@ -1002,6 +1102,16 @@ LAP_EXPECTED = {
     "dodge-challenger-stock": 86.116667,
     "ford-focusrs-stock": 86.250,
     "audi-r8v10-stock": 85.466667,
+    "audi-tt-stock": 86.817,
+    "ford-f100-offroad": 85.833,
+    "ford-fr100-stock": 85.9,
+    "volkswagen-golfw12650-stock": 85.933,
+    "ford-mustanggtr-stock": 85.883,
+    "dodge-viperacr-stock": 86.267,
+    "audi-s3-stock": 86.7,
+    "ford-bronco-offroad": 87.383,
+    "nissan-skyliner34ztune-stock": 85.183,
+    "chevrolet-socalhhr-stock": 86.817,
 }
 LAP_LENGTH = 222.040211
 LAP_SPAWN = (115.5, 1164.0, 1.638873)

@@ -11,8 +11,10 @@
 //     points away from the line, and a slow-down before the finish so the brake
 //     after the line stops the car before the measured 2.0 m narrowing.
 //
-// The straight 29 m regression course keeps the original P37 behaviour: full
-// throttle while running, gated by the rules.
+// The straight 29 m regression course keeps the original P37 throttle hold. A
+// 2.5 m lane-hold correction (documented on SHORT_LANE_HOLD) only engages for a
+// car that drifts beyond the five reference cars' measured 2.26 m maximum, so
+// their P37 inputs and anchors stay bit-identical.
 //
 // The controller is a pure function of the engine state and the committed
 // layout: same tick sequence, same inputs, same state hashes. The rules still
@@ -97,6 +99,40 @@ export function freeScriptInput(tick, speed = 0) {
 
 /** What the short-course sprint driver asks for while running. */
 export const SPRINT_DESIRED_INPUT = Object.freeze([1, 0, 0, 0]);
+
+/**
+ * Short-course drift damper (29 m regression only).
+ *
+ * The P37 control is a pure throttle hold, which is correct while the car
+ * tracks the 6 m line. A car whose XT record produces a sustained lateral
+ * drift would cross the finish gate outside its 6 m width and be respawned
+ * (`past-finish-line`). This deterministic damper engages only when BOTH the
+ * lateral offset and the measured lateral velocity exceed 1.0 m / 2.5 m/s in
+ * the same direction. The five reference cars never reach 2.5 m/s lateral
+ * speed on the 29 m line (measured max 1.75 m/s), so their inputs, state
+ * hashes and ghosts are bit-identical. It is a controller choice, not a
+ * recovered value, and the post-finish brake is unchanged.
+ */
+export const SHORT_LANE_HOLD = Object.freeze({
+  offsetMetres: 1.0,
+  lateralSpeed: 2.5,
+  gainPerMetre: 0.8,
+  maxSteer: 0.8
+});
+
+export function shortLaneHoldInput(state, layout) {
+  const centre = layout.course.band?.z ?? layout.course.spawn.z;
+  const offset = (state?.position?.[2] ?? centre) - centre;
+  const lateralSpeed = state?.velocity?.[2] ?? 0;
+  if (Math.abs(offset) < SHORT_LANE_HOLD.offsetMetres ||
+      Math.abs(lateralSpeed) < SHORT_LANE_HOLD.lateralSpeed ||
+      Math.sign(offset) !== Math.sign(lateralSpeed)) {
+    return SPRINT_DESIRED_INPUT;
+  }
+  const steer = clamp(Math.sign(offset) * SHORT_LANE_HOLD.gainPerMetre,
+    -SHORT_LANE_HOLD.maxSteer, SHORT_LANE_HOLD.maxSteer);
+  return [1, 0, steer, 0];
+}
 
 /** Controller constants. Distances in metres, speeds in m/s, times in seconds. */
 export const SPRINT_CONTROL = Object.freeze({
@@ -376,7 +412,10 @@ export function sprintScriptInput(rules, state, constants = null) {
     if (rules.phase !== 'running') return [0, 0, 0, 0];
     return rules.gateInput(freeScriptInput(rules.elapsedTicks + 1, state?.speed ?? 0));
   }
-  if (!isPathLayout(rules.layout)) return rules.gateInput(SPRINT_DESIRED_INPUT);
+  if (!isPathLayout(rules.layout)) {
+    if (rules.phase !== 'running' || !state) return rules.gateInput(SPRINT_DESIRED_INPUT);
+    return rules.gateInput(shortLaneHoldInput(state, rules.layout));
+  }
   if (!state) throw new Error('the scripted long-course sprint needs the engine state');
   if (rules.phase !== 'running') return rules.gateInput(SPRINT_DESIRED_INPUT);
   return rules.gateInput(sprintControl(state, rules.layout, constants));

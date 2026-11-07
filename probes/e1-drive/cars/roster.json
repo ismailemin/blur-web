@@ -9,10 +9,11 @@
     "format": "probes/asset-reader/FORMAT-xt.md"
   },
   "selection": [
-    "Every record is decoded and gated by tools/car_roster.py; the five below are the ones",
-    "this slice drives. The selection keeps the T-007 baseline (regression anchor) and adds one",
-    "car per drivetrain (RWD light / RWD heavy / FWD / AWD) so the same scripted drive produces",
-    "different, explainable physics on the same spawn, script and collision mesh."
+    "Every record is decoded and gated by tools/car_roster.py. The first five are the T-007",
+    "reference anchors (one per drivetrain mix) and must not move. The following ten are the",
+    "V1 audit's high/medium-confidence class-B cars in the manifest order of",
+    "_work/vehicle-pipeline/cars.json; each has an exact .model, a complete car-parts manifest,",
+    "a P52-style material pass and a measured 310 m scripted run."
   ],
   "default": "corvette-zr1-stock",
   "cars": [
@@ -55,6 +56,86 @@
       "recordIndex": 55,
       "layout": "AWD, 1600 kg, 6-speed",
       "why": "driveType 2 (four wheel) with the front differential torques populated: the third drivetrain branch"
+    },
+    {
+      "slug": "audi-tt-stock",
+      "name": "Audi_TT_Stock",
+      "recordId": 553815980,
+      "recordIndex": 10,
+      "layout": "AWD, 1400 kg, 6-speed",
+      "why": "V1 batch 1 (high confidence): exact audi_tt_stock.model, 100 draws / 52 static, AWD; second light AWD after the R8 V10"
+    },
+    {
+      "slug": "ford-f100-offroad",
+      "name": "Ford_F100_OffRoad",
+      "recordId": 641771883,
+      "recordIndex": 13,
+      "layout": "AWD, 1600 kg, 6-speed",
+      "why": "V1 batch 1 (high confidence): exact ford_f100_offroad.model, 78 draws / 34 static, AWD with a 3.051 m wheelbase"
+    },
+    {
+      "slug": "ford-fr100-stock",
+      "name": "Ford_FR100_Stock",
+      "recordId": 4067498883,
+      "recordIndex": 77,
+      "layout": "RWD, 1350 kg, 6-speed",
+      "why": "V1 batch 1 (high confidence): exact ford_fr100_stock.model, 71 draws / 33 static, the longest wheelbase in the batch (3.233 m)"
+    },
+    {
+      "slug": "volkswagen-golfw12650-stock",
+      "name": "Volkswagen_GolfW12650_Stock",
+      "recordId": 967622623,
+      "recordIndex": 17,
+      "layout": "RWD, 1600 kg, 6-speed",
+      "why": "V1 batch 1 (high confidence): exact volkswagen_golfw12650_stock.model, 92 draws / 43 static, 850 Nm RWD hatch"
+    },
+    {
+      "slug": "ford-mustanggtr-stock",
+      "name": "Ford_MustangGTR_Stock",
+      "recordId": 4248192450,
+      "recordIndex": 80,
+      "layout": "RWD, 1300 kg, 6-speed",
+      "why": "V1 batch 1 (high confidence): exact ford_mustanggtr_stock.model, 101 draws / 55 static, 850 Nm at an 8200 RPM limiter"
+    },
+    {
+      "slug": "dodge-viperacr-stock",
+      "name": "Dodge_ViperACR_Stock",
+      "recordId": 1411916496,
+      "recordIndex": 33,
+      "layout": "RWD, 1500 kg, 6-speed",
+      "why": "V1 batch 1 (high confidence): exact dodge_viperacr_stock.model, 83 draws / 48 static, 780 Nm RWD"
+    },
+    {
+      "slug": "audi-s3-stock",
+      "name": "Audi_S3_Stock",
+      "recordId": 345654945,
+      "recordIndex": 2,
+      "layout": "AWD, 1400 kg, 6-speed",
+      "why": "V1 batch 1 (high confidence): exact audi_s3_stock.model, 99 draws / 49 static, AWD"
+    },
+    {
+      "slug": "ford-bronco-offroad",
+      "name": "Ford_Bronco_OffRoad",
+      "recordId": 1025798142,
+      "recordIndex": 19,
+      "layout": "AWD, 1650 kg, 6-speed",
+      "why": "V1 batch 1 (medium confidence: 20/20 preview-paired wheel draws), exact ford_bronco_offroad.model, 82 draws / 25 static; a driven screenshot must confirm wheel placement"
+    },
+    {
+      "slug": "nissan-skyliner34ztune-stock",
+      "name": "Nissan_SkylineR34ZTune_Stock",
+      "recordId": 2352181282,
+      "recordIndex": 46,
+      "layout": "AWD, 1600 kg, 6-speed",
+      "why": "V1 batch 1 (medium confidence: 20/20 preview-paired wheel draws), exact nissan_skyliner34ztune_stock.model, 96 draws / 46 static, 1050 Nm AWD"
+    },
+    {
+      "slug": "chevrolet-socalhhr-stock",
+      "name": "Chevrolet_SoCalHHR_Stock",
+      "recordId": 3917320611,
+      "recordIndex": 74,
+      "layout": "RWD, 1350 kg, 6-speed",
+      "why": "V1 batch 1 (medium confidence: 20/20 preview-paired wheel draws), exact chevrolet_socalhhr_stock.model, 85 draws / 64 static"
     }
   ]
 }

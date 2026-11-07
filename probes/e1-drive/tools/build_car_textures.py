@@ -1,6 +1,6 @@
 """Export per-car UV0 streams and static albedo textures for the E1 drive slice.
 
-P52 resolved every draw of the five E1 roster cars to its committed material
+P52 resolved every draw of the E1 roster cars to its committed material
 binding (`_work/car-materials/roster/cars/<slug>/materials.json`, kind
 `blur.car-material-texture-manifest` v1) and decoded the referenced static
 `g_MeshTexture` images to mip0 RGBA8. This tool turns that record into PoC
@@ -56,8 +56,8 @@ MANIFEST_OUT = OUT_DIR / "car-textures.json"
 # Committed identities. The P52 roster index is the per-car record; the
 # car-parts index is the model/manifest/mesh map `build_geometry.mjs` already
 # pins. A regenerated or hand-edited input is a hard failure.
-COMMITTED_ROSTER_INDEX = "77e73bfff8e324459d337f9ec1817f717e39aabfe0134433ca886c2a1774cd76"
-COMMITTED_CAR_INDEX = "5042e714a309e28e19498a0d35e18fef941c0fac850e87bc0f986117bb9bc315"
+COMMITTED_ROSTER_INDEX = "20570f76fa156ce08d13afc39d434d50fb7259686d06f8fe8111841c416286e0"
+COMMITTED_CAR_INDEX = "4d56ac5a77c0946548b9c1c6669fef04de4c66358da71aec75c32f96df035aaa"
 
 # The committed `scene_inspect.exe` output per car, which carries the merged
 # `uv0` array parallel to `positions`. The car-parts index does not record this
@@ -69,19 +69,74 @@ COMMITTED_SCENE_REPORTS = {
     "dodge-challenger-stock": "b2284325b49fc663db1083b1032b93247ffd240d723c8564ac79893aa71b54fe",
     "ford-focusrs-stock": "d69f46ce09ba1759bbef7063f6f769b387814174af40a6199c617b7c9ad2e5f1",
     "audi-r8v10-stock": "948548055a1ff7f59482661d752a9a0542e023c8774315ceb8021545156f8639",
+    "audi-tt-stock": "31aa17de45e99a65943552e4ff98512532aafe8c1c2099ca9bbbfa090a69eaa3",
+    "ford-f100-offroad": "aa389f9e25f7e9d9cd3f2cdb7a86fa62261eb4edaaa7e6d4081942f5dc805859",
+    "ford-fr100-stock": "89330e2e63274d82a282fd473412b5e50e8f918820baaff6d2943227f0a9af08",
+    "volkswagen-golfw12650-stock": "8104fb0be5cf354b689b403e84aa339ff6ad9ac3d062d1d2a1a4a07d229fe2f3",
+    "ford-mustanggtr-stock": "4a3024a737fd0807a7ddc0414e7a96fcaffe02dee135534309dbdd6c268b0f8c",
+    "dodge-viperacr-stock": "8f3a2fd9aa3650f4623569aad5a5df0c7ea3803dacfe237d8d9f0de06e32a9f8",
+    "audi-s3-stock": "1f78138a5615d29c1aca52ab6a87635a535d644da485bfe0da460a2910ff2d43",
+    "ford-bronco-offroad": "d9d86338ecbceb25a35bc33a1145a8e2e8d1051d580e54d85a4be232433b686f",
+    "nissan-skyliner34ztune-stock": "1cfbcd8b24e2503880b7a42516b4995704d41e7c374812b129a8cb8e461d61f8",
+    "chevrolet-socalhhr-stock": "e00de48acd15b286df7c72a8d727d959c3c9a1474ff0de847b5c8d9009928207",
 }
 
-# P52 totals (docs/work/analysis/car-materials.md §2). Every derived count is
-# compared with these before the manifest is written.
+# P52 per-car totals (docs/work/analysis/car-materials.md §2, extended by the
+# T-007 vehicle batch 1). Every derived count is compared with the pinned value
+# for its own car before the aggregate document is written. The first five rows
+# are the original committed anchors and must never change; the next ten are the
+# V1-audited batch 1.
+EXPECTED_BY_CAR = {
+    "corvette-zr1-stock": {"draws": 100, "staticAlbedoDraws": 50, "paintDraws": 10,
+                           "lightDraws": 17, "noAlbedoDraws": 23, "textures": 9,
+                           "rgbaBytes": 4538368, "uvValues": 66096},
+    "lotus-exige-cup260-stock": {"draws": 88, "staticAlbedoDraws": 48, "paintDraws": 0,
+                                 "lightDraws": 14, "noAlbedoDraws": 26, "textures": 9,
+                                 "rgbaBytes": 4997120, "uvValues": 64272},
+    "dodge-challenger-stock": {"draws": 104, "staticAlbedoDraws": 42, "paintDraws": 11,
+                               "lightDraws": 13, "noAlbedoDraws": 38, "textures": 7,
+                               "rgbaBytes": 2637824, "uvValues": 56730},
+    "ford-focusrs-stock": {"draws": 115, "staticAlbedoDraws": 37, "paintDraws": 15,
+                           "lightDraws": 13, "noAlbedoDraws": 50, "textures": 7,
+                           "rgbaBytes": 3424256, "uvValues": 64534},
+    "audi-r8v10-stock": {"draws": 84, "staticAlbedoDraws": 47, "paintDraws": 9,
+                         "lightDraws": 9, "noAlbedoDraws": 19, "textures": 8,
+                         "rgbaBytes": 2580480, "uvValues": 62858},
+    "audi-tt-stock": {"draws": 100, "staticAlbedoDraws": 52, "paintDraws": 12,
+                      "lightDraws": 13, "noAlbedoDraws": 23, "textures": 7,
+                      "rgbaBytes": 2637824, "uvValues": 61860},
+    "ford-f100-offroad": {"draws": 78, "staticAlbedoDraws": 34, "paintDraws": 8,
+                          "lightDraws": 6, "noAlbedoDraws": 30, "textures": 7,
+                          "rgbaBytes": 2588672, "uvValues": 74102},
+    "ford-fr100-stock": {"draws": 71, "staticAlbedoDraws": 33, "paintDraws": 10,
+                         "lightDraws": 7, "noAlbedoDraws": 21, "textures": 8,
+                         "rgbaBytes": 2576384, "uvValues": 75044},
+    "volkswagen-golfw12650-stock": {"draws": 92, "staticAlbedoDraws": 43, "paintDraws": 10,
+                                    "lightDraws": 8, "noAlbedoDraws": 31, "textures": 8,
+                                    "rgbaBytes": 2580480, "uvValues": 64090},
+    "ford-mustanggtr-stock": {"draws": 101, "staticAlbedoDraws": 55, "paintDraws": 14,
+                              "lightDraws": 8, "noAlbedoDraws": 24, "textures": 7,
+                              "rgbaBytes": 2637824, "uvValues": 65854},
+    "dodge-viperacr-stock": {"draws": 83, "staticAlbedoDraws": 48, "paintDraws": 12,
+                             "lightDraws": 14, "noAlbedoDraws": 9, "textures": 7,
+                             "rgbaBytes": 3424256, "uvValues": 55516},
+    "audi-s3-stock": {"draws": 99, "staticAlbedoDraws": 49, "paintDraws": 11,
+                      "lightDraws": 17, "noAlbedoDraws": 22, "textures": 7,
+                      "rgbaBytes": 3424256, "uvValues": 60336},
+    "ford-bronco-offroad": {"draws": 82, "staticAlbedoDraws": 25, "paintDraws": 10,
+                            "lightDraws": 7, "noAlbedoDraws": 40, "textures": 6,
+                            "rgbaBytes": 2392064, "uvValues": 73054},
+    "nissan-skyliner34ztune-stock": {"draws": 96, "staticAlbedoDraws": 46, "paintDraws": 14,
+                                     "lightDraws": 13, "noAlbedoDraws": 23, "textures": 7,
+                                     "rgbaBytes": 2379776, "uvValues": 65100},
+    "chevrolet-socalhhr-stock": {"draws": 85, "staticAlbedoDraws": 64, "paintDraws": 0,
+                                 "lightDraws": 10, "noAlbedoDraws": 11, "textures": 8,
+                                 "rgbaBytes": 3686400, "uvValues": 64956},
+}
 EXPECTED = {
-    "draws": 491,
-    "staticAlbedoDraws": 224,
-    "paintDraws": 45,
-    "lightDraws": 66,
-    "noAlbedoDraws": 156,
-    "textures": 40,
-    "rgbaBytes": 18178048,
-    "uvValues": 2 * (33048 + 32136 + 28365 + 32267 + 31429),
+    key: sum(car[key] for car in EXPECTED_BY_CAR.values())
+    for key in ("draws", "staticAlbedoDraws", "paintDraws", "lightDraws",
+                "noAlbedoDraws", "textures", "rgbaBytes", "uvValues")
 }
 
 # One declared sampling choice, identical to the track pack. P52 records that no
@@ -519,6 +574,29 @@ def main(argv):
             raise SystemExit(f"FAILED: {slug} is not mapped in the car-parts index")
         records.append(build_car(entry, car_index_entry))
 
+    if set(roster_order) != set(EXPECTED_BY_CAR):
+        raise SystemExit(
+            "FAILED: the pinned per-car expectations do not cover exactly the roster"
+        )
+    for record in records:
+        coverage = record["coverage"]
+        expected = EXPECTED_BY_CAR[record["slug"]]
+        actual = {
+            "draws": coverage["drawCount"],
+            "staticAlbedoDraws": coverage["staticAlbedoDraws"],
+            "paintDraws": coverage["runtimePaintDraws"],
+            "lightDraws": coverage["runtimeLightBlendDraws"],
+            "noAlbedoDraws": coverage["runtimeNoAlbedoDraws"],
+            "textures": coverage["textureCount"],
+            "rgbaBytes": coverage["rgbaBytes"],
+            "uvValues": coverage["uvValues"],
+        }
+        for key, value in expected.items():
+            if actual[key] != value:
+                raise SystemExit(
+                    f"FAILED: {record['slug']} {key} is {actual[key]}, pinned {value}"
+                )
+
     totals = {
         "cars": len(records),
         "draws": sum(record["coverage"]["drawCount"] for record in records),
@@ -532,7 +610,7 @@ def main(argv):
         "uvBytes": sum(record["coverage"]["uvBytes"] for record in records),
     }
     expected_map = {
-        "cars": 5,
+        "cars": len(EXPECTED_BY_CAR),
         "draws": EXPECTED["draws"],
         "staticAlbedoDraws": EXPECTED["staticAlbedoDraws"],
         "runtimePaintDraws": EXPECTED["paintDraws"],

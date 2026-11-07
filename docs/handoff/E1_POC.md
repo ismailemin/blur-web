@@ -48,6 +48,11 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 | Ford Focus RS (FWD) | `ford-focusrs-stock` | 15,22 s |
 | Audi R8 V10 (AWD) | `audi-r8v10-stock` | **14,15 s** |
 
+**15 araç** (V2 batch 1): yukarıdakiler + `audi-tt-stock`, `audi-s3-stock`,
+`ford-f100-offroad`, `ford-fr100-stock`, `volkswagen-golfw12650-stock`,
+`ford-mustanggtr-stock`, `dodge-viperacr-stock`, `ford-bronco-offroad`,
+`nissan-skyliner34ztune-stock`, `chevrolet-socalhhr-stock` (14,10–15,48 s).
+
 29 m kısa parkur: `?course=short` (Corvette 2,800 s … Audi 2,283 s).
 
 **3 tur (loop-01, 222,04 m)** — `?course=lap`:

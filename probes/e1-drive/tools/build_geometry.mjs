@@ -69,10 +69,20 @@ const COMMITTED_MANIFESTS = {
   'lotus-exige-cup260-stock': 'sha256:4859e7b859097729b6c356e1615fa1652553957ef901f02eafa5b7a9b839f93e',
   'dodge-challenger-stock': 'sha256:53633d0f827cb72879c83f51a05e639b5210fba9298824e0d685c29662092d5e',
   'ford-focusrs-stock': 'sha256:8c7efb2ced9a89a607f12962c33c0237308866edad32ca47a2700091b3b3fb2f',
-  'audi-r8v10-stock': 'sha256:63882c50ca679e79e1f472875094cb59dd87944c0c507960e754c35fcc2a7502'
+  'audi-r8v10-stock': 'sha256:63882c50ca679e79e1f472875094cb59dd87944c0c507960e754c35fcc2a7502',
+  'audi-tt-stock': 'sha256:df2427a40aa814325092e1a507ee48acccf208110c3ce43ee671419f02e38a4f',
+  'ford-f100-offroad': 'sha256:fb67ba7f2013f396dcf1689e7bbdb7e9c67878eba2346f525838f05101b32d7e',
+  'ford-fr100-stock': 'sha256:c05d4d98f67dd712c725317d06cc9ecefa8078cefd286c35f97bbf8f4b88cfba',
+  'volkswagen-golfw12650-stock': 'sha256:82089f47abc943675377398054084b2ef63dd6de10935e46b2165d81fe0b3bbd',
+  'ford-mustanggtr-stock': 'sha256:edd00ffd9598d97e7d47ea82c9fcc5dc74a95e3a3148e1f76a98bd3a55144058',
+  'dodge-viperacr-stock': 'sha256:88176fc585740e638a78d99826c40163e70c16983b0592ace55e9a6da48dadb9',
+  'audi-s3-stock': 'sha256:9b0fcdd52bc1113760a37f65162ccb5423ae3e5bbe1a8aacbf6c76ccc96432b2',
+  'ford-bronco-offroad': 'sha256:9d05caf3aad8d21d63d1b3dfd05e9b3a4820ea7d993d196cde5d1d388f79b4be',
+  'nissan-skyliner34ztune-stock': 'sha256:c119bac367bb3f16a2384cea14c74d55ce174f6f4328bd0920adb4c6ae37f1a7',
+  'chevrolet-socalhhr-stock': 'sha256:576a5711991e2f68842e51130a1c6d0548bf359e6f08876d7af8f03e8796c0d5'
 };
 const COMMITTED_CAR_INDEX =
-  'sha256:5042e714a309e28e19498a0d35e18fef941c0fac850e87bc0f986117bb9bc315';
+  'sha256:4d56ac5a77c0946548b9c1c6669fef04de4c66358da71aec75c32f96df035aaa';
 
 // P52's per-car material/texture record plus its UV0 export. Committed output of
 // `build_car_textures.py`; a different file is a hard failure, because the car
@@ -80,7 +90,7 @@ const COMMITTED_CAR_INDEX =
 // consumer document is updated with it.
 const CAR_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/car-textures.json');
 const COMMITTED_CAR_TEXTURES =
-  'sha256:7d885ecdd53b51878a7343d0ee3ebb266c94ff648b555517a4492bdaf3973169';
+  'sha256:4807315d5de48c9d1fc4b84d703ab4390014e0a4db7f423e5f085876b1fa4a7c';
 
 // P73b level-instance prop pack: the P73a UV0 export plus the four decoded BC1
 // sources, emitted by `build_level_instance_textures.py`. Committed output of
@@ -147,7 +157,7 @@ if (carTextureDoc.kind !== 'e1-drive.car-textures' || carTextureDoc.version !== 
   throw new Error('car texture manifest kind/version is not e1-drive.car-textures v1');
 }
 if (carTextureDoc.pins?.p52RosterIndex !==
-    'sha256:77e73bfff8e324459d337f9ec1817f717e39aabfe0134433ca886c2a1774cd76' ||
+    'sha256:20570f76fa156ce08d13afc39d434d50fb7259686d06f8fe8111841c416286e0' ||
     carTextureDoc.pins?.carPartsIndex !== COMMITTED_CAR_INDEX) {
   throw new Error('car texture manifest does not carry the committed P52 roster and car-parts indexes');
 }
@@ -726,9 +736,12 @@ function buildBody(entry, options = {}) {
           scopeLabels: carTextureDoc.scopeLabels,
           coverage: carTexturePack.coverage,
           materialScope:
-            'static g_MeshTexture pixels only: 224 of 491 draws sample a decoded static image with the ' +
+            'static g_MeshTexture pixels only: ' + carTexturePack.coverage.staticAlbedoDraws + ' of ' +
+            carTexturePack.coverage.drawCount + ' draws sample a decoded static image with the ' +
             'committed UV0 stream sampled as (1-u, v) because the model U axis and the image reading ' +
-            'direction are opposite; V stays raw. The 267 runtime-only draws keep the committed P52 ' +
+            'direction are opposite; V stays raw. The ' +
+            (carTexturePack.coverage.drawCount - carTexturePack.coverage.staticAlbedoDraws) +
+            ' runtime-only draws keep the committed P52 ' +
             'reason and the diagnostic albedo. Material colour, blend state, shader stages, mip chain and ' +
             'sRGB interpretation are not applied',
         }
@@ -799,10 +812,34 @@ for (const rosterCar of roster.cars) {
   }
 }
 
-// The five bodies must reproduce P52's coverage exactly: a silently dropped
-// texture or draw is the failure mode this whole pass exists to prevent.
+// The fifteen bodies must reproduce the pinned per-car P52 coverage exactly: a
+// silently dropped texture or draw is the failure mode this whole pass exists to
+// prevent. The first five rows are the original anchors; the next ten are the
+// V1-audited batch 1. Each row is the car's own value, so a roster addition
+// cannot hide behind an aggregate total.
+const COMMITTED_CAR_COVERAGE = {
+  'corvette-zr1-stock': { draws: 100, textured: 50, paint: 10, light: 17, noAlbedo: 23, textures: 9, rgbaBytes: 4538368 },
+  'lotus-exige-cup260-stock': { draws: 88, textured: 48, paint: 0, light: 14, noAlbedo: 26, textures: 9, rgbaBytes: 4997120 },
+  'dodge-challenger-stock': { draws: 104, textured: 42, paint: 11, light: 13, noAlbedo: 38, textures: 7, rgbaBytes: 2637824 },
+  'ford-focusrs-stock': { draws: 115, textured: 37, paint: 15, light: 13, noAlbedo: 50, textures: 7, rgbaBytes: 3424256 },
+  'audi-r8v10-stock': { draws: 84, textured: 47, paint: 9, light: 9, noAlbedo: 19, textures: 8, rgbaBytes: 2580480 },
+  'audi-tt-stock': { draws: 100, textured: 52, paint: 12, light: 13, noAlbedo: 23, textures: 7, rgbaBytes: 2637824 },
+  'ford-f100-offroad': { draws: 78, textured: 34, paint: 8, light: 6, noAlbedo: 30, textures: 7, rgbaBytes: 2588672 },
+  'ford-fr100-stock': { draws: 71, textured: 33, paint: 10, light: 7, noAlbedo: 21, textures: 8, rgbaBytes: 2576384 },
+  'volkswagen-golfw12650-stock': { draws: 92, textured: 43, paint: 10, light: 8, noAlbedo: 31, textures: 8, rgbaBytes: 2580480 },
+  'ford-mustanggtr-stock': { draws: 101, textured: 55, paint: 14, light: 8, noAlbedo: 24, textures: 7, rgbaBytes: 2637824 },
+  'dodge-viperacr-stock': { draws: 83, textured: 48, paint: 12, light: 14, noAlbedo: 9, textures: 7, rgbaBytes: 3424256 },
+  'audi-s3-stock': { draws: 99, textured: 49, paint: 11, light: 17, noAlbedo: 22, textures: 7, rgbaBytes: 3424256 },
+  'ford-bronco-offroad': { draws: 82, textured: 25, paint: 10, light: 7, noAlbedo: 40, textures: 6, rgbaBytes: 2392064 },
+  'nissan-skyliner34ztune-stock': { draws: 96, textured: 46, paint: 14, light: 13, noAlbedo: 23, textures: 7, rgbaBytes: 2379776 },
+  'chevrolet-socalhhr-stock': { draws: 85, textured: 64, paint: 0, light: 10, noAlbedo: 11, textures: 8, rgbaBytes: 3686400 }
+};
 {
   const bodyList = Object.values(bodies);
+  if (bodyList.length !== Object.keys(COMMITTED_CAR_COVERAGE).length) {
+    throw new Error('car bodies: ' + bodyList.length + ' built, ' +
+      Object.keys(COMMITTED_CAR_COVERAGE).length + ' pinned');
+  }
   const totals = {
     draws: bodyList.reduce((sum, body) => sum + body.carDraws.length, 0),
     textured: bodyList.reduce((sum, body) =>
@@ -818,11 +855,23 @@ for (const rosterCar of roster.cars) {
       sum + body.textures.reduce((inner, texture) => inner + texture.rgbaBytes, 0), 0),
     uvBytes: bodyList.reduce((sum, body) => sum + (body.mesh.uv?.bytes ?? 0), 0),
   };
-  const expected = { draws: 491, textured: 224, paint: 45, light: 66, noAlbedo: 156, textures: 40,
-    rgbaBytes: 18178048 };
-  for (const [key, value] of Object.entries(expected)) {
-    if (totals[key] !== value) {
-      throw new Error('car texture totals: ' + key + ' is ' + totals[key] + ', P52 recorded ' + value);
+  for (const body of bodyList) {
+    const expected = COMMITTED_CAR_COVERAGE[body.slug];
+    if (!expected) throw new Error(body.slug + ': no pinned P52 coverage');
+    const actual = {
+      draws: body.carDraws.length,
+      textured: body.carDraws.filter((draw) => draw.textureId !== null).length,
+      paint: body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimePaintLookup').length,
+      light: body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeLightBlend').length,
+      noAlbedo: body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeShaderNoAlbedo').length,
+      textures: body.textures.length,
+      rgbaBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0)
+    };
+    for (const [key, value] of Object.entries(expected)) {
+      if (actual[key] !== value) {
+        throw new Error('car texture totals: ' + body.slug + ' ' + key + ' is ' + actual[key] +
+          ', pinned ' + value);
+      }
     }
   }
   if (totals.textured + totals.paint + totals.light + totals.noAlbedo !== totals.draws) {

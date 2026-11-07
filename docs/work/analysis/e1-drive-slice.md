@@ -2752,3 +2752,52 @@ capacity, HUD icon binding and projectile/boost rules remain un-recovered and
 are labelled; no AI use and no retail/full-game claim. The task card, handoff
 and `docs/STATUS.md` entry are owned by the main agent (this subagent's file
 ownership did not include them).
+
+## 34. Vehicle batch 1 — ten B-class cars join the playable roster
+
+Status: implementation + evidence, 7 November 2026. The playable E1 roster grew
+from 5 to **15** cars without moving the five original state anchors. The full
+record is `docs/work/verification/T-007-vehicle-batch1.md`.
+
+- **Roster.** `probes/e1-drive/cars/roster.json` now lists the five T-007 anchors
+  plus Audi TT, Ford F100 OffRoad, Ford FR100, VW Golf W12, Ford Mustang GTR,
+  Dodge Viper ACR, Audi S3, Ford Bronco, Nissan Skyline R34 and Chevrolet SoCal
+  HHR, in V1 manifest order. `car_roster.py` decodes all 62 records, gates
+  62/62, writes 15 field lists and `_work/e1-drive/cars.json`.
+- **Bodies/materials.** All fifteen map to their exact
+  `\models\vehicles\<name>.model` entry and build a complete part manifest. The
+  P52 material pass covers 1,378 draws: 673 static albedo, 146 paint, 169 light
+  blend, 390 no-albedo; 112 decoded textures / 46,505,984 B RGBA. Every added car
+  has zero undecoded textures; FR100's `fordf100_2` is a light-only texture (7
+  light references, 0 static draws). The four five-car guards were generalized to
+  the roster length with per-car pins, not weakened.
+- **Geometry.** `_work/e1-drive/geometry.json` is **106,864,802 B** (101.91 MiB)
+  versus 45,374,377 B before batch 1 (+135.5 %, ≈6.15 MB/car). It is inside the
+  declared 128 MiB batch-1 budget and the 15-car browser capture passes; batch 2
+  must split per-car chunks (`carBodiesIndex` + `cars/<slug>.geometry.json`)
+  before it ships.
+- **Drive proof.** All 15 finish the 310 m sprint (14.100–15.483 s), the 29 m
+  regression (2.267–3.400 s), the 3-lap loop (85.183–87.383 s) and the free-roam
+  basin (contained, 0 prop contacts). Every car has 2/2 ordered checkpoints, 0
+  respawn, wheel contact every tick, 0 NaN, a rules-off replay, a restart in the
+  same wasm instance and a committed 310 m + 29 m ghost (30 records). The
+  verifier is **2254/2254**.
+- **Prop layer.** The measured timed-course exclusion set grew from 9 to **23**
+  colliders (530 active of the 553 roadside profile) because the added lines
+  touch additional fence/rack components, including thin components swept
+  between ticks. The set is derived from the full raw pre-finish trace; the
+  scripted controller follows the raw engine state (the prop layer no longer
+  feeds back into it), and the layer is scoped to the timed run. The original
+  five state anchors, courses and gates did not move.
+- **Short-course damper.** The 29 m P37 throttle hold is unchanged for the five
+  reference cars. A documented drift damper (engages only above 2.5 m/s lateral
+  speed) lets the Nissan Skyline — which missed the 6 m finish line by 8 cm —
+  complete the regression at 2.267 s; its short ghost is committed.
+- **Limits.** Class B only; no C alias, no full-game claim, one map/car at a
+  time. Telemetry brake residuals for Bronco (0.229 m/s) and Skyline
+  (0.844 m/s) are recorded. The portable suite is **44/45**: the one failure is
+  `prop-collision-v2` pinning the whole `geometry.json` file (its collider data
+  and content hash are unchanged; the pin is owned by `probes/prop-collision/`).
+  The PoC checker is **20/23**: three hard-coded five-car checks in
+  `tools/check_e1_poc.py` (selected count, P52 totals, RGBA total) need the main
+  agent to generalize them.

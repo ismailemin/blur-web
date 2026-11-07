@@ -180,6 +180,13 @@ Nitro hedefi **52,759 m/s** (A), 1,3 s, 55 m/s cap; Shock BRAKE **19,995 m/s**;
 Shunt provisional 20 kN·s. Input-only/post-tick reddedildi; baseline shipped
 modülle bit-identical. Kanıt: `docs/work/analysis/boost-feasibility.md`.
 
+**V2 — 15 araçlık roster:** 10 B araç eklendi (Audi TT/S3, F100, FR100, Golf,
+Mustang GTR, Viper ACR, Bronco, Skyline R34, SoCal HHR); her biri kendi
+gövde/doku/ghost/restart ile kanıtlı. `geometry.json` **101,91 MiB** (+%135,5);
+batch 2 öncesi chunking zorunlu. **2254/2254**, 60/60 sprint capture console 0,
+CTest 15/15, suite 44/44, checker 23/23. Kanıt:
+`docs/work/verification/T-007-vehicle-batch1.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

@@ -1,6 +1,6 @@
 """Deterministic per-car material/albedo texture binding manifest.
 
-Scope: the five E1 roster cars, their committed part manifests and their own
+Scope: every car in the E1 roster, their committed part manifests and their own
 decoded ``.model`` files. For every draw it records the committed readers'
 material binding, then resolves the referenced static texture to
 ``(name, hash, block, index)``, assembles the original PC descriptor plus a
@@ -49,6 +49,7 @@ SCENE_EXE = ROOT / "_work/build/asset-reader-native/Release/scene_inspect.exe"
 TEXTURE_EXE = ROOT / "_work/build/asset-reader-native/Release/texture_inspect.exe"
 CARS_ROOT = ROOT / "_work/car-parts/cars"
 CARS_INDEX = CARS_ROOT / "index.json"
+ROSTER = ROOT / "probes/e1-drive/cars/roster.json"
 MANIFEST_KIND = "blur.car-material-texture-manifest"
 MANIFEST_VERSION = 1
 DECODER_MAX_DIMENSION = 512  # FORMAT-texture.md accepted PC decoder bound
@@ -356,8 +357,21 @@ def main() -> int:
     out_root.mkdir(parents=True, exist_ok=True)
 
     index = json.loads(args.cars_index.read_text(encoding="utf-8"))
-    if index.get("kind") != "car-parts.car-model-index" or len(index.get("mapped", [])) != 5:
-        raise RuntimeError("committed car index is not the five-car mapped index")
+    roster = json.loads(ROSTER.read_text(encoding="utf-8"))
+    roster_slugs = [car["slug"] for car in roster["cars"]]
+    if index.get("kind") != "car-parts.car-model-index":
+        raise RuntimeError("committed car index is not a car-parts.car-model-index")
+    mapped = index.get("mapped", [])
+    if len(mapped) != len(roster_slugs) or set(mapped) != set(roster_slugs):
+        raise RuntimeError(
+            f"committed car index maps {len(mapped)} cars, the e1-drive roster has "
+            f"{len(roster_slugs)}"
+        )
+    if len(index.get("cars", [])) != len(roster_slugs):
+        raise RuntimeError(
+            f"committed car index has {len(index.get('cars', []))} rows, the e1-drive roster has "
+            f"{len(roster_slugs)}"
+        )
     cars = sorted(index["cars"], key=lambda row: row["slug"])
 
     summaries = []

@@ -48,22 +48,37 @@ export class PropManifestError extends Error {
  * Measured driven-line exclusions for the timed 310 m sprint (P74b).
  *
  * The V2 `roadside` profile is clear on the measured centreline (0/1,245), but
- * the committed five-car scripted sprint follows the Stanley line with up to
- * ~0.6-0.9 m lateral error and grazes nine active colliders (fence posts and
- * rack components at the edge of the four known arcs). Making those solid would
- * change every affected car's inputs, state hash and finish time, i.e. break the
- * committed sprint. They are therefore excluded for the timed course only, by
- * exactly the measured set, and every other V2 structure stays solid.
+ * the committed scripted sprint follows the Stanley line with up to ~0.6-0.9 m
+ * lateral error and touches colliders at the edge of the known arcs (including
+ * thin fence/rack components swept between 60 Hz ticks by the prop layer's
+ * 8 cm substeps). Making those solid would change every affected car's inputs,
+ * state hash and finish time, i.e. break the committed sprint. They are
+ * therefore excluded for the timed course only, by exactly the measured set,
+ * and every other V2 structure stays solid.
  *
- * The list is derived from the committed reference ghost traces by
- * `tools/derive_sprint_exclusions.mjs` and re-checked by the verifier. It is not
- * typed in and the manifest is not modified.
+ * The list is derived from the committed reference ghost traces (all roster
+ * cars) by `tools/derive_sprint_exclusions.mjs` and re-checked by the verifier.
+ * It is not typed in and the manifest is not modified.
  */
 export const SPRINT_DRIVEN_EXCLUSIONS = Object.freeze([
   'river.block56.node289.draw.115.component.015',
+  'river.block56.node289.draw.116.component.000',
+  'river.block56.node289.draw.116.component.001',
+  'river.block56.node289.draw.116.component.028',
+  'river.block56.node289.draw.116.component.032',
+  'river.block56.node289.draw.116.component.039',
+  'river.block56.node289.draw.116.component.042',
   'river.block56.node289.draw.116.component.043',
   'river.block56.node289.draw.116.component.044',
+  'river.block56.node289.draw.116.component.045',
   'river.block56.node289.draw.116.component.047',
+  'river.block56.node289.draw.116.component.048',
+  'river.block56.node289.draw.116.component.051',
+  'river.block56.node289.draw.116.component.052',
+  'river.block56.node289.draw.116.component.053',
+  'river.block56.node289.draw.116.component.055',
+  'river.block56.node289.draw.95.component.002',
+  'river.block56.node289.draw.95.component.004',
   'river.block56.node289.draw.97.component.063',
   'river.block56.node289.draw.99.component.029',
   'river.block56.node289.draw.99.component.042',
@@ -71,7 +86,7 @@ export const SPRINT_DRIVEN_EXCLUSIONS = Object.freeze([
   'river.block56.node289.draw.99.component.047'
 ]);
 export const SPRINT_DRIVEN_EXCLUSION_CONTENT_SHA256 =
-  'sha256:9603f8580fc3ed2dd89a6571529b54d4cb6a81394724e6462d9c50192986b4f2';
+  'sha256:c16fd7ba39b353d18f92fac569cbb63638b36cff3df8f362047dbad0e137e3a9';
 export const SPRINT_DRIVEN_EXCLUSION_ARTIFACT = '_work/e1-drive/sprint-driven-exclusions.json';
 
 /** Mark the measured driven-line colliders inactive for the timed course only. */
@@ -97,10 +112,10 @@ export const SPRINT_PROP_PINS = Object.freeze({
   manifestContentSha256: PROP_MANIFEST_CONTENT_SHA256,
   variant: PROP_MANIFEST_VARIANT,
   manifestColliders: 651,
-  // P74 roadside profile = 553; 9 measured driven-line colliders are excluded
-  // for the timed course only, leaving 544 active colliders.
+  // P74 roadside profile = 553; the measured driven-line set excludes 23
+  // colliders for the timed course only, leaving 530 active colliders.
   profileColliders: 553,
-  colliders: 544,
+  colliders: 530,
   drivenLineExclusions: SPRINT_DRIVEN_EXCLUSIONS.length,
   drivenLineExclusionContentSha256: SPRINT_DRIVEN_EXCLUSION_CONTENT_SHA256,
   resolver: PROP_RESOLVER
