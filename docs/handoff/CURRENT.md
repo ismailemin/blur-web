@@ -142,6 +142,10 @@ Kanıt: `docs/work/analysis/audio-tyre-collision.md`.
 unsupported, instance/normal yok. Doğrulama **12.367/12.367**. Kanıt:
 `docs/work/analysis/map-slice-amboy.md`.
 
+**AI1 — AI rakip:** 5 araç 310 m + loop-01, 10/10 temiz, 0 respawn; 3 destekli
+profil + agresif (1/10 fail); 26/26, 133.068 tick hash; 4 AI sprint/3 AI lap
+deterministik. Kanıt: `docs/work/analysis/ai-driver.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

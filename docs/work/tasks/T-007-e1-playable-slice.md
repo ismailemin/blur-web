@@ -334,6 +334,14 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   normal yok, basit Box/Cylinder collision pakette değil. E1 hâlâ River-only.
 - Doğrulama **12.367/12.367**. Kanıt: `docs/work/analysis/map-slice-amboy.md`.
 
+### E1aa — AI rakip sürücüsü (AI1)  ✅
+- `probes/ai-driver/`: deterministik Stanley (sprint) / pure pursuit (loop) sürücü,
+  3 destekli skill profili (cautious/standard/reference) + agresif (1/10 fail).
+- Gerçek wasm ile 5 araç 310 m ve loop-01: 10/10 temiz, 0 respawn, 0 NaN;
+  committed follower ile 9/10 süre birebir (Lotus loop +1 tick).
+- **26/26**; 133.068 tick hash; 4 AI sprint + 3 AI lap deterministik sıra.
+- Kanıt: `docs/work/analysis/ai-driver.md`, `_work/ai-driver/results.json`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

@@ -51,6 +51,7 @@ def main():
         ('race-rules',['node','probes/race-rules/verify.mjs']),
         ('net-mvp-selftest',['node','probes/net-mvp/selftest.mjs']),
         ('map-slice-amboy',[sys.executable,'probes/map-slice/tools/verify_slice.py','--package','_work/map-slice/amboy']),
+        ('ai-driver',['node','probes/ai-driver/verify.mjs']),
     ])
     results=[]
     for name,command in steps:

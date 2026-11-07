@@ -810,6 +810,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Eksik: 0/1.606 dokulu, 27 section unsupported, 366 instance, normal yok; E1 hâlâ River-only.
 - Doğrulama **12.367/12.367**. Kanıt: `docs/work/analysis/map-slice-amboy.md`.
 
+## 7 Kasım 2026 — AI rakip sürücüsü
+
+- Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).
+- Gerçek wasm ile 5 araç 310 m + loop-01: 10/10 temiz, 0 respawn, 0 NaN; 4 AI sprint + 3 AI lap deterministik.
+- **26/26**, 133.068 tick hash. Kanıt: `docs/work/analysis/ai-driver.md`.
+
 ## 7 Kasım 2026 — ana suite 36 kontrol
 
 - `tools/verify_asset_probe.py` artık power-up tanımları + kuralları, 62 araç matrisi, 19 harita matrisi ve V2 collider kapısını da çalıştırıyor.
