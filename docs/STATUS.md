@@ -836,6 +836,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 310 m ile örtüşme 0 (en yakın 72,8 m); loop-01'de 2 (1,26/1,80 m). Retail 20 slotluk grid loop-01'de.
 - Doğrulama **1.415/1.415**. Kanıt: `docs/work/analysis/pickup-placement.md`.
 
+## 7 Kasım 2026 — M2 power-up ilk dilimi
+
+- `?mp=1&powerups=1`: **Mine/Shield/Repair** host otoriteli; 6 geçici pickup, tek slot, HUD health/shield/feed.
+- 18 olay (pickup/mine/shield/repair/damage/wreck/respawn); host/guest olay sayıları aynı, 20 teslim/0 drop.
+- Node **68/68**, iki tarayıcı capture **console 0/0**, suite 44/44, checker 23/23. Nitro/Shock/Shunt/Bolt/Barge tipli ertelendi.
+- Kanıt: `docs/work/verification/T-007-powerups.md`, `_work/e1-drive/browser-mp-powerups-*.png`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

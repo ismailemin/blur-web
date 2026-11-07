@@ -2681,3 +2681,74 @@ protocol gate, reconnect and the rules session) is
 6. **`check_e1_poc.py` and the `--skip-build` asset probe** remain read-only
    external gates; the M1 capture does not modify the game data, the room probe
    or the rules probe.
+
+## 33. M2/PWR2 — power-up slice (Mine, Shield, Repair)
+
+Status: implemented and verified, 7 November 2026, on top of the committed M1
+race (`f9ff085`). This is an original project rules/relay layer driven by the
+recovered PWR1 values; it is not a retail protocol or a full-game claim. The
+full evidence record is `docs/work/verification/T-007-powerups.md`.
+
+`?powerups=1` (multiplayer only, default off) adds the first power-up slice:
+
+- **Host-authoritative world.** The host builds `PowerupModel` from
+  `_work/powerups/powerups.json` and the committed
+  `probes/powerups/rules/engine.js` (`createWorld`). Clients send use intents
+  only; the host validates inventory/cooldown/type, resolves mine hits/shield
+  absorption/damage and broadcasts sequenced events. The guest applies the
+  host snapshot and event feed and never judges a hit locally.
+- **Integrated types.** **Bomb (Mine), Shield, Repair.** Nitro, Shock, Shunt,
+  Blindfire/Bolt, Barge and SuperShield are deferred with typed reasons: no
+  proven wasm boost/impulse hook and no serialized projectile lifetime, hit test
+  or human targeting (`POWERUP_DEFERRED`).
+- **Placement.** Six provisional pickups on the measured 310 m P48 arcs
+  40/90/140/190/240/280 m, cycling Bomb/Shield/Repair. Every event says
+  `placement:'provisional-measured-arc'`; PWR3 owns the real level/actor
+  placement.
+- **Collection and inventory.** Host planar proximity against the recovered
+  `PickupRadius=2.0 m`; one active slot; a second pickup is rejected with
+  `inventory-full`. Normal pickup respawn seconds are not serialized, so the
+  page emits a typed `respawn-unresolved` instead of guessing.
+- **Recovered values in use.** Bomb `Radius=1.0`, `OuterRadius=3.5`,
+  `DamageInflicted=100`, `Lifespan=60`, `MasterMinePrimeTimer=0.3`,
+  `PlaceBehindDistance=5`; Shield `Health=50`, `Lifetime=6`; Repair
+  `AmountToRepair=400`; pickup deactivate `0.6 s`.
+- **Damage/wreck/respawn.** The model applies the full Bomb damage inside
+  `Radius`, emits a typed near miss between `Radius` and `OuterRadius`, and
+  emits `wrecked` at 0 HP. After a labelled 1.0 s diagnostic delay it emits
+  `respawn` with the R1 `respawnTargetForGate(lastPassedGate)` target; the page
+  rebuilds the car through the existing `respawnAt()` path and rejoins progress.
+  Health is a labelled 100 HP diagnostic pool (`healthScale` is runtime-only).
+- **HUD and effects.** `#powerup-hud` shows the one-slot inventory
+  (icon/letter + type name), health, shield capacity/remaining time, status and
+  the last six sequenced events. A bounded diagnostic marker pass in
+  `packet-consumer.js` draws an octahedron for pickups, mines and shield
+  bubbles (16 slots, ghost pipeline, no new buffer/texture, no packet/physics
+  change). The icon is a labelled glyph because the retail `perk_icons`
+  binding is not recovered.
+- **Control channel.** `/_powerups/relay` is an ordered in-memory HTTP relay
+  beside the unchanged `probes/net-mvp` room service: host events, guest use
+  intents. It is project-specific, loopback and not a retail protocol.
+- **Logical tick across rebuilds.** A wreck rebuild resets the local engine
+  tick; the page carries `mpEngineTickOffset` into the 20 Hz snapshot and the M1
+  finish report so the race clock stays monotonic. The offset is recorded in the
+  finish hash payload; the normal M1 finish path is unchanged and re-verified.
+
+Verification:
+
+| Gate | Result |
+|---|---|
+| Node event-model tests | 68/68 PASS (`_work/e1-drive/powerups-node-report.json`) |
+| Two-browser `--mode mp-powerups` | PASS, console 0/0, identical host/guest event counts, mine/wreck/respawn + shield absorb/break + repair screenshots |
+| M1 Node regression | 874/874 PASS |
+| Portable asset suite | 41/41 PASS (concurrent `amboy-render` added; every step passes) |
+| PoC readiness | 23/23 PASS |
+| M1 two-browser capture | PASS, console 0/0, host P1 / guest P2 |
+| Solo sprint capture | PASS, console 0, 14.650 s |
+
+Limits: one remote slot and peer-state authority are unchanged; the mine
+falloff law, `Normal` pickup respawn seconds, max-health scale, inventory
+capacity, HUD icon binding and projectile/boost rules remain un-recovered and
+are labelled; no AI use and no retail/full-game claim. The task card, handoff
+and `docs/STATUS.md` entry are owned by the main agent (this subagent's file
+ownership did not include them).

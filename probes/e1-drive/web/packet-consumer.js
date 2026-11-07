@@ -416,6 +416,17 @@ function boundsOfDraws(draws) {
   return { min, max, center, radius };
 }
 
+/** Column-major translate * uniform-scale matrix for a diagnostic marker. */
+function markerMatrix(position, scale) {
+  const s = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return new Float32Array([
+    s, 0, 0, 0,
+    0, s, 0, 0,
+    0, 0, s, 0,
+    position[0], position[1], position[2], 1
+  ]);
+}
+
 const shortestAngle = (delta) => {
   let value = delta;
   while (value > Math.PI) value -= Math.PI * 2;
@@ -446,6 +457,13 @@ export class PacketConsumer {
     this.ghostDraws = [];
     this.ghostMatrices = null;
     this.ghostEnabled = false;
+    // Power-up diagnostics (M2/PWR2): a small marker mesh injected by the page,
+    // drawn in a separate translucent pass. Presentation only; never in updates,
+    // the packet hash or the physics.
+    this.powerupDraws = [];
+    this.powerupMarkers = null;
+    this.powerupEnabled = false;
+    this.powerupSlotCount = 0;
     this.stats = {
       renders: 0,
       geometryUploads: 0,
@@ -460,6 +478,12 @@ export class PacketConsumer {
       ghostDrawsIssued: 0,
       ghostFrames: 0,
       ghostEnabled: false,
+      // Power-up diagnostic marker pass (separate from packet draws).
+      powerupSlots: 0,
+      powerupDrawsIssued: 0,
+      powerupFrames: 0,
+      powerupEnabled: false,
+      powerupDropped: 0,
       ticksExecuted: 0,
       alpha: 0,
       renderTick: 0,
@@ -680,6 +704,12 @@ export class PacketConsumer {
     this.ghostEnabled = false;
     this.stats.ghostDraws = 0;
     this.stats.ghostEnabled = false;
+    this.powerupDraws = [];
+    this.powerupMarkers = null;
+    this.powerupEnabled = false;
+    this.powerupSlotCount = 0;
+    this.stats.powerupSlots = 0;
+    this.stats.powerupEnabled = false;
   }
 
   async load(packet) {
@@ -856,10 +886,16 @@ export class PacketConsumer {
       ? packet.draws.filter((draw) => draw.meshId === carBodyMeshId && draw.visible !== false).length
       : 0;
     const drawCount = packet.draws.length;
+    // Power-up diagnostic marker slots: injected mesh + a fixed number of
+    // translucent draw slots. They are not packet draws and never enter the
+    // packet hash or the physics. `?powerups=0` (the default) leaves this at 0.
+    const powerupConfig = packet.diagnostics?.extras?.powerups ?? null;
+    const powerupSlots = powerupConfig && Number.isInteger(powerupConfig.slots) && powerupConfig.slots > 0
+      ? powerupConfig.slots : 0;
     this.ghostDraws = [];
     this.stats.ghostDraws = ghostDrawCount;
     this.uniformBuffer = this.device.createBuffer({
-      size: (drawCount + ghostDrawCount) * DRAW_UNIFORM_STRIDE,
+      size: (drawCount + ghostDrawCount + powerupSlots) * DRAW_UNIFORM_STRIDE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
     this.buffers.push(this.uniformBuffer);
@@ -895,6 +931,35 @@ export class PacketConsumer {
       }
     }
     this.stats.texturedDraws = this.draws.filter((draw) => draw.textureId != null).length;
+    // Power-up marker draw slots (PWR2): one synthetic draw over the injected
+    // octahedron mesh. Nothing is in packet.draws, so the packet's own draw
+    // count/hash/camera framing are unchanged.
+    this.powerupDraws = [];
+    this.powerupMarkers = null;
+    this.powerupEnabled = false;
+    this.powerupSlotCount = powerupSlots;
+    this.stats.powerupSlots = powerupSlots;
+    this.stats.powerupDrawsIssued = 0;
+    this.stats.powerupFrames = 0;
+    this.stats.powerupEnabled = false;
+    if (powerupSlots > 0) {
+      const markerMesh = this.meshes.get(powerupConfig.markerMeshId);
+      if (!markerMesh) throw new Error('power-up marker mesh ' + powerupConfig.markerMeshId + ' was not uploaded');
+      const indexOffset = Number.isInteger(powerupConfig.indexOffset) ? powerupConfig.indexOffset : 0;
+      const indexCount = Number.isInteger(powerupConfig.indexCount) ? powerupConfig.indexCount : markerMesh.indexCount;
+      if (indexOffset < 0 || indexCount <= 0 || indexCount % 3 || indexOffset + indexCount > markerMesh.indexCount) {
+        throw new Error('power-up marker index range is invalid');
+      }
+      for (let index = 0; index < powerupSlots; index++) {
+        this.powerupDraws.push({
+          id: 'powerup.marker.' + index,
+          meshId: powerupConfig.markerMeshId,
+          mesh: markerMesh,
+          indexOffset,
+          indexCount
+        });
+      }
+    }
     // Ghost draw list: the same mesh, index ranges, textures and node ids as the
     // live car. Nothing is uploaded; only the per-frame node matrix differs.
     if (ghostDrawCount > 0) {
@@ -1024,6 +1089,46 @@ export class PacketConsumer {
     this.stats.ghostEnabled = true;
   }
 
+  /**
+   * Power-up diagnostics (PWR2): supply visible mine/pickup/shield markers for
+   * the next frame. Each marker is `{kind, position:[x,y,z], scale, colour}`.
+   * This is a labelled presentation overlay only: it never writes a physics or
+   * packet value, and the default `null` hides it.
+   */
+  setPowerupMarkers(markers) {
+    if (!markers) {
+      this.powerupMarkers = null;
+      this.powerupEnabled = false;
+      this.stats.powerupEnabled = false;
+      return;
+    }
+    if (!Array.isArray(markers)) throw new Error('power-up markers need an array');
+    if (markers.length > this.powerupDraws.length) {
+      this.stats.powerupDropped += markers.length - this.powerupDraws.length;
+      throw new Error('power-up marker slots ' + this.powerupDraws.length + ' but ' + markers.length + ' markers');
+    }
+    const normalized = markers.map((marker, index) => {
+      const position = Array.isArray(marker.position)
+        ? marker.position
+        : [marker.position?.x ?? 0, marker.position?.y ?? 0, marker.position?.z ?? 0];
+      if (!position.every((value) => Number.isFinite(value))) {
+        throw new Error('power-up marker ' + index + ' has a non-finite position');
+      }
+      const colour = Array.isArray(marker.colour) && marker.colour.length >= 3
+        ? marker.colour.slice(0, 3)
+        : [1, 1, 1];
+      return {
+        kind: marker.kind ?? 'marker',
+        position,
+        scale: Number.isFinite(marker.scale) ? marker.scale : 1,
+        colour
+      };
+    });
+    this.powerupMarkers = normalized;
+    this.powerupEnabled = normalized.length > 0;
+    this.stats.powerupEnabled = this.powerupEnabled;
+  }
+
   /** Interpolate the per-tick orbit camera; f = 0 returns tick A's stored matrices. */
   interpolateCamera(a, b, f) {
     if (!(f > 0)) return { view: Float32Array.from(a.view), projection: Float32Array.from(a.projection) };
@@ -1139,7 +1244,11 @@ export class PacketConsumer {
 
     const viewProjection = multiply(frame.projection, frame.view);
     const ghostActive = this.ghostEnabled && this.ghostMatrices !== null && this.ghostDraws.length > 0;
-    const slotCount = this.draws.length + (ghostActive ? this.ghostDraws.length : 0);
+    const powerupActive = this.powerupEnabled && Array.isArray(this.powerupMarkers) &&
+      this.powerupMarkers.length > 0 && this.powerupDraws.length > 0;
+    // Ghost and marker slots are reserved at load; offsets are stable even when
+    // one of the passes is inactive.
+    const slotCount = this.draws.length + this.ghostDraws.length + this.powerupSlotCount;
     const bytes = new Float32Array(slotCount * (DRAW_UNIFORM_STRIDE / 4));
     for (let index = 0; index < this.draws.length; index++) {
       const draw = this.draws[index];
@@ -1176,6 +1285,20 @@ export class PacketConsumer {
         bytes.set(viewProjection, base);
         bytes.set(this.ghostMatrices.get(draw.nodeId) ?? draw.world, base + 16);
         bytes.set([GHOST_TINT[0], GHOST_TINT[1], GHOST_TINT[2], draw.spins ? 0.85 : 0], base + 32);
+        bytes.set([0, 0, 0, 0], base + 36);
+      }
+    }
+    if (powerupActive) {
+      // Diagnostic marker slots follow the ghost slots. Colour is presentation
+      // only; the marker mesh/scale never enters the packet or the physics.
+      const markerBase = this.draws.length + this.ghostDraws.length;
+      const activeMarkers = this.powerupMarkers.slice(0, this.powerupDraws.length);
+      for (let index = 0; index < activeMarkers.length; index++) {
+        const marker = activeMarkers[index];
+        const base = (markerBase + index) * (DRAW_UNIFORM_STRIDE / 4);
+        bytes.set(viewProjection, base);
+        bytes.set(markerMatrix(marker.position, marker.scale), base + 16);
+        bytes.set([marker.colour[0], marker.colour[1], marker.colour[2], 0], base + 32);
         bytes.set([0, 0, 0, 0], base + 36);
       }
     }
@@ -1233,14 +1356,35 @@ export class PacketConsumer {
       this.stats.ghostDrawsIssued += this.ghostDraws.length;
       this.stats.ghostFrames++;
     }
+    if (powerupActive) {
+      // Third pass: the simple diagnostic marker mesh with the same translucent
+      // pipeline. Draw slots are capped at load; no buffer or texture is created.
+      pass.setPipeline(this.ghostPipeline);
+      pass.setBindGroup(2, this.placeholderGroup);
+      const markerBase = this.draws.length + this.ghostDraws.length;
+      const marker = this.powerupDraws[0];
+      pass.setVertexBuffer(0, marker.mesh.vertexBuffer);
+      pass.setVertexBuffer(1, marker.mesh.uvBuffer);
+      pass.setIndexBuffer(marker.mesh.indexBuffer, 'uint32');
+      const active = Math.min(this.powerupMarkers.length, this.powerupDraws.length);
+      for (let index = 0; index < active; index++) {
+        const draw = this.powerupDraws[index];
+        pass.setBindGroup(0, this.drawBindGroup, [(markerBase + index) * DRAW_UNIFORM_STRIDE]);
+        pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
+      }
+      this.stats.powerupDrawsIssued += active;
+      this.stats.powerupFrames++;
+    }
     pass.end();
     this.device.queue.submit([encoder.finish()]);
 
     this.stats.renders++;
     this.stats.uniformWrites++;
     this.stats.uniformBytes += bytes.byteLength;
-    this.stats.drawsIssued += this.visibleDraws.length + (ghostActive ? this.ghostDraws.length : 0);
+    this.stats.drawsIssued += this.visibleDraws.length + (ghostActive ? this.ghostDraws.length : 0) +
+      (powerupActive ? Math.min(this.powerupMarkers.length, this.powerupDraws.length) : 0);
     this.stats.ghostEnabled = ghostActive;
+    this.stats.powerupEnabled = powerupActive;
     this.stats.cursor = frame.cursor;
     this.stats.renderTick = frame.tickFloor;
     this.stats.alpha = frame.alpha;

@@ -320,6 +320,108 @@ html[data-mp] #cars { display: none; }
 #remote-tag[hidden] { display: none; }
 #remote-tag[data-state="reconnecting"] { color: var(--warn); border-color: rgba(232, 196, 111, 0.65); }
 
+/* M2/PWR2 power-up HUD. Presentation only: the host model/events are the
+   authority; the icon is a labelled diagnostic glyph because no retail HUD
+   icon binding was recovered. */
+#powerup-hud {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: 360px;
+  padding: 8px 12px;
+  background: rgba(8, 14, 20, 0.88);
+  border: 1px solid rgba(111, 195, 232, 0.35);
+  border-radius: 6px;
+  color: var(--ink);
+  pointer-events: none;
+}
+#powerup-hud[hidden] { display: none; }
+#powerup-hud .pwr-title {
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+#powerup-hud .pwr-badge {
+  margin-left: 8px;
+  padding: 0 6px;
+  color: var(--warn);
+  border: 1px solid rgba(232, 196, 111, 0.55);
+  border-radius: 999px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+#powerup-hud .pwr-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+#powerup-hud .pwr-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 5px;
+  font-size: 18px;
+  font-weight: 700;
+  background: #13222c;
+  border: 1px solid rgba(111, 195, 232, 0.4);
+  color: var(--muted);
+}
+#powerup-hud .pwr-icon[data-kind="bomb"] { color: #ff9a3c; border-color: rgba(255, 154, 60, 0.7); }
+#powerup-hud .pwr-icon[data-kind="shield"] { color: #4cc8ff; border-color: rgba(76, 200, 255, 0.7); }
+#powerup-hud .pwr-icon[data-kind="repair"] { color: #6fe89a; border-color: rgba(111, 232, 154, 0.7); }
+#powerup-hud #powerup-slot-name { color: var(--ink); }
+#powerup-hud #powerup-slot-timer { color: var(--muted); font-size: 11px; }
+#powerup-hud .pwr-meter {
+  display: grid;
+  grid-template-columns: 7ch 1fr 11ch;
+  gap: 6px;
+  align-items: center;
+  margin: 2px 0;
+  color: var(--muted);
+}
+#powerup-hud .pwr-bar {
+  height: 7px;
+  background: #13222c;
+  border: 1px solid rgba(111, 195, 232, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+}
+#powerup-hud .pwr-bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: #8fe3b0;
+  transition: width 80ms linear;
+}
+#powerup-hud .pwr-bar.pwr-shield i { background: #4cc8ff; }
+#powerup-hud #powerup-health-text,
+#powerup-hud #powerup-shield-text { color: var(--ink); text-align: right; }
+#powerup-hud .pwr-status {
+  margin-top: 5px;
+  color: var(--warn);
+  min-height: 1.4em;
+}
+#powerup-hud[data-state="wrecked"] .pwr-status { color: #ff8a8a; }
+#powerup-hud .pwr-feed {
+  margin-top: 4px;
+  max-height: 7.5em;
+  overflow: hidden;
+  white-space: pre-line;
+  color: var(--muted);
+  border-top: 1px solid rgba(111, 195, 232, 0.18);
+  padding-top: 4px;
+}
+#powerup-hud .pwr-note {
+  margin-top: 4px;
+  color: #5f7486;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 /* Shared M1 result table inside the existing results panel. */
 #mp-results { margin: 8px 0 2px; }
 #mp-results[hidden] { display: none; }

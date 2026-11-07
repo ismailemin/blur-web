@@ -390,6 +390,21 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Not: PWR2'nin geçici 310 m arc yerleşimi gerçek veriyle örtüşmüyor; M2 için
   loop-01/retail rota tercih edilmeli.
 
+### E1af — M2 power-up ilk dilimi (PWR2)  ✅
+- `?mp=1&powerups=1`: **Bomb/Mine, Shield, Repair** host otoriteli; 6 geçici
+  pickup (310 m arc 40/90/140/190/240/280), tek slot, HUD health/shield/feed.
+- 18 olay (pickup-spawned, mine-placed/armed/detonated, shield-absorbed/broken,
+  repaired, damage, wrecked, respawn…); istemci yalnız use intent gönderir.
+- Değerler PWR1'den: Bomb r1.0/outer3.5/dmg100/life60/prime0.3; Shield 50/6 s;
+  Repair 400; pickup radius 2.0. Nitro/Shock/Shunt/Bolt/Barge tipli ertelendi.
+- Node **68/68**; iki tarayıcı `--mode mp-powerups` **PASS**, console **0/0**;
+  host/guest olay sayıları aynı; 20 teslim, 0 drop.
+- `verify_e1_drive` **874/874**, suite 44/44, checker 23/23.
+- Kanıt: `docs/work/verification/T-007-powerups.md`,
+  `_work/e1-drive/browser-mp-powerups-*.png`.
+- Sınır: 100 HP / 1 s wreck / tek slot proje kuralı; mine falloff yok;
+  pickup respawn süresi unresolved; placement geçici (PWR3 54 gerçek nokta).
+
 ## Pipeline (bağımlılık sırası)
 
 ```

@@ -28,6 +28,7 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 | `/?course=free` | **Free-roam** (P65/P68 spawn havzası 7.702 m², truck/bina solid) |
 | `/?mp=1&host=1` | **M1 online race host** — oda kodu, lobby, 310 m |
 | `/?mp=1&room=CODE` | M1 guest — oda koduna katıl |
+| `/?mp=1&host=1&powerups=1` | **M2**: Mine/Shield/Repair, `E` ile kullan |
 | `/?script=drive` | Deterministik 300 tick sürüş |
 | `/?script=sprint` | Deterministik sprint (5 araç) |
 | `/?script=sprint&course=lap` | Deterministik 3 tur (5 araç) |
@@ -106,6 +107,23 @@ http://192.168.1.20:8801/?mp=1&room=<CODE>
 
 Sayfa `ws://<sayfa-host>:8811/ws` adresine bağlanır; HTTPS'e geçilirse oda
 servisi `wss://` arkasına alınmalı. Farklı ağlar (NAT/TURN) henüz kapsam dışı.
+
+### M2 power-up dilimi
+
+Host URL'sine `&powerups=1` ekle (guest de aynı odaya katılır):
+
+```text
+http://127.0.0.1:8801/?mp=1&host=1&powerups=1
+```
+
+- Pickup'a yaklaş → tek slot dolar (Mine / Shield / Repair).
+- **E** ile kullan: mine arkaya bırakılır, shield aktifleşir, repair can basar.
+- HUD: health 100, shield, olay akışı; mine/shield/pickup diagnostic marker.
+- Wreck olursa R1 son checkpoint'ten respawn.
+- `provisional` etiketi: pickup yerleşimi geçici ölçülmüş arc; gerçek 54 nokta
+  PWR3'te çıkarıldı, entegrasyonu sonraki adım.
+- Nitro/Shock/Shunt/Bolt/Barge bu dilimde **yok** (motor boost/impulse ve
+  hit-test verisi kanıtlanana kadar ertelendi).
 
 Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
 Dodge 4,633 → Focus 5,133 s.

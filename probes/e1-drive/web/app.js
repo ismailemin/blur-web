@@ -66,6 +66,10 @@ import {
 } from './mp-client.js';
 import { RemoteDisplay, remoteNodeMatrixMap } from './mp-remote.js';
 import {
+  POWERUP_DEFERRED, POWERUP_SCHEMA, POWERUP_SLICE_LABELS, POWERUP_SLICE_TYPES, applyPowerupBatch,
+  createPowerupModel, createPowerupView, forwardFromQuaternion, powerupEventText, powerupViewSummary, shieldFor
+} from './powerups.js';
+import {
   COLLISION_PROBES, PropManifestError, applyDrivenLineExclusions, checkPropManifest, collisionProbePose,
   createPropLayer, propPinsForCourse, propYawFromHeading
 } from './prop-layer.js';
@@ -213,6 +217,19 @@ if (MP) {
   }
   if (!/^wss?:\/\//.test(MP_URL)) throw new Error('mpServer must be a ws:// or wss:// URL');
 }
+// M2/PWR2 power-up slice. Default off; it is a multiplayer-only mode and the
+// first slice integrates Mine/Shield/Repair only (see POWERUP_DEFERRED).
+const POWERUPS = MP && params.get('powerups') === '1';
+if (MP && params.has('powerups') && params.get('powerups') !== '0' && params.get('powerups') !== '1') {
+  throw new Error('powerups must be 0 or 1');
+}
+if (!MP && params.get('powerups') === '1') {
+  throw new Error('?powerups=1 is the online race slice; add ?mp=1&host=1 or ?mp=1&room=CODE');
+}
+const POWERUP_MARKER_MESH = 'e1.powerup.marker';
+const POWERUP_MARKER_SLOTS = 16;
+const POWERUP_RELAY_POLL_MS = 100;
+const POWERUP_TICK_SECONDS = 1 / 60;
 // The capture-only diagnostic pace scales the speed targets of the scripted
 // Stanley controller. It changes only the input script (never physics or the
 // engine); the normal page and every existing gate pass no override.
@@ -397,6 +414,28 @@ const state = {
     remoteWheelSpin: 'static (the E1 state snapshot has no wheel angle)',
     sameCar: true,
     schema: MP_SCHEMA
+  } : null,
+  // M2/PWR2 power-up slice (`?mp=1&powerups=1`). Null unless explicitly enabled.
+  powerups: POWERUPS ? {
+    enabled: true,
+    phase: 'loading',
+    status: 'loading the PWR1 manifest…',
+    schema: POWERUP_SCHEMA,
+    manifestHash: null,
+    types: POWERUP_SLICE_TYPES.slice(),
+    deferred: { ...POWERUP_DEFERRED },
+    placement: null,
+    events: [],
+    counts: {},
+    lastEvents: [],
+    notice: null,
+    wrecked: false,
+    remoteWrecked: false,
+    snapshot: null,
+    view: null,
+    relay: null,
+    relayError: null,
+    host: MP_HOST
   } : null
 };
 
@@ -600,6 +639,20 @@ function publish() {
       mp.result.rows.map((row) => 'P' + row.positionNumber + ' ' + row.name +
         (row.timeSeconds === null ? ' DNF' : ' ' + row.timeSeconds.toFixed(3) + ' s')).join(' · ')]);
   }
+  if (state.powerups?.enabled) {
+    const hud = mpPowerupHudModel();
+    const local = hud?.local ?? null;
+    const item = local?.inventory?.[0] ?? null;
+    rows.push(['powerups', 'Mine/Shield/Repair · ' + (state.powerups.phase ?? 'loading') +
+      ' · health ' + (local ? local.health + '/' + local.maxHealth : '—') +
+      ' · slot ' + (item ? item.type : 'empty') +
+      ' · shield ' + (hud?.shield ? hud.shield.capacity + '/' + hud.shield.maxCapacity +
+        ' ' + hud.shield.secondsLeft.toFixed(2) + ' s' : 'none') +
+      (state.powerups.wrecked ? ' · WRECKED' : '') +
+      (state.powerups.relayError ? ' · relay ' + state.powerups.relayError : '')]);
+    rows.push(['pwr events', 'seq ' + ((state.powerups.lastEvents.at(-1)?.seq) ?? 0) +
+      ' · ' + Object.entries(state.powerups.counts).map(([type, count]) => type + ' ' + count).join(' · ')]);
+  }
   rows.push(
     ['tick', String(state.displayTick) + ' (engine ' + state.engineTick + ') · ' + state.phase],
     ['speed', state.speed.toFixed(2) + ' m/s · ' + state.speedKph.toFixed(0) + ' km/h'],
@@ -636,6 +689,7 @@ function publish() {
   publishSurveyBanner();
   publishSprintOverlays();
   publishMpOverlays();
+  publishPowerupHud();
 }
 
 /**
@@ -934,6 +988,12 @@ window.addEventListener('keydown', (event) => {
     doReset(Math.round(performance.now() * 1000));
     return;
   }
+  if ((event.key === 'e' || event.key === 'E') && POWERUPS && MP && !event.repeat) {
+    // Host-authoritative power-up use: the host applies it; the guest sends an
+    // intent and never judges the effect locally.
+    mpPowerupRequestUse();
+    return;
+  }
   keys.add(event.key.toLowerCase());
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(event.key.toLowerCase())) event.preventDefault();
 });
@@ -954,6 +1014,7 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('pointerdown', startEngineAudio);
 // Dispose the context (and its six sources) when the page is hidden/unloaded.
 window.addEventListener('pagehide', () => {
+  mpPowerupRelayStop();
   if (mpNet) { try { mpNet.close(); } catch {} }
   if (!engineAudio) return;
   engineAudio.dispose();
@@ -1005,6 +1066,22 @@ let ghostFrame = null;
 // Cumulative in-place rebuilds of this page's single wasm instance in telemetry
 // mode (one e1_create in loadEngine, then one e1_reset per manoeuvre and per R).
 let telemetryResets = 0;
+
+// M2/PWR2 power-up state (host model, client view and the project-specific relay).
+let powerupManifest = null;
+let powerupEngine = null;
+let powerupModel = null;
+let powerupView = null;
+let powerupRelay = null;
+let powerupBroadcastSeq = 0;
+let powerupLastEventSeq = 0;
+let powerupLastBroadcastAt = 0;
+let powerupPendingBatch = null;
+let powerupRelayTimer = null;
+// Logical race tick = local engine tick + accumulated rebuild offset. A power-up
+// wreck rebuilds the car (e1_create/e1_reset) and resets the engine tick; the
+// offset keeps the 20 Hz snapshot and the M1 finish report monotonic.
+let mpEngineTickOffset = 0;
 
 // ------------------------------------------------------------------ engine audio
 // The verified module plays six decoded retail `Race_V8_Engine_*` loops and
@@ -1567,6 +1644,7 @@ function groundYForState(state) {
 /** The input the current mode and rules allow for the step that reaches `tick`. */
 function currentInput(tick) {
   if (SOAK) return soakPhaseInput(tick);
+  if (MP && POWERUPS && state.powerups?.wrecked) return [0, 1, 0, 0];
   if (COLLISION_PROBE) {
     // Capture probe: full throttle until the additive layer reports the first
     // contact, then brake and handbrake. The input is a function of the run state
@@ -1684,12 +1762,23 @@ async function respawnAt(target, nowUs) {
   state.respawning = true;
   publish();
   try {
+    // M1/PWR2 logical race tick: the rebuild resets the engine tick, so carry
+    // the elapsed local ticks in the offset used by the 20 Hz snapshot and the
+    // finish report. The car rebuild itself is unchanged.
+    if (MP) {
+      mpEngineTickOffset += state.engineTick + 1;
+      mpLocalHistory = new Map();
+    }
     const tick0 = createWorld(target.x, target.z, target.heading);
     const tick1 = await startTimeline(tick0, { reload: true, rejoin: true });
     applyState(tick1);
     driveEngineAudio();
     holdReached = HOLD !== null && HOLD <= tick1.tick ? true : holdReached;
     state.ticksExecuted = 0;
+    if (state.powerups) {
+      state.powerups.wrecked = false;
+      state.powerups.notice = 'respawned at the race-rules target';
+    }
     driver.reset(nowUs);
     publish();
   } catch (error) {
@@ -1722,6 +1811,7 @@ async function startTimeline(tick0, {
     script: packetScript === null ? undefined : packetScript,
     camera: Object.keys(CAMERA_OVERRIDE).length ? CAMERA_OVERRIDE : undefined
   });
+  if (POWERUPS) attachPowerupMarkerGeometry(session.packet);
   state.cameraOverride = Object.keys(CAMERA_OVERRIDE).length ? { ...CAMERA_OVERRIDE } : null;
   const partsInfo = session.packet.diagnostics.extras.parts;
   state.parts = partsInfo?.partCount ?? 0;
@@ -2649,7 +2739,7 @@ async function runSoakMode(initialTick0) {
 /** E1-shaped network state from an engine snapshot. */
 function mpNetworkState(snapshot) {
   return {
-    tick: snapshot.tick,
+    tick: snapshot.tick + mpEngineTickOffset,
     position: [snapshot.position[0], snapshot.position[1], snapshot.position[2]],
     quaternion: quaternionFromAxes(snapshot.axisX, snapshot.axisY, snapshot.axisZ),
     speed: snapshot.speed
@@ -2658,8 +2748,9 @@ function mpNetworkState(snapshot) {
 
 /** Keep a short local state history for the capture's remote-pose comparison. */
 function mpRememberState(snapshot) {
-  mpLocalHistory.set(snapshot.tick, {
-    tick: snapshot.tick,
+  const tick = snapshot.tick + mpEngineTickOffset;
+  mpLocalHistory.set(tick, {
+    tick,
     position: [snapshot.position[0], snapshot.position[1], snapshot.position[2]],
     quaternion: quaternionFromAxes(snapshot.axisX, snapshot.axisY, snapshot.axisZ),
     speed: snapshot.speed
@@ -2715,6 +2806,7 @@ function mpAfterLocalTick(snapshot) {
   mpLastState = snapshot;
   mpRememberState(snapshot);
   if (MP_HOST) mpHostRulesStep(snapshot);
+  if (POWERUPS) mpPowerupHostTick(snapshot);
   const phase = mpNet.phase;
   if (phase === 'running' && !state.mp.finishReported) {
     const input = {
@@ -2723,8 +2815,9 @@ function mpAfterLocalTick(snapshot) {
       steer: snapshot.input[2],
       handbrake: snapshot.input[3]
     };
+    const logicalTick = snapshot.tick + mpEngineTickOffset;
     try {
-      mpNet.sendInput(input, snapshot.tick);
+      mpNet.sendInput(input, logicalTick);
       state.mp.sent.input++;
     } catch (error) {
       state.mp.sendFailures++;
@@ -2793,7 +2886,7 @@ function mpUpdateRemoteFrame(renderTick) {
   state.mp.remote.latest = latest;
   state.mp.remote.tick = latest.tick;
   state.mp.remote.authority = latest.authority === true;
-  const sampleTick = Math.max(0, renderTick - MP_REMOTE_DELAY_TICKS);
+  const sampleTick = Math.max(0, renderTick + mpEngineTickOffset - MP_REMOTE_DELAY_TICKS);
   const target = mpNet.sampleRemote(mpRemotePlayerId, sampleTick);
   if (!target) {
     consumer.setGhostFrame(null);
@@ -2826,8 +2919,9 @@ function mpUpdateRemoteFrame(renderTick) {
 /** Local finish: one canonical finish report; the shared table arrives later. */
 function mpLocalFinish(event) {
   if (!mpNet || !state.mp || state.mp.finishReported) return;
+  const logicalTick = event.tick + mpEngineTickOffset;
   state.mp.finishReported = true;
-  state.mp.finishTick = event.tick;
+  state.mp.finishTick = logicalTick;
   state.mp.finishTimeSeconds = event.timeSeconds;
   const hashes = state.tickHashes.filter((row) => row.tick <= event.tick).map((row) => row.stateHash);
   const sequenceHash = 'sha256:' + sha256Hex(hashes.join('\n'));
@@ -2836,10 +2930,11 @@ function mpLocalFinish(event) {
     version: 1,
     courseId: state.sprintCourseId,
     layoutHash: state.sprintLayoutHash,
-    finishTick: event.tick,
+    finishTick: logicalTick,
     timeSeconds: event.timeSeconds,
     checkpoints: event.checkpoints ?? null,
-    stateSequenceHash: sequenceHash
+    stateSequenceHash: sequenceHash,
+    rebuildTickOffset: mpEngineTickOffset
   });
   try {
     const finalState = session?.lastState ?? mpLastState;
@@ -2852,7 +2947,7 @@ function mpLocalFinish(event) {
   }
   state.mp.phase = 'finished-local';
   state.mp.status = 'finish reported; waiting for the shared result';
-  mpNet.reportFinished({ tick: event.tick, hash: mpFinishHash })
+  mpNet.reportFinished({ tick: logicalTick, hash: mpFinishHash })
     .then(() => { state.mp.status = 'finish reported; waiting for the shared result'; publish(); })
     .catch((error) => { state.mp.lastError = error.message; state.mp.status = 'finish report failed: ' + error.message; publish(); });
   publish();
@@ -2936,6 +3031,7 @@ function handleMpEvent(type, payload) {
       if (remote) {
         const wasConnected = state.mp.remote.connected;
         mpRemotePlayerId = remote.id;
+        if (powerupView) powerupView.remoteId = remote.id;
         state.mp.remote.id = remote.id;
         state.mp.remote.name = remote.name;
         state.mp.remote.slot = remote.slot;
@@ -3114,6 +3210,13 @@ async function beginMultiplayerRace() {
     applyState(tick1);
     state.consumer = 'running';
     state.mp.status = 'running';
+    if (POWERUPS) {
+      if (MP_HOST) mpPowerupHostStart();
+      else if (state.powerups) {
+        state.powerups.phase = 'running';
+        state.powerups.status = 'client view running; host events arrive on the relay';
+      }
+    }
     publish();
     if (!mpFrameStarted) {
       mpFrameStarted = true;
@@ -3131,6 +3234,559 @@ function mpFail(message) {
     state.mp.status = 'error: ' + message;
   }
   fail(message);
+}
+
+// ------------------------------------------------------------- power-up slice
+// M2/PWR2: host-authoritative Mine/Shield/Repair. The host owns the PWR1
+// prototype world; clients send only use intents and render host events. The
+// project-specific HTTP relay beside the unchanged room service is the control
+// channel (the room service's only channels are input/state).
+
+/** Inject the diagnostic marker mesh + a bounded marker draw slot count. */
+function attachPowerupMarkerGeometry(packet) {
+  if (!POWERUPS || !packet) return packet;
+  const marker = {
+    id: POWERUP_MARKER_MESH,
+    storage: 'inline-json',
+    label: 'diagnostic octahedron marker (presentation only)',
+    vertexCount: 6,
+    indexCount: 24,
+    positions: [0, 1, 0, 1, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, -1, 0, -1, 0],
+    indices: [0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 5, 2, 1, 5, 3, 2, 5, 4, 3, 5, 1, 4]
+  };
+  if (!packet.meshes.some((mesh) => mesh.id === marker.id)) packet.meshes.push(marker);
+  packet.diagnostics = packet.diagnostics ?? {};
+  packet.diagnostics.extras = packet.diagnostics.extras ?? {};
+  packet.diagnostics.extras.powerups = {
+    markerMeshId: marker.id,
+    slots: POWERUP_MARKER_SLOTS,
+    indexOffset: 0,
+    indexCount: marker.indexCount,
+    label: 'diagnostic octahedron markers: pickup / mine / shield bubble (presentation only)'
+  };
+  return packet;
+}
+
+/** Load the PWR1 manifest and the committed rules prototype (read-only inputs). */
+async function initPowerups() {
+  if (!POWERUPS) return;
+  state.powerups.phase = 'loading';
+  state.powerups.status = 'loading the PWR1 manifest…';
+  const response = await fetch('/_work/powerups/powerups.json', { cache: 'no-store' });
+  if (!response.ok) throw new Error('PWR1 manifest fetch failed: HTTP ' + response.status);
+  powerupManifest = await response.json();
+  if (!Array.isArray(powerupManifest.entities) || powerupManifest.entities.length !== 11) {
+    throw new Error('PWR1 manifest does not carry the 11 PickupType entities');
+  }
+  powerupEngine = await import('/powerups/engine.js');
+  if (typeof powerupEngine.createWorld !== 'function') {
+    throw new Error('PWR1 rules prototype does not export createWorld');
+  }
+  state.powerups.manifestHash = powerupManifest.hashes?.manifestContent ?? null;
+  state.powerups.types = POWERUP_SLICE_TYPES.slice();
+  state.powerups.deferred = { ...POWERUP_DEFERRED };
+  state.powerups.phase = 'ready';
+  state.powerups.status = 'PWR1 manifest and rules prototype loaded';
+}
+
+function mpPowerupRelayUrl() {
+  return '/_powerups/relay';
+}
+
+function mpPowerupRelaySend(kind, payload) {
+  if (!powerupRelay) return Promise.reject(new Error('power-up relay is not ready'));
+  return fetch(mpPowerupRelayUrl(), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      room: powerupRelay.room,
+      from: powerupRelay.playerId,
+      kind,
+      payload
+    })
+  }).then(async (response) => {
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error('relay HTTP ' + response.status + ': ' + text.slice(0, 160));
+    }
+    return response.json();
+  });
+}
+
+function mpPowerupRelayStart() {
+  if (!POWERUPS || !powerupRelay || powerupRelayTimer) return;
+  powerupRelayTimer = setInterval(() => { void mpPowerupRelayPoll(); }, POWERUP_RELAY_POLL_MS);
+  void mpPowerupRelayPoll();
+}
+
+function mpPowerupRelayStop() {
+  if (powerupRelayTimer) clearInterval(powerupRelayTimer);
+  powerupRelayTimer = null;
+}
+
+async function mpPowerupRelayPoll() {
+  if (!powerupRelay || powerupRelay.polling) return;
+  powerupRelay.polling = true;
+  try {
+    const params = new URLSearchParams({
+      room: powerupRelay.room,
+      after: String(powerupRelay.cursor ?? 0),
+      exclude: powerupRelay.playerId
+    });
+    const response = await fetch(mpPowerupRelayUrl() + '?' + params.toString(), { cache: 'no-store' });
+    if (!response.ok) throw new Error('relay HTTP ' + response.status);
+    const data = await response.json();
+    if (Number.isInteger(data.next) && data.next > (powerupRelay.cursor ?? 0)) powerupRelay.cursor = data.next;
+    for (const message of data.messages ?? []) {
+      if (message.kind === 'intent' && MP_HOST) mpPowerupHandleIntent(message);
+      else if (message.kind === 'event' && !MP_HOST) mpPowerupHandleBatch(message.payload);
+    }
+    if (state.powerups) state.powerups.relayError = null;
+  } catch (error) {
+    if (state.powerups) state.powerups.relayError = error.message;
+  } finally {
+    powerupRelay.polling = false;
+  }
+}
+
+function mpPowerupRespawnTarget(playerId) {
+  if (mpRace?.progress?.course) {
+    const participant = mpRace.progress.byId.get(playerId);
+    const gateIndex = Math.max(0, (participant?.gateIndex ?? 1) - 1);
+    const target = mpRace.progress.course.respawnTargetForGate(gateIndex);
+    return { ...target, source: 'race-rules-respawn-target' };
+  }
+  if (sprintRules) {
+    const target = sprintRules.respawnTarget();
+    return { ...target, y: state.position[1], source: 'sprint-rules-respawn-target' };
+  }
+  return null;
+}
+
+function mpPowerupClearRemote(playerId) {
+  if (!playerId || playerId !== mpRemotePlayerId) return;
+  try { mpNet?.net?._interp?.delete(playerId); } catch { /* the buffer is optional */ }
+  mpRemoteDisplay = null;
+  if (state.mp) {
+    state.mp.remote.latest = null;
+    state.mp.remote.sample = null;
+    state.mp.remote.display = null;
+    state.mp.remote.tick = null;
+    state.mp.remote.distance = null;
+  }
+  consumer.setGhostFrame(null);
+}
+
+function mpPowerupHandleEvents(events) {
+  if (!state.powerups || !Array.isArray(events) || !events.length) return;
+  const localId = mpNet?.playerId ?? null;
+  for (const event of events) {
+    state.powerups.lastEvents.push(event);
+    if (state.powerups.lastEvents.length > 64) state.powerups.lastEvents.shift();
+    state.powerups.counts[event.type] = (state.powerups.counts[event.type] ?? 0) + 1;
+    if (event.type === 'wrecked') {
+      if (event.targetId === localId) state.powerups.wrecked = true;
+      else state.powerups.remoteWrecked = true;
+    }
+    if (event.type === 'respawn') {
+      if (event.playerId === localId) {
+        state.powerups.wrecked = false;
+        state.powerups.notice = 'respawn at ' + (event.target?.gateId ?? 'last checkpoint');
+        if (!pendingRespawn) {
+          pendingRespawn = {
+            x: event.target.x,
+            z: event.target.z,
+            heading: event.target.headingRad ?? event.target.heading ?? 0,
+            gateId: event.target.gateId ?? null,
+            gateIndex: event.target.gateIndex ?? null
+          };
+        }
+      } else {
+        state.powerups.remoteWrecked = false;
+        mpPowerupClearRemote(event.playerId);
+      }
+    }
+    if (event.type === 'use-rejected' || event.type === 'pickup-rejected') {
+      state.powerups.notice = state.powerups.notice = (event.type === 'use-rejected' ? 'use rejected: ' : 'pickup rejected: ') + event.reason;
+    }
+  }
+  if (MP_HOST && powerupModel) state.powerups.events = powerupModel.events.slice(-64);
+  else state.powerups.events = state.powerups.events.concat(events).slice(-64);
+  publishPowerupHud();
+}
+
+function mpPowerupHandleIntent(message) {
+  if (!MP_HOST || !powerupModel) return;
+  const payload = message.payload;
+  if (!payload || payload.type !== 'use') return;
+  const events = powerupModel.requestUse(message.from, { slot: payload.slot ?? 0 });
+  if (events.length) mpPowerupHandleEvents(events);
+  mpPowerupBroadcast(true);
+}
+
+function mpPowerupHandleBatch(batch) {
+  if (!batch || !powerupView) return;
+  if (Number.isInteger(batch.batchSeq) && batch.batchSeq <= powerupView.lastBatchSeq) return;
+  const previousEventSeq = powerupView.lastEventSeq;
+  applyPowerupBatch(powerupView, batch);
+  state.powerups.view = powerupViewSummary(powerupView);
+  const fresh = (batch.events ?? []).filter((event) =>
+    Number.isInteger(event.seq) && event.seq > previousEventSeq);
+  if (fresh.length) mpPowerupHandleEvents(fresh);
+  publishPowerupHud();
+}
+
+function mpPowerupBroadcast(force = false) {
+  if (!MP_HOST || !powerupModel || !powerupRelay || !state.powerups) return;
+  if (powerupPendingBatch) {
+    const retry = powerupPendingBatch;
+    mpPowerupRelaySend('event', retry)
+      .then(() => { if (powerupPendingBatch === retry) powerupPendingBatch = null; })
+      .catch((error) => { state.powerups.relayError = error.message; });
+    return;
+  }
+  const now = performance.now();
+  if (!force && now - powerupLastBroadcastAt < 500) return;
+  const events = powerupModel.events.slice(powerupLastEventSeq);
+  const batch = {
+    batchSeq: ++powerupBroadcastSeq,
+    now: powerupModel.now,
+    events,
+    snapshot: powerupModel.snapshot()
+  };
+  powerupLastEventSeq = powerupModel.events.length;
+  powerupLastBroadcastAt = now;
+  powerupPendingBatch = batch;
+  mpPowerupRelaySend('event', batch)
+    .then(() => { if (powerupPendingBatch === batch) powerupPendingBatch = null; })
+    .catch((error) => { state.powerups.relayError = error.message; });
+}
+
+function mpPowerupHostStart() {
+  if (!MP_HOST || !state.powerups || !powerupManifest || !powerupEngine) return;
+  if (powerupModel) return;
+  powerupModel = createPowerupModel({
+    manifest: powerupManifest,
+    createWorld: powerupEngine.createWorld,
+    authorityId: mpNet.playerId,
+    maxHealth: 100,
+    respawnDelaySeconds: 1.0,
+    normalRespawnSeconds: null,
+    inventoryCapacity: 1
+  });
+  const hostId = mpNet.playerId;
+  const guestId = mpRemotePlayerId;
+  const heading = state.mp?.grid?.headingRad ?? state.sprintLayout?.course?.spawn?.headingRad ?? 0;
+  const hostForward = { x: Math.sin(heading), y: 0, z: Math.cos(heading) };
+  const hostStart = state.mp?.grid
+    ? { x: state.mp.grid.x, y: state.position[1], z: state.mp.grid.z }
+    : { x: state.position[0], y: state.position[1], z: state.position[2] };
+  powerupModel.addPlayer(hostId, { position: hostStart, forward: hostForward });
+  if (guestId) {
+    const guestStart = state.mp?.guestSpawnState?.position ?? hostStart;
+    const guestForward = hostForward;
+    powerupModel.addPlayer(guestId, {
+      position: { x: guestStart[0] ?? guestStart.x, y: guestStart[1] ?? guestStart.y ?? 0, z: guestStart[2] ?? guestStart.z },
+      forward: guestForward
+    });
+  }
+  const spawned = powerupModel.spawnProvisionalPickups(sprintRules.layout);
+  state.powerups.placement = powerupModel.placement;
+  state.powerups.phase = 'running';
+  state.powerups.status = 'host power-up world running';
+  state.powerups.snapshot = powerupModel.snapshot();
+  powerupLastEventSeq = 0;
+  powerupBroadcastSeq = 0;
+  mpPowerupHandleEvents(powerupModel.events.slice());
+  mpPowerupBroadcast(true);
+  return spawned;
+}
+
+function mpPowerupHostTick(snapshot) {
+  if (!MP_HOST || !powerupModel || !state.powerups) return;
+  const guestId = mpRemotePlayerId;
+  const latest = state.mp?.remote.latest?.state ?? null;
+  const guestSpawn = state.mp?.guestSpawnState?.position ?? null;
+  const states = {};
+  states[mpNet.playerId] = {
+    position: snapshot.position,
+    forward: { x: snapshot.axisZ[0], y: snapshot.axisZ[1], z: snapshot.axisZ[2] }
+  };
+  if (guestId) {
+    states[guestId] = latest
+      ? { position: latest.position, quaternion: latest.quaternion }
+      : { position: guestSpawn ?? snapshot.position };
+  }
+  const events = powerupModel.tick(POWERUP_TICK_SECONDS, states, mpPowerupRespawnTarget);
+  state.powerups.snapshot = powerupModel.snapshot();
+  if (events.length) mpPowerupHandleEvents(events);
+  mpPowerupBroadcast(false);
+}
+
+function mpPowerupRequestUse() {
+  if (!POWERUPS || !state.mp) return;
+  if (state.powerups?.wrecked) {
+    state.powerups.notice = 'cannot use an item while wrecked';
+    publishPowerupHud();
+    return;
+  }
+  if (MP_HOST) {
+    if (!powerupModel) return;
+    const events = powerupModel.requestUse(mpNet.playerId, { slot: 0 });
+    if (events.length) mpPowerupHandleEvents(events);
+    mpPowerupBroadcast(true);
+    return;
+  }
+  state.powerups.notice = 'use intent sent to the host';
+  mpPowerupRelaySend('intent', { type: 'use', slot: 0 })
+    .catch((error) => { state.powerups.relayError = error.message; });
+  publishPowerupHud();
+}
+
+const POWERUP_MARKER_COLOURS = Object.freeze({
+  Bomb: [1.0, 0.42, 0.08],
+  Shield: [0.14, 0.76, 1.0],
+  Repair: [0.2, 0.95, 0.35]
+});
+
+function mpPowerupMarkerList() {
+  if (!POWERUPS) return null;
+  const localId = mpNet?.playerId ?? null;
+  const markers = [];
+  const snapshot = MP_HOST ? state.powerups.snapshot : null;
+  const pickups = MP_HOST
+    ? (snapshot ? snapshot.pickups : [])
+    : Object.values(state.powerups.view?.pickups ?? {});
+  const mines = MP_HOST
+    ? (snapshot ? snapshot.mines : [])
+    : Object.values(state.powerups.view?.mines ?? {});
+  const effects = MP_HOST
+    ? (snapshot ? snapshot.effects : [])
+    : Object.values(state.powerups.view?.effects ?? {});
+  for (const pickup of pickups) {
+    if (pickup.state && pickup.state !== 'active') continue;
+    markers.push({
+      kind: 'pickup',
+      position: [pickup.position.x, (pickup.position.y ?? 0) + 0.9, pickup.position.z],
+      scale: 0.85,
+      colour: POWERUP_MARKER_COLOURS[pickup.type] ?? [0.9, 0.9, 0.2]
+    });
+  }
+  for (const mine of mines) {
+    markers.push({
+      kind: 'mine',
+      position: [mine.position.x, (mine.position.y ?? 0) + 0.45, mine.position.z],
+      scale: mine.armed === false ? 0.45 : 0.65,
+      colour: [1.0, 0.25, 0.05]
+    });
+  }
+  const localPosition = state.position ? [...state.position] : null;
+  const remotePosition = state.mp?.remote.display?.position
+    ?? state.mp?.remote.latest?.state?.position
+    ?? null;
+  for (const effect of effects) {
+    if (effect.kind !== 'shield' && effect.kind !== 'superShield') continue;
+    const owner = effect.ownerId === localId ? localPosition : remotePosition;
+    if (!owner) continue;
+    markers.push({
+      kind: 'shield',
+      position: [owner[0], owner[1] + 0.9, owner[2]],
+      scale: 2.6,
+      colour: [0.14, 0.76, 1.0]
+    });
+  }
+  if (markers.length > POWERUP_MARKER_SLOTS) {
+    state.powerups.markerDropped = markers.length - POWERUP_MARKER_SLOTS;
+    markers.length = POWERUP_MARKER_SLOTS;
+  }
+  return markers;
+}
+
+function mpPowerupHudModel() {
+  if (!POWERUPS || !state.powerups) return null;
+  const localId = mpNet?.playerId ?? null;
+  const remoteId = mpRemotePlayerId;
+  if (MP_HOST && state.powerups.snapshot) {
+    const snapshot = state.powerups.snapshot;
+    const local = snapshot.players.find((player) => player.id === localId) ?? null;
+    const remote = snapshot.players.find((player) => player.id === remoteId) ?? null;
+    const shield = snapshot.effects.find((effect) => effect.ownerId === localId &&
+      (effect.kind === 'shield' || effect.kind === 'superShield')) ?? null;
+    return {
+      source: 'host',
+      now: snapshot.now,
+      local,
+      remote,
+      shield: shield ? { ...shield, secondsLeft: Math.max(0, shield.expiresAt - snapshot.now) } : null,
+      pickups: snapshot.pickups,
+      mines: snapshot.mines,
+      effects: snapshot.effects,
+      feed: state.powerups.lastEvents.slice(-8).map((event) => ({
+        seq: event.seq, type: event.type, text: powerupEventText(event)
+      })),
+      counts: state.powerups.counts,
+      placement: snapshot.placement,
+      labels: snapshot.labels,
+      relayError: state.powerups.relayError
+    };
+  }
+  if (powerupView) {
+    const summary = powerupViewSummary(powerupView);
+    return { ...summary, source: 'client' };
+  }
+  return { source: 'client', now: 0, local: null, remote: null, shield: null, pickups: [], mines: [], effects: [], feed: [], counts: {}, placement: null, labels: null, relayError: state.powerups.relayError };
+}
+
+function publishPowerupHud() {
+  const root = document.getElementById('powerup-hud');
+  if (!root) return;
+  if (!POWERUPS || !state.powerups) { root.hidden = true; return; }
+  root.hidden = false;
+  const hud = mpPowerupHudModel();
+  const set = (id, text) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = text;
+  };
+  const local = hud?.local ?? null;
+  const item = local?.inventory?.[0] ?? null;
+  const label = item ? (POWERUP_SLICE_LABELS[item.type] ?? item.type) : 'EMPTY';
+  const icon = document.getElementById('powerup-slot-icon');
+  if (icon) {
+    icon.textContent = item ? label.slice(0, 1) : '·';
+    icon.dataset.kind = item ? item.type.toLowerCase() : 'empty';
+  }
+  set('powerup-slot-name', item ? label + ' · ' + item.type : 'empty slot');
+  set('powerup-slot-timer', item ? 'E — use · host validates' : 'pick up a pickup on the measured course');
+  const health = local ? local.health : null;
+  const maxHealth = local?.maxHealth ?? null;
+  const percent = Number.isFinite(health) && Number.isFinite(maxHealth) && maxHealth > 0
+    ? Math.max(0, Math.min(100, (health / maxHealth) * 100)) : 0;
+  const bar = document.getElementById('powerup-health-bar');
+  if (bar) bar.style.width = percent.toFixed(1) + '%';
+  set('powerup-health-text', Number.isFinite(health) ? health.toFixed(0) + ' / ' + maxHealth + ' HP' : '—');
+  const shield = hud?.shield ?? null;
+  set('powerup-shield-text', shield
+    ? shield.capacity + ' / ' + shield.maxCapacity + ' · ' + shield.secondsLeft.toFixed(2) + ' s'
+    : 'no shield');
+  const shieldBar = document.getElementById('powerup-shield-bar');
+  if (shieldBar) {
+    shieldBar.style.width = shield && shield.maxCapacity > 0
+      ? Math.max(0, Math.min(100, (shield.capacity / shield.maxCapacity) * 100)).toFixed(1) + '%'
+      : '0%';
+  }
+  const status = state.powerups.wrecked
+    ? 'WRECKED — waiting for the host respawn event'
+    : (state.powerups.notice ?? 'ready · E uses the held item');
+  set('powerup-status', status);
+  const placement = hud?.placement ?? state.powerups.placement;
+  set('powerup-note', 'provisional measured-arc placement · ' + POWERUP_SLICE_TYPES.join('/') +
+    ' · host events seq ' + (hud?.counts ? (state.powerups.lastEvents.at(-1)?.seq ?? 0) : 0) +
+    ' · diagnostic markers' + (placement?.mode ? ' · ' + placement.mode : '') +
+    (hud?.relayError ? ' · relay: ' + hud.relayError : ''));
+  const feed = (hud?.feed ?? []).slice(-6).map((entry) => '#' + entry.seq + ' ' + entry.text).join('\n');
+  set('powerup-feed', feed || 'no power-up events yet');
+  root.dataset.state = state.powerups.wrecked ? 'wrecked' : (item ? 'armed' : 'ready');
+}
+
+/** Compact capture/debug projection (never used by the render path). */
+function mpPowerupCapture() {
+  if (!POWERUPS || !state.powerups) return null;
+  const hud = mpPowerupHudModel();
+  const element = (id) => document.getElementById(id);
+  return {
+    schema: POWERUP_SCHEMA,
+    enabled: true,
+    phase: state.powerups.phase,
+    status: state.powerups.status,
+    manifestHash: state.powerups.manifestHash,
+    types: state.powerups.types,
+    deferred: state.powerups.deferred,
+    placement: hud?.placement ?? state.powerups.placement,
+    labels: hud?.labels ?? state.powerups.snapshot?.labels ?? null,
+    eventCount: powerupModel ? powerupModel.events.length : (powerupView?.lastEventSeq ?? 0),
+    lastEventSeq: powerupModel ? powerupModel.events.length : (powerupView?.lastEventSeq ?? 0),
+    lastBatchSeq: powerupView?.lastBatchSeq ?? powerupBroadcastSeq,
+    counts: hud?.counts ?? state.powerups.counts,
+    feed: hud?.feed ?? [],
+    local: hud?.local ?? null,
+    remote: hud?.remote ?? null,
+    shield: hud?.shield ?? null,
+    pickups: hud?.pickups ?? [],
+    mines: hud?.mines ?? [],
+    effects: hud?.effects ?? [],
+    wrecked: state.powerups.wrecked,
+    remoteWrecked: state.powerups.remoteWrecked,
+    relay: state.powerups.relay,
+    relayError: state.powerups.relayError,
+    markerDropped: state.powerups.markerDropped ?? 0,
+    hud: {
+      hidden: element('powerup-hud')?.hidden ?? null,
+      icon: element('powerup-slot-icon')?.textContent ?? null,
+      name: element('powerup-slot-name')?.textContent ?? null,
+      timer: element('powerup-slot-timer')?.textContent ?? null,
+      health: element('powerup-health-text')?.textContent ?? null,
+      shield: element('powerup-shield-text')?.textContent ?? null,
+      status: element('powerup-status')?.textContent ?? null,
+      note: element('powerup-note')?.textContent ?? null,
+      feed: element('powerup-feed')?.textContent ?? null
+    },
+    markers: {
+      slots: consumer?.stats?.powerupSlots ?? 0,
+      drawsIssued: consumer?.stats?.powerupDrawsIssued ?? 0,
+      frames: consumer?.stats?.powerupFrames ?? 0,
+      enabled: consumer?.stats?.powerupEnabled ?? false,
+      dropped: consumer?.stats?.powerupDropped ?? 0
+    },
+    events: (powerupModel ? powerupModel.events.slice(-80) : state.powerups.lastEvents.slice(-80))
+  };
+}
+
+function mpInstallPowerupDebugApi() {
+  if (!POWERUPS) return;
+  const hostEventWindow = (mutate) => {
+    if (!MP_HOST || !powerupModel) throw new Error('power-up host mutation is host-only');
+    const before = powerupModel.events.length;
+    mutate();
+    const events = powerupModel.events.slice(before);
+    if (events.length) mpPowerupHandleEvents(events);
+    mpPowerupBroadcast(true);
+    return events;
+  };
+  window.__powerups = {
+    enabled: true,
+    state: () => mpPowerupCapture(),
+    events: () => (powerupModel ? powerupModel.events.slice() : state.powerups.events.slice()),
+    use: () => mpPowerupRequestUse(),
+    grant: (type) => hostEventWindow(() => {
+      powerupModel.clearInventory(mpNet.playerId);
+      powerupModel.grantItem(mpNet.playerId, type);
+    }),
+    grantGuest: (type) => hostEventWindow(() => {
+      if (!mpRemotePlayerId) throw new Error('no guest player');
+      powerupModel.clearInventory(mpRemotePlayerId);
+      powerupModel.grantItem(mpRemotePlayerId, type);
+    }),
+    clearGuest: () => hostEventWindow(() => {
+      if (!mpRemotePlayerId) throw new Error('no guest player');
+      powerupModel.clearInventory(mpRemotePlayerId);
+    }),
+    placeMineOnGuest: (ahead = 0) => hostEventWindow(() => {
+      const latest = state.mp?.remote.latest?.state;
+      if (!latest) throw new Error('no guest state yet');
+      const forward = forwardFromQuaternion(latest.quaternion) ?? { x: 0, y: 0, z: 1 };
+      const speed = Number.isFinite(latest.speed) ? latest.speed : 0;
+      // `'arm'` places the mine where the guest will be when the recovered
+      // MasterMinePrimeTimer (0.3 s) elapses, so the first outer-radius contact
+      // is already inside the direct-hit radius. A number is an explicit offset.
+      const distance = ahead === 'arm' ? Math.max(1.0, speed * 0.31) : (Number.isFinite(ahead) ? ahead : 0);
+      powerupModel.placeMineForPlayer(mpNet.playerId, {
+        x: latest.position[0] + forward.x * distance,
+        y: latest.position[1],
+        z: latest.position[2] + forward.z * distance
+      });
+    }),
+    broadcast: () => mpPowerupBroadcast(true)
+  };
 }
 
 /** Compact probe for the headless capture; never used by the render path. */
@@ -3182,6 +3838,7 @@ function mpCaptureSnapshot() {
     } : null,
     validation: mp.validation,
     hostSession: mp.hostSession,
+    powerups: mpPowerupCapture(),
     remote: {
       id: mp.remote.id,
       name: mp.remote.name,
@@ -3243,6 +3900,7 @@ function mpInstallDebugApi() {
     stateAt: (tick) => mpHistoryAt(Number(tick)),
     result: () => mpResult,
     mpState: () => state.mp,
+    powerups: () => mpPowerupCapture(),
     constants: {
       tickHz: MP_TICK_HZ,
       inputHz: MP_INPUT_HZ,
@@ -3250,7 +3908,12 @@ function mpInstallDebugApi() {
       remoteDelayTicks: MP_REMOTE_DELAY_TICKS,
       positionThresholdMetres: MP_POSITION_THRESHOLD_METRES,
       angleThresholdRad: MP_ANGLE_THRESHOLD_RAD,
-      blendTicks: MP_BLEND_TICKS
+      blendTicks: MP_BLEND_TICKS,
+      powerups: POWERUPS ? {
+        types: POWERUP_SLICE_TYPES,
+        markerSlots: POWERUP_MARKER_SLOTS,
+        relayPollMs: POWERUP_RELAY_POLL_MS
+      } : null
     }
   };
 }
@@ -3274,6 +3937,7 @@ async function startMultiplayer() {
     mpSessionCar = car.slug;
     state.mp.sessionCar = mpSessionCar;
     state.mp.engineReady = true;
+    if (POWERUPS) await initPowerups();
     state.mp.status = 'engine loaded; connecting to the room service…';
     publish();
 
@@ -3317,6 +3981,26 @@ async function startMultiplayer() {
     }
     mpRemoteDisplay = null;
     mpLocalHistory = new Map();
+    if (POWERUPS) {
+      powerupRelay = {
+        room: joined.room.code,
+        playerId: joined.you.id,
+        cursor: 0,
+        polling: false
+      };
+      powerupView = createPowerupView({ localId: joined.you.id, remoteId: remote?.id ?? null });
+      state.powerups.phase = 'lobby';
+      state.powerups.status = 'power-up relay connected; the host creates the world at start';
+      state.powerups.relay = {
+        room: joined.room.code,
+        playerId: joined.you.id,
+        role: MP_HOST ? 'host' : 'guest',
+        pollMs: POWERUP_RELAY_POLL_MS,
+        endpoint: '/_powerups/relay'
+      };
+      mpPowerupRelayStart();
+      mpInstallPowerupDebugApi();
+    }
     state.consumer = 'lobby';
     mpBindUi();
     publish();
@@ -3446,6 +4130,7 @@ function frame(nowMs) {
   }
 
   if (MP) mpUpdateRemoteFrame(cursor); else updateGhostFrame();
+  if (MP && POWERUPS) consumer.setPowerupMarkers(mpPowerupMarkerList());
   consumer.syncTimeline();
   const rendered = consumer.renderFrame({ cursor });
   if (rendered) {

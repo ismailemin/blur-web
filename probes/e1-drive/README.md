@@ -270,6 +270,10 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 
 # 10. M1 two-browser multiplayer capture (game 8802, room 8811)
 & $node probes/e1-drive/tools/capture_browser.mjs --mode mp --port 8802 --room-port 8811
+
+# 11. M2/PWR2 power-up capture (Mine/Shield/Repair, two browsers)
+& $node probes/e1-drive/tools/powerups_model_tests.mjs
+& $node probes/e1-drive/tools/capture_browser.mjs --mode mp-powerups --port 8802 --room-port 8811
 ```
 
 Outputs go to `_work/e1-drive/` (module, geometry, track, roster, per-car packets
@@ -394,6 +398,49 @@ in `web/app.js`, `web/index.html`, `web/style.css`, `web/sprint-script.js`
 `/race-rules/` routes plus `--with-room`), and `tools/verify_e1_drive.mjs` /
 `tools/capture_browser.mjs` (Node protocol gate and `--mode mp`). The full
 verification record is `docs/work/verification/T-007-multiplayer.md`.
+
+## Power-ups (M2/PWR2) — Mine, Shield, Repair
+
+Status: M2 first slice, 7 November 2026. `?powerups=1` (multiplayer only,
+default off) adds a host-authoritative power-up world on top of the M1 race.
+The full record is `docs/work/verification/T-007-powerups.md`.
+
+| Item | Behaviour |
+|---|---|
+| integrated types | **Bomb/Mine, Shield, Repair** (Nitro/Shock/Shunt/Blindfire/Barge/projectiles deferred) |
+| placement | six **provisional** items on the measured 310 m arcs 40/90/140/190/240/280 m; PWR3 owns real placement |
+| collection | host proximity against the recovered `PickupRadius=2.0 m`; one inventory slot; `pickup-rejected inventory-full` |
+| values | Bomb `Radius 1.0 / Outer 3.5 / Damage 100 / Lifespan 60 / Prime 0.3 / PlaceBehind 5`; Shield `Health 50 / Lifetime 6`; Repair `AmountToRepair 400`; deactivate `0.6 s` — all from `_work/powerups/powerups.json` |
+| use | guest sends a use intent; the host validates and broadcasts sequenced events (`mine-placed`, `mine-armed`, `mine-detonated`, `mine-expired`, `shield-activated`, `shield-absorbed`, `shield-broken`, `repaired`, `damage`, `wrecked`, `respawn`, `pickup*`, `use-rejected`) |
+| damage | 100 HP **diagnostic** pool; full Bomb damage inside `Radius`, typed `mine-near-miss` between `Radius` and `OuterRadius`, no damage outside `OuterRadius` |
+| wreck/respawn | `wrecked` at 0 HP, labelled 1.0 s diagnostic delay, `respawn` at the R1 `respawnTargetForGate(lastPassedGate)` target; the car is rebuilt through `respawnAt()` |
+| HUD | one-slot icon/letter + type, health, shield capacity/remaining seconds, status, last six sequenced events; icon is a labelled diagnostic glyph (retail `perk_icons` binding not recovered) |
+| effects | bounded octahedron marker pass (16 slots, ghost pipeline, no new buffer/texture): pickups, mines, shield bubble |
+| control channel | `/_powerups/relay`, an ordered in-memory HTTP relay beside the unchanged `probes/net-mvp` room service |
+
+The page must be served by `tools/serve.mjs`; it now serves
+`/_work/powerups/powerups.json`, `/powerups/engine.js` and `/_powerups/relay`.
+A server process started before this change must be restarted so it serves the
+new routes.
+The three new files are `web/powerups.js` (host model + client reducer),
+`tools/powerups_model_tests.mjs` (68 Node checks) and the capture mode below.
+Deferred types stay typed in `POWERUP_DEFERRED`; no damage, radius, timer or
+projectile rule is invented. No retail/full-game claim.
+
+```powershell
+# host / guest URLs (both pages add the flag)
+# http://127.0.0.1:8802/?mp=1&host=1&powerups=1&script=sprint
+# http://127.0.0.1:8802/?mp=1&room=CODE&powerups=1&script=sprint
+
+& $node probes/e1-drive/tools/powerups_model_tests.mjs
+& $node probes/e1-drive/tools/capture_browser.mjs --mode mp-powerups --port 8802 --room-port 8811
+```
+
+The capture grants/uses items through the page's capture-only `window.__powerups`
+API: host mine placement, guest wreck/respawn, guest shield absorb/break and
+guest repair. It records the identical host/guest event counts, HUD text,
+marker-pass stats, relay stats, console and screenshots under
+`_work/e1-drive/browser-mp-powerups-*.png`.
 
 ## The module API
 

@@ -45,6 +45,8 @@ def main():
         ('net-layout',[sys.executable,'probes/net-layout/tests/run_net_layout.py']+(['--skip-build'] if args.skip_build else [])),
         ('powerups-definitions',[sys.executable,'probes/powerups/tools/verify_powerups.py']),
         ('powerups-rules',['node','probes/powerups/rules/tests.mjs']),
+        ('pickup-placements',[sys.executable,'probes/powerups/tools/verify_pickup_placement.py']),
+        ('powerups-model',['node','probes/e1-drive/tools/powerups_model_tests.mjs']),
         ('vehicle-pipeline',[sys.executable,'probes/vehicle-pipeline/tools/verify_vehicle_pipeline.py']),
         ('map-pipeline',[sys.executable,'probes/map-pipeline/tools/verify_maps.py']),
         ('prop-collision-v2',['node','probes/prop-collision/tools/verify_v2.mjs']),

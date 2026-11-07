@@ -56,12 +56,12 @@ const edge = EDGE_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!edge) throw new Error('msedge.exe not found; pass --edge <path>');
 
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp', 'mp-powerups'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality or mp)');
+    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality, mp or mp-powerups)');
 }
-// `--mode mp` uses the documented M1 capture ports: game 8802, room 8811.
-const PORT = Number(option('--port', MODE === 'mp' ? '8802' : '8801'));
+// `--mode mp`/`mp-powerups` use the documented M1 capture ports: game 8802, room 8811.
+const PORT = Number(option('--port', MODE === 'mp' || MODE === 'mp-powerups' ? '8802' : '8801'));
 const ROOM_PORT = Number(option('--room-port', '8811'));
 const DEBUG_PORT = Number(option('--debug-port', '9341'));
 const PROFILE = path.join(OUT, 'edge-profile-' + PORT);
@@ -1136,6 +1136,397 @@ async function mpCapturePass() {
   }
 }
 
+/**
+ * M2/PWR2 power-up capture (`--mode mp-powerups`): two real pages, the real
+ * 310 m race, the host-authoritative Mine/Shield/Repair slice. The host grants a
+ * mine, the guest hits it and is wrecked/respawned; the guest uses a shield and
+ * absorbs a mine (break + overflow); the guest uses a repair and heals. The
+ * capture checks the event counts on both pages, the HUD, the diagnostic marker
+ * pass, console cleanliness and the project-specific relay.
+ */
+async function mpPowerupsCapturePass() {
+  const passFailures = [];
+  const passCheck = (label, ok, detail = '') => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const hostPage = { send, evaluate, messages };
+  messages.length = 0;
+  let guestPage = null;
+  let roomServer = null;
+  const shots = {};
+  let code = null;
+  let hostLobby = null;
+  let guestLobby = null;
+  let hostStarted = null;
+  let guestStarted = null;
+  let hostFinal = null;
+  let guestFinal = null;
+  let fatal = null;
+
+  const snapshotOf = async (handle) => {
+    try { return await handle.evaluate('window.__mp ? window.__mp.snapshot() : null'); } catch { return null; }
+  };
+  const powerOf = async (handle) => {
+    try { return await handle.evaluate('window.__powerups ? window.__powerups.state() : null'); } catch { return null; }
+  };
+  const waitSnapshot = async (handle, predicate, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await snapshotOf(handle);
+      if (last && predicate(last)) return last;
+      await sleep(150);
+    }
+    throw new Error(label + ' timed out; last phase ' + (last?.phase ?? 'null') +
+      ' power ' + (last?.powerups?.phase ?? 'null') + ' status ' + (last?.status ?? 'null'));
+  };
+  const waitPower = async (handle, predicate, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await powerOf(handle);
+      if (last && predicate(last)) return last;
+      await sleep(120);
+    }
+    throw new Error(label + ' timed out; last ' + JSON.stringify(last?.counts ?? last?.status ?? null).slice(0, 300));
+  };
+  const shot = async (handle, name) => {
+    const result = await handle.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync(path.join(OUT, name), Buffer.from(result.data, 'base64'));
+    shots[name] = '_work/e1-drive/' + name;
+    return name;
+  };
+  const count = (state, type) => state?.counts?.[type] ?? 0;
+  const eventTypes = (events) => {
+    const counts = {};
+    for (const event of events ?? []) counts[event.type] = (counts[event.type] ?? 0) + 1;
+    return counts;
+  };
+
+  try {
+    roomServer = await startRoomServer({ port: ROOM_PORT, log: () => {} });
+    guestPage = await openSecondPage();
+    guestPage.messages.length = 0;
+    const car = defaultSlug;
+    const roomQuery = '&mpServer=' + encodeURIComponent(roomServer.wsUrl) + '&audio=0';
+    const hostUrl = origin + '/?mp=1&host=1&powerups=1&script=sprint&mpPace=0.55&car=' + encodeURIComponent(car) +
+      '&name=Host' + roomQuery;
+    await hostPage.send('Page.navigate', { url: hostUrl });
+    hostLobby = await waitSnapshot(hostPage, (snapshot) =>
+      snapshot.phase === 'lobby' && snapshot.engineReady && snapshot.powerups?.phase === 'lobby',
+      120000, 'host power-up lobby');
+    code = hostLobby.roomCode;
+    passCheck('host allocated a 5-character room code', typeof code === 'string' && /^[A-Z2-9]{5}$/.test(code), code);
+
+    const guestUrl = origin + '/?mp=1&room=' + encodeURIComponent(code) + '&powerups=1&script=sprint' +
+      '&car=' + encodeURIComponent(car) + '&mpPace=0.5&name=Guest' + roomQuery;
+    await guestPage.send('Page.navigate', { url: guestUrl });
+    guestLobby = await waitSnapshot(guestPage, (snapshot) =>
+      snapshot.phase === 'lobby' && snapshot.engineReady && snapshot.powerups?.phase === 'lobby',
+      120000, 'guest power-up lobby');
+    hostLobby = await waitSnapshot(hostPage, (snapshot) =>
+      snapshot.players.length === 2 && snapshot.powerups?.phase === 'lobby', 20000, 'host roster + power-ups');
+
+    passCheck('both pages load the PWR1 manifest and rules prototype',
+      hostLobby.powerups?.manifestHash && guestLobby.powerups?.manifestHash === hostLobby.powerups.manifestHash,
+      JSON.stringify({ host: hostLobby.powerups?.manifestHash, guest: guestLobby.powerups?.manifestHash }));
+    passCheck('both pages expose exactly Mine/Shield/Repair',
+      JSON.stringify(hostLobby.powerups?.types) === JSON.stringify(['Bomb', 'Shield', 'Repair']) &&
+      JSON.stringify(guestLobby.powerups?.types) === JSON.stringify(['Bomb', 'Shield', 'Repair']),
+      JSON.stringify(hostLobby.powerups?.types));
+    passCheck('both pages state the deferred types and their reasons',
+      Object.keys(hostLobby.powerups?.deferred ?? {}).length >= 6 &&
+      /boost hook/.test(hostLobby.powerups?.deferred?.Nitrous ?? ''),
+      JSON.stringify(Object.keys(hostLobby.powerups?.deferred ?? {})));
+    passCheck('power-up HUD is visible and labelled provisional',
+      hostLobby.powerups?.hud?.hidden === false && /provisional/.test(hostLobby.powerups?.hud?.note ?? ''),
+      JSON.stringify(hostLobby.powerups?.hud));
+
+    await hostPage.evaluate('window.__mp.setReady(true)');
+    await guestPage.evaluate('window.__mp.setReady(true)');
+    hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.players.length === 2 &&
+      snapshot.players.every((player) => player.ready), 15000, 'host all ready');
+    guestLobby = await waitSnapshot(guestPage, (snapshot) => snapshot.players.length === 2 &&
+      snapshot.players.every((player) => player.ready), 15000, 'guest all ready');
+    passCheck('ready propagates to both rosters',
+      hostLobby.players.every((player) => player.ready) && guestLobby.players.every((player) => player.ready));
+
+    await hostPage.evaluate('window.__mp.start()');
+    hostStarted = await waitSnapshot(hostPage, (snapshot) => snapshot.started && snapshot.engineTick >= 2,
+      30000, 'host race start');
+    guestStarted = await waitSnapshot(guestPage, (snapshot) => snapshot.started && snapshot.engineTick >= 2,
+      30000, 'guest race start');
+    passCheck('host start broadcasts room.started to both pages', hostStarted.started && guestStarted.started);
+
+    const hostRunning = await waitPower(hostPage, (power) => power.phase === 'running' && power.pickups.length === 6,
+      30000, 'host provisional pickups');
+    const guestRunning = await waitPower(guestPage, (power) => power.phase === 'running' && power.pickups.length === 6,
+      30000, 'guest provisional pickups');
+    passCheck('six provisional pickups spawn on the measured arcs',
+      hostRunning.pickups.length === 6 && guestRunning.pickups.length === 6,
+      `${hostRunning.pickups.length}/${guestRunning.pickups.length}`);
+    passCheck('placement is labelled provisional measured-arc on both pages',
+      hostRunning.placement?.mode === 'provisional-measured-arc' &&
+      guestRunning.placement?.mode === 'provisional-measured-arc' &&
+      JSON.stringify(hostRunning.placement?.arcs) === JSON.stringify([40, 90, 140, 190, 240, 280]),
+      JSON.stringify(hostRunning.placement?.arcs));
+    passCheck('pickups carry only the integrated types',
+      hostRunning.pickups.every((pickup) => ['Bomb', 'Shield', 'Repair'].includes(pickup.type)),
+      hostRunning.pickups.map((pickup) => pickup.type).join(','));
+    await shot(hostPage, 'browser-mp-powerups-spawn-host.png');
+    await shot(guestPage, 'browser-mp-powerups-spawn-guest.png');
+
+    // ------------------------------------------------------------ mine placement
+    await hostPage.evaluate("window.__powerups.grant('Bomb'); null");
+    const hostBomb = await waitPower(hostPage, (power) => power.local?.inventory?.some((item) => item.type === 'Bomb'),
+      10000, 'host Bomb in inventory');
+    passCheck('host collected a staged Bomb into its one inventory slot',
+      hostBomb.local.inventory.length === 1 && hostBomb.local.inventory[0].type === 'Bomb',
+      JSON.stringify(hostBomb.local.inventory));
+    await hostPage.evaluate('window.__powerups.use(); null');
+    const minePlaced = await waitPower(hostPage, (power) => count(power, 'mine-placed') >= 1 &&
+      power.mines.length >= 1, 10000, 'host mine-placed');
+    await waitPower(guestPage, (power) => count(power, 'mine-placed') >= 1, 10000, 'guest mine-placed');
+    passCheck('host placed a mine and the event reached the guest',
+      count(minePlaced, 'mine-placed') >= 1 && count(await powerOf(guestPage), 'mine-placed') >= 1);
+    passCheck('mine marker is rendered on both pages',
+      minePlaced.markers.drawsIssued > 0 && minePlaced.markers.frames > 0,
+      JSON.stringify(minePlaced.markers));
+    await shot(hostPage, 'browser-mp-powerups-mine-host.png');
+
+    // ----------------------------------------------------- guest wreck + respawn
+    await hostPage.evaluate('window.__powerups.clearGuest(); null');
+    let wrecked = null;
+    for (const ahead of ['arm', 'arm', 'arm']) {
+      const argument = typeof ahead === 'string' ? "'" + ahead + "'" : String(ahead);
+      await hostPage.evaluate('window.__powerups.placeMineOnGuest(' + argument + '); null');
+      try {
+        wrecked = await waitPower(guestPage, (power) => count(power, 'wrecked') >= 1, 3500, 'guest wrecked');
+        break;
+      } catch { /* place another mine where the guest will be when armed */ }
+    }
+    if (!wrecked) throw new Error('guest did not hit a staged mine; host ' + JSON.stringify((await powerOf(hostPage))?.counts));
+    const wreckEvidence = await powerOf(guestPage);
+    passCheck('host mine hit the guest and emitted wrecked',
+      count(wreckEvidence, 'wrecked') >= 1,
+      JSON.stringify(wreckEvidence.counts));
+    await shot(guestPage, 'browser-mp-powerups-wrecked-guest.png');
+    const respawned = await waitPower(guestPage, (power) => count(power, 'respawn') >= 1 && power.wrecked === false,
+      6000, 'guest respawn');
+    passCheck('guest respawned at the R1 target and restored health',
+      count(respawned, 'respawn') >= 1 && respawned.local?.health === respawned.local?.maxHealth,
+      JSON.stringify({ counts: respawned.counts, health: respawned.local?.health }));
+    await shot(guestPage, 'browser-mp-powerups-respawn-guest.png');
+
+    // ------------------------------------------------------ shield absorb + break
+    await hostPage.evaluate('window.__powerups.clearGuest(); window.__powerups.grantGuest(\'Shield\'); null');
+    await waitPower(guestPage, (power) => power.local?.inventory?.some((item) => item.type === 'Shield'),
+      10000, 'guest Shield in inventory');
+    await guestPage.evaluate('window.__powerups.use(); null');
+    const shielded = await waitPower(guestPage, (power) => count(power, 'shield-activated') >= 1 && power.shield !== null,
+      10000, 'guest shield-activated');
+    passCheck('guest shield activated with the recovered capacity/lifetime',
+      shielded.shield?.capacity === 50 && shielded.shield?.maxCapacity === 50 &&
+      shielded.shield.secondsLeft > 0 && shielded.shield.secondsLeft <= 6.001,
+      JSON.stringify(shielded.shield));
+    await waitPower(hostPage, (power) => count(power, 'shield-activated') >= 1, 10000, 'host sees shield-activated');
+    await shot(guestPage, 'browser-mp-powerups-shield-guest.png');
+
+    let absorbed = null;
+    for (const ahead of ['arm', 'arm', 'arm']) {
+      const argument = typeof ahead === 'string' ? "'" + ahead + "'" : String(ahead);
+      await hostPage.evaluate('window.__powerups.placeMineOnGuest(' + argument + '); null');
+      try {
+        absorbed = await waitPower(guestPage, (power) => count(power, 'shield-absorbed') >= 1, 3500, 'guest shield absorbed');
+        break;
+      } catch { /* place another mine where the guest will be when armed */ }
+    }
+    if (!absorbed) throw new Error('guest did not absorb a staged mine; counts ' + JSON.stringify((await powerOf(guestPage))?.counts));
+    const broken = await waitPower(guestPage, (power) => count(power, 'shield-broken') >= 1 &&
+      power.shield === null && power.local?.health <= 50, 5000, 'guest shield broken');
+    passCheck('shield absorbed the hit, broke, and the overflow damaged health',
+      count(broken, 'shield-absorbed') >= 1 && count(broken, 'shield-broken') >= 1 &&
+      broken.shield === null && broken.local.health < broken.local.maxHealth,
+      JSON.stringify({ counts: broken.counts, health: broken.local?.health }));
+    await waitPower(hostPage, (power) => count(power, 'shield-absorbed') >= 1 && count(power, 'shield-broken') >= 1,
+      10000, 'host sees shield absorb/break');
+    await shot(guestPage, 'browser-mp-powerups-shield-hit-guest.png');
+
+    // --------------------------------------------------------------- repair
+    await hostPage.evaluate('window.__powerups.clearGuest(); window.__powerups.grantGuest(\'Repair\'); null');
+    await waitPower(guestPage, (power) => power.local?.inventory?.some((item) => item.type === 'Repair'),
+      10000, 'guest Repair in inventory');
+    await guestPage.evaluate('window.__powerups.use(); null');
+    const repaired = await waitPower(guestPage, (power) => count(power, 'repaired') >= 1 &&
+      power.local?.health === power.local?.maxHealth, 10000, 'guest repaired');
+    passCheck('Repair healed the guest back to the diagnostic max health',
+      count(repaired, 'repaired') >= 1 && repaired.local.health === repaired.local.maxHealth,
+      JSON.stringify({ counts: repaired.counts, health: repaired.local?.health }));
+    await waitPower(hostPage, (power) => count(power, 'repaired') >= 1, 10000, 'host sees repaired');
+    await shot(guestPage, 'browser-mp-powerups-repair-guest.png');
+
+    // --------------------------------------------------------------- evidence
+    hostFinal = await snapshotOf(hostPage);
+    guestFinal = await snapshotOf(guestPage);
+    const hostPower = await powerOf(hostPage);
+    const guestPower = await powerOf(guestPage);
+    const required = ['pickup-spawned', 'mine-placed', 'mine-armed', 'mine-detonated', 'wrecked',
+      'respawn', 'shield-activated', 'shield-absorbed', 'shield-broken', 'repaired', 'damage'];
+    const hostCounts = Object.fromEntries(required.map((type) => [type, count(hostPower, type)]));
+    const guestCounts = Object.fromEntries(required.map((type) => [type, count(guestPower, type)]));
+    passCheck('all required host-authoritative event types occurred',
+      required.every((type) => hostCounts[type] >= 1),
+      JSON.stringify(hostCounts));
+    passCheck('the guest applied the same required event counts',
+      required.every((type) => guestCounts[type] === hostCounts[type]),
+      JSON.stringify({ host: hostCounts, guest: guestCounts }));
+    const hostAuthority = hostFinal?.you?.id ?? null;
+    passCheck('client events carry host authority and strictly increase',
+      hostAuthority !== null &&
+      (guestPower.events ?? []).every((event, index, list) => event.authority === hostAuthority &&
+        (index === 0 || event.seq > list[index - 1].seq)),
+      'authority ' + String(hostAuthority) + ' · seq ' + (guestPower.events?.length ?? 0));
+    passCheck('diagnostic marker pass drew pickups/mine/shield on both pages',
+      hostPower.markers.drawsIssued > 0 && guestPower.markers.drawsIssued > 0 &&
+      hostPower.markers.slots === 16 && guestPower.markers.slots === 16,
+      JSON.stringify({ host: hostPower.markers, guest: guestPower.markers }));
+    passCheck('HUD shows inventory, health, shield and the event feed',
+      hostPower.hud.hidden === false && guestPower.hud.hidden === false &&
+      /health|HP/i.test(guestPower.hud.health ?? '') &&
+      /no shield|s ·/.test(guestPower.hud.shield ?? '') &&
+      /mine|shield|repair/i.test(guestPower.hud.feed ?? ''),
+      JSON.stringify({ host: hostPower.hud, guest: guestPower.hud }));
+    passCheck('HUD states the provisional placement label',
+      /provisional measured-arc placement/.test(guestPower.hud.note ?? ''),
+      guestPower.hud.note);
+
+    const relayResponse = await fetch(origin + '/_powerups/relay/stats?room=' + encodeURIComponent(code));
+    const relayStats = await relayResponse.json();
+    passCheck('power-up relay carried host events and guest intents without drops',
+      relayStats?.stats?.events > 0 && relayStats?.stats?.intents > 0 &&
+      relayStats?.stats?.dropped === 0 && relayStats?.stats?.polls > 0,
+      JSON.stringify(relayStats));
+
+    passCheck('console is clean on both pages',
+      hostPage.messages.length === 0 && guestPage.messages.length === 0,
+      [...hostPage.messages, ...guestPage.messages].slice(0, 6).map((entry) => entry.source + ' ' + entry.text).join(' | '));
+    passCheck('both pages are still in the running power-up race (no fatal state)',
+      hostFinal?.phase === 'running' && guestFinal?.phase === 'running' &&
+      hostFinal?.powerups?.phase === 'running' && guestFinal?.powerups?.phase === 'running',
+      JSON.stringify({ host: hostFinal?.phase, guest: guestFinal?.phase }));
+
+    const evidence = {
+      kind: 'e1-drive.mp-powerups-browser',
+      version: 1,
+      browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT, pages: 2 },
+      ports: { game: PORT, room: ROOM_PORT },
+      room: { code, wsUrl: roomServer.wsUrl, stats: roomServer.stats(), relay: relayStats },
+      manifest: {
+        hash: hostPower.manifestHash ?? hostLobby.powerups?.manifestHash ?? null,
+        types: hostPower.types,
+        deferred: hostPower.deferred,
+        placement: hostPower.placement,
+        labels: hostPower.labels
+      },
+      lobby: {
+        host: { powerups: hostLobby.powerups },
+        guest: { powerups: guestLobby.powerups },
+        screenshots: {
+          host: shots['browser-mp-powerups-spawn-host.png'],
+          guest: shots['browser-mp-powerups-spawn-guest.png']
+        }
+      },
+      scenario: {
+        minePlaced: {
+          event: minePlaced.events?.filter((event) => event.type === 'mine-placed').slice(-1)[0] ?? null,
+          hostCounts, guestCounts
+        },
+        wreck: {
+          guestWrecked: wreckEvidence,
+          respawn: respawned,
+          screenshot: shots['browser-mp-powerups-wrecked-guest.png'],
+          respawnScreenshot: shots['browser-mp-powerups-respawn-guest.png']
+        },
+        shield: {
+          activated: shielded.shield,
+          broken,
+          screenshot: shots['browser-mp-powerups-shield-guest.png'],
+          hitScreenshot: shots['browser-mp-powerups-shield-hit-guest.png']
+        },
+        repair: {
+          healed: repaired,
+          screenshot: shots['browser-mp-powerups-repair-guest.png']
+        }
+      },
+      final: {
+        host: hostFinal,
+        guest: guestFinal,
+        hostPower,
+        guestPower,
+        hostPowerCounts: hostCounts,
+        guestPowerCounts: guestCounts
+      },
+      console: {
+        host: { totalMessages: hostPage.messages.length, messages: hostPage.messages },
+        guest: { totalMessages: guestPage.messages.length, messages: guestPage.messages }
+      },
+      assertions: { ok: passFailures.length === 0, failures: passFailures },
+      verdict: passFailures.length === 0 && hostPage.messages.length === 0 && guestPage.messages.length === 0
+        ? 'clean-console-and-gates' : 'failed'
+    };
+    writeFileSync(path.join(OUT, 'browser-evidence-mp-powerups.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+    writeFileSync(path.join(LOGS, 'edge-mp-powerups.log'), browserLog +
+      '\nroom: ' + JSON.stringify(roomServer.stats()) + '\nrelay: ' + JSON.stringify(relayStats) + '\n', 'utf8');
+    return {
+      ok: evidence.verdict === 'clean-console-and-gates',
+      summary: {
+        verdict: evidence.verdict,
+        room: code,
+        manifestHash: evidence.manifest.hash,
+        eventCounts: hostCounts,
+        guestEventCounts: guestCounts,
+        huds: { host: hostPower.hud, guest: guestPower.hud },
+        markers: { host: hostPower.markers, guest: guestPower.markers },
+        relay: relayStats,
+        console: { host: hostPage.messages.length, guest: guestPage.messages.length },
+        screenshots: shots,
+        failures: passFailures
+      }
+    };
+  } catch (error) {
+    fatal = error;
+    const evidence = {
+      kind: 'e1-drive.mp-powerups-browser',
+      version: 1,
+      browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT, pages: 2 },
+      ports: { game: PORT, room: ROOM_PORT },
+      room: roomServer ? { code, stats: roomServer.stats() } : null,
+      console: {
+        host: { totalMessages: hostPage.messages.length, messages: hostPage.messages },
+        guest: { totalMessages: guestPage?.messages?.length ?? 0, messages: guestPage?.messages ?? [] }
+      },
+      assertions: { ok: false, failures: [error.message, ...passFailures] },
+      verdict: 'failed',
+      error: error.message
+    };
+    writeFileSync(path.join(OUT, 'browser-evidence-mp-powerups.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+    writeFileSync(path.join(LOGS, 'edge-mp-powerups.log'), browserLog + '\nERROR: ' + error.message + '\n', 'utf8');
+    return {
+      ok: false,
+      summary: {
+        verdict: 'failed',
+        room: code,
+        error: error.message,
+        failures: passFailures,
+        screenshots: shots,
+        console: { host: hostPage.messages.length, guest: guestPage?.messages?.length ?? 0 }
+      }
+    };
+  } finally {
+    try { guestPage?.close(); } catch {}
+    try { await roomServer?.close(); } catch {}
+    if (fatal) console.error('mp-powerups capture failed:', fatal.message);
+  }
+}
+
 if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
     : MODE === 'lap' ? await lapCapturePass()
@@ -1150,7 +1541,8 @@ if (MODE !== 'drive') {
         : MODE === 'telemetry-restart' ? await telemetryRestartCapturePass()
           : MODE === 'audio' ? await audioCapturePass()
             : MODE === 'mp' ? await mpCapturePass()
-              : await telemetryCapturePass();
+              : MODE === 'mp-powerups' ? await mpPowerupsCapturePass()
+                : await telemetryCapturePass();
   await shutdown();
   await sleep(400);
   console.log(JSON.stringify(result.summary, null, 2));
