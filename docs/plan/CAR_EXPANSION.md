@@ -78,3 +78,27 @@ record provably references the same model (no nearest-name guessing).
 - Some B cars have ambiguous wheel groups (20/20 preview-paired); a driven
   screenshot must confirm the wheel placement before the car is called
   complete.
+
+## Batch 1 result (15 cars) and batch 2 composition
+
+Batch 1 shipped 10 B cars; all 15 cars are proven (browser 60/60, 2254 checks).
+The single 106.9 MB geometry is 101.9 MiB, so **chunking is mandatory before
+batch 2** (`VEHICLE_CHUNKING.md`).
+
+V3 (8 Nov) proved **14 of the 15 C records** with a record-level chain
+(`AmaxVehicle.dynamics` handle → XT refs → `RP_CarDynamics` id → engine
+`models/vehicles/%s.model`), validated on 47/47 existing records:
+
+- 7 high-confidence C (proven wheel draws): records 18, 22, 25, 47, 63, 65, 75.
+- 7 medium C (all 20 wheel draws preview-paired): 1, 7, 23, 31, 39, 48, 71.
+- `DefaultCar` stays unsupported (no dynamics handle; fallback only).
+
+V4 resolved the Hummer H2 blocker: the model genuinely has no brake caliper
+(`cali_01` is a license-plate texture); the builder accepts a typed
+`caliper:"absent"` with a staged manifest. It can join batch 2 as medium.
+
+Total provable: **61 / 62** records.
+
+Recommended batch 2 (10 cars): the 7 high-confidence C + 3 high-confidence B,
+then batch 3 = the 7 medium C + remaining B + Hummer. The exact roster is
+chosen after chunking lands so the per-car byte budget is measured.
