@@ -26,6 +26,8 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 | `/` | Serbest sürüş + sprint kuralları (310 m parkur) |
 | `/?course=lap` | **3 turluk kapalı tur** (P61 loop-01, 222,04 m) |
 | `/?course=free` | **Free-roam** (P65/P68 spawn havzası 7.702 m², truck/bina solid) |
+| `/?mp=1&host=1` | **M1 online race host** — oda kodu, lobby, 310 m |
+| `/?mp=1&room=CODE` | M1 guest — oda koduna katıl |
 | `/?script=drive` | Deterministik 300 tick sürüş |
 | `/?script=sprint` | Deterministik sprint (5 araç) |
 | `/?script=sprint&course=lap` | Deterministik 3 tur (5 araç) |
@@ -70,6 +72,21 @@ Tur modu loop-01 üzerinde **ayrı spawn** kullanır (eski spawn bileşeninden
   otomatik spawn reset. Görünmez duvar yok.
 - Doğu kanalı (1.321 m²) C03 boru/çit duvarı yüzünden **erişilemez**; oraya
   spawn/respawn yok.
+
+## M1 online race (iki tarayıcı)
+
+Sunucu `tools/run_e1_poc.ps1` ile açıldığında oda servisi de **8811**'de başlar.
+
+1. Host: **http://127.0.0.1:8801/?mp=1&host=1** → oda kodu oluşur (ör. `KRP3Q`).
+2. Guest: **http://127.0.0.1:8801/?mp=1&room=KRP3Q** → aynı odaya katılır.
+3. İkisi de **READY**, host **START**.
+4. 310 m River yarışı; diğer araç `REMOTE · 20 HZ SNAPSHOT · NO COLLISION`
+   etiketiyle görünür.
+5. Finish: iki sayfada da aynı **RACE RESULT** tablosu (host otoritesi).
+
+Sınırlar: aynı araç (M1), tek harita (River 310 m), WebSocket loopback/LAN;
+WebRTC/TURN/NAT, power-up, AI rakip ve host migration M2/M3'te. Aynı ağda iki
+makine için 8811 portu açık olmalı.
 
 Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
 Dodge 4,633 → Focus 5,133 s.

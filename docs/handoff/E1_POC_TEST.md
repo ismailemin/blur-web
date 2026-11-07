@@ -96,6 +96,7 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 - [ ] `?course=free`: 431 collider solid; truck/bina içinden geçilmiyor; HUD `free roam`; `R` spawn'a dönüyor.
 - [ ] İlk tuş/click sonrası motor sesi geliyor; RPM yükselince pitch yükseliyor; `M` sessize alıyor; `?audio=0` tamamen sessiz.
 - [ ] Truck/wreck'ler gerçek albedo ile dokulu (4 BC3 cab draw hariç); HUD'da diagnostic sayısı düşük.
+- [ ] M1: host `?mp=1&host=1` oda kodu veriyor; guest `?mp=1&room=CODE` katılıyor; ikisi READY → host START → iki sayfada aynı sonuç; console 0.
 - [ ] Süre tablodaki değere ±0,01 s (scripted) veya makul (klavye).
 - [ ] `R`: aynı sayfada yeniden countdown; süre sıfırlanır, en iyi süre korunur.
 - [ ] Beş araç seçilebilir; her biri kendi gövdesi/tekerleriyle görünür.

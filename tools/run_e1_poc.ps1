@@ -31,5 +31,8 @@ if ($missing.Count -gt 0) {
 
 Write-Host 'E1 PoC  ->  http://127.0.0.1:8801/' -ForegroundColor Green
 Write-Host 'Scripted ->  http://127.0.0.1:8801/?script=drive&car=audi-r8v10-stock'
+Write-Host 'MP host  ->  http://127.0.0.1:8801/?mp=1&host=1'
+Write-Host 'MP guest ->  http://127.0.0.1:8801/?mp=1&room=<CODE>'
+Write-Host 'Room service: ws://127.0.0.1:8811/ws'
 Write-Host 'Stop with Ctrl+C.'
-& $node (Join-Path $root 'probes/e1-drive/tools/serve.mjs') --port 8801
+& $node (Join-Path $root 'probes/e1-drive/tools/serve.mjs') --port 8801 --with-room --room-port 8811

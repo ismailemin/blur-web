@@ -2551,3 +2551,133 @@ needs a main-agent update to the 447/V2 pins; this task does not modify it.
    suspension or vertical dynamics. Penetration is bounded by one 8 cm substep.
 4. **No full-game, retail-collision or retail-handling claim.** One level, three
    courses, five cars; no opponents, traffic, race audio or multiplayer.
+
+---
+
+## 32. M1 — two browsers, one measured 310 m race
+
+**Date:** 7 November 2026
+**Scope:** `probes/e1-drive/**`, `_work/e1-drive/**`,
+`_work/logs/e1-drive/**`, `probes/e1-drive/README.md`, this document and
+`docs/work/verification/T-007-multiplayer.md`. `probes/net-mvp/**`,
+`probes/race-rules/**`, `probes/prop-collision/**`, `probes/audio/**`,
+`tools/`, `upstream/` and `game-data/` are read-only inputs and were not
+modified.
+
+The M1 gate connects the two standalone probes — the room/transport layer and
+the rules layer — to the real drive slice. Two browser pages join one room by
+code, both drive the measured 310 m P48 course with the real wasm car, see the
+other car through the existing ghost draw path, and finish with one shared
+result. It is an original project protocol and authority model, not a retail
+network claim.
+
+### 32.1 Session architecture
+
+```text
+host page                                   guest page
+  wasm engine (own car)                       wasm engine (own car)
+  60 Hz input  ─┐                             60 Hz input  ─┐
+  20 Hz state  ─┤                             20 Hz state  ─┤
+                ▼                                            ▼
+        probes/net-mvp/server.mjs  (unchanged RFC 6455 relay, room, resume)
+                ▲                                            ▲
+                └────────────── 20 Hz state ─────────────────┘
+  RaceSession (host rules)                     display only: sampleRemote
+   ordered gates / finish / result              + RemoteDisplay corrector
+                │                                            │
+                └──────── room.finished ──► shared pure result table ◄──┘
+```
+
+- The **host** creates the room (slot 1) and runs `RaceSession` over both cars:
+  ordered checkpoints, finish validation, result order and a deterministic
+  session hash.
+- The **guest** joins slot 2, simulates its own car and sends input/state. It does
+  not run a second judge.
+- Both pages render the other car through the **existing ghost pipeline**
+  (`consumer.setGhostFrame`), one remote slot, with a translucent diagnostic
+  tint and the `REMOTE · … · no collision` tag.
+- **Correction:** the remote display target comes from `sampleRemote` (position
+  lerp, quaternion slerp, no extrapolation). A delta above **0.5 m / 0.25 rad**
+  is a counted hard set; smaller deltas blend over **3 frames**. The local engine
+  is never teleported.
+- **Finish:** each page reports `client.finished {tick, hash}`. The room's
+  `room.finished` broadcast is converted by the **same pure function**
+  (`buildMpResult`) on both pages, so positions/times/hash are identical. The
+  host keeps its session ticking after its own finish until the guest's finish is
+  observed (bounded) and records the validation delta.
+
+### 32.2 What had to be added
+
+| File | Change |
+|---|---|
+| `web/mp-client.js` (new) | `MpSession` wrapper over the injected `NetClient` (DOM-free, runs in Node and the browser), room/lobby/ready/start, typed event normalisation, `buildMpResult`, URL/name/code/roster helpers, M1 constants |
+| `web/mp-remote.js` (new) | `RemoteDisplay` threshold/blend corrector and the nine remote node matrices (body × wheel rest × Rx), reusing `packet-adapter` matrix helpers |
+| `web/app.js` | `?mp=1` mode, lobby overlay, host start, per-tick sends, remote display, RaceSession host loop, finish/result, reconnect labels, HUD counters; single-player best times and ghost replay are explicitly off in MP |
+| `web/index.html`, `web/style.css` | lobby (room/name/car/roster/ready/start/status), `REMOTE` tag, shared result table, MP HUD styling |
+| `web/sprint-script.js` | optional controller-constants argument for the capture-only scripted pace; default behaviour unchanged |
+| `tools/serve.mjs` | read-only `/net-mvp/` and `/race-rules/` routes; `--with-room --room-port` launcher; actual-port return |
+| `tools/verify_e1_drive.mjs` | 18 Node-level MP protocol/authority/result/reconnect/RaceSession checks |
+| `tools/capture_browser.mjs` | `--mode mp`: room service, two page targets, lobby/ready/start, both finishes, remote-pose samples, shared result, console gate, six screenshots |
+
+### 32.3 Scope decisions
+
+- **One car for both bodies.** The host's car at creation is the session car;
+  both pages load it. The guest page must be opened with the same `?car=`. A
+  guest with a different car fails with an explicit message instead of silently
+  racing two different bodies. The lobby car selector records each player's
+  metadata only.
+- **Provisional grid.** The start grid (2.2 m spacing, two per row) comes from
+  `probes/race-rules/course-model.mjs`; it is project-specific and labelled
+  `provisional`, not a recovered retail table.
+- **Peer-state remote authority.** The host runs the rules/result and its own
+  physics. It does **not** run a second physics body for the guest; the guest's
+  20 Hz state is the pose the host validates and relays. This keeps M1 to one
+  engine per page and one uploaded body per page. It is labelled
+  `remotePhysicsAuthority:'peer-state'`; a second host-side body is M2 work.
+- **Engine load before room join.** The 45 MB geometry parse and wasm world
+  build happen before the room socket opens, so the room's 5 s heartbeat is not
+  starved by the synchronous load.
+- **20 Hz relay granularity.** The host's session may observe the guest finish
+  one or two 60 Hz ticks before/after the guest's own report. The displayed
+  table uses the room's finish ticks; the validation delta is recorded and
+  checked (≤ 6 ticks in the browser capture).
+
+### 32.4 Measured result
+
+Representative two-page capture (`--mode mp --port 8802 --room-port 8811`):
+
+| measurement | result |
+|---|---|
+| room | allocated 5-character code (per run; not committed) |
+| host / guest | slot 1 / slot 2; both connected, both finished |
+| shared result | identical rows and hash on both pages; host P1, guest P2 |
+| host time / guest time | 14.667 s / 16.400 s (the guest's scripted pace is 0.85 in the capture) |
+| host RaceSession | phase `finished`, guest `finished`, validation delta **-1…-2 ticks** (20 Hz relay) |
+| remote pose samples | 20 samples, max display Δ **3.72e-5 m**, max received-vs-authoritative Δ **7.0e-7 m** |
+| state/input sequences | host 324 state / 968 input, guest 358 / 1072; every state applied exactly (the capture still allows one final in-flight message) |
+| console | **0** messages on both pages |
+| room stats | 1 room created, 1 finished, 2 connections; no resume in the clean run |
+
+Screenshots: lobby, mid-race and finish for both pages under
+`_work/e1-drive/browser-mp-*.png`. The guest mid-race frame shows the host car
+ahead through the remote slot; the finish frames show the same `RACE RESULT`
+table on both pages. The full check-by-check record (including the Node
+protocol gate, reconnect and the rules session) is
+`docs/work/verification/T-007-multiplayer.md`.
+
+### 32.5 Limits and non-claims
+
+1. **WebSocket loopback, not UDP/WebRTC.** No STUN/TURN, no NAT traversal, no
+   TLS/auth/accounts/database. The room code is a lookup key, not a secret.
+2. **No second authoritative physics body.** Remote state is peer-reported and
+   host-validated; there is no anti-cheat claim and no host-side re-simulation of
+   the guest. This is the documented M1 `peer-state` authority, not the stronger
+   M2 model.
+3. **One map, one car for both bodies, one remote slot, no power-ups/AI.**
+4. **Late join/restart/host migration are out of scope.** The room rejects late
+   joins; `R` is disabled in an M1 room; the URL role is fixed for the session.
+5. **Same-machine clock.** Cross-machine clock skew and WAN behavior are not
+   tested. The 20 Hz state interpolation hides a 3-tick (50 ms) display delay.
+6. **`check_e1_poc.py` and the `--skip-build` asset probe** remain read-only
+   external gates; the M1 capture does not modify the game data, the room probe
+   or the rules probe.

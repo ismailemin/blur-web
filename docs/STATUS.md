@@ -817,6 +817,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 405 engel: 334 Racification decal, 50 decoder 512 px, 17 BC3 alfa, 4 runtime. 27 section + 366 instance geometri engeli.
 - Doğrulama **13.090/13.090**. Kanıt: `docs/work/analysis/map-slice-amboy-textures.md`.
 
+## 7 Kasım 2026 — M1 online race
+
+- `?mp=1&host=1` / `?mp=1&room=CODE`: oda kodu, lobby, ready, host start, 310 m River.
+- Host `RaceSession` otoritesi; 20 Hz snapshot; uzak araç ghost hattı + interpolasyon; 0,5 m düzeltme eşiği.
+- `verify_e1_drive` **874/874** (+18 MP); MP Node **18/18**; iki tarayıcı **console 0/0**, ortak sonuç; P1 14,667 s / P2 16,400 s.
+- Launcher `run_e1_poc.ps1` oda servisini 8811'de açar. Kanıt: `docs/work/verification/T-007-multiplayer.md`, `_work/e1-drive/browser-mp-*.png`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

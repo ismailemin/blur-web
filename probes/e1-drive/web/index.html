@@ -15,10 +15,29 @@
 <div id="countdown" hidden></div>
 <div id="event" data-visible="0"></div>
 <div id="ghost-tag" hidden aria-label="ghost replay"></div>
+<div id="remote-tag" hidden aria-label="remote player"></div>
+<div id="mp-lobby" hidden aria-label="multiplayer lobby">
+  <h2>ONLINE RACE — M1</h2>
+  <div class="mp-row"><span class="mp-key">room</span><strong id="mp-room-code">—</strong>
+    <span id="mp-connection" class="mp-status">connecting…</span></div>
+  <div class="mp-row"><span class="mp-key">you</span><span id="mp-name">—</span>
+    <span id="mp-role" class="mp-status">—</span></div>
+  <div class="mp-row"><span class="mp-key">car</span><select id="mp-car" aria-label="lobby car metadata"></select>
+    <span class="mp-note">M1 races one car for both players; this pick is lobby metadata</span></div>
+  <div id="mp-players" class="mp-players"></div>
+  <div class="mp-row">
+    <button id="mp-ready" type="button">READY</button>
+    <button id="mp-start" type="button" hidden>START RACE</button>
+    <span id="mp-lobby-status" class="mp-status">connecting…</span>
+  </div>
+  <div class="mp-note" id="mp-server-note"></div>
+  <div class="mp-note">310 m · River · 2 players · WebSocket loopback room service · no power-ups/AI in M1</div>
+</div>
 <div id="results" hidden>
   <h2>FINISH</h2>
   <div class="time" id="results-time">—</div>
   <div class="best" id="results-best"></div>
+  <div id="mp-results" hidden></div>
   <div class="hint">R — restart the race</div>
 </div>
 <div id="cars">
@@ -31,7 +50,8 @@
 <div id="legend">
   <strong>E1 sprint slice</strong> — wasm RacingPhysics on the River collision mesh → render packet v1.1 → WebGPU<br>
   default: the measured <strong>310 m P48 course</strong> (310.395 m measured, finish at 300.160 m) · <code>?course=short</code> = the 29 m regression straight · <code>?course=lap</code> = the <strong>P61 loop-01 3-lap race</strong> (222.040 m, component 5) · <code>?course=free</code> = <strong>free roam</strong> on the P65/P68 spawn basin (7,702 m², no gates/finish/lap)<br>
-  point-to-point sprint, 3-lap race or free roam · timer/lap times/best lap · respawn/containment · <strong>G</strong> ghost replay on the sprint courses · physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · static albedo textures on real UV0 · material colour/blend/mips/sRGB not applied · rest-pose wheel placement · lap and free-roam modes add a read-only visible-prop layer (<code>all-visible</code>) · <strong>engine audio</strong> follows the wasm <code>Engine().RPM()</code> after your first key/click (six retail V8 loops; <code>?audio=0</code> off)
+  point-to-point sprint, 3-lap race or free roam · timer/lap times/best lap · respawn/containment · <strong>G</strong> ghost replay on the sprint courses · physics car from <code>RP_CarDynamics</code> · per-car body/wheel mesh from that car's own <code>.model</code> · static albedo textures on real UV0 · material colour/blend/mips/sRGB not applied · rest-pose wheel placement · lap and free-roam modes add a read-only visible-prop layer (<code>all-visible</code>) · <strong>engine audio</strong> follows the wasm <code>Engine().RPM()</code> after your first key/click (six retail V8 loops; <code>?audio=0</code> off)<br>
+  <strong>?mp=1&amp;host=1</strong> opens the M1 two-player lobby (host) and <strong>?mp=1&amp;room=CODE</strong> joins; one car, the 310 m River course, 20 Hz remote snapshots, host result
 </div>
 <div id="keys">
   <strong>W</strong>/<strong>↑</strong> throttle · <strong>S</strong>/<strong>↓</strong> brake ·

@@ -355,6 +355,19 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   `docs/work/analysis/map-slice-amboy-textures.md`.
 - Sıradaki: reader printer düzeltmesi + Amboy render binding.
 
+### E1ac — M1 online race (INT1)  ✅
+- `?mp=1&host=1` / `?mp=1&room=CODE`: oda kodu, lobby, ready, host start,
+  310 m River; host `RaceSession` otoritesi, 20 Hz snapshot, uzak araç ghost
+  hattıyla interpolasyon, 0,5 m/0,25 rad düzeltme eşiği.
+- `verify_e1_drive` **874/874** (856 + 18 MP); MP Node raporu **18/18**;
+  iki tarayıcı capture **PASS**, console **0/0**, ortak sonuç
+  `0ef78fcb…`; P1 Host 14,667 s / P2 Guest 16,400 s.
+- Launcher: `tools/run_e1_poc.ps1` artık oda servisini 8811'de açar.
+- Sınır: WebSocket loopback/LAN, tek harita, aynı araç, tek remote slot,
+  power-up/AI/host migration yok, WebRTC/TURN yok.
+- Kanıt: `docs/work/verification/T-007-multiplayer.md`,
+  `_work/e1-drive/browser-mp-{lobby,mid,finish}-{host,guest}.png`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

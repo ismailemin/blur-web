@@ -365,8 +365,13 @@ export function sprintControlTerms(state, layout, constants = null) {
 /**
  * Input for the scripted sprint: the rules gate the request, so the sequence is
  * still a pure function of the rules state, the engine state and the tick order.
+ *
+ * `constants` is an optional controller override. M1's headless `--mode mp`
+ * capture uses it to give the guest a slower diagnostic pace so both cars are
+ * visibly separate; the normal page path passes nothing and the committed
+ * controller is unchanged.
  */
-export function sprintScriptInput(rules, state) {
+export function sprintScriptInput(rules, state, constants = null) {
   if (isFreeLayout(rules.layout)) {
     if (rules.phase !== 'running') return [0, 0, 0, 0];
     return rules.gateInput(freeScriptInput(rules.elapsedTicks + 1, state?.speed ?? 0));
@@ -374,7 +379,7 @@ export function sprintScriptInput(rules, state) {
   if (!isPathLayout(rules.layout)) return rules.gateInput(SPRINT_DESIRED_INPUT);
   if (!state) throw new Error('the scripted long-course sprint needs the engine state');
   if (rules.phase !== 'running') return rules.gateInput(SPRINT_DESIRED_INPUT);
-  return rules.gateInput(sprintControl(state, rules.layout));
+  return rules.gateInput(sprintControl(state, rules.layout, constants));
 }
 
 /**

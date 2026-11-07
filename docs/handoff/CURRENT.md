@@ -152,6 +152,13 @@ bağlanabilir; reader binding'i çözüyor ama printer `albedoTexture:null` yaz�
 27 section + 366 instance geometri engeli. Doğrulama **13.090/13.090**.
 Kanıt: `docs/work/analysis/map-slice-amboy-textures.md`.
 
+**INT1 — M1 online race (TAMAM):** `?mp=1&host=1` / `?mp=1&room=CODE`; oda,
+lobby, ready, host start, 310 m River, 20 Hz snapshot, ghost hattıyla uzak araç,
+host `RaceSession` otoritesi. `verify_e1_drive` **874/874**; iki tarayıcı
+capture console **0/0**, ortak sonuç `0ef78fcb…` (P1 14,667 / P2 16,400 s).
+Launcher oda servisini 8811'de açar. Kanıt:
+`docs/work/verification/T-007-multiplayer.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

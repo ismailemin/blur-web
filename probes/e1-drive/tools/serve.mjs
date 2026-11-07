@@ -1,6 +1,6 @@
 // Static server for the E1 drive slice.
 //
-// Serves exactly seven trees, all read-only:
+// Serves exactly nine trees, all read-only:
 //   /                -> probes/e1-drive/web/            (the page)
 //   /_work/e1-drive/ -> _work/e1-drive/                 (module, geometry, level, packet, layouts)
 //   /ghosts/         -> probes/e1-drive/ghosts/         (committed reference ghost traces)
@@ -8,9 +8,16 @@
 //   /_work/free-roam-prop/ -> _work/free-roam-prop/     (P74 R04-V2 free-roam collider manifest)
 //   /audio/          -> probes/audio/web/               (the committed engine-audio ES module)
 //   /_work/audio/    -> _work/audio/                    (decoded retail WAVs, read-only, not committed)
+//   /net-mvp/        -> probes/net-mvp/                 (client/protocol modules, read-only)
+//   /race-rules/     -> probes/race-rules/              (M1 rules ES modules, read-only)
 //
 // No directory listing, no writes, no path escapes. Callable as a module
-// (`startServer({port})`) or directly (`node probes/e1-drive/tools/serve.mjs [--port 8801]`).
+// (`startServer({port})`) or directly
+// (`node probes/e1-drive/tools/serve.mjs [--port 8801] [--with-room] [--room-port 8811]`).
+//
+// `--with-room` starts the unmodified `probes/net-mvp/server.mjs` room service
+// beside the game server. The page's default multiplayer WebSocket target is
+// `ws://<page-host>:8811/ws`; `?mpServer=ws://host:port/ws` overrides it.
 
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -26,6 +33,10 @@ const PROP_WORK = path.join(ROOT, '_work/prop-collision');
 const FREE_PROP_WORK = path.join(ROOT, '_work/free-roam-prop');
 const AUDIO = path.join(ROOT, 'probes/audio/web');
 const AUDIO_WORK = path.join(ROOT, '_work/audio');
+const NET_MVP = path.join(ROOT, 'probes/net-mvp');
+const RACE_RULES = path.join(ROOT, 'probes/race-rules');
+// The page only needs the dependency-free client half of the transport probe.
+const NET_MVP_MODULES = new Set(['client.mjs', 'protocol.mjs', 'hash.mjs', 'race.mjs']);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -58,7 +69,13 @@ export function startServer({ port = 8801 } = {}) {
     else if (pathname.startsWith('/_work/free-roam-prop/')) file = safeJoin(FREE_PROP_WORK, pathname.slice('/_work/free-roam-prop/'.length));
     else if (pathname.startsWith('/audio/')) file = safeJoin(AUDIO, pathname.slice('/audio/'.length));
     else if (pathname.startsWith('/_work/audio/')) file = safeJoin(AUDIO_WORK, pathname.slice('/_work/audio/'.length));
-    else file = safeJoin(WEB, pathname.slice(1));
+    else if (pathname.startsWith('/net-mvp/')) {
+      const name = pathname.slice('/net-mvp/'.length);
+      if (NET_MVP_MODULES.has(name)) file = path.join(NET_MVP, name);
+    } else if (pathname.startsWith('/race-rules/')) {
+      const relative = pathname.slice('/race-rules/'.length);
+      if (relative.endsWith('.mjs')) file = safeJoin(RACE_RULES, relative);
+    } else file = safeJoin(WEB, pathname.slice(1));
 
     if (!file || !existsSync(file) || !statSync(file).isFile()) {
       response.writeHead(404, { 'content-type': 'text/plain' });
@@ -77,7 +94,8 @@ export function startServer({ port = 8801 } = {}) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', () => {
-      resolve({ server, origin: 'http://127.0.0.1:' + port, port });
+      const actualPort = server.address().port;
+      resolve({ server, origin: 'http://127.0.0.1:' + actualPort, port: actualPort });
     });
   });
 }
@@ -86,7 +104,30 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const args = process.argv.slice(2);
   const index = args.indexOf('--port');
   const port = Number(index >= 0 ? args[index + 1] : 8801);
+  const roomIndex = args.indexOf('--room-port');
+  const roomPort = Number(roomIndex >= 0 ? args[roomIndex + 1] : 8811);
   const { origin } = await startServer({ port });
+  let room = null;
+  if (args.includes('--with-room')) {
+    const { startRoomServer } = await import('../../net-mvp/server.mjs');
+    room = await startRoomServer({
+      port: roomPort,
+      log: (event) => console.log('[net-mvp]', JSON.stringify(event))
+    });
+    console.log('room service:        ' + room.wsUrl + ' (unchanged probes/net-mvp/server.mjs)');
+  } else {
+    console.log('room service:        start probes/net-mvp/server.mjs on ' + roomPort +
+      ' or rerun with --with-room');
+  }
   console.log('E1 drive slice: ' + origin + '/?script=drive');
   console.log('manual keyboard drive: ' + origin + '/');
+  console.log('multiplayer host: ' + origin + '/?mp=1&host=1&script=sprint' +
+    ' (lobby shows the allocated room code)');
+  console.log('multiplayer guest: ' + origin + '/?mp=1&room=CODE&script=sprint');
+  if (room) {
+    const closeRoom = room.close;
+    const shut = async () => { try { await closeRoom(); } catch {} process.exit(0); };
+    process.on('SIGINT', shut);
+    process.on('SIGTERM', shut);
+  }
 }

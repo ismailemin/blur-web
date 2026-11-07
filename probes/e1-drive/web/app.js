@@ -53,12 +53,18 @@ import { SPRINT_EVENT, courseGroundAt, coursePosition, createSprintRules, freeGr
 import { createBestTimes } from './sprint-best.js';
 import {
   GHOST_CORNERS, GHOST_SOURCE, buildGhostArcTable, createGhostStore, decodeGhost, ghostFromRun,
-  ghostGap, ghostMatrices, referenceGhostFileName, validateGhostRecord
+  ghostGap, ghostMatrices, quaternionFromAxes, referenceGhostFileName, validateGhostRecord
 } from './ghost-replay.js';
 import {
   FREE_PACKET_SCRIPT, FREE_SCRIPT_TICKS, LAP_PACKET_SCRIPT, LAP_SCRIPT_TICKS, respawnScriptInput,
-  sprintScriptInput, SPRINT_PACKET_SCRIPT
+  sprintScriptInput, SPRINT_PACKET_SCRIPT, SPRINT_CONTROL
 } from './sprint-script.js';
+import {
+  MpSession, MP_ANGLE_THRESHOLD_RAD, MP_BLEND_TICKS, MP_INPUT_HZ, MP_MAX_PLAYERS, MP_POSITION_THRESHOLD_METRES,
+  MP_REMOTE_DELAY_TICKS, MP_SCHEMA, MP_STATE_EVERY_TICKS, MP_TICK_HZ, buildMpResult, defaultRoomUrl,
+  normalizePlayerName, normalizeRoomCode, sessionCarForRoom
+} from './mp-client.js';
+import { RemoteDisplay, remoteNodeMatrixMap } from './mp-remote.js';
 import {
   COLLISION_PROBES, PropManifestError, applyDrivenLineExclusions, checkPropManifest, collisionProbePose,
   createPropLayer, propPinsForCourse, propYawFromHeading
@@ -178,6 +184,51 @@ for (const [key, value] of Object.entries(CAMERA_OVERRIDE)) {
   if (key !== 'yawOffset' && value <= 0) throw new Error('bad camera override ' + key + '=' + params.get(key));
 }
 
+// ---------------------------------------------------------------- multiplayer
+// M1: `${origin}/?mp=1&host=1` creates a room; `?mp=1&room=CODE` joins it. The
+// room service is the unchanged probes/net-mvp server; the page talks to it over
+// WebSocket at `?mpServer=` or the documented default port 8811. Only the 310 m
+// sprint is in scope for M1.
+const MP = params.get('mp') === '1';
+const MP_HOST = MP && params.get('host') === '1';
+const MP_REQUESTED_CODE = params.get('room');
+const MP_CODE = MP_REQUESTED_CODE === null ? null : normalizeRoomCode(MP_REQUESTED_CODE);
+const MP_NAME = normalizePlayerName(params.get('name'), MP_HOST ? 'Host' : 'Guest');
+const MP_URL = params.get('mpServer') || defaultRoomUrl(location);
+const MP_PACE = params.has('mpPace') ? Number(params.get('mpPace')) : 1;
+if (MP) {
+  if (TELEMETRY || SOAK || SURVEY || COLLISION_PROBE) {
+    throw new Error('?mp=1 is its own mode; drop telemetry/soak/survey/collisionprobe');
+  }
+  if (COURSE_PARAM !== '310') throw new Error('M1 multiplayer runs the measured 310 m sprint; drop ?course=' + COURSE_PARAM);
+  if (params.has('hold')) throw new Error('multiplayer is a live room; drop ?hold=');
+  if (SCRIPT_PARAM && SCRIPT_PARAM !== 'sprint') throw new Error('multiplayer supports ?script=sprint for the diagnostic drive only');
+  if (MP_REQUESTED_CODE !== null && !MP_CODE) {
+    throw new Error('room must be 5 characters from ABCDEFGHJKLMNPQRSTUVWXYZ23456789 (got ' +
+      JSON.stringify(MP_REQUESTED_CODE) + ')');
+  }
+  if (!MP_HOST && !MP_CODE) throw new Error('a multiplayer guest needs ?room=CODE (the host allocates it)');
+  if (!Number.isFinite(MP_PACE) || MP_PACE < 0.5 || MP_PACE > 1.2) {
+    throw new Error('mpPace must be a number in [0.5, 1.2]');
+  }
+  if (!/^wss?:\/\//.test(MP_URL)) throw new Error('mpServer must be a ws:// or wss:// URL');
+}
+// The capture-only diagnostic pace scales the speed targets of the scripted
+// Stanley controller. It changes only the input script (never physics or the
+// engine); the normal page and every existing gate pass no override.
+const MP_CONTROL = MP && MP_PACE !== 1
+  ? Object.freeze({
+    ...SPRINT_CONTROL,
+    cruiseSpeed: SPRINT_CONTROL.cruiseSpeed * MP_PACE,
+    minSpeed: SPRINT_CONTROL.minSpeed * MP_PACE,
+    finishSpeed: SPRINT_CONTROL.finishSpeed * MP_PACE
+  })
+  : null;
+// Provisional race-rules starting grid (2.2 m spacing, two per row). M1 starts
+// both cars on the measured start line in the same row; this is project-specific
+// and labelled `provisional`, never a retail start-position table.
+const MP_GRID_OPTIONS = Object.freeze({});
+
 const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
 const GEOMETRY_URL = '/_work/e1-drive/geometry.json';
 const LEVEL_URL = '/_work/e1-drive/Level.levelphysics';
@@ -296,7 +347,57 @@ const state = {
   soakReport: null,
   // Engine audio (P71): typed status plus the RPM/layer values the HUD shows.
   // Null until the module has been constructed or forced off.
-  audio: null
+  audio: null,
+  // M1 multiplayer (`?mp=1`): room/lobby, 20 Hz remote snapshot, display
+  // correction counter, host rules/result. Null outside the MP mode.
+  mp: MP ? {
+    enabled: true,
+    host: MP_HOST,
+    name: MP_NAME,
+    url: MP_URL,
+    requestedCode: MP_CODE,
+    requestedCodeMismatch: false,
+    phase: 'connecting',
+    status: 'connecting…',
+    error: null,
+    engineReady: false,
+    room: null,
+    you: null,
+    players: [],
+    ready: false,
+    started: false,
+    grid: null,
+    sessionCar: null,
+    remote: {
+      id: null, name: null, slot: null, car: null, connected: null,
+      latest: null, sample: null, display: null, input: null,
+      distance: null, authority: false,
+      corrections: 0, hardSets: 0, blends: 0, tick: null
+    },
+    result: null,
+    resultSource: null,
+    validation: null,
+    hostSession: null,
+    finishReported: false,
+    finishTick: null,
+    finishTimeSeconds: null,
+    ping: null,
+    sent: { state: 0, input: 0 },
+    received: { state: 0, input: 0 },
+    applied: { state: 0, input: 0 },
+    sendFailures: 0,
+    dropCount: 0,
+    resumeCount: 0,
+    inputHz: MP_INPUT_HZ,
+    stateHz: MP_TICK_HZ / MP_STATE_EVERY_TICKS,
+    remoteDelayTicks: MP_REMOTE_DELAY_TICKS,
+    correctionThresholdMetres: MP_POSITION_THRESHOLD_METRES,
+    correctionThresholdRad: MP_ANGLE_THRESHOLD_RAD,
+    blendTicks: MP_BLEND_TICKS,
+    remoteWheelSpin: 'static (the E1 state snapshot has no wheel angle)',
+    sameCar: true,
+    schema: MP_SCHEMA
+  } : null
 };
 
 /**
@@ -473,6 +574,32 @@ function publish() {
       (soak.frames ? ' · ' + soak.frames + ' frames' : '') +
       (soak.status ? ' · ' + soak.status : '')]);
   }
+  if (state.mp?.enabled) {
+    const mp = state.mp;
+    rows.push(['mp', 'M1 · room ' + (mp.room?.code ?? '—') + ' · ' + mp.phase +
+      ' · ' + (mp.host ? 'host' : 'guest') + ' · slot ' + (mp.you?.slot ?? '—') +
+      (mp.requestedCodeMismatch ? ' · requested ' + mp.requestedCode : '')]);
+    rows.push(['mp net', 'ping ' + (mp.ping === null ? '—' : mp.ping.toFixed(1)) + ' ms · state seq ' +
+      mp.sent.state + '/' + mp.applied.state + ' · input ' + mp.sent.input + '/' + mp.applied.input +
+      ' · corrections ' + mp.remote.corrections + ' (' + mp.remote.hardSets + ' hard, ' +
+      mp.remote.blends + ' blend)']);
+    rows.push(['mp remote', mp.remote.name
+      ? mp.remote.name + ' · tick ' + (mp.remote.tick ?? '—') +
+        ' · Δ ' + (mp.remote.distance === null ? '—' : mp.remote.distance.toFixed(3) + ' m') +
+        ' · ' + (mp.remote.connected === false ? 'DISCONNECTED' : 'connected') +
+        ' · interpolated, no collision'
+      : 'waiting for the other player']);
+    if (mp.validation) {
+      rows.push(['mp host', 'RaceSession ' + (mp.validation.sessionPhase ?? '—') +
+        ' · guest ' + (mp.validation.guestStatus ?? '—') +
+        ' · host finish ' + (mp.validation.hostFinishTick ?? '—') +
+        ' · guest finish ' + (mp.validation.guestReportedTick ?? '—') +
+        ' · Δ ' + (mp.validation.guestTickDelta ?? '—')]);
+    }
+    if (mp.result) rows.push(['mp result', 'shared table ' + mp.result.hash.slice(7, 23) + '… · ' +
+      mp.result.rows.map((row) => 'P' + row.positionNumber + ' ' + row.name +
+        (row.timeSeconds === null ? ' DNF' : ' ' + row.timeSeconds.toFixed(3) + ' s')).join(' · ')]);
+  }
   rows.push(
     ['tick', String(state.displayTick) + ' (engine ' + state.engineTick + ') · ' + state.phase],
     ['speed', state.speed.toFixed(2) + ' m/s · ' + state.speedKph.toFixed(0) + ' km/h'],
@@ -508,6 +635,7 @@ function publish() {
   document.getElementById('hud').textContent = rows.map(([key, value]) => key.padEnd(10) + value).join('\n');
   publishSurveyBanner();
   publishSprintOverlays();
+  publishMpOverlays();
 }
 
 /**
@@ -528,8 +656,7 @@ function publishSurveyBanner() {
 }
 
 /** Countdown, event banner and results panel, all driven by rules state. */
-function publishSprintOverlays() {
-  const ghostTag = document.getElementById('ghost-tag');
+function publishSprintOverlays() {  const ghostTag = document.getElementById('ghost-tag');
   if (ghostTag) {
     const visible = state.ghost?.enabled === true;
     ghostTag.hidden = !visible;
@@ -563,6 +690,12 @@ function publishSprintOverlays() {
     banner.dataset.visible = '0';
   }
 
+  if (MP) {
+    // The M1 result is the shared room table, rendered by publishMpOverlays().
+    if (!state.mp?.result) results.hidden = true;
+    return;
+  }
+
   if (sprint.finished && state.sprintResult) {
     results.hidden = false;
     document.getElementById('results-time').textContent =
@@ -584,6 +717,156 @@ function publishSprintOverlays() {
   } else {
     results.hidden = true;
   }
+}
+
+/**
+ * M1 lobby, remote tag and shared result overlay. Presentation only: the room
+ * service owns the roster/ready/start state and the host result is the shared
+ * table built from `room.finished`.
+ */
+function publishMpOverlays() {
+  const lobby = document.getElementById('mp-lobby');
+  if (!lobby) return;
+  document.documentElement.dataset.mp = state.mp?.enabled ? state.mp.phase : 'off';
+  if (!state.mp?.enabled) {
+    lobby.hidden = true;
+    const tag = document.getElementById('remote-tag');
+    if (tag) tag.hidden = true;
+    const mpResults = document.getElementById('mp-results');
+    if (mpResults) mpResults.hidden = true;
+    return;
+  }
+  const mp = state.mp;
+  const lobbyVisible = mp.phase === 'connecting' || mp.phase === 'loading' || mp.phase === 'lobby' ||
+    mp.phase === 'starting' || mp.phase === 'error';
+  lobby.hidden = !lobbyVisible;
+
+  const setText = (id, text) => {
+    const node = document.getElementById(id);
+    if (node) node.textContent = text;
+  };
+  setText('mp-room-code', mp.room?.code ?? '—');
+  setText('mp-name', mp.name + (mp.you ? ' · P' + mp.you.slot : ''));
+  setText('mp-role', mp.host ? 'host (authoritative result)' : 'guest (sends input + 20 Hz state)');
+  const phaseLabel = mp.phase === 'connecting' ? 'connecting to the room service…'
+    : mp.phase === 'loading' ? 'loading the session car before joining the room…'
+      : mp.phase === 'lobby' ? (mp.engineReady ? 'in the lobby' : 'loading the engine…')
+        : mp.phase === 'starting' ? 'race starting…'
+          : mp.phase === 'reconnecting' ? 'RECONNECTING — the room keeps the slot for 30 s'
+            : mp.phase === 'error' ? 'error'
+              : mp.phase;
+  setText('mp-connection', phaseLabel);
+  setText('mp-lobby-status', mp.status ?? phaseLabel);
+
+  const roster = state.roster?.roster?.cars ?? [];
+  const carSelect = document.getElementById('mp-car');
+  if (carSelect && roster.length && carSelect.options.length !== roster.length) {
+    carSelect.textContent = '';
+    for (const entry of roster) {
+      const option = document.createElement('option');
+      option.value = entry.slug;
+      option.textContent = carLabel(entry);
+      carSelect.append(option);
+    }
+  }
+  const selfRow = mp.room?.players?.find((player) => player.id === mp.you?.id);
+  if (carSelect && selfRow) carSelect.value = selfRow.car;
+
+  const list = document.getElementById('mp-players');
+  if (list) {
+    list.textContent = '';
+    const players = [...(mp.room?.players ?? [])].sort((a, b) => a.slot - b.slot);
+    for (const player of players) {
+      const row = document.createElement('div');
+      row.className = 'mp-player';
+      const you = player.id === mp.you?.id ? ' (you)' : '';
+      const host = player.host ? '<span class="mp-host">HOST</span>' : '';
+      const ready = player.ready ? '<span class="mp-ready-on">READY</span>' : '<span class="mp-ready-off">not ready</span>';
+      const down = player.connected === false ? '<span class="mp-down">DISCONNECTED</span>' : '';
+      row.innerHTML = 'P' + player.slot + ' · ' + escapeHtml(player.name) + you + ' · ' +
+        escapeHtml(player.car) + host + ready + down;
+      list.append(row);
+    }
+  }
+
+  const readyButton = document.getElementById('mp-ready');
+  if (readyButton) {
+    const ready = selfRow?.ready === true;
+    readyButton.textContent = ready ? 'CANCEL READY' : 'READY';
+    readyButton.disabled = mp.phase !== 'lobby' || !mp.engineReady;
+    readyButton.dataset.ready = ready ? '1' : '0';
+  }
+  const startButton = document.getElementById('mp-start');
+  if (startButton) {
+    const players = mp.room?.players ?? [];
+    const allReady = players.length >= 2 && players.every((player) => player.ready && player.connected !== false);
+    startButton.hidden = !mp.host;
+    startButton.disabled = !(mp.phase === 'lobby' && mp.engineReady && allReady);
+    startButton.dataset.enabled = startButton.disabled ? '0' : '1';
+  }
+  setText('mp-server-note', 'room service ' + mp.url + ' · ' +
+    (mp.requestedCodeMismatch
+      ? 'requested ' + mp.requestedCode + '; allocated ' + (mp.room?.code ?? '—') + ' (codes are not reservable)'
+      : mp.host ? 'share ?mp=1&room=' + (mp.room?.code ?? 'CODE') + ' with the second player'
+        : 'joined ' + (mp.room?.code ?? '—') + ' as guest'));
+
+  const tag = document.getElementById('remote-tag');
+  if (tag) {
+    const visible = mp.remote.latest !== null && mp.phase !== 'connecting' && mp.phase !== 'lobby' && mp.phase !== 'error';
+    tag.hidden = !visible;
+    tag.dataset.state = mp.remote.connected === false ? 'reconnecting' : 'connected';
+    tag.textContent = visible
+      ? 'REMOTE · ' + (mp.remote.name ?? 'other player') +
+        (mp.remote.connected === false ? ' · RECONNECTING (labelled, no guessed pose)' : '') +
+        ' · 20 Hz snapshot · no collision'
+      : '';
+  }
+
+  const results = document.getElementById('results');
+  const mpResults = document.getElementById('mp-results');
+  if (results && mpResults) {
+    if (mp.result) {
+      results.hidden = false;
+      const heading = results.querySelector('h2');
+      if (heading) heading.textContent = 'RACE RESULT';
+      const hint = results.querySelector('.hint');
+      if (hint) hint.textContent = 'M1 room result — restart is not available in a room (M2)';
+      const winner = mp.result.rows.find((row) => row.playerId === mp.result.winnerId) ?? mp.result.rows[0];
+      document.getElementById('results-time').textContent = winner
+        ? 'P' + winner.positionNumber + ' · ' + winner.name + ' · ' +
+          (winner.timeSeconds === null ? 'DNF' : winner.timeSeconds.toFixed(3) + ' s')
+        : '—';
+      document.getElementById('results-best').textContent =
+        'room ' + (mp.room?.code ?? '—') + ' · shared table ' + mp.result.hash.slice(7, 23) + '… · ' +
+        'host ' + (mp.room?.players?.find((player) => player.host)?.name ?? '—');
+      mpResults.hidden = false;
+      mpResults.textContent = '';
+      const head = document.createElement('div');
+      head.className = 'mp-result-row mp-result-head';
+      head.innerHTML = '<span>#</span><span>player</span><span>time</span>';
+      mpResults.append(head);
+      for (const row of mp.result.rows) {
+        const line = document.createElement('div');
+        line.className = 'mp-result-row';
+        line.dataset.player = row.playerId;
+        line.innerHTML = '<span class="mp-result-pos">' + row.positionNumber + '</span>' +
+          '<span class="mp-result-name">' + escapeHtml(row.name) +
+          (row.host ? ' <span class="mp-result-host">HOST</span>' : '') + '</span>' +
+          '<span class="mp-result-time' + (row.status === 'dnf' ? ' mp-result-dnf' : '') + '">' +
+          (row.status === 'dnf' ? 'DNF' : row.timeSeconds.toFixed(3) + ' s') + '</span>';
+        mpResults.append(line);
+      }
+    } else {
+      mpResults.hidden = true;
+      if (mp.phase !== 'reconnecting') results.hidden = true;
+    }
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
 }
 
 function fail(message) {
@@ -671,6 +954,7 @@ window.addEventListener('keydown', (event) => {
 window.addEventListener('pointerdown', startEngineAudio);
 // Dispose the context (and its six sources) when the page is hidden/unloaded.
 window.addEventListener('pagehide', () => {
+  if (mpNet) { try { mpNet.close(); } catch {} }
   if (!engineAudio) return;
   engineAudio.dispose();
   publishAudioState({ state: 'disposed', contextState: 'closed', rpm: null, activeLayers: 0, layers: [] });
@@ -732,6 +1016,28 @@ let telemetryResets = 0;
 let engineAudio = null;
 let audioMuted = false;
 let audioRpmOverride = null;
+
+// ------------------------------------------------------------------ multiplayer
+// The M1 room client, the local slot/grid, the shared result builder and the
+// one remote-car display slot. `mpRaceRules` holds the dynamically imported
+// `probes/race-rules` module so a page without the route still loads the
+// single-player modes unchanged.
+let mpNet = null;
+let mpRaceRules = null;
+let mpRace = null;
+let mpSessionCar = null;
+let mpSlot = null;
+let mpSettledTick0 = null;
+let mpStarted = false;
+let mpFrameStarted = false;
+let mpLastState = null;
+let mpLocalHistory = new Map();
+let mpRemoteDisplay = null;
+let mpRemotePlayerId = null;
+let mpResult = null;
+let mpFinishHash = null;
+let mpLastStatsAt = 0;
+let mpRemoteFinished = null;
 
 /** The live retail RPM value; null before a world exists (never a guess). */
 function liveEngineRpm() {
@@ -1052,12 +1358,12 @@ function createWorld(x, z, heading) {
   return readState();
 }
 
-async function loadEngine() {
+async function loadEngine(carOverride = null) {
   const factory = (await import(ENGINE_MODULE)).default;
   engineFactory = factory;
   module = await factory();
   const roster = await loadRoster();
-  car = resolveCar(roster, REQUESTED_CAR);
+  car = resolveCar(roster, carOverride ?? REQUESTED_CAR);
   state.roster = roster;
   state.car = carIdentity(car);
   populateSelector(roster, car);
@@ -1160,17 +1466,43 @@ async function loadEngine() {
     let storage = null;
     try { storage = window.localStorage; } catch { storage = null; }
     bestTimes = createBestTimes(storage, SPRINT_BEST_KEY);
-    state.sprintBest = bestTimes.bestFor(car.slug);
-    // Ghost / rival replay: the stored best run, or the committed deterministic
-    // reference trace. `?ghost=1` shows it from the start; otherwise `G` toggles.
-    await loadGhost(storage);
-    ghostEnabled = GHOST_REQUESTED && ghost.record !== null;
+    state.sprintBest = MP ? null : bestTimes.bestFor(car.slug);
+    if (MP) {
+      // The one remote slot reuses the ghost draw path in M1, so the single-player
+      // replay is explicitly off (no silent sharing of the slot). The same car's
+      // wheel rest matrices are the remote car's rest matrices.
+      ghost = { record: null, decoded: null, table: null, source: 'none', label: null,
+        reason: 'multiplayer uses the single remote-car slot; ghost replay is off', note: null };
+      ghostEnabled = false;
+      const remoteBody = geometry.carBodies[car.slug];
+      if (!remoteBody) throw new Error('geometry has no body for ' + car.slug);
+      ghostWheelRest = Object.fromEntries(remoteBody.wheelGroups.map((group) =>
+        [group.corner, group.matrixColumnMajor]));
+    } else {
+      // Ghost / rival replay: the stored best run, or the committed deterministic
+      // reference trace. `?ghost=1` shows it from the start; otherwise `G` toggles.
+      await loadGhost(storage);
+      ghostEnabled = GHOST_REQUESTED && ghost.record !== null;
+    }
     // The 310 m course starts on the measured tangent of its start gate; the
     // 29 m regression course keeps the committed drive spawn heading; the lap
     // starts on P61 loop-01's own point and tangent (component 5). The soak
     // schedule runs drive/telemetry segments whose node anchors were recorded
     // at the legacy spawn heading, so its shared world keeps that heading.
-    const start = layoutStartPosition(layout, spawn);
+    let start = layoutStartPosition(layout, spawn);
+    if (MP && mpRaceRules) {
+      // Provisional race-rules grid: two cars side by side on the measured start
+      // line. Both pages compute the same grid from the same committed layout and
+      // slot, so the local body and the host's rules see the same start point.
+      const model = new mpRaceRules.CourseModel(layout);
+      const grid = model.startGrid(MP_MAX_PLAYERS, MP_GRID_OPTIONS);
+      const index = Math.max(0, Math.min(grid.length - 1, (mpSlot ?? 1) - 1));
+      const slot = grid[index];
+      start = { x: slot.x, z: slot.z, heading: slot.headingRad, headingRad: slot.headingRad,
+        source: 'race-rules provisional grid' };
+      state.mp.grid = { slot: slot.slot, x: slot.x, z: slot.z, headingRad: slot.headingRad,
+        source: slot.source, options: { ...MP_GRID_OPTIONS } };
+    }
     if (COLLISION_PROBE) {
       tick0 = createWorld(collisionProbeStart.x, collisionProbeStart.z, collisionProbeStart.headingRad);
       const startEnvelope = state.props?.carEnvelope;
@@ -1196,7 +1528,7 @@ async function loadEngine() {
         resolved: { x: tick0.position[0], z: tick0.position[2] }
       };
     } else {
-      tick0 = createWorld(start.x, start.z, SOAK ? spawn.heading : start.heading);
+      tick0 = createWorld(start.x, start.z, SOAK ? spawn.heading : (start.heading ?? start.headingRad));
     }
   } else {
     tick0 = createWorld(spawn.x, spawn.z, spawn.heading);
@@ -1245,7 +1577,7 @@ function currentInput(tick) {
   if (SPRINT_FALL) {
     return sprintRules.respawns > 0 ? sprintRules.gateInput([1, 0, 0, 0]) : respawnScriptInput(tick);
   }
-  if (SCRIPTED_SPRINT) return sprintScriptInput(sprintRules, session?.lastState ?? null);
+  if (SCRIPTED_SPRINT) return sprintScriptInput(sprintRules, session?.lastState ?? null, MP_CONTROL);
   return sprintRules.gateInput(keyboardInput());
 }
 
@@ -1268,12 +1600,18 @@ function handleSprintEvents(events) {
       untilTick: event.tick + 90
     };
     if (event.type === SPRINT_EVENT.FINISH) {
-      const submitted = bestTimes.submit(car.slug, {
-        seconds: event.timeSeconds,
-        car: car.name,
-        checkpoints: event.laps ?? event.checkpoints,
-        respawns: sprintRules.respawns
-      });
+      // Single-player best times are not part of the M1 authority: the shared
+      // result table is. Skipping the localStorage write also avoids the two
+      // capture pages (same browser origin) overwriting each other's best.
+      let submitted = { best: null, previous: null, improved: false, persistent: false };
+      if (!MP && bestTimes) {
+        submitted = bestTimes.submit(car.slug, {
+          seconds: event.timeSeconds,
+          car: car.name,
+          checkpoints: event.laps ?? event.checkpoints,
+          respawns: sprintRules.respawns
+        });
+      }
       state.sprintBest = submitted.best;
       state.sprintResult = {
         visible: true,
@@ -1291,7 +1629,8 @@ function handleSprintEvents(events) {
         improved: submitted.improved,
         persistent: submitted.persistent
       };
-      recordGhostFinish(event);
+      if (MP) mpLocalFinish(event);
+      else recordGhostFinish(event);
     }
   }
 }
@@ -1372,7 +1711,10 @@ async function startTimeline(tick0, {
   const start = collisionProbeStart
     ? { x: collisionProbeStart.x, z: collisionProbeStart.z, headingRad: collisionProbeStart.headingRad,
       source: 'P74 collision-v2 capture probe (manifest-derived pose)' }
-    : sprintRules ? layoutStartPosition(sprintRules.layout, spawn) : spawn;
+    : MP && state.mp?.grid
+      ? { x: state.mp.grid.x, z: state.mp.grid.z, headingRad: state.mp.grid.headingRad,
+        source: 'race-rules provisional start grid' }
+      : sprintRules ? layoutStartPosition(sprintRules.layout, spawn) : spawn;
   session = createSession(geometry, tick0, {
     spawn: { x: start.x, z: start.z, headingRad: start.headingRad ?? start.heading,
       source: start.source ?? (sprintRules?.layout?.source?.spawnSource ?? spawn.source ?? 'probes/e1-drive/tools/spawn.mjs') },
@@ -2298,7 +2640,700 @@ async function runSoakMode(initialTick0) {
   }
 }
 
+// ------------------------------------------------------------------ multiplayer
+// M1 room flow. The host is the rules/result authority; both clients simulate
+// their own car with the real wasm engine and send 20 Hz state (60 Hz inputs).
+// The host feeds both cars into `RaceSession` for ordered checkpoints/finish
+// validation. HUD numbers and the shared result table come from this block only.
+
+/** E1-shaped network state from an engine snapshot. */
+function mpNetworkState(snapshot) {
+  return {
+    tick: snapshot.tick,
+    position: [snapshot.position[0], snapshot.position[1], snapshot.position[2]],
+    quaternion: quaternionFromAxes(snapshot.axisX, snapshot.axisY, snapshot.axisZ),
+    speed: snapshot.speed
+  };
+}
+
+/** Keep a short local state history for the capture's remote-pose comparison. */
+function mpRememberState(snapshot) {
+  mpLocalHistory.set(snapshot.tick, {
+    tick: snapshot.tick,
+    position: [snapshot.position[0], snapshot.position[1], snapshot.position[2]],
+    quaternion: quaternionFromAxes(snapshot.axisX, snapshot.axisY, snapshot.axisZ),
+    speed: snapshot.speed
+  });
+  while (mpLocalHistory.size > 5000) mpLocalHistory.delete(mpLocalHistory.keys().next().value);
+}
+
+function mpHistoryAt(tick) {
+  return mpLocalHistory.get(tick) ?? null;
+}
+
+/** Update HUD counters from the transport stats; throttled to 4 Hz. */
+function mpUpdateStats(force = false) {
+  if (!mpNet || !state.mp) return;
+  const now = performance.now();
+  if (!force && now - mpLastStatsAt < 250) return;
+  mpLastStatsAt = now;
+  const stats = mpNet.stats();
+  state.mp.ping = stats.rtt.state.p50 ?? stats.rtt.control.p50 ?? null;
+  state.mp.sent = { ...stats.sent };
+  state.mp.received = { ...stats.received };
+  let stateApplied = 0;
+  let inputApplied = 0;
+  for (const stream of stats.streams) {
+    if (stream.channel === 'state') stateApplied += stream.lastApplied;
+    else inputApplied += stream.lastApplied;
+  }
+  state.mp.applied = { state: stateApplied, input: inputApplied };
+  const remote = stats.streams.find((stream) => stream.channel === 'state');
+  if (remote) {
+    const latest = mpNet.latestRemote(remote.from);
+    if (latest) {
+      state.mp.remote.latest = latest;
+      state.mp.remote.tick = latest.tick;
+      state.mp.remote.authority = latest.authority === true;
+      state.mp.remote.seq = latest.seq;
+    }
+  }
+  const remotePlayer = mpNet.remotePlayer();
+  if (remotePlayer) {
+    state.mp.remote.id = remotePlayer.id;
+    state.mp.remote.name = remotePlayer.name;
+    state.mp.remote.slot = remotePlayer.slot;
+    state.mp.remote.car = remotePlayer.car;
+    state.mp.remote.connected = remotePlayer.connected !== false;
+    if (mpRemotePlayerId === null) mpRemotePlayerId = remotePlayer.id;
+  }
+}
+
+/** Per-tick MP work after the local engine/rules step. */
+function mpAfterLocalTick(snapshot) {
+  if (!mpNet || !state.mp) return;
+  mpLastState = snapshot;
+  mpRememberState(snapshot);
+  if (MP_HOST) mpHostRulesStep(snapshot);
+  const phase = mpNet.phase;
+  if (phase === 'running' && !state.mp.finishReported) {
+    const input = {
+      throttle: snapshot.input[0],
+      brake: snapshot.input[1],
+      steer: snapshot.input[2],
+      handbrake: snapshot.input[3]
+    };
+    try {
+      mpNet.sendInput(input, snapshot.tick);
+      state.mp.sent.input++;
+    } catch (error) {
+      state.mp.sendFailures++;
+      state.mp.lastError = error.message;
+    }
+    if (snapshot.tick % MP_STATE_EVERY_TICKS === 0) {
+      try {
+        mpNet.sendState(mpNetworkState(snapshot));
+        state.mp.sent.state++;
+      } catch (error) {
+        state.mp.sendFailures++;
+        state.mp.lastError = error.message;
+      }
+    }
+  }
+  mpUpdateStats(false);
+}
+
+/** Build the rules state the host feeds RaceSession for one participant. */
+function mpRulesState(id, snapshotOrState) {
+  if (!snapshotOrState) {
+    const grid = state.mp.grid;
+    return { id, position: grid ? [grid.x, 0, grid.z] : [0, 0, 0], contact: null };
+  }
+  return {
+    id,
+    position: snapshotOrState.position,
+    velocity: snapshotOrState.velocity ?? null,
+    contact: snapshotOrState.anyContact === undefined ? null : snapshotOrState.anyContact === 1
+  };
+}
+
+/** Host: advance the authoritative RaceSession by one engine tick. */
+function mpHostRulesStep(snapshot) {
+  if (!MP_HOST || !mpRace || !mpNet) return;
+  const guestId = mpRemotePlayerId;
+  if (!guestId) return;
+  const guestLatest = state.mp.remote.latest;
+  const guestState = mpRulesState(guestId, guestLatest?.state ?? state.mp.guestSpawnState ?? null);
+  const hostState = mpRulesState(mpNet.playerId, snapshot);
+  const progressRow = mpRace.progress.byId.get(guestId);
+  if (guestLatest && progressRow?.awaitingRejoin) {
+    mpRace.progress.rejoin(guestId, guestState, mpRace.raceTick);
+  }
+  const states = {};
+  states[mpNet.playerId] = hostState;
+  states[guestId] = guestState;
+  const events = mpRace.step(states);
+  if (events.length) {
+    state.mp.hostEvents = (state.mp.hostEvents ?? []).concat(events).slice(-64);
+  }
+  if (state.mp.result && !state.mp.validation) mpComputeHostValidation();
+}
+
+/** Compose/refresh the remote display from the interpolation buffer. */
+function mpUpdateRemoteFrame(renderTick) {
+  if (!mpNet || !mpRemotePlayerId) {
+    consumer.setGhostFrame(null);
+    return;
+  }
+  const latest = mpNet.latestRemote(mpRemotePlayerId);
+  if (!latest) {
+    consumer.setGhostFrame(null);
+    return;
+  }
+  state.mp.remote.latest = latest;
+  state.mp.remote.tick = latest.tick;
+  state.mp.remote.authority = latest.authority === true;
+  const sampleTick = Math.max(0, renderTick - MP_REMOTE_DELAY_TICKS);
+  const target = mpNet.sampleRemote(mpRemotePlayerId, sampleTick);
+  if (!target) {
+    consumer.setGhostFrame(null);
+    return;
+  }
+  if (!mpRemoteDisplay) mpRemoteDisplay = new RemoteDisplay();
+  const display = mpRemoteDisplay.update(target);
+  if (!display || !ghostWheelRest) {
+    consumer.setGhostFrame(null);
+    return;
+  }
+  state.mp.remote.sample = {
+    tick: target.tick,
+    position: [target.position[0], target.position[1], target.position[2]],
+    interpolated: target.interpolated === true,
+    clamped: target.clamped === true,
+    alpha: target.alpha ?? 0,
+    from: target.from ?? null,
+    to: target.to ?? null
+  };
+  state.mp.remote.display = { position: display.position.slice(), quaternion: display.quaternion.slice() };
+  state.mp.remote.distance = display.errorMetres;
+  state.mp.remote.corrections = display.corrections;
+  state.mp.remote.hardSets = display.hardSets;
+  state.mp.remote.blends = display.blends;
+  const { map } = remoteNodeMatrixMap({ position: display.position, quaternion: display.quaternion }, ghostWheelRest);
+  consumer.setGhostFrame(map);
+}
+
+/** Local finish: one canonical finish report; the shared table arrives later. */
+function mpLocalFinish(event) {
+  if (!mpNet || !state.mp || state.mp.finishReported) return;
+  state.mp.finishReported = true;
+  state.mp.finishTick = event.tick;
+  state.mp.finishTimeSeconds = event.timeSeconds;
+  const hashes = state.tickHashes.filter((row) => row.tick <= event.tick).map((row) => row.stateHash);
+  const sequenceHash = 'sha256:' + sha256Hex(hashes.join('\n'));
+  mpFinishHash = hashOf({
+    kind: 'e1-drive.mp.finish',
+    version: 1,
+    courseId: state.sprintCourseId,
+    layoutHash: state.sprintLayoutHash,
+    finishTick: event.tick,
+    timeSeconds: event.timeSeconds,
+    checkpoints: event.checkpoints ?? null,
+    stateSequenceHash: sequenceHash
+  });
+  try {
+    const finalState = session?.lastState ?? mpLastState;
+    if (finalState) {
+      mpNet.sendState(mpNetworkState(finalState));
+      state.mp.sent.state++;
+    }
+  } catch (error) {
+    state.mp.sendFailures++;
+  }
+  state.mp.phase = 'finished-local';
+  state.mp.status = 'finish reported; waiting for the shared result';
+  mpNet.reportFinished({ tick: event.tick, hash: mpFinishHash })
+    .then(() => { state.mp.status = 'finish reported; waiting for the shared result'; publish(); })
+    .catch((error) => { state.mp.lastError = error.message; state.mp.status = 'finish report failed: ' + error.message; publish(); });
+  publish();
+}
+
+/** Shared result table from the room's finish broadcast (host and guest). */
+function mpApplyResult(message) {
+  if (!state.mp || !sprintRules) return;
+  const room = message.room ?? mpNet?.room ?? null;
+  if (!Array.isArray(message.results) || !room) return;
+  const table = buildMpResult({ layout: sprintRules.layout, room, results: message.results });
+  mpResult = table;
+  state.mp.result = table;
+  state.mp.resultSource = 'room.finished';
+  state.mp.phase = 'finished';
+  state.mp.status = 'shared result received';
+  state.mp.players = [...room.players];
+  if (MP_HOST) mpComputeHostValidation();
+  mpUpdateStats(true);
+  publish();
+}
+
+/**
+ * Host validation record. It is recomputed while the host keeps ticking after
+ * the room result so the guest's final state can still arrive (the relay and the
+ * room finish broadcast are independent WebSocket messages).
+ */
+function mpComputeHostValidation() {
+  if (!MP_HOST || !mpRace || !state.mp || state.mp.validation) return;
+  try {
+    const snapshot = mpRace.snapshot();
+    const hostRow = snapshot.results.rows.find((row) => row.id === mpNet.playerId);
+    const guestRow = snapshot.results.rows.find((row) => row.id === mpRemotePlayerId);
+    // The guest's final state and its client.finished report are independent
+    // messages. Keep the host session running until the ProgressTracker has
+    // actually observed the guest finish; only then publish the validation row.
+    if (guestRow?.status !== 'finished') return;
+    const reported = state.mp.remote.finish?.tick ?? null;
+    const countdownTicks = sprintRules.layout.countdown?.ticks ?? 0;
+    const reportedRace = reported === null ? null : reported - countdownTicks;
+    state.mp.validation = {
+      sessionPhase: snapshot.phase,
+      sessionRaceTick: snapshot.raceTick,
+      sessionHash: mpRace.hash(),
+      hostFinishTick: hostRow?.finishTick ?? null,
+      guestFinishTick: guestRow?.finishTick ?? null,
+      guestStatus: guestRow?.status ?? null,
+      guestReportedTick: reported,
+      guestReportedRaceTick: reportedRace,
+      guestTickDelta: guestRow?.finishTick !== null && guestRow?.finishTick !== undefined && reportedRace !== null
+        ? guestRow.finishTick - reportedRace : null,
+      guestValidated: guestRow?.status === 'finished'
+    };
+    state.mp.hostSession = {
+      phase: snapshot.phase,
+      raceTick: snapshot.raceTick,
+      resultsHash: snapshot.results.hash,
+      hash: state.mp.validation.sessionHash
+    };
+  } catch (error) {
+    state.mp.lastError = 'host validation failed: ' + error.message;
+  }
+}
+
+/** Normalised room-client events. */
+function handleMpEvent(type, payload) {
+  if (!state.mp) return;
+  switch (type) {
+    case 'welcome':
+      state.mp.status = 'connected to the room service';
+      break;
+    case 'lobby': {
+      const { room, you } = payload;
+      state.mp.room = room;
+      state.mp.you = you;
+      state.mp.players = [...room.players];
+      state.mp.requestedCodeMismatch = Boolean(mpNet?.requestedCodeMismatch);
+      const self = room.players.find((player) => player.id === you?.id);
+      state.mp.ready = self?.ready === true;
+      const remote = room.players.find((player) => player.id !== you?.id);
+      if (remote) {
+        const wasConnected = state.mp.remote.connected;
+        mpRemotePlayerId = remote.id;
+        state.mp.remote.id = remote.id;
+        state.mp.remote.name = remote.name;
+        state.mp.remote.slot = remote.slot;
+        state.mp.remote.car = remote.car;
+        state.mp.remote.connected = remote.connected !== false;
+        if (remote.connected === false) {
+          state.mp.status = 'remote player disconnected; the room keeps the slot for 30 s';
+        } else if (wasConnected === false) {
+          state.mp.status = 'remote player resumed';
+        }
+      }
+      if (!mpStarted) state.mp.phase = 'lobby';
+      if (!state.mp.engineReady) state.mp.status = 'in the lobby; loading the engine…';
+      else if (!state.mp.started) state.mp.status = state.mp.ready ? 'ready' : 'in the lobby';
+      publish();
+      break;
+    }
+    case 'started':
+      state.mp.started = true;
+      state.mp.phase = 'starting';
+      state.mp.status = 'countdown';
+      publish();
+      void beginMultiplayerRace();
+      break;
+    case 'remoteState': {
+      if (!state.mp.remote.id) state.mp.remote.id = payload.from;
+      state.mp.remote.latest = payload;
+      state.mp.remote.tick = payload.tick;
+      state.mp.remote.authority = payload.authority === true;
+      state.mp.remote.connected = true;
+      break;
+    }
+    case 'remoteInput':
+      state.mp.remote.input = payload;
+      break;
+    case 'peerDisconnected':
+      state.mp.remote.connected = false;
+      state.mp.status = 'remote player disconnected; the room keeps the slot for 30 s';
+      publish();
+      break;
+    case 'peerResumed':
+      state.mp.remote.connected = true;
+      state.mp.status = 'remote player resumed';
+      publish();
+      break;
+    case 'peerFinished':
+      state.mp.remote.finish = { tick: payload.tick, hash: payload.hash };
+      mpRemoteFinished = payload;
+      publish();
+      break;
+    case 'reconnecting':
+      state.mp.phase = 'reconnecting';
+      state.mp.dropCount++;
+      state.mp.status = 'RECONNECTING — the room keeps this slot for 30 s';
+      publish();
+      break;
+    case 'resumed':
+      state.mp.resumeCount++;
+      state.mp.phase = state.mp.result ? 'finished' : (state.mp.started ? 'running' : 'lobby');
+      state.mp.status = 'resumed the same room slot';
+      mpUpdateStats(true);
+      publish();
+      break;
+    case 'result':
+      mpApplyResult(payload);
+      break;
+    case 'error': {
+      state.mp.lastError = payload?.message ?? String(payload);
+      state.mp.sendFailures++;
+      // A typed rejection is shown, not silent. Fatal lobby failures set the
+      // error state; a transient send/stream error keeps the race running.
+      if (state.mp.phase === 'connecting' || state.mp.phase === 'lobby') {
+        state.mp.error = state.mp.lastError;
+        state.mp.status = 'room error: ' + state.mp.lastError;
+      }
+      publish();
+      break;
+    }
+    case 'closed':
+      if (state.mp.phase !== 'finished') {
+        state.mp.phase = 'error';
+        state.mp.status = 'room connection closed';
+        state.mp.error = 'room connection closed';
+        publish();
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+/** Bind the lobby controls once the room and engine are ready. */
+function mpBindUi() {
+  const ready = document.getElementById('mp-ready');
+  if (ready && !ready.dataset.bound) {
+    ready.dataset.bound = '1';
+    ready.addEventListener('click', () => {
+      if (!mpNet || state.mp.phase !== 'lobby') return;
+      const next = !(state.mp.ready === true);
+      mpNet.setReady(next)
+        .then(() => { state.mp.ready = next; publish(); })
+        .catch((error) => { state.mp.lastError = error.message; state.mp.status = 'ready failed: ' + error.message; publish(); });
+    });
+  }
+  const start = document.getElementById('mp-start');
+  if (start && !start.dataset.bound) {
+    start.dataset.bound = '1';
+    start.addEventListener('click', () => { void mpStartRace(); });
+  }
+  const carSelect = document.getElementById('mp-car');
+  if (carSelect && !carSelect.dataset.bound) {
+    carSelect.dataset.bound = '1';
+    carSelect.addEventListener('change', () => {
+      if (!mpNet || state.mp.phase !== 'lobby') return;
+      mpNet.selectCar(carSelect.value)
+        .then(() => publish())
+        .catch((error) => { state.mp.lastError = error.message; state.mp.status = 'car select failed: ' + error.message; publish(); });
+    });
+  }
+}
+
+/** Host-only start; the room service still enforces host + all-ready. */
+async function mpStartRace() {
+  if (!MP_HOST || !mpNet) return;
+  const players = mpNet.room?.players ?? [];
+  const allReady = players.length >= 2 && players.every((player) => player.ready && player.connected !== false);
+  if (mpNet.phase !== 'lobby' || !allReady) {
+    state.mp.status = 'start needs two connected, ready players';
+    publish();
+    return;
+  }
+  state.mp.phase = 'starting';
+  state.mp.status = 'starting…';
+  publish();
+  try {
+    await mpNet.start();
+  } catch (error) {
+    state.mp.phase = 'lobby';
+    state.mp.status = 'start rejected: ' + error.message;
+    state.mp.lastError = error.message;
+    publish();
+  }
+}
+
+/** Begin the local race on both pages when the room broadcasts `room.started`. */
+async function beginMultiplayerRace() {
+  if (mpStarted || !state.mp?.engineReady || !sprintRules) return;
+  mpStarted = true;
+  state.mp.phase = 'running';
+  state.mp.status = 'countdown';
+  try {
+    if (MP_HOST) {
+      const players = [...(mpNet?.room?.players ?? [])].sort((a, b) => a.slot - b.slot);
+      const participants = players.map((player) => ({ id: player.id, slot: player.slot }));
+      mpRace = new mpRaceRules.RaceSession({
+        layout: sprintRules.layout,
+        participants,
+        config: { hostId: mpNet.playerId, minParticipants: 2, maxParticipants: 2 }
+      });
+      for (const player of players) mpRace.command({ type: 'ready', from: player.id, ready: true });
+      mpRace.command({ type: 'start', from: mpNet.playerId });
+      // Consume the zero-tick loading phase so the session countdown starts on
+      // the same engine tick as the local SprintRules countdown.
+      mpRace.step(null);
+      const guest = players.find((player) => player.id !== mpNet.playerId);
+      if (guest) {
+        const model = new mpRaceRules.CourseModel(sprintRules.layout);
+        const grid = model.startGrid(MP_MAX_PLAYERS, MP_GRID_OPTIONS);
+        const slot = grid[Math.max(0, Math.min(grid.length - 1, guest.slot - 1))];
+        state.mp.guestSpawnState = { position: [slot.x, slot.y, slot.z], contact: null };
+      }
+      state.mp.hostSession = { created: true, participants: participants.map((row) => row.id),
+        config: { hostId: mpNet.playerId, countdownTicks: sprintRules.layout.countdown?.ticks ?? 0 } };
+    }
+    const tick1 = await startTimeline(mpSettledTick0, { reload: true });
+    applyState(tick1);
+    state.consumer = 'running';
+    state.mp.status = 'running';
+    publish();
+    if (!mpFrameStarted) {
+      mpFrameStarted = true;
+      requestAnimationFrame(frame);
+    }
+  } catch (error) {
+    mpFail('multiplayer start failed: ' + error.message);
+  }
+}
+
+function mpFail(message) {
+  if (state.mp) {
+    state.mp.phase = 'error';
+    state.mp.error = message;
+    state.mp.status = 'error: ' + message;
+  }
+  fail(message);
+}
+
+/** Compact probe for the headless capture; never used by the render path. */
+function mpCaptureSnapshot() {
+  if (!state.mp) return null;
+  const mp = state.mp;
+  const overlay = (id) => document.getElementById(id);
+  const sprint = state.sprint;
+  return {
+    schema: mp.schema,
+    phase: mp.phase,
+    status: mp.status,
+    error: mp.error,
+    roomCode: mp.room?.code ?? null,
+    requestedCode: mp.requestedCode,
+    requestedCodeMismatch: mp.requestedCodeMismatch,
+    host: mp.host,
+    you: mp.you ? { id: mp.you.id, slot: mp.you.slot } : null,
+    engineReady: mp.engineReady,
+    started: mp.started,
+    sessionCar: mp.sessionCar,
+    grid: mp.grid,
+    players: (mp.room?.players ?? []).map((player) => ({
+      id: player.id, slot: player.slot, name: player.name, car: player.car,
+      ready: player.ready, connected: player.connected, host: player.host
+    })),
+    engineTick: state.engineTick,
+    frames: state.frames,
+    consumer: state.consumer,
+    local: { tick: state.engineTick, position: state.position, speed: state.speed },
+    sprint: sprint ? {
+      phase: sprint.phase,
+      elapsedSeconds: sprint.elapsedSeconds,
+      finishTimeSeconds: sprint.finishTimeSeconds,
+      finishTick: sprint.finishTick,
+      finished: sprint.finished,
+      checkpointsPassed: sprint.checkpointsPassed,
+      progress: sprint.progress,
+      countdownLabel: sprint.countdownLabel
+    } : null,
+    finishReported: mp.finishReported,
+    finishTick: mp.finishTick,
+    finishHash: mpFinishHash,
+    result: mp.result ? {
+      hash: mp.result.hash,
+      order: mp.result.order,
+      winnerId: mp.result.winnerId,
+      rows: mp.result.rows
+    } : null,
+    validation: mp.validation,
+    hostSession: mp.hostSession,
+    remote: {
+      id: mp.remote.id,
+      name: mp.remote.name,
+      slot: mp.remote.slot,
+      car: mp.remote.car,
+      connected: mp.remote.connected,
+      latestTick: mp.remote.tick,
+      seq: mp.remote.seq ?? null,
+      authority: mp.remote.authority,
+      corrections: mp.remote.corrections,
+      hardSets: mp.remote.hardSets,
+      blends: mp.remote.blends,
+      distance: mp.remote.distance,
+      sample: mp.remote.sample,
+      sampleTick: mp.remote.sample?.tick ?? null,
+      samplePosition: mp.remote.sample?.position ?? null,
+      sampleFrom: mp.remote.sample?.from ?? null,
+      sampleTo: mp.remote.sample?.to ?? null,
+      latestPosition: mp.remote.latest?.state?.position ?? null,
+      latestQuaternion: mp.remote.latest?.state?.quaternion ?? null,
+      displayPosition: mp.remote.display?.position ?? null,
+      displayQuaternion: mp.remote.display?.quaternion ?? null,
+      finish: mp.remote.finish ?? null
+    },
+    sent: mp.sent,
+    received: mp.received,
+    applied: mp.applied,
+    ping: mp.ping,
+    sendFailures: mp.sendFailures,
+    dropCount: mp.dropCount,
+    resumeCount: mp.resumeCount,
+    overlays: {
+      lobbyHidden: overlay('mp-lobby')?.hidden ?? null,
+      roomCodeText: overlay('mp-room-code')?.textContent ?? null,
+      statusText: overlay('mp-lobby-status')?.textContent ?? null,
+      readyText: overlay('mp-ready')?.textContent ?? null,
+      readyDisabled: overlay('mp-ready')?.disabled ?? null,
+      startHidden: overlay('mp-start')?.hidden ?? null,
+      startDisabled: overlay('mp-start')?.disabled ?? null,
+      remoteTagHidden: overlay('remote-tag')?.hidden ?? null,
+      remoteTagText: overlay('remote-tag')?.textContent ?? null,
+      resultsHidden: overlay('results')?.hidden ?? null,
+      resultsTime: overlay('results-time')?.textContent ?? null,
+      resultsBest: overlay('results-best')?.textContent ?? null,
+      mpResultsHidden: overlay('mp-results')?.hidden ?? null,
+      mpResultsText: overlay('mp-results')?.textContent ?? null
+    }
+  };
+}
+
+/** Capture/debug surface; the page never depends on it. */
+function mpInstallDebugApi() {
+  window.__mp = {
+    session: () => mpNet,
+    setReady: (ready) => (mpNet ? mpNet.setReady(Boolean(ready)) : Promise.reject(new Error('no room'))),
+    start: () => mpStartRace(),
+    drop: (options = {}) => (mpNet ? mpNet.net.simulateDrop(options) : Promise.reject(new Error('no room'))),
+    snapshot: () => mpCaptureSnapshot(),
+    stateAt: (tick) => mpHistoryAt(Number(tick)),
+    result: () => mpResult,
+    mpState: () => state.mp,
+    constants: {
+      tickHz: MP_TICK_HZ,
+      inputHz: MP_INPUT_HZ,
+      stateHz: MP_TICK_HZ / MP_STATE_EVERY_TICKS,
+      remoteDelayTicks: MP_REMOTE_DELAY_TICKS,
+      positionThresholdMetres: MP_POSITION_THRESHOLD_METRES,
+      angleThresholdRad: MP_ANGLE_THRESHOLD_RAD,
+      blendTicks: MP_BLEND_TICKS
+    }
+  };
+}
+
+/** `?mp=1` entry point: load the session car, connect/join, show the lobby. */
+async function startMultiplayer() {
+  state.consumer = 'loading';
+  state.mp.phase = 'loading';
+  state.mp.status = 'loading the session car before joining the room…';
+  publish();
+  mpInstallDebugApi();
+  try {
+    // The engine + 45 MB geometry load is the long blocking phase. Do it before
+    // opening the room socket so the 5 s room heartbeat is not starved by the
+    // synchronous load; the room connection then starts in the lobby.
+    const raceRules = await import('/race-rules/index.mjs');
+    mpRaceRules = raceRules;
+    mpSlot = MP_HOST ? 1 : 2;
+    const tick0 = await loadEngine(REQUESTED_CAR ?? null);
+    mpSettledTick0 = tick0;
+    mpSessionCar = car.slug;
+    state.mp.sessionCar = mpSessionCar;
+    state.mp.engineReady = true;
+    state.mp.status = 'engine loaded; connecting to the room service…';
+    publish();
+
+    const netModule = await import('/net-mvp/client.mjs');
+    mpNet = new MpSession({
+      NetClient: netModule.NetClient,
+      url: MP_URL,
+      name: MP_NAME,
+      host: MP_HOST,
+      code: MP_CODE,
+      car: mpSessionCar,
+      map: 'usa_la_river',
+      maxPlayers: MP_MAX_PLAYERS,
+      onEvent: handleMpEvent
+    });
+    const joined = await mpNet.open();
+    const roomCar = sessionCarForRoom(joined.room, mpSessionCar);
+    if (roomCar && roomCar !== mpSessionCar) {
+      throw new Error('M1 needs the same car for both players: this page loaded ' +
+        JSON.stringify(mpSessionCar) + ' but the room host car is ' + JSON.stringify(roomCar) +
+        '; reopen the guest with ?car=' + roomCar);
+    }
+    if (joined.you.slot !== mpSlot) {
+      throw new Error('M1 expects the host in slot 1 and the guest in slot 2; this page joined slot ' +
+        joined.you.slot + (MP_HOST ? ' as host' : ' as guest'));
+    }
+    state.mp.room = joined.room;
+    state.mp.you = joined.you;
+    state.mp.players = [...joined.room.players];
+    state.mp.requestedCodeMismatch = mpNet.requestedCodeMismatch;
+    state.mp.phase = 'lobby';
+    state.mp.status = state.mp.ready ? 'ready' : 'engine loaded; press READY';
+    const remote = joined.room.players.find((player) => player.id !== joined.you.id);
+    if (remote) {
+      mpRemotePlayerId = remote.id;
+      state.mp.remote.id = remote.id;
+      state.mp.remote.name = remote.name;
+      state.mp.remote.slot = remote.slot;
+      state.mp.remote.car = remote.car;
+      state.mp.remote.connected = remote.connected !== false;
+    }
+    mpRemoteDisplay = null;
+    mpLocalHistory = new Map();
+    state.consumer = 'lobby';
+    mpBindUi();
+    publish();
+  } catch (error) {
+    mpFail(error.message);
+  }
+}
+
+
 async function doReset(nowUs) {
+  if (MP) {
+    if (state.mp) {
+      state.mp.status = 'restart is not available in an M1 room (return to the lobby is M2)';
+      publish();
+    }
+    return;
+  }
   if (pendingRespawn) return;
   try {
     if (sprintRules) {
@@ -2348,14 +3383,23 @@ function frame(nowMs) {
         handleSprintEvents(events);
       }
       applyState(snapshot);
+      if (MP) mpAfterLocalTick(snapshot);
       if (sprintRules) {
         if (sprintRules.awaitingRejoin) {
           pendingRespawn = sprintRules.respawnTarget();
           break;
         }
         if (sprintRules.phase === 'finished' && snapshot.tick - sprintRules.finishTick >= FINISH_TAIL_TICKS) {
-          holdReached = true;
-          state.holdReached = true;
+          // In an M1 room the host must keep its engine tick alive until the
+          // guest's finish is validated and the shared result arrives; the guest
+          // may hold once its own brake tail is done.
+          const tail = snapshot.tick - sprintRules.finishTick;
+          const keepHostRunning = MP && MP_HOST &&
+            state.mp?.validation?.guestValidated !== true && tail < 600;
+          if (!keepHostRunning) {
+            holdReached = true;
+            state.holdReached = true;
+          }
           break;
         }
       }
@@ -2401,7 +3445,7 @@ function frame(nowMs) {
     state.cameraOcclusion = cameraAtDisplay.occlusion ?? null;
   }
 
-  updateGhostFrame();
+  if (MP) mpUpdateRemoteFrame(cursor); else updateGhostFrame();
   consumer.syncTimeline();
   const rendered = consumer.renderFrame({ cursor });
   if (rendered) {
@@ -2434,6 +3478,10 @@ window.addEventListener('resize', applyCanvasAspect);
 async function main() {
   state.consumer = 'loading';
   publish();
+  if (MP) {
+    await startMultiplayer();
+    return;
+  }
   const tick0 = await loadEngine();
 
   if (TELEMETRY) {

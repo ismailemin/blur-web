@@ -40,7 +40,7 @@ Content expands after that gate, not before.
 |---|---|---|
 | **M0 Inventory** | All levels, all 62 vehicle records, all power-up entities audited | Content manifests + coverage matrices + verifier |
 | **M0 Net** | Room server + two-client transport harness | 2 headless clients, join/ready/state/ack/reconnect, loss/latency test |
-| **M1 Online race** | `?mp=1` in e1-drive: room, car select, start countdown, remote car state, finish | 2 browser clients finish `usa_la_river` 310 m and lap; screenshot + console 0 |
+| **M1 Online race** | `?mp=1` in e1-drive: room, car select, start countdown, remote car state, finish | **DONE** — 874/874, two-browser capture, console 0, shared result |
 | **M2 Power-ups** | Pickups, weapons, mines, shield, nitro, damage/respawn online | Rules prototype + 2-client event sync tests |
 | **M3 Maps** | At least 3 additional maps with collision/road/draws | Per-map layout + capture + finish |
 | **M4 Vehicles** | All 62 records: model/fields/textures or an explicit unsupported reason | Coverage matrix 62/62 classified |

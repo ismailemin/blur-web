@@ -228,3 +228,111 @@ html, body {
 html[data-telemetry] #keys,
 html[data-telemetry] #legend { display: none; }
 
+/* M1 multiplayer lobby. Presentation only: the room service is the lobby
+   authority; these buttons call the room client. */
+#mp-lobby {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 54ch;
+  max-width: 78ch;
+  padding: 18px 24px;
+  background: rgba(6, 12, 17, 0.96);
+  border: 1px solid rgba(111, 195, 232, 0.5);
+  border-radius: 8px;
+  color: var(--ink);
+  pointer-events: auto;
+  z-index: 20;
+}
+#mp-lobby[hidden] { display: none; }
+#mp-lobby h2 {
+  margin: 0 0 10px;
+  font-size: 22px;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+#mp-lobby .mp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+#mp-lobby .mp-key {
+  width: 7ch;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+#mp-lobby #mp-room-code { font-size: 18px; letter-spacing: 0.18em; color: #f2d06f; }
+#mp-lobby .mp-status { color: var(--muted); }
+#mp-lobby .mp-note { color: var(--muted); margin-top: 4px; }
+#mp-lobby .mp-players {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(111, 195, 232, 0.22);
+  border-radius: 6px;
+}
+#mp-lobby .mp-player { margin: 2px 0; }
+#mp-lobby .mp-player .mp-host { color: #8fe3b0; margin-left: 8px; }
+#mp-lobby .mp-player .mp-ready-on { color: #8fe3b0; margin-left: 8px; }
+#mp-lobby .mp-player .mp-ready-off { color: var(--warn); margin-left: 8px; }
+#mp-lobby .mp-player .mp-down { color: #e88a8a; margin-left: 8px; }
+#mp-lobby button {
+  padding: 4px 14px;
+  background: #0f1a22;
+  color: var(--ink);
+  border: 1px solid rgba(111, 195, 232, 0.5);
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+#mp-lobby button:disabled { opacity: 0.45; cursor: default; }
+#mp-lobby button[hidden] { display: none; }
+#mp-lobby #mp-car {
+  max-width: 38ch;
+  padding: 2px 6px;
+  background: #0f1a22;
+  color: var(--ink);
+  border: 1px solid rgba(111, 195, 232, 0.35);
+  border-radius: 4px;
+  font: inherit;
+}
+html[data-mp] #cars { display: none; }
+
+/* Remote car tag. The car itself is the existing car mesh drawn through the
+   ghost pipeline with a translucent diagnostic tint. */
+#remote-tag {
+  position: fixed;
+  left: 50%;
+  bottom: 150px;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9fe0ff;
+  background: rgba(8, 20, 30, 0.86);
+  border: 1px solid rgba(79, 196, 240, 0.6);
+  border-radius: 999px;
+  pointer-events: none;
+}
+#remote-tag[hidden] { display: none; }
+#remote-tag[data-state="reconnecting"] { color: var(--warn); border-color: rgba(232, 196, 111, 0.65); }
+
+/* Shared M1 result table inside the existing results panel. */
+#mp-results { margin: 8px 0 2px; }
+#mp-results[hidden] { display: none; }
+#mp-results .mp-result-row {
+  display: grid;
+  grid-template-columns: 3ch 14ch 10ch;
+  gap: 8px;
+  padding: 1px 0;
+}
+#mp-results .mp-result-head { color: var(--muted); }
+#mp-results .mp-result-pos { color: #f2d06f; }
+#mp-results .mp-result-name { color: var(--ink); }
+#mp-results .mp-result-time { color: var(--accent); text-align: right; }
+#mp-results .mp-result-host { color: #8fe3b0; }
+#mp-results .mp-result-dnf { color: #e88a8a; }
+

@@ -33,6 +33,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { startServer } from './serve.mjs';
+import { startRoomServer } from '../../net-mvp/server.mjs';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { buildGhostArcTable, decodeGhost, ghostGap, ghostMatrices } from '../web/ghost-replay.js';
 import { coursePosition } from '../web/sprint-rules.js';
@@ -54,7 +55,14 @@ const EDGE_CANDIDATES = [
 const edge = EDGE_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!edge) throw new Error('msedge.exe not found; pass --edge <path>');
 
-const PORT = Number(option('--port', '8801'));
+const MODE = option('--mode', 'drive');
+if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp'].includes(MODE)) {
+  throw new Error('unknown --mode ' + JSON.stringify(MODE) +
+    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality or mp)');
+}
+// `--mode mp` uses the documented M1 capture ports: game 8802, room 8811.
+const PORT = Number(option('--port', MODE === 'mp' ? '8802' : '8801'));
+const ROOM_PORT = Number(option('--room-port', '8811'));
 const DEBUG_PORT = Number(option('--debug-port', '9341'));
 const PROFILE = path.join(OUT, 'edge-profile-' + PORT);
 const VIEWPORT = { width: 1600, height: 900 };
@@ -63,11 +71,6 @@ const ONLY_CAR = option('--car', null);
 const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
-const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality'].includes(MODE)) {
-  throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio or quality)');
-}
 // Course selection: 310 (default, `_work/e1-drive/sprint.json`), short
 // (`?course=short`, `_work/e1-drive/sprint-short.json`), lap (`?course=lap`,
 // `_work/e1-drive/sprint-lap.json`) or free (`?course=free`,
@@ -204,6 +207,10 @@ const browser = spawn(edge, [
   '--disable-extensions',
   '--disable-sync',
   '--disable-component-update',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding',
+  '--disable-features=CalculateNativeWinOcclusion',
   '--hide-scrollbars',
   '--force-device-scale-factor=1',
   '--window-size=' + VIEWPORT.width + ',' + VIEWPORT.height,
@@ -282,6 +289,71 @@ await send('Runtime.enable');
 await send('Log.enable');
 await send('Page.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: VIEWPORT.width, height: VIEWPORT.height, deviceScaleFactor: 1, mobile: false });
+await send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
+await send('Page.setWebLifecycleState', { state: 'active' }).catch(() => {});
+
+/**
+ * Create a second page target in the same headless Edge process and return the
+ * same CDP helpers the first page uses. M1 needs two independent pages: one
+ * host and one guest. `PUT /json/new` is the DevTools HTTP way to open a tab in
+ * the running browser; a GET fallback covers older builds.
+ */
+async function openSecondPage(url = 'about:blank') {
+  let response = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' });
+  if (!response.ok) {
+    response = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/new?${encodeURIComponent(url)}`);
+  }
+  if (!response.ok) throw new Error('could not create the second page target: HTTP ' + response.status);
+  const target = await response.json();
+  if (!target.webSocketDebuggerUrl) throw new Error('second page target has no webSocketDebuggerUrl');
+  const socket2 = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => {
+    socket2.addEventListener('open', resolve, { once: true });
+    socket2.addEventListener('error', reject, { once: true });
+  });
+  const messages2 = [];
+  const pending2 = new Map();
+  let nextId2 = 0;
+  socket2.addEventListener('message', (event) => {
+    const message = JSON.parse(event.data);
+    if (message.id) {
+      const entry = pending2.get(message.id);
+      if (!entry) return;
+      pending2.delete(message.id);
+      if (message.error) entry.reject(new Error(JSON.stringify(message.error)));
+      else entry.resolve(message.result);
+      return;
+    }
+    if (message.method === 'Runtime.consoleAPICalled') {
+      messages2.push({ source: 'console.' + message.params.type, text: message.params.args.map((arg) => arg.value ?? arg.description).join(' ') });
+    } else if (message.method === 'Runtime.exceptionThrown') {
+      const details = message.params.exceptionDetails;
+      messages2.push({ source: 'exception', text: details.exception?.description ?? details.text });
+    } else if (message.method === 'Log.entryAdded') {
+      messages2.push({ source: 'log.' + message.params.entry.level, text: message.params.entry.text, url: message.params.entry.url });
+    }
+  });
+  const send2 = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++nextId2;
+    pending2.set(id, { resolve, reject });
+    socket2.send(JSON.stringify({ id, method, params }));
+  });
+  const evaluate2 = async (expression) => {
+    const result = await send2('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    if (result.exceptionDetails) {
+      const details = result.exceptionDetails;
+      throw new Error('evaluate failed: ' + (details.exception?.description ?? details.text ?? JSON.stringify(details)));
+    }
+    return result.result.value;
+  };
+  await send2('Runtime.enable');
+  await send2('Log.enable');
+  await send2('Page.enable');
+  await send2('Emulation.setDeviceMetricsOverride', { width: VIEWPORT.width, height: VIEWPORT.height, deviceScaleFactor: 1, mobile: false });
+  await send2('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
+  await send2('Page.setWebLifecycleState', { state: 'active' }).catch(() => {});
+  return { target, socket: socket2, messages: messages2, send: send2, evaluate: evaluate2, close: () => socket2.close() };
+}
 
 async function capture(car, label, tick, options = {}) {
   const script = options.script ?? 'drive';
@@ -699,6 +771,371 @@ async function audioCapturePass() {
   };
 }
 
+/**
+ * M1 multiplayer capture (`--mode mp`): one headless Edge process, two page
+ * targets, the unchanged room service on 8811 and the game server on 8802.
+ *
+ * Host `?mp=1&host=1&script=sprint`, guest `?mp=1&room=CODE&script=sprint&mpPace=0.85`
+ * (the pace override is a capture-only input script difference so the two cars
+ * are visibly separate and the result table has two distinct times). Both pages
+ * are real wasm-physics pages; the host runs RaceSession, both render the remote
+ * car through the ghost pipeline. The checks are the M1 acceptance gates:
+ * lobby/ready/start, both finishes, equal shared result, remote pose tolerance,
+ * sequences/authority, console 0 and screenshots.
+ */
+async function mpCapturePass() {
+  const passFailures = [];
+  const passCheck = (label, ok, detail = '') => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const distance3 = (a, b) => (Array.isArray(a) && Array.isArray(b)
+    ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : null);
+  const hostPage = { send, evaluate, messages };
+  messages.length = 0;
+  let guestPage = null;
+  let roomServer = null;
+  const remoteSamples = [];
+  const shots = {};
+  let hostLobby = null;
+  let guestLobby = null;
+  let hostStarted = null;
+  let guestStarted = null;
+  let hostFinal = null;
+  let guestFinal = null;
+  let fatal = null;
+  let midShotAt = null;
+  let resultSeenAt = null;
+
+  const snapshotOf = async (handle) => {
+    try { return await handle.evaluate('window.__mp ? window.__mp.snapshot() : null'); } catch { return null; }
+  };
+  const snapshotText = (snapshot) => {
+    if (!snapshot) return 'null';
+    return JSON.stringify({ phase: snapshot.phase, status: snapshot.status, error: snapshot.error,
+      engineTick: snapshot.engineTick, engineReady: snapshot.engineReady, roomCode: snapshot.roomCode,
+      result: snapshot.result?.hash ?? null });
+  };
+  const waitSnapshot = async (handle, predicate, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await snapshotOf(handle);
+      if (last && predicate(last)) return last;
+      await sleep(150);
+    }
+    throw new Error(label + ' timed out; last ' + snapshotText(last));
+  };
+  const shot = async (handle, name) => {
+    const result = await handle.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const relative = '_work/e1-drive/' + name;
+    writeFileSync(path.join(OUT, name), Buffer.from(result.data, 'base64'));
+    shots[name] = relative;
+    return relative;
+  };
+
+  try {
+    roomServer = await startRoomServer({ port: ROOM_PORT, log: () => {} });
+    guestPage = await openSecondPage();
+    guestPage.messages.length = 0;
+    const car = defaultSlug;
+    const roomQuery = '&mpServer=' + encodeURIComponent(roomServer.wsUrl) + '&audio=0';
+    const hostUrl = origin + '/?mp=1&host=1&script=sprint&car=' + encodeURIComponent(car) +
+      '&name=Host' + roomQuery;
+    await hostPage.send('Page.navigate', { url: hostUrl });
+    hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.phase === 'lobby' && snapshot.engineReady,
+      120000, 'host lobby + engine');
+    const code = hostLobby.roomCode;
+    passCheck('host allocated a 5-character room code', typeof code === 'string' && /^[A-Z2-9]{5}$/.test(code), code);
+
+    const guestUrl = origin + '/?mp=1&room=' + encodeURIComponent(code) + '&script=sprint&car=' + encodeURIComponent(car) +
+      '&mpPace=0.85&name=Guest' + roomQuery;
+    await guestPage.send('Page.navigate', { url: guestUrl });
+    guestLobby = await waitSnapshot(guestPage, (snapshot) => snapshot.phase === 'lobby' && snapshot.engineReady,
+      120000, 'guest lobby + engine');
+    hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.players.length === 2, 15000,
+      'host roster has the guest');
+
+    passCheck('guest joined the host room code', guestLobby.roomCode === code,
+      JSON.stringify({ host: code, guest: guestLobby.roomCode }));
+    passCheck('both pages see the same two-player roster', hostLobby.players.length === 2 &&
+      guestLobby.players.length === 2, `${hostLobby.players.length}/${guestLobby.players.length}`);
+    const hostSelf = hostLobby.players.find((player) => player.id === hostLobby.you.id);
+    const hostOther = hostLobby.players.find((player) => player.id !== hostLobby.you.id);
+    const guestSelf = guestLobby.players.find((player) => player.id === guestLobby.you.id);
+    passCheck('host marker and slots are host=1 guest=2',
+      hostSelf?.slot === 1 && hostSelf?.host === true && hostOther?.slot === 2 && hostOther?.host === false &&
+      guestSelf?.slot === 2 && guestSelf?.host === false,
+      JSON.stringify({ hostSelf, guestSelf }));
+    passCheck('M1 uses one session car for both players',
+      hostLobby.sessionCar !== null && hostLobby.sessionCar === guestLobby.sessionCar,
+      `${hostLobby.sessionCar} / ${guestLobby.sessionCar}`);
+    passCheck('lobby start is host-only and disabled before ready',
+      hostLobby.overlays.startHidden === false && hostLobby.overlays.startDisabled === true &&
+      guestLobby.overlays.startHidden === true,
+      JSON.stringify({ host: hostLobby.overlays.startHidden, hostDisabled: hostLobby.overlays.startDisabled,
+        guest: guestLobby.overlays.startHidden }));
+
+    await hostPage.evaluate('window.__mp.setReady(true)');
+    await guestPage.evaluate('window.__mp.setReady(true)');
+    hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.players.length === 2 &&
+      snapshot.players.every((player) => player.ready), 15000, 'host all ready');
+    guestLobby = await waitSnapshot(guestPage, (snapshot) => snapshot.players.length === 2 &&
+      snapshot.players.every((player) => player.ready), 15000, 'guest all ready');
+    passCheck('ready propagates to both rosters', hostLobby.players.every((player) => player.ready) &&
+      guestLobby.players.every((player) => player.ready));
+    passCheck('host start becomes enabled when all players are ready',
+      hostLobby.overlays.startHidden === false && hostLobby.overlays.startDisabled === false,
+      JSON.stringify(hostLobby.overlays));
+    passCheck('lobby shows the room code and a live connection status',
+      hostLobby.overlays.roomCodeText === code && /lobby|ready|engine/i.test(hostLobby.overlays.statusText ?? ''),
+      JSON.stringify({ code: hostLobby.overlays.roomCodeText, status: hostLobby.overlays.statusText }));
+    const lobbyHostShot = await shot(hostPage, 'browser-mp-lobby-host.png');
+    const lobbyGuestShot = await shot(guestPage, 'browser-mp-lobby-guest.png');
+
+    await hostPage.evaluate('window.__mp.start()');
+    hostStarted = await waitSnapshot(hostPage, (snapshot) => snapshot.started && snapshot.engineTick >= 2,
+      30000, 'host race start');
+    guestStarted = await waitSnapshot(guestPage, (snapshot) => snapshot.started && snapshot.engineTick >= 2,
+      30000, 'guest race start');
+    passCheck('host start broadcasts room.started to both pages', hostStarted.started && guestStarted.started);
+
+    const raceDeadline = Date.now() + 150000;
+    let hostView = hostStarted;
+    let guestView = guestStarted;
+    while (Date.now() < raceDeadline) {
+      hostView = await snapshotOf(hostPage) ?? hostView;
+      guestView = await snapshotOf(guestPage) ?? guestView;
+      if (hostView.remote.sampleTick !== null && guestView.remote.sampleTick !== null &&
+          remoteSamples.length < 20) {
+        const guestAtLatest = hostView.remote.latestTick !== null
+          ? await guestPage.evaluate('window.__mp.stateAt(' + hostView.remote.latestTick + ')').catch(() => null)
+          : null;
+        const hostAtLatest = guestView.remote.latestTick !== null
+          ? await hostPage.evaluate('window.__mp.stateAt(' + guestView.remote.latestTick + ')').catch(() => null)
+          : null;
+        if (hostView.remote.displayPosition && hostView.remote.samplePosition) {
+          remoteSamples.push({
+            side: 'host-view-of-guest',
+            sampleTick: hostView.remote.sampleTick,
+            latestTick: hostView.remote.latestTick,
+            displayDistance: distance3(hostView.remote.displayPosition, hostView.remote.samplePosition),
+            latestDistance: guestAtLatest ? distance3(hostView.remote.latestPosition, guestAtLatest.position) : null,
+            interpolated: hostView.remote.sample?.interpolated ?? null,
+            corrections: hostView.remote.corrections
+          });
+        }
+        if (guestView.remote.displayPosition && guestView.remote.samplePosition) {
+          remoteSamples.push({
+            side: 'guest-view-of-host',
+            sampleTick: guestView.remote.sampleTick,
+            latestTick: guestView.remote.latestTick,
+            displayDistance: distance3(guestView.remote.displayPosition, guestView.remote.samplePosition),
+            latestDistance: hostAtLatest ? distance3(guestView.remote.latestPosition, hostAtLatest.position) : null,
+            interpolated: guestView.remote.sample?.interpolated ?? null,
+            corrections: guestView.remote.corrections
+          });
+        }
+      }
+      if (!midShotAt && hostView.engineTick >= 300 && hostView.engineTick < 1400 &&
+          guestView.engineTick >= 300 && hostView.sprint?.phase === 'running' && guestView.sprint?.phase === 'running') {
+        midShotAt = { hostTick: hostView.engineTick, guestTick: guestView.engineTick };
+        await shot(hostPage, 'browser-mp-mid-host.png');
+        await shot(guestPage, 'browser-mp-mid-guest.png');
+      }
+      if (hostView.result && guestView.result) {
+        if (hostView.validation) break;
+        if (resultSeenAt === null) resultSeenAt = Date.now();
+        if (Date.now() - resultSeenAt > 15000) break;
+      }
+      await sleep(120);
+    }
+    hostFinal = hostView;
+    guestFinal = guestView;
+    if (!hostFinal.result || !guestFinal.result) {
+      throw new Error('both pages did not reach the shared result; host phase ' + hostFinal.phase +
+        ', guest phase ' + guestFinal.phase + ', ticks ' + hostFinal.engineTick + '/' + guestFinal.engineTick);
+    }
+    const finishHostShot = await shot(hostPage, 'browser-mp-finish-host.png');
+    const finishGuestShot = await shot(guestPage, 'browser-mp-finish-guest.png');
+
+    passCheck('both pages reached the shared result',
+      hostFinal.phase === 'finished' && guestFinal.phase === 'finished');
+    passCheck('host and guest render the same result hash',
+      hostFinal.result.hash === guestFinal.result.hash,
+      hostFinal.result.hash + ' / ' + guestFinal.result.hash);
+    passCheck('host and guest render identical result rows',
+      JSON.stringify(hostFinal.result.rows) === JSON.stringify(guestFinal.result.rows));
+    const hostRow = hostFinal.result.rows.find((row) => row.playerId === hostFinal.you.id);
+    const guestRow = hostFinal.result.rows.find((row) => row.playerId === guestFinal.you.id);
+    passCheck('finish order is host P1 and guest P2',
+      hostRow?.positionNumber === 1 && guestRow?.positionNumber === 2 &&
+      hostRow?.status === 'finished' && guestRow?.status === 'finished',
+      JSON.stringify({ host: hostRow?.positionNumber, guest: guestRow?.positionNumber }));
+    passCheck('both table rows are finished (no DNF)',
+      hostFinal.result.rows.every((row) => row.status === 'finished'),
+      hostFinal.result.rows.map((row) => row.status).join(','));
+    passCheck('host local finish time equals the shared table time',
+      hostFinal.sprint?.finishTimeSeconds !== null &&
+      Math.abs(hostFinal.sprint.finishTimeSeconds - hostRow.timeSeconds) < 1e-6,
+      `${hostFinal.sprint?.finishTimeSeconds} vs ${hostRow?.timeSeconds}`);
+    passCheck('guest local finish time equals the shared table time',
+      guestFinal.sprint?.finishTimeSeconds !== null &&
+      Math.abs(guestFinal.sprint.finishTimeSeconds - guestRow.timeSeconds) < 1e-6,
+      `${guestFinal.sprint?.finishTimeSeconds} vs ${guestRow?.timeSeconds}`);
+    passCheck('host RaceSession validated the guest finish',
+      hostFinal.validation?.guestValidated === true && hostFinal.validation?.guestStatus === 'finished',
+      JSON.stringify(hostFinal.validation));
+    passCheck('host finish detection is within 6 ticks of the guest report',
+      Number.isFinite(hostFinal.validation?.guestTickDelta) && Math.abs(hostFinal.validation.guestTickDelta) <= 6,
+      String(hostFinal.validation?.guestTickDelta));
+    passCheck('both pages show the result overlay',
+      hostFinal.overlays.resultsHidden === false && guestFinal.overlays.resultsHidden === false &&
+      hostFinal.overlays.mpResultsHidden === false && (hostFinal.overlays.resultsTime ?? '').includes(hostRow.name),
+      JSON.stringify({ host: hostFinal.overlays.resultsTime, guest: guestFinal.overlays.resultsTime }));
+
+    const displayDistances = remoteSamples.map((row) => row.displayDistance).filter(Number.isFinite);
+    const latestDistances = remoteSamples.map((row) => row.latestDistance).filter(Number.isFinite);
+    const maxDisplay = displayDistances.length ? Math.max(...displayDistances) : null;
+    const maxLatest = latestDistances.length ? Math.max(...latestDistances) : null;
+    passCheck('remote pose is within 0.5 m at sampled ticks',
+      remoteSamples.length >= 4 && maxDisplay !== null && maxDisplay <= 0.5,
+      `${remoteSamples.length} samples, max display Δ ${maxDisplay}`);
+    passCheck('received snapshot equals the sender state at the same tick',
+      maxLatest !== null && maxLatest <= 1e-3,
+      `max latest Δ ${maxLatest}`);
+
+    passCheck('host applied the guest state sequence and vice versa (final state may be in flight)',
+      Math.abs(hostFinal.applied.state - guestFinal.sent.state) <= 1 &&
+      Math.abs(guestFinal.applied.state - hostFinal.sent.state) <= 1,
+      JSON.stringify({ hostApplied: hostFinal.applied.state, guestSent: guestFinal.sent.state,
+        guestApplied: guestFinal.applied.state, hostSent: hostFinal.sent.state }));
+    passCheck('authority flag is host=true / guest=false on the relayed state',
+      guestFinal.remote.authority === true && hostFinal.remote.authority === false,
+      JSON.stringify({ guestSeesHost: guestFinal.remote.authority, hostSeesGuest: hostFinal.remote.authority }));
+    passCheck('remote tag is visible and labelled REMOTE',
+      hostFinal.overlays.remoteTagHidden === false && guestFinal.overlays.remoteTagHidden === false &&
+      /^REMOTE/.test(hostFinal.overlays.remoteTagText ?? '') &&
+      /no collision/.test(hostFinal.overlays.remoteTagText ?? ''),
+      JSON.stringify({ host: hostFinal.overlays.remoteTagText, guest: guestFinal.overlays.remoteTagText }));
+    const hudText = await hostPage.evaluate('document.getElementById("hud").textContent');
+    passCheck('HUD shows room, ping, sequence and correction count',
+      /^mp\s/m.test(hudText) && /ping /.test(hudText) && /state seq /.test(hudText) && /corrections /.test(hudText),
+      (hudText ?? '').split('\n').filter((line) => /^(mp|mp net|mp remote)/.test(line)).join(' | '));
+    passCheck('correction counters are recorded on both pages',
+      Number.isFinite(hostFinal.remote.corrections) && Number.isFinite(guestFinal.remote.corrections),
+      JSON.stringify({ host: hostFinal.remote.corrections, guest: guestFinal.remote.corrections }));
+
+    const roomStats = roomServer.stats();
+    passCheck('room service finished exactly one room', roomStats.roomsCreated === 1 && roomStats.roomsFinished === 1,
+      JSON.stringify(roomStats));
+
+    const hostBlocking = hostPage.messages.filter((entry) => entry.source !== 'console.log');
+    const guestBlocking = guestPage.messages.filter((entry) => entry.source !== 'console.log');
+    passCheck('console is clean on both pages', hostPage.messages.length === 0 && guestPage.messages.length === 0,
+      [...hostPage.messages, ...guestPage.messages].slice(0, 6).map((entry) => entry.source + ' ' + entry.text).join(' | '));
+
+    const evidence = {
+      kind: 'e1-drive.mp-browser',
+      version: 1,
+      browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT, pages: 2 },
+      ports: { game: PORT, room: ROOM_PORT },
+      room: {
+        code,
+        wsUrl: roomServer.wsUrl,
+        stats: roomStats,
+        requestedCodeMismatch: hostLobby.requestedCodeMismatch
+      },
+      lobby: {
+        host: hostLobby,
+        guest: guestLobby,
+        screenshots: { host: shots['browser-mp-lobby-host.png'], guest: shots['browser-mp-lobby-guest.png'] }
+      },
+      race: {
+        hostStarted,
+        guestStarted,
+        midShotAt,
+        screenshots: {
+          host: shots['browser-mp-mid-host.png'],
+          guest: shots['browser-mp-mid-guest.png']
+        }
+      },
+      remotePose: {
+        samples: remoteSamples,
+        toleranceMetres: 0.5,
+        maxDisplayDistance: maxDisplay,
+        maxLatestDistance: maxLatest
+      },
+      finish: {
+        host: hostFinal,
+        guest: guestFinal,
+        screenshots: { host: finishHostShot, guest: finishGuestShot },
+        sharedHash: hostFinal.result.hash,
+        rowsEqual: JSON.stringify(hostFinal.result.rows) === JSON.stringify(guestFinal.result.rows)
+      },
+      console: {
+        host: { totalMessages: hostPage.messages.length, blocking: hostBlocking.length, messages: hostPage.messages },
+        guest: { totalMessages: guestPage.messages.length, blocking: guestBlocking.length, messages: guestPage.messages }
+      },
+      assertions: { ok: passFailures.length === 0, failures: passFailures },
+      verdict: passFailures.length === 0 && hostPage.messages.length === 0 && guestPage.messages.length === 0
+        ? 'clean-console-and-gates' : 'failed'
+    };
+    writeFileSync(path.join(OUT, 'browser-evidence-mp.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+    writeFileSync(path.join(LOGS, 'edge-mp.log'), browserLog +
+      '\nroom: ' + JSON.stringify(roomStats) + '\n', 'utf8');
+    return {
+      ok: evidence.verdict === 'clean-console-and-gates',
+      summary: {
+        verdict: evidence.verdict,
+        room: code,
+        sharedHash: hostFinal.result.hash,
+        rows: hostFinal.result.rows.map((row) => ({
+          position: row.positionNumber, name: row.name, tick: row.tick, timeSeconds: row.timeSeconds
+        })),
+        remotePose: { samples: remoteSamples.length, maxDisplayDistance: maxDisplay, maxLatestDistance: maxLatest },
+        sequences: { host: hostFinal.sent, guest: guestFinal.sent, appliedHost: hostFinal.applied, appliedGuest: guestFinal.applied },
+        console: { host: hostPage.messages.length, guest: guestPage.messages.length },
+        screenshots: shots,
+        failures: passFailures
+      }
+    };
+  } catch (error) {
+    fatal = error;
+    const evidence = {
+      kind: 'e1-drive.mp-browser',
+      version: 1,
+      browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT, pages: 2 },
+      ports: { game: PORT, room: ROOM_PORT },
+      room: roomServer ? { stats: roomServer.stats() } : null,
+      lobby: { host: hostLobby, guest: guestLobby },
+      race: { hostStarted, guestStarted, midShotAt },
+      remotePose: { samples: remoteSamples },
+      finish: { host: hostFinal, guest: guestFinal },
+      console: {
+        host: { totalMessages: hostPage.messages.length, messages: hostPage.messages },
+        guest: { totalMessages: guestPage?.messages?.length ?? 0, messages: guestPage?.messages ?? [] }
+      },
+      assertions: { ok: false, failures: [error.message, ...passFailures] },
+      verdict: 'failed',
+      error: error.message
+    };
+    writeFileSync(path.join(OUT, 'browser-evidence-mp.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+    writeFileSync(path.join(LOGS, 'edge-mp.log'), browserLog + '\nERROR: ' + error.message + '\n', 'utf8');
+    return {
+      ok: false,
+      summary: {
+        verdict: 'failed',
+        error: error.message,
+        failures: passFailures,
+        screenshots: shots,
+        console: { host: hostPage.messages.length, guest: guestPage?.messages?.length ?? 0 }
+      }
+    };
+  } finally {
+    try { guestPage?.close(); } catch {}
+    try { await roomServer?.close(); } catch {}
+    if (fatal) console.error('mp capture failed:', fatal.message);
+  }
+}
+
 if (MODE !== 'drive') {
   const result = MODE === 'sprint' ? await sprintCapturePass()
     : MODE === 'lap' ? await lapCapturePass()
@@ -712,7 +1149,8 @@ if (MODE !== 'drive') {
       : MODE === 'restart' ? await restartCapturePass()
         : MODE === 'telemetry-restart' ? await telemetryRestartCapturePass()
           : MODE === 'audio' ? await audioCapturePass()
-            : await telemetryCapturePass();
+            : MODE === 'mp' ? await mpCapturePass()
+              : await telemetryCapturePass();
   await shutdown();
   await sleep(400);
   console.log(JSON.stringify(result.summary, null, 2));

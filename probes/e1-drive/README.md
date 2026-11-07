@@ -264,11 +264,136 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/serve.mjs            # http://127.0.0.1:8801/ (keyboard sprint)
 & $node probes/e1-drive/tools/serve.mjs --port 8801  # /?script=sprint&car=audi-r8v10-stock
                                                      # /?telemetry=1&car=audi-r8v10-stock
+& $node probes/e1-drive/tools/serve.mjs --port 8802 --with-room --room-port 8811
+                                                     # M1: page + unchanged net-mvp room service
+                                                     # /?mp=1&host=1  and  /?mp=1&room=CODE
+
+# 10. M1 two-browser multiplayer capture (game 8802, room 8811)
+& $node probes/e1-drive/tools/capture_browser.mjs --mode mp --port 8802 --room-port 8811
 ```
 
 Outputs go to `_work/e1-drive/` (module, geometry, track, roster, per-car packets
 and states, screenshots, evidence) and `_work/logs/e1-drive/` (build/verify/Edge
 logs). None of it is committed.
+
+## Multiplayer (M1) — two browsers, one 310 m race
+
+Status: M1 gate, 7 November 2026. Two browser pages join a room through the
+unchanged `probes/net-mvp/server.mjs` room service, both drive the real wasm car
+on the measured 310 m P48 course, see each other through the ghost draw pipeline,
+and finish with one shared result. This is an original project room/snapshot
+layer, not a retail network protocol claim.
+
+### URLs and launcher
+
+| role | URL |
+|---|---|
+| host | `http://127.0.0.1:8802/?mp=1&host=1&script=sprint` (the lobby shows the allocated code) |
+| guest | `http://127.0.0.1:8802/?mp=1&room=CODE&script=sprint` |
+
+`?room=CODE&host=1` is accepted: the host creates a room and the lobby displays
+the **allocated** code; room codes are not reservable. `?name=`, `?car=`,
+`?mpServer=ws://host:port/ws` and `?mpPace=` (capture-only scripted pace) are
+optional. The default room endpoint is `ws://<page-host>:8811/ws`.
+
+```powershell
+# one process: game server + unchanged room service
+& $node probes/e1-drive/tools/serve.mjs --port 8802 --with-room --room-port 8811
+# or two terminals
+& $node probes/e1-drive/tools/serve.mjs --port 8802
+& $node probes/net-mvp/server.mjs --port 8811
+# two-browser headless proof
+& $node probes/e1-drive/tools/capture_browser.mjs --mode mp --port 8802 --room-port 8811
+```
+
+The game server now serves `/net-mvp/` (the dependency-free client/protocol
+modules) and `/race-rules/` (the M1 rules modules) read-only. Both paths are new
+routes in `tools/serve.mjs`; `probes/net-mvp/**` and `probes/race-rules/**` are
+unmodified.
+
+### Session flow
+
+1. Each page loads the engine and the measured course **before** opening the room
+   socket (the 45 MB geometry parse would otherwise starve the room heartbeat).
+2. Host `?mp=1&host=1` creates a room and becomes slot 1; guest
+   `?mp=1&room=CODE` joins slot 2. The lobby shows the roster, slot, host marker,
+   ready state, room code and connection status.
+3. Host presses start only when every connected player is ready; the room
+   service enforces the same rule. `room.started` gives both pages the same seed
+   and tick rate.
+4. Both pages start the local wasm engine on the provisional race-rules grid
+   (2.2 m spacing, two per row; project-specific, not a retail start table) and
+   the 90-tick countdown. Each sends its **60 Hz input** and **20 Hz state**
+   through the room service.
+5. Host runs `RaceSession` over both cars for ordered checkpoints, finish
+   validation and the authoritative result; the host's own car is the only
+   host-simulated physics body. The remote car is drawn from the owner's 20 Hz
+   state (peer-state relay) — see the limit below.
+6. At the finish each page sends `client.finished {tick, hash}`. The room's
+   `room.finished` broadcast is turned into the same pure result table on both
+   pages; the overlay shows positions, ticks and race times. The host's
+   `RaceSession` validation is recorded in the HUD/evidence.
+
+### Authority, sync and correction
+
+- **Host result authority.** The host owns the rules session, validates ordered
+  gates/finish and records the session hash; it keeps ticking after its own
+  finish until the guest's finish is observed (bounded) so the validation is not
+  lost to the 20 Hz relay.
+- **Snapshot shape.** `{tick, position:[x,y,z], quaternion:[x,y,z,w], speed}`
+  from the E1 state; the sender builds the quaternion from the engine's body
+  axes. The room service relays it unchanged.
+- **Remote rendering.** One remote slot reuses the existing ghost draw path:
+  the already-uploaded car mesh, a second set of node matrices, a translucent
+  cyan diagnostic tint and a `REMOTE · … · no collision` tag. The ghost replay
+  itself is disabled in an MP page (one slot).
+- **Interpolation.** `sampleRemote(playerId, renderTick - 3)` lerps position and
+  slerps the quaternion; it never extrapolates. The remote wheel spin is static
+  because the E1 state snapshot has no wheel angle (labelled, not guessed).
+- **Correction.** A remote-display delta above **0.5 m** or **0.25 rad** is a
+  counted hard set; a smaller delta blends over **3 frames**. The local engine
+  is never teleported. The HUD shows the correction/hard-set/blend counts.
+- **Finish/result.** `buildMpResult({layout, room, results})` is a pure function
+  of the committed layout and the room finish broadcast. Both clients render the
+  same rows/hash. The winner is the lowest validated finish tick; ties share a
+  position. A missing/invalid tick is an explicit DNF row, never a guessed time.
+- **Disconnect/reconnect.** The net-mvp client auto-reconnects with its 24-byte
+  resume token inside the 30 s window; the page shows a labelled
+  `RECONNECTING` state, the room keeps the slot, and the same player id/slot/host
+  returns. A dropped remote is tagged `REMOTE · … · RECONNECTING`, with no
+  guessed pose.
+
+### M1 scope and limits
+
+- **One map, one car for both bodies.** The session loads the host's car; the
+  guest's lobby car pick is metadata (the guest must open with the same
+  `?car=`). Power-ups and AI are M2.
+- **WebSocket loopback room service**, not UDP/WebRTC. No STUN/TURN, no NAT
+  test, no TLS/auth/accounts/database; the room code is a lookup key.
+- **Peer-state remote authority.** The host runs the authoritative rules/result
+  and its own physics; it does not run a second physics body for the guest. The
+  guest's 20 Hz state is what the host validates and relays. The host result is
+  therefore host-validated, but a peer could report a false pose; M1 has no
+  anti-cheat claim.
+- **20 Hz relay.** The host's RaceSession can observe the guest finish one or
+  two 60 Hz ticks before/after the guest's own report; the displayed table uses
+  the room's finish ticks, and the validation delta is recorded.
+- **Late join after start is rejected** by the room service; host migration is
+  not implemented (the URL role stays fixed).
+- **Single remote slot.** The ghost pipeline's one extra draw set is used for
+  the M1 opponent; a second remote slot is M2 work.
+- **Same-machine clocks.** Both pages share one machine clock; cross-machine
+  clock skew and real WAN behavior are not tested.
+- **No full-game claim.** This is one measured River course, one 310 m sprint,
+  one opponent slot and no power-ups.
+
+Files added/changed: `web/mp-client.js` (room wrapper + pure result builder),
+`web/mp-remote.js` (interpolation/correction + nine node matrices), the MP hooks
+in `web/app.js`, `web/index.html`, `web/style.css`, `web/sprint-script.js`
+(optional scripted-pace constants), `tools/serve.mjs` (read-only `/net-mvp/` and
+`/race-rules/` routes plus `--with-room`), and `tools/verify_e1_drive.mjs` /
+`tools/capture_browser.mjs` (Node protocol gate and `--mode mp`). The full
+verification record is `docs/work/verification/T-007-multiplayer.md`.
 
 ## The module API
 

@@ -73,6 +73,14 @@ import { buildCorridorSurvey } from '../web/corridor-survey.js';
 import { runFreePropLayerTests, runPropLayerTests, runV2PropLayerTests } from './prop_layer_tests.mjs';
 import { LIMIT_STATIONS, runLimitStation, stationPose, writeCorridorProbe } from './corridor_probe.mjs';
 import { TICK0_LIMITS } from './spawn.mjs';
+import { startRoomServer } from '../../net-mvp/server.mjs';
+import { NetClient, NetError } from '../../net-mvp/client.mjs';
+import {
+  MP_ANGLE_THRESHOLD_RAD, MP_BLEND_TICKS, MP_POSITION_THRESHOLD_METRES, MP_STATE_EVERY_TICKS, MP_TICK_HZ,
+  MpSession, buildMpResult, defaultRoomUrl, normalizeRoomCode, sessionCarForRoom
+} from '../web/mp-client.js';
+import { RemoteDisplay } from '../web/mp-remote.js';
+import { CourseModel, RaceSession } from '../../race-rules/index.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const OUT = path.join(ROOT, '_work/e1-drive');
@@ -5086,9 +5094,317 @@ check('engine audio: _e1_engine_rpm() is -1 before a world and the live Engine()
       audioRpmAfter > 0 && (audioLimiter === null || audioRpmAfter <= audioLimiter),
       `before ${audioRpmBefore}, after ${audioRpmAfter}, limiter ${audioLimiter}`);
 
+// ------------------------------------------------------------------ multiplayer
+// M1 Node-level gate: the unchanged room service, the injected NetClient, the
+// page's MpSession wrapper and the shared result builder. No browser is needed
+// for the protocol, sequence, authority, reconnect or result checks.
+let mpNodeReport = null;
+{
+  const mpChecksBefore = checks.length;
+  const roomServer = await startRoomServer({ port: 0, log: () => {} });
+  const mpEvents = { authority: {}, peer: [], results: null, errors: [] };
+  const makeSession = (options) => new MpSession({
+    NetClient,
+    url: roomServer.wsUrl,
+    maxPlayers: 2,
+    car: 'corvette-zr1-stock',
+    onEvent: (type, payload) => {
+      if (options.name === 'Host' && type === 'remoteState') mpEvents.authority.hostSeesGuest = payload.authority;
+      if (options.name === 'Guest' && type === 'remoteState') mpEvents.authority.guestSeesHost = payload.authority;
+      if (type === 'peerDisconnected' || type === 'peerResumed' || type === 'reconnected') mpEvents.peer.push({ type });
+      if (type === 'result') mpEvents.results = payload.results;
+      if (type === 'error') mpEvents.errors.push(payload?.message ?? String(payload));
+    },
+    ...options
+  });
+  let mpHost = null;
+  let mpGuest = null;
+  const mpNode = {
+    kind: 'e1-drive.mp-node',
+    version: 1,
+    room: null,
+    lobby: null,
+    sequence: null,
+    authority: null,
+    sample: null,
+    reconnect: null,
+    finish: null,
+    result: null,
+    session: null,
+    remoteDisplay: null,
+    rejections: {},
+    constants: {
+      tickHz: MP_TICK_HZ,
+      stateEveryTicks: MP_STATE_EVERY_TICKS,
+      positionThresholdMetres: MP_POSITION_THRESHOLD_METRES,
+      angleThresholdRad: MP_ANGLE_THRESHOLD_RAD,
+      blendTicks: MP_BLEND_TICKS
+    }
+  };
+  try {
+    mpHost = makeSession({ name: 'Host', host: true });
+    await mpHost.open();
+    const code = mpHost.code;
+    mpGuest = makeSession({ name: 'Guest', host: false, code });
+    await mpGuest.open();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    mpNode.room = {
+      code,
+      hostId: mpHost.hostId,
+      hostSlot: mpHost.slot,
+      guestSlot: mpGuest.slot,
+      hostCar: mpHost.players.find((player) => player.id === mpHost.playerId)?.car ?? null,
+      guestCar: mpGuest.players.find((player) => player.id === mpGuest.playerId)?.car ?? null,
+      sessionCar: sessionCarForRoom(mpHost.room)
+    };
+    check('mp: host created a room and the guest joined the same code',
+      typeof code === 'string' && code.length === 5 && mpGuest.code === code && mpHost.players.length === 2,
+      JSON.stringify(mpNode.room));
+    check('mp: host/guest slots are 1/2 and the host marker is stable',
+      mpHost.slot === 1 && mpGuest.slot === 2 && mpHost.hostId === mpHost.playerId &&
+      mpHost.players.find((player) => player.host)?.id === mpHost.playerId,
+      JSON.stringify({ hostSlot: mpHost.slot, guestSlot: mpGuest.slot, hostId: mpHost.hostId }));
+    check('mp: M1 session car is the host car (guest pick is metadata)',
+      mpNode.room.sessionCar === mpNode.room.hostCar,
+      JSON.stringify({ sessionCar: mpNode.room.sessionCar, hostCar: mpNode.room.hostCar,
+        guestCar: mpNode.room.guestCar }));
+
+    try { await mpGuest.start(); mpNode.rejections.nonHostStart = null; }
+    catch (error) { mpNode.rejections.nonHostStart = error instanceof NetError ? error.code : error.name; }
+    check('mp: a non-host start is rejected with NET_NOT_HOST',
+      mpNode.rejections.nonHostStart === 'NET_NOT_HOST', String(mpNode.rejections.nonHostStart));
+
+    await mpHost.setReady(true);
+    await mpGuest.setReady(true);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    check('mp: ready flags propagate to both rosters',
+      mpHost.players.every((player) => player.ready) && mpGuest.players.every((player) => player.ready),
+      JSON.stringify(mpHost.players.map((player) => [player.slot, player.ready])));
+    const started = await mpHost.start({ seed: 'blur-mp-node-v1' });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    check('mp: host start broadcasts the same seed/startTick/tickHz to both',
+      started.seed === 'blur-mp-node-v1' && started.startTick === 1 && started.tickHz === 60 &&
+      mpGuest.startedInfo?.seed === started.seed && mpHost.phase === 'running' && mpGuest.phase === 'running',
+      JSON.stringify({ host: started, guest: mpGuest.startedInfo }));
+
+    const samples = sprintFile.course.samples;
+    const sampleAtArc = (arc) => {
+      let low = 0;
+      let high = samples.length - 1;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (samples[middle].arc < arc) low = middle + 1; else high = middle;
+      }
+      return samples[Math.max(0, Math.min(samples.length - 1, low))];
+    };
+    const stateAt = (tick, lateral) => {
+      const sample = sampleAtArc(Math.min(300, Math.max(0, (tick - 90) * 0.5)));
+      return {
+        tick,
+        position: [sample.x + lateral, sample.groundY, sample.z],
+        quaternion: [0, 0, 0, 1],
+        speed: tick > 90 ? 30 : 0
+      };
+    };
+    const exchangeTicks = 60;
+    for (let tick = 1; tick <= exchangeTicks; tick++) {
+      mpHost.sendInput({ throttle: 1, brake: 0, steer: 0, handbrake: 0 }, tick);
+      mpGuest.sendInput({ throttle: 1, brake: 0, steer: 0, handbrake: 0 }, tick);
+      if (tick % MP_STATE_EVERY_TICKS === 0) {
+        mpHost.sendState(stateAt(tick, -1.1));
+        mpGuest.sendState(stateAt(tick, 1.1));
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const mpHostStats = mpHost.stats();
+    const mpGuestStats = mpGuest.stats();
+    const streamRow = (stats, channel) => stats.streams.find((stream) => stream.channel === channel) ?? null;
+    const hostStateStream = streamRow(mpHostStats, 'state');
+    const hostInputStream = streamRow(mpHostStats, 'input');
+    const guestStateStream = streamRow(mpGuestStats, 'state');
+    mpNode.sequence = {
+      hostSent: mpHostStats.sent,
+      guestSent: mpGuestStats.sent,
+      hostStateApplied: hostStateStream?.lastApplied ?? null,
+      hostInputApplied: hostInputStream?.lastApplied ?? null,
+      guestStateApplied: guestStateStream?.lastApplied ?? null,
+      hostViolations: hostStateStream?.violations ?? null,
+      guestViolations: guestStateStream?.violations ?? null
+    };
+    check('mp: every 20 Hz state and 60 Hz input arrived in sequence',
+      hostStateStream?.lastApplied === Math.floor(exchangeTicks / MP_STATE_EVERY_TICKS) &&
+      hostStateStream?.violations === 0 && hostInputStream?.lastApplied === exchangeTicks &&
+      hostInputStream?.violations === 0 && guestStateStream?.lastApplied === Math.floor(exchangeTicks / MP_STATE_EVERY_TICKS) &&
+      guestStateStream?.violations === 0,
+      JSON.stringify(mpNode.sequence));
+    mpNode.authority = { ...mpEvents.authority };
+    check('mp: host relayed state is authoritative for the guest; guest relay is not for the host',
+      mpEvents.authority.guestSeesHost === true && mpEvents.authority.hostSeesGuest === false,
+      JSON.stringify(mpEvents.authority));
+    const remoteSample = mpHost.sampleRemote(mpGuest.playerId, 30);
+    mpNode.sample = remoteSample;
+    check('mp: remote interpolation returns a pose inside the received snapshot window',
+      remoteSample !== null && Number.isFinite(remoteSample.position?.[0]) &&
+      remoteSample.tick === 30 && remoteSample.clamped === false,
+      JSON.stringify(remoteSample));
+
+    const corrector = new RemoteDisplay();
+    const first = corrector.update({ position: [0, 0, 0], quaternion: [0, 0, 0, 1] });
+    const blend = corrector.update({ position: [0.1, 0, 0], quaternion: [0, 0, 0, 1] });
+    const hard = corrector.update({ position: [2.0, 0, 0], quaternion: [0, 0, 0, 1] });
+    mpNode.remoteDisplay = {
+      first: first?.corrections ?? null, blend: blend?.blended ?? null, blendCorrections: blend?.corrections ?? null,
+      hard: hard?.hardSet ?? null, hardCorrections: hard?.corrections ?? null,
+      thresholds: { position: MP_POSITION_THRESHOLD_METRES, angle: MP_ANGLE_THRESHOLD_RAD },
+      blendTicks: MP_BLEND_TICKS
+    };
+    check('mp: remote display blends small deltas and hard-sets past 0.5 m (counted)',
+      first !== null && blend?.blended === true && blend?.hardSet === false && blend?.corrections === 0 &&
+      hard?.hardSet === true && hard?.corrections === 1,
+      JSON.stringify(mpNode.remoteDisplay));
+
+    mpHost.finalizeStreams();
+    mpGuest.finalizeStreams();
+    await mpHost.waitForStreams(4000);
+    await mpGuest.waitForStreams(4000);
+    const hostFinishTick = 120;
+    const guestFinishTick = hostFinishTick + 12;
+    const hostHash = hashOfLocal({ kind: 'e1-drive.mp.finish.test', player: 'host', tick: hostFinishTick });
+    const guestHash = hashOfLocal({ kind: 'e1-drive.mp.finish.test', player: 'guest', tick: guestFinishTick });
+    await mpHost.reportFinished({ tick: hostFinishTick, hash: hostHash });
+    await mpGuest.reportFinished({ tick: guestFinishTick, hash: guestHash });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    mpNode.finish = {
+      roomPhase: mpHost.room?.phase ?? null,
+      results: mpEvents.results,
+      hostTick: hostFinishTick,
+      guestTick: guestFinishTick
+    };
+    check('mp: both client.finished reports reach the room and finish it',
+      mpHost.room?.phase === 'finished' && mpGuest.room?.phase === 'finished' &&
+      Array.isArray(mpEvents.results) && mpEvents.results.length === 2,
+      JSON.stringify(mpNode.finish));
+    const resultOne = buildMpResult({
+      layout: sprintFile,
+      room: mpHost.room,
+      results: mpEvents.results
+    });
+    const resultTwo = buildMpResult({
+      layout: sprintFile,
+      room: mpGuest.room,
+      results: mpEvents.results
+    });
+    mpNode.result = {
+      hash: resultOne.hash,
+      secondHash: resultTwo.hash,
+      rows: resultOne.rows,
+      order: resultOne.order
+    };
+    check('mp: the shared result table is identical on both clients and deterministic',
+      resultOne.hash === resultTwo.hash && resultOne.order.length === 2 &&
+      resultOne.rows.every((row) => row.status === 'finished'),
+      JSON.stringify({ hash: resultOne.hash, second: resultTwo.hash }));
+    check('mp: finish ticks map to equal race times (countdown subtracted) and host is P1',
+      resultOne.rows[0].positionNumber === 1 && resultOne.rows[0].tick === hostFinishTick &&
+      Math.abs(resultOne.rows[0].timeSeconds - (hostFinishTick - (sprintFile.countdown?.ticks ?? 0)) / MP_TICK_HZ) < 1e-6 &&
+      resultOne.rows[1].positionNumber === 2,
+      JSON.stringify(resultOne.rows.map((row) => [row.positionNumber, row.name, row.tick, row.timeSeconds])));
+
+    // Reconnect while the room is finished is still a valid resume; the room
+    // retains the same player id/slot and the host does not change.
+    const guestIdBefore = mpGuest.playerId;
+    const hostIdBefore = mpHost.hostId;
+    let resumed = null;
+    try { resumed = await mpGuest.net.simulateDrop({ timeoutMs: 8000 }); }
+    catch (error) { mpEvents.errors.push(error.message); }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    mpNode.reconnect = {
+      resumed: Boolean(resumed?.resumed),
+      guestIdBefore,
+      guestIdAfter: mpGuest.playerId,
+      hostIdBefore,
+      hostIdAfter: mpHost.hostId,
+      peerEvents: mpEvents.peer.slice()
+    };
+    check('mp: a dropped guest resumes the same room slot and the host stays stable',
+      resumed?.resumed === true && mpGuest.playerId === guestIdBefore && mpHost.hostId === hostIdBefore,
+      JSON.stringify(mpNode.reconnect));
+
+    // Rules-level host authority on the committed 310 m layout. Synthetic
+    // centre-line motion, two participants, same command sequence twice.
+    const runRules = () => {
+      const session = new RaceSession({
+        layout: sprintFile,
+        participants: ['p1', 'p2'],
+        config: { hostId: 'p1' }
+      });
+      session.command({ type: 'ready', from: 'p1', ready: true });
+      session.command({ type: 'ready', from: 'p2', ready: true });
+      session.command({ type: 'start', from: 'p1' });
+      session.step(null);
+      const countdown = sprintFile.countdown?.ticks ?? 0;
+      for (let tick = 1; tick <= 1200; tick++) {
+        const arc1 = tick <= countdown ? 0 : Math.min(305, (tick - countdown) * 0.49);
+        const arc2 = tick <= countdown ? 0 : Math.min(305, (tick - countdown) * 0.47);
+        const s1 = sampleAtArc(arc1);
+        const s2 = sampleAtArc(arc2);
+        session.step({
+          p1: { position: [s1.x, s1.groundY, s1.z], contact: true },
+          p2: { position: [s2.x, s2.groundY, s2.z], contact: true }
+        });
+        if (session.phase === 'finished') break;
+      }
+      return session;
+    };
+    const sessionA = runRules();
+    const sessionB = runRules();
+    const sessionResult = sessionA.snapshot().results;
+    mpNode.session = {
+      phase: sessionA.phase,
+      raceTick: sessionA.raceTick,
+      hash: sessionA.hash(),
+      secondHash: sessionB.hash(),
+      rows: sessionResult.rows.map((row) => ({
+        id: row.id, position: row.position, status: row.status, finishTick: row.finishTick
+      })),
+      eventLogHash: sessionA.eventLogHash()
+    };
+    check('mp: host RaceSession finishes both participants on the committed 310 m layout',
+      sessionA.phase === 'finished' && sessionResult.rows.length === 2 &&
+      sessionResult.rows.every((row) => row.status === 'finished'),
+      JSON.stringify(mpNode.session.rows));
+    check('mp: RaceSession results order the faster car first and the snapshot hash repeats',
+      sessionResult.rows[0].id === 'p1' && sessionResult.rows[0].position === 1 &&
+      sessionA.hash() === sessionB.hash() && sessionA.replayHash() === sessionB.replayHash(),
+      JSON.stringify({ first: sessionResult.rows[0], hash: sessionA.hash(), second: sessionB.hash() }));
+    check('mp: URL/code helpers keep the documented M1 contract',
+      defaultRoomUrl({ protocol: 'http:', hostname: '127.0.0.1' }) === 'ws://127.0.0.1:8811/ws' &&
+      normalizeRoomCode('abcde') === 'ABCDE' && normalizeRoomCode('ABCD1') === null &&
+      normalizeRoomCode('ABCDE') === 'ABCDE',
+      JSON.stringify({ url: defaultRoomUrl({ protocol: 'http:', hostname: '127.0.0.1' }),
+        lower: normalizeRoomCode('abcde'), bad: normalizeRoomCode('ABCD1') }));
+    const guestPeerEvents = mpEvents.peer.map((event) => event.type);
+    check('mp: the reconnect path is exercised through the unchanged room service (no new transport)',
+      mpNode.reconnect.resumed === true && mpNode.reconnect.guestIdAfter === guestIdBefore,
+      JSON.stringify({ peerEvents: guestPeerEvents, reconnect: mpNode.reconnect }));
+  } catch (error) {
+    mpNode.error = error?.stack ?? String(error);
+    check('mp: Node multiplayer harness completed without an exception', false, String(error?.message ?? error));
+  } finally {
+    try { mpHost?.close(); } catch {}
+    try { mpGuest?.close(); } catch {}
+    await roomServer.close();
+  }
+  mpNode.checks = checks.length - mpChecksBefore;
+  mpNode.failures = checks.slice(mpChecksBefore).filter((entry) => !entry.ok).map((entry) => entry.label);
+  mpNodeReport = mpNode;
+  writeFileSync(path.join(OUT, 'mp-node-report.json'), JSON.stringify(mpNode, null, 2) + '\n', 'utf8');
+}
+
 const report = {
   purpose: 'E1 drive slice: wasm vehicle physics -> render packet v1.1 -> WebGPU consumer, several XT cars',
   status: failures.length === 0 ? 'PASS' : 'FAIL',
+  multiplayer: mpNodeReport,
   propV2: {
     kind: 'e1-drive.prop-collision-v2',
     version: 1,
@@ -5543,6 +5859,12 @@ writeFileSync(path.join(LOGS, 'verify.log'), log.join('\n') + '\n' +
 
 console.log(JSON.stringify({
   status: report.status,
+  multiplayer: {
+    checks: mpNodeReport?.checks ?? 0,
+    failures: mpNodeReport?.failures ?? [],
+    resultHash: mpNodeReport?.result?.hash ?? null,
+    sessionHash: mpNodeReport?.session?.hash ?? null
+  },
   wasm: `${report.module.wasmBytes} B ${report.module.wasmSha256.slice(0, 16)} (${report.module.objects} objects)`,
   roster: `${report.roster.counts.selected} cars of ${report.roster.counts.records} records`,
   track: {
