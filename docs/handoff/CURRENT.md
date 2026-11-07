@@ -113,6 +113,12 @@ yazılmalı, 41 platform-bound. M1 için 5 modüllü kural katmanı tanımlandı
 (RaceDirector, CourseModel, ProgressTracker, RespawnPolicy, ResultModel).
 Kanıt: `docs/work/analysis/game-logic-audit.md`.
 
+**M1 — 19 harita denetimi:** **1 A / 16 B / 2 C**. River A; sıradaki üç aday
+`usa_amboy` (2.060,6 m, %97,6), `spa_barcelona_gracia` (624,9 m, %99,6),
+`usa_la_longbeachdocks` (818,4 m, %47,3). 2 C harita draw kapsaması 0/6,2 m
+(instance traversal gerek). Doğrulama **193/193**. Kanıt:
+`docs/work/analysis/map-pipeline.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

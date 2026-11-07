@@ -273,6 +273,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/analysis/game-logic-audit.md`; envanter hash
   `8e431241…3c0a`.
 
+### E1u — 19 harita denetimi (M1)  ✅
+- 19 level dizininin tamamı Gravity shape stream'iyle parse ediliyor; collision
+  oracle tek başına 15/19'da takılıyor (shape tipleri).
+- **1 A / 16 B / 2 C.** A = `usa_la_river` (mevcut). C = bowl/highrise
+  multiplayer (draw kapsaması 0 / 6,2 m; instance traversal gerek).
+- Sıradaki 3 aday: **usa_amboy** (2.060,6 m, %97,6), **spa_barcelona_gracia**
+  (624,9 m, %99,6), **usa_la_longbeachdocks** (818,4 m, %47,3; 74/76 section).
+- Aday layout hand-off'ları `_work/map-pipeline/candidates/` altında.
+- Doğrulama **193/193**. Kanıt: `docs/work/analysis/map-pipeline.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

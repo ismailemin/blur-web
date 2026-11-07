@@ -773,6 +773,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Engeller: oyun PCH/DirectX, actor/runtime coupling, .aid AI verisi, DemonWare, hasar/pickup/scoring.
 - Kanıt: `docs/work/analysis/game-logic-audit.md`, `_work/game-logic-audit/game-logic-inventory.json`.
 
+## 7 Kasım 2026 — 19 harita denetimi
+
+- 19 level parse ediliyor; **1 A / 16 B / 2 C**. A = River; C = bowl/highrise multiplayer (draw 0/6,2 m).
+- Sıradaki adaylar: **usa_amboy** 2.060,6 m (%97,6), **spa_barcelona_gracia** 624,9 m (%99,6), **usa_la_longbeachdocks** 818,4 m (%47,3, 74/76 section).
+- Aday layout'lar `_work/map-pipeline/candidates/`; doğrulama **193/193**. Kanıt: `docs/work/analysis/map-pipeline.md`.
+
 ## 7 Kasım 2026 — tam oyun / multiplayer planı
 
 - Hedef: iki tarayıcının oda koduyla aynı yarışı bitirdiği, içerik genişleyen bir sürüm. Plan: `docs/plan/FULL_GAME.md`.
