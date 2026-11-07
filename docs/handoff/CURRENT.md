@@ -107,6 +107,12 @@ materyal+fizik verisi hazır; sürüş dilimine eklenmemiş. Sıradaki 10 araç
 manifestlendi; 5 araç guard'ı 4 dosyada sert kodlu (main-agent). Doğrulama
 **542/542**. Kanıt: `docs/work/analysis/vehicle-pipeline.md`.
 
+**G1 — yarış mantığı/AI denetimi:** Upstream **481 dosya / 134.941 satır**;
+**108 dosya / 26.369 satır** AI çekirdeği object-compile, 324 dosya yeniden
+yazılmalı, 41 platform-bound. M1 için 5 modüllü kural katmanı tanımlandı
+(RaceDirector, CourseModel, ProgressTracker, RespawnPolicy, ResultModel).
+Kanıt: `docs/work/analysis/game-logic-audit.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

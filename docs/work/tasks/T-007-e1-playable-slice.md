@@ -262,6 +262,17 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - 5 araç guard'ı 4 dosyada sert kodlu; genişletme main-agent sahipliğinde.
 - Doğrulama **542/542**. Kanıt: `docs/work/analysis/vehicle-pipeline.md`.
 
+### E1t — Yarış mantığı/AI denetimi (G1)  ✅
+- Upstream oyun mantığı: **481 dosya / 134.941 satır / 1.178 sınıf**.
+- **108 dosya / 26.369 satır** AI çekirdeği object-compile ediyor (link/run yok);
+  **324 dosya / 88.749 satır** yeniden yazılmalı; 41 dosya platform-bound.
+- M1 için minimum kural katmanı 5 modül: RaceDirector, CourseModel,
+  ProgressTracker, RespawnPolicy, ResultModel — `sprint-rules.js`'ten evrilebilir.
+- En büyük engel: oyun PCH/DirectX, actor/runtime coupling, .aid AI verisi,
+  DemonWare MP modu, hasar/pickup/scoring verisi.
+- Kanıt: `docs/work/analysis/game-logic-audit.md`; envanter hash
+  `8e431241…3c0a`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

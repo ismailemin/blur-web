@@ -765,6 +765,14 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sıradaki 10 B araç manifestlendi; 42 B'nin tamamı 4 tekerlek grubu ve geçerli fizik alanlarına sahip. 5 araç guard'ı 4 dosyada sert kodlu.
 - Doğrulama **542/542**, 62/62 sınıflandırıldı. Kanıt: `docs/work/analysis/vehicle-pipeline.md`.
 
+## 7 Kasım 2026 — yarış mantığı/AI denetimi
+
+- Upstream oyun mantığı **481 dosya / 134.941 satır / 1.178 sınıf**.
+- **108 dosya / 26.369 satır** AI çekirdeği object-compile (link/run yok); 324 dosya yeniden yazılmalı; 41 platform-bound.
+- M1 için 5 modüllü kural katmanı: RaceDirector, CourseModel, ProgressTracker, RespawnPolicy, ResultModel.
+- Engeller: oyun PCH/DirectX, actor/runtime coupling, .aid AI verisi, DemonWare, hasar/pickup/scoring.
+- Kanıt: `docs/work/analysis/game-logic-audit.md`, `_work/game-logic-audit/game-logic-inventory.json`.
+
 ## 7 Kasım 2026 — tam oyun / multiplayer planı
 
 - Hedef: iki tarayıcının oda koduyla aynı yarışı bitirdiği, içerik genişleyen bir sürüm. Plan: `docs/plan/FULL_GAME.md`.
