@@ -1,11 +1,12 @@
-// Verify the E1 usa_amboy map integration (M3 first map).
+// Verify an E1 map integration (M3 map packages: usa_amboy, spa_barcelona_gracia).
 //
 //   node probes/e1-drive/tools/verify_e1_map.mjs
-//   node probes/e1-drive/tools/verify_e1_map.mjs --map amboy   (the only map in v1)
+//   node probes/e1-drive/tools/verify_e1_map.mjs --map amboy
+//   node probes/e1-drive/tools/verify_e1_map.mjs --map gracia
 //
 // Gates:
 //   1. the committed map-slice packages still match the builder pins;
-//   2. `build_map_amboy.mjs --check` reproduces both generated files;
+//   2. `build_map_<map>.mjs --check` reproduces both generated files;
 //   3. the map/layout documents pass the page's own validator;
 //   4. physics settles at the measured spawn: 61/61 ticks match the committed
 //      physics-settle state hashes, 4/4 contacts, finite;
@@ -14,8 +15,8 @@
 //   6. replaying the recorded input sequence into a fresh module reproduces every
 //      state hash (the rules never write a physics value).
 //
-// Outputs: `_work/e1-drive/map-amboy-run.json` (the node anchor the browser
-// capture compares against) and `_work/e1-drive/map-amboy-verify.json`.
+// Outputs: `_work/e1-drive/map-<map>-run.json` (the node anchor the browser
+// capture compares against) and `_work/e1-drive/map-<map>-verify.json`.
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -25,7 +26,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { hashOf } from '../web/packet-hash.js';
 import { MAPS } from '../web/map-registry.js';
-import { validateAmboyPackage } from '../web/map-amboy.js';
+import { validateMapPackage } from '../web/map-package.js';
 import { createSprintRules } from '../web/sprint-rules.js';
 import { sprintScriptInput } from '../web/sprint-script.js';
 
@@ -34,7 +35,7 @@ const OUT = path.join(ROOT, '_work/e1-drive');
 const LOGS = path.join(ROOT, '_work/logs/e1-drive');
 const MAP_ID = process.argv.includes('--map') ? process.argv[process.argv.indexOf('--map') + 1] : 'amboy';
 const MAP = MAPS[MAP_ID];
-if (!MAP || MAP.id !== 'amboy') throw new Error('verify_e1_map.mjs only supports --map amboy in M3');
+if (!MAP || MAP.kind !== 'map-package') throw new Error('verify_e1_map.mjs needs --map amboy|gracia');
 
 const sha256 = (buffer) => 'sha256:' + createHash('sha256').update(buffer).digest('hex');
 const readJson = (relative) => JSON.parse(readFileSync(path.join(ROOT, relative), 'utf8'));
@@ -49,10 +50,11 @@ mkdirSync(OUT, { recursive: true });
 mkdirSync(LOGS, { recursive: true });
 
 // ---------------------------------------------------------------- 1. builder
-const builder = spawnSync(process.execPath, [path.join(ROOT, 'probes/e1-drive/tools/build_map_amboy.mjs'), '--check'], {
-  cwd: ROOT, encoding: 'utf8'
-});
-check('build_map_amboy.mjs --check reproduces the generated map + layout', builder.status === 0,
+const builder = spawnSync(process.execPath,
+  [path.join(ROOT, 'probes/e1-drive/tools/build_map_' + MAP_ID + '.mjs'), '--check'], {
+    cwd: ROOT, encoding: 'utf8'
+  });
+check('build_map_' + MAP_ID + '.mjs --check reproduces the generated map + layout', builder.status === 0,
   (builder.stdout + builder.stderr).trim().slice(0, 600));
 if (builder.status !== 0) throw new Error('map artifacts are stale or hand-edited:\n' + builder.stdout + builder.stderr);
 
@@ -63,7 +65,7 @@ check('map file matches the registry SHA-256', sha256(mapBytes) === MAP.pins.map
 check('layout file matches the registry SHA-256', sha256(layoutBytes) === MAP.pins.layoutFileSha256, sha256(layoutBytes));
 const map = JSON.parse(mapBytes.toString('utf8'));
 const layout = JSON.parse(layoutBytes.toString('utf8'));
-const validated = validateAmboyPackage(map, layout, MAP.pins);
+const validated = validateMapPackage(map, layout, MAP.pins);
 check('map + layout pass the page validator', validated.ok, validated.errors.join('; '));
 if (!validated.ok) throw new Error(validated.errors.join('; '));
 
@@ -75,7 +77,7 @@ const raceRules = await import(pathToFileURL(raceRulesPath).href);
 const r1Layout = { ...layout, courseId: '310m' };
 const courseModel = new raceRules.CourseModel(r1Layout, { verifyLayoutHash: false });
 const spawnProjection = courseModel.project([layout.course.spawn.x, 0, layout.course.spawn.z]);
-check('R1 CourseModel consumes the measured Amboy gates/samples',
+check('R1 CourseModel consumes the measured ' + MAP.label + ' gates/samples',
   courseModel.checkpointCount === 2 && courseModel.startGate.id === 'start' &&
   courseModel.finishGate.id === 'finish' && spawnProjection.arc === 0,
   JSON.stringify({ checkpoints: courseModel.checkpointCount, arc: spawnProjection.arc }));
@@ -116,11 +118,11 @@ const spawn = layout.course.spawn;
 const tick0 = createWorld(spawn.x, spawn.z, spawn.headingRad);
 const info = JSON.parse(module.UTF8ToString(module._e1_info()));
 check('engine decoded the expected car', info.car === 'Corvette_ZR1_Stock', info.car);
-check('engine ground probe matches the measured spawn', Math.abs(info.groundY - (-0.0942230225)) < 1e-6,
-  String(info.groundY));
+check('engine ground probe matches the measured spawn',
+  Math.abs(info.groundY - layout.course.spawn.ground) < 1e-3, String(info.groundY));
 
 // ---------------------------------------------------------------- 4. settle
-const sliceSettle = readJson('_work/map-slice/amboy/physics-settle.json');
+const sliceSettle = readJson('_work/map-slice/' + MAP_ID + '/physics-settle.json');
 const settleTicks = [{ tick: 0, stateHash: hashOf(tick0), state: tick0 }];
 for (let tick = 1; tick <= 60; tick++) {
   if (!module._e1_step()) throw new Error('e1_step failed at settle tick ' + tick);
@@ -132,7 +134,7 @@ check('physics settle matches the committed 61/61 state hashes', !settleMismatch
   settleMismatch ? `tick ${settleMismatch.tick}: ${settleMismatch.stateHash} vs ${sliceSettle.ticks[settleMismatch.tick]?.stateHash}` : '');
 const settleSequence = 'sha256:' + createHash('sha256')
   .update(settleTicks.map((row) => row.stateHash).join('\n')).digest('hex');
-check('settle sequence hash is the committed Amboy sequence', settleSequence === sliceSettle.summary.stateSequenceHash,
+check('settle sequence hash is the committed ' + MAP.label + ' sequence', settleSequence === sliceSettle.summary.stateSequenceHash,
   settleSequence);
 check('settle keeps 4/4 wheel contacts on 61/61 ticks',
   settleTicks.every((row) => row.state.finite === 1 && row.state.anyContact === 1 &&
@@ -275,16 +277,16 @@ const run = {
 };
 
 const runText = JSON.stringify(run, null, 2) + '\n';
-writeFileSync(path.join(OUT, 'map-amboy-run.json'), runText, 'utf8');
+writeFileSync(path.join(OUT, 'map-' + MAP_ID + '-run.json'), runText, 'utf8');
 
 const verify = {
   schema: 'e1-drive.map-verify/1',
   map: MAP_ID,
   level: MAP.level,
   files: {
-    map: { path: '_work/e1-drive/amboy/map.json', bytes: mapBytes.byteLength, sha256: sha256(mapBytes) },
-    layout: { path: '_work/e1-drive/amboy/layout.json', bytes: layoutBytes.byteLength, sha256: sha256(layoutBytes) },
-    run: { path: '_work/e1-drive/map-amboy-run.json', bytes: Buffer.byteLength(runText), sha256: sha256(Buffer.from(runText)) }
+    map: { path: '_work/e1-drive/' + MAP_ID + '/map.json', bytes: mapBytes.byteLength, sha256: sha256(mapBytes) },
+    layout: { path: '_work/e1-drive/' + MAP_ID + '/layout.json', bytes: layoutBytes.byteLength, sha256: sha256(layoutBytes) },
+    run: { path: '_work/e1-drive/map-' + MAP_ID + '-run.json', bytes: Buffer.byteLength(runText), sha256: sha256(Buffer.from(runText)) }
   },
   package: {
     render: map.source.render,
@@ -300,8 +302,8 @@ const verify = {
   ok: failures.length === 0
 };
 const verifyText = JSON.stringify(verify, null, 2) + '\n';
-writeFileSync(path.join(OUT, 'map-amboy-verify.json'), verifyText, 'utf8');
-writeFileSync(path.join(LOGS, 'map-amboy-verify.log'), verifyText, 'utf8');
+writeFileSync(path.join(OUT, 'map-' + MAP_ID + '-verify.json'), verifyText, 'utf8');
+writeFileSync(path.join(LOGS, 'map-' + MAP_ID + '-verify.log'), verifyText, 'utf8');
 
 console.log(JSON.stringify({
   ok: verify.ok,

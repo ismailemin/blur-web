@@ -139,11 +139,13 @@ web/fixed-step.js (1/60, 4-tick cap, pause rule)            ▼
         └────────────────────► web/packet-consumer.js (WebGPU, geometry uploaded once)
 ```
 
-## Maps (M3 first map: `usa_amboy`)
+## Maps (M3: `usa_amboy`, `spa_barcelona_gracia`)
 
 `?map=river` is the default and is byte-for-byte the existing M1 page (same
-paths, geometry, layouts, spawn, best-time keys and pins). `?map=amboy` swaps
-only the map half:
+paths, geometry, layouts, spawn, best-time keys and pins). `?map=amboy` and
+`?map=gracia` swap only the map half. Both are built by the shared
+`tools/map_package_builder.mjs` through the thin `build_map_amboy.mjs` /
+`build_map_gracia.mjs` wrappers and validated by `web/map-package.js`.
 
 | item | value |
 |---|---|
@@ -185,6 +187,41 @@ to confirm the regression.
 Limits: the path is measured draw coverage, not a retail start line; there are no
 Amboy prop colliders, power-ups, opponents, AI, lap or retail race rules. This is
 one playable point-to-point map, not a full-game claim.
+
+### Second map: `spa_barcelona_gracia`
+
+| item | value |
+|---|---|
+| map package | `_work/map-slice/gracia-render` (MAP5) + `_work/map-slice/gracia` |
+| generated page input | `_work/e1-drive/gracia/map.json` + `layout.json` (`tools/build_map_gracia.mjs`) |
+| physics | `game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics`, served read-only at `/map-data/spa_barcelona_gracia/…` |
+| opaque draws | **2,627 / 365,451 triangles**, one merged mesh (738,905 vertices, 1,651,896 indices) |
+| textures | **734** merged RGBA8 mip0 blobs, 3,247,360 B (739 sources; 5 duplicate pairs) |
+| normals | **0 vertex normals**; the consumer's existing screen-space derivative normal path is used |
+| blocked | **953** draws / 185,181 triangles: 518 Racification additive/alpha, 426 BC3-alpha, 5 decoder-size, 4 runtime-albedo (labelled; no fallback) |
+| geometry blockers | **4** unsupported sections, **2,714** instance descriptions, `instancesApplied:false` |
+| collision | 113,270 static triangles; the two Boxes and 38 `InstancedTriangleMesh` records are outside the triangle package |
+| path | measured **624.913781 m** point-to-point, spawn `(336, -23)` heading `2.15879893`, checkpoints `208.343387` / `416.652048` m |
+| rules | the same R1-style SprintRules: 90-tick countdown, ordered checkpoints, finish, respawn, best time |
+| best time | `e1-drive.sprint.best.v3.gracia` (separate from River and Amboy) |
+
+The page verifies the same pins before `e1_create`. The measured-path controller
+is shared with Amboy (`?map=gracia&script=sprint` finishes in **66.267 s / tick
+4,066**, 2 checkpoints, 0 respawns). River and Amboy pins are untouched.
+
+```powershell
+& $node probes/e1-drive/tools/build_map_gracia.mjs           # writes _work/e1-drive/gracia/{map,layout}.json
+& $node probes/e1-drive/tools/verify_e1_map.mjs --map gracia # pins, 61/61 settle, scripted finish, replay
+& $node probes/e1-drive/tools/serve.mjs --port 8801         # /?map=gracia&script=sprint
+& $node probes/e1-drive/tools/capture_browser.mjs --mode map --map gracia --port 8801
+```
+
+`verify_e1_map.mjs --map <id>` records `_work/e1-drive/map-<id>-run.json` and
+`map-<id>-verify.json`. Details and evidence: `docs/work/verification/T-007-map-gracia.md`.
+
+Limits: Gracia is the same single-player point-to-point slice; 4 unsupported
+sections and 2,714 instances are not applied, and 953 blocked draws are labelled.
+No full-game claim.
 
 ## Cars
 

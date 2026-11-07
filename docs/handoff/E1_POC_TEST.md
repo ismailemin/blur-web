@@ -99,6 +99,7 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 - [ ] M1: host `?mp=1&host=1` oda kodu veriyor; guest `?mp=1&room=CODE` katılıyor; ikisi READY → host START → iki sayfada aynı sonuç; console 0.
 - [ ] M2: `&powerups=1` ile pickup toplanıyor, `E` ile mine/shield/repair/nitro/shock kullanılıyor; HUD health/shield/feed güncelleniyor; wreck → respawn; console 0.
 - [ ] `?map=amboy&script=sprint`: 2.060,6 m yol, 2 checkpoint, finish; console 0; River varsayılan bozulmuyor.
+- [ ] `?map=gracia&script=sprint`: 624,9 m yol, 2 checkpoint, finish; console 0.
 - [ ] Süre tablodaki değere ±0,01 s (scripted) veya makul (klavye).
 - [ ] `R`: aynı sayfada yeniden countdown; süre sıfırlanır, en iyi süre korunur.
 - [ ] Beş araç seçilebilir; her biri kendi gövdesi/tekerleriyle görünür.

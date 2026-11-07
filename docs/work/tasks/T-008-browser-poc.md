@@ -87,6 +87,7 @@ sürüşü deneyebileceği PoC.
 | Nitro + Shock | BOOST2 | ✅ 31/31 + 79/79, console 0 |
 | Projectile verisi | PWR4 | ✅ 19/19, 888/888 |
 | Amboy oynanabilir | MAP6 | ✅ 2.060,6 m, 23/23 |
+| Gracia oynanabilir | MAP7 | ✅ 624,9 m, 2.627 draw, 23/23 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

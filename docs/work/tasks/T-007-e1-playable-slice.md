@@ -482,6 +482,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-map-amboy.md`,
   `_work/e1-drive/browser-corvette-zr1-stock-map-amboy-mid.png`.
 
+### E1am — Gracia oynanabilir harita (MAP7)  ✅
+- `?map=gracia&script=sprint`: **2.627 opaque draw / 365.451 tri / 734 doku**
+  (3,25 MB), **624,913781 m** ölçülmüş yol.
+- Corvette finish **66,267 s / tick 4.066**, checkpoint 26,783 / 47,917 s,
+  0 respawn, 4/4 temas, replay birebir; state `cf089202…`.
+- 953 draw engelli (518 Racification, 426 BC3, 5 boyut, 4 runtime); 4 section
+  + 2.714 instance yok; derivative normal.
+- Map verifier **23/23**; Amboy 23/23; River 2254/2254; capture console 0;
+  suite **52/52**; checker 23/23.
+- Kanıt: `docs/work/verification/T-007-map-gracia.md`,
+  `_work/e1-drive/browser-*-map-gracia-mid.png`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

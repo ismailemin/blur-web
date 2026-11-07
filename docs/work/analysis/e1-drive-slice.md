@@ -3062,3 +3062,11 @@ warnings); the finish frame reports 222.050 s with both checkpoints.
    exists.
 5. No vertex normals; derivative normals are the documented fallback.
 6. No full-game claim.
+
+### 36.7 Second map: `spa_barcelona_gracia` (MAP5)
+
+The map integration was generalized rather than copied: `tools/map_package_builder.mjs` holds the package reader and emits the same map/layout schema for `usa_amboy` and `spa_barcelona_gracia`; the two `build_map_*.mjs` files are thin instantiations. `web/map-package.js` is the shared pin/shape validator and merger, and the packet adapter derives its map provenance from the merged document instead of Amboy literals. The Amboy builder still reproduces both committed files byte-for-byte.
+
+Gracia inputs: `_work/map-slice/gracia` + `gracia-render`. The generated map document is 72,616,715 B (2,627 opaque draws / 365,451 triangles / 734 textures / 3,247,360 B), the layout is 312,569 B (2,571 samples, 624.913781 m). 953 blocked draws are labelled (518 Racification, 426 BC3-alpha, 5 decoder-size, 4 runtime); 4 unsupported sections and 2,714 instance descriptions are not applied; there are no vertex normals.
+
+Physics settles 61/61 on the package hashes (`sha256:4fd8ae0c...6e8e30`) at spawn `(336, -23)` heading `2.15879893`. The scripted sprint finishes at **66.266667 s / tick 4,066** with both checkpoints, 0 respawns and a bit-identical replay. Browser capture is `clean-console-and-gates` (console 0) at start/checkpoint/mid/finish. Gracia map verifier 23/23; River verifier 2254/2254; suite 50/50; checker 23/23. Evidence: `docs/work/verification/T-007-map-gracia.md`.

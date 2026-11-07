@@ -195,11 +195,13 @@ export const LAP_CONTROL = Object.freeze({  cruiseSpeed: 10,
 });
 
 /**
- * Controller for the measured usa_amboy point-to-point path (M3). The path has
- * tight hairpins (the 2 km measured line turns back on itself several times), so
- * this controller uses short-horizon pure pursuit and a lower cruise speed
- * instead of the 310 m Stanley tuning. These are controller choices, not
- * recovered vehicle or map values; the engine physics is untouched.
+ * Controller for a measured point-to-point map path (M3: usa_amboy and
+ * spa_barcelona_gracia). The Amboy path has tight hairpins (the 2 km measured
+ * line turns back on itself several times), so this controller uses
+ * short-horizon pure pursuit and a lower cruise speed instead of the 310 m
+ * Stanley tuning. These are controller choices, not recovered vehicle or map
+ * values; the engine physics is untouched. The same controller is used for the
+ * Gracia 624.9 m path so the two map runs share one deterministic input policy.
  */
 export const AMBOY_CONTROL = Object.freeze({
   cruiseSpeed: 12,
@@ -452,7 +454,8 @@ export function sprintScriptInput(rules, state, constants = null) {
   }
   if (!state) throw new Error('the scripted long-course sprint needs the engine state');
   if (rules.phase !== 'running') return rules.gateInput(SPRINT_DESIRED_INPUT);
-  const control = rules.layout?.courseId === 'amboy' ? AMBOY_CONTROL : constants;
+  const control = rules.layout?.courseId === 'amboy' || rules.layout?.courseId === 'gracia'
+    ? AMBOY_CONTROL : constants;
   return rules.gateInput(sprintControl(state, rules.layout, control));
 }
 

@@ -307,9 +307,9 @@ export function createSession(geometry, tick0, options = {}) {
   if (mapRender) {
     levelDraws = [];
     trackVisual = mapRender;
-    if (mapRender.label !== 'amboy-direct-draws' || !Array.isArray(mapRender.draws) ||
+    if (mapRender.label !== geometry.map?.renderLabel || !Array.isArray(mapRender.draws) ||
         mapRender.draws.length === 0) {
-      throw new Error('geometry mapRender is not the committed Amboy direct-draw package');
+      throw new Error('geometry mapRender is not the committed map direct-draw package');
     }
     trackMesh = geometry.meshes.find((mesh) => mesh.id === mapRender.meshId);
     if (!trackMesh) throw new Error('map render names a missing mesh ' + mapRender.meshId);
@@ -888,16 +888,20 @@ export function createSession(geometry, tick0, options = {}) {
   // value below is read from the map package; nothing is inferred.
   if (mapRender) {
     const mapCounts = geometry.map?.counts ?? null;
+    const mapLevel = geometry.map?.level ?? 'map';
+    const mapPackage = geometry.map?.packageLabel ?? 'map-render';
+    const blockedDecal = mapRender.blocked?.effectDecal?.draws ?? 0;
+    const blockedDiagnostic = mapRender.blocked?.diagnosticOnly?.draws ?? 0;
     packet.diagnostics.scope =
-      'usa_amboy first-RenderList direct LOD0 draws: ' + mapRender.drawCount + ' opaque draws / ' +
+      mapLevel + ' first-RenderList direct LOD0 draws: ' + mapRender.drawCount + ' opaque draws / ' +
       (mapRender.triangleTotal ?? 0) + ' triangles across ' + mapRender.texturePack.uniqueBlobs +
       ' uploaded textures, plus the ' + body.name + ' body drawn as ' + body.carParts.length +
       ' manifest parts / ' + body.carDraws.length + ' draws; the ' + mapRender.blocked.draws +
-      ' blocked draws (334 effect/decal, 71 diagnostic) are skipped with labels; no vertex normals are present, ' +
+      ' blocked draws (' + blockedDecal + ' effect/decal, ' + blockedDiagnostic + ' diagnostic) are skipped with labels; no vertex normals are present, ' +
       'so shading uses the consumer screen-space derivative normals; materials/blend/sampler state remain diagnostic';
     packet.diagnostics.extras.map = {
-      level: 'usa_amboy',
-      package: 'amboy-render',
+      level: mapLevel,
+      package: mapPackage,
       label: mapRender.label,
       source: mapRender.source ?? null,
       counts: mapCounts,
@@ -949,17 +953,18 @@ export function createSession(geometry, tick0, options = {}) {
         coverage: null
       },
       sections: [],
-      reason: 'usa_amboy first-RenderList direct LOD0 draws from the committed map-slice render package; ' +
+      reason: mapLevel + ' first-RenderList direct LOD0 draws from the committed map-slice render package; ' +
         'every opaque draw carries its source index range, real UV0 and resolved static albedo identity',
       coverage: null
     };
     packet.diagnostics.extras.textures.levelAndTrack = {
       count: mapRender.texturePack.uniqueBlobs,
       rgbaBytes: mapRender.texturePack.bytesMip0,
-      source: 'usa_amboy map-slice render package'
+      source: mapLevel + ' map-slice render package'
     };
     packet.diagnostics.extras.textures.reason =
-      'the packet carries the usa_amboy 179 merged RGBA8 mip0 albedo blobs plus only the driven car\'s ' +
+      'the packet carries the ' + mapLevel + ' ' + mapRender.texturePack.uniqueBlobs +
+      ' merged RGBA8 mip0 albedo blobs plus only the driven car\'s ' +
       'own P52 images; the producer records sRGB/mip generation as hints and the consumer applies its ' +
       'documented sRGB + derived mip policy. Material colour, blend state and sampler wrap/filter are not applied';
     packet.diagnostics.extras.textures.uploaded = {
@@ -974,7 +979,7 @@ export function createSession(geometry, tick0, options = {}) {
       triangleCount: mapRender.collisionSurface.triangleCount,
       bounds: mapRender.collisionSurface.bounds,
       source: mapRender.collisionSurface.source,
-      reason: 'the simulated wheels trace usa_amboy/Level.levelphysics through the wasm physics; this ' +
+      reason: 'the simulated wheels trace ' + mapLevel + '/Level.levelphysics through the wasm physics; this ' +
         'collision mesh is kept in packet.physicsSurfaces for provenance and is not in packet.meshes, ' +
         'so it is neither uploaded nor drawn'
     };
@@ -986,7 +991,7 @@ export function createSession(geometry, tick0, options = {}) {
       texturedTriangles: 0,
       diagnosticTriangles: 0,
       blockedInstances: [],
-      blockedReason: 'none: the usa_amboy package has no River level-prop layer',
+      blockedReason: 'none: the ' + mapLevel + ' package has no River level-prop layer',
       manifest: null,
       manifestSha256: null,
       contentHash: null,
@@ -1000,18 +1005,19 @@ export function createSession(geometry, tick0, options = {}) {
       reason: 'the map package replaces the River level-prop/track packs'
     };
     packet.diagnostics.approximations = [
-      'usa_amboy direct draws sample their static g_tAlbedo image with the real UV0 stream and the consumer sRGB/mip policy; material colour, blend state and sampler wrap/filter remain unapplied',
+      mapLevel + ' direct draws sample their static g_tAlbedo image with the real UV0 stream and the consumer sRGB/mip policy; material colour, blend state and sampler wrap/filter remain unapplied',
       'no vertex normals were decoded; shading uses screen-space derivatives of the world position (the existing consumer path)',
-      'the 334 effect/decal draws and 71 diagnostic draws are skipped with labels: no fallback texture or colour is invented',
-      'the 27 unsupported sections and 366 instance descriptions are not applied and can add surfaces',
+      'the ' + blockedDecal + ' effect/decal draws and ' + blockedDiagnostic + ' diagnostic draws are skipped with labels: no fallback texture or colour is invented',
+      'the ' + mapRender.unsupportedSections + ' unsupported sections and ' + mapRender.instances.descriptions + ' instance descriptions are not applied and can add surfaces',
       'one directional light; no shadow, post-process, particle or effect pass exists in this consumer',
       'wheel placement uses the manifest rest-pose translation; the spin angle is integrated from the physics wheel angular velocity'
     ];
     packet.diagnostics.limits = [
-      'usa_amboy first-RenderList direct LOD0 draws only: 27 unsupported sections and 366 instance descriptions are not applied',
-      'the path is measured (2,060.595 m), not a retail start line; this is one point-to-point sprint, not a lap',
-      'collision triangles exclude the Box, four Cylinders and the InstancedTriangleMesh; the engine still loads the complete Level.levelphysics',
-      'no Amboy prop colliders, power-ups, opponents, AI or race audio',
+      mapLevel + ' first-RenderList direct LOD0 draws only: ' + mapRender.unsupportedSections +
+        ' unsupported sections and ' + mapRender.instances.descriptions + ' instance descriptions are not applied',
+      'the path is measured, not a retail start line; this is one point-to-point sprint, not a lap',
+      'collision triangles exclude the simple shapes and InstancedTriangleMesh; the engine still loads the complete Level.levelphysics',
+      'no ' + (geometry.map?.label ?? 'map') + ' prop colliders, power-ups, opponents, AI or race audio',
       'one car at a time; the car body uses the selected roster car\'s own mesh'
     ];
   }

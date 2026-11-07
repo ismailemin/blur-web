@@ -51,7 +51,7 @@ import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-s
 import { isFreeLayout, layoutStartHeading, layoutStartPosition, validateSprintLayout } from './sprint-layout.js';
 import { SPRINT_EVENT, courseGroundAt, coursePosition, createSprintRules, freeGroundAt } from './sprint-rules.js';
 import { MAPS, resolveMap } from './map-registry.js';
-import { bytesSha256, mergeMapGeometry, textSha256, validateAmboyPackage } from './map-amboy.js';
+import { bytesSha256, mergeMapGeometry, textSha256, validateMapPackage } from './map-package.js';
 import { createBestTimes } from './sprint-best.js';
 import {
   GHOST_CORNERS, GHOST_SOURCE, buildGhostArcTable, createGhostStore, decodeGhost, ghostFromRun,
@@ -148,16 +148,19 @@ const COURSE_IS_LAP = COURSE_PARAM === 'lap';
 const COURSE_IS_FREE = COURSE_PARAM === 'free';
 const COURSE_KEY = COURSE_IS_SHORT ? 'short' : COURSE_IS_LAP ? 'lap' : COURSE_IS_FREE ? 'free' : '310m';
 // Map registry (M3): `?map=river` (default) keeps the exact M1 paths, layouts and
-// pins. `?map=amboy` loads the committed usa_amboy map package. An unknown id is
-// a hard error; there is no silent fallback to River.
+// pins. `?map=amboy` and `?map=gracia` load their committed map packages. An
+// unknown id is a hard error; there is no silent fallback to River.
 const MAP = resolveMap(params.get('map'));
 const MAP_IS_AMBOY = MAP.id === 'amboy';
-const AMBOY_PACKET_SCRIPT =
-  'sprint: 3-2-1 countdown, pure-pursuit controller on the measured usa_amboy 2,060.595 m path, ' +
-  'brake after the finish (probes/e1-drive/web/sprint-script.js)';
-// The Amboy path is ~2 km at a controlled 12 m/s; the verified scripted finish
-// is tick 13,413. River's 3,600-tick bound stays exact.
-const MAX_SPRINT_SCRIPT_TICKS = MAP_IS_AMBOY ? 20000 : 3600;
+const MAP_IS_GRACIA = MAP.id === 'gracia';
+const MAP_IS_PACKAGE = MAP.kind === 'map-package';
+const MAP_PACKET_SCRIPT =
+  'sprint: 3-2-1 countdown, pure-pursuit controller on the measured ' + MAP.level + ' ' +
+  (MAP_IS_AMBOY ? '2,060.595' : MAP_IS_GRACIA ? '624.914' : '') +
+  ' m path, brake after the finish (probes/e1-drive/web/sprint-script.js)';
+// The map paths are up to ~2 km at a controlled 12 m/s; the verified Amboy
+// scripted finish is tick 13,413. River's 3,600-tick bound stays exact.
+const MAX_SPRINT_SCRIPT_TICKS = MAP_IS_PACKAGE ? 20000 : 3600;
 // Capture-only collision probe (`?collisionprobe=lap-sign|free-pipe`). It starts
 // the real engine at a manifest-derived pose in front of a P74 V2 target, applies
 // throttle until the additive prop layer reports a contact and then brakes with
@@ -239,17 +242,19 @@ if (MP && params.has('powerups') && params.get('powerups') !== '0' && params.get
 if (!MP && params.get('powerups') === '1') {
   throw new Error('?powerups=1 is the online race slice; add ?mp=1&host=1 or ?mp=1&room=CODE');
 }
-// usa_amboy (M3 first map) is a single-player point-to-point map package. The
-// River-only modes and courses are rejected explicitly rather than silently
-// loading a different map or course.
-if (MAP_IS_AMBOY) {
+// usa_amboy / spa_barcelona_gracia (M3 map packages) are single-player
+// point-to-point maps. The River-only modes and courses are rejected explicitly
+// rather than silently loading a different map or course.
+if (MAP_IS_PACKAGE) {
   if (!MAP.courses.includes(COURSE_PARAM)) {
-    throw new Error('?map=amboy runs the measured 2,060.595 m course; drop ?course=' + COURSE_PARAM);
+    throw new Error('?map=' + MAP.id + ' runs the measured ' +
+      (MAP_IS_AMBOY ? '2,060.595' : MAP_IS_GRACIA ? '624.914' : '') +
+      ' m course; drop ?course=' + COURSE_PARAM);
   }
-  if (MP) throw new Error('?map=amboy is single-player; the M1 online race is the River 310 m course');
-  if (SCRIPT_PARAM === 'drive') throw new Error('?map=amboy runs the sprint; drop ?script=drive');
+  if (MP) throw new Error('?map=' + MAP.id + ' is single-player; the M1 online race is the River 310 m course');
+  if (SCRIPT_PARAM === 'drive') throw new Error('?map=' + MAP.id + ' runs the sprint; drop ?script=drive');
   if (TELEMETRY || SOAK || SURVEY || COLLISION_PROBE) {
-    throw new Error('?map=amboy supports drive/sprint only; drop telemetry/soak/survey/collisionprobe');
+    throw new Error('?map=' + MAP.id + ' supports drive/sprint only; drop telemetry/soak/survey/collisionprobe');
   }
 }
 const POWERUP_MARKER_MESH = 'e1.powerup.marker';
@@ -529,9 +534,10 @@ function publish() {
     ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—'],
     ['audio', audioHudValue()]
   ];
-  if (MAP_IS_AMBOY && state.map) {
+  if (MAP_IS_PACKAGE && state.map) {
     const counts = state.map.counts ?? {};
-    rows.push(['map', 'AMBOY · usa_amboy measured path ' + (state.sprintLayout?.span?.measuredLengthMetres ?? 0).toFixed(3) +
+    rows.push(['map', (state.map.label ?? MAP.label).toUpperCase() + ' · ' + state.map.level + ' measured path ' +
+      (state.sprintLayout?.span?.measuredLengthMetres ?? 0).toFixed(3) +
       ' m · ' + counts.draws + ' opaque draws / ' + counts.drawTriangles + ' tri · ' +
       counts.textures + ' tex / ' + (counts.textureBytes ?? 0) + ' B']);
     rows.push(['layers', 'skipped: ' + counts.decalDraws + ' additive decals + ' + counts.diagnosticDraws +
@@ -575,9 +581,10 @@ function publish() {
           state.props.substeps + ' substeps'
         : 'all-visible · loading']);
     } else {
-      rows.push(['course', MAP_IS_AMBOY
-        ? 'USA Amboy measured path · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(3) +
-          ' m · ?map=amboy'
+      rows.push(['course', MAP_IS_PACKAGE
+        ? (MAP_IS_AMBOY ? 'USA Amboy' : MAP_IS_GRACIA ? 'Barcelona Gracia' : MAP.label) +
+          ' measured path · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(3) +
+          ' m · ?map=' + MAP.id
         : COURSE_IS_LAP
           ? 'loop-01 P61 · 3 laps · ' + course.lengthMetres.toFixed(1) + ' m · ?course=lap'
           : COURSE_IS_SHORT
@@ -1507,25 +1514,25 @@ async function loadEngine(carOverride = null) {
   fieldBytes = new Uint8Array(await fieldsResponse.arrayBuffer());
 
   let preloadedLayout = null;
-  if (MAP_IS_AMBOY) {
+  if (MAP_IS_PACKAGE) {
     // Package pins for the map document, layout, source render/slice and the
     // Level.levelphysics bytes. A mismatch is a hard failure: no fallback map.
     const mapText = await geometryResponse.text();
     const mapDocument = JSON.parse(mapText);
     if (!sprintResponse?.ok) {
-      throw new Error('Amboy layout fetch failed: HTTP ' + (sprintResponse?.status ?? 'missing') +
-        ' — run `node probes/e1-drive/tools/build_map_amboy.mjs`');
+      throw new Error(MAP.label + ' layout fetch failed: HTTP ' + (sprintResponse?.status ?? 'missing') +
+        ' — run `node probes/e1-drive/tools/build_map_' + MAP.id + '.mjs`');
     }
     const layoutText = await sprintResponse.text();
     const mapLayout = JSON.parse(layoutText);
-    const packageCheck = validateAmboyPackage(mapDocument, mapLayout, MAP.pins);
-    if (!packageCheck.ok) throw new Error('Amboy map package rejected: ' + packageCheck.errors.join('; '));
+    const packageCheck = validateMapPackage(mapDocument, mapLayout, MAP.pins);
+    if (!packageCheck.ok) throw new Error(MAP.label + ' map package rejected: ' + packageCheck.errors.join('; '));
     if (textSha256(layoutText) !== MAP.pins.layoutFileSha256) {
-      throw new Error('Amboy layout file does not match its pinned SHA-256');
+      throw new Error(MAP.label + ' layout file does not match its pinned SHA-256');
     }
     const physicsSha = await bytesSha256(levelBytes);
     if (physicsSha !== MAP.pins.physicsFileSha256) {
-      throw new Error('usa_amboy Level.levelphysics does not match its pinned SHA-256 (' + physicsSha + ')');
+      throw new Error(MAP.level + ' Level.levelphysics does not match its pinned SHA-256 (' + physicsSha + ')');
     }
     // The map document names its source packages; fetch and hash them so the page
     // verifies the actual package bytes, not only the recorded identity.
@@ -1541,7 +1548,7 @@ async function loadEngine(carOverride = null) {
     if (renderSha !== MAP.pins.renderFileSha256) throw new Error('render.json does not match its pinned SHA-256');
     if (sliceSha !== MAP.pins.sliceFileSha256) throw new Error('slice.json does not match its pinned SHA-256');
     const baseGeometry = await baseResponse.json();
-    geometry = mergeMapGeometry(baseGeometry, mapDocument);
+    geometry = mergeMapGeometry(baseGeometry, mapDocument, { id: MAP.id, label: MAP.label, level: MAP.level });
     state.map = {
       id: MAP.id,
       label: MAP.label,
@@ -1553,7 +1560,7 @@ async function loadEngine(carOverride = null) {
       limits: mapDocument.mapRender.limits,
       physicsSha256: physicsSha
     };
-    // The committed spawn artifact is River-specific; the Amboy spawn is the
+    // The committed spawn artifact is River-specific; the map spawn is the
     // measured layout's first point and tangent.
     spawn = {
       x: mapLayout.course.spawn.x,
@@ -1574,8 +1581,8 @@ async function loadEngine(carOverride = null) {
         ' — run `node probes/e1-drive/tools/build_sprint.mjs` (or `node tools/verify_e1_drive.mjs` first)');
     }
     const layout = preloadedLayout ?? await sprintResponse.json();
-    if (MAP_IS_AMBOY) {
-      // The Amboy layout is validated above against the map package pins. Its
+    if (MAP_IS_PACKAGE) {
+      // The map layout is validated above against the map package pins. Its
       // gates are measured path stations, so the River geometry re-derivation
       // (drawn/collision triangle coverage) does not apply.
     } else {
@@ -1618,7 +1625,7 @@ async function loadEngine(carOverride = null) {
     // the physics authority; the layer only resolves the pose after the tick.
     // A changed file, profile or collider count throws a typed PropManifestError;
     // there is no fallback to an older manifest.
-    const pins = (SOAK || MAP_IS_AMBOY) ? null : propPinsForCourse(COURSE_PARAM);
+    const pins = (SOAK || MAP_IS_PACKAGE) ? null : propPinsForCourse(COURSE_PARAM);
     if (pins) {
       const [manifestResponse, resolver] = await Promise.all([
         fetch('/' + pins.manifest, { cache: 'no-store' }),
@@ -1667,11 +1674,11 @@ async function loadEngine(carOverride = null) {
       if (!remoteBody) throw new Error('geometry has no body for ' + car.slug);
       ghostWheelRest = Object.fromEntries(remoteBody.wheelGroups.map((group) =>
         [group.corner, group.matrixColumnMajor]));
-    } else if (MAP_IS_AMBOY) {
-      // No committed usa_amboy reference ghost exists; a River trace would be a
+    } else if (MAP_IS_PACKAGE) {
+      // No committed map reference ghost exists; a River trace would be a
       // wrong pose on this map. The HUD states why instead of guessing one.
       ghost = { record: null, decoded: null, table: null, source: 'none', label: null,
-        reason: 'no committed usa_amboy reference ghost; River traces are not reusable on this map', note: null };
+        reason: 'no committed ' + MAP.level + ' reference ghost; River traces are not reusable on this map', note: null };
       ghostEnabled = false;
     } else {
       // Ghost / rival replay: the stored best run, or the committed deterministic
@@ -1840,7 +1847,7 @@ function handleSprintEvents(events) {
         persistent: submitted.persistent
       };
       if (MP) mpLocalFinish(event);
-      else if (!MAP_IS_AMBOY) recordGhostFinish(event);
+      else if (!MAP_IS_PACKAGE) recordGhostFinish(event);
     }
   }
 }
@@ -1926,7 +1933,7 @@ async function respawnAt(target, nowUs) {
 async function startTimeline(tick0, {
   reload = false, rejoin = false,
   packetScript = SPRINT_MODE
-    ? (MAP_IS_AMBOY ? AMBOY_PACKET_SCRIPT
+    ? (MAP_IS_PACKAGE ? MAP_PACKET_SCRIPT
       : COURSE_IS_LAP ? LAP_PACKET_SCRIPT : COURSE_IS_FREE ? FREE_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT)
     : undefined
 } = {}) {

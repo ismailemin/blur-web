@@ -210,6 +210,11 @@ map verifier 23/23, River 2254/2254, capture console 0, suite 51/51.
 334 decal + 71 diagnostic atlandı; 27 section + 366 instance yok. Kanıt:
 `docs/work/verification/T-007-map-amboy.md`.
 
+**MAP7 — Gracia oynanabilir:** `?map=gracia&script=sprint`: **2.627 draw /
+734 doku**, 624,913781 m; Corvette **66,267 s**, 0 respawn; map 23/23,
+Amboy 23/23, River 2254/2254, console 0, suite 52/52. Kanıt:
+`docs/work/verification/T-007-map-gracia.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

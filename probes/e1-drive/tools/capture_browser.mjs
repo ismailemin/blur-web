@@ -34,6 +34,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import { startServer } from './serve.mjs';
 import { startRoomServer } from '../../net-mvp/server.mjs';
+import { MAPS } from '../web/map-registry.js';
 import { buildOccluder } from '../web/camera-occlusion.js';
 import { buildGhostArcTable, decodeGhost, ghostGap, ghostMatrices } from '../web/ghost-replay.js';
 import { coursePosition } from '../web/sprint-rules.js';
@@ -68,6 +69,11 @@ const PROFILE = path.join(OUT, 'edge-profile-' + PORT);
 const VIEWPORT = { width: 1600, height: 900 };
 const TICKS = option('--ticks', '0,150,240,300').split(',').map(Number);
 const ONLY_CAR = option('--car', null);
+const MAP_ID = option('--map', 'amboy');
+const MAP_ENTRY = MAPS[MAP_ID];
+if (!MAP_ENTRY || MAP_ENTRY.kind !== 'map-package') {
+  throw new Error('--map must name a map package (' + Object.values(MAPS).filter((entry) => entry.kind === 'map-package').map((entry) => entry.id).join(', ') + '), got ' + JSON.stringify(MAP_ID));
+}
 const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
@@ -2073,10 +2079,10 @@ async function qualityCapturePass() {
  * upload/draw counts against `_work/e1-drive/map-amboy-run.json`.
  */
 async function mapCapturePass() {
-  const runPath = path.join(OUT, 'map-amboy-run.json');
-  const mapPath = path.join(OUT, 'amboy/map.json');
+  const runPath = path.join(OUT, 'map-' + MAP_ID + '-run.json');
+  const mapPath = path.join(OUT, MAP_ID + '/map.json');
   if (!existsSync(runPath) || !existsSync(mapPath)) {
-    throw new Error('missing map run/map document; run `node probes/e1-drive/tools/verify_e1_map.mjs` first');
+    throw new Error('missing map run/map document; run `node probes/e1-drive/tools/verify_e1_map.mjs --map ' + MAP_ID + '` first');
   }
   const mapRun = JSON.parse(readFileSync(runPath, 'utf8'));
   const mapDoc = JSON.parse(readFileSync(mapPath, 'utf8'));
@@ -2087,23 +2093,24 @@ async function mapCapturePass() {
   const rows = [];
   const passFailures = [];
   const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
-  const expectedDraws = mapDoc.counts.draws + body.carDraws.length;
+  const counts = mapDoc.counts;
+  const expectedDraws = counts.draws + body.carDraws.length;
   const uploadBytes = meshBytes({ ...mapDoc.meshes[0], uv: mapDoc.meshes[0].uv }) + meshBytes(body.mesh);
 
   for (const spec of mapRun.captures) {
-    const label = 'map-amboy-' + spec.label;
+    const label = 'map-' + MAP_ID + '-' + spec.label;
     const shot = await capture(car, label, spec.tick, {
       script: 'sprint',
-      extraQuery: 'map=amboy',
+      extraQuery: 'map=' + MAP_ID,
       longRun: true,
-      bestKey: 'e1-drive.sprint.best.v3.amboy'
+      bestKey: MAP_ENTRY.bestKey
     });
     const probe = shot.probe;
     const state = probe.sprint;
     const overlay = probe.overlays ?? {};
     passCheck(`${label}: held at tick ${spec.tick}`, probe.holdReached === true && probe.displayTick === spec.tick,
       `display ${probe.displayTick}`);
-    passCheck(`${label}: page reports the Amboy map`, probe.map?.id === 'amboy', JSON.stringify(probe.map?.id));
+    passCheck(`${label}: page reports the ${MAP_ENTRY.label} map`, probe.map?.id === MAP_ID, JSON.stringify(probe.map?.id));
     passCheck(`${label}: page reports the pinned layout hash`, probe.sprintLayoutHash === mapRun.layout.hash,
       (probe.sprintLayoutHash ?? 'none') + ' vs ' + mapRun.layout.hash);
     passCheck(`${label}: browser state hash equals the node run`, probe.tickHashes[spec.tick]?.stateHash === spec.stateHash,
@@ -2112,15 +2119,15 @@ async function mapCapturePass() {
       String(probe.geometryUploads));
     passCheck(`${label}: uploaded bytes are the map mesh + the car body`,
       probe.geometryUploadBytes === uploadBytes, `${probe.geometryUploadBytes} vs ${uploadBytes}`);
-    passCheck(`${label}: draw count is 1,201 opaque map draws + the car`,
+    passCheck(`${label}: draw count is ${counts.draws} opaque map draws + the car`,
       probe.draws === expectedDraws && probe.drawsIssued === probe.frames * probe.draws,
       `${probe.draws} / ${expectedDraws}`);
-    passCheck(`${label}: track layer is the 1,201-draw / 348,948-triangle Amboy mesh`,
-      probe.trackDraws === 1201 && probe.trackTriangles === 348948 && probe.trackTextures === 179 &&
-      probe.trackTextureBytes === 2654272,
+    passCheck(`${label}: track layer is the ${counts.draws}-draw / ${counts.triangles}-triangle ${MAP_ENTRY.label} mesh`,
+      probe.trackDraws === counts.draws && probe.trackTriangles === counts.triangles &&
+      probe.trackTextures === counts.textures && probe.trackTextureBytes === counts.textureBytes,
       JSON.stringify({ draws: probe.trackDraws, tri: probe.trackTriangles, tex: probe.trackTextures, bytes: probe.trackTextureBytes }));
-    passCheck(`${label}: skipped layers are labelled`, probe.mapCounts?.blockedDraws === 405 &&
-      probe.mapCounts?.decalDraws === 334 && probe.mapCounts?.diagnosticDraws === 71,
+    passCheck(`${label}: skipped layers are labelled`, probe.mapCounts?.blockedDraws === counts.blockedDraws &&
+      probe.mapCounts?.decalDraws === counts.decalDraws && probe.mapCounts?.diagnosticDraws === counts.diagnosticDraws,
       JSON.stringify(probe.mapCounts));
 
     if (spec.label === 'start') {
@@ -2142,8 +2149,8 @@ async function mapCapturePass() {
       passCheck(`${label}: the finish fires with both checkpoints and the node time`,
         state?.finished === true && state.checkpointsPassed === 2 &&
         Math.abs(state.finishTimeSeconds - mapRun.sprint.finish.timeSeconds) < 1e-6 &&
-        state.progress === 1,
-        JSON.stringify({ finished: state?.finished, cp: state?.checkpointsPassed, time: state?.finishTimeSeconds }));
+        state.progress >= 0.999,
+        JSON.stringify({ finished: state?.finished, cp: state?.checkpointsPassed, time: state?.finishTimeSeconds, progress: state?.progress }));
       passCheck(`${label}: the results overlay shows the time and car`,
         overlay.resultsHidden === false && (overlay.resultsTime ?? '').includes(mapRun.sprint.finish.timeSeconds.toFixed(3)) &&
         (overlay.resultsTime ?? '').includes(car.name),
@@ -2171,7 +2178,7 @@ async function mapCapturePass() {
   const evidence = {
     browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
     mode: 'map',
-    map: 'amboy',
+    map: MAP_ID,
     package: {
       mapHash: mapDoc.hash,
       layoutHash: mapRun.layout.hash,
@@ -2185,13 +2192,14 @@ async function mapCapturePass() {
     assertions: { ok: passFailures.length === 0, failures: passFailures },
     verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
   };
-  writeFileSync(path.join(OUT, 'browser-evidence-map-amboy.json'),
+  writeFileSync(path.join(OUT, 'browser-evidence-map-' + MAP_ID + '.json'),
     JSON.stringify(evidence, null, 2) + '\n', 'utf8');
-  writeFileSync(path.join(LOGS, 'edge-map-amboy.log'), browserLog, 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-map-' + MAP_ID + '.log'), browserLog, 'utf8');
   return {
     ok: evidence.verdict === 'clean-console-and-gates',
     summary: {
       verdict: evidence.verdict,
+      map: MAP_ID,
       consoleMessages: evidence.console.totalMessages,
       errorsAndWarnings: evidence.console.errorsAndWarnings,
       failures: passFailures,

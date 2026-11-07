@@ -3,8 +3,9 @@
 // `?map=river` (the default) is the existing M1 single-player route: its paths,
 // pins, layouts and best-time keys are byte-for-byte the values the page used
 // before this registry existed. `?map=amboy` selects the M3 usa_amboy map
-// package built by `tools/build_map_amboy.mjs` from the committed map-slice
-// render package.
+// package built by `tools/build_map_amboy.mjs`, and `?map=gracia` selects the
+// M3 spa_barcelona_gracia package built by `tools/build_map_gracia.mjs`, both
+// from their committed map-slice render packages.
 //
 // The pins are hard failures, not hints: a different package, a regenerated
 // layout or a hand-edited map document must fail loudly instead of silently
@@ -13,7 +14,7 @@
 export const MAP_DEFAULT = 'river';
 
 /** Map ids accepted by `?map=`. */
-export const MAP_IDS = Object.freeze(['river', 'amboy']);
+export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia']);
 
 export const MAPS = Object.freeze({
   river: Object.freeze({
@@ -75,7 +76,58 @@ export const MAPS = Object.freeze({
       instanceDescriptions: 366,
       collisionTriangles: 63708,
       pathLengthMetres: 2060.595408,
-      checkpointArcs: Object.freeze([686.862337, 1373.667341])
+      checkpointArcs: Object.freeze([686.862337, 1373.667341]),
+      sampleCount: 8673,
+      renderLabel: 'amboy-direct-draws',
+      courseId: 'amboy'
+    })
+  }),
+  gracia: Object.freeze({
+    id: 'gracia',
+    label: 'Gracia',
+    level: 'spa_barcelona_gracia',
+    kind: 'map-package',
+    // Generated from the read-only MAP5 packages; served from `_work/e1-drive/gracia/`.
+    geometryUrl: '/_work/e1-drive/gracia/map.json',
+    // Car bodies, materials, light and camera intrinsics stay in the committed
+    // geometry document; the Gracia package replaces only the map half.
+    baseGeometryUrl: '/_work/e1-drive/geometry.json',
+    physicsUrl: '/map-data/spa_barcelona_gracia/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/gracia/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.gracia',
+    courses: Object.freeze(['310']),
+    multiplayer: false,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:562b56889b80d3368d5a1f08f009d6f351b6d3de33b3539df51c666a737a6a0d',
+      mapContentHash: 'sha256:dc60abe8527d28d659af1dbed2098928214f31dc3b62d0984369b40238b1b831',
+      layoutFileSha256: 'sha256:e2f9a1114c283ca84838db96286c5482e9b7b6c4fec779b34bbb4a579991a3b8',
+      layoutContentHash: 'sha256:1aa622fd77a4637d5b2ddfd9292cc8cd3afd61df197db581db078826133faf30',
+      renderFileSha256: 'sha256:fd6266501fedb8eada56a0bc2e0b166eb3baff0345e1548786c8bcf4e2b3f514',
+      renderContentHash: 'sha256:1fae82cf504afd9e3a88f55a0f310d7b09c8d42e494d23d775e80ef8b8516280',
+      sliceFileSha256: 'sha256:e1e1fe62c6e36d8ea71a7b82303b4ff4b6abafcb9fad2810e019be1292652534',
+      sliceContentHash: 'sha256:c1bdf1a7c91d0cd0d1866e28ab9140975401e9927f8466facded2cc5d6e89fef',
+      physicsFileSha256: 'sha256:acfb58a20ff7adced0b2424dc39474509e6b4c4c805729fd9463bdd310a173c0',
+      physicsBytes: 5569121,
+      draws: 2627,
+      drawTriangles: 365451,
+      textures: 734,
+      textureBytes: 3247360,
+      vertices: 738905,
+      indices: 1651896,
+      decalDraws: 518,
+      diagnosticDraws: 435,
+      blockedDraws: 953,
+      unsupportedSections: 4,
+      instanceDescriptions: 2714,
+      collisionTriangles: 113270,
+      pathLengthMetres: 624.913781,
+      checkpointArcs: Object.freeze([208.343397, 416.652055]),
+      sampleCount: 2571,
+      renderLabel: 'gracia-direct-draws',
+      courseId: 'gracia'
     })
   })
 });

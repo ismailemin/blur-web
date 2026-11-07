@@ -30,6 +30,7 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 | `/?mp=1&room=CODE` | M1 guest — oda koduna katıl |
 | `/?mp=1&host=1&powerups=1` | **M2**: Mine/Shield/Repair/Nitro/Shock, `E` ile kullan |
 | `/?map=amboy&script=sprint` | **usa_amboy** haritası (2.060,6 m, 1.201 dokulu draw) |
+| `/?map=gracia&script=sprint` | **spa_barcelona_gracia** (624,9 m, 2.627 dokulu draw) |
 | `/?script=drive` | Deterministik 300 tick sürüş |
 | `/?script=sprint` | Deterministik sprint (5 araç) |
 | `/?script=sprint&course=lap` | Deterministik 3 tur (5 araç) |
@@ -132,18 +133,20 @@ http://127.0.0.1:8801/?mp=1&host=1&powerups=1
 - Shunt/Bolt/Barge ve projectile'lar bu dilimde **yok** (retail flip/tip,
   hedefleme ve hit-test verisi kanıtlanana kadar ertelendi).
 
-### Amboy haritası
+### Amboy / Gracia haritaları
 
 ```text
 http://127.0.0.1:8801/?map=amboy&script=sprint
+http://127.0.0.1:8801/?map=gracia&script=sprint
 ```
 
-- Gerçek `usa_amboy` physics + **1.201 dokulu draw / 269.300 tri / 179 doku**
-- Ölçülmüş **2.060,595 m** point-to-point; 2 checkpoint, finish
-- Corvette scripted finish **222,05 s**; 0 respawn, 0 NaN
-- River varsayılan kalır; `?map=amboy` MP/telemetry/soak/survey ile birleşmez
-- Atlanan: 334 additive decal, 71 diagnostic, 27 section, 366 instance; vertex
-  normal yok (derivative normal); simple/instance collision yok
+- Amboy: gerçek physics + **1.201 dokulu draw / 269.300 tri / 179 doku**;
+  ölçülmüş **2.060,595 m**; Corvette **222,05 s**
+- Gracia: **2.627 draw / 365.451 tri / 734 doku**; **624,914 m**;
+  Corvette **66,27 s**
+- River varsayılan kalır; `?map=` MP/telemetry/soak/survey ile birleşmez
+- Atlananlar etiketli: Amboy 334 decal + 71 diagnostic; Gracia 518 + 435;
+  27/4 section, 366/2.714 instance; vertex normal yok (derivative normal)
 
 Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
 Dodge 4,633 → Focus 5,133 s.
