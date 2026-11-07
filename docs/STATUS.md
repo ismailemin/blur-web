@@ -759,6 +759,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 4 before/after karede değişim %91–99,6; packet/fizik hash'leri değişmedi; mip build 30–34 ms/yükleme.
 - `verify_e1_drive` 838/838, suite 31/31, checker 23/23, tüm capture'lar console 0. Kanıt: `docs/work/verification/T-007-texture-quality.md`.
 
+## 7 Kasım 2026 — 62 araç denetimi
+
+- **5 A / 42 B / 15 C**: A mevcut 5 araç; B model+Scene+materyal+fizik hazır ama sürüş diliminde değil; C tam model yolu yok.
+- Sıradaki 10 B araç manifestlendi; 42 B'nin tamamı 4 tekerlek grubu ve geçerli fizik alanlarına sahip. 5 araç guard'ı 4 dosyada sert kodlu.
+- Doğrulama **542/542**, 62/62 sınıflandırıldı. Kanıt: `docs/work/analysis/vehicle-pipeline.md`.
+
 ## 7 Kasım 2026 — tam oyun / multiplayer planı
 
 - Hedef: iki tarayıcının oda koduyla aynı yarışı bitirdiği, içerik genişleyen bir sürüm. Plan: `docs/plan/FULL_GAME.md`.

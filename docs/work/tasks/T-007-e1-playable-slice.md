@@ -253,6 +253,15 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   `_work/e1-drive/browser-*-prop-truck.png`.
 - Sınır: `g_tMaterial`, renk/blend/alpha/mip/sRGB yok; 4 BC3 draw kapalı.
 
+### E1s — 62 araç denetimi (V1)  ✅
+- **5 A / 42 B / 15 C.** A = mevcut kanıtlı 5 araç; B = model+Scene+materyal+fizik
+  hazır ama sürüş dilimine eklenmemiş; C = tam model yolu yok (15).
+- 42 B aracın tamamı 4 tekerlek grubu, 6–10 doku ve geçerli fizik alanlarına
+  sahip; sıradaki 10 araç manifestlendi (Audi TT, F100, FR100, Golf, Mustang GTR,
+  Viper ACR, S3, Bronco, Skyline, HHR).
+- 5 araç guard'ı 4 dosyada sert kodlu; genişletme main-agent sahipliğinde.
+- Doğrulama **542/542**. Kanıt: `docs/work/analysis/vehicle-pipeline.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
