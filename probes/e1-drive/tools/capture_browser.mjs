@@ -1711,15 +1711,24 @@ async function mpPowerupsCapturePass() {
     passCheck('both pages load the PWR1 manifest and rules prototype',
       hostLobby.powerups?.manifestHash && guestLobby.powerups?.manifestHash === hostLobby.powerups.manifestHash,
       JSON.stringify({ host: hostLobby.powerups?.manifestHash, guest: guestLobby.powerups?.manifestHash }));
-    passCheck('both pages expose exactly Mine/Shield/Repair/Nitro/Shock',
-      JSON.stringify(hostLobby.powerups?.types) === JSON.stringify(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock']) &&
-      JSON.stringify(guestLobby.powerups?.types) === JSON.stringify(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock']),
+    passCheck('both pages expose the eight core types including Blindfire/Shunt/Barge',
+      JSON.stringify(hostLobby.powerups?.types) === JSON.stringify([
+        'Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Blindfire', 'Shunt', 'Barge'
+      ]) &&
+      JSON.stringify(guestLobby.powerups?.types) === JSON.stringify([
+        'Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Blindfire', 'Shunt', 'Barge'
+      ]),
       JSON.stringify(hostLobby.powerups?.types));
-    passCheck('both pages state the deferred types and their reasons',
-      Object.keys(hostLobby.powerups?.deferred ?? {}).length >= 4 &&
-      /projectile/.test(hostLobby.powerups?.deferred?.Shunt ?? '') &&
-      !('Nitrous' in (hostLobby.powerups?.deferred ?? {})) &&
-      !('Shock' in (hostLobby.powerups?.deferred ?? {})),
+    passCheck('both pages load the PWR4 projectile manifest',
+      hostLobby.powerups?.projectileManifestHash &&
+      guestLobby.powerups?.projectileManifestHash === hostLobby.powerups.projectileManifestHash,
+      JSON.stringify({ host: hostLobby.powerups?.projectileManifestHash,
+        guest: guestLobby.powerups?.projectileManifestHash }));
+    passCheck('only SuperShield remains deferred, with a typed reason',
+      Object.keys(hostLobby.powerups?.deferred ?? {}).join(',') === 'SuperShield' &&
+      !('Shunt' in (hostLobby.powerups?.deferred ?? {})) &&
+      !('Blindfire' in (hostLobby.powerups?.deferred ?? {})) &&
+      !('Barge' in (hostLobby.powerups?.deferred ?? {})),
       JSON.stringify(Object.keys(hostLobby.powerups?.deferred ?? {})));
     passCheck('power-up HUD is visible and labelled provisional',
       hostLobby.powerups?.hud?.hidden === false && /provisional/.test(hostLobby.powerups?.hud?.note ?? ''),
@@ -1754,7 +1763,8 @@ async function mpPowerupsCapturePass() {
       JSON.stringify(hostRunning.placement?.arcs) === JSON.stringify([40, 90, 140, 190, 240, 280]),
       JSON.stringify(hostRunning.placement?.arcs));
     passCheck('pickups carry only the integrated types',
-      hostRunning.pickups.every((pickup) => ['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock'].includes(pickup.type)),
+      hostRunning.pickups.every((pickup) => ['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock',
+        'Blindfire', 'Shunt', 'Barge'].includes(pickup.type)),
       hostRunning.pickups.map((pickup) => pickup.type).join(','));
     await shot(hostPage, 'browser-mp-powerups-spawn-host.png');
     await shot(guestPage, 'browser-mp-powerups-spawn-guest.png');
@@ -1940,6 +1950,102 @@ async function mpPowerupsCapturePass() {
     await shot(hostPage, 'browser-mp-powerups-shock-host.png');
     await waitPower(hostPage, (power) => count(power, 'effect-expired') >= 3, 6000, 'Shock effect expires');
 
+    // -------------------------------------- projectiles: Blindfire/Shunt/Barge
+    const weaponBaseHost = await powerOf(hostPage);
+    const weaponBaseGuest = await powerOf(guestPage);
+    const delta = (state, base, type) => count(state, type) - count(base, type);
+
+    await hostPage.evaluate("window.__powerups.stageWeapon('host','guest','Blindfire',true); null");
+    await waitPower(hostPage, (power) => delta(power, weaponBaseHost, 'projectile-fired') >= 1,
+      10000, 'host Blindfire miss fired');
+    await shot(hostPage, 'browser-mp-powerups-blindfire-host.png');
+    passCheck('Blindfire fires a diagnostic projectile marker on River',
+      (await powerOf(hostPage))?.markers?.drawsIssued > 0,
+      JSON.stringify((await powerOf(hostPage))?.markers));
+
+    await hostPage.evaluate("window.__powerups.stageWeapon('host','guest','Blindfire'); null");
+    const guestBlindfire = await waitPower(guestPage, (power) =>
+      delta(power, weaponBaseGuest, 'projectile-hit') >= 1, 15000, 'guest Blindfire hit');
+    const guestBlindHit = (guestBlindfire.events ?? []).filter((event) => event.type === 'projectile-hit').slice(-1)[0] ?? null;
+    passCheck('host Blindfire hits the guest through the documented envelope for 50',
+      guestBlindHit?.pickupType === 'Blindfire' && guestBlindHit?.damage === 50 &&
+      guestBlindfire.local?.health < guestBlindfire.local?.maxHealth,
+      JSON.stringify({ hit: guestBlindHit, health: guestBlindfire.local?.health }));
+
+    await waitPower(hostPage, (power) => power.wrecked === false &&
+      power.local?.health === power.local?.maxHealth, 12000, 'host alive before guest Blindfire');
+    await hostPage.evaluate("window.__powerups.stageWeapon('guest','host','Blindfire'); null");
+    const hostBlindfire = await waitPower(hostPage, (power) =>
+      (power.events ?? []).some((event) => event.type === 'projectile-hit' &&
+        event.pickupType === 'Blindfire' && event.targetId === power.local?.id),
+      15000, 'host Blindfire hit');
+    passCheck('guest Blindfire reaches the host through the host event stream',
+      (hostBlindfire.events ?? []).some((event) => event.type === 'projectile-hit' &&
+        event.pickupType === 'Blindfire' && event.targetId === hostBlindfire.local?.id),
+      JSON.stringify(hostBlindfire.counts));
+
+    await hostPage.evaluate("window.__powerups.stageWeapon('host','guest','Shunt'); null");
+    const guestShunt = await waitPower(guestPage, (power) =>
+      delta(power, weaponBaseGuest, 'shunt-hit') >= 1, 15000, 'guest Shunt hit');
+    const guestShuntEvent = (guestShunt.events ?? []).filter((event) => event.type === 'shunt-hit').slice(-1)[0] ?? null;
+    passCheck('host Shunt homes to the guest, flips, and carries the provisional impulse',
+      guestShuntEvent?.hitType === 'major' && guestShuntEvent?.fakePhysics?.kind === 'flip-forward' &&
+      guestShuntEvent?.impulse?.source === 'provisional-impulse' &&
+      guestShuntEvent?.impulse?.deltaV === 12.5,
+      JSON.stringify(guestShuntEvent));
+    const guestImpulse = await waitPower(guestPage, (power) =>
+      power.engineBoost?.kind === 3 || power.boost?.kind === 3, 10000, 'guest Shunt impulse queued');
+    passCheck('the guest applies the Shunt provisional impulse through the boost queue',
+      guestImpulse.engineBoost?.kind === 3 || guestImpulse.boost?.kind === 3,
+      JSON.stringify({ engine: guestImpulse.engineBoost, boost: guestImpulse.boost }));
+    await shot(guestPage, 'browser-mp-powerups-shunt-guest.png');
+    await waitPower(guestPage, (power) => power.wrecked === false, 8000, 'guest respawn before Barge');
+
+    await hostPage.evaluate("window.__powerups.stageWeapon('guest','host','Shunt'); null");
+    const hostShunt = await waitPower(hostPage, (power) =>
+      (power.events ?? []).some((event) => event.type === 'shunt-hit' &&
+        event.targetId === power.local?.id), 15000, 'host Shunt hit');
+    passCheck('guest Shunt is judged by the host and applies the impulse to the host car',
+      (hostShunt.events ?? []).some((event) => event.type === 'shunt-hit' &&
+        event.targetId === hostShunt.local?.id && event.impulse?.source === 'provisional-impulse'),
+      JSON.stringify(hostShunt.counts));
+    await waitPower(hostPage, (power) => power.wrecked === false, 8000, 'host respawn before Barge');
+
+    await hostPage.evaluate("window.__powerups.stageWeapon('host','guest','Barge'); null");
+    const hostBargeMarkers = await hostPage.evaluate('window.__powerups.markers()');
+    await waitPower(guestPage, (power) => delta(power, weaponBaseGuest, 'barge-activated') >= 1,
+      8000, 'guest sees barge-activated');
+    await shot(guestPage, 'browser-mp-powerups-barge-guest.png');
+    const guestBarge = await waitPower(guestPage, (power) =>
+      delta(power, weaponBaseGuest, 'barge-hit') >= 1, 15000, 'guest Barge hit');
+    const guestBargeEvent = (guestBarge.events ?? []).filter((event) => event.type === 'barge-hit').slice(-1)[0] ?? null;
+    const guestBargeActivated = (guestBarge.events ?? []).filter((event) => event.type === 'barge-activated').slice(-1)[0] ?? null;
+    passCheck('host Barge activates radius 7 / 0.4 s and hits the guest for 100',
+      guestBargeActivated?.radius === 7 && Math.abs(guestBargeActivated?.durationSeconds - 0.4) < 1e-6 &&
+      guestBargeEvent?.damage === 100 &&
+      (guestBargeEvent?.hitType === 'major' || guestBargeEvent?.hitType === 'minor'),
+      JSON.stringify({ activated: guestBargeActivated, hit: guestBargeEvent }));
+    passCheck('the host marker list emits the Barge ring at the 8.08 m outer radius',
+      Array.isArray(hostBargeMarkers) &&
+      hostBargeMarkers.some((marker) => marker.shape === 'ring' && marker.scale === 8.08),
+      JSON.stringify(hostBargeMarkers));
+    await shot(hostPage, 'browser-mp-powerups-barge-host.png');
+    await waitPower(guestPage, (power) => power.wrecked === false, 8000, 'guest respawn after Barge');
+
+    await hostPage.evaluate("window.__powerups.stageWeapon('guest','host','Barge'); null");
+    const hostBarge = await waitPower(hostPage, (power) =>
+      (power.events ?? []).some((event) => event.type === 'barge-hit' &&
+        event.targetId === power.local?.id), 15000, 'host Barge hit');
+    passCheck('guest Barge is judged by the host and reaches the host car',
+      (hostBarge.events ?? []).some((event) => event.type === 'barge-hit' &&
+        event.targetId === hostBarge.local?.id),
+      JSON.stringify(hostBarge.counts));
+
+    await waitPower(hostPage, (power) => count(power, 'projectile-expired') >= 1,
+      15000, 'staged Blindfire miss expires');
+    await waitPower(guestPage, (power) => count(power, 'projectile-expired') >= 1,
+      15000, 'guest sees the Blindfire expiry');
+
     // --------------------------------------------------------------- evidence
     hostFinal = await snapshotOf(hostPage);
     guestFinal = await snapshotOf(guestPage);
@@ -1947,7 +2053,8 @@ async function mpPowerupsCapturePass() {
     const guestPower = await powerOf(guestPage);
     const required = ['pickup-spawned', 'mine-placed', 'mine-armed', 'mine-detonated', 'wrecked',
       'respawn', 'shield-activated', 'shield-absorbed', 'shield-broken', 'repaired', 'damage',
-      'nitro-activated', 'shock-activated'];
+      'nitro-activated', 'shock-activated', 'projectile-fired', 'projectile-hit',
+      'projectile-expired', 'shunt-hit', 'barge-activated', 'barge-hit'];
     const hostCounts = Object.fromEntries(required.map((type) => [type, count(hostPower, type)]));
     const guestCounts = Object.fromEntries(required.map((type) => [type, count(guestPower, type)]));
     passCheck('all required host-authoritative event types occurred',
@@ -1965,15 +2072,17 @@ async function mpPowerupsCapturePass() {
       (guestPower.events ?? []).every((event, index, list) => event.authority === hostAuthority &&
         (index === 0 || event.seq > list[index - 1].seq)),
       'authority ' + String(hostAuthority) + ' · seq ' + (guestPower.events?.length ?? 0));
-    passCheck('diagnostic marker pass drew pickups/mine/shield on both pages',
+    passCheck('diagnostic marker pass drew pickups/mines/weapons and the barge ring on both pages',
       hostPower.markers.drawsIssued > 0 && guestPower.markers.drawsIssued > 0 &&
-      hostPower.markers.slots === 16 && guestPower.markers.slots === 16,
+      hostPower.markers.markerSlots === 16 && hostPower.markers.ringSlots === 4 &&
+      guestPower.markers.markerSlots === 16 && guestPower.markers.ringSlots === 4 &&
+      guestPower.markers.ringDrawsIssued > 0,
       JSON.stringify({ host: hostPower.markers, guest: guestPower.markers }));
     passCheck('HUD shows inventory, health, shield and the event feed',
       hostPower.hud.hidden === false && guestPower.hud.hidden === false &&
       /health|HP/i.test(guestPower.hud.health ?? '') &&
       /no shield|s ·/.test(guestPower.hud.shield ?? '') &&
-      /mine|shield|repair|nitro|shock|damage|wrecked/i.test(guestPower.hud.feed ?? ''),
+      /pickup|projectile|shunt|barge|mine|shield|repair|nitro|shock|damage|wrecked/i.test(guestPower.hud.feed ?? ''),
       JSON.stringify({ host: hostPower.hud, guest: guestPower.hud }));
     passCheck('HUD states the provisional placement label',
       /provisional measured-arc placement/.test(guestPower.hud.note ?? ''),
@@ -2002,6 +2111,8 @@ async function mpPowerupsCapturePass() {
       room: { code, wsUrl: roomServer.wsUrl, stats: roomServer.stats(), relay: relayStats },
       manifest: {
         hash: hostPower.manifestHash ?? hostLobby.powerups?.manifestHash ?? null,
+        projectileHash: hostPower.projectileManifestHash ?? hostLobby.powerups?.projectileManifestHash ?? null,
+        projectileModel: hostPower.projectileModel ?? null,
         types: hostPower.types,
         deferred: hostPower.deferred,
         placement: hostPower.placement,
@@ -2072,6 +2183,27 @@ async function mpPowerupsCapturePass() {
             engine: hostShock.engineBoost,
             screenshot: shots['browser-mp-powerups-shock-host.png']
           }
+        },
+        weapons: {
+          blindfire: {
+            hostMissFired: (await powerOf(hostPage))?.counts?.['projectile-fired'] ?? 0,
+            guestHit: guestBlindHit,
+            hostHit: (hostBlindfire.events ?? []).filter((event) => event.type === 'projectile-hit').slice(-1)[0] ?? null,
+            screenshot: shots['browser-mp-powerups-blindfire-host.png']
+          },
+          shunt: {
+            guestEvent: guestShuntEvent,
+            guestImpulse: guestImpulse.engineBoost,
+            hostEvent: (hostShunt.events ?? []).filter((event) => event.type === 'shunt-hit').slice(-1)[0] ?? null,
+            screenshot: shots['browser-mp-powerups-shunt-guest.png']
+          },
+          barge: {
+            guestActivated: guestBargeActivated,
+            guestHit: guestBargeEvent,
+            hostHit: (hostBarge.events ?? []).filter((event) => event.type === 'barge-hit').slice(-1)[0] ?? null,
+            screenshot: shots['browser-mp-powerups-barge-host.png'],
+            guestScreenshot: shots['browser-mp-powerups-barge-guest.png']
+          }
         }
       },
       final: {
@@ -2112,6 +2244,17 @@ async function mpPowerupsCapturePass() {
             health: guestShock.local?.health ?? null },
           hostTarget: { before: hostShockBefore, targetMps: hostShockTarget?.targetMps,
             engine: hostShock.engineBoost }
+        },
+        weapons: {
+          blindfire: { guestDamage: guestBlindHit?.damage ?? null,
+            hostHit: (hostBlindfire.events ?? []).some((event) => event.type === 'projectile-hit') },
+          shunt: { guestDeltaV: guestShuntEvent?.impulse?.deltaV ?? null,
+            guestFlip: guestShuntEvent?.fakePhysics?.kind ?? null,
+            guestImpulse: guestImpulse.engineBoost?.kind ?? null },
+          barge: { radius: guestBargeActivated?.radius ?? null,
+            durationSeconds: guestBargeActivated?.durationSeconds ?? null,
+            guestDamage: guestBargeEvent?.damage ?? null,
+            hostHit: (hostBarge.events ?? []).some((event) => event.type === 'barge-hit') }
         },
         huds: { host: hostPower.hud, guest: guestPower.hud },
         markers: { host: hostPower.markers, guest: guestPower.markers },

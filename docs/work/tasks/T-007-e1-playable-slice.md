@@ -554,6 +554,20 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-mp-ai.md`,
   `_work/e1-drive/browser-mp-ai-mid-guest-amboy.png`.
 
+### E1as — Blindfire/Shunt/Barge (WPN1)  ✅
+- Power-up dilimi: **Bomb, Shield, Repair, Nitrous, Shock, Blindfire, Shunt,
+  Barge** (8 tip); yalnız SuperShield ertelendi.
+- Blindfire 300 m/s/r0.2/dmg50/10 s/3 charge; Shunt 0.75/100-50/40 s/homing +
+  20 kN·s provisional impulse; Barge 7 m (+0.5/2.0 band) 100 dmg 0.4 s;
+  JINK `not-serialized`.
+- Tek hasar modeli: PWR4 projectile + PWR1 health/shield; hit başına bir kez.
+- Node **107/107** (39 yeni); verify **2281/2281**; suite 57/57; checker 23/23;
+  iki tarayıcı capture **console 0/0**, projectile 5/hit 4/shunt 2/barge 2.
+- Kanıt: `docs/work/verification/T-007-powerups.md` WPN1,
+  `_work/e1-drive/browser-mp-powerups-{blindfire,shunt,barge}-*.png`.
+- Sınır: retail fake-physics magnitude, camera-LOS/ground ray, dynamic object,
+  damage-mode modifiers yok; target envelope proje.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

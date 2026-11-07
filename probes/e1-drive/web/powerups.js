@@ -25,23 +25,45 @@ import {
 } from './boost-model.js';
 
 export const POWERUP_SCHEMA = 'e1-drive.powerups/1';
-export const POWERUP_SLICE_TYPES = Object.freeze(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock']);
+export const POWERUP_SLICE_TYPES = Object.freeze([
+  'Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Blindfire', 'Shunt', 'Barge'
+]);
+export const POWERUP_PROJECTILE_TYPES = Object.freeze(['Blindfire', 'Shunt', 'Barge']);
 export const POWERUP_SLICE_LABELS = Object.freeze({
   Bomb: 'MINE',
   Shield: 'SHIELD',
   Repair: 'REPAIR',
   Nitrous: 'NITRO',
-  Shock: 'SHOCK'
+  Shock: 'SHOCK',
+  Blindfire: 'BLINDFIRE',
+  Shunt: 'SHUNT',
+  Barge: 'BARGE'
 });
 
-// A collection of *provable* reasons, not a roadmap promise.
+// A collection of *provable* reasons, not a roadmap promise. Only SuperShield
+// remains outside the slice; Blindfire/Shunt/Barge are driven by the PWR4
+// projectile model (recovered XT values + typed runtime-only fields).
 export const POWERUP_DEFERRED = Object.freeze({
-  Shunt: 'retail Shunt is a projectile hit plus E_FAKE_PHYSICS_FLIP_FORWARD/TIP_FORWARD + damage; the impulse magnitude and hit timing are not recovered (only a labelled provisional 20 kN·s design exists).',
-  Blindfire: 'projectile speed/damage are serialized; lifetime, bolt count/charges and targeting are runtime-only.',
-  Barge: 'retail Barge is a projectile/area push; the hit test and force application are not serialized.',
   SuperShield: 'single-player-only PickupType (no multiplayer flag); its boost/mass fields need the same missing physics hook.'
 });
 
+// Documented project car envelope, not a recovered retail hull. Source:
+// probes/prop-collision/lib/collider-build.mjs CAR_ENVELOPE (2.98 x 1.68 x 1.35).
+// The target sphere radius is the OBB circumradius, which equals the committed
+// sprint-layout carCircumradiusMetres 1.710 (sqrt(1.49^2 + 0.84^2) = 1.7105).
+export const POWERUP_CAR_ENVELOPE = Object.freeze({
+  length: 2.98,
+  width: 1.68,
+  height: 1.35,
+  source: 'probes/prop-collision/lib/collider-build.mjs CAR_ENVELOPE (documented maximum XT envelope, not a recovered retail hull)'
+});
+export const POWERUP_TARGET_RADIUS_M = Math.hypot(
+  POWERUP_CAR_ENVELOPE.length / 2,
+  POWERUP_CAR_ENVELOPE.width / 2
+);
+export const POWERUP_SHUNT_MAX_TARGET_M = 500;
+export const POWERUP_SHUNT_MIN_FORWARD_DOT = Math.SQRT1_2; // cos 45 deg
+export const POWERUP_PROVISIONAL_SHUNT_IMPULSE_NS = 20000; // BOOST1 provisional design choice, not retail
 // Provisional placement on the measured 310 m P48 arc. PWR3 is recovering the
 // real level/actor placement separately; these arcs are a documented project
 // choice, not retail data. The plan is a pure function of the committed layout.
@@ -122,20 +144,38 @@ export function provisionalPickupPlan(layout, options = {}) {
 export function createPowerupModel({
   manifest,
   createWorld,
+  projectileManifest = null,
+  createProjectileModel = null,
   authorityId = 'host',
   maxHealth = 100,
   respawnDelaySeconds = 1.0,
   normalRespawnSeconds = null,
-  inventoryCapacity = 1
+  inventoryCapacity = 1,
+  provisionalShuntImpulseNs = POWERUP_PROVISIONAL_SHUNT_IMPULSE_NS
 } = {}) {
   if (!manifest || !Array.isArray(manifest.entities)) throw new Error('power-up model needs the PWR1 manifest');
   if (typeof createWorld !== 'function') throw new Error('power-up model needs the PWR1 createWorld factory');
+  if (projectileManifest && typeof createProjectileModel !== 'function') {
+    throw new Error('power-up model needs the PWR4 createProjectileModel factory when a projectile manifest is supplied');
+  }
+  if (projectileManifest && projectileManifest.schema !== 'blur-powerups-projectiles/1') {
+    throw new Error('projectile manifest schema is not blur-powerups-projectiles/1');
+  }
 
   const world = createWorld(manifest, {
     authorityId,
     mode: 'Normal',
     normalRespawnSeconds
   });
+  const projectiles = projectileManifest
+    ? createProjectileModel(projectileManifest, { authorityId })
+    : null;
+  const projectileRuntime = projectileManifest?.runtimeValues ?? null;
+  const projectileDirections = new Map();
+  // PWR4 owns hit judgement; the PWR1 world owns the health/shield/wreck model.
+  // The internal damage call is replaced so a hit is applied exactly once,
+  // through world.damage() (shield absorb included).
+  if (projectiles) projectiles.damage = () => null;
   const catalog = world.catalog;
   const bombDefinition = catalog.entities.get('Bomb');
   const bombLevel = bombDefinition?.levels?.Normal;
@@ -154,6 +194,358 @@ export function createPowerupModel({
   };
   const shockValues = shockLevel.values;
 
+  // ---------------------------------------------------------- projectile bridge
+  // PWR4 judges travel/hit/expiry; this wrapper owns host sequencing, charges,
+  // and applies every hit through the PWR1 world so shields/wreck/respawn stay
+  // in one place. Missing values are typed, never guessed.
+  function projectileChargesOf(playerId, type) {
+    return projectiles ? projectiles.charges(playerId, type) : 0;
+  }
+
+  function projectileMaxCharges(type) {
+    const value = projectileRuntime?.[type]?.charges;
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function projectileDelay(type, level = 'Normal') {
+    const value = projectileManifest?.types?.[type]?.levels?.[level]?.fields?.Delay?.value;
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function ensureProjectileCharges(playerId, type) {
+    if (!projectiles || !POWERUP_PROJECTILE_TYPES.includes(type)) return 0;
+    const charges = projectileMaxCharges(type);
+    if (!Number.isFinite(charges)) return 0;
+    return projectiles.addInventory(playerId, type, charges);
+  }
+
+  function projectileCarConfig(player) {
+    return {
+      position: { ...player.position },
+      forward: player.forward ?? { x: 0, y: 0, z: 1 },
+      speedMps: player.speedMps ?? 0,
+      massKg: player.massKg ?? null,
+      radiusM: POWERUP_TARGET_RADIUS_M,
+      extents: {
+        x: POWERUP_CAR_ENVELOPE.length,
+        y: POWERUP_CAR_ENVELOPE.height,
+        z: POWERUP_CAR_ENVELOPE.width
+      },
+      health: player.health,
+      maxHealth: player.maxHealth,
+      alive: player.alive
+    };
+  }
+
+  function syncProjectileCars() {
+    if (!projectiles) return;
+    for (const player of world.players.values()) {
+      const existing = projectiles.cars.get(player.id);
+      if (!existing) {
+        projectiles.addCar(player.id, projectileCarConfig(player));
+        continue;
+      }
+      existing.position = { ...player.position };
+      existing.forward = { ...(player.forward ?? { x: 0, y: 0, z: 1 }) };
+      existing.speedMps = player.speedMps ?? 0;
+      existing.massKg = player.massKg ?? null;
+      existing.health = player.health;
+      existing.maxHealth = player.maxHealth;
+      existing.alive = player.alive;
+    }
+  }
+
+  function buildProvisionalImpulse(targetId, hitType, direction) {
+    const target = world.players.get(targetId) ?? null;
+    const massKg = target?.massKg ?? null;
+    const impulse = {
+      status: 'provisional-impulse',
+      source: 'provisional-impulse',
+      impulseNs: provisionalShuntImpulseNs,
+      massKg,
+      direction: direction ? { ...direction } : null,
+      retailEquivalent: hitType === 'major'
+        ? 'E_FAKE_PHYSICS_FLIP_FORWARD' : 'E_FAKE_PHYSICS_TIP_FORWARD',
+      label: 'BOOST1 ' + provisionalShuntImpulseNs + ' N*s design choice; retail fake-physics magnitude is not-serialized'
+    };
+    if (!Number.isFinite(massKg) || massKg <= 0) {
+      impulse.status = 'missing-input';
+      impulse.required = ['massKg'];
+      return impulse;
+    }
+    if (!direction || !(Math.hypot(direction.x, direction.y, direction.z) > 0)) {
+      impulse.status = 'missing-input';
+      impulse.required = ['direction'];
+      return impulse;
+    }
+    impulse.deltaV = round6(provisionalShuntImpulseNs / massKg);
+    return impulse;
+  }
+
+  function translateProjectileEvents(raw, extra = {}) {
+    const translated = [];
+    if (!Array.isArray(raw)) return translated;
+    for (const rawEvent of raw) {
+      const { seq, authority, at, ...data } = rawEvent;
+      const type = rawEvent.type;
+      if (type === 'projectile-hit' || type === 'barge-hit' || type === 'shock-hit') {
+        const event = world.emit(type, { ...data, ...extra });
+        const source = data.pickupType ? data.pickupType : (data.bargeId ? 'Barge' : 'projectile');
+        const result = world.damage(data.targetId, data.damage, {
+          kind: source,
+          projectileId: data.projectileId ?? null,
+          bargeId: data.bargeId ?? null,
+          hitType: data.hitType ?? null,
+          staged: extra.staged === true
+        });
+        event.appliedDamage = result.remaining;
+        event.absorbed = result.absorbed;
+        event.health = result.health;
+        event.healthScale = 'runtime-only: 100 HP diagnostic pool';
+        translated.push(event);
+      } else if (type === 'shunt-hit') {
+        const direction = projectileDirections.get(data.projectileId) ?? null;
+        const impulse = buildProvisionalImpulse(data.targetId, data.hitType, direction);
+        translated.push(world.emit('shunt-hit', { ...data, impulse, ...extra }));
+        projectileDirections.delete(data.projectileId);
+      } else {
+        if (type === 'projectile-expired') projectileDirections.delete(data.projectileId);
+        translated.push(world.emit(type, { ...data, ...extra }));
+      }
+    }
+    return translated;
+  }
+
+  /**
+   * Recovered human Shunt target rule (VehicleLogicActor.cpp:2056-2222): no
+   * self/wrecked target, planar distance <= 500 m, forward dot > cos 45 deg,
+   * lowest score (1 - dot) * sqrt(distance / 500). The host has no camera
+   * line-of-sight, so the car's engine forward is used and labelled.
+   */
+  function selectShuntTarget(ownerId) {
+    const owner = world.players.get(ownerId);
+    if (!owner) return { targetId: null, reason: 'no-owner' };
+    const forward = owner.forward ?? { x: 0, y: 0, z: 1 };
+    const forwardLength = Math.hypot(forward.x, forward.z) || 1;
+    let best = null;
+    for (const candidate of world.players.values()) {
+      if (candidate.id === ownerId || !candidate.alive) continue;
+      const dx = candidate.position.x - owner.position.x;
+      const dz = candidate.position.z - owner.position.z;
+      const distanceM = Math.hypot(dx, dz);
+      if (!(distanceM > 0) || distanceM > POWERUP_SHUNT_MAX_TARGET_M) continue;
+      const dotForward = (dx * forward.x + dz * forward.z) / (distanceM * forwardLength);
+      if (!(dotForward > POWERUP_SHUNT_MIN_FORWARD_DOT)) continue;
+      const score = (1 - dotForward) * Math.sqrt(distanceM / POWERUP_SHUNT_MAX_TARGET_M);
+      if (!best || score < best.score) {
+        best = { targetId: candidate.id, score: round6(score), distanceM: round6(distanceM), dotForward: round6(dotForward) };
+      }
+    }
+    if (!best) {
+      return {
+        targetId: null,
+        reason: 'no-eligible-target',
+        rule: {
+          maxDistanceM: POWERUP_SHUNT_MAX_TARGET_M,
+          minForwardDot: POWERUP_SHUNT_MIN_FORWARD_DOT,
+          source: 'VehicleLogicActor.cpp:2056-2222 (host forward cone; camera LOS not modelled)'
+        }
+      };
+    }
+    return {
+      ...best,
+      rule: {
+        maxDistanceM: POWERUP_SHUNT_MAX_TARGET_M,
+        minForwardDot: POWERUP_SHUNT_MIN_FORWARD_DOT,
+        score: '(1 - dotForward) * sqrt(distance / 500)',
+        source: 'VehicleLogicActor.cpp:2056-2222 (host forward cone; camera LOS not modelled)'
+      }
+    };
+  }
+
+  function fireProjectileItem(player, item, slot, request) {
+    const start = world.events.length;
+    if (!projectiles) {
+      world.emit('use-rejected', {
+        playerId: player.id, pickupType: item.type, reason: 'projectile-model-unavailable',
+        missing: 'PWR4 projectile manifest/model was not supplied to the host model'
+      });
+      return world.events.slice(start);
+    }
+    const type = item.type;
+    const level = item.level ?? 'Normal';
+    const chargesBefore = projectileChargesOf(player.id, type);
+    if (!(chargesBefore > 0)) {
+      world.emit('use-rejected', {
+        playerId: player.id, pickupType: type, reason: 'no-ammo',
+        charges: chargesBefore,
+        chargesSource: { status: 'runtime-only', value: projectileMaxCharges(type) }
+      });
+      return world.events.slice(start);
+    }
+    const projectileStart = projectiles.events.length;
+    let result = null;
+    let targeting = null;
+    if (type === 'Blindfire') {
+      result = projectiles.fireBlindfire({
+        ownerId: player.id,
+        level,
+        origin: request.origin ? positionOf(request.origin) : undefined,
+        direction: request.direction ?? player.forward
+      });
+    } else if (type === 'Shunt') {
+      const explicit = request.targetId ? world.players.get(request.targetId) : null;
+      targeting = explicit && explicit.id !== player.id && explicit.alive
+        ? { targetId: explicit.id, source: 'caller-input' }
+        : selectShuntTarget(player.id);
+      if (!targeting.targetId) {
+        world.emit('projectile-rejected', {
+          playerId: player.id, pickupType: type, reason: 'no-eligible-target',
+          targeting
+        });
+        projectiles.events.length = projectileStart;
+        return world.events.slice(start);
+      }
+      result = projectiles.fireShunt({
+        ownerId: player.id,
+        targetId: targeting.targetId,
+        level,
+        origin: request.origin ? positionOf(request.origin) : undefined
+      });
+    } else if (type === 'Barge') {
+      result = projectiles.fireBarge({ ownerId: player.id, level });
+    } else {
+      throw new Error('unexpected projectile item ' + JSON.stringify(type));
+    }
+    if (result && result.kind === 'projectile') {
+      projectileDirections.set(result.id, { ...result.direction });
+      if (request.staged === true) result.staged = true;
+    }
+    const events = translateProjectileEvents(projectiles.events.slice(projectileStart),
+      request.staged === true ? { staged: true } : {});
+    projectiles.events.length = projectileStart;
+    const remaining = projectileChargesOf(player.id, type);
+    if (remaining <= 0) {
+      const index = player.inventory.indexOf(item);
+      if (index >= 0) player.inventory.splice(index, 1);
+    }
+    player.nextUseAt = world.now + projectileDelay(type, level);
+    for (const event of events) {
+      event.chargesRemaining = remaining;
+      event.chargesMax = projectileMaxCharges(type);
+      event.chargesSource = { status: 'runtime-only', source: type === 'Blindfire'
+        ? 'VLC_Pickups.cpp:2859' : 'VLC_Pickups.cpp:2855' };
+      if (targeting) event.targeting = targeting;
+    }
+    return world.events.slice(start);
+  }
+
+  function advanceProjectiles(dt) {
+    if (!projectiles) return [];
+    syncProjectileCars();
+    for (const projectile of projectiles.projectiles) {
+      projectileDirections.set(projectile.id, { ...projectile.direction });
+    }
+    const start = projectiles.events.length;
+    projectiles.advance(dt);
+    const events = translateProjectileEvents(projectiles.events.slice(start));
+    projectiles.events.length = start;
+    syncProjectileCars();
+    return events;
+  }
+
+  /**
+   * Capture-only diagnostic: fire a weapon from `attackerId` at `targetId`.
+   * Blindfire/Shunt launch a few metres from the target so the hit is judged
+   * on the next tick; Barge stages the owner's model position at the target
+   * (the PWR1 physics pose is never modified). Every event is marked staged.
+   */
+  function stageWeapon({ attackerId, targetId = null, pickupType, miss = false } = {}) {
+    if (!projectiles) throw new Error('stageWeapon needs the PWR4 projectile model');
+    const attacker = world.players.get(attackerId);
+    if (!attacker) throw new Error('stageWeapon needs a known attacker');
+    const target = targetId ? world.players.get(targetId) : null;
+    if (!miss && !target) throw new Error('stageWeapon needs a known target unless miss=true');
+    if (!POWERUP_PROJECTILE_TYPES.includes(pickupType)) {
+      throw new Error('stageWeapon does not handle ' + JSON.stringify(pickupType));
+    }
+    syncProjectileCars();
+    projectiles.addInventory(attackerId, pickupType, 1);
+    const start = world.events.length;
+    const projectileStart = projectiles.events.length;
+    const forward = attacker.forward ?? { x: 0, y: 0, z: 1 };
+    const direction = miss || !target
+      ? { ...forward }
+      : (() => {
+        const dx = target.position.x - attacker.position.x;
+        const dy = (target.position.y ?? 0) - (attacker.position.y ?? 0);
+        const dz = target.position.z - attacker.position.z;
+        const length = Math.hypot(dx, dy, dz) || 1;
+        return { x: dx / length, y: dy / length, z: dz / length };
+      })();
+    if (pickupType === 'Blindfire') {
+      const origin = miss || !target
+        ? {
+          x: attacker.position.x + direction.x * 2,
+          y: (attacker.position.y ?? 0) + 0.3,
+          z: attacker.position.z + direction.z * 2
+        }
+        : {
+          x: target.position.x - direction.x * 4,
+          y: (target.position.y ?? 0) + 0.3,
+          z: target.position.z - direction.z * 4
+        };
+      const projectile = projectiles.fireBlindfire({ ownerId: attackerId, origin, direction });
+      if (projectile?.kind === 'projectile') projectileDirections.set(projectile.id, { ...projectile.direction });
+    } else if (pickupType === 'Shunt') {
+      const origin = {
+        x: target.position.x - direction.x * 8,
+        y: (target.position.y ?? 0) + 0.3,
+        z: target.position.z - direction.z * 8
+      };
+      const projectile = projectiles.fireShunt({
+        ownerId: attackerId, targetId: target.id, origin
+      });
+      if (projectile?.kind === 'projectile') projectileDirections.set(projectile.id, { ...projectile.direction });
+    } else {
+      const car = projectiles.cars.get(attackerId);
+      const saved = { ...car.position };
+      car.position = { ...target.position };
+      projectiles.fireBarge({ ownerId: attackerId });
+      for (let tick = 0; tick < 3; tick++) {
+        projectiles.advance(1 / 60);
+        if (projectiles.effects.find((effect) => effect.kind === 'barge')?.hitTargets?.has(target.id)) break;
+      }
+      car.position = saved;
+      syncProjectileCars();
+    }
+    const fired = translateProjectileEvents(projectiles.events.slice(projectileStart), { staged: true });
+    projectiles.events.length = projectileStart;
+    if (!miss && pickupType !== 'Barge') {
+      for (let tick = 0; tick < 180; tick++) {
+        const startTick = projectiles.events.length;
+        projectiles.advance(1 / 60);
+        const hits = translateProjectileEvents(projectiles.events.slice(startTick), { staged: true });
+        projectiles.events.length = startTick;
+        if (hits.some((event) => event.type === 'projectile-hit')) break;
+        if (!projectiles.projectiles.length) break;
+      }
+    } else if (miss) {
+      // One tick keeps the marker moving; the host loop owns the rest.
+      const startTick = projectiles.events.length;
+      projectiles.advance(1 / 60);
+      translateProjectileEvents(projectiles.events.slice(startTick), { staged: true });
+      projectiles.events.length = startTick;
+    }
+    const events = world.events.slice(start);
+    for (const event of events) {
+      event.staged = true;
+      event.diagnostic = 'capture-staged weapon fire; no PWR1 inventory item was consumed';
+      void fired;
+    }
+    return events;
+  }
+
   const model = {
     schema: POWERUP_SCHEMA,
     world,
@@ -164,6 +556,12 @@ export function createPowerupModel({
     respawnDelaySeconds,
     normalRespawnSeconds,
     inventoryCapacity,
+    projectileManifestHash: projectileManifest?.hashes?.manifestContent ?? null,
+    projectiles,
+    projectileRuntime,
+    provisionalShuntImpulseNs,
+    carEnvelope: { ...POWERUP_CAR_ENVELOPE },
+    targetRadiusM: POWERUP_TARGET_RADIUS_M,
     // Diagnostic labels: these are project constants, not recovered retail data.
     labels: {
       healthScale: 'runtime-only: 100 HP diagnostic pool (PWR1 healthScale is runtime-only)',
@@ -178,6 +576,12 @@ export function createPowerupModel({
       nitroClass: M2_NITRO_CLASS_SOURCE,
       shock: 'Shock is a speed scrub (E_FAKE_SPEED_BRAKE) to the exact PWR1 Shock curve target with the 10 mph floor; DamageInflicted=' + shockValues.DamageInflicted + ', InnerRadius=' + shockValues.InnerRadius + ', OuterRadius=' + shockValues.OuterRadius + ', Lifetime=' + shockValues.Lifetime + ' s',
       shockTargeting: 'not-serialized: the Shock hit test/falloff is not in PWR1; M2a uses the recovered Inner/OuterRadius with planar distance and applies DamageInflicted to every target inside OuterRadius',
+      projectiles: 'PWR4 recovered values: Blindfire Speed=300 m/s, Radius=0.2 m, Damage=50, lifetime=10 s (runtime-only), 3 charges (runtime-only); Shunt Radius=0.75 m, Damage=100 major / 50 minor, lifetime=40 s (runtime-only), homing 0.3..1.0 x 50 + target speed (runtime-only), target 500 m / cos 45 deg; Barge Radius=7.0 m (+0.5 runtime padding, 2.0 m inner band), Damage=100, Duration=0.4 s',
+      targetEnvelope: 'documented project car envelope ' + POWERUP_CAR_ENVELOPE.length + ' x ' + POWERUP_CAR_ENVELOPE.width + ' x ' + POWERUP_CAR_ENVELOPE.height + ' m; target sphere radius ' + round6(POWERUP_TARGET_RADIUS_M) + ' m = OBB circumradius (matches sprint-layout carCircumradiusMetres 1.710); not a recovered retail hull',
+      shuntImpulse: 'provisional-impulse: ' + provisionalShuntImpulseNs + ' N*s is a BOOST1 design choice, not retail; retail is E_FAKE_PHYSICS_FLIP_FORWARD/TIP_FORWARD with a not-serialized magnitude',
+      shuntTargeting: 'host forward cone: distance <= ' + POWERUP_SHUNT_MAX_TARGET_M + ' m, dotForward > cos 45 deg; camera line-of-sight is not modelled',
+      bargeJink: 'JINK_BARGE_LEFT/RIGHT and JINK_BARGE_MINOR_LEFT/RIGHT magnitude is not-serialized; no linear vehicle impulse is applied',
+      dynamicObjects: 'not applicable: the e1-drive world has no replicated dynamic objects, so the serialized PerkForceEffects MaxForce table is not emitted',
       tickRate: TICK_HZ
     },
     boost: {
@@ -236,6 +640,15 @@ export function createPowerupModel({
       player.forward = options.forward ? { ...options.forward } : { x: 0, y: 0, z: 1 };
       player.respawnAt = null;
       player.forwardXZ = options.forward ?? null;
+      player.speedMps = Number.isFinite(options.speedMps) ? options.speedMps : 0;
+      player.massKg = Number.isFinite(options.massKg) ? options.massKg : null;
+      player.radiusM = POWERUP_TARGET_RADIUS_M;
+      player.extents = {
+        x: POWERUP_CAR_ENVELOPE.length,
+        y: POWERUP_CAR_ENVELOPE.height,
+        z: POWERUP_CAR_ENVELOPE.width
+      };
+      if (projectiles) projectiles.addCar(id, projectileCarConfig(player));
       return player;
     },
 
@@ -247,6 +660,7 @@ export function createPowerupModel({
       const forward = state.forward
         ?? (state.quaternion ? forwardFromQuaternion(state.quaternion) : null);
       if (forward) player.forward = { x: forward.x, y: forward.y ?? 0, z: forward.z };
+      if (Number.isFinite(state.speedMps)) player.speedMps = state.speedMps;
       return player;
     },
 
@@ -284,7 +698,17 @@ export function createPowerupModel({
     },
 
     collect(pickupId, playerId) {
-      return world.pickup(pickupId, playerId);
+      const event = world.pickup(pickupId, playerId);
+      if (event?.type === 'pickup') ensureProjectileCharges(playerId, event.pickupType);
+      return event;
+    },
+
+    projectileCharges(playerId, type) {
+      return projectileChargesOf(playerId, type);
+    },
+
+    stageWeapon(request) {
+      return stageWeapon(request);
     },
 
     /**
@@ -322,6 +746,9 @@ export function createPowerupModel({
       if (world.now < player.nextUseAt) {
         world.emit('use-rejected', { playerId, reason: 'cooldown', nextUseAt: player.nextUseAt });
         return world.events.slice(start);
+      }
+      if (POWERUP_PROJECTILE_TYPES.includes(item.type)) {
+        return fireProjectileItem(player, item, slot, request);
       }
       let position = request.position ? positionOf(request.position) : null;
       if (!position && item.type === 'Bomb') {
@@ -514,7 +941,8 @@ export function createPowerupModel({
         for (const player of world.players.values()) {
           if (!player.alive) continue;
           if (planarDistance(player.position, item.position) <= radius) {
-            world.pickup(item.id, player.id);
+            const pickupEvent = world.pickup(item.id, player.id);
+            if (pickupEvent?.type === 'pickup') ensureProjectileCharges(player.id, pickupEvent.pickupType);
             break;
           }
         }
@@ -536,6 +964,7 @@ export function createPowerupModel({
       }
 
       world.advance(dt);
+      advanceProjectiles(dt);
 
       // Wreck scheduling and the R1 respawn target. The prototype has no
       // respawn; this wrapper adds the project rules-layer behaviour.
@@ -594,7 +1023,16 @@ export function createPowerupModel({
             health: round6(player.health),
             maxHealth: player.maxHealth,
             alive: player.alive,
-            inventory: player.inventory.map((item) => ({ type: item.type, level: item.level })),
+            massKg: player.massKg ?? null,
+            inventory: player.inventory.map((item) => {
+              const row = { type: item.type, level: item.level };
+              if (POWERUP_PROJECTILE_TYPES.includes(item.type)) {
+                row.charges = projectileChargesOf(player.id, item.type);
+                row.maxCharges = projectileMaxCharges(item.type);
+                row.chargesSource = { status: 'runtime-only' };
+              }
+              return row;
+            }),
             position: { x: round6(player.position.x), y: round6(player.position.y ?? 0), z: round6(player.position.z) },
             respawnAt: player.respawnAt === null ? null : round6(player.respawnAt)
           }))
@@ -640,6 +1078,59 @@ export function createPowerupModel({
           targets: effect.targets ? effect.targets.map((target) => ({ ...target })) : null,
           targeting: effect.targeting ?? null
         })),
+        projectiles: projectiles
+          ? projectiles.projectiles.map((projectile) => ({
+            id: projectile.id,
+            pickupType: projectile.pickupType,
+            level: projectile.level,
+            ownerId: projectile.ownerId,
+            targetId: projectile.targetId,
+            position: { ...projectile.position },
+            direction: { ...projectile.direction },
+            speedMps: round6(projectile.speedMps),
+            radiusM: projectile.radiusM,
+            damage: projectile.damage,
+            age: round6(projectile.age),
+            lifetimeSeconds: projectile.lifetimeSeconds,
+            lifetimeSource: projectile.lifetimeSource,
+            chargesRemaining: projectile.chargesRemaining,
+            status: projectile.status,
+            homing: projectile.homing ?? null,
+            hitTest: projectile.hitTest
+          })).sort((a, b) => a.id.localeCompare(b.id))
+          : [],
+        barges: projectiles
+          ? projectiles.effects
+            .filter((effect) => effect.kind === 'barge')
+            .map((effect) => {
+              const envelopeFudge = (POWERUP_CAR_ENVELOPE.length + POWERUP_CAR_ENVELOPE.width) / 2
+                - effect.extentsFudgeAverage;
+              const outerRadius = effect.radius + effect.padding + envelopeFudge;
+              return {
+                id: effect.id,
+                kind: 'barge',
+                ownerId: effect.ownerId,
+                position: { ...effect.position },
+                radius: effect.radius,
+                padding: effect.padding,
+                innerBand: effect.innerBand,
+                extentsFudgeAverage: effect.extentsFudgeAverage,
+                outerRadius: round6(outerRadius),
+                innerRadius: round6(outerRadius - effect.innerBand),
+                damage: effect.damage,
+                durationSeconds: effect.durationSeconds,
+                expiresAt: round6(effect.expiresAt),
+                secondsLeft: round6(Math.max(0, effect.expiresAt - (projectiles?.now ?? world.now))),
+                hitTest: effect.hitTest
+              };
+            })
+            .sort((a, b) => a.id.localeCompare(b.id))
+          : [],
+        projectileModel: projectiles ? {
+          schema: projectileManifest.schema,
+          manifestHash: projectileManifest.hashes?.manifestContent ?? null,
+          source: 'PWR4 _work/powerups/projectiles.json'
+        } : null,
         eventCount: world.events.length
       };
     }
@@ -659,6 +1150,8 @@ export function createPowerupView({ localId = null, remoteId = null, now = 0 } =
     pickups: {},
     mines: {},
     effects: {},
+    projectiles: {},
+    barges: {},
     feed: [],
     counts: {},
     lastEventSeq: 0,
@@ -691,6 +1184,19 @@ const EVENT_TEXT = {
   'nitro-hit': (event) => 'NITRO applied · ' + (event.targetMps ?? '—') + ' m/s',
   'shock-hit': (event) => 'SHOCK hit · ' + (event.targetPlayer ?? '—') + ' · ' +
     (event.targetMps != null ? Number(event.targetMps).toFixed(2) : '—') + ' m/s',
+  'projectile-fired': (event) => (event.pickupType ?? 'projectile') + ' fired - ' +
+    (event.chargesRemaining ?? '?') + ' charge(s) left',
+  'projectile-hit': (event) => (event.pickupType ?? 'projectile') + ' hit ' +
+    (event.targetId ?? '?') + ' - ' + (event.damage ?? '?') + ' dmg',
+  'projectile-expired': (event) => (event.pickupType ?? 'projectile') + ' expired',
+  'shunt-hit': (event) => 'SHUNT ' + (event.hitType ?? 'hit') + ' - ' +
+    (event.impulse?.deltaV != null ? Number(event.impulse.deltaV).toFixed(2) + ' m/s provisional impulse' : 'impulse typed'),
+  'barge-activated': (event) => 'BARGE - ' + (event.radius ?? '?') + ' m / ' +
+    (event.durationSeconds ?? '?') + ' s',
+  'barge-hit': (event) => 'BARGE hit ' + (event.targetId ?? '?') + ' - ' +
+    (event.hitType ?? '') + ' - ' + (event.damage ?? '?') + ' dmg',
+  'shunt-impulse-provisional': (event) => 'SHUNT provisional impulse - ' +
+    (event.deltaV != null ? Number(event.deltaV).toFixed(2) : '?') + ' m/s',
   repaired: (event) => 'repaired +' + (event.amount ?? 0) + ' · ' + (event.health ?? '—') + ' HP',
   damage: (event) => 'damage -' + (event.amount ?? 0) + ' · ' + (event.health ?? '—') + ' HP',
   wrecked: () => 'WRECKED',
@@ -723,6 +1229,14 @@ function mergeSnapshot(view, snapshot) {
   for (const mine of snapshot.mines ?? []) view.mines[mine.id] = { ...mine, position: { ...mine.position } };
   view.effects = {};
   for (const effect of snapshot.effects ?? []) view.effects[effect.id] = { ...effect };
+  view.projectiles = {};
+  for (const projectile of snapshot.projectiles ?? []) {
+    view.projectiles[projectile.id] = { ...projectile, position: { ...projectile.position } };
+  }
+  view.barges = {};
+  for (const barge of snapshot.barges ?? []) {
+    view.barges[barge.id] = { ...barge, position: { ...barge.position } };
+  }
   view.snapshotLabels = snapshot.labels ?? view.snapshotLabels ?? null;
   view.placement = snapshot.placement ?? view.placement ?? null;
 }
@@ -793,6 +1307,42 @@ function applyEventOnly(view, event) {
     case 'shock-activated':
       if (event.effect) view.effects[event.effect.id] = { ...event.effect, ...(event.targets ? { targets: event.targets } : {}) };
       break;
+    case 'projectile-fired':
+      view.projectiles[event.projectileId] = {
+        id: event.projectileId,
+        pickupType: event.pickupType,
+        ownerId: event.ownerId,
+        targetId: event.targetId ?? null,
+        position: { ...(event.origin ?? { x: 0, y: 0, z: 0 }) },
+        direction: { ...(event.direction ?? { x: 0, y: 0, z: 1 }) },
+        speedMps: event.speedMps,
+        lifetimeSeconds: event.lifetimeSeconds,
+        chargesRemaining: event.chargesRemaining,
+        age: 0,
+        status: 'active'
+      };
+      break;
+    case 'projectile-hit':
+    case 'shunt-hit':
+    case 'projectile-expired':
+      delete view.projectiles[event.projectileId];
+      break;
+    case 'barge-activated':
+      if (event.bargeId) view.barges[event.bargeId] = {
+        id: event.bargeId,
+        kind: 'barge',
+        ownerId: event.ownerId,
+        position: { ...event.position },
+        radius: event.radius,
+        durationSeconds: event.durationSeconds,
+        outerRadius: event.hitTest?.majorRadius ?? event.radius,
+        innerRadius: (event.hitTest?.majorRadius ?? event.radius) - (event.hitTest?.innerBand ?? 0),
+        expiresAt: (view.now ?? 0) + (event.durationSeconds ?? 0),
+        secondsLeft: event.durationSeconds ?? 0
+      };
+      break;
+    case 'barge-hit':
+      break;
     case 'shield-absorbed': {
       const effect = view.effects[event.effectId];
       if (effect) effect.capacity = event.capacity;
@@ -803,6 +1353,7 @@ function applyEventOnly(view, event) {
       break;
     case 'effect-expired':
       delete view.effects[event.effectId];
+      delete view.barges[event.effectId];
       break;
     case 'damage':
     case 'repaired': {
@@ -869,6 +1420,8 @@ export function powerupViewSummary(view) {
     pickups: Object.values(view.pickups),
     mines: Object.values(view.mines),
     effects: Object.values(view.effects),
+    projectiles: Object.values(view.projectiles ?? {}),
+    barges: Object.values(view.barges ?? {}),
     feed: view.feed.slice(-8),
     counts: { ...view.counts },
     lastEventSeq: view.lastEventSeq,

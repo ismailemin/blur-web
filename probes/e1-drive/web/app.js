@@ -75,8 +75,9 @@ import {
 } from './mp-ai.js';
 import { createAiDriver, SKILL_PROFILES as AI_SKILL_PROFILES } from './ai-driver-browser.js';
 import {
-  POWERUP_DEFERRED, POWERUP_SCHEMA, POWERUP_SLICE_LABELS, POWERUP_SLICE_TYPES, applyPowerupBatch,
-  createPowerupModel, createPowerupView, forwardFromQuaternion, powerupEventText, powerupViewSummary, shieldFor
+  POWERUP_DEFERRED, POWERUP_PROJECTILE_TYPES, POWERUP_SCHEMA, POWERUP_SLICE_LABELS, POWERUP_SLICE_TYPES,
+  applyPowerupBatch, createPowerupModel, createPowerupView, forwardFromQuaternion, powerupEventText,
+  powerupViewSummary, shieldFor
 } from './powerups.js';
 import {
   COLLISION_PROBES, PropManifestError, applyDrivenLineExclusions, checkPropManifest, collisionProbePose,
@@ -301,6 +302,8 @@ if (MAP_IS_PACKAGE) {
 }
 const POWERUP_MARKER_MESH = 'e1.powerup.marker';
 const POWERUP_MARKER_SLOTS = 16;
+const POWERUP_RING_MESH = 'e1.powerup.ring';
+const POWERUP_RING_SLOTS = 4;
 const POWERUP_RELAY_POLL_MS = 100;
 const POWERUP_TICK_SECONDS = 1 / 60;
 // The capture-only diagnostic pace scales the speed targets of the scripted
@@ -1318,6 +1321,8 @@ let telemetryResets = 0;
 
 // M2/PWR2 power-up state (host model, client view and the project-specific relay).
 let powerupManifest = null;
+let powerupProjectileManifest = null;
+let powerupProjectileModel = null;
 let powerupEngine = null;
 let powerupModel = null;
 let powerupView = null;
@@ -4909,6 +4914,8 @@ function attachPowerupMarkerGeometry(packet) {
     indices: [0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 5, 2, 1, 5, 3, 2, 5, 4, 3, 5, 1, 4]
   };
   if (!packet.meshes.some((mesh) => mesh.id === marker.id)) packet.meshes.push(marker);
+  const ring = buildPowerupRingMesh();
+  if (!packet.meshes.some((mesh) => mesh.id === ring.id)) packet.meshes.push(ring);
   packet.diagnostics = packet.diagnostics ?? {};
   packet.diagnostics.extras = packet.diagnostics.extras ?? {};
   packet.diagnostics.extras.powerups = {
@@ -4916,9 +4923,43 @@ function attachPowerupMarkerGeometry(packet) {
     slots: POWERUP_MARKER_SLOTS,
     indexOffset: 0,
     indexCount: marker.indexCount,
-    label: 'diagnostic octahedron markers: pickup / mine / shield bubble (presentation only)'
+    ringMeshId: ring.id,
+    ringSlots: POWERUP_RING_SLOTS,
+    ringIndexOffset: 0,
+    ringIndexCount: ring.indexCount,
+    label: 'diagnostic octahedron markers (pickup/mine/shield/weapon) + flat barge ring (presentation only)'
   };
   return packet;
+}
+
+/** Flat annulus in the XZ plane; scale = world radius, 0.1 m ring width. */
+function buildPowerupRingMesh(segments = 32) {
+  const inner = 0.9;
+  const outer = 1.0;
+  const positions = [];
+  const indices = [];
+  for (let index = 0; index < segments; index++) {
+    const a = (index / segments) * Math.PI * 2;
+    const b = ((index + 1) / segments) * Math.PI * 2;
+    const points = [
+      [Math.cos(a) * inner, 0, Math.sin(a) * inner],
+      [Math.cos(a) * outer, 0, Math.sin(a) * outer],
+      [Math.cos(b) * inner, 0, Math.sin(b) * inner],
+      [Math.cos(b) * outer, 0, Math.sin(b) * outer]
+    ];
+    for (const point of points) positions.push(point[0], point[1], point[2]);
+    const base = index * 4;
+    indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+  }
+  return {
+    id: POWERUP_RING_MESH,
+    storage: 'inline-json',
+    label: 'diagnostic flat annulus for the Barge radius (presentation only)',
+    vertexCount: positions.length / 3,
+    indexCount: indices.length,
+    positions,
+    indices
+  };
 }
 
 /** Load the PWR1 manifest and the committed rules prototype (read-only inputs). */
@@ -4932,11 +4973,22 @@ async function initPowerups() {
   if (!Array.isArray(powerupManifest.entities) || powerupManifest.entities.length !== 11) {
     throw new Error('PWR1 manifest does not carry the 11 PickupType entities');
   }
+  const projectileResponse = await fetch('/_work/powerups/projectiles.json', { cache: 'no-store' });
+  if (!projectileResponse.ok) throw new Error('PWR4 projectile manifest fetch failed: HTTP ' + projectileResponse.status);
+  powerupProjectileManifest = await projectileResponse.json();
+  if (powerupProjectileManifest.schema !== 'blur-powerups-projectiles/1') {
+    throw new Error('PWR4 projectile manifest schema is not blur-powerups-projectiles/1');
+  }
   powerupEngine = await import('/powerups/engine.js');
   if (typeof powerupEngine.createWorld !== 'function') {
     throw new Error('PWR1 rules prototype does not export createWorld');
   }
+  powerupProjectileModel = await import('/powerups/projectiles.js');
+  if (typeof powerupProjectileModel.createProjectileModel !== 'function') {
+    throw new Error('PWR4 rules prototype does not export createProjectileModel');
+  }
   state.powerups.manifestHash = powerupManifest.hashes?.manifestContent ?? null;
+  state.powerups.projectileManifestHash = powerupProjectileManifest.hashes?.manifestContent ?? null;
   state.powerups.types = POWERUP_SLICE_TYPES.slice();
   state.powerups.deferred = { ...POWERUP_DEFERRED };
   state.powerups.phase = 'ready';
@@ -5039,8 +5091,10 @@ function mpQueueBoostFromEvent(event) {
   const startTick = state.engineTick + delay - 1;
   let kind = 0;
   let targetMps = 0;
-  let ticks = 0;
+  let ticks = 1;
   let magnitude = 0;
+  let direction = { x: 0, y: 0, z: 0 };
+  let impulseLabel = null;
   if (event.type === 'nitro-activated') {
     if (event.targetPlayer !== localId) return false;
     kind = 1;
@@ -5054,14 +5108,29 @@ function mpQueueBoostFromEvent(event) {
     targetMps = Number(target.targetMps);
     ticks = Number(event.ticks);
     magnitude = Number(event.magnitude);
+  } else if (event.type === 'shunt-hit') {
+    if (event.targetId !== localId) return false;
+    const impulse = event.impulse ?? null;
+    if (!impulse || impulse.status !== 'provisional-impulse' || !Number.isFinite(impulse.impulseNs) ||
+        !Number.isFinite(impulse.massKg) || impulse.massKg <= 0 || !impulse.direction) {
+      state.powerups.notice = 'Shunt impulse typed ' + (impulse?.status ?? 'missing');
+      return false;
+    }
+    kind = 3;
+    targetMps = 0;
+    ticks = 1;
+    magnitude = impulse.impulseNs;
+    direction = impulse.direction;
+    impulseLabel = impulse;
   } else {
     return false;
   }
-  if (!(targetMps > 0) || !(ticks > 0) || !(magnitude > 0)) {
+  if (kind !== 3 && (!(targetMps > 0) || !(ticks > 0) || !(magnitude > 0))) {
     state.powerups.notice = 'boost event rejected: missing target/ticks/magnitude';
     return false;
   }
-  const accepted = engine.boostQueue(kind, startTick, Math.round(ticks), targetMps, magnitude, 0, 0, 0);
+  const accepted = engine.boostQueue(kind, startTick, Math.round(ticks), targetMps, magnitude,
+    direction.x ?? 0, direction.y ?? 0, direction.z ?? 0);
   if (!accepted) {
     state.powerups.notice = 'boost queue rejected: ' + engine.boostLastError();
     return false;
@@ -5081,11 +5150,14 @@ function mpQueueBoostFromEvent(event) {
     source: event.source ?? null,
     targetSource: event.targetSource ?? null,
     classLetter: event.classLetter ?? null,
+    impulse: impulseLabel,
     wasm
   };
-  state.powerups.notice = (event.type === 'nitro-activated' ? 'NITRO' : 'SHOCK') +
-    ' queued at tick ' + startTick + ' · target ' + targetMps.toFixed(2) + ' m/s';
-  return true;
+  state.powerups.notice = event.type === 'nitro-activated'
+    ? 'NITRO queued at tick ' + startTick + ' - target ' + targetMps.toFixed(2) + ' m/s'
+    : event.type === 'shock-activated'
+      ? 'SHOCK queued at tick ' + startTick + ' - target ' + targetMps.toFixed(2) + ' m/s'
+      : 'SHUNT provisional impulse ' + (impulseLabel?.deltaV ?? '?') + ' m/s at tick ' + startTick;  return true;
 }
 
 function mpPowerupHandleEvents(events) {
@@ -5095,7 +5167,7 @@ function mpPowerupHandleEvents(events) {
     state.powerups.lastEvents.push(event);
     if (state.powerups.lastEvents.length > 64) state.powerups.lastEvents.shift();
     state.powerups.counts[event.type] = (state.powerups.counts[event.type] ?? 0) + 1;
-    if ((event.type === 'nitro-activated' || event.type === 'shock-activated') &&
+    if ((event.type === 'nitro-activated' || event.type === 'shock-activated' || event.type === 'shunt-hit') &&
         Number.isInteger(event.seq) && !state.powerups.boostEventSeqs.includes(event.seq)) {
       state.powerups.boostEventSeqs.push(event.seq);
       if (state.powerups.boostEventSeqs.length > 64) state.powerups.boostEventSeqs.shift();
@@ -5196,6 +5268,8 @@ function mpPowerupHostStart() {
   powerupModel = createPowerupModel({
     manifest: powerupManifest,
     createWorld: powerupEngine.createWorld,
+    projectileManifest: powerupProjectileManifest,
+    createProjectileModel: powerupProjectileModel.createProjectileModel,
     authorityId: mpNet.playerId,
     maxHealth: 100,
     respawnDelaySeconds: 1.0,
@@ -5209,13 +5283,21 @@ function mpPowerupHostStart() {
   const hostStart = state.mp?.grid
     ? { x: state.mp.grid.x, y: state.position[1], z: state.mp.grid.z }
     : { x: state.position[0], y: state.position[1], z: state.position[2] };
-  powerupModel.addPlayer(hostId, { position: hostStart, forward: hostForward });
+  const sessionMassKg = Number.isFinite(state.car?.mass) ? state.car.mass : null;
+  powerupModel.addPlayer(hostId, {
+    position: hostStart,
+    forward: hostForward,
+    speedMps: state.speed,
+    massKg: sessionMassKg
+  });
   if (guestId) {
     const guestStart = state.mp?.guestSpawnState?.position ?? hostStart;
     const guestForward = hostForward;
     powerupModel.addPlayer(guestId, {
       position: { x: guestStart[0] ?? guestStart.x, y: guestStart[1] ?? guestStart.y ?? 0, z: guestStart[2] ?? guestStart.z },
-      forward: guestForward
+      forward: guestForward,
+      speedMps: state.speed,
+      massKg: sessionMassKg
     });
   }
   const spawned = powerupModel.spawnProvisionalPickups(sprintRules.layout);
@@ -5238,12 +5320,13 @@ function mpPowerupHostTick(snapshot) {
   const states = {};
   states[mpNet.playerId] = {
     position: snapshot.position,
-    forward: { x: snapshot.axisZ[0], y: snapshot.axisZ[1], z: snapshot.axisZ[2] }
+    forward: { x: snapshot.axisZ[0], y: snapshot.axisZ[1], z: snapshot.axisZ[2] },
+    speedMps: snapshot.speed
   };
   if (guestId) {
     states[guestId] = latest
-      ? { position: latest.position, quaternion: latest.quaternion }
-      : { position: guestSpawn ?? snapshot.position };
+      ? { position: latest.position, quaternion: latest.quaternion, speedMps: latest.speed }
+      : { position: guestSpawn ?? snapshot.position, speedMps: 0 };
   }
   const events = powerupModel.tick(POWERUP_TICK_SECONDS, states, mpPowerupRespawnTarget);
   state.powerups.snapshot = powerupModel.snapshot();
@@ -5288,7 +5371,10 @@ const POWERUP_MARKER_COLOURS = Object.freeze({
   Shield: [0.14, 0.76, 1.0],
   Repair: [0.2, 0.95, 0.35],
   Nitrous: [1.0, 0.85, 0.1],
-  Shock: [0.75, 0.25, 1.0]
+  Shock: [0.75, 0.25, 1.0],
+  Blindfire: [1.0, 0.55, 0.1],
+  Shunt: [1.0, 0.2, 0.35],
+  Barge: [0.95, 0.15, 0.15]
 });
 
 function mpPowerupMarkerList() {
@@ -5305,6 +5391,12 @@ function mpPowerupMarkerList() {
   const effects = MP_HOST
     ? (snapshot ? snapshot.effects : [])
     : Object.values(state.powerups.view?.effects ?? {});
+  const projectileRows = MP_HOST
+    ? (snapshot?.projectiles ?? [])
+    : Object.values(state.powerups.view?.projectiles ?? {});
+  const bargeRows = MP_HOST
+    ? (snapshot?.barges ?? [])
+    : Object.values(state.powerups.view?.barges ?? {});
   for (const pickup of pickups) {
     if (pickup.state && pickup.state !== 'active') continue;
     markers.push({
@@ -5320,6 +5412,25 @@ function mpPowerupMarkerList() {
       position: [mine.position.x, (mine.position.y ?? 0) + 0.45, mine.position.z],
       scale: mine.armed === false ? 0.45 : 0.65,
       colour: [1.0, 0.25, 0.05]
+    });
+  }
+  for (const projectile of projectileRows) {
+    const colour = POWERUP_MARKER_COLOURS[projectile.pickupType] ?? [1.0, 0.6, 0.1];
+    markers.push({
+      kind: 'projectile',
+      shape: 'marker',
+      position: [projectile.position.x, (projectile.position.y ?? 0), projectile.position.z],
+      scale: projectile.pickupType === 'Shunt' ? 0.55 : 0.4,
+      colour
+    });
+  }
+  for (const barge of bargeRows) {
+    markers.push({
+      kind: 'barge',
+      shape: 'ring',
+      position: [barge.position.x, (barge.position.y ?? 0) + 0.06, barge.position.z],
+      scale: barge.outerRadius ?? barge.radius ?? 7.5,
+      colour: [0.95, 0.15, 0.15]
     });
   }
   const localPosition = state.position ? [...state.position] : null;
@@ -5340,11 +5451,19 @@ function mpPowerupMarkerList() {
         : (effect.kind === 'nitro' ? [1.0, 0.85, 0.1] : [0.75, 0.25, 1.0])
     });
   }
-  if (markers.length > POWERUP_MARKER_SLOTS) {
-    state.powerups.markerDropped = markers.length - POWERUP_MARKER_SLOTS;
-    markers.length = POWERUP_MARKER_SLOTS;
+  const markerRows = markers.filter((marker) => marker.shape !== 'ring');
+  const ringRows = markers.filter((marker) => marker.shape === 'ring');
+  let dropped = 0;
+  if (markerRows.length > POWERUP_MARKER_SLOTS) {
+    dropped += markerRows.length - POWERUP_MARKER_SLOTS;
+    markerRows.length = POWERUP_MARKER_SLOTS;
   }
-  return markers;
+  if (ringRows.length > POWERUP_RING_SLOTS) {
+    dropped += ringRows.length - POWERUP_RING_SLOTS;
+    ringRows.length = POWERUP_RING_SLOTS;
+  }
+  state.powerups.markerDropped = dropped;
+  return [...markerRows, ...ringRows];
 }
 
 function mpPowerupHudModel() {
@@ -5369,6 +5488,8 @@ function mpPowerupHudModel() {
       pickups: snapshot.pickups,
       mines: snapshot.mines,
       effects: snapshot.effects,
+      projectiles: snapshot.projectiles ?? [],
+      barges: snapshot.barges ?? [],
       feed: state.powerups.lastEvents.slice(-8).map((event) => ({
         seq: event.seq, type: event.type, text: powerupEventText(event)
       })),
@@ -5382,7 +5503,7 @@ function mpPowerupHudModel() {
     const summary = powerupViewSummary(powerupView);
     return { ...summary, source: 'client' };
   }
-  return { source: 'client', now: 0, local: null, remote: null, shield: null, pickups: [], mines: [], effects: [], feed: [], counts: {}, placement: null, labels: null, relayError: state.powerups.relayError };
+  return { source: 'client', now: 0, local: null, remote: null, shield: null, pickups: [], mines: [], effects: [], projectiles: [], barges: [], feed: [], counts: {}, placement: null, labels: null, relayError: state.powerups.relayError };
 }
 
 function publishPowerupHud() {
@@ -5411,6 +5532,25 @@ function publishPowerupHud() {
       (Number.isFinite(boost.targetMps) ? ' · ' + Number(boost.targetMps).toFixed(2) + ' m/s' : '') +
       (wasmBoost ? ' · wasm ' + (wasmBoost.remaining ?? 0) + 't / ' + (wasmBoost.applied ?? 0) + 'f' : '')
     : (item ? 'E — use · host validates' : 'pick up a pickup on the measured course'));
+  if (item && Number.isFinite(item.charges)) {
+    const nameElement = document.getElementById('powerup-slot-name');
+    if (nameElement) {
+      nameElement.textContent = label + ' - ' + item.type + ' - ' + item.charges +
+        '/' + (item.maxCharges ?? '?') + ' charges';
+    }
+  }
+  const activeRows = [...(hud?.projectiles ?? []), ...(hud?.barges ?? [])];
+  if (activeRows.length) {
+    const timerElement = document.getElementById('powerup-slot-timer');
+    if (timerElement) {
+      timerElement.textContent = activeRows.map((row) => {
+        const secondsLeft = Number.isFinite(row.secondsLeft)
+          ? row.secondsLeft
+          : Math.max(0, (row.lifetimeSeconds ?? 0) - (row.age ?? 0));
+        return (row.pickupType ?? row.kind ?? 'effect') + ' ' + Number(secondsLeft).toFixed(2) + ' s';
+      }).join(' / ');
+    }
+  }
   const health = local ? local.health : null;
   const maxHealth = local?.maxHealth ?? null;
   const percent = Number.isFinite(health) && Number.isFinite(maxHealth) && maxHealth > 0
@@ -5435,6 +5575,12 @@ function publishPowerupHud() {
         ' · ' + boost.secondsLeft.toFixed(2) + ' s · seq ' + (state.powerups.boost?.eventSeq ?? '—')
       : (state.powerups.notice ?? 'ready · E uses the held item'));
   set('powerup-status', status);
+  if (boost?.kind === 3) {
+    set('powerup-slot-name', 'SHUNT - provisional impulse');
+    set('powerup-status', 'SHUNT provisional impulse ' +
+      (Number.isFinite(boost.impulse?.deltaV) ? Number(boost.impulse.deltaV).toFixed(2) : '?') +
+      ' m/s - seq ' + (state.powerups.boost?.eventSeq ?? '-'));
+  }
   const placement = hud?.placement ?? state.powerups.placement;
   set('powerup-note', 'provisional measured-arc placement · ' + POWERUP_SLICE_TYPES.join('/') +
     ' · host events seq ' + (hud?.counts ? (state.powerups.lastEvents.at(-1)?.seq ?? 0) : 0) +
@@ -5457,6 +5603,7 @@ function mpPowerupCapture() {
     phase: state.powerups.phase,
     status: state.powerups.status,
     manifestHash: state.powerups.manifestHash,
+    projectileManifestHash: state.powerups.projectileManifestHash ?? null,
     types: state.powerups.types,
     deferred: state.powerups.deferred,
     placement: hud?.placement ?? state.powerups.placement,
@@ -5475,6 +5622,9 @@ function mpPowerupCapture() {
     pickups: hud?.pickups ?? [],
     mines: hud?.mines ?? [],
     effects: hud?.effects ?? [],
+    projectiles: hud?.projectiles ?? [],
+    barges: hud?.barges ?? [],
+    projectileModel: state.powerups.snapshot?.projectileModel ?? null,
     wrecked: state.powerups.wrecked,
     remoteWrecked: state.powerups.remoteWrecked,
     relay: state.powerups.relay,
@@ -5493,7 +5643,10 @@ function mpPowerupCapture() {
     },
     markers: {
       slots: consumer?.stats?.powerupSlots ?? 0,
+      markerSlots: consumer?.stats?.powerupMarkerSlots ?? 0,
+      ringSlots: consumer?.stats?.powerupRingSlots ?? 0,
       drawsIssued: consumer?.stats?.powerupDrawsIssued ?? 0,
+      ringDrawsIssued: consumer?.stats?.powerupRingDrawsIssued ?? 0,
       frames: consumer?.stats?.powerupFrames ?? 0,
       enabled: consumer?.stats?.powerupEnabled ?? false,
       dropped: consumer?.stats?.powerupDropped ?? 0
@@ -5508,6 +5661,7 @@ function mpInstallPowerupDebugApi() {
     if (!MP_HOST || !powerupModel) throw new Error('power-up host mutation is host-only');
     const before = powerupModel.events.length;
     mutate();
+    state.powerups.snapshot = powerupModel.snapshot();
     const events = powerupModel.events.slice(before);
     if (events.length) mpPowerupHandleEvents(events);
     mpPowerupBroadcast(true);
@@ -5517,6 +5671,7 @@ function mpInstallPowerupDebugApi() {
     enabled: true,
     state: () => mpPowerupCapture(),
     events: () => (powerupModel ? powerupModel.events.slice() : state.powerups.events.slice()),
+    markers: () => mpPowerupMarkerList(),
     use: () => mpPowerupRequestUse(),
     grant: (type) => hostEventWindow(() => {
       powerupModel.clearInventory(mpNet.playerId);
@@ -5584,6 +5739,18 @@ function mpInstallPowerupDebugApi() {
         speedSource: 'capture-current-state'
       });
     }),
+    stageWeapon: (attacker = 'host', target = 'guest', pickupType = 'Blindfire', miss = false) => {
+      const attackerId = attacker === 'guest' ? mpRemotePlayerId : mpNet.playerId;
+      const targetId = target === 'guest' ? mpRemotePlayerId : mpNet.playerId;
+      if (!attackerId) throw new Error('no ' + attacker + ' player');
+      if (!miss && !targetId) throw new Error('no ' + target + ' player');
+      return hostEventWindow(() => powerupModel.stageWeapon({
+        attackerId,
+        targetId: miss ? null : targetId,
+        pickupType,
+        miss
+      }));
+    },
     broadcast: () => mpPowerupBroadcast(true)
   };
 }

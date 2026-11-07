@@ -933,6 +933,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Uzak araçlar N slot (cyan insan, amber AI), 20 Hz relay, reconnect'te AI devam; console **0/0**.
 - `verify_e1_drive` **2281/2281** (16 MP-AI), suite 57/57, checker 23/23. Kanıt: `docs/work/verification/T-007-mp-ai.md`.
 
+## 8 Kasım 2026 — kalan silahlar
+
+- Dilim **8 tip**: Bomb/Shield/Repair/Nitrous/Shock/Blindfire/Shunt/Barge; yalnız SuperShield ertelendi.
+- Blindfire 300 m/s/r0.2/dmg50/10 s/3 charge; Shunt 0.75/100-50/40 s/homing + 20 kN·s provisional; Barge 7 m/0.4 s; JINK not-serialized.
+- Node **107/107** (39 yeni); verify 2281/2281; suite 57/57; checker 23/23; iki tarayıcı console 0/0 (projectile 5/hit 4/shunt 2/barge 2).
+- Kanıt: `docs/work/verification/T-007-powerups.md` WPN1, `_work/e1-drive/browser-mp-powerups-{blindfire,shunt,barge}-*.png`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

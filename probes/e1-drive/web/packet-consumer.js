@@ -468,7 +468,9 @@ export class PacketConsumer {
     // drawn in a separate translucent pass. Presentation only; never in updates,
     // the packet hash or the physics.
     this.powerupDraws = [];
+    this.powerupRingDraws = [];
     this.powerupMarkers = null;
+    this.powerupRingMarkers = null;
     this.powerupEnabled = false;
     this.powerupSlotCount = 0;
     this.stats = {
@@ -489,7 +491,10 @@ export class PacketConsumer {
       ghostActiveSlots: 0,
       // Power-up diagnostic marker pass (separate from packet draws).
       powerupSlots: 0,
+      powerupMarkerSlots: 0,
+      powerupRingSlots: 0,
       powerupDrawsIssued: 0,
+      powerupRingDrawsIssued: 0,
       powerupFrames: 0,
       powerupEnabled: false,
       powerupDropped: 0,
@@ -719,10 +724,14 @@ export class PacketConsumer {
     this.stats.ghostSlotCount = 1;
     this.stats.ghostActiveSlots = 0;
     this.powerupDraws = [];
+    this.powerupRingDraws = [];
     this.powerupMarkers = null;
+    this.powerupRingMarkers = null;
     this.powerupEnabled = false;
     this.powerupSlotCount = 0;
     this.stats.powerupSlots = 0;
+    this.stats.powerupMarkerSlots = 0;
+    this.stats.powerupRingSlots = 0;
     this.stats.powerupEnabled = false;
   }
 
@@ -916,10 +925,12 @@ export class PacketConsumer {
     const powerupConfig = packet.diagnostics?.extras?.powerups ?? null;
     const powerupSlots = powerupConfig && Number.isInteger(powerupConfig.slots) && powerupConfig.slots > 0
       ? powerupConfig.slots : 0;
+    const powerupRingSlots = powerupConfig && Number.isInteger(powerupConfig.ringSlots) &&
+      powerupConfig.ringSlots > 0 ? powerupConfig.ringSlots : 0;
     this.ghostDraws = [];
     this.stats.ghostDraws = ghostDrawCount;
     this.uniformBuffer = this.device.createBuffer({
-      size: (drawCount + ghostDrawCount * ghostSlotCount + powerupSlots) * DRAW_UNIFORM_STRIDE,
+      size: (drawCount + ghostDrawCount * ghostSlotCount + powerupSlots + powerupRingSlots) * DRAW_UNIFORM_STRIDE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
     this.buffers.push(this.uniformBuffer);
@@ -959,11 +970,16 @@ export class PacketConsumer {
     // octahedron mesh. Nothing is in packet.draws, so the packet's own draw
     // count/hash/camera framing are unchanged.
     this.powerupDraws = [];
+    this.powerupRingDraws = [];
     this.powerupMarkers = null;
+    this.powerupRingMarkers = null;
     this.powerupEnabled = false;
-    this.powerupSlotCount = powerupSlots;
-    this.stats.powerupSlots = powerupSlots;
+    this.powerupSlotCount = powerupSlots + powerupRingSlots;
+    this.stats.powerupSlots = powerupSlots + powerupRingSlots;
+    this.stats.powerupMarkerSlots = powerupSlots;
+    this.stats.powerupRingSlots = powerupRingSlots;
     this.stats.powerupDrawsIssued = 0;
+    this.stats.powerupRingDrawsIssued = 0;
     this.stats.powerupFrames = 0;
     this.stats.powerupEnabled = false;
     if (powerupSlots > 0) {
@@ -981,6 +997,26 @@ export class PacketConsumer {
           mesh: markerMesh,
           indexOffset,
           indexCount
+        });
+      }
+    }
+    if (powerupRingSlots > 0) {
+      const ringMesh = this.meshes.get(powerupConfig.ringMeshId);
+      if (!ringMesh) throw new Error('power-up ring mesh ' + powerupConfig.ringMeshId + ' was not uploaded');
+      const ringIndexOffset = Number.isInteger(powerupConfig.ringIndexOffset) ? powerupConfig.ringIndexOffset : 0;
+      const ringIndexCount = Number.isInteger(powerupConfig.ringIndexCount)
+        ? powerupConfig.ringIndexCount : ringMesh.indexCount;
+      if (ringIndexOffset < 0 || ringIndexCount <= 0 || ringIndexCount % 3 ||
+          ringIndexOffset + ringIndexCount > ringMesh.indexCount) {
+        throw new Error('power-up ring index range is invalid');
+      }
+      for (let index = 0; index < powerupRingSlots; index++) {
+        this.powerupRingDraws.push({
+          id: 'powerup.ring.' + index,
+          meshId: powerupConfig.ringMeshId,
+          mesh: ringMesh,
+          indexOffset: ringIndexOffset,
+          indexCount: ringIndexCount
         });
       }
     }
@@ -1155,16 +1191,15 @@ export class PacketConsumer {
   setPowerupMarkers(markers) {
     if (!markers) {
       this.powerupMarkers = null;
+      this.powerupRingMarkers = null;
       this.powerupEnabled = false;
       this.stats.powerupEnabled = false;
       return;
     }
     if (!Array.isArray(markers)) throw new Error('power-up markers need an array');
-    if (markers.length > this.powerupDraws.length) {
-      this.stats.powerupDropped += markers.length - this.powerupDraws.length;
-      throw new Error('power-up marker slots ' + this.powerupDraws.length + ' but ' + markers.length + ' markers');
-    }
-    const normalized = markers.map((marker, index) => {
+    const markerRows = [];
+    const ringRows = [];
+    markers.forEach((marker, index) => {
       const position = Array.isArray(marker.position)
         ? marker.position
         : [marker.position?.x ?? 0, marker.position?.y ?? 0, marker.position?.z ?? 0];
@@ -1174,15 +1209,26 @@ export class PacketConsumer {
       const colour = Array.isArray(marker.colour) && marker.colour.length >= 3
         ? marker.colour.slice(0, 3)
         : [1, 1, 1];
-      return {
+      const row = {
         kind: marker.kind ?? 'marker',
+        shape: marker.shape === 'ring' ? 'ring' : 'marker',
         position,
         scale: Number.isFinite(marker.scale) ? marker.scale : 1,
         colour
       };
+      (row.shape === 'ring' ? ringRows : markerRows).push(row);
     });
-    this.powerupMarkers = normalized;
-    this.powerupEnabled = normalized.length > 0;
+    if (markerRows.length > this.powerupDraws.length) {
+      this.stats.powerupDropped += markerRows.length - this.powerupDraws.length;
+      throw new Error('power-up marker slots ' + this.powerupDraws.length + ' but ' + markerRows.length + ' markers');
+    }
+    if (ringRows.length > this.powerupRingDraws.length) {
+      this.stats.powerupDropped += ringRows.length - this.powerupRingDraws.length;
+      throw new Error('power-up ring slots ' + this.powerupRingDraws.length + ' but ' + ringRows.length + ' rings');
+    }
+    this.powerupMarkers = markerRows;
+    this.powerupRingMarkers = ringRows;
+    this.powerupEnabled = markerRows.length > 0 || ringRows.length > 0;
     this.stats.powerupEnabled = this.powerupEnabled;
   }
 
@@ -1306,8 +1352,11 @@ export class PacketConsumer {
     const activeGhostSlots = ghostFrames.filter((entry) => entry !== null).length;
     const ghostActive = activeGhostSlots > 0 && this.ghostDrawsPerCar > 0;
     const ghostDrawCount = this.ghostDrawsPerCar;
-    const powerupActive = this.powerupEnabled && Array.isArray(this.powerupMarkers) &&
+    const powerupMarkerActive = this.powerupEnabled && Array.isArray(this.powerupMarkers) &&
       this.powerupMarkers.length > 0 && this.powerupDraws.length > 0;
+    const powerupRingActive = this.powerupEnabled && Array.isArray(this.powerupRingMarkers) &&
+      this.powerupRingMarkers.length > 0 && this.powerupRingDraws.length > 0;
+    const powerupActive = powerupMarkerActive || powerupRingActive;
     // Ghost and marker slots are reserved at load; offsets are stable even when
     // one of the passes is inactive.
     const ghostSlotStride = ghostDrawCount * (this.ghostSlotCount ?? 1);
@@ -1361,13 +1410,23 @@ export class PacketConsumer {
       // Diagnostic marker slots follow the ghost slots. Colour is presentation
       // only; the marker mesh/scale never enters the packet or the physics.
       const markerBase = this.draws.length + ghostSlotStride;
-      const activeMarkers = this.powerupMarkers.slice(0, this.powerupDraws.length);
+      const activeMarkers = (this.powerupMarkers ?? []).slice(0, this.powerupDraws.length);
       for (let index = 0; index < activeMarkers.length; index++) {
         const marker = activeMarkers[index];
         const base = (markerBase + index) * (DRAW_UNIFORM_STRIDE / 4);
         bytes.set(viewProjection, base);
         bytes.set(markerMatrix(marker.position, marker.scale), base + 16);
         bytes.set([marker.colour[0], marker.colour[1], marker.colour[2], 0], base + 32);
+        bytes.set([0, 0, 0, 0], base + 36);
+      }
+      const ringBase = markerBase + this.powerupDraws.length;
+      const activeRings = (this.powerupRingMarkers ?? []).slice(0, this.powerupRingDraws.length);
+      for (let index = 0; index < activeRings.length; index++) {
+        const ring = activeRings[index];
+        const base = (ringBase + index) * (DRAW_UNIFORM_STRIDE / 4);
+        bytes.set(viewProjection, base);
+        bytes.set(markerMatrix(ring.position, ring.scale), base + 16);
+        bytes.set([ring.colour[0], ring.colour[1], ring.colour[2], 0], base + 32);
         bytes.set([0, 0, 0, 0], base + 36);
       }
     }
@@ -1430,22 +1489,40 @@ export class PacketConsumer {
       this.stats.ghostFrames++;
     }
     if (powerupActive) {
-      // Third pass: the simple diagnostic marker mesh with the same translucent
+      // Third pass: the diagnostic marker/ring meshes with the same translucent
       // pipeline. Draw slots are capped at load; no buffer or texture is created.
       pass.setPipeline(this.ghostPipeline);
       pass.setBindGroup(2, this.placeholderGroup);
       const markerBase = this.draws.length + ghostSlotStride;
-      const marker = this.powerupDraws[0];
-      pass.setVertexBuffer(0, marker.mesh.vertexBuffer);
-      pass.setVertexBuffer(1, marker.mesh.uvBuffer);
-      pass.setIndexBuffer(marker.mesh.indexBuffer, 'uint32');
-      const active = Math.min(this.powerupMarkers.length, this.powerupDraws.length);
-      for (let index = 0; index < active; index++) {
-        const draw = this.powerupDraws[index];
-        pass.setBindGroup(0, this.drawBindGroup, [(markerBase + index) * DRAW_UNIFORM_STRIDE]);
-        pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
+      let activeMarkers = 0;
+      if (powerupMarkerActive) {
+        const marker = this.powerupDraws[0];
+        pass.setVertexBuffer(0, marker.mesh.vertexBuffer);
+        pass.setVertexBuffer(1, marker.mesh.uvBuffer);
+        pass.setIndexBuffer(marker.mesh.indexBuffer, 'uint32');
+        activeMarkers = Math.min(this.powerupMarkers.length, this.powerupDraws.length);
+        for (let index = 0; index < activeMarkers; index++) {
+          const draw = this.powerupDraws[index];
+          pass.setBindGroup(0, this.drawBindGroup, [(markerBase + index) * DRAW_UNIFORM_STRIDE]);
+          pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
+        }
+        this.stats.powerupDrawsIssued += activeMarkers;
       }
-      this.stats.powerupDrawsIssued += active;
+      let activeRings = 0;
+      if (powerupRingActive) {
+        const ring = this.powerupRingDraws[0];
+        pass.setVertexBuffer(0, ring.mesh.vertexBuffer);
+        pass.setVertexBuffer(1, ring.mesh.uvBuffer);
+        pass.setIndexBuffer(ring.mesh.indexBuffer, 'uint32');
+        activeRings = Math.min(this.powerupRingMarkers.length, this.powerupRingDraws.length);
+        const ringBase = markerBase + this.powerupDraws.length;
+        for (let index = 0; index < activeRings; index++) {
+          const draw = this.powerupRingDraws[index];
+          pass.setBindGroup(0, this.drawBindGroup, [(ringBase + index) * DRAW_UNIFORM_STRIDE]);
+          pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
+        }
+        this.stats.powerupRingDrawsIssued += activeRings;
+      }
       this.stats.powerupFrames++;
     }
     pass.end();
@@ -1455,7 +1532,8 @@ export class PacketConsumer {
     this.stats.uniformWrites++;
     this.stats.uniformBytes += bytes.byteLength;
     this.stats.drawsIssued += this.visibleDraws.length + (ghostActive ? ghostDrawCount * activeGhostSlots : 0) +
-      (powerupActive ? Math.min(this.powerupMarkers.length, this.powerupDraws.length) : 0);
+      (powerupMarkerActive ? Math.min(this.powerupMarkers.length, this.powerupDraws.length) : 0) +
+      (powerupRingActive ? Math.min(this.powerupRingMarkers.length, this.powerupRingDraws.length) : 0);
     this.stats.ghostEnabled = ghostActive;
     this.stats.ghostActiveSlots = ghostActive ? activeGhostSlots : 0;
     this.stats.powerupEnabled = powerupActive;

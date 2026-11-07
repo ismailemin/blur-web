@@ -401,7 +401,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 10. M1 two-browser multiplayer capture (game 8802, room 8811)
 & $node probes/e1-drive/tools/capture_browser.mjs --mode mp --port 8802 --room-port 8811
 
-# 11. M2/PWR2+PWR2a power-up capture (Mine/Shield/Repair/Nitro/Shock, two browsers)
+# 11. M2 power-up capture (Mine/Shield/Repair/Nitro/Shock/Blindfire/Shunt/Barge, two browsers)
 & $node probes/e1-drive/tools/boost_model_tests.mjs
 & $node probes/e1-drive/tools/powerups_model_tests.mjs
 & $node probes/e1-drive/tools/capture_browser.mjs --mode mp-powerups --port 8802 --room-port 8811
@@ -577,35 +577,39 @@ plus `--with-room`), and `tools/verify_e1_drive.mjs` /
 full verification record is `docs/work/verification/T-007-multiplayer.md` and
 `docs/work/verification/T-007-mp-maps.md`.
 
-## Power-ups (M2/PWR2+PWR2a) - Mine, Shield, Repair, Nitro, Shock
+## Power-ups (M2/PWR2+PWR2a+WPN1) - Mine, Shield, Repair, Nitro, Shock, Blindfire, Shunt, Barge
 
-Status: M2 first slice, 7 November 2026. `?powerups=1` (multiplayer only,
-default off) adds a host-authoritative power-up world on top of the M1 race.
-The full record is `docs/work/verification/T-007-powerups.md`.
+Status: M2 first slice 7 November 2026; WPN1 weapons 8 November 2026.
+`?powerups=1` (multiplayer only, default off) adds a host-authoritative power-up
+world on top of the M1 race. The full record is
+`docs/work/verification/T-007-powerups.md`.
 
 | Item | Behaviour |
 |---|---|
-| integrated types | **Bomb/Mine, Shield, Repair, Nitrous (Nitro), Shock** (Shunt/Blindfire/Barge/projectiles deferred) |
+| integrated types | **Bomb/Mine, Shield, Repair, Nitrous (Nitro), Shock, Blindfire/Bolt, Shunt, Barge** (only SuperShield remains deferred) |
 | placement | six **provisional** items on the measured 310 m arcs 40/90/140/190/240/280 m cycling Bomb/Shield/Repair/Nitrous/Shock/Bomb; PWR3 owns real placement |
 | collection | host proximity against the recovered `PickupRadius=2.0 m`; one inventory slot; `pickup-rejected inventory-full` |
 | values | Bomb `Radius 1.0 / Outer 3.5 / Damage 100 / Lifespan 60 / Prime 0.3 / PlaceBehind 5`; Shield `Health 50 / Lifetime 6`; Repair `AmountToRepair 400`; Nitro `300 m/s²`, 0.5 s force window, 1.3 s duration, exact PWR1 Hermite target (class A, 55 m/s project cap); Shock exact PWR1 curve target, 10 mph floor, `Inner 7 / Outer 14 / Lifetime 1.5 / Damage 100`; deactivate `0.6 s` — all from `_work/powerups/powerups.json` |
-| use | guest sends a use intent; the host validates and broadcasts sequenced events (`mine-placed`, `mine-armed`, `mine-detonated`, `mine-expired`, `shield-activated`, `shield-absorbed`, `shield-broken`, `repaired`, `nitro-activated`, `shock-activated`, `effect-expired`, `damage`, `wrecked`, `respawn`, `pickup*`, `use-rejected`) |
+| weapons (WPN1) | Blindfire `Speed 300 / Radius 0.2 / Damage 50`, runtime 10 s + 3 charges, forward; Shunt `Radius 0.75 / Damage 100 major (50 minor)`, runtime 60-110 m/s initial, homing, 40 s, target 500 m / cos 45 deg; Barge `Radius 7.0 / Damage 100 / Duration 0.4 s`, +0.5 m padding, 2.0 m band, 8.08/6.08 m with the documented envelope; host judges travel/hit/expiry and applies damage through the PWR1 shield/wreck model |
+| use | guest sends a use intent; the host validates and broadcasts sequenced events (`mine-placed`, `mine-armed`, `mine-detonated`, `mine-expired`, `shield-activated`, `shield-absorbed`, `shield-broken`, `repaired`, `nitro-activated`, `shock-activated`, `projectile-fired`, `projectile-hit`, `projectile-expired`, `shunt-hit`, `barge-activated`, `barge-hit`, `effect-expired`, `damage`, `wrecked`, `respawn`, `pickup*`, `use-rejected`) |
 | damage | 100 HP **diagnostic** pool; full Bomb damage inside `Radius`, typed `mine-near-miss` between `Radius` and `OuterRadius`, no damage outside `OuterRadius`; Shock applies its recovered 100 damage inside `OuterRadius` |
 | nitro / shock | host-sequenced; each page applies the event to its **own** car through `e1_boost_queue` **before** `C_Scene::Simulate` (no post-tick velocity/pose write); the host does not simulate the guest body |
 | wreck/respawn | `wrecked` at 0 HP, labelled 1.0 s diagnostic delay, `respawn` at the R1 `respawnTargetForGate(lastPassedGate)` target; the car is rebuilt through `respawnAt()` |
-| HUD | one-slot icon/letter + type, health, shield capacity/remaining seconds, active Nitro/Shock timer/status/target, last six sequenced events; icon is a labelled diagnostic glyph (retail `perk_icons` binding not recovered) |
-| effects | bounded octahedron marker pass (16 slots, ghost pipeline, no new buffer/texture): pickups, mines, shield bubbles and Nitro/Shock owner markers |
+| HUD | one-slot icon/letter + type, Blindfire charge count, live projectile/Barge countdown, health, shield capacity/remaining seconds, active Nitro/Shock/Shunt-impulse status, last six sequenced events; icon is a labelled diagnostic glyph (retail `perk_icons` binding not recovered) |
+| effects | bounded octahedron marker pass (16 slots) for pickups, mines, shield bubbles, Nitro/Shock owners and live projectiles, plus a 4-slot flat annulus for the Barge radius (same ghost pipeline, no new texture) |
 | control channel | `/_powerups/relay`, an ordered in-memory HTTP relay beside the unchanged `probes/net-mvp` room service |
 
 The page must be served by `tools/serve.mjs`; it now serves
-`/_work/powerups/powerups.json`, `/powerups/engine.js` and `/_powerups/relay`.
+`/_work/powerups/powerups.json`, `/_work/powerups/projectiles.json`,
+`/powerups/engine.js`, `/powerups/projectiles.js` and `/_powerups/relay`.
 A server process started before this change must be restarted so it serves the
 new routes.
 The new files are `web/powerups.js` (host model + client reducer),
 `web/boost-model.js` (exact PWR1 Hermite targets + queue model),
-`tools/powerups_model_tests.mjs` (79 Node checks), the boost tests below and the
-capture mode. Deferred types stay typed in `POWERUP_DEFERRED`; no damage, radius,
-timer or projectile rule is invented. No retail/full-game claim.
+`tools/powerups_model_tests.mjs` (**107 Node checks**, including the weapon
+cases), the boost tests below and the capture mode. Only `SuperShield` stays
+typed in `POWERUP_DEFERRED`; no damage, radius, timer or projectile rule is
+invented. No retail/full-game claim.
 
 ### Nitro and Shock (M2a)
 
@@ -639,10 +643,38 @@ post-tick writes:
   `browser-mp-powerups-nitro-*.png` / `…-shock-*.png`.
 
 The Shock hit test is a documented project planar distance inside the recovered
-`OuterRadius`; PWR1 does not serialize the retail hit/falloff rule. Shunt, Barge,
-Blindfire and projectiles remain deferred with typed reasons. Full record:
+`OuterRadius`; PWR1 does not serialize the retail hit/falloff rule. Full record:
 `docs/work/verification/T-007-powerups.md` section 10 and
 `docs/work/analysis/e1-drive-slice.md` section 35.
+
+### Blindfire, Shunt and Barge (WPN1)
+
+The PWR4 rules model (`probes/powerups/rules/projectiles.js`) is composed with
+the PWR1 health world; PWR4 judges travel/hit/expiry and the host wrapper applies
+every hit through `world.damage` so shields/wreck/respawn stay in one place.
+
+- **Blindfire/Bolt:** recovered 300 m/s, 0.2 m sphere, 50 damage; runtime 10 s
+  lifetime and 3 charges. The inventory slot keeps its remaining charges after
+  a shot. Straight-line sphere + swept-segment hit, no homing, no ground ray.
+- **Shunt:** recovered 0.75 m sphere, 100 major / 50 minor; runtime
+  `clamp(max(forward+15,10),60,110)` initial speed, 65 deg/s homing at
+  `clamp(d^2/50^2,0.3,1.0)*50 + targetSpeed`, 40 s lifetime, 1 charge. Target
+  rule: 500 m, forward dot > cos 45 deg, lowest `(1-dot)*sqrt(d/500)`; the host
+  uses its engine forward (camera LOS is not modelled). A hit emits
+  `shunt-hit` with a labelled `provisional-impulse` (20 kN*s, `deltaV=J/mass`);
+  each page applies it to its own car as `e1_boost_queue` kind 3.
+- **Barge:** recovered 7.0 m / 100 / 0.4 s, runtime +0.5 m padding, 2.0 m inner
+  band and 1.75 m extents fudge. With the documented 2.98 x 1.68 m envelope the
+  outer/inner bands are 8.08/6.08 m. Major/minor both apply 100; the jink is
+  emitted with `magnitude:{status:'not-serialized'}` and no linear impulse.
+- **Target shape:** the 1.7105 m sphere is the OBB circumradius of the
+  documented project envelope, not a recovered retail hull. Missing
+  radius/extents are typed.
+- **Presentation:** live projectile octahedra and a flat Barge annulus (4
+  bound slots); no retail FX is claimed.
+- **Evidence:** `powerups_model_tests` 107/107, capture `clean-console-and-gates`
+  console 0/0, event counts identical host/guest (Blindfire 50, Shunt 12.5 m/s
+  impulse, Barge 100), `verify_e1_drive` 2281/2281, suite 57/57.
 
 ```powershell
 & $node probes/e1-drive/tools/boost_model_tests.mjs

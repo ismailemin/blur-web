@@ -581,3 +581,85 @@ Screenshots:
    the AI driver was re-run on its existing five-reference-car selection and is
    26/26. Only generated `_work` artifacts were regenerated; no probe source,
    tool or game data was edited.
+
+---
+
+## WPN1 addendum - Blindfire/Bolt, Shunt and Barge (8 November 2026)
+
+Status: **implementation + evidence**. This addendum extends the M2 power-up
+slice with the three remaining core weapons; the PWR2 text above remains the
+historical Mine/Shield/Repair record.
+
+Scope labels: `engineIntegration:true`, `powerups:true`,
+`powerupTypes:['Bomb','Shield','Repair','Nitrous','Shock','Blindfire','Shunt','Barge']`,
+`projectiles:true`, `hostRulesAuthority:true`, `clientJudgement:false`,
+`healthModel:'diagnostic-100hp'`, `retailProtocol:false`, `fullGame:false`.
+Read-only inputs: `_work/powerups/projectiles.json`,
+`probes/powerups/rules/projectiles.js` (PWR4), `_work/powerups/powerups.json`,
+`probes/powerups/rules/engine.js` (PWR1). No powerups/ai-driver/race-rules/
+net-mvp/boost-feasibility/map-slice/tools/upstream/game-data file was modified.
+
+### Result summary
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Node event-model tests | **107/107 PASS** (39 new weapon checks) | `_work/e1-drive/powerups-node-report.json`, `_work/logs/e1-drive/powerups-node-wpn1.log` |
+| PWR4 projectile rules | **19/19 PASS** (unchanged) | `_work/logs/e1-drive/projectiles-node-wpn1.log` |
+| PWR1 rules | **9/9 PASS** (unchanged) | suite |
+| `verify_e1_drive.mjs` | **2281/2281 PASS** | `_work/e1-drive/run.json`, `_work/logs/e1-drive/verify-e1-drive-wpn1.log` |
+| Suite `--skip-build` | **57/57 PASS** | `_work/logs/e1-drive/verify-asset-probe-wpn1.log` |
+| Checker | **23/23 PASS**, exit 0 | `_work/logs/e1-drive/check-e1-poc-wpn1.log` |
+| Two-browser capture | `clean-console-and-gates`, console **0/0** | `_work/e1-drive/browser-evidence-mp-powerups.json`, `_work/logs/e1-drive/mp-capture-powerups-wpn1.log` |
+
+### Recovered values used
+
+- **Blindfire/Bolt:** Speed 300 m/s, Radius 0.2 m, Damage 50 (XT); lifetime
+  10 s, 3 charges, forward fire (runtime-only).
+- **Shunt:** Radius 0.75 m, Damage 100 major / 50 minor (XT + minor rule);
+  initial speed `clamp(max(forward+15,10),60,110)`, homing
+  `clamp(d^2/50^2,0.3,1.0)*50 + targetSpeed`, lifetime 40 s, 1 charge, target
+  500 m / cos 45 deg / lowest `(1-dot)*sqrt(d/500)` (runtime-only + recovered
+  source rule).
+- **Barge:** Radius 7.0 m, Damage 100, Duration 0.4 s (XT); +0.5 m runtime
+  padding, 2.0 m inner band, 1.75 m extents fudge. With the documented 2.98 x
+  1.68 m envelope the outer/inner bands are 8.08 m / 6.08 m.
+- **Target shape:** 1.7105 m sphere = OBB circumradius of the documented
+  `CAR_ENVELOPE` (2.98 x 1.68 x 1.35 m); not a recovered retail hull.
+- **Shunt impulse:** 20000 N*s, `source:'provisional-impulse'`, applied through
+  the BOOST1 queue as kind 3 on the hit car only. Retail is a FakePhysics
+  flip/tip whose magnitude is not serialized.
+- **Barge jink:** `JINK_BARGE_LEFT/RIGHT` with
+  `magnitude:{status:'not-serialized'}`; no linear vehicle impulse.
+- **Dynamic objects:** none in this slice, so no `dynamic-object-impulse`.
+
+### Host events
+
+`projectile-fired`, `projectile-hit`, `projectile-expired`, `shunt-hit` (with
+the provisional impulse), `barge-activated`, `barge-hit`, `effect-expired`
+(Barge) and the typed `projectile-rejected` / `use-rejected` diagnostics. All
+host events carry the host `seq`/`authority`; clients send only use intents.
+
+### Capture
+
+`?mp=1&host=1&powerups=1` and `?mp=1&room=CODE&powerups=1` on River. The capture
+uses each weapon in both directions: Blindfire 50 damage host to guest and
+guest to host; Shunt `flip-forward` + 12.5 m/s provisional impulse + engine
+kind 3; Barge radius 7 /
+0.4 s / 100 damage. Event counts are identical on both pages:
+`projectile-fired 5`, `projectile-hit 4`, `projectile-expired 1`,
+`shunt-hit 2`, `barge-activated 2`, `barge-hit 2`. The marker pass reserves 16
+octahedron slots and 4 Barge ring slots, 0 dropped. Screenshots:
+`browser-mp-powerups-blindfire-host.png`, `...-shunt-guest.png`,
+`...-barge-host.png`, `...-barge-guest.png`.
+
+### Limits
+
+- No retail fake-physics magnitude, camera-LOS targeting, ground ray,
+  dynamic-object impulse or damage-mode modifiers.
+- Shunt linear impulse and the Barge ring are labelled project devices, not
+  retail data or FX.
+- Target radius/extents are the documented project envelope; missing values
+  are typed, never guessed.
+- Capture weapon fire is host-staged (`staged:true`) to make both directions
+  deterministic; normal play uses the recovered host forward-cone rule.
+- No retail-parity or full-game claim.

@@ -249,6 +249,12 @@ Uzak araçlar N slot (cyan insan, amber AI), 20 Hz relay, reconnect devam.
 **2281/2281** (16 MP-AI), capture console 0/0. Kanıt:
 `docs/work/verification/T-007-mp-ai.md`.
 
+**WPN1 — Blindfire/Shunt/Barge:** dilim 8 tipe çıktı (yalnız SuperShield
+ertelendi). Blindfire 3 charge/10 s; Shunt homing + 20 kN·s provisional
+impulse; Barge 7 m/0.4 s; JINK not-serialized. Node **107/107**, verify
+2281/2281, capture console 0/0. Kanıt:
+`docs/work/verification/T-007-powerups.md` WPN1.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

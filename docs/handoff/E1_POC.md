@@ -139,15 +139,16 @@ Host URL'sine `&powerups=1` ekle (guest de aynı odaya katılır):
 http://127.0.0.1:8801/?mp=1&host=1&powerups=1
 ```
 
-- Pickup'a yaklaş → tek slot dolar (Mine / Shield / Repair / Nitro / Shock).
-- **E** ile kullan: mine arkaya bırakılır, shield aktifleşir, repair can basar,
-  Nitro hızlandırır, Shock hedefi yavaşlatır.
+- Pickup'a yaklaş → tek slot dolar (Mine / Shield / Repair / Nitro / Shock /
+  Blindfire / Shunt / Barge).
+- **E** ile kullan: mine, shield, repair, nitro, shock, blindfire projectile,
+  shunt homing, barge alanı.
 - HUD: health 100, shield, olay akışı; mine/shield/pickup diagnostic marker.
 - Wreck olursa R1 son checkpoint'ten respawn.
 - `provisional` etiketi: pickup yerleşimi geçici ölçülmüş arc; gerçek 54 nokta
   PWR3'te çıkarıldı, entegrasyonu sonraki adım.
-- Shunt/Bolt/Barge ve projectile'lar bu dilimde **yok** (retail flip/tip,
-  hedefleme ve hit-test verisi kanıtlanana kadar ertelendi).
+- SuperShield ve dynamic-object/retail fake-physics etkileri bu dilimde
+  **yok**; diğer 8 tip host otoriteli çalışıyor.
 
 ### Amboy / Gracia haritaları
 

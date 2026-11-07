@@ -52,7 +52,7 @@ const RACE_RULES = path.join(ROOT, 'probes/race-rules');
 // and the committed rules prototype (never copied or edited here).
 const POWERUPS_WORK = path.join(ROOT, '_work/powerups');
 const POWERUPS_RULES = path.join(ROOT, 'probes/powerups/rules');
-const POWERUPS_RULE_FILES = new Set(['engine.js']);
+const POWERUPS_RULE_FILES = new Set(['engine.js', 'projectiles.js']);
 // M3 map packages and the read-only level physics bytes. The map-slice tree is
 // generated game-data output; `game-data/` is the installed game tree. Neither
 // is copied into the repository or written by the server.

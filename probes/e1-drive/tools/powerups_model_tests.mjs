@@ -17,8 +17,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createWorld } from '../../powerups/rules/engine.js';
+import { createProjectileModel } from '../../powerups/rules/projectiles.js';
 import {
-  POWERUP_DEFERRED, POWERUP_PLACEMENT_ARCS, POWERUP_PLACEMENT_TYPES, POWERUP_SLICE_TYPES,
+  POWERUP_DEFERRED, POWERUP_PLACEMENT_ARCS, POWERUP_PLACEMENT_TYPES, POWERUP_PROJECTILE_TYPES,
+  POWERUP_PROVISIONAL_SHUNT_IMPULSE_NS, POWERUP_SLICE_TYPES, POWERUP_TARGET_RADIUS_M,
   createPowerupModel, provisionalPickupPlan
 } from '../web/powerups.js';
 
@@ -26,6 +28,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../../..');
 const OUT = path.join(ROOT, '_work/e1-drive');
 const MANIFEST = path.join(ROOT, '_work/powerups/powerups.json');
+const PROJECTILES = path.join(ROOT, '_work/powerups/projectiles.json');
 const LAYOUT = path.join(ROOT, '_work/e1-drive/sprint.json');
 
 const checks = [];
@@ -43,12 +46,15 @@ function loadJson(file, label) {
 }
 
 const manifest = loadJson(MANIFEST, 'PWR1 manifest');
+const projectileManifest = loadJson(PROJECTILES, 'PWR4 projectile manifest');
 const layout = loadJson(LAYOUT, 'measured 310 m layout');
 
 function makeModel() {
   return createPowerupModel({
     manifest,
     createWorld,
+    projectileManifest,
+    createProjectileModel,
     authorityId: 'host',
     maxHealth: 100,
     respawnDelaySeconds: 1.0,
@@ -58,8 +64,18 @@ function makeModel() {
 }
 
 function addPair(model, options = {}) {
-  model.addPlayer('p1', { position: options.p1 ?? { x: 20, y: 0, z: 0 }, forward: { x: 0, y: 0, z: 1 } });
-  model.addPlayer('p2', { position: options.p2 ?? { x: 0, y: 0, z: 0 }, forward: { x: 0, y: 0, z: 1 } });
+  model.addPlayer('p1', {
+    position: options.p1 ?? { x: 20, y: 0, z: 0 },
+    forward: options.p1Forward ?? { x: 0, y: 0, z: 1 },
+    speedMps: options.p1Speed ?? 20,
+    massKg: 1600
+  });
+  model.addPlayer('p2', {
+    position: options.p2 ?? { x: 0, y: 0, z: 0 },
+    forward: options.p2Forward ?? { x: 0, y: 0, z: 1 },
+    speedMps: options.p2Speed ?? 20,
+    massKg: 1600
+  });
 }
 
 const respawnTarget = (playerId) => ({
@@ -69,13 +85,16 @@ const respawnTarget = (playerId) => ({
 // ---------------------------------------------------------------- manifest/data
 check('manifest exposes the 11 PickupType entities', manifest.entities.length === 11, manifest.entities.length);
 check('manifest hash is present', typeof manifest.hashes?.manifestContent === 'string', manifest.hashes?.manifestContent);
-check('integrated slice is exactly Bomb/Shield/Repair/Nitrous/Shock',
-  JSON.stringify(POWERUP_SLICE_TYPES) === JSON.stringify(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock']), POWERUP_SLICE_TYPES.join(','));
-for (const type of ['Shunt', 'Blindfire', 'Barge', 'SuperShield']) {
-  check('deferred type ' + type + ' has a typed reason', typeof POWERUP_DEFERRED[type] === 'string' && POWERUP_DEFERRED[type].length > 20);
-}
-check('Nitro and Shock are no longer deferred',
-  !('Nitrous' in POWERUP_DEFERRED) && !('Shock' in POWERUP_DEFERRED),
+check('integrated slice is exactly the eight core types',
+  JSON.stringify(POWERUP_SLICE_TYPES) === JSON.stringify([
+    'Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Blindfire', 'Shunt', 'Barge'
+  ]), POWERUP_SLICE_TYPES.join(','));
+check('Blindfire, Shunt and Barge are the projectile types',
+  JSON.stringify(POWERUP_PROJECTILE_TYPES) === JSON.stringify(['Blindfire', 'Shunt', 'Barge']),
+  POWERUP_PROJECTILE_TYPES.join(','));
+check('only SuperShield remains deferred, with a typed reason',
+  typeof POWERUP_DEFERRED.SuperShield === 'string' && POWERUP_DEFERRED.SuperShield.length > 20 &&
+  !('Shunt' in POWERUP_DEFERRED) && !('Blindfire' in POWERUP_DEFERRED) && !('Barge' in POWERUP_DEFERRED),
   JSON.stringify(Object.keys(POWERUP_DEFERRED)));
 
 const catalog = makeModel().catalog;
@@ -104,6 +123,47 @@ check('Shock radii/lifetime/damage traced to PWR1',
   near(shock.values.Lifetime, 1.5) && near(shock.values.DamageInflicted, 100),
   JSON.stringify({ inner: shock.values.InnerRadius, outer: shock.values.OuterRadius,
     lifetime: shock.values.Lifetime, damage: shock.values.DamageInflicted }));
+check('Blindfire Speed/Radius/Damage traced to PWR4',
+  near(projectileManifest.types.Blindfire.levels.Normal.fields.Speed.value, 300) &&
+  near(projectileManifest.types.Blindfire.levels.Normal.fields.Radius.value, 0.2, 1e-6) &&
+  near(projectileManifest.types.Blindfire.levels.Normal.fields.DamageInflicted.value, 50),
+  JSON.stringify({ speed: projectileManifest.types.Blindfire.levels.Normal.fields.Speed.value,
+    radius: projectileManifest.types.Blindfire.levels.Normal.fields.Radius.value,
+    damage: projectileManifest.types.Blindfire.levels.Normal.fields.DamageInflicted.value }));
+check('Blindfire lifetime/charges are typed runtime-only values',
+  near(projectileManifest.runtimeValues.Blindfire.lifetimeSeconds, 10) &&
+  projectileManifest.runtimeValues.Blindfire.charges === 3 &&
+  projectileManifest.unknowns.Blindfire.some((row) => row.field === 'projectileLifetime' && row.status === 'runtime-only'),
+  JSON.stringify(projectileManifest.runtimeValues.Blindfire));
+check('Shunt Radius/Damage traced to PWR4',
+  near(projectileManifest.types.Shunt.levels.Normal.fields.Radius.value, 0.75) &&
+  near(projectileManifest.types.Shunt.levels.Normal.fields.DamageInflicted.value, 100),
+  JSON.stringify({ radius: projectileManifest.types.Shunt.levels.Normal.fields.Radius.value,
+    damage: projectileManifest.types.Shunt.levels.Normal.fields.DamageInflicted.value }));
+check('Shunt lifetime/speed/homing are typed runtime-only values',
+  near(projectileManifest.runtimeValues.Shunt.lifetimeSeconds, 40) &&
+  projectileManifest.runtimeValues.Shunt.minSpeedMps === 60 &&
+  projectileManifest.runtimeValues.Shunt.maxSpeedMps === 110 &&
+  near(projectileManifest.runtimeValues.Shunt.maxHomingSpeedMps, 50) &&
+  projectileManifest.runtimeValues.Shunt.charges === 1,
+  JSON.stringify(projectileManifest.runtimeValues.Shunt));
+check('Barge Radius/Damage/Duration traced to PWR4',
+  near(projectileManifest.types.Barge.levels.Normal.fields.Radius.value, 7) &&
+  near(projectileManifest.types.Barge.levels.Normal.fields.DamageInflicted.value, 100) &&
+  near(projectileManifest.types.Barge.levels.Normal.fields.Duration.value, 0.4, 1e-6),
+  JSON.stringify({ radius: projectileManifest.types.Barge.levels.Normal.fields.Radius.value,
+    damage: projectileManifest.types.Barge.levels.Normal.fields.DamageInflicted.value,
+    duration: projectileManifest.types.Barge.levels.Normal.fields.Duration.value }));
+check('Barge padding/band/extents fudge are typed runtime-only values',
+  near(projectileManifest.runtimeValues.Barge.paddingM, 0.5) &&
+  near(projectileManifest.runtimeValues.Barge.innerBandM, 2.0) &&
+  near(projectileManifest.runtimeValues.Barge.extentsFudgeAverageM, 1.75) &&
+  projectileManifest.runtimeValues.Barge.charges === 1,
+  JSON.stringify(projectileManifest.runtimeValues.Barge));
+check('documented target envelope gives the committed OBB circumradius',
+  near(POWERUP_TARGET_RADIUS_M, 1.7104677722775135, 1e-12) &&
+  near(POWERUP_PROVISIONAL_SHUNT_IMPULSE_NS, 20000),
+  String(POWERUP_TARGET_RADIUS_M));
 check('PickupRadius traced to PWR1', near(catalog.system.radius, 2.0), catalog.system.radius);
 check('PickupDeactivateTimer traced to PWR1', near(catalog.system.deactivateSeconds, 0.6, 1e-6), catalog.system.deactivateSeconds);
 
@@ -328,6 +388,215 @@ check('provisional plan uses measured samples (arc/position match)',
     eventOf(events, 'respawn')?.source === 'race-rules-respawn-target');
 }
 
+// ------------------------------------------------- projectile weapons
+{
+  const model = makeModel();
+  addPair(model, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 0, y: 0, z: 30 } });
+  model.grantItem('p1', 'Blindfire');
+  const item = model.players.get('p1').inventory[0];
+  check('Blindfire pickup grants the runtime 3 charges',
+    item?.type === 'Blindfire' && model.projectileCharges('p1', 'Blindfire') === 3,
+    JSON.stringify({ item, charges: model.projectileCharges('p1', 'Blindfire') }));
+  let events = model.requestUse('p1');
+  const fired = eventOf(events, 'projectile-fired');
+  check('Blindfire fires the recovered 300 m/s / 0.2 m / 50 damage bolt',
+    fired && near(fired.speedMps, 300) && fired.pickupType === 'Blindfire' &&
+    near(fired.chargesRemaining, 2) && near(fired.lifetimeSeconds, 10) &&
+    fired.lifetimeSource === 'runtime-only',
+    JSON.stringify(fired && { speed: fired.speedMps, charges: fired.chargesRemaining,
+      lifetime: fired.lifetimeSeconds, source: fired.lifetimeSource }));
+  let hit = null;
+  for (let tick = 0; tick < 30 && !hit; tick++) {
+    events = model.tick(1 / 60, {}, respawnTarget);
+    hit = eventOf(events, 'projectile-hit');
+  }
+  check('Blindfire swept sphere hits the documented target envelope', Boolean(hit),
+    events.map((event) => event.type).join(','));
+  check('Blindfire applies 50 damage through the 100 HP model',
+    hit && near(hit.damage, 50) && model.players.get('p2').health === 50,
+    JSON.stringify({ hit: hit?.damage, health: model.players.get('p2').health }));
+  check('a Blindfire hit leaves 2 of 3 charges in the inventory slot',
+    model.players.get('p1').inventory.length === 1 &&
+    model.projectileCharges('p1', 'Blindfire') === 2,
+    JSON.stringify(model.players.get('p1').inventory));
+}
+
+{
+  const model = makeModel();
+  addPair(model, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 50, y: 0, z: 0 } });
+  model.grantItem('p1', 'Blindfire');
+  model.requestUse('p1');
+  let events = [];
+  for (let tick = 0; tick < 12; tick++) {
+    events = model.tick(1.0, {}, respawnTarget);
+    if (hasEvent(events, 'projectile-expired')) break;
+  }
+  const expired = eventOf(events, 'projectile-expired');
+  check('Blindfire miss expires at the runtime-only 10 s lifetime',
+    expired && expired.reason === 'old-age' && near(expired.lifetimeSeconds, 10),
+    JSON.stringify(expired));
+  check('an expired Blindfire did no damage and left no projectile',
+    model.players.get('p2').health === 100 && model.projectiles.projectiles.length === 0,
+    JSON.stringify({ health: model.players.get('p2').health,
+      projectiles: model.projectiles.projectiles.length }));
+}
+
+{
+  const model = makeModel();
+  addPair(model, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 0, y: 0, z: 40 } });
+  model.grantItem('p1', 'Blindfire');
+  const charges = [];
+  for (let shot = 0; shot < 3; shot++) {
+    const events = model.requestUse('p1');
+    charges.push(eventOf(events, 'projectile-fired')?.chargesRemaining ?? null);
+    model.tick(0.11, {}, respawnTarget);
+  }
+  check('Blindfire consumes exactly 3 charges then removes the item',
+    JSON.stringify(charges) === JSON.stringify([2, 1, 0]) &&
+    model.players.get('p1').inventory.length === 0,
+    JSON.stringify({ charges, inventory: model.players.get('p1').inventory }));
+  const rejected = model.requestUse('p1');
+  check('a fourth Blindfire use is a typed empty-inventory rejection',
+    eventOf(rejected, 'use-rejected')?.reason === 'empty-inventory',
+    JSON.stringify(eventOf(rejected, 'use-rejected')));
+}
+
+{
+  const model = makeModel();
+  addPair(model, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 0, y: 0, z: 30 } });
+  model.grantItem('p1', 'Shunt');
+  let events = model.requestUse('p1');
+  const fired = eventOf(events, 'projectile-fired');
+  check('Shunt fires at the runtime initial max(forward+15,10) clamped 60..110',
+    fired && fired.targetId === 'p2' && near(fired.speedMps, 60) &&
+    fired.homing?.maxHomingSpeedMps === 50 && fired.homing?.minSpeedMps === 60,
+    JSON.stringify(fired && { speed: fired.speedMps, homing: fired.homing }));
+  let hit = null;
+  let shuntHit = null;
+  for (let tick = 0; tick < 80 && !shuntHit; tick++) {
+    events = model.tick(1 / 60, {}, respawnTarget);
+    hit = hit || eventOf(events, 'projectile-hit');
+    shuntHit = eventOf(events, 'shunt-hit');
+  }
+  check('Shunt homes to the 500 m / cos 45 target and damages 100 (major)',
+    hit && shuntHit && hit.hitType === 'major' && near(hit.damage, 100) &&
+    shuntHit.fakePhysics?.kind === 'flip-forward',
+    JSON.stringify({ hit, shuntHit }));
+  check('Shunt wrecked the 100 HP target',
+    model.players.get('p2').health === 0 && model.players.get('p2').alive === false,
+    JSON.stringify({ health: model.players.get('p2').health, alive: model.players.get('p2').alive }));
+  const impulse = shuntHit?.impulse ?? null;
+  check('Shunt hit carries the provisional impulse with delta-v = J/m',
+    impulse && impulse.source === 'provisional-impulse' &&
+    impulse.status === 'provisional-impulse' &&
+    near(impulse.impulseNs, 20000) && near(impulse.massKg, 1600) &&
+    near(impulse.deltaV, 12.5) && impulse.direction != null,
+    JSON.stringify(impulse));
+  check('Shunt is a one-charge item and leaves the inventory empty',
+    model.players.get('p1').inventory.length === 0 &&
+    model.projectileCharges('p1', 'Shunt') === 0);
+}
+
+{
+  const model = makeModel();
+  addPair(model, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 0, y: 0, z: -30 } });
+  model.grantItem('p1', 'Shunt');
+  const events = model.requestUse('p1');
+  const rejected = eventOf(events, 'projectile-rejected');
+  check('Shunt refuses a target outside the 500 m / cos 45 forward cone',
+    rejected?.reason === 'no-eligible-target' && model.players.get('p1').inventory.length === 1,
+    JSON.stringify(rejected));
+}
+
+{
+  const major = makeModel();
+  addPair(major, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 5, y: 0, z: 0 } });
+  major.grantItem('p1', 'Barge');
+  let events = major.requestUse('p1');
+  const activated = eventOf(events, 'barge-activated');
+  check('Barge activates the recovered radius/duration with the +0.5 runtime padding',
+    activated && near(activated.radius, 7) && near(activated.durationSeconds, 0.4, 1e-6) &&
+    near(activated.hitTest.majorRadius, 7.5) && near(activated.hitTest.innerBand, 2),
+    JSON.stringify(activated && { radius: activated.radius, duration: activated.durationSeconds,
+      hitTest: activated.hitTest }));
+  events = major.tick(1 / 60, {}, respawnTarget);
+  const bargeHit = eventOf(events, 'barge-hit');
+  check('Barge major band hits for 100 inside 7.5 + envelope fudge - 2.0 m',
+    bargeHit && bargeHit.hitType === 'major' && near(bargeHit.damage, 100) &&
+    near(bargeHit.outerRadius, 8.08, 1e-6) && near(bargeHit.innerRadius, 6.08, 1e-6),
+    JSON.stringify(bargeHit));
+  check('Barge damage wrecks the 100 HP target', major.players.get('p2').health === 0);
+  check('Barge fake-physics is the labelled JINK with no serialized magnitude',
+    bargeHit?.fakePhysics?.kind === 'jink-barge-right' &&
+    bargeHit?.fakePhysics?.magnitude?.status === 'not-serialized',
+    JSON.stringify(bargeHit?.fakePhysics));
+  const snapshot = major.snapshot();
+  check('Barge snapshot exposes the 8.08 m outer and 6.08 m inner band',
+    snapshot.barges.length === 1 && near(snapshot.barges[0].outerRadius, 8.08, 1e-6) &&
+    near(snapshot.barges[0].innerRadius, 6.08, 1e-6),
+    JSON.stringify(snapshot.barges));
+
+  const minor = makeModel();
+  addPair(minor, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 7, y: 0, z: 0 } });
+  minor.grantItem('p1', 'Barge');
+  minor.requestUse('p1');
+  const minorEvents = minor.tick(1 / 60, {}, respawnTarget);
+  const minorHit = eventOf(minorEvents, 'barge-hit');
+  check('Barge minor band (7 m) still applies 100 and only changes the jink',
+    minorHit?.hitType === 'minor' && near(minorHit.damage, 100) &&
+    minorHit?.fakePhysics?.kind === 'jink-barge-minor-right',
+    JSON.stringify(minorHit));
+
+  const miss = makeModel();
+  addPair(miss, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 10, y: 0, z: 0 } });
+  miss.grantItem('p1', 'Barge');
+  miss.requestUse('p1');
+  const missEvents = miss.tick(0.5, {}, respawnTarget);
+  check('Barge outside the 8.08 m outer band misses and expires at 0.4 s',
+    !hasEvent(missEvents, 'barge-hit') && hasEvent(missEvents, 'effect-expired') &&
+    miss.snapshot().barges.length === 0,
+    missEvents.map((event) => event.type).join(','));
+}
+
+{
+  const model = makeModel();
+  addPair(model, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 0, y: 0, z: 30 } });
+  model.grantItem('p2', 'Shield');
+  model.requestUse('p2');
+  model.grantItem('p1', 'Blindfire');
+  model.requestUse('p1');
+  let events = [];
+  for (let tick = 0; tick < 30; tick++) {
+    events = model.tick(1 / 60, {}, respawnTarget);
+    if (hasEvent(events, 'projectile-hit')) break;
+  }
+  check('projectile damage passes through the PWR1 shield absorb model',
+    hasEvent(events, 'shield-absorbed') && model.players.get('p2').health === 100 &&
+    eventOf(events, 'projectile-hit')?.absorbed === 50,
+    JSON.stringify({ events: events.map((event) => event.type), health: model.players.get('p2').health }));
+}
+
+{
+  const run = () => {
+    const model = makeModel();
+    addPair(model, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 0, y: 0, z: 30 } });
+    model.grantItem('p1', 'Blindfire');
+    model.requestUse('p1');
+    for (let tick = 0; tick < 60; tick++) model.tick(1 / 60, {}, respawnTarget);
+    model.grantItem('p1', 'Shunt');
+    model.requestUse('p1');
+    for (let tick = 0; tick < 60; tick++) model.tick(1 / 60, {}, respawnTarget);
+    model.grantItem('p1', 'Barge');
+    model.requestUse('p1');
+    for (let tick = 0; tick < 30; tick++) model.tick(1 / 60, {}, respawnTarget);
+    return JSON.stringify(model.snapshot());
+  };
+  const a = run();
+  const b = run();
+  check('the same projectile command sequence yields the same snapshot',
+    a === b, 'sha256:' + createHash('sha256').update(a).digest('hex'));
+}
+
 // -------------------------------------------------------------- sequencing
 {
   const model = makeModel();
@@ -376,12 +645,15 @@ const report = {
   inputs: {
     manifest: path.relative(ROOT, MANIFEST).replaceAll('\\', '/'),
     manifestContentHash: manifest.hashes?.manifestContent ?? null,
+    projectileManifest: path.relative(ROOT, PROJECTILES).replaceAll('\\', '/'),
+    projectileManifestContentHash: projectileManifest.hashes?.manifestContent ?? null,
     layout: path.relative(ROOT, LAYOUT).replaceAll('\\', '/'),
     layoutHash: layout.hash ?? null
   },
   slice: {
     types: POWERUP_SLICE_TYPES.slice(),
     deferred: { ...POWERUP_DEFERRED },
+    projectileTypes: POWERUP_PROJECTILE_TYPES.slice(),
     placementArcs: POWERUP_PLACEMENT_ARCS.slice(),
     placementTypes: POWERUP_PLACEMENT_TYPES.slice(),
     normalRespawnSeconds: null,
