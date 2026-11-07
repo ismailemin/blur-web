@@ -6,8 +6,27 @@ lap or claim a playable game. It packages one level's collision, first-RenderLis
 direct draw geometry, measured layout, spawn proof and an E1 wasm physics settle
 so a later integration task has bounded, hashed inputs.
 
-Current package: `usa_amboy` (2,060.6 m measured draw-covered path). Refreshed
-7 November 2026 with reader `level_inspect.exe` 249,856 B /
+Current packages: `usa_amboy` (2,060.6 m measured draw-covered path) and
+`spa_barcelona_gracia` (624.9 m, 88/92 sections). The tools take a level name
+and package directory, so a new level does not need a code fork:
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+& $py probes/map-slice/tools/extract_slice.py --level spa_barcelona_gracia
+& $py probes/map-slice/tools/amboy_texture_bindings.py --level spa_barcelona_gracia
+& $py probes/map-slice/tools/amboy_blocker_report.py --level spa_barcelona_gracia
+& $py probes/map-slice/tools/build_amboy_render.py --level spa_barcelona_gracia
+& $py probes/map-slice/tools/verify_slice.py --package _work/map-slice/gracia
+& $py probes/map-slice/tools/verify_amboy_texture_bindings.py --level spa_barcelona_gracia
+& $py probes/map-slice/tools/verify_amboy_render.py --package _work/map-slice/gracia-render --level spa_barcelona_gracia
+```
+
+Amboy stays the default for every tool. Details:
+[`docs/work/analysis/map-slice-gracia.md`](../../docs/work/analysis/map-slice-gracia.md)
+(Gracia) and
+[`docs/work/analysis/map-slice-amboy.md`](../../docs/work/analysis/map-slice-amboy.md)
+(Amboy). Amboy was refreshed 7 November 2026 with reader
+`level_inspect.exe` 249,856 B /
 `a633a030f530b9939991b4fc5c67aebe60d00cd22d59a6fffb3f74b0fbf6965b`; all 48
 supported sections were replayed with byte-identical geometry (see
 [Reader refresh](#reader-refresh)).
@@ -66,6 +85,33 @@ as **hints only** (`applied:false`). No fallback texture is invented.
 
 Details and the exact e1 integration gap:
 [`docs/work/analysis/map-slice-amboy-render.md`](../../docs/work/analysis/map-slice-amboy-render.md).
+
+## E1 module pin policy (behaviour-based)
+
+The slice packages do **not** hard-fail when `_work/e1-drive/module` is rebuilt
+with the same physics behaviour. `verify_slice.py` treats the module/build files
+as soft pins: it re-runs the current module on the package physics at the
+recorded spawn, twice, and compares all 61 per-tick state hashes plus the
+sequence hash to `physics-settle.json`. A byte/hash drift is accepted only when
+those match; otherwise it fails with the first mismatching tick and both hashes.
+The current identity is recorded informationally in `verify.json`.
+
+`probes/map-slice/tools/refresh_module_pin.py` refreshes the recorded identity
+after a rebuild without touching collision, draw, UV0, index, layout or spawn
+bytes:
+
+```powershell
+& $py probes/map-slice/tools/refresh_module_pin.py --package _work/map-slice/amboy
+& $py probes/map-slice/tools/refresh_module_pin.py --package _work/map-slice/gracia
+```
+
+Current identity at the 7 November 2026 refresh: module 11,480 B /
+`5177ea975151fb085a44b8b960e384913d36a7e225078a1783f90e1f0b1bff2a`, build
+3,466 B / `8493193cb8aacc5a9d108874318c612298b46edb5fe28b12c8558b7f0d5c7577`,
+wasm `bcdc2d994a499cc399333b44cfc418d6594f8b5182a668c3a9df761d891de265`.
+Amboy sequence `d25c4592…53491b38`, Gracia sequence `4fd8ae0c…386e8e30`; both
+replayed 61/61 ticks identically. Hashes and the exact policy:
+[`docs/work/analysis/map-slice-module-pin-policy.md`](../../docs/work/analysis/map-slice-module-pin-policy.md).
 
 ## Reproduce
 

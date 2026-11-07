@@ -56,6 +56,9 @@ def main():
         ('ai-driver',['node','probes/ai-driver/verify.mjs']),
         ('amboy-textures',[sys.executable,'probes/map-slice/tools/verify_amboy_texture_bindings.py']),
         ('amboy-render',[sys.executable,'probes/map-slice/tools/verify_amboy_render.py','--package','_work/map-slice/amboy-render']),
+        ('gracia-slice',[sys.executable,'probes/map-slice/tools/verify_slice.py','--package','_work/map-slice/gracia']),
+        ('gracia-textures',[sys.executable,'probes/map-slice/tools/verify_amboy_texture_bindings.py','--level','spa_barcelona_gracia']),
+        ('gracia-render',[sys.executable,'probes/map-slice/tools/verify_amboy_render.py','--package','_work/map-slice/gracia-render','--level','spa_barcelona_gracia']),
     ])
     results=[]
     for name,command in steps:

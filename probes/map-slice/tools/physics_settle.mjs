@@ -12,9 +12,14 @@
 //
 // Usage:
 //   node probes/map-slice/tools/physics_settle.mjs [--package _work/map-slice/amboy]
+//        [--out <json>]
+//
+// --out writes the settle document somewhere other than
+// <package>/physics-settle.json; the verifier uses it to replay the current
+// module without touching the committed package.
 
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashOf } from '../../e1-drive/web/packet-hash.js';
@@ -22,9 +27,10 @@ import { hashOf } from '../../e1-drive/web/packet-hash.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
 const packageArg = args.includes('--package') ? args[args.indexOf('--package') + 1] : '_work/map-slice/amboy';
+const outArg = args.includes('--out') ? args[args.indexOf('--out') + 1] : null;
 const PACKAGE = path.resolve(ROOT, packageArg);
 const SLICE = path.join(PACKAGE, 'slice.json');
-const OUT = path.join(PACKAGE, 'physics-settle.json');
+const OUT = outArg ? path.resolve(ROOT, outArg) : path.join(PACKAGE, 'physics-settle.json');
 
 const BAND_OFFSETS_M = [-0.5, -0.25, 0.0, 0.25, 0.5];
 const STATIONS_M = [0.0, 1.0, 2.0, 3.0, 4.0];
@@ -196,15 +202,22 @@ const determinism = {
   identical: perTickEqual && runA.summary.stateSequenceHash === runB.summary.stateSequenceHash,
 };
 
+// Record the identity of the module actually replayed, not only the pin that
+// was stored in slice.json. The verifier accepts a pin drift when the per-tick
+// state hashes are unchanged.
+const moduleSha256 = createHash('sha256').update(readFileSync(modulePath)).digest('hex');
+const buildJsonSha256 = createHash('sha256').update(readFileSync(buildPath)).digest('hex');
 const doc = {
   schema: 'blur.map-slice.physics-settle/1',
   level: slice.level,
   module: {
     path: source.e1Module.path,
-    sha256: source.e1Module.sha256,
+    sha256: moduleSha256,
+    pinnedSha256: source.e1Module.sha256,
     wasmPath: path.relative(ROOT, wasmPath).split(path.sep).join('/'),
     wasmSha256: createHash('sha256').update(wasmBytes).digest('hex'),
-    buildJsonSha256: source.e1Build.sha256,
+    buildJsonSha256: buildJsonSha256,
+    pinnedBuildJsonSha256: source.e1Build.sha256,
     build: {
       objects: build.objects,
       reusedObjects: build.reusedObjects,
@@ -243,11 +256,12 @@ const doc = {
     rendererClaim: false,
     e1DriveIntegration: false,
     statement: '60-tick zero-input settle of the existing E1 wasm vehicle on '
-             + 'usa_amboy/Level.levelphysics at the candidate spawn; no frame, '
+             + slice.level + '/Level.levelphysics at the candidate spawn; no frame, '
              + 'lap, map integration or retail start-line claim',
   },
 };
 
+mkdirSync(path.dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(doc, null, 1) + '\n', 'utf8');
 console.log(JSON.stringify({
   output: path.relative(ROOT, OUT).split(path.sep).join('/'),

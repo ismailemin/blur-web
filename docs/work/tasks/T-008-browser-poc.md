@@ -83,6 +83,7 @@ sürüşü deneyebileceği PoC.
 | M2 power-up dilimi | PWR2 | ✅ Mine/Shield/Repair, 68/68 |
 | Nitro boost fizibilitesi | BOOST1 | ✅ AddForce yolu, hedef 52,759 m/s |
 | 15 araçlık roster | V2 | ✅ 10 yeni araç, 2254/2254 |
+| Gracia harita paketi | MAP5 | ✅ 624,9 m, 2.627 draw, 46 suite |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

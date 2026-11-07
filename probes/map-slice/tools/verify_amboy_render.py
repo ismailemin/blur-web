@@ -29,10 +29,6 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
 TOOL = Path(__file__).resolve().parent / "build_amboy_render.py"
-SLICE_DIR = ROOT / "_work/map-slice/amboy"
-TEXTURE_DIR = ROOT / "_work/map-slice/amboy-textures"
-BINDINGS = TEXTURE_DIR / "bindings.json"
-BLOCKERS = TEXTURE_DIR / "blockers.json"
 
 BINDABLE = "bindable-static-albedo"
 EFFECT = "blocked-effect-not-static-albedo"
@@ -99,6 +95,17 @@ def expected_chain_bytes(width: int, height: int, levels: int) -> int:
                for level in range(min(levels, natural)))
 
 
+def bindable_texture_rows(bindings: dict) -> list[dict]:
+    ids = {row["textureId"] for row in bindings["draws"]
+           if row["status"] == BINDABLE and row.get("textureId")}
+    return [row for row in bindings["textures"] if row["id"] in ids]
+
+
+def trim_bindable_sources(bindings: dict) -> int:
+    return len({row["textureId"] for row in bindings["draws"]
+                if row["status"] == BINDABLE and row.get("textureId")})
+
+
 def file_map(directory: Path, ignore=()) -> dict[str, bytes]:
     result = {}
     for path in sorted(directory.rglob("*")):
@@ -111,7 +118,7 @@ def file_map(directory: Path, ignore=()) -> dict[str, bytes]:
     return result
 
 
-def verify(package: Path) -> dict:
+def verify(package: Path, level: str | None = None) -> dict:
     c = Checker()
     render_path = package / "render.json"
     diag_path = package / "diagnostics.json"
@@ -120,17 +127,55 @@ def verify(package: Path) -> dict:
 
     manifest = load_json(render_path)
     diagnostics = load_json(diag_path)
+    level = level or manifest.get("level")
+    if level != manifest.get("level"):
+        raise SystemExit("requested level %r != manifest level %r"
+                         % (level, manifest.get("level")))
+    SLICE_DIR = (ROOT / manifest["source"]["slice"]["path"]).parent
+    BINDINGS = ROOT / manifest["source"]["bindings"]["path"]
+    BLOCKERS = ROOT / manifest["source"]["blockers"]["path"]
+    TEXTURE_DIR = BINDINGS.parent
     slice_doc = load_json(SLICE_DIR / "slice.json")
     bindings = load_json(BINDINGS)
     blockers = load_json(BLOCKERS)
+    slide = slice_doc["draws"]
+    status = bindings["counts"]["statuses"]
+    expected_bindable = bindings["counts"]["bindableDraws"]
+    expected_blocked = bindings["counts"]["blockedDraws"]
+    expected_draws = slide["drawCount"]
+    expected_bindable_tri = bindings["counts"]["bindableTriangles"]
+    expected_blocked_tri = slice_doc["draws"]["triangleCount"] - expected_bindable_tri
+    expected_effect = status.get(EFFECT, 0)
+    expected_decoder = status.get(DECODER, 0)
+    expected_alpha = status.get(ALPHA, 0)
+    expected_runtime = status.get(RUNTIME, 0)
+    bindable_rows = bindable_texture_rows(bindings)
+    expected_sources = trim_bindable_sources(bindings)
+    expected_unique_blobs = len({row["rgbaSha256"] for row in bindable_rows})
+    expected_ref_mip0 = sum(row["width"] * row["height"] * 4
+                            for row in bindable_rows)
+    expected_ref_chain = sum(expected_chain_bytes(row["width"], row["height"],
+                                                  row["levels"])
+                             for row in bindable_rows)
+    unique_rows = {}
+    for row in bindable_rows:
+        unique_rows.setdefault(row["rgbaSha256"], row)
+    expected_unique_mip0 = sum(row["width"] * row["height"] * 4
+                               for row in unique_rows.values())
+    expected_unique_chain = sum(expected_chain_bytes(row["width"], row["height"],
+                                                     row["levels"])
+                                for row in unique_rows.values())
 
     # ------------------------------------------------------------- identity
-    c.check("schema", manifest.get("schema") == "blur.map-slice.amboy-render/1")
+    c.check("schema", manifest.get("schema") ==
+            ("blur.map-slice.amboy-render/1" if level == "usa_amboy"
+             else "blur.map-slice.render/1"))
     c.check("kind", manifest.get("kind") == "map-slice-render-package")
-    c.check("level", manifest.get("level") == "usa_amboy")
+    c.check("level", manifest.get("level") == level)
     c.check("diagnostics.schema", diagnostics.get("schema") ==
-            "blur.map-slice.amboy-render-diagnostics/1")
-    c.check("diagnostics.level", diagnostics.get("level") == "usa_amboy")
+            ("blur.map-slice.amboy-render-diagnostics/1" if level == "usa_amboy"
+             else "blur.map-slice.render-diagnostics/1"))
+    c.check("diagnostics.level", diagnostics.get("level") == level)
     for name in ("dataOnly", "rendererChanged", "e1DriveIntegrated", "gpuUploaded",
                  "browserFrameProduced", "playableClaim", "texturesBoundInGpu",
                  "srgbApplied", "mipsGenerated", "instancesApplied", "normalsIncluded"):
@@ -144,28 +189,44 @@ def verify(package: Path) -> dict:
                 diagnostics["scope"].get(name) is (name == "dataOnly"))
 
     counts = manifest["counts"]
-    c.check("counts.bindableDraws", counts.get("bindableDraws") == 1201, counts.get("bindableDraws"))
-    c.check("counts.blockedDraws", counts.get("blockedDraws") == 405)
-    c.check("counts.draws", counts.get("draws") == 1606)
-    c.check("counts.bindableTriangles", counts.get("bindableTriangles") == 269300)
-    c.check("counts.blockedTriangles", counts.get("blockedTriangles") == 79648)
-    c.check("counts.textureSources", counts.get("textureSources") == 186)
-    c.check("counts.uniqueTextureBlobs", counts.get("uniqueTextureBlobs") == 179)
-    c.check("counts.mergedTextureSources", counts.get("mergedTextureSources") == 7)
+    c.check("counts.bindableDraws", counts.get("bindableDraws") == expected_bindable,
+            counts.get("bindableDraws"))
+    c.check("counts.blockedDraws", counts.get("blockedDraws") == expected_blocked)
+    c.check("counts.draws", counts.get("draws") == expected_draws)
+    c.check("counts.bindableTriangles",
+            counts.get("bindableTriangles") == expected_bindable_tri)
+    c.check("counts.blockedTriangles",
+            counts.get("blockedTriangles") == expected_blocked_tri)
+    c.check("counts.textureSources",
+            counts.get("textureSources") ==
+            trim_bindable_sources(bindings))
+    c.check("counts.uniqueTextureBlobs",
+            counts.get("uniqueTextureBlobs") ==
+            len({texture["rgbaSha256"] for texture in bindable_texture_rows(bindings)}))
+    c.check("counts.mergedTextureSources",
+            counts.get("mergedTextureSources") ==
+            trim_bindable_sources(bindings) -
+            len({texture["rgbaSha256"] for texture in bindable_texture_rows(bindings)}))
     statuses = counts.get("statuses", {})
-    c.check("counts.status.effect", statuses.get(EFFECT) == 334)
-    c.check("counts.status.decoder", statuses.get(DECODER) == 50)
-    c.check("counts.status.alpha", statuses.get(ALPHA) == 17)
-    c.check("counts.status.runtime", statuses.get(RUNTIME) == 4)
-    c.check("counts.status.bindable", statuses.get(BINDABLE) == 1201)
+    c.check("counts.status.effect", statuses.get(EFFECT) == expected_effect)
+    c.check("counts.status.decoder", statuses.get(DECODER) == expected_decoder)
+    c.check("counts.status.alpha", statuses.get(ALPHA) == expected_alpha)
+    c.check("counts.status.runtime", statuses.get(RUNTIME) == expected_runtime)
+    c.check("counts.status.bindable", statuses.get(BINDABLE) == expected_bindable)
 
     diag_counts = diagnostics["counts"]
-    c.check("diagnostics.counts.blocked", diag_counts.get("blockedDraws") == 405)
-    c.check("diagnostics.counts.triangles", diag_counts.get("blockedTriangles") == 79648)
-    c.check("diagnostics.counts.effect", diag_counts["byStatus"].get(EFFECT) == 334)
-    c.check("diagnostics.counts.decoder", diag_counts["byStatus"].get(DECODER) == 50)
-    c.check("diagnostics.counts.alpha", diag_counts["byStatus"].get(ALPHA) == 17)
-    c.check("diagnostics.counts.runtime", diag_counts["byStatus"].get(RUNTIME) == 4)
+    c.check("diagnostics.counts.blocked",
+            diag_counts.get("blockedDraws") == expected_blocked)
+    c.check("diagnostics.counts.triangles",
+            diag_counts.get("blockedTriangles") == expected_blocked_tri)
+    c.check("diagnostics.counts.effect",
+            diag_counts["byStatus"].get(EFFECT) == expected_effect)
+    c.check("diagnostics.counts.decoder",
+            diag_counts["byStatus"].get(DECODER) == expected_decoder)
+    c.check("diagnostics.counts.alpha",
+            diag_counts["byStatus"].get(ALPHA) == expected_alpha)
+    c.check("diagnostics.counts.runtime",
+            diag_counts["byStatus"].get(RUNTIME) == expected_runtime)
     c.check("diagnostics.fallbackNotInvented",
             diagnostics["scope"].get("fallbackTextureInvented") is False)
     c.check("manifest.fallbackNotInvented",
@@ -183,13 +244,15 @@ def verify(package: Path) -> dict:
     c.check("upload.srgbVariant", contract["textures"].get("srgbVariant") ==
             "rgba8unorm-srgb")
     c.check("upload.srgbNotApplied", contract["textures"].get("srgbApplied") is False)
-    c.check("upload.opaqueDraws", contract["passes"]["opaqueAlbedo"].get("draws") == 1201)
+    c.check("upload.opaqueDraws",
+            contract["passes"]["opaqueAlbedo"].get("draws") == expected_bindable)
     c.check("upload.decalDraws",
-            contract["passes"]["effectAdditiveDecal"].get("draws") == 334)
+            contract["passes"]["effectAdditiveDecal"].get("draws") == expected_effect)
     c.check("upload.decalNotOpaque",
             contract["passes"]["effectAdditiveDecal"].get("opaqueAlbedo") is False)
     c.check("upload.diagnosticDraws",
-            contract["passes"]["diagnosticOnly"].get("draws") == 71)
+            contract["passes"]["diagnosticOnly"].get("draws") ==
+            expected_blocked - expected_effect)
     c.check("upload.normalsAbsent", "not included" in contract.get("normals", ""))
     c.check("upload.instancesAbsent", "not applied" in contract.get("instances", ""))
 
@@ -238,11 +301,14 @@ def verify(package: Path) -> dict:
         c.check("buffer.%s.inHashes" % name,
                 manifest["hashes"]["files"].get(record["path"], {}).get("sha256") ==
                 record["sha256"])
-    c.check("buffer.vertexCount", positions.size == 529624 * 3)
-    c.check("buffer.uvCount", uv0.size == 529624 * 2)
-    c.check("buffer.indexCount", indices.size == 1046844)
-    c.check("buffer.triangles", indices.size // 3 == 348948)
-    c.check("buffer.indexMax", int(indices.max()) < 529624, int(indices.max()))
+    expected_vertices = slide["vertexCount"]
+    expected_indices = slide["triangleCount"] * 3
+    c.check("buffer.vertexCount", positions.size == expected_vertices * 3)
+    c.check("buffer.uvCount", uv0.size == expected_vertices * 2)
+    c.check("buffer.indexCount", indices.size == expected_indices)
+    c.check("buffer.triangles", indices.size // 3 == slide["triangleCount"])
+    c.check("buffer.indexMax", int(indices.max()) < expected_vertices,
+            int(indices.max()))
     c.check("buffer.positionFinite", bool(np.isfinite(positions).all()))
     c.check("buffer.uvFinite", bool(np.isfinite(uv0).all()))
     c.check("buffer.positions.stride", manifest["buffers"]["positions"].get("stride") == 12)
@@ -254,7 +320,9 @@ def verify(package: Path) -> dict:
     sections = {row["id"]: row for row in slice_doc["draws"]["sections"]}
     package_draws = slice_doc["draws"]["draws"]
     binding_draws = bindings["draws"]
-    c.check("join.drawCount", len(package_draws) == 1606 and len(binding_draws) == 1606)
+    c.check("join.drawCount",
+            len(package_draws) == expected_draws and
+            len(binding_draws) == expected_draws)
     joined = {}
     for package_draw, binding_draw in zip(package_draws, binding_draws):
         key = (binding_draw["section"], binding_draw["drawIndex"])
@@ -265,15 +333,15 @@ def verify(package: Path) -> dict:
                 section["indexOffset"] + binding_draw["firstIndex"] and
                 package_draw["indexCount"] == binding_draw["indexCount"])
         joined[key] = (package_draw, binding_draw)
-    c.check("join.uniqueKeys", len(joined) == 1606)
+    c.check("join.uniqueKeys", len(joined) == expected_draws)
 
     # ---------------------------------------------------------- bindable draws
     draws = manifest["draws"]
     by_id = {}
     for draw in draws:
         by_id[draw.get("drawId")] = draw
-    c.check("draws.count", len(draws) == 1201)
-    c.check("draws.uniqueIds", len(by_id) == 1201)
+    c.check("draws.count", len(draws) == expected_bindable)
+    c.check("draws.uniqueIds", len(by_id) == expected_bindable)
 
     uv_checked = 0
     for key, (package_draw, binding_draw) in joined.items():
@@ -308,15 +376,17 @@ def verify(package: Path) -> dict:
                 first_vertex >= section["vertexOffset"] and
                 last_vertex < section["vertexOffset"] + section["vertexCount"])
         slot = draw.get("textureSlot")
-        c.check("draw.%s.slot" % draw_id, isinstance(slot, int) and 0 <= slot < 179, slot)
+        c.check("draw.%s.slot" % draw_id,
+                isinstance(slot, int) and
+                0 <= slot < manifest["counts"]["uniqueTextureBlobs"], slot)
 
-    c.check("draws.uvChecked", uv_checked == 1201, uv_checked)
+    c.check("draws.uvChecked", uv_checked == expected_bindable, uv_checked)
 
     # ---------------------------------------------------------- diagnostics
     diag_draws = diagnostics["draws"]
-    c.check("diagnostics.draws.count", len(diag_draws) == 405)
+    c.check("diagnostics.draws.count", len(diag_draws) == expected_blocked)
     c.check("diagnostics.draws.unique",
-            len({row["drawId"] for row in diag_draws}) == 405)
+            len({row["drawId"] for row in diag_draws}) == expected_blocked)
     blocked_keys = {key for key, (_, binding_draw) in joined.items()
                     if binding_draw["status"] != BINDABLE}
     c.check("diagnostics.keysCoverBlocked",
@@ -327,24 +397,25 @@ def verify(package: Path) -> dict:
 
     groups = diagnostics["groups"]
     c.check("diagnostics.group.effectDraws",
-            groups["effectDecal"].get("draws") == 334)
+            groups["effectDecal"].get("draws") == expected_effect)
     c.check("diagnostics.group.effectTriangles",
-            groups["effectDecal"].get("triangles") == 56860)
+            groups["effectDecal"].get("triangles") ==
+            bindings["counts"]["statusTriangles"].get(EFFECT, 0))
     c.check("diagnostics.group.effectSeparate",
             groups["effectDecal"].get("separateAdditiveDecalList") is True)
     c.check("diagnostics.group.effectNotOpaque",
             groups["effectDecal"].get("opaqueAlbedo") is False)
     c.check("diagnostics.group.decoderDraws",
-            groups["decoderSize"].get("draws") == 50)
+            groups["decoderSize"].get("draws") == expected_decoder)
     c.check("diagnostics.group.alphaDraws",
-            groups["alphaRule"].get("draws") == 17)
+            groups["alphaRule"].get("draws") == expected_alpha)
     c.check("diagnostics.group.runtimeDraws",
-            groups["runtimeAlbedo"].get("draws") == 4)
+            groups["runtimeAlbedo"].get("draws") == expected_runtime)
 
     effect_ranges = groups["effectDecal"]["indexRanges"]
-    c.check("diagnostics.decalRanges.count", len(effect_ranges) == 334)
+    c.check("diagnostics.decalRanges.count", len(effect_ranges) == expected_effect)
     effect_range_map = {row["drawId"]: row for row in effect_ranges}
-    c.check("diagnostics.decalRanges.unique", len(effect_range_map) == 334)
+    c.check("diagnostics.decalRanges.unique", len(effect_range_map) == expected_effect)
 
     effect_seen = 0
     for row in diag_draws:
@@ -371,8 +442,12 @@ def verify(package: Path) -> dict:
             aux = diagnostic.get("auxTexture") or {}
             c.check("diag.%s.auxTexture" % draw_id,
                     bool(aux.get("textureId")) and bool(aux.get("name")))
-            c.check("diag.%s.colourConstant" % draw_id,
-                    diagnostic.get("colourConstant") == [1.0, 1.0, 0.7, 1.0])
+            if str(row.get("effect", "")).startswith("Racification"):
+                c.check("diag.%s.colourConstant" % draw_id,
+                        diagnostic.get("colourConstant") == [1.0, 1.0, 0.7, 1.0])
+            else:
+                c.check("diag.%s.colourConstant" % draw_id,
+                        diagnostic.get("colourConstant") is None)
             rng = effect_range_map.get(draw_id)
             c.check("diag.%s.decalRange" % draw_id,
                     bool(rng) and rng.get("firstIndex") == global_first and
@@ -396,23 +471,25 @@ def verify(package: Path) -> dict:
         else:
             c.check("diag.%s.classification" % draw_id, False, status)
 
-    c.check("diagnostics.effectSeen", effect_seen == 334, effect_seen)
+    c.check("diagnostics.effectSeen", effect_seen == expected_effect, effect_seen)
     c.check("diagnostics.noDiagnosticDrawIsBindable",
             all(row["status"] != BINDABLE for row in diag_draws))
 
     # -------------------------------------------------------------- textures
     items = manifest["textures"]["items"]
-    c.check("textures.itemCount", len(items) == 179)
+    c.check("textures.itemCount", len(items) == expected_unique_blobs)
     c.check("textures.slotsSequential",
-            [item["slot"] for item in items] == list(range(179)))
+            [item["slot"] for item in items] == list(range(len(items))))
     c.check("textures.bytes.referencedMip0",
-            manifest["textures"]["bytes"].get("referencedMip0") == 2672704)
+            manifest["textures"]["bytes"].get("referencedMip0") == expected_ref_mip0)
     c.check("textures.bytes.uniqueMip0",
-            manifest["textures"]["bytes"].get("uniqueMip0") == 2654272)
+            manifest["textures"]["bytes"].get("uniqueMip0") == expected_unique_mip0)
     c.check("textures.bytes.referencedChain",
-            manifest["textures"]["bytes"].get("referencedExpectedChain") == 3564368)
+            manifest["textures"]["bytes"].get("referencedExpectedChain") ==
+            expected_ref_chain)
     c.check("textures.bytes.uniqueChain",
-            manifest["textures"]["bytes"].get("uniqueExpectedChain") == 3539772)
+            manifest["textures"]["bytes"].get("uniqueExpectedChain") ==
+            expected_unique_chain)
 
     slot_map = {item["slot"]: item for item in items}
     binding_textures = {row["id"]: row for row in bindings["textures"]}
@@ -468,18 +545,26 @@ def verify(package: Path) -> dict:
                     binding_texture is not None and
                     binding_texture.get("rgbaSha256") == item["sha256"])
 
-    c.check("textures.sourceCount", len(source_to_slot) == 186, len(source_to_slot))
-    c.check("textures.totalBytes", texture_bytes == 2654272, texture_bytes)
-    c.check("textures.chainBytes", chain_bytes == 3539772, chain_bytes)
-    c.check("textures.drawCoverage", texture_draws == 1201, texture_draws)
-    c.check("textures.triangleCoverage", texture_triangles == 269300, texture_triangles)
+    c.check("textures.sourceCount", len(source_to_slot) == expected_sources,
+            len(source_to_slot))
+    c.check("textures.totalBytes", texture_bytes == expected_unique_mip0,
+            texture_bytes)
+    c.check("textures.chainBytes", chain_bytes == expected_unique_chain, chain_bytes)
+    c.check("textures.drawCoverage", texture_draws == expected_bindable, texture_draws)
+    c.check("textures.triangleCoverage",
+            texture_triangles == expected_bindable_tri, texture_triangles)
     c.check("textures.distinctDimensions",
-            len(manifest["textures"]["distinctDimensions"]) == 16)
+            len(manifest["textures"]["distinctDimensions"]) ==
+            len({"%dx%d" % (row["width"], row["height"]) for row in unique_rows.values()}))
 
     merged = manifest["textures"]["mergedGroups"]
-    c.check("textures.mergedGroups", len(merged) == 7)
+    expected_merge_groups = expected_sources - expected_unique_blobs
+    c.check("textures.mergedGroups", len(merged) == expected_merge_groups)
     c.check("textures.mergedIds",
-            sum(len(group["sourceIds"]) for group in merged) == 14)
+            sum(len(group["sourceIds"]) for group in merged) ==
+            sum(1 for row in bindable_rows
+                if sum(1 for other in bindable_rows
+                       if other["rgbaSha256"] == row["rgbaSha256"]) > 1))
     merge_bad = 0
     for group in merged:
         ids = group["sourceIds"]
@@ -506,7 +591,9 @@ def verify(package: Path) -> dict:
     c.check("layout.pointsSha256", layout["pointsSha256"] == sha256_bytes(layout_bytes))
     c.check("layout.sourcePointsSha256",
             layout["pointsSha256"] == slice_doc["layout"]["pointsSha256"])
-    c.check("layout.pointCount", len(points) == 8673 and layout["pointCount"] == 8673)
+    c.check("layout.pointCount",
+            len(points) == layout["pointCount"] ==
+            slice_doc["layout"]["pointCount"])
     c.check("layout.spawn", layout["spawn"] == slice_doc["layout"]["spawn"])
     c.check("layout.checkpoints", layout["checkpoints"] == slice_doc["layout"]["checkpoints"])
     c.check("layout.finish", layout["finish"] == slice_doc["layout"]["finish"])
@@ -548,8 +635,11 @@ def verify(package: Path) -> dict:
         c.check("layout.checkpoint.%d.float32Distance" % checkpoint["index"],
                 recorded is not None and
                 abs(float(cumulative[best]) - recorded["distanceM"]) <= 1e-9)
-    tangent = math.atan2(float(points[1, 0] - points[0, 0]),
-                         float(points[1, 1] - points[0, 1]))
+    # Amboy's committed float32 heading uses the first segment; generalized
+    # levels use the first-2 m (index 8) tangent to match the candidate heading.
+    heading_index = 1 if level == "usa_amboy" else min(8, len(points) - 1)
+    tangent = math.atan2(float(points[heading_index, 0] - points[0, 0]),
+                         float(points[heading_index, 1] - points[0, 1]))
     heading_error = abs(math.atan2(math.sin(tangent - layout["spawn"]["heading"]),
                                    math.cos(tangent - layout["spawn"]["heading"])))
     c.check("layout.spawnHeading",
@@ -565,7 +655,9 @@ def verify(package: Path) -> dict:
     body = {key: value for key, value in manifest.items() if key != "hashes"}
     c.check("hashes.contentSha256",
             hashes.get("contentSha256") == sha256_bytes(canonical(body)))
-    c.check("hashes.fileCount", len(hashes["files"]) == 184, len(hashes["files"]))
+    c.check("hashes.fileCount",
+            len(hashes["files"]) ==
+            5 + len(items), len(hashes["files"]))
     package_files = file_map(package, ignore=("render.json", "verify.json"))
     c.check("hashes.noMissingFiles", set(package_files) == set(hashes["files"]))
     hash_bad = 0
@@ -583,7 +675,8 @@ def verify(package: Path) -> dict:
     c.check("hashes.excludesManifest", "render.json" not in hashes["files"])
 
     # ------------------------------------------- two fresh deterministic builds
-    build_root = ROOT / "_work/logs/map-slice/amboy-render-determinism"
+    build_root = ROOT / "_work/logs/map-slice" / ("%s-render-determinism" %
+                                                 level.split("_")[-1])
     if build_root.exists():
         shutil.rmtree(build_root)
     build_root.mkdir(parents=True, exist_ok=True)
@@ -592,8 +685,11 @@ def verify(package: Path) -> dict:
         build_dirs = []
         for index in (1, 2):
             target = build_root / ("build-%d" % index)
-            process = subprocess.run([sys.executable, str(TOOL), "--out", str(target)],
-                                     cwd=str(ROOT), capture_output=True, timeout=600)
+            process = subprocess.run(
+                [sys.executable, str(TOOL), "--level", level,
+                 "--package", str(SLICE_DIR), "--texture-dir", str(TEXTURE_DIR),
+                 "--out", str(target)],
+                cwd=str(ROOT), capture_output=True, timeout=1800)
             c.check("determinism.build%d.exit" % index, process.returncode == 0,
                     process.stderr.decode("utf-8", "replace")[-400:])
             build_dirs.append(target)
@@ -629,9 +725,10 @@ def verify(package: Path) -> dict:
         shutil.rmtree(build_root, ignore_errors=True)
 
     result = {
-        "schema": "blur.map-slice.amboy-render-verify/1",
+        "schema": ("blur.map-slice.amboy-render-verify/1" if level == "usa_amboy"
+                   else "blur.map-slice.render-verify/1"),
         "kind": "map-slice-render-verifier",
-        "level": "usa_amboy",
+        "level": level,
         "status": "PASS" if not c.errors else "FAIL",
         "checks": c.count,
         "errors": len(c.errors),
@@ -674,10 +771,11 @@ def verify(package: Path) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", default="_work/map-slice/amboy-render")
+    parser.add_argument("--level", default=None)
     args = parser.parse_args()
     package = (ROOT / args.package).resolve() if not Path(args.package).is_absolute() \
         else Path(args.package)
-    result = verify(package)
+    result = verify(package, args.level)
     print(json.dumps({key: result[key] for key in
                       ("status", "checks", "errors", "counts", "determinism")},
                      indent=1))

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Resolve static albedo + UV0 for usa_amboy first-RenderList direct draws.
+"""Resolve static albedo + UV0 for a level's first-RenderList direct draws.
 
-Data/analysis only. The script consumes the committed map-pipeline draw probe
-stages (node.chunk / geometry.chunk / native.json / reference.json), the
-original levelrender/levelstream archives and the committed scene/material
-reader modules under tools/. It writes a deterministic binding manifest under
-_work/map-slice/amboy-textures/.
+Defaults to ``usa_amboy`` so the committed package is unchanged; pass
+``--level spa_barcelona_gracia`` to build the Gracia manifest. Data/analysis
+only. The script consumes the committed map-pipeline draw probe stages
+(node.chunk / geometry.chunk / native.json / reference.json), the original
+levelrender/levelstream archives and the committed scene/material reader modules
+under tools/. It writes a deterministic binding manifest under
+``_work/map-slice/<short>-textures/``.
 
 Nothing under probes/e1-drive, probes/map-pipeline, probes/asset-reader, the
 engine, tools/, upstream/ or game-data/ is modified.
@@ -23,17 +25,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "probes/map-slice/tools"))
 
 from inspect_car_level_assets import render_layout, resource_prefix, stream_prefix  # noqa: E402
 from inspect_car_materials import texture_lod  # noqa: E402
 from inspect_level_instances import InstanceReader, read_lists  # noqa: E402
+from map_slice_common import package_dir, short_name, texture_dir  # noqa: E402
 
 LEVEL = "usa_amboy"
-PACKAGE = ROOT / "_work/map-slice/amboy"
-OUT = ROOT / "_work/map-slice/amboy-textures"
+PACKAGE = package_dir(LEVEL)
+OUT = texture_dir(LEVEL)
 STAGES = ROOT / "_work/map-pipeline/probes"
 LEVEL_DIR = ROOT / "game-data/Blur/levels" / LEVEL
 NATIVE = ROOT / "_work/build/asset-reader-native/Release/texture_inspect.exe"
+PREFIX = short_name(LEVEL)
 
 BC1 = 0x31545844
 BC2 = 0x33545844
@@ -380,7 +385,7 @@ def texture_source_record(source: dict, archive: TextureArchive, scene: dict):
             "format": descriptor["format"],
             "payloadBytes": shared["dataBytes"],
             "blob": blob,
-            "id": "amboy.shared.%d" % index,
+            "id": "%s.shared.%d" % (PREFIX, index),
         }
     record = archive.texture(block, index)
     if record is None:
@@ -404,7 +409,7 @@ def texture_source_record(source: dict, archive: TextureArchive, scene: dict):
         "format": descriptor["format"],
         "payloadBytes": record["dataBytes"],
         "blob": blob,
-        "id": "amboy.albedo.%d.%d" % (block, index),
+        "id": "%s.albedo.%d.%d" % (PREFIX, block, index),
     }
 
 
@@ -460,13 +465,21 @@ def classify_draw(draw: dict, texture) -> tuple[str, str | None]:
 
 
 def main() -> int:
+    global LEVEL, PACKAGE, OUT, LEVEL_DIR, PREFIX, SCHEMA
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--package", type=Path, default=PACKAGE)
-    parser.add_argument("--out", type=Path, default=OUT)
+    parser.add_argument("--level", default=LEVEL)
+    parser.add_argument("--package", type=Path, default=None)
+    parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
-    package = args.package.resolve()
-    out = args.out.resolve()
+    LEVEL = args.level
+    PREFIX = short_name(LEVEL)
+    PACKAGE = (args.package or package_dir(LEVEL)).resolve()
+    OUT = (args.out or texture_dir(LEVEL)).resolve()
+    LEVEL_DIR = ROOT / "game-data/Blur/levels" / LEVEL
+    SCHEMA = ("blur.map-slice.amboy-textures/1" if LEVEL == "usa_amboy"
+              else "blur.map-slice.textures/1")
+    package, out = PACKAGE, OUT
     out.mkdir(parents=True, exist_ok=True)
 
     slice_doc = load_json(package / "slice.json")
@@ -492,8 +505,10 @@ def main() -> int:
         resources = resource_prefix(node_raw, {"resourcePayloadOffset": 24,
                                                "scenePayloadOffset": 0}, streamed=True)
         lists = read_lists(node_raw, resources)
-        if len(lists) != 1:
-            raise SystemExit("expected one RenderList for " + section["id"])
+        if not lists:
+            raise SystemExit("node chunk has no RenderList for " + section["id"])
+        # The committed reader emits the first node-chunk RenderList; later
+        # lists in the same chunk are not part of the direct-draw pass.
         render_list = lists[0]
         resolver = Resolver(render_list, scene["effects"])
 
@@ -640,6 +655,20 @@ def main() -> int:
     status_effects = Counter()
     for row in draw_rows:
         status_effects[(row["status"], row["effect"])] += 1
+    effect_layer_names = sorted({row["effect"] for row in draw_rows
+                                 if row["status"] == "blocked-effect-not-static-albedo"})
+    unsupported_count = len(slice_doc["draws"]["unsupportedSections"])
+    if "Racification" in " ".join(effect_layer_names) or \
+            any(name.startswith("Racification") for name in effect_layer_names):
+        effect_limit = ("Racification draws expose a static g_tTexture from an "
+                        "additive alpha-tested layer shader; they are not bound as "
+                        "albedo.")
+    else:
+        effect_limit = ("Effect-layer draws (%d, %s) expose a shader texture that is "
+                        "not a static g_tAlbedo; they are recorded but not bound as "
+                        "albedo." % (status_counts.get(
+                            "blocked-effect-not-static-albedo", 0),
+                            ", ".join(effect_layer_names) or "none"))
 
     result = {
         "schema": SCHEMA,
@@ -673,7 +702,8 @@ def main() -> int:
         "materialResolution": {
             "reader": "source-shaped replica of scene_reader.cpp bind_albedo(): instance -> base -> every active stream material, nested type-8 rows followed, last g_tAlbedo wins",
             "albedoParameters": ["g_tAlbedo", "g_MeshTexture"],
-            "vehicleEffects": "the veh_ path is implemented and none of the 1,606 draws uses it",
+            "vehicleEffects": "the veh_ path is implemented and none of the %s draws "
+                              "uses it" % format(len(draw_rows), ","),
         },
         "counts": {
             "sections": len(section_rows),
@@ -704,8 +734,9 @@ def main() -> int:
         "limits": [
             "Data only: no renderer, GPU, browser, playable-game or full-game claim.",
             "Static g_tAlbedo/g_MeshTexture identity and UV0 only; g_tMaterial, material colour, blend, alpha test, shader stages, sampler wrap/filter, mips and sRGB are not applied.",
-            "Racification draws expose a static g_tTexture from an additive alpha-tested layer shader; they are not bound as albedo.",
-            "First-RenderList direct LOD0 primitives only; instances and the 27 unsupported sections are reported separately.",
+            effect_limit,
+            "First-RenderList direct LOD0 primitives only; instances and the %d "
+            "unsupported sections are reported separately." % unsupported_count,
         ],
     }
     write_json(out / "bindings.json", result)

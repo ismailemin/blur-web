@@ -11,6 +11,7 @@ Writes _work/map-slice/amboy-textures/verify.json. Data only.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import subprocess
@@ -26,12 +27,13 @@ sys.path.insert(0, str(ROOT / "probes/map-slice/tools"))
 from inspect_car_level_assets import render_layout, resource_prefix, stream_prefix  # noqa: E402
 from inspect_level_instances import read_lists  # noqa: E402
 from verify_instance_textures_reference import material_albedo  # noqa: E402
+from map_slice_common import package_dir, texture_dir  # noqa: E402
 import amboy_texture_bindings as atb  # noqa: E402
 import amboy_blocker_report as abr  # noqa: E402
 
 LEVEL = "usa_amboy"
-PACKAGE = ROOT / "_work/map-slice/amboy"
-OUT = ROOT / "_work/map-slice/amboy-textures"
+PACKAGE = package_dir(LEVEL)
+OUT = texture_dir(LEVEL)
 REPEAT = ROOT / "_work/map-slice/amboy-textures-repeat"
 STAGES = ROOT / "_work/map-pipeline/probes"
 LEVEL_DIR = ROOT / "game-data/Blur/levels" / LEVEL
@@ -69,6 +71,21 @@ def fnv1a64(data):
 
 
 def main() -> int:
+    global LEVEL, PACKAGE, OUT, REPEAT, LEVEL_DIR, STAGES
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--level", default=LEVEL)
+    parser.add_argument("--package", type=Path, default=None)
+    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--repeat", type=Path, default=None)
+    args = parser.parse_args()
+    LEVEL = args.level
+    PACKAGE = (args.package or package_dir(LEVEL)).resolve()
+    OUT = (args.out or texture_dir(LEVEL)).resolve()
+    REPEAT = (args.repeat or
+              (ROOT / "_work/map-slice" /
+               (OUT.name + "-repeat"))).resolve()
+    LEVEL_DIR = ROOT / "game-data/Blur/levels" / LEVEL
+
     manifest = load(OUT / "bindings.json")
     blockers = load(OUT / "blockers.json")
     slice_doc = load(PACKAGE / "slice.json")
@@ -77,11 +94,17 @@ def main() -> int:
     records = scene["stream"]["chunks"]
     archive = atb.TextureArchive(records, LEVEL_DIR / "level.levelstream")
 
-    check("schema", manifest.get("schema") == atb.SCHEMA)
-    check("draw count", manifest["counts"]["draws"] == 1606,
+    expected_schema = ("blur.map-slice.amboy-textures/1" if LEVEL == "usa_amboy"
+                       else "blur.map-slice.textures/1")
+    check("schema", manifest.get("schema") == expected_schema)
+    check("level", manifest.get("level") == LEVEL)
+    check("draw count",
+          manifest["counts"]["draws"] == slice_doc["draws"]["drawCount"],
           manifest["counts"]["draws"])
-    check("section count", manifest["counts"]["sections"] == 48)
-    check("triangle count", manifest["counts"]["triangles"] == 348948)
+    check("section count",
+          manifest["counts"]["sections"] == len(slice_doc["draws"]["sections"]))
+    check("triangle count",
+          manifest["counts"]["triangles"] == slice_doc["draws"]["triangleCount"])
     check("input levelrender hash",
           manifest["inputs"]["levelrender"]["sha256"] == sha256_bytes(levelrender))
     check("input levelstream hash",
@@ -139,9 +162,12 @@ def main() -> int:
                   material["material"] == row["material"]["material"])
             material_checked += 1
 
-    check("all draws visited", sum(len(rows) for rows in draws_by_section.values()) == 1606)
-    check("UV hashes recomputed", uv_checked == 1606, uv_checked)
-    check("material chains recomputed", material_checked == 1606, material_checked)
+    expected_draws = slice_doc["draws"]["drawCount"]
+    check("all draws visited",
+          sum(len(rows) for rows in draws_by_section.values()) == expected_draws)
+    check("UV hashes recomputed", uv_checked == expected_draws, uv_checked)
+    check("material chains recomputed", material_checked == expected_draws,
+          material_checked)
 
     status = Counter()
     texture_checked = 0
@@ -185,9 +211,12 @@ def main() -> int:
               len(set(alphas)) == texture["alpha"]["distinct"])
         texture_checked += 1
 
-    check("texture sources", len(manifest["textures"]) == 195,
+    expected_decoded = sum(1 for texture in manifest["textures"]
+                           if texture.get("decodeBlocker") != "decoder-size-limit")
+    check("texture sources",
+          len(manifest["textures"]) == manifest["counts"]["distinctTextureSources"],
           len(manifest["textures"]))
-    check("decoded textures", texture_checked == 189, texture_checked)
+    check("decoded textures", texture_checked == expected_decoded, texture_checked)
 
     # External anchor for the blob reconstruction method: the P47 River blob.
     river_dir = ROOT / "game-data/Blur/levels/usa_la_river"
@@ -205,52 +234,96 @@ def main() -> int:
         check("P47 anchor blob byte-identical",
               anchor.is_file() and sha256_bytes(river_blob) == sha256_bytes(anchor.read_bytes()))
 
-    # Recompute the status split from the manifest material/texture facts.
+    # Recompute the status split from the manifest's per-draw status field and
+    # cross-check the summary counters. Amboy additionally keeps its committed
+    # exact split.
     for row in manifest["draws"]:
-        sa = row["status"]
-        status[sa] += 1
-    expected = {
-        "bindable-static-albedo": 1201,
-        "blocked-decoder-size-limit": 50,
-        "blocked-alpha-rule-missing": 17,
-        "blocked-effect-not-static-albedo": 334,
-        "blocked-runtime-albedo-parameter": 4,
+        status[row["status"]] += 1
+    known = {
+        "bindable-static-albedo",
+        "blocked-decoder-size-limit",
+        "blocked-alpha-rule-missing",
+        "blocked-effect-not-static-albedo",
+        "blocked-runtime-albedo-parameter",
     }
-    check("status split", dict(status) == expected, dict(status))
-    check("bindable counts", manifest["counts"]["bindableDraws"] == 1201 and
-          manifest["counts"]["bindableTriangles"] == 269300)
-    check("bindable texture sources", manifest["counts"]["bindableTextureSources"] == 186)
+    check("status split counters",
+          dict(status) == manifest["counts"]["statuses"], dict(status))
+    check("status names known", set(status) <= known, set(status) - known)
+    if LEVEL == "usa_amboy":
+        expected = {
+            "bindable-static-albedo": 1201,
+            "blocked-decoder-size-limit": 50,
+            "blocked-alpha-rule-missing": 17,
+            "blocked-effect-not-static-albedo": 334,
+            "blocked-runtime-albedo-parameter": 4,
+        }
+        check("status split", dict(status) == expected, dict(status))
+        check("bindable counts", manifest["counts"]["bindableDraws"] == 1201 and
+              manifest["counts"]["bindableTriangles"] == 269300)
+        check("bindable texture sources",
+              manifest["counts"]["bindableTextureSources"] == 186)
+    else:
+        bindable_ids = {row["textureId"] for row in manifest["draws"]
+                        if row["status"] == "bindable-static-albedo"}
+        check("bindable counts",
+              manifest["counts"]["bindableDraws"] == status.get(
+                  "bindable-static-albedo", 0) and
+              manifest["counts"]["bindableTriangles"] ==
+              sum(row["triangleCount"] for row in manifest["draws"]
+                  if row["status"] == "bindable-static-albedo"))
+        check("bindable texture sources",
+              manifest["counts"]["bindableTextureSources"] == len(bindable_ids))
 
-    # Blocker report: all 27 stop on POSITION0 type 7 and resolve a static albedo.
+    # Blocker report: every unsupported section stops on a POSITION0 format and
+    # resolves a static albedo on the texture side.
     unsupported = blockers["unsupportedSections"]["sections"]
-    check("unsupported sections", len(unsupported) == 27)
+    expected_unsupported = slice_doc["draws"]["sectionsUnsupported"]
+    check("unsupported sections", len(unsupported) == expected_unsupported,
+          (len(unsupported), expected_unsupported))
     for row in unsupported:
         bad = row["firstUnsupportedPosition"]
         check("unsupported %s geometry" % row["id"],
-              bad is not None and bad["positionElement"]["type"] == 7 and
-              bad["positionElement"]["method"] == 0 and bad["vertexStride"] == 28)
+              bad is not None and bad["positionElement"]["method"] == 0 and
+              bad["positionElement"]["type"] not in (6, 9))
+        static_side = row["primitiveCounts"].get("staticAlbedo", 0) > 0
         check("unsupported %s texture" % row["id"],
-              row["primitiveCounts"].get("staticAlbedo", 0) > 0)
-    check("all 27 texture side resolved",
-          blockers["unsupportedSections"]["summary"].get("textureSideResolved") == 27)
+              static_side == (row["textureSide"] ==
+                              "static-albedo-resolved-for-at-least-one-primitive"))
+    texture_side_resolved = sum(
+        1 for row in unsupported
+        if row["textureSide"] == "static-albedo-resolved-for-at-least-one-primitive")
+    check("all unsupported texture side resolved",
+          blockers["unsupportedSections"]["summary"].get("textureSideResolved") ==
+          texture_side_resolved)
 
     instances = blockers["instances"]
-    check("instance sections", instances["summary"]["sections"] == 3)
-    check("instance count", instances["summary"]["instances"] == 366)
-    check("instance static albedo", instances["summary"]["staticAlbedoInstances"] == 366)
-    check("instance UV0 declared", instances["summary"]["uv0DeclaredInstances"] == 366)
+    expected_instances = sum(
+        s.get("instanceDescriptionsSkipped", 0)
+        for s in slice_doc["draws"]["sections"])
+    expected_instance_sections = sum(
+        1 for s in slice_doc["draws"]["sections"]
+        if s.get("instanceDescriptionsSkipped"))
+    check("instance sections",
+          instances["summary"]["sections"] == expected_instance_sections)
+    check("instance count", instances["summary"]["instances"] == expected_instances)
+    check("instance static albedo",
+          instances["summary"]["staticAlbedoInstances"] == expected_instances)
+    check("instance UV0 declared",
+          instances["summary"]["uv0DeclaredInstances"] == expected_instances)
     for row in instances["sections"]:
         check("instances %s native omitted" % row["id"],
               row["nativeSingleChunk"]["emittedInstanceCount"] == 0 and
-              row["nativeSingleChunk"]["omittedOtherBlockInstances"] == row["instanceCount"])
+              row["nativeSingleChunk"]["omittedOtherBlockInstances"] ==
+              row["instanceCount"])
 
     # Determinism: rebuild the manifest into a second directory and compare bytes.
     if REPEAT.exists():
         import shutil
         shutil.rmtree(REPEAT)
-    process = subprocess.run([sys.executable, str(ROOT / "probes/map-slice/tools/amboy_texture_bindings.py"),
-                              "--out", str(REPEAT)], capture_output=True, text=True,
-                             timeout=1800)
+    process = subprocess.run(
+        [sys.executable, str(ROOT / "probes/map-slice/tools/amboy_texture_bindings.py"),
+         "--level", LEVEL, "--package", str(PACKAGE), "--out", str(REPEAT)],
+        capture_output=True, text=True, timeout=3600)
     check("repeat build exit", process.returncode == 0, process.stderr[-300:])
     if process.returncode == 0:
         original = (OUT / "bindings.json").read_bytes()

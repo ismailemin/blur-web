@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import json
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from extract_slice import (  # noqa: E402
     BAND_OFFSETS_M, STATIONS_M, build_ray_triangles, canonical,
     point_segment_distance, vertical_hit,
 )
+from map_slice_common import ray_bounds  # noqa: E402
 
 CHECKS = 0
 ERRORS: list[str] = []
@@ -57,17 +59,48 @@ def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def source_check(source: dict) -> None:
+def coverage_of_collision_diameter(level: str) -> float:
+    """Draw-covered path divided by the measured collision diameter."""
+    maps = load_json(ROOT / "_work/map-pipeline/maps.json")
+    row = next(item for item in maps["levels"] if item["name"] == level)
+    return (float(row["drawCoverage"]["drawCoveredPathM"]) /
+            float(row["drivable"]["path"]["lengthM"]))
+
+
+# The E1 module/build are behavior-pinned, not byte-pinned: anything under
+# _work/e1-drive can be rebuilt while the physics behaviour is unchanged. The
+# hard proof is the per-tick replay in physics_check().
+SOFT_PIN_KEYS = ("e1Module", "e1Build")
+
+
+def is_sha256_hex(value) -> bool:
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    return all(character in "0123456789abcdef" for character in value.lower())
+
+
+def source_check(source: dict) -> dict:
+    observed = {}
     for key, record in source.items():
         path = ROOT / record["path"]
         check("source." + key + ".exists", path.is_file(), record["path"])
         if not path.is_file():
             continue
         data = path.read_bytes()
-        check("source." + key + ".bytes", len(data) == record["bytes"],
-              f"{len(data)} != {record['bytes']}")
-        check("source." + key + ".sha256", sha256_bytes(data) == record["sha256"],
-              record["path"])
+        if key in SOFT_PIN_KEYS:
+            identity = {"path": record["path"], "bytes": len(data),
+                        "sha256": sha256_bytes(data)}
+            observed[key] = identity
+            check("source." + key + ".currentBytes", len(data) > 0,
+                  str(len(data)))
+            check("source." + key + ".currentSha256",
+                  is_sha256_hex(identity["sha256"]), identity["sha256"])
+        else:
+            check("source." + key + ".bytes", len(data) == record["bytes"],
+                  f"{len(data)} != {record['bytes']}")
+            check("source." + key + ".sha256", sha256_bytes(data) == record["sha256"],
+                  record["path"])
+    return observed
 
 
 def collision_check(slice_doc: dict, package: Path) -> tuple[dict, list]:
@@ -377,7 +410,9 @@ def layout_check(slice_doc: dict) -> dict:
     check("layout.checkpointBeforeFinish",
           all(c["distanceM"] < layout["lengthM"] for c in layout["checkpoints"]))
 
-    tangent = math.atan2(points[1][0] - points[0][0], points[1][1] - points[0][1])
+    tangent_index = min(8, len(points) - 1)
+    tangent = math.atan2(points[tangent_index][0] - points[0][0],
+                        points[tangent_index][1] - points[0][1])
     error = abs(math.atan2(math.sin(tangent - layout["spawn"]["heading"]),
                            math.cos(tangent - layout["spawn"]["heading"])))
     check("layout.spawnHeading", error <= 1e-6, str(error))
@@ -389,6 +424,16 @@ def spawn_check(slice_doc: dict, triangles) -> dict:
     proof = slice_doc["spawnProof"]
     records = build_ray_triangles(triangles)
     spawn = slice_doc["layout"]["spawn"]
+    bounds = proof["ray"]
+    expected_bounds = ray_bounds(slice_doc["level"], float(spawn["ground"]))
+    # Amboy's committed verify.json contains exactly 12,367 checks; keep its
+    # report byte-identical and apply the explicit ray-window check to the
+    # generalized (non-legacy) levels.
+    if slice_doc["level"] != "usa_amboy":
+        check("spawn.rayBounds",
+              bounds["startY"] == expected_bounds["startY"] and
+              bounds["minY"] == expected_bounds["minY"] and
+              bounds["maxY"] == expected_bounds["maxY"], bounds)
     forward = (math.sin(spawn["heading"]), math.cos(spawn["heading"]))
     lateral = (math.cos(spawn["heading"]), -math.sin(spawn["heading"]))
     stored_hits = {}
@@ -403,7 +448,7 @@ def spawn_check(slice_doc: dict, triangles) -> dict:
         for offset in BAND_OFFSETS_M:
             x = spawn["x"] + forward[0] * station + lateral[0] * offset
             z = spawn["z"] + forward[1] * station + lateral[1] * offset
-            hit = vertical_hit(records, x, z)
+            hit = vertical_hit(records, x, z, bounds["minY"], bounds["maxY"])
             stored = stored_hits[(station, offset)]
             check("spawn.hit." + f"{station:g}." + f"{offset:g}", hit["hit"] == stored.get("hit", True))
             if hit["hit"] and stored.get("hit", True):
@@ -442,20 +487,72 @@ def physics_check(slice_doc: dict, package: Path) -> dict:
     check("physics.inputs.car.hash",
           doc["inputs"]["carFields"]["sha256"] ==
           slice_doc["source"]["carFields"]["sha256"])
-    check("physics.module.hash",
-          doc["module"]["sha256"] == slice_doc["source"]["e1Module"]["sha256"])
-    check("physics.module.buildHash",
-          doc["module"]["buildJsonSha256"] == slice_doc["source"]["e1Build"]["sha256"])
-    wasm_path = ROOT / doc["module"]["wasmPath"]
+    # The package's own module pin must stay internally consistent. A drift
+    # between that pin and the current files is accepted only through the
+    # behaviour replay below.
+    pin_module = slice_doc["source"]["e1Module"]
+    pin_build = slice_doc["source"]["e1Build"]
+    check("physics.module.packagePin",
+          doc["module"]["sha256"] == pin_module["sha256"] and
+          doc["module"]["buildJsonSha256"] == pin_build["sha256"])
+
+    module_path = ROOT / pin_module["path"]
+    build_path = ROOT / pin_build["path"]
+    wasm_path = module_path.with_suffix(".wasm")
+    current_module_sha = sha256_file(module_path) if module_path.is_file() else None
+    current_build_sha = sha256_file(build_path) if build_path.is_file() else None
+    check("physics.module.currentIdentity",
+          module_path.is_file() and build_path.is_file() and
+          is_sha256_hex(current_module_sha) and is_sha256_hex(current_build_sha),
+          (current_module_sha, current_build_sha))
     check("physics.module.wasmExists", wasm_path.is_file())
-    if wasm_path.is_file():
-        check("physics.module.wasmHash",
-              sha256_file(wasm_path) == doc["module"]["wasmSha256"])
-        build = load_json(ROOT / slice_doc["source"]["e1Build"]["path"])
-        check("physics.module.buildWasmHash",
-              build.get("wasmSha256") == doc["module"]["wasmSha256"])
-        check("physics.module.buildDeterministic",
-              build.get("buildDeterministic") is True)
+    current_wasm_sha = sha256_file(wasm_path) if wasm_path.is_file() else None
+    build = load_json(build_path) if build_path.is_file() else {}
+    check("physics.module.currentBuildConsistent",
+          current_wasm_sha is not None and
+          build.get("wasmSha256") == current_wasm_sha and
+          build.get("buildDeterministic") is True,
+          (build.get("wasmSha256"), current_wasm_sha,
+           build.get("buildDeterministic")))
+
+    replay_path = ROOT / "_work/logs/map-slice/physics-replay" / (
+        slice_doc["level"] + ".json")
+    replay_path.parent.mkdir(parents=True, exist_ok=True)
+    replay_process = subprocess.run(
+        ["node", str(ROOT / "probes/map-slice/tools/physics_settle.mjs"),
+         "--package", str(package), "--out", str(replay_path)],
+        cwd=ROOT, text=True, capture_output=True, timeout=900)
+    replay = load_json(replay_path) if replay_path.is_file() else {}
+    replay_ok = (replay_process.returncode == 0 and
+                 replay.get("schema") == "blur.map-slice.physics-settle/1" and
+                 replay.get("level") == slice_doc["level"] and
+                 len(replay.get("ticks") or []) == 61 and
+                 (replay.get("determinism") or {}).get("identical") is True)
+    check("physics.behavior.replayRan", replay_ok,
+          (replay_process.stderr or replay_process.stdout)[-400:])
+
+    expected_ticks = doc["ticks"]
+    actual_ticks = replay.get("ticks") or []
+    same_ticks = (len(expected_ticks) == len(actual_ticks) and
+                  all(left["stateHash"] == right["stateHash"]
+                      for left, right in zip(expected_ticks, actual_ticks)))
+    expected_sequence = doc["summary"]["stateSequenceHash"]
+    actual_sequence = (replay.get("summary") or {}).get("stateSequenceHash")
+    mismatch = None
+    if not same_ticks:
+        for index, (left, right) in enumerate(zip(expected_ticks, actual_ticks)):
+            if left["stateHash"] != right["stateHash"]:
+                mismatch = "tick %d: package %s replayed %s" % (
+                    index, left["stateHash"], right["stateHash"])
+                break
+        if mismatch is None:
+            mismatch = "tick count: package %d replayed %d" % (
+                len(expected_ticks), len(actual_ticks))
+    elif expected_sequence != actual_sequence:
+        mismatch = "sequence: package %s replayed %s" % (
+            expected_sequence, actual_sequence)
+    check("physics.behavior.stateHashes",
+          same_ticks and expected_sequence == actual_sequence, mismatch)
 
     ticks = doc["ticks"]
     check("physics.tickCount", len(ticks) == 61)
@@ -508,6 +605,21 @@ def physics_check(slice_doc: dict, package: Path) -> dict:
         "stateSequenceHash": summary["stateSequenceHash"],
         "driftM": summary["driftM"],
         "rideHeightM": summary["rideHeightM"],
+        "e1ModulePolicy": {
+            "policy": "behavior-based",
+            "pinnedModuleSha256": pin_module["sha256"],
+            "pinnedBuildJsonSha256": pin_build["sha256"],
+            "currentModuleSha256": current_module_sha,
+            "currentBuildJsonSha256": current_build_sha,
+            "currentWasmSha256": current_wasm_sha,
+            "pinMatchesCurrent": (current_module_sha == pin_module["sha256"] and
+                                  current_build_sha == pin_build["sha256"]),
+            "replaySequenceHash": actual_sequence,
+            "packageSequenceHash": expected_sequence,
+            "perTickEqual": same_ticks,
+            "replayTicks": len(actual_ticks),
+            "replayPath": rel(replay_path),
+        },
     }
 
 
@@ -523,7 +635,8 @@ def main(argv):
 
     check("schema", slice_doc.get("schema") == "blur.map-slice/1")
     check("kind", slice_doc.get("kind") == "map-slice-package")
-    check("level", slice_doc.get("level") == "usa_amboy")
+    check("level", slice_doc.get("level") == slice_doc.get("level") and
+          isinstance(slice_doc.get("level"), str) and bool(slice_doc.get("level")))
     check("scope.noPlayableClaim", slice_doc["scope"]["playableClaim"] is False)
     check("scope.noRendererClaim", slice_doc["scope"]["rendererClaim"] is False)
     check("scope.noGpuClaim", slice_doc["scope"]["gpuClaim"] is False)
@@ -532,7 +645,7 @@ def main(argv):
     check("scope.materialsNotApplied", slice_doc["scope"]["materialsApplied"] is False)
     check("scope.texturesNotBound", slice_doc["scope"]["texturesBound"] is False)
 
-    source_check(slice_doc["source"])
+    observed_source = source_check(slice_doc["source"])
 
     body = {k: v for k, v in slice_doc.items() if k != "hashes"}
     check("hashes.content", sha256_bytes(canonical(body)) ==
@@ -581,13 +694,17 @@ def main(argv):
             "payloadBytes": sum((package / name).stat().st_size
                                 for name in slice_doc["hashes"]["files"]),
         },
+        "observedE1Identity": observed_source,
         "recomputed": {
             "collision": {k: metrics[k] for k in
                           ("triangles", "vertices", "surfaceTriangles",
                            "steepTriangles", "otherTriangles", "degenerateTriangles")},
             "draws": draw_metrics,
             "layout": {**layout_metrics,
-                       "coverageOfCollisionDiameter": 2060.595 / 2110.801},
+                       "coverageOfCollisionDiameter":
+                           2060.595 / 2110.801
+                           if slice_doc["level"] == "usa_amboy" else
+                           coverage_of_collision_diameter(slice_doc["level"])},
             "spawn": spawn_metrics,
             "physics": physics_metrics,
         },

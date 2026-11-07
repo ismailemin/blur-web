@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Classify the usa_amboy unsupported draw sections and skipped instances.
+"""Classify a level's unsupported draw sections and skipped instances.
 
-Reports, separately for the 27 unsupported first-RenderList sections and the 366
-instance descriptions in 3 supported sections:
+Defaults to ``usa_amboy``; pass ``--level spa_barcelona_gracia`` for Gracia.
+Reports, separately for each unsupported first-RenderList section and every
+instance description in supported sections:
 
   * whether the source material chain resolves a static g_tAlbedo (texture side)
   * whether the committed reader stops on geometry (geometry-reader side)
@@ -12,6 +13,7 @@ Data/analysis only. No renderer, GPU, browser or full-game claim.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -24,11 +26,12 @@ sys.path.insert(0, str(ROOT / "probes/map-slice/tools"))
 
 from inspect_car_level_assets import render_layout, resource_prefix, stream_prefix  # noqa: E402
 from inspect_level_instances import read_lists  # noqa: E402
+from map_slice_common import package_dir, short_name, texture_dir  # noqa: E402
 import amboy_texture_bindings as atb  # noqa: E402
 
 LEVEL = "usa_amboy"
-PACKAGE = ROOT / "_work/map-slice/amboy"
-OUT = ROOT / "_work/map-slice/amboy-textures"
+PACKAGE = package_dir(LEVEL)
+OUT = texture_dir(LEVEL)
 STAGES = ROOT / "_work/map-pipeline/probes"
 LEVEL_DIR = ROOT / "game-data/Blur/levels" / LEVEL
 NATIVE = ROOT / "_work/build/asset-reader-native/Release/level_inspect.exe"
@@ -288,6 +291,19 @@ def instance_report(slice_doc, scene, records, stream_path, out):
 
 
 def main() -> int:
+    global LEVEL, PACKAGE, OUT, LEVEL_DIR, SCHEMA
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--level", default=LEVEL)
+    parser.add_argument("--package", type=Path, default=None)
+    parser.add_argument("--out", type=Path, default=None)
+    args = parser.parse_args()
+    LEVEL = args.level
+    PACKAGE = (args.package or package_dir(LEVEL)).resolve()
+    OUT = (args.out or texture_dir(LEVEL)).resolve()
+    LEVEL_DIR = ROOT / "game-data/Blur/levels" / LEVEL
+    SCHEMA = ("blur.map-slice.amboy-blockers/1" if LEVEL == "usa_amboy"
+              else "blur.map-slice.blockers/1")
+    OUT.mkdir(parents=True, exist_ok=True)
     slice_doc = load_json(PACKAGE / "slice.json")
     levelrender = (LEVEL_DIR / "level.levelrender").read_bytes()
     scene = render_layout(levelrender, "level")["scene"]
@@ -337,7 +353,9 @@ def main() -> int:
         },
         "limits": [
             "Data only: no renderer, GPU, browser or full-game claim.",
-            "The 27 sections stop in the committed direct-draw reader before material binding; their source materials are parsed separately and are not drawn.",
+            "The %d sections stop in the committed direct-draw reader before "
+            "material binding; their source materials are parsed separately and "
+            "are not drawn." % len(unsupported_rows),
             "Instance material/UV0 declarations are source facts; no instance geometry is emitted by the committed reader in this package.",
             "Vertex element type 7 is reported as an unknown source type; its byte width is not documented in the repository and is not guessed.",
         ],

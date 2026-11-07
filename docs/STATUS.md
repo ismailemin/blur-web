@@ -857,6 +857,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `geometry.json` **106.864.802 B** (101,91 MiB, +%135,5); batch 2 öncesi chunking zorunlu.
 - **2254/2254**; 60/60 sprint capture console 0; CTest 15/15; suite 44/44; checker 23/23. Kanıt: `docs/work/verification/T-007-vehicle-batch1.md`.
 
+## 7 Kasım 2026 — Gracia harita paketi
+
+- `spa_barcelona_gracia`: 113.270 collision tri, **88/92 section**, 550.632 tri / 3.580 draw, UV 3.580/3.580.
+- Yol **624,91378 m** (%99,60), spawn `(336,−23)`; fizik 61/61 tick 4/4 temas, sequence `4fd8ae0c…`.
+- **2.627 draw / 365.451 tri** gerçek albedo (734 doku); 953 engelli (518 Racification, 426 BC3 alfa, 5 boyut, 4 runtime).
+- Render paketi 28,8 MB; 26.797 + 32.782 + 45.590 doğrulama; suite 46/46. Modül pin politikası behavior-based. Kanıt: `docs/work/analysis/map-slice-gracia.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

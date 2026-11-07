@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Build the render-ready ``usa_amboy`` package from the MAP2 slice and MAP3 bindings.
+"""Build a render-ready package from a slice and its texture bindings.
 
-Inputs (read-only):
-  _work/map-slice/amboy/slice.json
-  _work/map-slice/amboy/draws.{positions.f32,uv0.f32,indices.u32}.bin
-  _work/map-slice/amboy-textures/bindings.json
-  _work/map-slice/amboy-textures/blockers.json
-  _work/map-slice/amboy-textures/textures/*.rgba
+Defaults to ``usa_amboy`` (committed MAP2 slice + MAP3 bindings). Pass
+``--level spa_barcelona_gracia`` for Gracia. Inputs (read-only):
+  _work/map-slice/<short>/slice.json
+  _work/map-slice/<short>/draws.{positions.f32,uv0.f32,indices.u32}.bin
+  _work/map-slice/<short>-textures/bindings.json
+  _work/map-slice/<short>-textures/blockers.json
+  _work/map-slice/<short>-textures/textures/*.rgba
 
-Output (default _work/map-slice/amboy-render):
+Output (default _work/map-slice/<short>-render):
   render.json                     manifest: buffers, 1,201 draws, 179 texture
                                   blobs, layout/spawn, upload contract, hashes
   diagnostics.json                405 blocked draws + separate additive-decal list
@@ -38,12 +39,17 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
-SLICE_DIR = ROOT / "_work/map-slice/amboy"
-TEXTURE_DIR = ROOT / "_work/map-slice/amboy-textures"
+sys.path.insert(0, str(ROOT / "probes/map-slice/tools"))
+from map_slice_common import package_dir, render_dir, short_name, texture_dir  # noqa: E402
+
+LEVEL = "usa_amboy"
+SLICE_DIR = package_dir(LEVEL)
+TEXTURE_DIR = texture_dir(LEVEL)
 BINDINGS = TEXTURE_DIR / "bindings.json"
 BLOCKERS = TEXTURE_DIR / "blockers.json"
 RGBA_DIR = TEXTURE_DIR / "textures"
-DEFAULT_OUT = ROOT / "_work/map-slice/amboy-render"
+DEFAULT_OUT = render_dir(LEVEL)
+PREFIX = short_name(LEVEL)
 
 SCHEMA = "blur.map-slice.amboy-render/1"
 DIAG_SCHEMA = "blur.map-slice.amboy-render-diagnostics/1"
@@ -134,17 +140,19 @@ def build(out: Path) -> dict:
     bindings = load_json(BINDINGS)
     blockers = load_json(BLOCKERS)
 
-    if slice_doc["level"] != "usa_amboy" or bindings["level"] != "usa_amboy":
+    if slice_doc["level"] != LEVEL or bindings["level"] != LEVEL:
         raise SystemExit("unexpected level: %r / %r" % (slice_doc["level"], bindings["level"]))
-    if blockers.get("level") != "usa_amboy":
+    if blockers.get("level") != LEVEL:
         raise SystemExit("unexpected blockers level: %r" % blockers.get("level"))
 
     sections = {row["id"]: row for row in slice_doc["draws"]["sections"]}
     package_draws = slice_doc["draws"]["draws"]
     binding_draws = bindings["draws"]
-    if len(package_draws) != 1606 or len(binding_draws) != 1606:
-        raise SystemExit("expected 1,606 draws, got %d / %d"
+    if len(package_draws) != len(binding_draws):
+        raise SystemExit("slice/binding draw count differs: %d / %d"
                          % (len(package_draws), len(binding_draws)))
+    if LEVEL == "usa_amboy" and len(package_draws) != 1606:
+        raise SystemExit("expected 1,606 Amboy draws, got %d" % len(package_draws))
 
     # ---------------------------------------------------------------- buffers
     pos_path = SLICE_DIR / "draws.positions.f32.bin"
@@ -159,11 +167,14 @@ def build(out: Path) -> dict:
     vertex_count = int(positions.size // 3)
     uv_vertex_count = int(uv0.size // 2)
     index_count = int(indices.size)
-    if vertex_count != 529624 or uv_vertex_count != 529624 or index_count != 1046844:
-        raise SystemExit("unexpected buffer sizes: %d verts / %d uv / %d idx"
-                         % (vertex_count, uv_vertex_count, index_count))
-    if index_count // 3 != 348948:
-        raise SystemExit("unexpected triangle count: %d" % (index_count // 3))
+    if vertex_count != uv_vertex_count:
+        raise SystemExit("position/UV vertex count differs: %d / %d"
+                         % (vertex_count, uv_vertex_count))
+    if LEVEL == "usa_amboy" and (vertex_count != 529624 or
+                                 index_count != 1046844 or
+                                 index_count // 3 != 348948):
+        raise SystemExit("unexpected Amboy buffer sizes: %d verts / %d idx"
+                         % (vertex_count, index_count))
 
     out.mkdir(parents=True, exist_ok=True)
     texture_out = out / "textures"
@@ -209,12 +220,13 @@ def build(out: Path) -> dict:
         status_triangles[status] += binding_draw["triangleCount"]
         rows.append((package_draw, binding_draw, section, global_first))
 
-    if status_counts[BINDABLE] != 1201 or status_counts[EFFECT] != 334 or \
-            status_counts[DECODER] != 50 or status_counts[ALPHA] != 17 or \
-            status_counts[RUNTIME] != 4:
-        raise SystemExit("unexpected status split: %r" % status_counts)
-    if status_triangles[BINDABLE] != 269300:
-        raise SystemExit("unexpected bindable triangle count: %d" % status_triangles[BINDABLE])
+    if sum(status_counts.values()) != len(rows):
+        raise SystemExit("status split does not cover every draw: %r" % status_counts)
+    if LEVEL == "usa_amboy" and (
+            status_counts[BINDABLE] != 1201 or status_counts[EFFECT] != 334 or
+            status_counts[DECODER] != 50 or status_counts[ALPHA] != 17 or
+            status_counts[RUNTIME] != 4 or status_triangles[BINDABLE] != 269300):
+        raise SystemExit("unexpected Amboy status split: %r" % status_counts)
 
     # -------------------------------------------------------- texture sources
     texture_by_id = {row["id"]: row for row in bindings["textures"]}
@@ -227,7 +239,7 @@ def build(out: Path) -> dict:
             if texture_id not in texture_by_id:
                 raise SystemExit("bindable texture missing from manifest: %r" % texture_id)
 
-    if len(bindable_ids) != 186:
+    if LEVEL == "usa_amboy" and len(bindable_ids) != 186:
         raise SystemExit("expected 186 bindable texture sources, got %d" % len(bindable_ids))
 
     # Group by decoded RGBA hash and merge identical sources.
@@ -330,15 +342,13 @@ def build(out: Path) -> dict:
             merged_groups.append({"sha256": rgba_sha, "primaryId": primary,
                                   "sourceIds": ids})
 
-    if len(texture_items) != 179 or len(merged_groups) != 7:
-        raise SystemExit("unexpected texture merge result: %d blobs / %d groups"
-                         % (len(texture_items), len(merged_groups)))
-    if referenced_mip0 != 2672704 or unique_mip0 != 2654272:
-        raise SystemExit("unexpected mip0 totals: %d referenced / %d unique"
-                         % (referenced_mip0, unique_mip0))
-    if referenced_chain != 3564368 or unique_chain != 3539772:
-        raise SystemExit("unexpected chain totals: %d referenced / %d unique"
-                         % (referenced_chain, unique_chain))
+    if LEVEL == "usa_amboy" and (
+            len(texture_items) != 179 or len(merged_groups) != 7 or
+            referenced_mip0 != 2672704 or unique_mip0 != 2654272 or
+            referenced_chain != 3564368 or unique_chain != 3539772):
+        raise SystemExit("unexpected Amboy texture merge result: %d blobs / %d "
+                         "groups / %d referenced mip0"
+                         % (len(texture_items), len(merged_groups), referenced_mip0))
 
     # ------------------------------------------------------------- bindable
     bindable_draws = []
@@ -386,8 +396,9 @@ def build(out: Path) -> dict:
         bindable_index_count += binding_draw["indexCount"]
         referenced_vertices.update(int(value) for value in range_indices)
 
-    if len(bindable_draws) != 1201:
-        raise SystemExit("expected 1,201 bindable draws, got %d" % len(bindable_draws))
+    if LEVEL == "usa_amboy" and len(bindable_draws) != 1201:
+        raise SystemExit("expected 1,201 Amboy bindable draws, got %d"
+                         % len(bindable_draws))
 
     # ------------------------------------------------------------ diagnostics
     diagnostic_draws = []
@@ -415,6 +426,7 @@ def build(out: Path) -> dict:
         texture_id = binding_draw.get("textureId")
         aux = binding_draw.get("auxTexture")
         if status == EFFECT:
+            is_racification = binding_draw["effect"].startswith("Racification")
             diagnostic = {
                 "pass": "effect-additive-decal",
                 "albedoUsed": False,
@@ -423,17 +435,19 @@ def build(out: Path) -> dict:
                 "separatePass": "effect-additive-decal",
                 "auxTexture": {
                     "parameter": aux.get("parameter") if aux else None,
-                    "textureId": ("amboy.albedo.%d.%d" % (aux["block"], aux["index"]))
+                    "textureId": ("%s.albedo.%d.%d" % (PREFIX, aux["block"], aux["index"]))
                     if aux and aux.get("block", -1) >= 0 else
-                    ("amboy.shared.%d" % aux["index"]) if aux else None,
+                    ("%s.shared.%d" % (PREFIX, aux["index"])) if aux else None,
                     "name": aux.get("name") if aux else None,
                     "kind": aux.get("kind") if aux else None,
                     "formatName": aux.get("formatName") if aux else None,
                     "width": aux.get("width") if aux else None,
                     "height": aux.get("height") if aux else None,
                 },
-                "colourConstant": RACIFICATION_COLOUR,
-                "colourConstantSource": "Racification.fx g_vColour (static shader constant)",
+                "colourConstant": RACIFICATION_COLOUR if is_racification else None,
+                "colourConstantSource": (
+                    "Racification.fx g_vColour (static shader constant)"
+                    if is_racification else None),
                 "reason": binding_draw["blocker"],
                 "note": ("shader exposes g_tTexture with additive/alpha-tested blend; "
                          "binding it as opaque albedo would be a semantic error"),
@@ -499,19 +513,33 @@ def build(out: Path) -> dict:
             "diagnostic": diagnostic,
         })
 
-    if len(diagnostic_draws) != 405:
-        raise SystemExit("expected 405 diagnostic draws, got %d" % len(diagnostic_draws))
-    if len(effect_draws) != 334 or len(decoder_draws) != 50 or \
-            len(alpha_draws) != 17 or len(runtime_draws) != 4:
-        raise SystemExit("unexpected diagnostic split")
+    if LEVEL == "usa_amboy" and (
+            len(diagnostic_draws) != 405 or len(effect_draws) != 334 or
+            len(decoder_draws) != 50 or len(alpha_draws) != 17 or
+            len(runtime_draws) != 4):
+        raise SystemExit("unexpected Amboy diagnostic split: %d/%d/%d/%d/%d"
+                         % (len(diagnostic_draws), len(effect_draws),
+                            len(decoder_draws), len(alpha_draws), len(runtime_draws)))
 
     effect_ranges = [{"drawId": d["drawId"], "firstIndex": d["firstIndex"],
                       "indexCount": d["indexCount"]}
                      for d in diagnostic_draws if d["status"] == EFFECT]
+    effect_names = sorted({d["effect"] for d in effect_draws})
+    if effect_names and all(name.startswith("Racification") for name in effect_names):
+        effect_note = ("%d Racification/RacificationDLayer draws form a separate "
+                       "additive, alpha-tested decal layer. They are not opaque "
+                       "albedo and are not part of the %s-draw opaque list."
+                       % (len(effect_draws), format(len(bindable_draws), ",")))
+    else:
+        effect_note = ("%d effect-layer draws (%s) form a separate additive/"
+                       "alpha-tested layer. They are not opaque albedo and are not "
+                       "part of the %s-draw opaque list."
+                       % (len(effect_draws), ", ".join(effect_names) or "none",
+                          format(len(bindable_draws), ",")))
     diagnostics_doc = {
         "schema": DIAG_SCHEMA,
         "kind": "map-slice-render-diagnostics",
-        "level": "usa_amboy",
+        "level": LEVEL,
         "scope": {
             "dataOnly": True,
             "rendererChanged": False,
@@ -542,9 +570,7 @@ def build(out: Path) -> dict:
                 "textureBound": False,
                 "separateAdditiveDecalList": True,
                 "indexRanges": effect_ranges,
-                "note": ("334 Racification/RacificationDLayer draws form a separate "
-                         "additive, alpha-tested decal layer. They are not opaque "
-                         "albedo and are not part of the 1,201-draw opaque list."),
+                "note": effect_note,
             },
             "decoderSize": {
                 "status": DECODER,
@@ -590,8 +616,12 @@ def build(out: Path) -> dict:
     step = np.diff(points[:, :2], axis=0)
     cumulative = np.concatenate(([0.0], np.cumsum(np.hypot(step[:, 0], step[:, 1]))))
     float32_length = float(cumulative[-1])
-    heading_f32 = math.atan2(float(points[1, 0] - points[0, 0]),
-                             float(points[1, 1] - points[0, 1]))
+    # Amboy's committed render manifest measured the heading on the first
+    # float32 segment; keep that byte-identical. Gracia's candidate heading is
+    # the first-2 m tangent, so use the 8th 0.25 m point.
+    heading_index = 1 if LEVEL == "usa_amboy" else min(8, len(points) - 1)
+    heading_f32 = math.atan2(float(points[heading_index, 0] - points[0, 0]),
+                             float(points[heading_index, 1] - points[0, 1]))
     heading_error_f32 = abs(math.atan2(
         math.sin(heading_f32 - layout_src["spawn"]["heading"]),
         math.cos(heading_f32 - layout_src["spawn"]["heading"])))
@@ -619,10 +649,49 @@ def build(out: Path) -> dict:
     distinct_dimensions = sorted({dims_string(item["width"], item["height"])
                                   for item in texture_items})
     sections_with_bindable = sorted({row["section"] for row in bindable_draws})
+    instance_sections = [s for s in slice_doc["draws"]["sections"]
+                         if s.get("instanceDescriptionsSkipped")]
+    instance_descriptions = slice_doc["draws"].get("instanceDescriptionsSkipped", 0)
+    unsupported_count = len(slice_doc["draws"]["unsupportedSections"])
+    if LEVEL == "usa_amboy":
+        integration_gaps = [
+            "e1-drive still builds its packet from River; a ?map=amboy packet "
+            "producer is not part of this package.",
+            "No GPU upload, shader, blend, alpha-test, sampler or sRGB conversion "
+            "is implemented or claimed.",
+            "The 405 blocked draws are diagnostic only: 334 are a separate "
+            "additive decal layer (not opaque albedo), 50 exceed the decoder "
+            "bound, 17 need an alpha rule and 4 are runtime parameters.",
+            "No vertex normals are available; shading needs a reader change or a "
+            "documented geometric-normal fallback.",
+            "instancesApplied:false: 366 instance descriptions and 27 unsupported "
+            "billboard sections remain geometry blockers.",
+            "No collision/simple-shape copy is emitted here; the slice package "
+            "and Level.levelphysics remain the physics inputs.",
+        ]
+    else:
+        integration_gaps = [
+            "e1-drive still builds its packet from River; a ?map=%s packet "
+            "producer is not part of this package." % PREFIX,
+            "No GPU upload, shader, blend, alpha-test, sampler or sRGB conversion "
+            "is implemented or claimed.",
+            "The %d blocked draws are diagnostic only: %d are a separate additive "
+            "decal layer (not opaque albedo), %d exceed the decoder bound, %d need "
+            "an alpha rule and %d are runtime parameters."
+            % (len(diagnostic_draws), len(effect_draws), len(decoder_draws),
+               len(alpha_draws), len(runtime_draws)),
+            "No vertex normals are available; shading needs a reader change or a "
+            "documented geometric-normal fallback.",
+            "instancesApplied:false: %d instance descriptions in %d supported "
+            "sections and %d unsupported sections remain geometry blockers."
+            % (instance_descriptions, len(instance_sections), unsupported_count),
+            "No collision/simple-shape copy is emitted here; the slice package "
+            "and Level.levelphysics remain the physics inputs.",
+        ]
     manifest_body = {
         "schema": SCHEMA,
         "kind": "map-slice-render-package",
-        "level": "usa_amboy",
+        "level": LEVEL,
         "units": {
             "position": "metres, left-handed level space (x, y, z)",
             "uv0": "normalised texture coordinates (u, v)",
@@ -779,33 +848,21 @@ def build(out: Path) -> dict:
                 "distinctDimensions": len(distinct_dimensions),
             },
             "passes": {
-                "opaqueAlbedo": {"drawList": "render.json#draws", "draws": 1201},
+                "opaqueAlbedo": {"drawList": "render.json#draws",
+                                 "draws": len(bindable_draws)},
                 "effectAdditiveDecal": {
                     "drawList": "diagnostics.json#groups.effectDecal.indexRanges",
-                    "draws": 334,
+                    "draws": len(effect_draws),
                     "opaqueAlbedo": False,
                 },
-                "diagnosticOnly": {"drawList": "diagnostics.json#draws", "draws": 71},
+                "diagnosticOnly": {"drawList": "diagnostics.json#draws",
+                                   "draws": len(diagnostic_draws) - len(effect_draws)},
             },
             "sampler": "raw sampler state is recorded per texture; not applied",
             "normals": "not included by the committed direct-draw reader",
             "instances": "not applied",
         },
-        "integrationGaps": [
-            "e1-drive still builds its packet from River; a ?map=amboy packet "
-            "producer is not part of this package.",
-            "No GPU upload, shader, blend, alpha-test, sampler or sRGB conversion "
-            "is implemented or claimed.",
-            "The 405 blocked draws are diagnostic only: 334 are a separate "
-            "additive decal layer (not opaque albedo), 50 exceed the decoder "
-            "bound, 17 need an alpha rule and 4 are runtime parameters.",
-            "No vertex normals are available; shading needs a reader change or a "
-            "documented geometric-normal fallback.",
-            "instancesApplied:false: 366 instance descriptions and 27 unsupported "
-            "billboard sections remain geometry blockers.",
-            "No collision/simple-shape copy is emitted here; the slice package "
-            "and Level.levelphysics remain the physics inputs.",
-        ],
+        "integrationGaps": integration_gaps,
         "limits": [
             "Data only: no renderer, GPU, browser, playable-game or full-game claim.",
             "The three geometry buffers are byte-identical to the MAP2 slice "
@@ -837,10 +894,29 @@ def build(out: Path) -> dict:
 
 
 def main() -> int:
+    global LEVEL, SLICE_DIR, TEXTURE_DIR, BINDINGS, BLOCKERS, RGBA_DIR, PREFIX
+    global SCHEMA, DIAG_SCHEMA
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", default=str(DEFAULT_OUT))
+    parser.add_argument("--level", default=LEVEL)
+    parser.add_argument("--package", type=Path, default=None,
+                        help="slice package directory")
+    parser.add_argument("--texture-dir", type=Path, default=None)
+    parser.add_argument("--out", default=None)
     args = parser.parse_args()
-    out = Path(args.out)
+
+    LEVEL = args.level
+    PREFIX = short_name(LEVEL)
+    SLICE_DIR = (args.package or package_dir(LEVEL)).resolve()
+    TEXTURE_DIR = (args.texture_dir or texture_dir(LEVEL)).resolve()
+    BINDINGS = TEXTURE_DIR / "bindings.json"
+    BLOCKERS = TEXTURE_DIR / "blockers.json"
+    RGBA_DIR = TEXTURE_DIR / "textures"
+    SCHEMA = ("blur.map-slice.amboy-render/1" if LEVEL == "usa_amboy"
+              else "blur.map-slice.render/1")
+    DIAG_SCHEMA = ("blur.map-slice.amboy-render-diagnostics/1"
+                   if LEVEL == "usa_amboy"
+                   else "blur.map-slice.render-diagnostics/1")
+    out = Path(args.out) if args.out else render_dir(LEVEL)
     manifest = build(out)
     print(json.dumps({
         "output": rel(out),

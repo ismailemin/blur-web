@@ -45,7 +45,11 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[3]
 SCANNER_DIR = ROOT / "probes/map-pipeline/tools"
 sys.path.insert(0, str(SCANNER_DIR))
+sys.path.insert(0, str(ROOT / "probes/map-slice/tools"))
 import physics_scan  # noqa: E402
+from map_slice_common import (  # noqa: E402
+    package_dir, ray_bounds, short_name, texture_dir,
+)
 
 SCHEMA = "blur.map-slice/1"
 LAYOUT_SCHEMA = "blur.map-slice.layout/1"
@@ -236,8 +240,11 @@ def build_ray_triangles(triangles):
     return records
 
 
-def vertical_hit(records, x: float, z: float) -> dict:
-    """Highest upward/downward triangle under a vertical ray at (x, z)."""
+def vertical_hit(records, x: float, z: float, min_y: float | None = None,
+                 max_y: float | None = None) -> dict:
+    """Highest triangle under a vertical ray at (x, z) inside a Y window."""
+    lo = RAY_MIN_Y if min_y is None else min_y
+    hi = RAY_MAX_Y if max_y is None else max_y
     best = None
     for t in records:
         if x < t["minx"] or x > t["maxx"] or z < t["minz"] or z > t["maxz"]:
@@ -252,7 +259,7 @@ def vertical_hit(records, x: float, z: float) -> dict:
         if u < -1e-9 or v < -1e-9 or w < -1e-9:
             continue
         y = u * a[1] + v * b[1] + w * c[1]
-        if y < RAY_MIN_Y or y > RAY_MAX_Y:
+        if y < lo or y > hi:
             continue
         if best is None or y > best["y"]:
             best = {"hit": True, "y": y, "normal": list(t["normal"]),
@@ -260,11 +267,12 @@ def vertical_hit(records, x: float, z: float) -> dict:
     return best if best is not None else {"hit": False}
 
 
-def spawn_proof(records, spawn: dict) -> dict:
+def spawn_proof(records, spawn: dict, level: str = "usa_amboy") -> dict:
     heading = float(spawn["heading"])
     forward = (math.sin(heading), math.cos(heading))
     lateral = (math.cos(heading), -math.sin(heading))
     x0, z0 = float(spawn["x"]), float(spawn["z"])
+    bounds = ray_bounds(level, float(spawn["ground"]))
 
     band = []
     for station in STATIONS_M:
@@ -272,7 +280,7 @@ def spawn_proof(records, spawn: dict) -> dict:
         for offset in BAND_OFFSETS_M:
             x = x0 + forward[0] * station + lateral[0] * offset
             z = z0 + forward[1] * station + lateral[1] * offset
-            hit = vertical_hit(records, x, z)
+            hit = vertical_hit(records, x, z, bounds["minY"], bounds["maxY"])
             if hit["hit"]:
                 row.append({
                     "hit": True,
@@ -295,8 +303,8 @@ def spawn_proof(records, spawn: dict) -> dict:
         raise SystemExit("FAILED: no collision hit at the candidate spawn")
     ground = center[0]["y"]
     return {
-        "ray": {"axis": "vertical down", "startY": RAY_START_Y,
-                "minY": RAY_MIN_Y, "maxY": RAY_MAX_Y,
+        "ray": {"axis": "vertical down", "startY": bounds["startY"],
+                "minY": bounds["minY"], "maxY": bounds["maxY"],
                 "rule": "highest triangle hit under the point; no interpolation"},
         "center": center[0],
         "groundY": round(ground, 9),
@@ -724,8 +732,12 @@ def layout_document(candidate_path: Path, covered_path: Path, level: str) -> tup
         layout_passable += int(passable[iz, ix])
 
     heading = float(spawn["heading"])
-    tangent = math.atan2(points[1]["x"] - points[0]["x"],
-                         points[1]["z"] - points[0]["z"])
+    # The candidate heading is measured over the first 2 m (index 8 of the
+    # 0.25 m layout), not the first 0.25 m segment. For a straight start this is
+    # identical; for a corner in the first metres it avoids a false mismatch.
+    tangent_index = min(8, len(points) - 1)
+    tangent = math.atan2(points[tangent_index]["x"] - points[0]["x"],
+                         points[tangent_index]["z"] - points[0]["z"])
     heading_error = abs(math.atan2(math.sin(tangent - heading),
                                    math.cos(tangent - heading)))
 
@@ -792,11 +804,11 @@ def layout_document(candidate_path: Path, covered_path: Path, level: str) -> tup
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", default="usa_amboy")
-    parser.add_argument("--out", default="_work/map-slice/amboy")
+    parser.add_argument("--out", default=None)
     args = parser.parse_args(argv)
 
     level = args.level
-    out = ROOT / args.out
+    out = ROOT / args.out if args.out else package_dir(level)
     logs = ROOT / "_work/logs/map-slice"
     logs.mkdir(parents=True, exist_ok=True)
     out.mkdir(parents=True, exist_ok=True)
@@ -825,7 +837,7 @@ def main(argv):
 
     print("layout ...")
     layout, _ = layout_document(candidate_path, covered_path, level)
-    proof = spawn_proof(ray_records, layout["spawn"])
+    proof = spawn_proof(ray_records, layout["spawn"], level)
 
     print("draws ...")
     draws = draw_geometry(render_path, DRAW_PROBES)
@@ -835,6 +847,195 @@ def main(argv):
     refresh = draws["nativeReaderRefresh"]
     identity = refresh["identity"]
     refresh_counts = refresh["counts"]
+    short = short_name(level)
+    texture_package = texture_dir(level)
+
+    if level == "usa_amboy":
+        textures_block = {
+            "status": "none-bound",
+            "boundCount": 0,
+            "boundBytes": 0,
+            "items": [],
+            "directDrawAlbedo": "identity-resolved-not-bound",
+            "identity": identity,
+            "identityCounts": refresh_counts,
+            "reason": "No albedo image bytes are bound: the package has 0 image items "
+                      "and 0 texture bytes. The fixed reader resolves a static albedo "
+                      "identity for %d/%d draws (%d resource-block + %d shared) and "
+                      "reports %d identity-blocked draws; MAP3 joins that identity to "
+                      "decoder/alpha evidence for 1,201 bindable / 405 blocked draws "
+                      "(docs/work/analysis/map-slice-amboy-textures.md). Identity is not "
+                      "binding: texture format, alpha, blend, shader stages, sampler wrap/"
+                      "filter, mips, sRGB and pixels are not applied." % (
+                          identity["resolvedDraws"], draws["drawCount"],
+                          identity.get("static-resource-albedo-resolved", 0),
+                          identity.get("static-shared-albedo-resolved", 0),
+                          identity["blockedDraws"]),
+            "bindingManifest": {
+                "bindings": "_work/map-slice/amboy-textures/bindings.json",
+                "blockers": "_work/map-slice/amboy-textures/blockers.json",
+                "analysis": "docs/work/analysis/map-slice-amboy-textures.md",
+                "bindableDraws": 1201,
+                "blockedDraws": 405,
+                "uvHashesVerified": 1606,
+            },
+            "attempts": [
+                {
+                    "tool": "_work/build/asset-reader-native/Release/level_inspect.exe "
+                            "<levelrender> <geometry.chunk> <node.chunk> <block> <node>",
+                    "result": "fixed reader replay on %d/%d supported sections: "
+                              "pos/UV0/index/draw-range identical; %d draws resolve "
+                              "static albedo identity (%d resource + %d shared), "
+                              "%d blocked; %d/%d UV0 hashes printed; %d shared texture "
+                              "identities per section. No image bytes." % (
+                                  refresh["sectionsReplayed"],
+                                  refresh["sectionsReplayed"],
+                                  identity["resolvedDraws"],
+                                  identity.get("static-resource-albedo-resolved", 0),
+                                  identity.get("static-shared-albedo-resolved", 0),
+                                  identity["blockedDraws"],
+                                  refresh_counts["uvHashDraws"], draws["drawCount"],
+                                  refresh_counts["sharedTextureEntries"] //
+                                  max(refresh["sectionsReplayed"], 1)),
+                },
+                {
+                    "tool": "level_inspect.exe --instances-all ... 100 234",
+                    "result": "status=error: 'First RenderList contains no instances'",
+                },
+                {
+                    "tool": "level_inspect.exe --instances-all ... 54 184",
+                    "result": "status=ok but 0 in-scope draws; 261 instances reported "
+                              "'other-block'; scope says no instance bound to the "
+                              "supplied geometry chunk passed the bounds check",
+                },
+                {
+                    "tool": "scene_inspect.exe level.levelrender --resources",
+                    "result": "status=error: 'Expected Model container at byte 20' "
+                              "(the Scene resource reader accepts model containers, "
+                              "not a levelrender archive)",
+                },
+            ],
+        }
+        integration_gaps = [
+            "per-map geometry upload and packet producer: the package has buffers and "
+            "ranges but e1-drive still builds River only",
+            "materials/textures: 0 bound direct-draw albedo images; static albedo "
+            "identity is resolved for 1,268/1,606 draws (1,201 bindable after the MAP3 "
+            "decoder/alpha join), but the e1 page still needs a texture upload/decoder "
+            "pass before this is more than diagnostic",
+            "normals: absent from the committed direct-draw export; shading needs a "
+            "reader change or a documented geometric-normal fallback",
+            "instances: instancesApplied:false; 3 supported sections carry skipped "
+            "instance descriptions, and instance-only geometry can add surfaces",
+            "collision extras: the box, four cylinders and the InstancedTriangleMesh "
+            "are not shipped in the triangle package",
+            "spawn: derived from the measured path, not a retail start-line record",
+            "course: point-to-point only; no lap/closed circuit is claimed",
+            "props: no Amboy prop colliders or map-specific race rules",
+            "UI: no map select, no Amboy entry, no results screen",
+            "browser/GPU: no frame, screenshot or console evidence for this map",
+        ]
+        package_limits = [
+            "draw coverage is first-RenderList direct LOD0 only; instances not applied",
+            "the 1 m audit grid is coarser than the measured 1/6 m path grid",
+            "collision triangles are the static triangle meshes; simple shapes and "
+            "instance geometry are excluded",
+            "physics proof is a 60-tick zero-input settle on one car, not a lap",
+            "no renderer, GPU, playable-game or full-game claim",
+        ]
+    else:
+        instance_sections = [s for s in draws["sections"]
+                             if s["instanceDescriptionsSkipped"]]
+        excluded_shapes = [s for s in collision["shapes"] if not s["shipped"]]
+        excluded_types = {}
+        for shape in excluded_shapes:
+            excluded_types[shape["importName"]] = \
+                excluded_types.get(shape["importName"], 0) + 1
+        excluded_text = ", ".join("%d %s" % (value, key)
+                                  for key, value in sorted(excluded_types.items()))
+        textures_block = {
+            "status": "none-bound",
+            "boundCount": 0,
+            "boundBytes": 0,
+            "items": [],
+            "directDrawAlbedo": "identity-resolved-not-bound",
+            "identity": identity,
+            "identityCounts": refresh_counts,
+            "reason": "No albedo image bytes are bound: the package has 0 image items "
+                      "and 0 texture bytes. The fixed reader resolves a static albedo "
+                      "identity for %d/%d draws (%d resource-block + %d shared) and "
+                      "reports %d identity-blocked draws. The per-draw binding manifest "
+                      "is a separate tool output (%s) and is not consumed by this "
+                      "slice. Identity is not binding: texture format, alpha, blend, "
+                      "shader stages, sampler wrap/filter, mips, sRGB and pixels are "
+                      "not applied." % (
+                          identity["resolvedDraws"], draws["drawCount"],
+                          identity.get("static-resource-albedo-resolved", 0),
+                          identity.get("static-shared-albedo-resolved", 0),
+                          identity["blockedDraws"],
+                          "_work/map-slice/%s-textures/bindings.json" % short),
+            "bindingManifest": {
+                "bindings": "_work/map-slice/%s-textures/bindings.json" % short,
+                "blockers": "_work/map-slice/%s-textures/blockers.json" % short,
+                "analysis": "docs/work/analysis/map-slice-%s.md" % short,
+                "generatedSeparately": True,
+            },
+            "attempts": [
+                {
+                    "tool": "_work/build/asset-reader-native/Release/level_inspect.exe "
+                            "<levelrender> <geometry.chunk> <node.chunk> <block> <node>",
+                    "result": "fixed reader replay on %d/%d supported sections: "
+                              "pos/UV0/index/draw-range identical; %d draws resolve "
+                              "static albedo identity (%d resource + %d shared), "
+                              "%d blocked; %d/%d UV0 hashes printed; %d shared texture "
+                              "identities per section. No image bytes." % (
+                                  refresh["sectionsReplayed"],
+                                  refresh["sectionsReplayed"],
+                                  identity["resolvedDraws"],
+                                  identity.get("static-resource-albedo-resolved", 0),
+                                  identity.get("static-shared-albedo-resolved", 0),
+                                  identity["blockedDraws"],
+                                  refresh_counts["uvHashDraws"], draws["drawCount"],
+                                  refresh_counts["sharedTextureEntries"] //
+                                  max(refresh["sectionsReplayed"], 1)),
+                },
+                {
+                    "tool": "level_inspect.exe --instances-all / --instances-bundle",
+                    "result": "not run by the slice extractor; per-section instance "
+                              "attempts and their exact results are recorded by "
+                              "amboy_blocker_report.py --level %s in "
+                              "_work/map-slice/%s-textures/blockers.json" % (level, short),
+                },
+            ],
+        }
+        integration_gaps = [
+            "per-map geometry upload and packet producer: the package has buffers and "
+            "ranges but e1-drive still builds River only",
+            "materials/textures: 0 bound direct-draw albedo images; static albedo "
+            "identity is resolved for %d/%d draws, and a separate binding manifest "
+            "records decoder/alpha evidence; the e1 page still needs texture upload "
+            "before this is more than diagnostic" %
+            (identity["resolvedDraws"], draws["drawCount"]),
+            "normals: absent from the committed direct-draw export; shading needs a "
+            "reader change or a documented geometric-normal fallback",
+            "instances: instancesApplied:false; %d supported sections carry %d skipped "
+            "instance descriptions, and instance-only geometry can add surfaces" %
+            (len(instance_sections), draws["instanceDescriptionsSkipped"]),
+            "collision extras: %s are not shipped in the triangle package" % excluded_text,
+            "spawn: derived from the measured path, not a retail start-line record",
+            "course: point-to-point only; no lap/closed circuit is claimed",
+            "props: no map-specific prop colliders or race rules",
+            "UI: no map select entry or results screen",
+            "browser/GPU: no frame, screenshot or console evidence for this map",
+        ]
+        package_limits = [
+            "draw coverage is first-RenderList direct LOD0 only; instances not applied",
+            "the 1 m audit grid is coarser than the measured 1/12 m path lattice",
+            "collision triangles are the static triangle meshes; simple shapes and "
+            "instance geometry are excluded",
+            "physics proof is a 60-tick zero-input settle on one car, not a lap",
+            "no renderer, GPU, playable-game or full-game claim",
+        ]
 
     body = {
         "schema": SCHEMA,
@@ -937,101 +1138,12 @@ def main(argv):
             "nativeReader": draws["nativeReader"],
             "nativeReaderRefresh": draws["nativeReaderRefresh"],
         },
-        "textures": {
-            "status": "none-bound",
-            "boundCount": 0,
-            "boundBytes": 0,
-            "items": [],
-            "directDrawAlbedo": "identity-resolved-not-bound",
-            "identity": identity,
-            "identityCounts": refresh_counts,
-            "reason": "No albedo image bytes are bound: the package has 0 image items "
-                      "and 0 texture bytes. The fixed reader resolves a static albedo "
-                      "identity for %d/%d draws (%d resource-block + %d shared) and "
-                      "reports %d identity-blocked draws; MAP3 joins that identity to "
-                      "decoder/alpha evidence for 1,201 bindable / 405 blocked draws "
-                      "(docs/work/analysis/map-slice-amboy-textures.md). Identity is not "
-                      "binding: texture format, alpha, blend, shader stages, sampler wrap/"
-                      "filter, mips, sRGB and pixels are not applied." % (
-                          identity["resolvedDraws"], draws["drawCount"],
-                          identity.get("static-resource-albedo-resolved", 0),
-                          identity.get("static-shared-albedo-resolved", 0),
-                          identity["blockedDraws"]),
-            "bindingManifest": {
-                "bindings": "_work/map-slice/amboy-textures/bindings.json",
-                "blockers": "_work/map-slice/amboy-textures/blockers.json",
-                "analysis": "docs/work/analysis/map-slice-amboy-textures.md",
-                "bindableDraws": 1201,
-                "blockedDraws": 405,
-                "uvHashesVerified": 1606,
-            },
-            "attempts": [
-                {
-                    "tool": "_work/build/asset-reader-native/Release/level_inspect.exe "
-                            "<levelrender> <geometry.chunk> <node.chunk> <block> <node>",
-                    "result": "fixed reader replay on %d/%d supported sections: "
-                              "pos/UV0/index/draw-range identical; %d draws resolve "
-                              "static albedo identity (%d resource + %d shared), "
-                              "%d blocked; %d/%d UV0 hashes printed; %d shared texture "
-                              "identities per section. No image bytes." % (
-                                  refresh["sectionsReplayed"],
-                                  refresh["sectionsReplayed"],
-                                  identity["resolvedDraws"],
-                                  identity.get("static-resource-albedo-resolved", 0),
-                                  identity.get("static-shared-albedo-resolved", 0),
-                                  identity["blockedDraws"],
-                                  refresh_counts["uvHashDraws"], draws["drawCount"],
-                                  refresh_counts["sharedTextureEntries"] //
-                                  max(refresh["sectionsReplayed"], 1)),
-                },
-                {
-                    "tool": "level_inspect.exe --instances-all ... 100 234",
-                    "result": "status=error: 'First RenderList contains no instances'",
-                },
-                {
-                    "tool": "level_inspect.exe --instances-all ... 54 184",
-                    "result": "status=ok but 0 in-scope draws; 261 instances reported "
-                              "'other-block'; scope says no instance bound to the "
-                              "supplied geometry chunk passed the bounds check",
-                },
-                {
-                    "tool": "scene_inspect.exe level.levelrender --resources",
-                    "result": "status=error: 'Expected Model container at byte 20' "
-                              "(the Scene resource reader accepts model containers, "
-                              "not a levelrender archive)",
-                },
-            ],
-        },
+        "textures": textures_block,
         "layout": layout,
         "spawnProof": proof,
         "physicsProof": {"status": "pending", "file": "physics-settle.json"},
-        "integrationGaps": [
-            "per-map geometry upload and packet producer: the package has buffers and "
-            "ranges but e1-drive still builds River only",
-            "materials/textures: 0 bound direct-draw albedo images; static albedo "
-            "identity is resolved for 1,268/1,606 draws (1,201 bindable after the MAP3 "
-            "decoder/alpha join), but the e1 page still needs a texture upload/decoder "
-            "pass before this is more than diagnostic",
-            "normals: absent from the committed direct-draw export; shading needs a "
-            "reader change or a documented geometric-normal fallback",
-            "instances: instancesApplied:false; 3 supported sections carry skipped "
-            "instance descriptions, and instance-only geometry can add surfaces",
-            "collision extras: the box, four cylinders and the InstancedTriangleMesh "
-            "are not shipped in the triangle package",
-            "spawn: derived from the measured path, not a retail start-line record",
-            "course: point-to-point only; no lap/closed circuit is claimed",
-            "props: no Amboy prop colliders or map-specific race rules",
-            "UI: no map select, no Amboy entry, no results screen",
-            "browser/GPU: no frame, screenshot or console evidence for this map",
-        ],
-        "limits": [
-            "draw coverage is first-RenderList direct LOD0 only; instances not applied",
-            "the 1 m audit grid is coarser than the measured 1/6 m path grid",
-            "collision triangles are the static triangle meshes; simple shapes and "
-            "instance geometry are excluded",
-            "physics proof is a 60-tick zero-input settle on one car, not a lap",
-            "no renderer, GPU, playable-game or full-game claim",
-        ],
+        "integrationGaps": integration_gaps,
+        "limits": package_limits,
     }
 
     provisional = {**body, "hashes": {"status": "pending"}}
@@ -1042,8 +1154,10 @@ def main(argv):
         ["node", str(ROOT / "probes/map-slice/tools/physics_settle.mjs"),
          "--package", str(out)],
         cwd=ROOT, text=True, capture_output=True)
-    (logs / "physics-settle.log").write_text(
-        "$ node probes/map-slice/tools/physics_settle.mjs --package " + args.out + "\n" +
+    log_name = "physics-settle.log" if level == "usa_amboy" \
+        else "physics-settle-%s.log" % short
+    (logs / log_name).write_text(
+        "$ node probes/map-slice/tools/physics_settle.mjs --package " + rel(out) + "\n" +
         settled.stdout + settled.stderr, encoding="utf-8")
     if settled.returncode != 0:
         raise SystemExit("FAILED: physics settle failed\n" + settled.stdout + settled.stderr)

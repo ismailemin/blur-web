@@ -187,6 +187,12 @@ batch 2 öncesi chunking zorunlu. **2254/2254**, 60/60 sprint capture console 0,
 CTest 15/15, suite 44/44, checker 23/23. Kanıt:
 `docs/work/verification/T-007-vehicle-batch1.md`.
 
+**MAP5 — Gracia haritası:** 113.270 collision tri, **88/92 section**, 550.632
+tri; yol **624,91 m** (%99,6); **2.627 draw / 365.451 tri** gerçek albedo
+(734 doku), 953 engelli. Render paketi 28,8 MB; 26.797 + 32.782 + 45.590
+doğrulama. Modül pin politikası behavior-based (61/61 tick hash). Kanıt:
+`docs/work/analysis/map-slice-gracia.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

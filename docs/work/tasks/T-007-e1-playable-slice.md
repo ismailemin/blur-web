@@ -431,6 +431,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-vehicle-batch1.md`,
   `_work/e1-drive/browser-audi-tt-stock-sprint-finish.png`.
 
+### E1ai — İkinci harita: spa_barcelona_gracia (MAP5)  ✅ veri
+- 113.270 collision tri, **88/92 section**, 550.632 tri / 3.580 draw; UV
+  3.580/3.580. 4 section POSITION type-7, 2.714 instance prerequisite.
+- Yol **624,91378 m** (%99,60), spawn `(336, −23)`, checkpoint 208,34/416,65 m;
+  fizik 61/61 tick 4/4 temas, sequence `4fd8ae0c…`.
+- **2.627 draw / 365.451 tri** gerçek albedo (734 doku, 3,25 MB); 953 draw
+  engelli (518 Racification, 426 BC3 alfa, 5 boyut, 4 runtime).
+- Render paketi **28,8 MB**; doğrulama 26.797 + 32.782 + 45.590.
+- Modül pin politikası behavior-based: binary drift kabul, 61/61 tick hash şart.
+- Kanıt: `docs/work/analysis/map-slice-gracia.md`,
+  `docs/work/analysis/map-slice-module-pin-policy.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

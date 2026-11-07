@@ -512,3 +512,28 @@ visual gates remain separate and were not run.
    schema.
 5. No renderer, GPU, browser frame, driven lap, playable-game or full-game
    claim.
+
+## 12. Behavior-based module pin refresh (7 November 2026 follow-up)
+
+The E1 module pin is now **behavior-based**. `verify_slice.py` re-runs the
+current `_work/e1-drive/module/e1_drive.mjs` on this package's physics bytes at
+the recorded spawn and accepts module/build/wasm hash drift only when all 61
+per-tick state hashes and the sequence hash match `physics-settle.json`. The
+current identity is recorded informationally; geometry, draws, layout, spawn,
+textures and manifests stay hard-pinned.
+
+| item | refreshed value |
+|---|---|
+| module | 11,480 B / `5177ea975151fb085a44b8b960e384913d36a7e225078a1783f90e1f0b1bff2a` |
+| build | 3,466 B / `8493193cb8aacc5a9d108874318c612298b46edb5fe28b12c8558b7f0d5c7577` |
+| wasm | `bcdc2d994a499cc399333b44cfc418d6594f8b5182a668c3a9df761d891de265` |
+| sequence | `sha256:d25c4592…53491b38`, 61/61 ticks identical |
+| `slice.json` | 1,632,556 B / `8f5e07d681353b47abb799fdcd69b716fecca225d7a2f76dab48bf14b501b3d7`, content `61915aed…43ec8` |
+| `physics-settle.json` | 40,213 B / `79f1a2bcc944e7bdb13d3860206496e4dc7910050f15d3827a4e64ffe7427a97` |
+| `verify.json` | **12,367 checks, PASS**, `c24d7acf…de910` |
+
+Payload geometry, collision, draws, layout and spawn are unchanged. The
+binding/blocker/summary input pins were updated to the new slice hash and the
+render package was rebuilt; the texture verifier repeat build proves the
+data rows are unchanged. Policy and full hashes:
+[`map-slice-module-pin-policy.md`](map-slice-module-pin-policy.md).
