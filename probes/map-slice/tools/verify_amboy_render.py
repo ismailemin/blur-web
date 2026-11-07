@@ -35,6 +35,7 @@ EFFECT = "blocked-effect-not-static-albedo"
 DECODER = "blocked-decoder-size-limit"
 ALPHA = "blocked-alpha-rule-missing"
 RUNTIME = "blocked-runtime-albedo-parameter"
+NO_ALBEDO = "blocked-no-static-albedo"
 FNV_OFFSET = 0xCBF29CE484222325
 FNV_PRIME = 0x100000001B3
 FNV_MASK = 0xFFFFFFFFFFFFFFFF
@@ -149,6 +150,7 @@ def verify(package: Path, level: str | None = None) -> dict:
     expected_decoder = status.get(DECODER, 0)
     expected_alpha = status.get(ALPHA, 0)
     expected_runtime = status.get(RUNTIME, 0)
+    expected_no_albedo = status.get(NO_ALBEDO, 0)
     bindable_rows = bindable_texture_rows(bindings)
     expected_sources = trim_bindable_sources(bindings)
     expected_unique_blobs = len({row["rgbaSha256"] for row in bindable_rows})
@@ -213,6 +215,9 @@ def verify(package: Path, level: str | None = None) -> dict:
     c.check("counts.status.alpha", statuses.get(ALPHA) == expected_alpha)
     c.check("counts.status.runtime", statuses.get(RUNTIME) == expected_runtime)
     c.check("counts.status.bindable", statuses.get(BINDABLE) == expected_bindable)
+    if expected_no_albedo:
+        c.check("counts.status.noAlbedo",
+                statuses.get(NO_ALBEDO) == expected_no_albedo)
 
     diag_counts = diagnostics["counts"]
     c.check("diagnostics.counts.blocked",
@@ -227,6 +232,9 @@ def verify(package: Path, level: str | None = None) -> dict:
             diag_counts["byStatus"].get(ALPHA) == expected_alpha)
     c.check("diagnostics.counts.runtime",
             diag_counts["byStatus"].get(RUNTIME) == expected_runtime)
+    if expected_no_albedo:
+        c.check("diagnostics.counts.noAlbedo",
+                diag_counts["byStatus"].get(NO_ALBEDO) == expected_no_albedo)
     c.check("diagnostics.fallbackNotInvented",
             diagnostics["scope"].get("fallbackTextureInvented") is False)
     c.check("manifest.fallbackNotInvented",
@@ -411,6 +419,10 @@ def verify(package: Path, level: str | None = None) -> dict:
             groups["alphaRule"].get("draws") == expected_alpha)
     c.check("diagnostics.group.runtimeDraws",
             groups["runtimeAlbedo"].get("draws") == expected_runtime)
+    if expected_no_albedo:
+        c.check("diagnostics.group.noAlbedoDraws",
+                groups.get("noStaticAlbedo", {}).get("draws") == expected_no_albedo,
+                groups.get("noStaticAlbedo"))
 
     effect_ranges = groups["effectDecal"]["indexRanges"]
     c.check("diagnostics.decalRanges.count", len(effect_ranges) == expected_effect)
@@ -468,6 +480,11 @@ def verify(package: Path, level: str | None = None) -> dict:
             c.check("diag.%s.runtimeClassification" % draw_id,
                     diagnostic.get("blocker") == "runtime-albedo-parameter" and
                     diagnostic.get("sourceTextureId") is None)
+        elif status == NO_ALBEDO:
+            c.check("diag.%s.noAlbedoClassification" % draw_id,
+                    diagnostic.get("blocker") == "no-static-albedo" and
+                    diagnostic.get("sourceTextureId") is None and
+                    diagnostic.get("fallback") == "none")
         else:
             c.check("diag.%s.classification" % draw_id, False, status)
 
@@ -558,7 +575,13 @@ def verify(package: Path, level: str | None = None) -> dict:
             len({"%dx%d" % (row["width"], row["height"]) for row in unique_rows.values()}))
 
     merged = manifest["textures"]["mergedGroups"]
-    expected_merge_groups = expected_sources - expected_unique_blobs
+    # A merge group is one distinct RGBA payload shared by two or more sources.
+    # Counting sources-merged (sources - blobs) only equals the group count when
+    # every group is a pair; a 3-way merge makes the two differ.
+    hash_counts = {}
+    for row in bindable_rows:
+        hash_counts[row["rgbaSha256"]] = hash_counts.get(row["rgbaSha256"], 0) + 1
+    expected_merge_groups = sum(1 for count in hash_counts.values() if count > 1)
     c.check("textures.mergedGroups", len(merged) == expected_merge_groups)
     c.check("textures.mergedIds",
             sum(len(group["sourceIds"]) for group in merged) ==

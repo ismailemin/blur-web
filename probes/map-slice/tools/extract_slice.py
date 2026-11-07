@@ -189,6 +189,10 @@ def collision_geometry(level_path: Path) -> dict:
                    "the drivable triangle surface",
                 10: "InstancedTriangleMesh instance geometry is not decoded by the "
                     "committed scanner (instances are not applied)",
+                13: "Fluid collision shape; excluded from the drivable triangle "
+                    "surface by the committed scanner",
+                17: "FluidMesh (importType 17); excluded from the drivable triangle "
+                    "surface by the committed scanner",
             }
             base.update({"shipped": False,
                          "reason": reasons.get(shape["importType"],

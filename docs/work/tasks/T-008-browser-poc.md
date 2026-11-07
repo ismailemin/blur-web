@@ -91,6 +91,7 @@ sürüşü deneyebileceği PoC.
 | MP harita seçimi | MP8 | ✅ 3 harita, 2265/2265 |
 | AI Amboy/Gracia | AI3 | ✅ 30/30 + 26/30, 25/25 |
 | Yeni harita pickup | PWR5 | ✅ 83/59 placement, 3670+4060 |
+| Longbeach paketi | MAP8 | ✅ 818,4 m, 1.039 draw, 57 suite |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

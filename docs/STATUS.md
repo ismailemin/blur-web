@@ -919,6 +919,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Provisional 310 m arc'larla 0/6 örtüşme. Doğrulama **3.670** + **4.060**, River 1.415.
 - M2'yi yeni haritalara taşımak için retail rota veya kontrollü araç offset'i gerek. Kanıt: `docs/work/analysis/pickup-placement.md` §11–16.
 
+## 7 Kasım 2026 — Longbeach harita paketi
+
+- `usa_la_longbeachdocks`: 25.183 collision tri, **74/76 section**, 1.141 draw / 537.294 tri; **1.039 bindable / 164 doku** (1,24 MB), 102 engelli.
+- Yol **818,371716 m** (%47,29 collision çapı), spawn `(−519,111)`; fizik 61/61, sequence `bb4d7efc…`.
+- Paketler: slice 25,4 MB, textures 21,4 MB, render 26,1 MB; doğrulama **9.480 + 9.967 + 13.534**; suite **57/57**.
+- Sınır: draw kapsaması %47,3 (195 component), 2 section, 7.476 instance, 96 engelli draw. Kanıt: `docs/work/analysis/map-slice-longbeach.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

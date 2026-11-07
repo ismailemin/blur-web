@@ -245,6 +245,7 @@ def main() -> int:
         "blocked-alpha-rule-missing",
         "blocked-effect-not-static-albedo",
         "blocked-runtime-albedo-parameter",
+        "blocked-no-static-albedo",
     }
     check("status split counters",
           dict(status) == manifest["counts"]["statuses"], dict(status))

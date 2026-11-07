@@ -530,6 +530,17 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/analysis/pickup-placement.md` §11–16.
 - Not: M2'yi Amboy/Gracia'ya taşımak için retail rota veya araç offset'i gerek.
 
+### E1aq — Longbeach harita paketi (MAP8)  ✅ veri
+- `usa_la_longbeachdocks`: 25.183 collision tri, **74/76 section**, 1.141 draw /
+  537.294 tri; **1.039 bindable / 511.782 tri**, 164 doku (1,24 MB), 102 engelli.
+- Yol **818,371716 m** (%47,29 collision çapı), spawn `(−519,111)`; fizik 61/61
+  tick 4/4 temas, sequence `bb4d7efc…`.
+- Paketler: slice 25,4 MB, textures 21,4 MB, render 26,1 MB.
+- Doğrulama **9.480 + 9.967 + 13.534**; Amboy/Gracia değişmedi; suite **57/57**.
+- Sınır: draw kapsaması yalnız %47,3 (195 component), 2 section, 7.476 instance,
+  fluid mesh hariç, 93 alfa + 2 boyut + 1 no-albedo engelli.
+- Kanıt: `docs/work/analysis/map-slice-longbeach.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

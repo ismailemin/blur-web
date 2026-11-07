@@ -236,6 +236,12 @@ Kanıt: `_work/logs/e1-drive/mp-gracia-gridfix.log`.
 retail rotada. Provisional ile 0/6 örtüşme. 3.670 + 4.060 doğrulama. Kanıt:
 `docs/work/analysis/pickup-placement.md` §11–16.
 
+**MAP8 — Longbeach paketi:** 25.183 collision tri, **74/76 section**, 1.141
+draw / 537.294 tri; **1.039 bindable / 164 doku**; 818,371716 m (%47,29);
+fizik 61/61. Doğrulama 9.480 + 9.967 + 13.534; suite 57/57. Sınır: draw
+kapsaması %47,3, 2 section, 7.476 instance. Kanıt:
+`docs/work/analysis/map-slice-longbeach.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

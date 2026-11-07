@@ -3,8 +3,8 @@
 
 The slice/binding/render tools were first written for ``usa_amboy``. This
 module factors out the small number of level-specific names and constants so the
-same tools can build another level (``spa_barcelona_gracia``) without changing
-Amboy defaults or output bytes.
+same tools can build another level (``spa_barcelona_gracia``,
+``usa_la_longbeachdocks``) without changing Amboy defaults or output bytes.
 
 Only names and measurement windows live here. No geometry, material or texture
 value is level-specific.
@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SHORT_NAMES = {
     "usa_amboy": "amboy",
     "spa_barcelona_gracia": "gracia",
+    "usa_la_longbeachdocks": "longbeach",
 }
 
 

@@ -67,6 +67,11 @@ EFFECT = "blocked-effect-not-static-albedo"
 DECODER = "blocked-decoder-size-limit"
 ALPHA = "blocked-alpha-rule-missing"
 RUNTIME = "blocked-runtime-albedo-parameter"
+# Present in some levels (e.g. the Ocean_LN water draw): the primitive material
+# stack contains no g_tAlbedo/g_tTexture assignment at all, so there is no
+# static image identity to bind. Kept as a separate diagnostic status rather
+# than folded into "effect", because there is no shader texture to name.
+NO_ALBEDO = "blocked-no-static-albedo"
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -197,7 +202,8 @@ def build(out: Path) -> dict:
 
     # -------------------------------------------------- bindings / draw join
     bindable_ids = set()
-    status_counts = {BINDABLE: 0, EFFECT: 0, DECODER: 0, ALPHA: 0, RUNTIME: 0}
+    status_counts = {BINDABLE: 0, EFFECT: 0, DECODER: 0, ALPHA: 0, RUNTIME: 0,
+                     NO_ALBEDO: 0}
     status_triangles = {key: 0 for key in status_counts}
     rows = []
     for package_draw, binding_draw in zip(package_draws, binding_draws):
@@ -406,7 +412,9 @@ def build(out: Path) -> dict:
     decoder_draws = []
     alpha_draws = []
     runtime_draws = []
-    diagnostic_triangles = {EFFECT: 0, DECODER: 0, ALPHA: 0, RUNTIME: 0}
+    no_albedo_draws = []
+    diagnostic_triangles = {EFFECT: 0, DECODER: 0, ALPHA: 0, RUNTIME: 0,
+                            NO_ALBEDO: 0}
     for package_draw, binding_draw, section, global_first in rows:
         status = binding_draw["status"]
         if status == BINDABLE:
@@ -497,6 +505,21 @@ def build(out: Path) -> dict:
                 "reason": binding_draw["blocker"],
             }
             runtime_draws.append(binding_draw)
+        elif status == NO_ALBEDO:
+            diagnostic = {
+                "pass": "diagnostic-only",
+                "albedoUsed": False,
+                "textureBound": False,
+                "fallback": "none",
+                "blocker": "no-static-albedo",
+                "sourceTextureId": texture_id,
+                "sourceFormat": None,
+                "decodedInMAP3": None,
+                "reason": binding_draw["blocker"],
+                "note": ("the primitive material stack has no g_tAlbedo or "
+                         "g_tTexture assignment; no static image identity exists"),
+            }
+            no_albedo_draws.append(binding_draw)
         diagnostic_draws.append({
             "drawId": "%s#%d" % (binding_draw["section"], binding_draw["drawIndex"]),
             "section": binding_draw["section"],
@@ -557,8 +580,13 @@ def build(out: Path) -> dict:
                 DECODER: len(decoder_draws),
                 ALPHA: len(alpha_draws),
                 RUNTIME: len(runtime_draws),
+                **({NO_ALBEDO: len(no_albedo_draws)} if no_albedo_draws else {}),
             },
-            "trianglesByStatus": diagnostic_triangles,
+            "trianglesByStatus": {
+                key: diagnostic_triangles[key]
+                for key in ((EFFECT, DECODER, ALPHA, RUNTIME) +
+                            ((NO_ALBEDO,) if no_albedo_draws else ()))
+            },
         },
         "groups": {
             "effectDecal": {
@@ -596,6 +624,15 @@ def build(out: Path) -> dict:
                 "textureBound": False,
                 "note": "g_tAlbedo is a runtime DATA_INDEX parameter; no static image",
             },
+            **({"noStaticAlbedo": {
+                "status": NO_ALBEDO,
+                "draws": len(no_albedo_draws),
+                "triangles": diagnostic_triangles[NO_ALBEDO],
+                "pass": "diagnostic-only",
+                "textureBound": False,
+                "note": ("no g_tAlbedo or g_tTexture assignment exists in the "
+                         "primitive material stack; no static image identity"),
+            }} if no_albedo_draws else {}),
         },
         "draws": diagnostic_draws,
         "limits": [
@@ -670,16 +707,26 @@ def build(out: Path) -> dict:
             "and Level.levelphysics remain the physics inputs.",
         ]
     else:
+        blocked_text = (
+            "The %d blocked draws are diagnostic only: %d are a separate additive "
+            "decal layer (not opaque albedo), %d exceed the decoder bound, %d need "
+            "an alpha rule and %d are runtime parameters."
+            % (len(diagnostic_draws), len(effect_draws), len(decoder_draws),
+               len(alpha_draws), len(runtime_draws)))
+        if no_albedo_draws:
+            blocked_text = (
+                "The %d blocked draws are diagnostic only: %d are a separate "
+                "additive decal layer (not opaque albedo), %d exceed the decoder "
+                "bound, %d need an alpha rule, %d are runtime parameters and %d "
+                "have no static albedo assignment at all."
+                % (len(diagnostic_draws), len(effect_draws), len(decoder_draws),
+                   len(alpha_draws), len(runtime_draws), len(no_albedo_draws)))
         integration_gaps = [
             "e1-drive still builds its packet from River; a ?map=%s packet "
             "producer is not part of this package." % PREFIX,
             "No GPU upload, shader, blend, alpha-test, sampler or sRGB conversion "
             "is implemented or claimed.",
-            "The %d blocked draws are diagnostic only: %d are a separate additive "
-            "decal layer (not opaque albedo), %d exceed the decoder bound, %d need "
-            "an alpha rule and %d are runtime parameters."
-            % (len(diagnostic_draws), len(effect_draws), len(decoder_draws),
-               len(alpha_draws), len(runtime_draws)),
+            blocked_text,
             "No vertex normals are available; shading needs a reader change or a "
             "documented geometric-normal fallback.",
             "instancesApplied:false: %d instance descriptions in %d supported "
@@ -748,6 +795,7 @@ def build(out: Path) -> dict:
                 DECODER: len(decoder_draws),
                 ALPHA: len(alpha_draws),
                 RUNTIME: len(runtime_draws),
+                **({NO_ALBEDO: len(no_albedo_draws)} if no_albedo_draws else {}),
             },
         },
         "buffers": {
@@ -805,6 +853,8 @@ def build(out: Path) -> dict:
             "decoderSizeDraws": len(decoder_draws),
             "alphaRuleDraws": len(alpha_draws),
             "runtimeAlbedoDraws": len(runtime_draws),
+            **({"noStaticAlbedoDraws": len(no_albedo_draws)}
+               if no_albedo_draws else {}),
             "fallbackTextureInvented": False,
         },
         "layout": {
