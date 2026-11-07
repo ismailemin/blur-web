@@ -824,6 +824,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `verify_e1_drive` **874/874** (+18 MP); MP Node **18/18**; iki tarayıcı **console 0/0**, ortak sonuç; P1 14,667 s / P2 16,400 s.
 - Launcher `run_e1_poc.ps1` oda servisini 8811'de açar. Kanıt: `docs/work/verification/T-007-multiplayer.md`, `_work/e1-drive/browser-mp-*.png`.
 
+## 7 Kasım 2026 — Amboy render paketi
+
+- `_work/map-slice/amboy-render/`: 1.201 opaque draw (269.300 tri) + 179 RGBA8 doku (2,65 MB); 334 additive decal ayrı, 71 diagnostic.
+- Geometry buffer'ları MAP2 ile byte-identical; UV 1.606/1.606 MAP3 ile aynı; iki build byte-identical.
+- Doğrulama **17.813/17.813**. E1 gap: `?map=amboy`, packet producer, GPU upload, decal pass. Kanıt: `docs/work/analysis/map-slice-amboy-render.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

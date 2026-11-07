@@ -36,6 +36,37 @@ blocked; MAP3 joins that identity to decoder/alpha evidence for 1,201 bindable /
 shader or sampler state is applied. See `textures.identity`,
 `draws.nativeReaderRefresh` and `textures.attempts` in `slice.json`.
 
+## Render-ready package
+
+`_work/map-slice/amboy-render/` turns the slice + MAP3 bindings into one upload
+set. It is **data only**: no renderer, GPU, browser or playable claim.
+
+| file | content |
+|---|---|
+| `render.json` | manifest: buffers, 1,201 opaque draws, 179 merged textures, layout/spawn, upload contract, hashes |
+| `diagnostics.json` | 405 blocked draws: 334-draw separate additive-decal list, 50 decoder-size, 17 BC3-alpha, 4 runtime |
+| `draws.positions.f32.bin`, `draws.uv0.f32.bin`, `draws.indices.u32.bin` | byte-identical to the slice buffers (529,624 vertices, 1,046,844 indices) |
+| `layout.points.f32.bin` | 8,673 `x,z,h` float32 points; same SHA-256 as the slice layout |
+| `textures/tex-NNN.rgba` | 179 deduplicated RGBA8 mip0 blobs (186 sources) |
+| `verify.json` | 17,813-check independent verifier, PASS |
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/map-slice/tools/build_amboy_render.py --out _work/map-slice/amboy-render
+& $py probes/map-slice/tools/verify_amboy_render.py --package _work/map-slice/amboy-render
+```
+
+The verifier recomputes every draw range and UV0 hash against MAP3, checks the
+1,201/405 split and the 334-entry decal list, hashes all 179 texture blobs,
+re-measures the layout/spawn, and builds the package twice byte-identically.
+Texture merge totals: 2,672,704 B referenced mip0 → 2,654,272 B unique mip0;
+expected chain 3,564,368 B → 3,539,772 B. sRGB and mip generation are recorded
+as **hints only** (`applied:false`). No fallback texture is invented.
+
+Details and the exact e1 integration gap:
+[`docs/work/analysis/map-slice-amboy-render.md`](../../docs/work/analysis/map-slice-amboy-render.md).
+
 ## Reproduce
 
 Use the bundled Python and Node:

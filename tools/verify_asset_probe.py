@@ -53,6 +53,7 @@ def main():
         ('map-slice-amboy',[sys.executable,'probes/map-slice/tools/verify_slice.py','--package','_work/map-slice/amboy']),
         ('ai-driver',['node','probes/ai-driver/verify.mjs']),
         ('amboy-textures',[sys.executable,'probes/map-slice/tools/verify_amboy_texture_bindings.py']),
+        ('amboy-render',[sys.executable,'probes/map-slice/tools/verify_amboy_render.py','--package','_work/map-slice/amboy-render']),
     ])
     results=[]
     for name,command in steps:

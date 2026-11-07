@@ -159,6 +159,11 @@ capture console **0/0**, ortak sonuç `0ef78fcb…` (P1 14,667 / P2 16,400 s).
 Launcher oda servisini 8811'de açar. Kanıt:
 `docs/work/verification/T-007-multiplayer.md`.
 
+**AMB1 — Amboy render paketi:** 1.201 opaque draw (269.300 tri) + 179 doku
+(2,65 MB), 334 additive decal ayrı, 71 diagnostic; UV 1.606/1.606 MAP3 ile
+aynı; 17.813/17.813, iki build byte-identical. E1 gap: map registry/packet/
+upload. Kanıt: `docs/work/analysis/map-slice-amboy-render.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

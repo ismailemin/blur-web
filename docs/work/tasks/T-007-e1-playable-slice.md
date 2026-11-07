@@ -368,6 +368,16 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-multiplayer.md`,
   `_work/e1-drive/browser-mp-{lobby,mid,finish}-{host,guest}.png`.
 
+### E1ad — Amboy render paketi (AMB1)  ✅ veri
+- `_work/map-slice/amboy-render/` 19,13 MB: 1.201 opaque draw (269.300 tri)
+  gerçek albedo + UV0, 179 RGBA8 doku (2,65 MB), 334 additive-decal ayrı,
+  71 diagnostic.
+- 3 geometry buffer'ı MAP2 ile byte-identical; 1.606/1.606 UV hash MAP3 ile aynı.
+- Upload kontratı: 2 vertex buffer + 1 index + 179 bind group; sRGB/mip hint.
+- Doğrulama **17.813/17.813**, iki build byte-identical.
+- E1 entegrasyon gap'i: `?map=amboy`, packet producer, WebGPU upload, decal pass.
+- Kanıt: `docs/work/analysis/map-slice-amboy-render.md`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```
