@@ -497,6 +497,12 @@ The room protocol already carries a `map` selector (`room.create`,
 - **Map switch.** A host map change clears both ready flags and reloads the
   selected package on both pages (serialized per page, with a loading status and
   measured bytes/time). Late changes after `room.started` are not supported.
+- **Start grid.** Each MP slot is probed with the real engine for 140 ticks
+  before the race world is created. River/Amboy keep the released lateral grid
+  when both slots are grounded. Gracia's lateral slot 1 is airborne at tick 91,
+  so it uses the measured spawn + path-tangent longitudinal grid (slot 1 2.2 m
+  ahead, slot 2 the measured spawn) and starts with 0 respawns. The measured
+  start line and solo spawn are not moved.
 - **Finish/result.** The reported finish tick is derived from the local race time
   (`round(seconds·60)+countdown`), so a respawn rebuild cannot shift the table by
   a tick. The guest's own report is the result row and is accepted while the room

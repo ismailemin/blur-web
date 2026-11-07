@@ -1724,8 +1724,134 @@ function mpRulesLayout(layout) {
   return { ...layout, sourceCourseId: layout.courseId, courseId: '310m' };
 }
 
+/** Measured start tangent, normalised; fall back to the first path segment. */
+function mpGridTangent(layout) {
+  const gate = layout?.gates?.[0];
+  let tx = gate?.tangent?.tx;
+  let tz = gate?.tangent?.tz;
+  if (!Number.isFinite(tx) || !Number.isFinite(tz) || Math.hypot(tx, tz) < 1e-9) {
+    const a = layout?.course?.samples?.[0];
+    const b = layout?.course?.samples?.[1];
+    if (a && b) {
+      tx = b.x - a.x;
+      tz = b.z - a.z;
+    }
+  }
+  const length = Math.hypot(tx ?? 0, tz ?? 0);
+  if (!(length > 0)) throw new Error('multiplayer grid has no measured start tangent');
+  return { tx: tx / length, tz: tz / length };
+}
+
+/**
+ * Longitudinal grid derived from the map's measured spawn and path tangent.
+ * Slot 1 is one row ahead of the measured spawn; slot 2 is the spawn itself.
+ * The measured start line and solo spawn are not moved. Offsets are candidate
+ * rows; the real-engine probe below picks the first pair whose ground is valid.
+ */
+function mpAlongPathGrid(layout, offsetMetres) {
+  const spawn = layout.course.spawn;
+  const tangent = mpGridTangent(layout);
+  const slot1Arc = offsetMetres;
+  return [
+    {
+      slot: 1,
+      x: Math.round((spawn.x + tangent.tx * offsetMetres) * 1e6) / 1e6,
+      z: Math.round((spawn.z + tangent.tz * offsetMetres) * 1e6) / 1e6,
+      y: courseGroundAt(layout, slot1Arc),
+      headingRad: spawn.headingRad,
+      offsetMetres,
+      source: 'measured spawn + path tangent (longitudinal)'
+    },
+    {
+      slot: 2,
+      x: spawn.x,
+      z: spawn.z,
+      y: spawn.ground ?? courseGroundAt(layout, 0),
+      headingRad: spawn.headingRad,
+      offsetMetres: 0,
+      source: 'measured spawn (longitudinal grid)'
+    }
+  ];
+}
+
+/**
+ * Probe one slot with the real wasm engine and the sprint rules: create the
+ * measured world at the pose, step through the countdown and 50 running ticks,
+ * and reject an airborne/off-course respawn. The final race world is created
+ * after this probe, so probing changes nothing at start.
+ */
+function mpProbeGridSlot(layout, slot) {
+  const probeRules = createSprintRules(layout);
+  let state0;
+  try {
+    state0 = createWorld(slot.x, slot.z, slot.headingRad);
+  } catch (error) {
+    return { slot: slot.slot, x: slot.x, z: slot.z, ok: false,
+      reason: 'no-ground', error: error.message };
+  }
+  probeRules.prime(state0);
+  let current = state0;
+  for (let tick = 1; tick <= 140; tick++) {
+    module._e1_set_input(0, 0, 0, 0);
+    module._e1_step();
+    current = readState();
+    const events = probeRules.step(current);
+    const respawn = events.find((event) => event.type === SPRINT_EVENT.RESPAWN);
+    if (respawn) {
+      return { slot: slot.slot, x: slot.x, z: slot.z, ok: false,
+        reason: (respawn.reasons ?? ['respawn']).join(','), tick: current.tick,
+        y: current.position[1] };
+    }
+    if (probeRules.awaitingRejoin) {
+      return { slot: slot.slot, x: slot.x, z: slot.z, ok: false,
+        reason: 'awaiting-rejoin', tick: current.tick, y: current.position[1] };
+    }
+  }
+  return { slot: slot.slot, x: slot.x, z: slot.z, ok: true, tick: current.tick,
+    y: current.position[1], contacts: current.contacts.join('') };
+}
+
+/**
+ * Choose a grounded two-car grid. River/Amboy keep the released lateral grid
+ * when both slots probe clean; a package map whose lateral slot is airborne
+ * (Gracia slot 1) falls back to measured-spawn longitudinal slots. The choice
+ * is deterministic on both pages and fails explicitly if no pair is grounded.
+ */
+function mpChooseMpGrid(layout) {
+  const model = new mpRaceRules.CourseModel(mpRulesLayout(layout), { verifyLayoutHash: false });
+  const lateral = model.startGrid(MP_MAX_PLAYERS, MP_GRID_OPTIONS);
+  const candidates = [
+    { source: 'race-rules provisional lateral grid', options: { ...MP_GRID_OPTIONS }, slots: lateral }
+  ];
+  for (const offset of [2.2, 1.1, 3.3, 4.4, 5.0]) {
+    candidates.push({
+      source: 'measured spawn + path tangent (longitudinal)',
+      options: { longitudinalOffsetMetres: offset },
+      slots: mpAlongPathGrid(layout, offset)
+    });
+  }
+  const cache = new Map();
+  const probe = (slot) => {
+    const key = slot.slot + ':' + slot.x.toFixed(4) + ':' + slot.z.toFixed(4);
+    if (!cache.has(key)) cache.set(key, mpProbeGridSlot(layout, slot));
+    return cache.get(key);
+  };
+  const tried = [];
+  for (const candidate of candidates) {
+    const probes = candidate.slots.map(probe);
+    const ok = probes.every((entry) => entry.ok);
+    tried.push({ source: candidate.source, options: candidate.options, ok,
+      slots: candidate.slots.map((slot) => ({ slot: slot.slot, x: slot.x, z: slot.z })),
+      probes });
+    if (ok) return { ...candidate, probes, tried };
+  }
+  throw new Error('multiplayer start grid has no grounded slot pair: ' +
+    tried.map((row) => row.source + ' ' + row.probes.map((p) => p.reason ?? 'ok').join('/')).join('; '));
+}
+
 /** One world at an arbitrary spawn point: the same call `e1_create` the page loads with. */
-function createWorld(x, z, heading) {  const levelPtr = module._malloc(levelBytes.byteLength);
+function createWorld(x, z, heading) {
+  const levelPtr = module._malloc(levelBytes.byteLength);
   const fieldsPtr = module._malloc(fieldBytes.byteLength + 1);
   if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
   module.HEAPU8.set(levelBytes, levelPtr);
@@ -1999,21 +2125,31 @@ async function loadEngine(carOverride = null) {
     // at the legacy spawn heading, so its shared world keeps that heading.
     let start = layoutStartPosition(layout, spawn);
     if (MP && mpRaceRules) {
-      // Provisional race-rules grid: two cars side by side on the measured start
-      // line. Both pages compute the same grid from the same committed layout and
-      // slot, so the local body and the host's rules see the same start point.
-      // The released race-rules allow-list predates M3 (`310m`/`lap`); the
-      // point-to-point package layout is passed through the equivalent sprint
-      // mode with the layout bytes/gates untouched and hash verification off.
-      // This is a rules-mode mapping, not a geometry or map value.
-      const model = new mpRaceRules.CourseModel(mpRulesLayout(layout), { verifyLayoutHash: false });
-      const grid = model.startGrid(MP_MAX_PLAYERS, MP_GRID_OPTIONS);
+      // Provisional race-rules grid. River/Amboy keep the released lateral grid
+      // when both slots probe clean; Gracia slot 1 is airborne on that lateral
+      // pose, so the measured spawn/tangent longitudinal grid is used instead.
+      // Each slot is probed with the real engine before the final race world is
+      // created; the measured start line and solo spawn are not moved.
+      const chosen = mpChooseMpGrid(layout);
+      const grid = chosen.slots;
       const index = Math.max(0, Math.min(grid.length - 1, (mpSlot ?? 1) - 1));
       const slot = grid[index];
       start = { x: slot.x, z: slot.z, heading: slot.headingRad, headingRad: slot.headingRad,
-        source: 'race-rules provisional grid' };
-      state.mp.grid = { slot: slot.slot, x: slot.x, z: slot.z, headingRad: slot.headingRad,
-        source: slot.source, options: { ...MP_GRID_OPTIONS } };
+        source: chosen.source };
+      state.mp.grid = {
+        slot: slot.slot,
+        x: slot.x,
+        z: slot.z,
+        headingRad: slot.headingRad,
+        source: chosen.source,
+        options: chosen.options,
+        slots: grid.map((entry) => ({ slot: entry.slot, x: entry.x, z: entry.z,
+          y: entry.y ?? null, headingRad: entry.headingRad, offsetMetres: entry.offsetMetres ?? null,
+          source: entry.source })),
+        probes: chosen.probes,
+        tried: chosen.tried.map((row) => ({ source: row.source, options: row.options, ok: row.ok,
+          probes: row.probes }))
+      };
     }
     if (COLLISION_PROBE) {
       tick0 = createWorld(collisionProbeStart.x, collisionProbeStart.z, collisionProbeStart.headingRad);
@@ -3765,10 +3901,10 @@ async function beginMultiplayerRace() {
       mpRace.step(null);
       const guest = players.find((player) => player.id !== mpNet.playerId);
       if (guest) {
-        const model = new mpRaceRules.CourseModel(mpRulesLayout(sprintRules.layout), { verifyLayoutHash: false });
-        const grid = model.startGrid(MP_MAX_PLAYERS, MP_GRID_OPTIONS);
+        const grid = state.mp.grid?.slots ?? [];
         const slot = grid[Math.max(0, Math.min(grid.length - 1, guest.slot - 1))];
-        state.mp.guestSpawnState = { position: [slot.x, slot.y, slot.z], contact: null };
+        if (!slot) throw new Error('multiplayer start grid has no slot for guest P' + guest.slot);
+        state.mp.guestSpawnState = { position: [slot.x, slot.y ?? 0, slot.z], contact: null };
       }
       state.mp.hostSession = { created: true, participants: participants.map((row) => row.id),
         config: { hostId: mpNet.playerId, countdownTicks: sprintRules.layout.countdown?.ticks ?? 0 } };

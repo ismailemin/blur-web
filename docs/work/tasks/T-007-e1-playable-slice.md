@@ -506,8 +506,10 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   23/23 + 23/23.
 - Kanıt: `docs/work/verification/T-007-mp-maps.md`,
   `_work/e1-drive/browser-mp-*-{amboy,gracia}.png`.
-- Kalan: Gracia host grid pozisyonu tick 91'de airborne respawn tetikliyor
-  (provisional grid); düzeltme ayrı iş. Amboy/Gracia'da power-up/AI yok.
+- **Gracia grid fix:** lateral slot tick 91'de airborne oluyordu; 140-tick
+  wasm probe ile doğrulanan **spawn + tangent × 2.2 m** longitudinal grid
+  kullanılıyor. Gracia host **0 respawn**, 66,250 s; guest 69,383 s; console 0/0.
+- Kalan: Amboy/Gracia'da power-up/AI yok; grid probe sabit 140 tick.
 
 ## Pipeline (bağımlılık sırası)
 

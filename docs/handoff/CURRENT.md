@@ -222,6 +222,10 @@ River 14,667/16,400; Amboy 222,000/237,567; Gracia 66,317/69,183 s; console
 **2265/2265**; suite 51/51; checker 23/23. Kanıt:
 `docs/work/verification/T-007-mp-maps.md`.
 
+**Gracia grid fix:** lateral slot airborne oluyordu; 140-tick wasm probe ile
+doğrulanan spawn+tangent grid kullanılıyor; host **0 respawn**, 66,250 s.
+Kanıt: `_work/logs/e1-drive/mp-gracia-gridfix.log`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

@@ -899,6 +899,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Finish kontratı: host otoritesi, guest kendi raporu, geç rapor açık odada kabul, kapalı odada ret.
 - **2265/2265**, suite 51/51, checker 23/23, harita 23/23 + 23/23. Kalan: Gracia host grid tick 91 airborne respawn (provisional grid).
 
+## 7 Kasım 2026 — Gracia grid fix
+
+- Gracia lateral slot tick 91'de airborne respawn tetikliyordu; 140-tick wasm probe ile doğrulanan measured spawn + tangent × 2.2 m longitudinal grid kullanılıyor.
+- Gracia MP: host **0 respawn**, 66,250 s; guest 69,383 s; console 0/0; sonuçlar birebir. River/Amboy değişmedi.
+- **2265/2265**, suite 51/51, checker 23/23. Kanıt: `_work/logs/e1-drive/mp-gracia-gridfix.log`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

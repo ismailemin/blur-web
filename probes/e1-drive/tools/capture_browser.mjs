@@ -922,6 +922,18 @@ async function mpCapturePass() {
       guestLobby.map.loadMs > 0,
       JSON.stringify({ host: { ms: hostLobby.map?.loadMs, bytes: hostLobby.map?.bytes?.total },
         guest: { ms: guestLobby.map?.loadMs, bytes: guestLobby.map?.bytes?.total } }));
+    const expectedGrid = mpMapId === 'gracia'
+      ? 'measured spawn + path tangent (longitudinal)' : 'race-rules provisional lateral grid';
+    passCheck('both start-grid slots probe the real engine ground before start',
+      hostLobby.grid?.slots?.length === 2 && hostLobby.grid.probes?.length === 2 &&
+      hostLobby.grid.probes.every((probe) => probe.ok === true) &&
+      guestLobby.grid?.slot === 2 && hostLobby.grid.slot === 1,
+      JSON.stringify({ host: hostLobby.grid, guest: guestLobby.grid }));
+    passCheck('the Gracia longitudinal grid is selected only after the lateral pose fails',
+      hostLobby.grid?.source === expectedGrid &&
+      (mpMapId !== 'gracia' ||
+        hostLobby.grid.tried?.some((row) => row.source.includes('lateral') && row.ok === false)),
+      JSON.stringify({ source: hostLobby.grid?.source, tried: hostLobby.grid?.tried }));
     passCheck('lobby start is host-only and disabled before ready',
       hostLobby.overlays.startHidden === false && hostLobby.overlays.startDisabled === true &&
       guestLobby.overlays.startHidden === true,
@@ -1041,6 +1053,9 @@ async function mpCapturePass() {
     passCheck('both table rows are finished (no DNF)',
       hostFinal.result.rows.every((row) => row.status === 'finished'),
       hostFinal.result.rows.map((row) => row.status).join(','));
+    passCheck('no host or guest start respawn (grid ground probes kept both posture slots grounded)',
+      hostFinal.sprint?.respawns === 0 && guestFinal.sprint?.respawns === 0,
+      JSON.stringify({ host: hostFinal.sprint?.respawns, guest: guestFinal.sprint?.respawns }));
     passCheck('host row equals the host local finish within one tick',
       Number.isInteger(hostFinal.finishTick) && Math.abs(hostFinal.finishTick - hostRow.tick) <= 1 &&
       hostFinal.sprint?.finishTimeSeconds !== null &&

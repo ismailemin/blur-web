@@ -3132,14 +3132,15 @@ both overlays render the same shared table.
 |---|---|---|---|
 | River | tick 970 / 14.666667 s | tick 1074 / 16.400000 s | 0/0 |
 | Amboy | tick 13,410 / 222.000000 s | tick 14,344 / 237.566667 s | 0/0 |
-| Gracia | tick 4,069 / 66.316667 s | tick 4,241 / 69.183333 s | 0/0 |
+| Gracia | tick 4,065 / 66.250000 s | tick 4,253 / 69.383333 s | 0/0 |
 
 Both rows equal the local finish time within one tick (exactly in these runs);
-shared rows/hashes are identical on both pages. On Gracia the host's slot-1 grid
-pose went airborne at tick 91 and rebuilt, pausing the host's local race clock;
-the host projection is recorded as a **-132 tick** diagnostic (detected race tick
-4,019 vs the guest's reported 4,151, and -193 in an earlier run) while the
-guest's own report is accepted because the room is still open. Evidence:
+shared rows/hashes are identical on both pages. The MP start grid probes both
+slots with the real engine before the race world is created. Gracia's released
+lateral slot 1 is airborne at tick 91, so it uses the measured spawn + path
+tangent longitudinal grid (slot 1 2.2 m ahead at `(338.001826, -23.912520)`,
+slot 2 the measured spawn `(336, -23)`), giving 0 host/guest respawns; River and
+Amboy keep the lateral grid because both slots probe clean. Evidence:
 `docs/work/verification/T-007-mp-maps.md`.
 
 
@@ -3150,7 +3151,10 @@ guest's own report is accepted because the room is still open. Evidence:
    maps. No AI.
 3. The host still runs only its own physics body (peer-state guest), so this is
    not host-simulated two-body authority or anti-cheat.
-4. Package loading is a blocking fetch/parse per page with a visible loading
+4. Start-grid ground validity is established by a 140-tick real-engine probe per
+   candidate slot at load time; there is no continuous grid validation or
+   arbitrary terrain search beyond the measured spawn/tangent candidates.
+5. Package loading is a blocking fetch/parse per page with a visible loading
    status; there is no streaming, progressive upload or map download.
-5. No full-game claim.
+6. No full-game claim.
 

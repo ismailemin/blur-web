@@ -25,7 +25,7 @@ subagent.
 
 | Gate | Result | Evidence |
 |---|---|---|
-| `verify_e1_drive` (Node) | **2265/2265 checks passed** | `_work/e1-drive/run.json`, `_work/logs/e1-drive/verify-mp-maps-final3.log` |
+| `verify_e1_drive` (Node) | **2265/2265 checks passed** | `_work/e1-drive/run.json`, `_work/logs/e1-drive/verify-mp-maps-gridfix.log` |
 | MP protocol checks | **22/22** (inside the 2265) | `_work/e1-drive/mp-node-report.json` |
 | MP map-record checks | **7/7** | `_work/e1-drive/mp-map-node-report.json` |
 | River MP capture | **PASS**, console 0/0 | `_work/e1-drive/browser-evidence-mp.json` |
@@ -33,6 +33,7 @@ subagent.
 | Gracia MP capture | **PASS**, console 0/0 | `_work/e1-drive/browser-evidence-mp-gracia.json` |
 | Hash refusal | typed `MAP_PACKAGE_MISMATCH` (Node) | `mp-map-node-report.json → refusal` |
 | Late/closed report | open-race accept, closed `MP_ROOM_CLOSED` (Node) | `mp-node-report.json → finish` |
+| Start grid | real-engine slot probes; Gracia longitudinal fallback; **0 respawns** | `browser-evidence-mp-gracia.json → grid` |
 | Solo map regression | `verify_e1_map` Amboy + Gracia | logs under `_work/logs/e1-drive/` |
 
 ---
@@ -77,14 +78,21 @@ the map read-only and cannot pass `?map=`.
   90`; the shared table therefore equals the host's and guest's local finish
   time within **1 tick** (and exactly in the measured runs). The raw tick remains
   in `finishTickRaw` as a diagnostic.
+- **Start grid probes the real ground.** Each MP slot is created in the real
+  engine and stepped through the countdown (140 ticks) before the race world is
+  created. The released lateral grid is kept when both slots probe clean
+  (River/Amboy), so their start positions are unchanged. Gracia's lateral slot 1
+  `(335.54374, -24.000913)` is airborne at tick 91, so the page selects the
+  measured spawn + path-tangent longitudinal grid instead: slot 1
+  `(338.001826, -23.912520)` 2.2 m ahead, slot 2 the measured spawn
+  `(336, -23)`. Both slots probe clean at tick 140 (`contacts 1111`); the host
+  has **0 respawns**. The measured start line and solo spawn are not moved.
 - **Late guest report is accepted while the race is open.** The guest's own
   `client.finished` tick is the result row. The host no longer has to detect the
-  guest finish inside 6 ticks: the Gracia host grid slot triggered an airborne
-  respawn at tick 91, which paused the host's local race clock while the guest
-  kept racing, so the host projection lagged (final run: detected race tick
-  4,019 vs reported 4,151, delta **-132**; an earlier run measured -193). The
-  report is accepted, `guestReportAccepted:true`, `guestValidated:true`, and the
-  projection delta is recorded as a diagnostic.
+  guest finish inside 6 ticks; the host projection is a diagnostic (Gracia final
+  run: detected race tick 4,100 vs reported 4,163, delta **-63**; an earlier
+  pre-grid-fix run measured -193). The report is accepted,
+  `guestReportAccepted:true`, `guestValidated:true`.
 - **A report after the room closed is rejected.** `MpSession.reportFinished`
   rejects with `MP_ROOM_CLOSED` once `room.finished` has been broadcast. Node
   checks cover the open-race late report and the closed-room rejection.
@@ -101,6 +109,26 @@ the map read-only and cannot pass `?map=`.
 
 (Full values in `_work/e1-drive/mp-map-node-report.json`.)
 
+### 2.1 Start-grid ground evidence
+
+`loadEngine` probes each candidate slot with the real wasm engine for 140 ticks
+(countdown + 50 running ticks) before creating the final race world. The probe
+record is in `browser-evidence-mp*.json → finish.*.grid` and
+`browser-evidence-mp-gracia.json → grid`.
+
+| map | grid | slot 1 | slot 2 | probe |
+|---|---|---|---|---|
+| River | lateral (unchanged) | `(-87.208318, 1049.236299)` | `(-88.791682, 1050.763701)` | both `ok`, contacts `1111` |
+| Amboy | lateral (unchanged) | `(229.222185, 1128.777820)` | `(230.777815, 1127.222180)` | both `ok`, contacts `1111` |
+| Gracia | measured spawn + tangent, longitudinal | `(338.001826, -23.912520)` +2.2 m | `(336.000000, -23.000000)` measured spawn | both `ok`, contacts `1111` |
+
+Gracia's released lateral slot 1 `(335.54374, -24.000913)` was created and
+stepped with zero input: at tick 91 the sprint rules emitted
+`respawn: airborne` while the chassis fell from `y=130.985031` to `y=130.00238`
+with contacts `0000`. The longitudinal pair is grounded; the measured start line
+and solo spawn remain at `(336, -23)`. Both pages run the same deterministic
+probe sequence and choose the same grid.
+
 ---
 
 ## 3. Browser results
@@ -108,38 +136,50 @@ the map read-only and cannot pass `?map=`.
 ### 3.1 River regression
 
 - host `970` / **14.666667 s** (P1); guest `1074` / **16.400000 s** (P2);
-  shared hash `sha256:a5b39793…7db3b6`; rows equal; console 0/0.
-- host map load **404.9 ms**, guest **391.5 ms**; **109,204,221 B** fetched per
-  page. The M1 finish ticks are unchanged (970/1074).
+  shared hash `sha256:057c5925…dd6e1bbb`; rows equal; console 0/0; **0
+  respawns on both**.
+- host map load **444.7 ms**, guest **420.6 ms**; **109,204,221 B** fetched per
+  page. The M1 finish ticks and lateral grid are unchanged (970/1074); both
+  grid slots probe `ok` at tick 140 with contacts `1111`.
 - Host-projected guest finish is race tick 983 vs the reported 984 (**-1 tick**
   diagnostic); the report is accepted while the room is open.
 
 ### 3.2 Amboy
 
 - measured course 2,060.595 m; both pages finish; shared hash
-  `sha256:74f058fb…d5fd802b4`; rows equal; console 0/0.
+  `sha256:bb4b3bba…e8837ad8`; rows equal; console 0/0; **0 respawns on both**.
 - host **tick 13,410 / 222.000000 s** (P1), guest **tick 14,344 /
   237.566667 s** (P2); both rows equal their local finish within 0 ticks.
-- host map load **490.7 ms**, guest **497.6 ms**; **164.8 MB** fetched per page
-  (49.5 MB map + 106.9 MB base geometry + 1.2 MB layout + 4.4 MB physics +
+- host map load **520.2 ms**, guest **550.5 ms**; **164,766,985 B** fetched per
+  page (49.5 MB map + 106.9 MB base geometry + 1.2 MB layout + 4.4 MB physics +
   2.7 MB source packages).
+- Both released lateral slots probe clean at tick 140 (`contacts 1111`), so
+  Amboy keeps the unchanged lateral grid; 0 respawns.
 - Host-projected guest finish is race tick 14,253 vs the reported 14,254
   (**-1 tick** diagnostic); the report is accepted while the room is open.
 
 ### 3.3 Gracia
 
 - measured course 624.914 m; both pages finish; shared hash
-  `sha256:a4c309be…2f10e4f08`; rows equal; console 0/0.
-- host **tick 4,069 / 66.316667 s** (P1), guest **tick 4,241 / 69.183333 s**
+  `sha256:7f3cf349…4815eada`; rows equal; console 0/0; **0 respawns on both**.
+- host **tick 4,065 / 66.250000 s** (P1), guest **tick 4,253 / 69.383333 s**
   (P2); both rows equal their local finish within 0 ticks.
-- host map load **559.7 ms**, guest **563.7 ms**; **164.8 MB** fetched per page
-  (49.5 MB map + 106.9 MB base geometry + 1.2 MB layout + 4.4 MB physics +
-  2.7 MB source packages).
-- The host's slot-1 grid pose went airborne at tick 91 and respawned; the host
-  race clock paused during the rebuild. The host's projected guest finish is
-  tick 4,019 (race) vs the guest's reported race tick 4,151 — a **-132 tick
-  diagnostic delta**, not an acceptance gate. The guest report is accepted while
-  the room is open (`guestReportAccepted:true`, `guestValidated:true`).
+- host map load **617.0 ms**, guest **619.2 ms**; **191,106,592 B** fetched per
+  page (72.6 MB map + 106.9 MB base geometry + 0.31 MB layout + 5.6 MB physics +
+  5.7 MB source packages).
+- Start grid: the released lateral slot 1 `(335.54374, -24.000913)` is airborne
+  at tick 91 (`reason: airborne`, ground probe fails), while lateral slot 2 is
+  valid. The page falls back to the **measured spawn + path tangent longitudinal
+  grid**:
+  - slot 1 `(338.001826, -23.912520)`, 2.2 m ahead of spawn, probe at tick 140:
+    `ok`, contacts `1111`;
+  - slot 2 `(336.000000, -23.000000)` (the measured solo spawn), probe at tick
+    140: `ok`, contacts `1111`.
+  The measured start line and solo spawn are not moved. The host starts with
+  **0 respawns** and no airborne reset.
+- Host-projected guest finish is race tick 4,100 vs the reported 4,163
+  (**-63 tick** diagnostic); the report is accepted while the room is open
+  (`guestReportAccepted:true`, `guestValidated:true`).
 
 ### 3.4 Screenshots
 
@@ -214,13 +254,13 @@ the launcher default remains 8802/8811.
 
 | object | SHA-256 |
 |---|---|
-| `browser-evidence-mp.json` (River) | `8B37901E3E144EF56C0D7CFACD5221509229183895B9724B522F2557F6012F23` |
-| `browser-evidence-mp-amboy.json` | `2E5EF225E16A95B106962F2A06A0A4A3CD510FC77FD0A20CB919DB6B9CAB2136` |
-| `browser-evidence-mp-gracia.json` | `780B71AB38928B409ED2E21C2A43B82F2A2CAFDA7C270BD9A35EC6ACDEED91C3` |
-| `run.json` (2265 checks) | `B25D5C00BABC2E370375BB13765112F0255DA5FA0B9D8F01CE99205F4D25D9CA` |
-| `mp-node-report.json` | `B45BB9F0208AC0D4D1202F9B596F57613A329AF477596EE86D95B919A396692B` |
+| `browser-evidence-mp.json` (River) | `A8EF103D253816461F65EB1B21135F0E9F60EC55F1210FAD28AD65B1D7D362A5` |
+| `browser-evidence-mp-amboy.json` | `0E23E563B1126A52945011EAB68ECC63828902BEF7EDA8FD91FE00A857425936` |
+| `browser-evidence-mp-gracia.json` | `A971D775E872BF824C2423803F3DF7F0B91487B5631E89D0F49F3C552CA9D534` |
+| `run.json` (2265 checks) | `5E91031F37B5123498CFC322ADC6399EB9D7152AC2B23D256BF2F50C729292D3` |
+| `mp-node-report.json` | `EE452F3CAFFDEE8E25A325FE86F6ADDAB7B9AB282659242B3725A62180704809` |
 | `mp-map-node-report.json` | `047B21C9A6EE937DE30A2147E2A61EB448B00569C00B4F8C29DCB3A23C486762` |
-| `_work/verification/suite.json` (51/51) | `0762EAEFFC6917895B071049A316179AA1EBE455F68CD2D466FE2ED52BE4D71D` |
+| `_work/verification/suite.json` (51/51) | `7F91DA29DAA4299BF5F20A4F22303F9EF5C70AD8CAFAD9830259F858828314BA` |
 
 ---
 
