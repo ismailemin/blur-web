@@ -190,6 +190,68 @@ def main() -> int:
         "Resolving any of these is a content/naming decision for the main agent, not a reader change.")
     add("")
 
+    alias_path = OUT / "c-aliases.json"
+    if alias_path.exists():
+        alias = json.loads(alias_path.read_text(encoding="utf-8"))
+        staging_path = OUT / "c-staging-results.json"
+        staging = (json.loads(staging_path.read_text(encoding="utf-8"))
+                   if staging_path.exists() else None)
+        staged = ({entry["index"]: entry for entry in staging["records"]}
+                  if staging else {})
+        add("### 4.1 C alias resolution (V3, 8 November 2026)")
+        add("")
+        add(f"Of the **{alias['counts']['records']}** C records, "
+            f"**{alias['counts']['provable']} are provable** and "
+            f"**{alias['counts']['unsupported']} remains unsupported**. The rule is not name "
+            "similarity: `AmaxVehicle.dynamics` in `\\gamedata\\xt\\amax.bin` is a `FlaskHandle` "
+            "that resolves through the XT `refs` table to the exact `RP_CarDynamics` record id. "
+            "The shipped engine builds the body path from that vehicle's tag "
+            "(`LevelState.cpp:334`, `RaceLogicCore.cpp:1489`) and the wheel path from "
+            "`wheelModel->fileName` (`LevelState.cpp:360`). A record is `provable` only when the "
+            "handle id matches, the tag model and wheel model exist in `root.pak`, and the vehicle "
+            "is `use=true` (an unused/missing body is replaced by the Shelby fallback, "
+            "`LevelState.cpp:339-345`).")
+        add("")
+        add("| # | record | status | AmaxVehicle identity (ref) | intended body model | name sim | staging |")
+        add("|--:|---|---|---|---|---:|---|")
+        for r in alias["records"]:
+            identity = r["identity"]
+            if r["status"] == "provable":
+                veh = f"`{identity['amaxTag']}` ({identity['amaxRefIndex']})"
+                model = f"`{r['intendedModel']['pakPath']}`"
+                sim = f"{r['recordNameSimilarityToIntendedModelStem']:.4f}"
+                stage = staged.get(r["index"], {}).get("status", "not-run")
+                if stage == "loads":
+                    body = staged[r["index"]]["body"]
+                    stage = (f"loads {body['drawCount']}d / {body['partCount']}p / "
+                             f"{body['wheelGroupCount']} WG / "
+                             f"{body['scene']['uv0ValidVertices']} UV0 / "
+                             f"{body['materials']['uniqueTextureCount']} tex")
+            else:
+                veh = "none"
+                model = "**none**"
+                sim = "—"
+                stage = "unsupported"
+            add(f"| {r['index']} | {r['name']} | **{r['status']}** | {veh} | {model} | {sim} | {stage} |")
+        add("")
+        add(f"**DefaultCar** is the only unsupported C record: no `AmaxVehicle` handle in "
+            f"`amax.bin` resolves to its id `{next(r['id'] for r in alias['records'] if r['index'] == 8)}`; "
+            f"the nearest file `\\models\\vehicles\\default.model` is a "
+            f"{next(r['nearestPakModel']['logicalBytes'] for r in alias['records'] if r['index'] == 8):,}-byte "
+            "placeholder (median real car body "
+            f"{next(r['nearestPakModel']['medianRealCarBytes'] for r in alias['records'] if r['index'] == 8):,} "
+            "bytes) and is not a body reference.")
+        add("")
+        alias_verify_path = OUT / "c-aliases-verify.json"
+        alias_checks = (json.loads(alias_verify_path.read_text(encoding="utf-8"))["checks"]
+                        if alias_verify_path.exists() else 0)
+        add("The 14 provable records stage-load through the committed car-parts builder, Scene and "
+            "material passes; results are in `_work/vehicle-pipeline/c-staging-results.json`. "
+            "Detail, per-record evidence, source citations and the "
+            f"{alias_checks}-check verifier: "
+            "[`vehicle-c-aliases.md`](vehicle-c-aliases.md). No C car is in the drive roster.")
+        add("")
+
     add("## 5. Physics fields — what differs per car")
     add("")
     add("All **62** records decode with the committed `car_xt.py` extractor and pass the completeness "
@@ -386,8 +448,9 @@ def main() -> int:
         "available data, not a P52 proof.")
     add("- The A cars use the committed P52 numbers; the B texture RGBA total is an upper-bound "
         "estimate from descriptor dimensions, not decoded pixels.")
-    add("- The 15 C records were not extracted at all. Their nearest-model lists are similarity "
-        "evidence only; adding an alias is a content decision that must be documented separately.")
+    add("- V1 did not extract the 15 C records. The V3 addendum (4.1) resolves 14 of them by "
+        "record-level `AmaxVehicle` identity and stages their body/wheel assets; `DefaultCar` "
+        "remains unsupported. No C car is in the drive roster.")
     add("- The `Hummer_H2_OffRoad` part-layer exception is recorded, not patched.")
     add("- No renderer, driver, browser, multiplayer or full-game claim is made for any B or C car.")
     add("")

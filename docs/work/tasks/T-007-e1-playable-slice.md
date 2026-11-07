@@ -568,6 +568,26 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Sınır: retail fake-physics magnitude, camera-LOS/ground ray, dynamic object,
   damage-mode modifiers yok; target envelope proje.
 
+### E1at — 14 C aracın model kanıtı (V3)  ✅
+- `AmaxVehicle.dynamics` FlaskHandle → XT refs → `RP_CarDynamics` id → engine
+  `models/vehicles/%s.model` kuralı; 47/47 mevcut kayıtta doğrulandı.
+- **14/15 C provable**; yalnız `DefaultCar` desteklenmez. 14/14 staging load:
+  1.409 body draw, 412 part, 280 wheel draw, 289.239 UV vertex, 113 doku.
+- 7 yüksek güven (wheel draw proven), 7 orta (preview-paired). Toplam
+  **61/62 kayıt** oynanabilir hale getirilebilir.
+- Doğrulama **438/438**; suite 58/58. Kanıt:
+  `docs/work/analysis/vehicle-c-aliases.md`.
+- Sıradaki: batch 2'ye 7 yüksek güvenli C ile başla.
+
+### E1au — Hummer H2 parça katmanı (V4)  ✅
+- `Hummer_H2_OffRoad` modelinde **brake caliper yok** (80 elementte 0
+  `e_brakecaliper_*`); `cali_01` aslında plaka dokusu. Uydurulmadı.
+- Builder tipli `caliper:"absent"` kabul ediyor; 4 wheel grubu 3 üyeli,
+  `absentMembers`/diagnostic kayıtlı. Staged manifest
+  `7f4166c5…`, 98 draw, 4/4 wheel.
+- Verifier PASS; Audi R8 present-caliper regression byte-identical.
+- Batch 2'ye medium-confidence girebilir (16 wheel draw preview-only).
+
 ## Pipeline (bağımlılık sırası)
 
 ```

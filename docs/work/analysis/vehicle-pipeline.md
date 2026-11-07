@@ -110,7 +110,7 @@ A model is mapped only by the committed rule: the record name lowercased plus `.
 | 57 | Volkswagen_Beetle_Rat | B | RWD | 700 | volkswagen_beetle_rat.model | 94 | 42 | 6 | 4 |  |
 | 58 | Hummer_H2_Rat | B | AWD | 2500 | hummer_h2_rat.model | 82 | 22 | 7 | 4 |  |
 | 59 | BMW_M3E92_Drift | B | RWD | 1462 | bmw_m3e92_drift.model | 101 | 48 | 9 | 4 |  |
-| 60 | Hummer_H2_OffRoad | B | AWD | 2500 | hummer_h2_offroad.model | 98 | 23 | 6 | 4 |  |
+| 60 | Hummer_H2_OffRoad | B† | AWD | 2500 | hummer_h2_offroad.model | 98 | 23 | 6 | 4 | staged |
 | 61 | Dodge_Challenger_Race | B | RWD | 1450 | dodge_challenger_race.model | 99 | 32 | 7 | 4 |  |
 | 62 | ACSchnitzer_ACS1Coupe_Stock | B | RWD | 1480 | acschnitzer_acs1coupe_stock.model | 108 | 36 | 7 | 4 |  |
 | 63 | Foose_Stallion_Stockgrpc | C | RWD | 1495 | **missing** | — | — | — | — |  |
@@ -126,6 +126,11 @@ A model is mapped only by the committed rule: the record name lowercased plus `.
 | 78 | Dodge_ViperGTSR_Stock | B | RWD | 1400 | dodge_vipergtsr_stock.model | 91 | 51 | 8 | 4 |  |
 | 79 | Toyota_Supra_Smooth | B | RWD | 1400 | toyota_supra_smooth.model | 84 | 49 | 7 | 4 |  |
 | 80 | Ford_MustangGTR_Stock | B | RWD | 1300 | ford_mustanggtr_stock.model | 101 | 55 | 7 | 4 | yes |
+
+† `Hummer_H2_OffRoad` has no brake-caliper element. The part builder now records
+a typed `caliper:"absent"` per wheel group (three proven members, no invented
+mesh) and a staged manifest exists outside the E1 roster; `staged` is not a
+shortlist entry. See §7.1 and `docs/work/analysis/vehicle-hummer-parts.md`.
 
 ## 3. Class A — the five proven reference cars
 
@@ -165,6 +170,32 @@ Each C record has **zero** exact matches for `\models\vehicles\<normalised name>
 
 Notable naming splits: `Covette_C3_Rat` is a one-letter typo for `corvette_c3_rat.model`; `Chevrolet_Camaro_StockE3` vs `chevrolet_camaro_stock.model`; `Ford_Mustang_GT500_Stock1stplay` vs `shelby_mustanggt500_stock.model`; `Nissan_350ZNismo_Stock grpc` contains a space; `DefaultCar` vs `default.model`. `BMW_135_Stock` has no close pak model at all (best similarity 0.667, a different BMW). Resolving any of these is a content/naming decision for the main agent, not a reader change.
 
+### 4.1 C alias resolution (V3, 8 November 2026)
+
+Of the **15** C records, **14 are provable** and **1 remains unsupported**. The rule is not name similarity: `AmaxVehicle.dynamics` in `\gamedata\xt\amax.bin` is a `FlaskHandle` that resolves through the XT `refs` table to the exact `RP_CarDynamics` record id. The shipped engine builds the body path from that vehicle's tag (`LevelState.cpp:334`, `RaceLogicCore.cpp:1489`) and the wheel path from `wheelModel->fileName` (`LevelState.cpp:360`). A record is `provable` only when the handle id matches, the tag model and wheel model exist in `root.pak`, and the vehicle is `use=true` (an unused/missing body is replaced by the Shelby fallback, `LevelState.cpp:339-345`).
+
+| # | record | status | AmaxVehicle identity (ref) | intended body model | name sim | staging |
+|--:|---|---|---|---|---:|---|
+| 1 | Opel_AstraExtreme_shannon | **provable** | `Opel_AstraExtreme_Stock_Shannon` (201) | `\models\vehicles\opel_astraextreme_stock_shannon.model` | 0.8929 | loads 86d / 28p / 4 WG / 30800 UV0 / 11 tex |
+| 7 | Renault_MeganeSportR26_Stockgrpc | **provable** | `Renault_MeganeSportR26_Stock` (552) | `\models\vehicles\renault_meganesportr26_stock.model` | 0.9333 | loads 125d / 38p / 4 WG / 23128 UV0 / 7 tex |
+| 8 | DefaultCar | **unsupported** | none | **none** | — | unsupported |
+| 18 | Dodge_Challanger_Tuner1stplay | **provable** | `Dodge_Challenger_Tuner` (1211) | `\models\vehicles\dodge_challenger_tuner.model` | 0.8235 | loads 93d / 30p / 4 WG / 20541 UV0 / 8 tex |
+| 22 | Nissan_350ZNismo_Stock grpc | **provable** | `Nissan_350ZNismo_Stock` (1332) | `\models\vehicles\nissan_350znismo_stock.model` | 0.8980 | loads 123d / 32p / 4 WG / 19172 UV0 / 8 tex |
+| 23 | BMW_135_Stock | **provable** | `BMW_1SeriesTii_Stock` (1358) | `\models\vehicles\bmw_1seriestii_stock.model` | 0.6667 | loads 111d / 26p / 4 WG / 13374 UV0 / 9 tex |
+| 25 | Chevrolet_Camaro_StockE3 | **provable** | `Chevrolet_Camaro_Stock` (1569) | `\models\vehicles\chevrolet_camaro_stock.model` | 0.9565 | loads 100d / 30p / 4 WG / 19569 UV0 / 7 tex |
+| 31 | LandRover_DefenderSVXgrpc | **provable** | `LandRover_DefenderSVX_Stock` (1732) | `\models\vehicles\landrover_defendersvx_stock.model` | 0.8462 | loads 85d / 30p / 4 WG / 21288 UV0 / 7 tex |
+| 39 | Ford_Mustang_GT500_Stock1stplay | **provable** | `Shelby_MustangGT500_Stock` (2333) | `\models\vehicles\shelby_mustanggt500_stock.model` | 0.6786 | loads 110d / 32p / 4 WG / 19677 UV0 / 7 tex |
+| 47 | VW_Beetle_Offroad | **provable** | `Volkswagen_Beetle_OffRoad` (2931) | `\models\vehicles\volkswagen_beetle_offroad.model` | 0.8095 | loads 85d / 18p / 4 WG / 21991 UV0 / 8 tex |
+| 48 | Ford_F150_OffRoadheh | **provable** | `Ford_F150_OffRoad` (3042) | `\models\vehicles\ford_f150_offroad.model` | 0.9189 | loads 120d / 34p / 4 WG / 15578 UV0 / 7 tex |
+| 63 | Foose_Stallion_Stockgrpc | **provable** | `Foose_Stallion_Stock` (4357) | `\models\vehicles\foose_stallion_stock.model` | 0.9091 | loads 103d / 27p / 4 WG / 19012 UV0 / 8 tex |
+| 65 | Chevrolet_Camaro_Ratdrift | **provable** | `Chevrolet_Camaro_Rat` (4491) | `\models\vehicles\chevrolet_camaro_rat.model` | 0.8889 | loads 99d / 32p / 4 WG / 17622 UV0 / 8 tex |
+| 71 | Opel_AstraExtreme_Stockgrippy | **provable** | `Opel_AstraExtreme_Stock` (4716) | `\models\vehicles\opel_astraextreme_stock.model` | 0.8846 | loads 86d / 28p / 4 WG / 30800 UV0 / 10 tex |
+| 75 | Covette_C3_Rat | **provable** | `Corvette_C3_Rat` (4963) | `\models\vehicles\corvette_c3_rat.model` | 0.9655 | loads 83d / 27p / 4 WG / 16687 UV0 / 8 tex |
+
+**DefaultCar** is the only unsupported C record: no `AmaxVehicle` handle in `amax.bin` resolves to its id `515172551`; the nearest file `\models\vehicles\default.model` is a 78,602-byte placeholder (median real car body 4,615,848 bytes) and is not a body reference.
+
+The 14 provable records stage-load through the committed car-parts builder, Scene and material passes; results are in `_work/vehicle-pipeline/c-staging-results.json`. Detail, per-record evidence, source citations and the 438-check verifier: [`vehicle-c-aliases.md`](vehicle-c-aliases.md). No C car is in the drive roster.
+
 ## 5. Physics fields — what differs per car
 
 All **62** records decode with the committed `car_xt.py` extractor and pass the completeness gate (positive mass/wheelbase/track/tyre radius/limiter/torque/gear/final/brake; ≥2 gears, torque points and grip points; valid top gear; drive type 0/1/2; all values finite). There are **no missing or extra schema field names** versus the reference Corvette ZR1 record.
@@ -202,7 +233,7 @@ The line-count spread is therefore the per-record gear-ratio cardinality (and th
 | referenced texture source bytes (47) | 26,855,696 |
 | referenced texture RGBA bytes (A exact + B bounded estimate) | 139,327,488 |
 
-Interpretation: **47 of 62** records can enter the existing geometry/material path today with no format work; **15** are blocked by the exact model-name rule. One of the 42 B cars (`Hummer_H2_OffRoad`) additionally needs a vehicle-specific part-layer exception (missing front brake-caliper member), so its manifest is not on the shortlist. The totals above are for the 47 exact-mapped models; the 15 C records contribute zero bytes because nothing is extracted for them. Reaching 62/62 therefore needs 15 documented alias/record decisions plus 42 B integrations, not new binary readers.
+Interpretation: **47 of 62** records can enter the existing geometry/material path today with no format work; **15** are C records under the exact model-name rule (V3's §4.1 resolves 14 of them by record-level identity; see that addendum). The `Hummer_H2_OffRoad` part-layer blocker is resolved as a typed absent brake caliper: the builder keeps each wheel group valid with its three proven members and records `caliper:"absent"`; its staged manifest is outside the E1 roster and outside the ten-car shortlist. The totals above are for the 47 exact-mapped models; the 15 C records contribute zero bytes because nothing is extracted for them. Reaching 62/62 therefore needs the documented alias/record decisions plus 42 B integrations, not new binary readers.
 
 ## 7. Next cars, ranked by confidence
 
@@ -223,7 +254,57 @@ The shortlist is the top of the B set after building a real part manifest with t
 
 Expected addition per car: one decoded body model and one part manifest/mesh; one RP_CarDynamics field list from the same record; one P52-style material/texture pass (the independent traversal already resolves the static-albedo and texture counts above); one body entry in `geometry.json` with the main-agent pins. The full per-car list is in `_work/vehicle-pipeline/cars.json` → `nextCars`.
 
-One B car is **not** on the shortlist: `Hummer_H2_OffRoad` (record 60) passes the model, Scene, MdlDat, physics and material checks, but the committed part builder rejects its front wheel because the group has `['brakeDisc','rim','tyre']` and no `brakeCaliper` element. Exact blocker: `part manifest: build_manifest: unsupported: wheel frontleft members are ['brakeDisc', 'rim', 'tyre'], expected ['brakeCaliper', 'brakeDisc', 'rim', 'tyre']`. It stays class B with that vehicle-specific step; it is not a C record and nothing was guessed.
+One B car is **not** on the shortlist: `Hummer_H2_OffRoad` (record 60) passes the model, Scene, MdlDat, physics and material checks, but its front wheel group lacked a `brakeCaliper` member. That blocker is now resolved as a typed absence; its staged manifest is complete but it is not an E1 roster entry and is not counted in the ten-car shortlist above.
+
+### 7.1 Hummer H2 OffRoad — typed absent brake caliper (staged resolution)
+
+The asset genuinely has no caliper node. `hummer_h2_offroad.model` (SHA-256
+`0e7f968b…d29869`) has 80 MdlDat elements and 21 models; model 0 `DefaultModel`
+has 58 elements, 4 `e_wheel_*` parents and only 12 wheel members: 4 `e_tyre_*`,
+4 `e_alloyRim_*` and 4 `E_BrakeDisc_*` (three per corner). No element name
+contains `caliper`, and no caliper is hidden under another parent or model. The
+separate `\models\vehicles\wheels\hummer_h2_offroad.model` resource has only
+`m_Alloy`/`e_alloyblur` rim geometry; no caliper model exists in the pak.
+
+The `cali_01` texture in the material traversal is **not** caliper evidence: its
+two draws (42 and 87, 10 triangles each) are fully contained by
+`e_licenseplate_back` and `e_licenseplate_front`, at Z ≈ −2.35 and +2.38. It is a
+license-plate texture. The four `breakdisc` draws (35–38) are thin symmetric
+discs inside the four `E_BrakeDisc_*` elements; no draw is attributable to a
+caliper.
+
+For comparison, the five proven reference cars each have 16 wheel elements:
+4 tyre + 4 rim + 4 disc + 4 caliper, with every caliper a direct child of its
+`e_wheel_*` parent. The sibling `hummer_h2_rat.model` also contains
+`E_BrakeCaliper_*` elements (four by name, though one is a `DefaultElement`
+child and its front-left corner lacks disc/caliper), proving the vehicle family
+can carry caliper nodes. The OffRoad asset is therefore missing them, not
+renaming them.
+
+The committed builder now accepts exactly this case: when model 0 has **zero**
+`e_brakecaliper_*` elements, a three-member wheel group is valid and records
+`caliper:"absent"` plus `absentMembers:[{wheelPart:"brakeCaliper", …}]` and
+`diagnostics.absentWheelParts`. No caliper mesh is invented, borrowed or
+substituted; a renamed or differently parented caliper still fails.
+
+Staged result (`_work/vehicle-pipeline/manifests/hummer-h2-offroad/`):
+98 draws, 36 parts (4 wheel groups + 32 non-wheel), 4 wheel groups, 16 wheel
+draws (8 tyre, 4 rim, 4 disc, 0 caliper), 82 proven draws and 16 preview-only
+wheel draws. UV0 is available on 7 of 11 global vertex buffers (11,783 valid
+vertices; 58/98 draws with UV0), and the independent material traversal resolves
+6 unique textures and 23 static-albedo draws. Manifest SHA-256
+`7f4166c5…a56d`, mesh SHA-256 `7d593ceb…954f`.
+
+Verification: the staged verifier passes with 0 failures; two independent builds
+are byte-identical; a present-caliper regression rebuild (Audi R8) reproduces its
+committed manifest hash exactly. The vehicle-pipeline verifier still reports
+PASS 542/542. Full detail and hashes: `docs/work/analysis/vehicle-hummer-parts.md`.
+
+Batch 2 may take this car (manifest complete, typed absence, deterministic), but
+the wheel corner identity is preview-only (16 ambiguous, 0 proven, the same
+medium-confidence tier as Bronco/Skyline/SoCalHHR). It still needs the roster
+entry, P52 committed materials, geometry pins, ghosts and browser capture; no
+drive or full-game claim is made.
 
 ## 8. Exact pipeline to add one B car
 
@@ -279,6 +360,8 @@ The ghost step matters: `verify_e1_drive.mjs` compares `ghosts/index.json` and t
 | `_work/vehicle-pipeline/summary.csv` | 16,199 | `1082f4feb6f7776bfa5071c7c0f0afb5463bea46cd6001f2fd4fd238f063d5cb` |
 | `_work/vehicle-pipeline/hashes.json` | 19,777 | `abd5e7a78fad0cbc913360d754a0623f0769d0d1225ce4fba6d06c8a529bf1e1` |
 | `_work/vehicle-pipeline/verify.json` | 62,858 | `938f3aae57f79ec52bfb7618d847d6848d78b7e5dad80f23bb10e52caed87066` |
+| `_work/vehicle-pipeline/manifests/hummer-h2-offroad/manifest.json` (staged) | 331,188 | `7f4166c5a91a103fc0f69c400a0098d63bfdf5a4a85683e7c4562f47a2b9a56d` |
+| `_work/vehicle-pipeline/hummer-h2-offroad/staging-verify.json` | 3,298 | `6b70b3df5125cba01b8f4a2497ae243d4383da7456617f6275a3ddf0d7472722` |
 
 | input | SHA-256 |
 | --- | --- |
@@ -316,7 +399,7 @@ Additional audit limits:
 
 - Material traversal is the independent `tools/inspect_car_materials.py` pass, not the P52 committed C++-cross-checked manifest; a B car's static/texture counts are evidence of available data, not a P52 proof.
 - The A cars use the committed P52 numbers; the B texture RGBA total is an upper-bound estimate from descriptor dimensions, not decoded pixels.
-- The 15 C records were not extracted at all. Their nearest-model lists are similarity evidence only; adding an alias is a content decision that must be documented separately.
-- The `Hummer_H2_OffRoad` part-layer exception is recorded, not patched.
+- V1 did not extract the 15 C records. The V3 addendum (4.1) resolves 14 of them by record-level `AmaxVehicle` identity and stages their body/wheel assets; `DefaultCar` remains unsupported. No C car is in the drive roster.
+- The `Hummer_H2_OffRoad` missing caliper is a typed absence in the builder and a staged manifest only; no roster, P52 material, geometry-pin, ghost or drive integration is claimed. The V1 audit artifact (`cars.json`/`summary.csv`/`hashes.json`) was not regenerated: §7.1 and `docs/work/analysis/vehicle-hummer-parts.md` carry the staged resolution.
 - No renderer, driver, browser, multiplayer or full-game claim is made for any B or C car.
 

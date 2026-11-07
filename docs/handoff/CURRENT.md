@@ -255,6 +255,12 @@ impulse; Barge 7 m/0.4 s; JINK not-serialized. Node **107/107**, verify
 2281/2281, capture console 0/0. Kanıt:
 `docs/work/verification/T-007-powerups.md` WPN1.
 
+**V3 — C araç kanıtı:** `AmaxVehicle.dynamics` handle → model tag kuralıyla
+**14/15 C provable** (yalnız DefaultCar yok); 14/14 staging load; toplam
+**61/62** araç. 438/438. **V4 — Hummer:** caliper gerçekten yok; tipli absent,
+staged manifest; batch 2 medium. Kanıt:
+`docs/work/analysis/vehicle-c-aliases.md`, `vehicle-hummer-parts.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

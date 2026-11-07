@@ -940,6 +940,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Node **107/107** (39 yeni); verify 2281/2281; suite 57/57; checker 23/23; iki tarayıcı console 0/0 (projectile 5/hit 4/shunt 2/barge 2).
 - Kanıt: `docs/work/verification/T-007-powerups.md` WPN1, `_work/e1-drive/browser-mp-powerups-{blindfire,shunt,barge}-*.png`.
 
+## 8 Kasım 2026 — C araç kanıtı + Hummer
+
+- `AmaxVehicle.dynamics` handle → model tag kuralı: **14/15 C provable**, yalnız DefaultCar desteklenmez; 47/47 mevcut kayıtta doğrulandı.
+- 14/14 staging load: 1.409 body draw, 4 wheel grubu, 289.239 UV vertex, 113 doku; 7 yüksek + 7 orta güven. Toplam **61/62** araç.
+- Hummer H2: brake caliper modelde yok (`cali_01` plaka dokusu); tipli `caliper:"absent"`, staged manifest; uydurulmadı.
+- Doğrulama **438/438**; suite **58/58**. Kanıt: `docs/work/analysis/vehicle-c-aliases.md`, `vehicle-hummer-parts.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).
