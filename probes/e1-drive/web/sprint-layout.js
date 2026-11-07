@@ -1322,9 +1322,9 @@ export const FREE_REGIONS_PATH = Object.freeze({
 export const FREE_SPAWN = Object.freeze({ x: -88.0, z: 1050.0, headingRad: Math.PI / 2 });
 
 /**
- * P68b spawn-component containment box. `spawnComponentBounds` is the measured
- * bbox of the free cell component that contains the spawn under the extended
- * 431-collider `all-visible` layer (P68a measured the same component at
+ * P68b/P74 spawn-component containment box. `spawnComponentBounds` is the
+ * measured bbox of the free cell component that contains the spawn under the
+ * 447-collider R04-V2 `all-visible` layer (P68a measured the same component at
  * 7,702.25 m2 with the committed manifest and 7,415.00 m2 with the extended one;
  * the eastern channel is cut off by the C03 prop wall and is *not* in the box).
  * The reset boundary is this box expanded by `marginMetres`.
@@ -1403,7 +1403,7 @@ export function isFreeLayout(layout) {
 /**
  * Derive the containment test lane from measured data: the easternmost lattice
  * cell whose straight run east reaches the reset boundary with a collision
- * surface under every 1 m sample and no P68b all-visible contact. This is the
+ * surface under every 1 m sample and no P74 R04-V2 all-visible contact. This is the
  * shortest useful lane to the boundary (the test wants to leave the box, not to
  * cross the whole basin). No coordinate is typed in: the lane, its length and
  * its ground are the measurement.
@@ -1460,7 +1460,7 @@ function deriveContainmentProbe(grid, bounds, propContacts, groundAt, envelope, 
     stepLimitMetres: MAX_GROUND_STEP_METRES,
     envelope: { length: envelope.length, width: envelope.width, height: envelope.height },
     rule: 'the shortest (easternmost) measured lattice lane whose 1 m samples reach the reset boundary over a ' +
-      'collision surface with no step above 5 cm per metre and no P68b all-visible contact; used only by the ' +
+      'collision surface with no step above 5 cm per metre and no P74 R04-V2 all-visible contact; used only by the ' +
       'containment test, not by the spawn'
   };
 }
@@ -1498,7 +1498,7 @@ export function deriveFreeRoamLayout(geometry, spawn, regionsDoc, options = {}) 
       JSON.stringify({ x: spawn?.x, z: spawn?.z, heading: spawn?.heading }));
   }
   if (typeof options.propContacts !== 'function' || !options.carEnvelope) {
-    throw new Error('the free-roam layout needs the P68b all-visible prop world for its containment measurement');
+    throw new Error('the free-roam layout needs the P74 R04-V2 all-visible prop world for its containment measurement');
   }
 
   const collision = options.collision ?? new TriangleIndex(collisionTriangles(geometry));
@@ -1542,8 +1542,8 @@ export function deriveFreeRoamLayout(geometry, spawn, regionsDoc, options = {}) 
     course: {
       rule:
         'free roam on the P65/P68 measured spawn basin: the committed spawn (-88, 1050, pi/2), no gates, no ' +
-        'finish, no lap counter and no corridor band; the P68b all-visible prop layer makes every visible prop ' +
-        'in the extended region solid',
+        'finish, no lap counter and no corridor band; the P74 R04-V2 all-visible prop layer makes every visible ' +
+        'prop in the reachable region solid',
       name: 'usa_la_river R04 free-roam spawn basin',
       spawn: { x: round6(spawn.x), z: round6(spawn.z), headingRad: heading },
       spawnGroundY: round6(spawnGroundY),
@@ -1588,8 +1588,8 @@ export function deriveFreeRoamLayout(geometry, spawn, regionsDoc, options = {}) 
         variant: FREE_PROP_PINS.variant,
         colliders: FREE_PROP_PINS.colliders,
         resolver: FREE_PROP_PINS.resolver,
-        rule: 'the P68b extended all-visible manifest is a region replacement for this mode only; the timed ' +
-          '310 m course keeps the committed 468-collider manifest'
+        rule: 'the P74 R04-V2 all-visible manifest is a region replacement for this mode only; the timed ' +
+          '310 m course keeps the P74 base V2 roadside profile (553 of 651 colliders)'
       }
     },
     gates: [],
@@ -1702,7 +1702,7 @@ export function validateSprintLayout(layout, geometry, spawn) {
   }
   if (isFreeLayout(layout)) {
     // Free roam has no gates, no finish and no lap: its structure is the
-    // measured basin, the P68b prop pins and the containment rule.
+    // measured basin, the P74 R04-V2 prop pins and the containment rule.
     const course = layout.course ?? {};
     const bounds = course.bounds ?? {};
     for (const key of ['minX', 'maxX', 'minZ', 'maxZ']) {
@@ -1746,7 +1746,7 @@ export function validateSprintLayout(layout, geometry, spawn) {
     }
     const prop = course.prop ?? {};
     for (const key of ['profile', 'manifest', 'manifestFileSha256', 'manifestContentSha256', 'variant', 'colliders']) {
-      if (prop[key] !== FREE_PROP_PINS[key]) fail('the free-roam prop pin ' + key + ' is not the P68b value');
+      if (prop[key] !== FREE_PROP_PINS[key]) fail('the free-roam prop pin ' + key + ' is not the P74 R04-V2 value');
     }
     return { ok: errors.length === 0, errors };
   }

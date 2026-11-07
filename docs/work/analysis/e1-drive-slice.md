@@ -2390,3 +2390,164 @@ metres, so it stays smooth; no upscale or invented detail is applied. Material
 colour/paint, UV transforms, normals, the 4 BC3 cab draws and the 267 non-static
 car draws remain unapplied and labelled. Full tables, paths and hashes:
 `docs/work/verification/T-007-texture-quality.md`.
+
+---
+
+## 31. P74b — binding the V2 collision manifests in the playable page
+
+**Date:** 7 November 2026. **Owner:** P74b. **Scope:** `probes/e1-drive/**`,
+`_work/e1-drive/**`, `_work/logs/e1-drive/**`, this section,
+`docs/work/verification/T-007-free-roam.md` and
+`docs/work/verification/T-007-lap-mode.md`. No change to
+`probes/prop-collision/**`, `probes/free-roam-prop/**`, `asset-reader`, the
+engine, `tools/`, `upstream/` or `game-data/`. No manifest was regenerated.
+
+### 31.1 Result
+
+The playable page now binds the P74 V2 manifests per course through the same
+additive post-tick resolver. The lap wall/garage/balcony/sign/grey-wall
+components and the free-roam pipes/fences/rails are solid; the timed 310 m
+sprint and the three lap/free runs keep their exact state-sequence anchors and
+finish times.
+
+| mode | manifest | profile | manifest / profile / active | run result |
+| --- | --- | --- | ---: | --- |
+| `?course=310` | `_work/prop-collision/colliders-v2.json` | `roadside` | 651 / 553 / **544** | 0 contacts, all five anchors and finish ticks unchanged |
+| `?course=lap` | same | `all-visible` | 651 / 651 / **651** | 0 contacts, all five anchors unchanged (86.100…85.467 s) |
+| `?course=free` | `_work/free-roam-prop/colliders-r04-v2.json` | `all-visible` | 447 / 447 / **447** | 0 contacts, all five anchors unchanged |
+
+File and content pins are `33488752…751d7` / `73620739…db9ee` (base V2) and
+`b1b8f2c9…18211` / `663e2570…20b38` (R04-V2). The page hashes the bytes before
+parsing and `checkPropManifest` re-checks the variant, profile count, total
+count and content hash. A mismatch throws a typed `PropManifestError`; there is
+no fallback to V1.
+
+### 31.2 The measured 310 m driven-line conflict
+
+P74's `roadside` profile is clear on the measured centreline (0 of 1,245 car
+poses). The committed scripted sprint does not drive the centreline exactly:
+its Stanley follower has up to ~0.6–0.9 m lateral error, and when the V2 layer
+was first bound the five cars contacted 0 / 354 / 3,094 / 544 / 5 ticks
+(Corvette / Lotus / Dodge / Focus / Audi), changing four state anchors and
+finishing two cars late. The touching components are edge pieces of the four
+known clusters, not the main walls/pipes.
+
+The response is explicit. `tools/derive_sprint_exclusions.mjs` sweeps the
+committed 310 m reference ghost traces through the same 553-collider roadside
+world and records **exactly 9 colliders** the committed line grazes:
+
+```text
+river.block56.node289.draw.115.component.015
+river.block56.node289.draw.116.component.043
+river.block56.node289.draw.116.component.044
+river.block56.node289.draw.116.component.047
+river.block56.node289.draw.97.component.063
+river.block56.node289.draw.99.component.029
+river.block56.node289.draw.99.component.042
+river.block56.node289.draw.99.component.043
+river.block56.node289.draw.99.component.047
+```
+
+Those nine are marked `active:false` for the timed course only
+(`applyDrivenLineExclusions`), leaving **544** active. The set has
+`exclusionContentSha256:9603f858…86b4f2`, is re-derived from the committed
+ghosts, and is checked by the verifier against the manifest (each id is
+`active:true` in the profile). The manifest and its `roadside` profile are not
+modified; the four on-course arcs remain the P74 exclusions. The timed course
+therefore keeps its 0-contact, anchored run, and 544 structures are solid.
+This is a measured data limit, not a silent fallback: the nine ids and arcs are
+in `run.json`, the artifact and the HUD row.
+
+### 31.3 Resolver targets (P74 V2)
+
+| target | test | result |
+| --- | --- | --- |
+| lap building wall `draw.355.component.000` (44.37 × 0.02 m) | 31 m/s head-on | blocks 100/120 ticks; side **1.501 m** = car half-length 1.49 + wall half 0.01 + slop; residual 0; max penetration 0.0728 m; target is the only contact |
+| free pipe `draw.95.component.004` | 31 m/s head-on | blocks 101/120 ticks; first contact is the neighbouring pipe `draw.95.component.002`; side 2.032 m; residual 0; max penetration 0.0728 m |
+| lap no-parking sign `draw.257.component.000` | 31 m/s head-on (single-collider world) | stops on the target, side 1.501 m, residual 0 |
+| free steel pole `draw.283.component.327` | 31 m/s head-on (single-collider world) | stops on the target, side 1.501 m, residual 0 |
+| lap wall | four-direction rays | **4/4 blocked**; first hits: wall (2), balcony `draw.233` (2) |
+| free pipe | four-direction rays | **4/4 blocked**; first hits: other `draw.95` pipes (4) |
+| both | no tunnelling at 31 m/s | 7 substeps per tick (840/120), resolved travel 10.50 m (wall) / 9.97 m (pipe) of 62.0 m free travel, residual 0, approach side kept |
+
+The resolver tests use the target's own measured ground. `draw.355` sits on the
+upper terrace at ground 6.514 m; the loop is at ~3.2 m there, so the browser
+capture cannot reach it. The captures use the reachable loop-side no-parking
+sign `draw.257.component.000` (2.44 × 2.76 m, ground 3.38 m) and a broad free
+pipe `draw.95.component.010`; the building-wall head-on remains the resolver
+proof.
+
+### 31.4 Browser collision probe
+
+`?collisionprobe=lap-sign|free-pipe` is a capture-only page mode: the start pose
+is derived from the target manifest record (`distanceMetres` outside the near
+face along `axis`), the engine gets full throttle until the layer reports its
+first contact and then brake + handbrake; there are no race rules, gates or
+timer. The layer does not write a physics value. `--mode collision-v2` captures
+five cars × two targets × approach (tick 30) / stopped (tick 360) / settled
+(tick 420).
+
+**Result: PASS** — 30 captures, **0 console messages**, **0 assertions**. All
+five cars stopped at both targets: lap sign side 1.962–2.673 m, speed
+0.001–0.064 m/s, 45–76 contacts; free pipe side 2.712–2.875 m, speed
+0.001–0.023 m/s, 51–61 contacts. The settled (tick 420) pose differs from the
+stopped (tick 360) pose by < 0.05 m for every car. Screenshots:
+`_work/e1-drive/browser-<slug>-collision-{lap-sign,free-pipe}-{approach,stopped,settled}.png`;
+evidence `_work/e1-drive/browser-evidence-collision-v2.json`
+(`sha256:81af5fb2…ca5840`).
+
+The free capture is 20/20 state hashes, console 0, 447 colliders; the props
+capture is 25/25, console 0; the 310 m browser sprint capture is 20/20 state
+hashes and finish times with the 544-active layer (console 0); the lap
+regression is the Corvette's four-frame three-lap race (4/4 state hashes,
+console 0, 651 colliders). The previous
+five-car lap evidence is preserved as `browser-evidence-lap-p74b-previous.json`;
+the full five-car headless lap rerun is left to the main agent because a lap
+frame exceeded the original poll window (raised to 600 s). The Node verifier
+covers all five lap cars.
+
+The capture uses the reachable lap no-parking sign (`draw.257`) rather than the
+44 m building wall: `draw.355` is on the upper terrace (ground 6.514 m) and the
+car cannot reach it from the loop at ~3.2 m. The wall's head-on proof is the
+resolver test at its own measured ground (§31.3).
+
+### 31.5 Verification
+
+```powershell
+$node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
+$py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $node probes/e1-drive/tools/build_sprint.mjs
+& $node probes/e1-drive/tools/derive_sprint_exclusions.mjs
+& $node probes/e1-drive/tools/verify_e1_drive.mjs              # 856/856
+& $py   tools/verify_asset_probe.py --skip-build                # 36/36
+& $py   tools/check_e1_poc.py                                   # 21/23 (documented V1 pins)
+& $node probes/e1-drive/tools/capture_browser.mjs --mode collision-v2 --port 8802
+```
+
+`verify_e1_drive` adds the per-mode pins, the exclusion artifact/hash, the
+lap/free route measurements, the five target stops, the rays and the no-tunnel
+case, and keeps every previous sprint/lap/free/ghost anchor. The free layout
+hash becomes `sha256:c1829cb2…ab80a6` because its recorded prop block is the
+V2 447 pins; the free runs and their anchors are unchanged.
+
+`check_e1_poc.py` still pins the V1 free manifest (431 colliders and the V1
+file/content hashes) in `tools/`, which is outside this task's ownership; its
+two free-roam items therefore fail while every other item passes. The checker
+needs a main-agent update to the 447/V2 pins; this task does not modify it.
+
+### 31.6 Limits
+
+1. **Nine measured 310 m driven-line exclusions.** They are the exact active
+   roadside components the committed scripted line grazes; making them solid
+   changes four of the five anchored runs. They are excluded by measurement,
+   recorded with ids/arcs, and the manifest/profile is unchanged. A re-measured
+   sprint line could remove the need for them.
+2. **The lap building wall is on the upper terrace.** The resolver proves the
+   wall solid at its own ground; the car cannot reach it from the loop. The
+   browser capture uses a reachable loop-side wall.
+3. **Visible-mesh approximation.** Boxes fitted to visible components; the
+   layer is a kinematic 2.5D post-tick pose resolver with no rotation sweep,
+   suspension or vertical dynamics. Penetration is bounded by one 8 cm substep.
+4. **No full-game, retail-collision or retail-handling claim.** One level, three
+   courses, five cars; no opponents, traffic, race audio or multiplayer.

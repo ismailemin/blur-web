@@ -206,16 +206,17 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   `_work/e1-drive/browser-<slug>-free-*.png`.
 - Sıradaki (P74b): V2 manifestlerini sayfaya bağlamak (yeni pinler).
 
-### E1q — Görünür yapı collision açığı (P74)  ✅ veri
-- Lap koridorunda **56 dikey bileşen** (bina cephesi, garaj duvarı, tabela,
-  alçak duvar) collider'sızdı; free kutuda 6 boru/duvar; 310 bandında 79.
-- V2 kuralı: dokusu/materyali olmasa da **dikey yapı solid**; yalnız gerçek
-  zemin ve tabanı ≥2,5 m olan overhead hariç.
-- Lap **0/902 bloke** (min 3,044 m), free **0/121** (min 3,793 m); 310
-  `roadside` **0/1245** bloke; dört on-course arc bilinçli hariç.
-- 8/8 head-on + 4 yön + 0 tunneling; **45/45**; V1 collider array byte-identical.
-- Kanıt: `probes/prop-collision/README.md` §P74, `_work/prop-collision/*-v2.json`.
-- Sıradaki (P74b): V2 manifestlerini sayfaya bağlamak.
+### E1q — Görünür yapı collision açığı (P74/P74b)  ✅ entegre
+- Lap koridorunda **56 dikey bileşen**, free kutuda 6, 310 bandında 79
+  collider'sızdı; V2 kuralı dikey yapıyı materyalden bağımsız solid yapıyor.
+- Sayfada: 310 **V2 roadside 553**, lap **V2 all-visible 651**, free
+  **R04-V2 all-visible 447**. Eski V1'e sessiz dönüş yok; pin uyuşmazsa hata.
+- Lap 0/902, free 0/121, 310 roadside 0/1245 bloke; free beton boru 31 m/s'de
+  0,001 m'de duruyor, 53 temas/53 bloke tick.
+- `verify_e1_drive` **856/856**; collision capture **30/30**, free 20/20,
+  lap 20/20, props 25/25, console 0.
+- Kanıt: `docs/work/analysis/prop-collision.md` §P74,
+  `_work/e1-drive/browser-*-collision-free-pipe-stopped.png`.
 
 ### E1r — Doku kalitesi (P75)  ✅
 - Kök neden: BC1 texelleri sRGB iken `rgba8unorm` + shader'da `pow(1/2.2)` →

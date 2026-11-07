@@ -64,9 +64,9 @@ const EXTRA_QUERY = option('--extra-query', '');
 const LABEL_PREFIX = option('--label-prefix', '');
 const EVIDENCE_NAME = option('--evidence-name', 'browser-evidence.json');
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'props', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, props, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio or quality)');
+    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio or quality)');
 }
 // Course selection: 310 (default, `_work/e1-drive/sprint.json`), short
 // (`?course=short`, `_work/e1-drive/sprint-short.json`), lap (`?course=lap`,
@@ -295,8 +295,9 @@ async function capture(car, label, tick, options = {}) {
   let probe = null;
   // A scripted run advances at the fixed-step 60 Hz in real time. The 3-lap
   // finish capture sits at ~88 s of simulated time, so the default 80 s poll
-  // window is too short; long runs get a proportionally longer window.
-  const pollAttempts = options.longRun ? 1200 : 400;
+  // window is too short; long runs get a proportionally longer window (600 s,
+  // needed on a slow/thermally throttled headless GPU).
+  const pollAttempts = options.longRun ? 3000 : 400;
   for (let attempt = 0; attempt < pollAttempts; attempt++) {
     probe = await evaluate(`(()=>{const p=window.e1DriveProbe;return p?{state:p.consumer,error:p.error,engineTick:p.engineTick,displayTick:p.displayTick,frames:p.frames,holdReached:p.holdReached,draws:p.draws,car:p.car,url:location.href}:null})()`).catch(() => null);
     if (probe && probe.url === url && probe.state === 'error') break;
@@ -373,6 +374,7 @@ async function capture(car, label, tick, options = {}) {
       sprintBest: p.sprintBest ?? null,
       ghost: p.ghost ?? null,
       props: p.props ?? null,
+      collisionProbe: p.collisionProbe ?? null,
       overlays: {
         countdownHidden: document.getElementById('countdown')?.hidden ?? null,
         countdownText: document.getElementById('countdown')?.textContent ?? null,
@@ -702,6 +704,7 @@ if (MODE !== 'drive') {
     : MODE === 'lap' ? await lapCapturePass()
     : MODE === 'free' ? await freeCapturePass()
     : MODE === 'props' ? await propsCapturePass()
+    : MODE === 'collision-v2' ? await collisionV2CapturePass()
     : MODE === 'quality' ? await qualityCapturePass()
     : MODE === 'ghost' ? await ghostCapturePass()
     : MODE === 'survey' ? await surveyCapturePass()
@@ -1334,9 +1337,9 @@ async function freeCapturePass() {
         probe.sprintLayout?.bounds?.maxX === 5 &&
         probe.sprintLayout?.containment?.marginMetres === 2,
         JSON.stringify({ gates: probe.sprintLayout?.gates?.length, bounds: probe.sprintLayout?.bounds }));
-      passCheck(`${car.slug}/${label}: the 431-collider P68b all-visible layer is active`,
-        probe.props?.profile === 'all-visible' && probe.props?.colliders === 431 &&
-        probe.props?.manifest === '_work/free-roam-prop/colliders-r04.json' &&
+      passCheck(`${car.slug}/${label}: the 447-collider R04-V2 all-visible layer is active`,
+        probe.props?.profile === 'all-visible' && probe.props?.colliders === 447 &&
+        probe.props?.manifest === '_work/free-roam-prop/colliders-r04-v2.json' &&
         probe.props?.contacts === 0,
         JSON.stringify({ profile: probe.props?.profile, colliders: probe.props?.colliders,
           manifest: probe.props?.manifest, contacts: probe.props?.contacts }));
@@ -1439,8 +1442,8 @@ async function freeCapturePass() {
     courseId: 'free',
     layout: { hash: freeLayout.hash, spawn: freeLayout.course.spawn, bounds: freeLayout.course.bounds,
       containment: freeLayout.course.containment, coverage: freeLayout.course.coverage },
-    prop: { profile: 'all-visible', manifest: '_work/free-roam-prop/colliders-r04.json', colliders: 431,
-      contentSha256: 'sha256:932e0f871e46b073d359c7a9549477e136fb56e58202b477ebc11fac53915b42' },
+    prop: { profile: 'all-visible', manifest: '_work/free-roam-prop/colliders-r04-v2.json', colliders: 447,
+      contentSha256: 'sha256:663e2570d1949e9bde155ec872e9fccfc09117833b5d3a663a275e686ef20b38' },
     cars: rows,
     packetHashAgreement: { exact, total: rows.length, note:
       'a mismatch is a documented last-bit transcendental difference between Node 24 and Edge 156; the state ' +
@@ -1656,9 +1659,160 @@ async function propsCapturePass() {
 }
 
 /**
+ * P74 V2 collision capture (`--mode collision-v2`): the real page and the real
+ * additive layer, driven at a manifest-derived start pose into the reachable lap
+ * no-parking sign (`draw.257`) and a free-roam concrete pipe (`draw.95`). Each
+ * target gets an approach frame (0 contacts), a stopped frame (contacts, brake +
+ * handbrake) and a settled frame 60 ticks later (same stopped pose). The building
+ * wall `draw.355` is proven in the resolver at its own terrace ground; it cannot
+ * be reached by the car from the loop. Console must be clean.
+ */
+async function collisionV2CapturePass() {
+  const rows = [];
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const targets = [
+    {
+      name: 'lap-sign', course: 'course=lap',
+      profile: 'all-visible', colliders: 651, manifest: '_work/prop-collision/colliders-v2.json',
+      nearFaceMin: 0.5
+    },
+    {
+      name: 'free-pipe', course: 'course=free',
+      profile: 'all-visible', colliders: 447, manifest: '_work/free-roam-prop/colliders-r04-v2.json',
+      nearFaceMin: 0.5
+    }
+  ];
+  const frames = [
+    { frame: 'approach', tick: 30 },
+    { frame: 'stopped', tick: 360 },
+    { frame: 'settled', tick: 420 }
+  ];
+
+  for (const target of targets) {
+    for (const car of cars) {
+      const body = geometry.carBodies[car.slug];
+      if (!body) throw new Error('geometry has no body for ' + car.slug);
+      const draws = 22 + geometry.trackVisual.drawCount + body.carDraws.length;
+      let stopped = null;
+      for (const spec of frames) {
+        const label = 'collision-' + target.name + '-' + spec.frame;
+        const shot = await capture(car, label, spec.tick, {
+          script: 'sprint', course: target.course, extraQuery: 'collisionprobe=' + target.name
+        });
+        const probe = shot.probe;
+        const messages = shot.messages;
+        const blocking = messages.filter((entry) => entry.source !== 'console.log');
+        const cp = probe.collisionProbe;
+        const position = probe.position ?? [NaN, NaN, NaN];
+        const side = cp
+          ? (position[0] - cp.targetCenter[0]) * cp.outward[0] +
+            (position[2] - cp.targetCenter[1]) * cp.outward[1]
+          : NaN;
+
+        passCheck(`${car.slug}/${label}: held at tick ${spec.tick} on the page timeline`,
+          probe.holdReached === true && probe.displayTick === spec.tick && probe.render?.tick === spec.tick,
+          `display ${probe.displayTick}, render ${probe.render?.tick}`);
+        passCheck(`${car.slug}/${label}: the page drove the requested car`,
+          probe.car?.name === car.name, JSON.stringify(probe.car?.name));
+        passCheck(`${car.slug}/${label}: console is clean`, blocking.length === 0,
+          blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+        passCheck(`${car.slug}/${label}: the V2 layer is the pinned ${target.profile} world`,
+          probe.props?.profile === target.profile && probe.props?.colliders === target.colliders &&
+          probe.props?.manifest === target.manifest,
+          JSON.stringify({ profile: probe.props?.profile, colliders: probe.props?.colliders,
+            manifest: probe.props?.manifest }));
+        passCheck(`${car.slug}/${label}: the probe runs with no race rules`,
+          cp !== null && cp.name === target.name && probe.phase === 'collision-probe' &&
+          probe.sprint === null,
+          JSON.stringify({ probe: cp?.name, phase: probe.phase, sprint: probe.sprint !== null }));
+        passCheck(`${car.slug}/${label}: one draw per draw per frame`,
+          probe.draws === draws && probe.drawsIssued === probe.frames * probe.draws,
+          `${probe.draws} draws, ${probe.drawsIssued} issued / ${probe.frames} frames`);
+        passCheck(`${car.slug}/${label}: the HUD states the collision probe and target`,
+          (probe.overlays?.hudText ?? '').includes('COLLISION PROBE') &&
+          (probe.overlays?.hudText ?? '').includes(cp?.target ?? '<no target>'),
+          (probe.overlays?.hudText ?? '').split('\n').filter((line) =>
+            /COLLISION PROBE|contact|approach/.test(line)).join(' | '));
+        passCheck(`${car.slug}/${label}: nine matrices per rendered tick`,
+          probe.render?.matrices?.length === 9, String(probe.render?.matrices?.length));
+
+        if (spec.frame === 'approach') {
+          passCheck(`${car.slug}/${label}: approaching with 0 contacts, outside the target`,
+            probe.props?.contacts === 0 && probe.props?.blockedTicks === 0 &&
+            side > (cp?.nearFaceMetres ?? 0) + 2 && probe.speed > 0.5,
+            JSON.stringify({ side, speed: probe.speed, contacts: probe.props?.contacts }));
+        } else if (spec.frame === 'stopped') {
+          stopped = { side, position: position.slice(), tick: spec.tick, stateHash: probe.tickHashes?.[spec.tick]?.stateHash ?? null };
+          passCheck(`${car.slug}/${label}: the car is in contact and stopped outside the target face`,
+            (probe.props?.contacts ?? 0) > 0 && (probe.props?.blockedTicks ?? 0) > 0 &&
+            probe.speed < 0.5 && side > (cp?.nearFaceMetres ?? 0) + target.nearFaceMin &&
+            side < 4,
+            JSON.stringify({ side, speed: probe.speed, contacts: probe.props?.contacts,
+              blockedTicks: probe.props?.blockedTicks }));
+        } else {
+          passCheck(`${car.slug}/${label}: the stopped pose does not move in the next 60 ticks`,
+            stopped !== null && (probe.props?.contacts ?? 0) > 0 && probe.speed < 0.5 &&
+            Math.hypot(position[0] - stopped.position[0], position[2] - stopped.position[2]) < 0.05,
+            JSON.stringify({ moved: stopped ? Math.hypot(position[0] - stopped.position[0],
+              position[2] - stopped.position[2]) : null, speed: probe.speed }));
+        }
+
+        rows.push({
+          car: car.name, slug: car.slug, target: target.name, frame: spec.frame, tick: spec.tick,
+          url: shot.url, screenshot: shot.screenshot, carCrop: shot.carCrop,
+          sideMetres: Number.isFinite(side) ? Number(side.toFixed(4)) : null,
+          position, speed: probe.speed,
+          contacts: probe.props?.contacts ?? null, blockedTicks: probe.props?.blockedTicks ?? null,
+          colliders: probe.props?.colliders ?? null, profile: probe.props?.profile ?? null,
+          manifest: probe.props?.manifest ?? null,
+          stateHash: probe.tickHashes?.[spec.tick]?.stateHash ?? null,
+          collisionProbe: cp,
+          camera: probe.render?.camera ?? null,
+          messages
+        });
+      }
+    }
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages);
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  passCheck('console is clean in every collision-v2 capture', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'collision-v2',
+    targets: targets.map((target) => ({ name: target.name, course: target.course,
+      profile: target.profile, colliders: target.colliders, manifest: target.manifest })),
+    rule: 'throttle until the additive layer reports a contact, then brake; the start pose is derived from the ' +
+      'manifest target record (12 m outside the near face)',
+    captures: rows,
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-collision-v2.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-collision-v2.log'), browserLog, 'utf8');
+  return {
+    ok: blocking.length === 0 && passFailures.length === 0,
+    summary: {
+      mode: 'collision-v2',
+      cars: cars.length,
+      targets: targets.length,
+      captures: rows.length,
+      console: allMessages.length,
+      assertions: passFailures.length,
+      failures: passFailures,
+      screenshots: rows.map((row) => row.screenshot)
+    },
+    evidence
+  };
+}
+
+/**
  * Start / lap 1 / lap 2 / finish captures of the 3-lap P61 loop-01 race, using
  * run.json → lapCourse.cars[].captures as the expected state. The page runs the
- * same layout and the same deterministic follower; the prop layer is active.
+ * same layout and the same deterministic follower; the V2 all-visible layer is active.
  */
 async function lapCapturePass() {
   const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
@@ -1722,9 +1876,11 @@ async function lapCapturePass() {
         probe.drawsIssued + ' draws / ' + probe.frames + ' frames * ' + probe.draws);
       passCheck(`${car.slug}/${label}: nine matrices per rendered tick`,
         probe.render?.matrices?.length === 9, String(probe.render?.matrices?.length));
-      passCheck(`${car.slug}/${label}: the all-visible prop layer is active`,
-        probe.props?.profile === 'all-visible' && probe.props?.colliders === 468,
-        JSON.stringify({ profile: probe.props?.profile, colliders: probe.props?.colliders }));
+      passCheck(`${car.slug}/${label}: the V2 all-visible prop layer is active`,
+        probe.props?.profile === 'all-visible' && probe.props?.colliders === 651 &&
+        probe.props?.manifest === '_work/prop-collision/colliders-v2.json',
+        JSON.stringify({ profile: probe.props?.profile, colliders: probe.props?.colliders,
+          manifest: probe.props?.manifest }));
 
       if (spec.label === 'start') {
         passCheck(`${car.slug}/${label}: the countdown is on screen on lap 1`,
@@ -1826,7 +1982,7 @@ async function lapCapturePass() {
     mode: 'lap',
     courseId: 'lap',
     layout: { hash: lapLayout.hash, span: lapLayout.course.span, lap: lapLayout.course.lap },
-    prop: { profile: 'all-visible', colliders: 468 },
+    prop: { profile: 'all-visible', manifest: '_work/prop-collision/colliders-v2.json', colliders: 651 },
     cars: rows,
     packetHashAgreement: { exact, total: rows.length, note:
       'a mismatch is a documented last-bit transcendental difference between Node 24 and Edge 156; the state ' +

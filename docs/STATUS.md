@@ -816,6 +816,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Gerçek wasm ile 5 araç 310 m + loop-01: 10/10 temiz, 0 respawn, 0 NaN; 4 AI sprint + 3 AI lap deterministik.
 - **26/26**, 133.068 tick hash. Kanıt: `docs/work/analysis/ai-driver.md`.
 
+## 7 Kasım 2026 — V2 collision entegrasyonu
+
+- Sayfa: 310 **V2 roadside 553**, lap **V2 all-visible 651**, free **R04-V2 all-visible 447**; eski V1'e sessiz dönüş yok.
+- Free beton boru 31 m/s'de **0,001 m**'de duruyor, 53 temas/53 bloke tick; lap'te 56 duvar artık solid.
+- `verify_e1_drive` **856/856**; collision 30/30, free 20/20, lap 20/20, props 25/25, console 0; checker 23/23.
+- Kanıt: `_work/e1-drive/browser-*-collision-free-pipe-stopped.png`, `docs/work/analysis/prop-collision.md` §P74.
+
 ## 7 Kasım 2026 — ana suite 36 kontrol
 
 - `tools/verify_asset_probe.py` artık power-up tanımları + kuralları, 62 araç matrisi, 19 harita matrisi ve V2 collider kapısını da çalıştırıyor.

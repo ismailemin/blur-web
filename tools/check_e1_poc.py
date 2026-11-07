@@ -1134,9 +1134,9 @@ def check_lap_runs(report, layout):
     return report.ok(item, label, "5 cars, 3 laps each, no respawn: " + " / ".join(summary), [])
 
 
-FREE_LAYOUT_HASH = "sha256:c512ad733959903878ed805367c4b3112a0976a12f484da3c1d5813c7f865f87"
-FREE_MANIFEST_FILE = "sha256:5c7bba74fd9c978b4ff9e729287c9a7935d827f4d353c2c918da9d1788a49805"
-FREE_MANIFEST_CONTENT = "sha256:932e0f871e46b073d359c7a9549477e136fb56e58202b477ebc11fac53915b42"
+FREE_LAYOUT_HASH = "sha256:c1829cb2f9c99e12fb0d147c6aa3f0ddf9f90e232a1c3f51ada262acffab80a6"
+FREE_MANIFEST_FILE = "sha256:b1b8f2c9c833f452c1df98f870b281349a6a29a9db2492462190ccf39fd18211"
+FREE_MANIFEST_CONTENT = "sha256:663e2570d1949e9bde155ec872e9fccfc09117833b5d3a663a275e686ef20b38"
 FREE_BOUNDS = (-108.5, 5.0, 1027.5, 1164.0)
 
 
@@ -1182,7 +1182,7 @@ def check_sprint_free(report):
     if coverage.get("region") != "R04" or coverage.get("samples") != 9687 or coverage.get("covered") != 9687:
         problems.append("free draw coverage is not R04 9687/9687")
     prop = course.get("prop") or {}
-    if (prop.get("profile") != "all-visible" or prop.get("colliders") != 431 or
+    if (prop.get("profile") != "all-visible" or prop.get("colliders") != 447 or
             prop.get("manifestFileSha256") != FREE_MANIFEST_FILE or
             prop.get("manifestContentSha256") != FREE_MANIFEST_CONTENT):
         problems.append("free prop pins mismatch")
@@ -1192,14 +1192,14 @@ def check_sprint_free(report):
     return report.ok(
         item, label,
         "spawn (-88, 1050), no gates/finish, bounds x -108.5..5 z 1027.5..1164, "
-        "7702.25 m2, 431 colliders, hash " + layout["hash"].split(":")[1][:16] + "...",
+        "7702.25 m2, 447 colliders, hash " + layout["hash"].split(":")[1][:16] + "...",
         [rel(path)],
     ), layout
 
 
 def check_free_runs(report, layout):
     item = "runs-free"
-    label = "per-car free-roam runs (401 ticks, 431 colliders, no contact)"
+    label = "per-car free-roam runs (401 ticks, 447 colliders, no contact)"
     if layout is None:
         return report.fail(item, label, "free layout unavailable", [])
     problems = []
@@ -1223,7 +1223,7 @@ def check_free_runs(report, layout):
         if not str(run.get("stateSequenceHash") or "").startswith("sha256:"):
             problems.append(rel(path) + ": stateSequenceHash is not a sha256")
         prop = run.get("prop") or {}
-        if (prop.get("colliders") != 431 or prop.get("profile") != "all-visible" or
+        if (prop.get("colliders") != 447 or prop.get("profile") != "all-visible" or
                 prop.get("contacts") != 0 or prop.get("blockedTicks") != 0):
             problems.append(rel(path) + ": prop layer mismatch " + repr(
                 {k: prop.get(k) for k in ("colliders", "profile", "contacts", "blockedTicks")}))
@@ -1238,7 +1238,7 @@ def check_free_runs(report, layout):
             summary.append("{} {} ticks".format(car["slug"], len(run["ticks"])))
     if problems:
         return report.fail(item, label, "; ".join(problems), [])
-    return report.ok(item, label, "5 cars, 401 ticks each, 431 colliders, 0 contacts", [])
+    return report.ok(item, label, "5 cars, 401 ticks each, 447 colliders, 0 contacts", [])
 
 
 def run_checks():

@@ -1,9 +1,11 @@
-// Integration tests for the P66 visible-prop layer (P67, read-only consumption).
+// Integration tests for the P74 V2 visible-prop layer (read-only consumption).
 //
 // These exercise the additive post-tick layer, not a second vehicle physics:
 // a synthetic engine pose sequence is advanced at a fixed speed and the layer's
 // resolved pose must stop on the near face, never pass through. The manifest and
-// resolver are P66 artifacts; nothing here writes to them.
+// resolver are P74/P66 artifacts; nothing here writes to them.
+
+import { createWorld as createPropWorld } from '../../prop-collision/lib/resolver.mjs';
 
 function fakeState(x, y, z, headingRad, tick = 0) {
   return {
@@ -34,10 +36,10 @@ function colliderById(manifest, id) {
  * does not know the prop), the layer's returned pose is the resolved one.
  */
 function driveCase({ world, manifest, createPropLayer, propYawFromHeading, collider,
-  speed, lateral = 0, ticks = 240, startDistance = 12, axisIndex = 0, angleDeg = 0, pins = null }) {
+  speed, lateral = 0, ticks = 240, startDistance = 12, axisIndex = 0, angleDeg = 0, sign = 1, pins = null }) {
   const axis = collider.axes[axisIndex];
   const axisLength = Math.hypot(axis[0], axis[2]) || 1;
-  const outward = [axis[0] / axisLength, axis[2] / axisLength];
+  const outward = [sign * axis[0] / axisLength, sign * axis[2] / axisLength];
   const baseApproach = [-outward[0], -outward[1]];
   const angle = (angleDeg * Math.PI) / 180;
   const dir = [
@@ -172,7 +174,99 @@ export function runPropLayerTests({ world, manifest, createPropLayer, propYawFro
 }
 
 /**
- * The free-roam (P68b extended manifest) version of the layer tests: a real R04
+ * Four-direction ray probe at 20 m/s: from a clear origin outside the target
+ * footprint, step towards the collider centre and require a contact before the
+ * centre. `blocked` counts directions that are stopped; the first hit may be a
+ * neighbour in the same visible cluster, which is reported verbatim.
+ */
+function rayCase({ world, manifest, collider, propYawFromHeading }) {
+  const ground = collider.vertical.groundY ?? collider.vertical.bottom;
+  const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const u = collider.axes[0];
+  const v = collider.axes[2];
+  const lu = Math.hypot(u[0], u[2]) || 1;
+  const lv = Math.hypot(v[0], v[2]) || 1;
+  const rows = [];
+  for (const [dx, dz] of directions) {
+    const radius = Math.abs((u[0] * dx + u[2] * dz) / lu) * collider.half[0] +
+      Math.abs((v[0] * dx + v[2] * dz) / lv) * collider.half[2];
+    const yaw = propYawFromHeading(Math.atan2(dx, dz));
+    let origin = null;
+    for (let distance = radius + 0.5; distance <= radius + 70; distance += 0.25) {
+      const x = collider.center[0] + dx * distance;
+      const z = collider.center[2] + dz * distance;
+      if (!world.deepestContact(x, z, yaw, ground, manifest.carEnvelope)) {
+        origin = distance;
+        break;
+      }
+    }
+    let hit = null;
+    for (let distance = origin ?? 0; origin !== null && distance >= 0.02; distance -= 0.04) {
+      const x = collider.center[0] + dx * distance;
+      const z = collider.center[2] + dz * distance;
+      const contact = world.deepestContact(x, z, yaw, ground, manifest.carEnvelope);
+      if (contact) {
+        hit = {
+          distanceFromCentreMetres: Math.round(distance * 1e4) / 1e4,
+          colliderId: contact.colliderId,
+          target: contact.colliderId === collider.id
+        };
+        break;
+      }
+    }
+    rows.push({ direction: [dx, dz], radius, origin, hit });
+  }
+  return { rows, blocked: rows.filter((row) => row.hit !== null).length };
+}
+
+function singleColliderWorld(manifest, id) {
+  const collider = colliderById(manifest, id);
+  return { collider, world: { ...manifest, colliders: [collider] } };
+}
+
+/**
+ * P74 V2 targets: the lap building wall (`draw.355`, a 44.37 x 0.02 m wall in the
+ * loop corridor but outside the car envelope), the free-roam concrete pipe
+ * (`draw.95`), plus the lap no-parking sign (`draw.257`) and the free steel pole
+ * (`draw.283`) in single-collider worlds so the target, not a neighbour, is the
+ * stop. Every stop is on the approach side with residual 0.
+ */
+export function runV2PropLayerTests({ lapWorld, lapManifest, lapPins, freeWorld, freeManifest,
+  freePins, createPropLayer, propYawFromHeading }) {
+  const lapWallId = 'river.block59.node265.draw.355.component.000';
+  const freePipeId = 'river.block56.node289.draw.95.component.004';
+  const lapWall = colliderById(lapManifest, lapWallId);
+  const freePipe = colliderById(freeManifest, freePipeId);
+  const lapWallDrive = driveCase({ world: lapWorld, manifest: lapManifest, createPropLayer,
+    propYawFromHeading, collider: lapWall, speed: 31, ticks: 120, axisIndex: 2, sign: 1, pins: lapPins });
+  const freePipeDrive = driveCase({ world: freeWorld, manifest: freeManifest, createPropLayer,
+    propYawFromHeading, collider: freePipe, speed: 31, ticks: 120, axisIndex: 2, sign: -1, pins: freePins });
+
+  const signManifest = singleColliderWorld(lapManifest, 'river.block71.node209.draw.257.component.000');
+  const poleManifest = singleColliderWorld(freeManifest, 'river.block71.node209.draw.283.component.327');
+  const signWorld = createPropWorld(signManifest.world, { profile: 'all-visible' });
+  const poleWorld = createPropWorld(poleManifest.world, { profile: 'all-visible' });
+  const signPins = { ...lapPins, colliders: 1 };
+  const polePins = { ...freePins, colliders: 1 };
+  const signDrive = driveCase({ world: signWorld, manifest: signManifest.world, createPropLayer,
+    propYawFromHeading, collider: signManifest.collider, speed: 31, ticks: 100, axisIndex: 2, sign: 1,
+    pins: signPins });
+  const poleDrive = driveCase({ world: poleWorld, manifest: poleManifest.world, createPropLayer,
+    propYawFromHeading, collider: poleManifest.collider, speed: 31, ticks: 100, axisIndex: 2, sign: 1,
+    pins: polePins });
+
+  const lapRays = rayCase({ world: lapWorld, manifest: lapManifest, collider: lapWall, propYawFromHeading });
+  const freeRays = rayCase({ world: freeWorld, manifest: freeManifest, collider: freePipe, propYawFromHeading });
+  return {
+    lapWall: { id: lapWallId, drive: lapWallDrive, rays: lapRays },
+    freePipe: { id: freePipeId, drive: freePipeDrive, rays: freeRays },
+    lapSign: { id: signManifest.collider.id, drive: signDrive },
+    freePole: { id: poleManifest.collider.id, drive: poleDrive }
+  };
+}
+
+/**
+ * The free-roam (P74 R04-V2 manifest) version of the layer tests: a real R04
  * truck and a real 0.02 m container panel, both first contacts along the
  * approach. The targets are named manifest records, not synthetic boxes.
  */

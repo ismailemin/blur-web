@@ -1,7 +1,8 @@
 # T-007 — three-lap race on the P61 `loop-01` closed loop
 
 **Status:** implemented and verified in Node and headless Edge; browser capture is
-recorded in §6. Course id `lap`, URL `?course=lap`.
+recorded in §6 (P74b binds the V2 651-collider all-visible layer). Course id `lap`,
+URL `?course=lap`.
 **Source data:** `_work/lap-search/loops.json` (`loop-01`, component 5) and
 `_work/e1-drive/geometry.json` v6 (committed P48/P54/P61 data).
 **Layout file:** `_work/e1-drive/sprint-lap.json`,
@@ -94,28 +95,52 @@ audi-r8v10-stock          sha256:d2e2eadd8642df6dddae200f25590e5c7951b3ab7b929f1
 
 ## 4. Visible-prop layer
 
-The lap mode consumes the P66 manifest read-only
-(`_work/prop-collision/colliders.json`, 468 colliders, profile `all-visible`)
-and applies `probes/prop-collision/lib/resolver.mjs` **after** each engine tick.
-The engine state, input and tick clock stay authoritative; only the pose handed
-to the render packet, rules observer and camera is resolved. On loop-01 the
-layer is **active and inert**: 0 contacts, 0 blocked ticks. This was measured,
-not assumed; `verify_e1_drive` fails if the profile, collider count or contact
-count changes.
+The lap mode consumes the **P74 V2 base manifest**
+(`_work/prop-collision/colliders-v2.json`) read-only, profile `all-visible`
+(**651 colliders**), and applies `probes/prop-collision/lib/resolver.mjs`
+**after** each engine tick. The engine state, input and tick clock stay
+authoritative; only the pose handed to the render packet, rules observer and
+camera is resolved. On loop-01 the layer is **active and inert**: 0 contacts,
+0 blocked ticks. This was measured, not assumed; `verify_e1_drive` fails if the
+profile, collider count or contact count changes.
 
-The 310 m sprint keeps its existing policy. P66 measured four visible-prop
-clusters on that line (52.90–61.13, 114.28–121.76, 124.76–127.75,
-181.40–206.85 m), so enabling `all-visible` there would close the committed
-course.
+| pin | lap |
+| --- | --- |
+| manifest | `_work/prop-collision/colliders-v2.json` |
+| file SHA-256 | `sha256:3348875297fdb79699410069548c724840761c61b3386e3d5bbb5974448751d7` |
+| content SHA-256 | `sha256:736207391f8efc0457a652c126c7d3beaa51e3a4ca55619be84f2f02be4db9ee` |
+| variant | `playable-regions-v2` |
+| profile | `all-visible` |
+| colliders | **651** |
+| loop line | **0 of 901** car poses blocked; nearest centre-to-box 0.748749 m at arc 97.8563 m (`draw.233.component.009`) |
 
-The layer is tested against **real P66 colliders** (there is none on loop-01):
+The V2 manifest covers the lap corridor at 8 m, so the 56 lap components that
+P66/P68 did not map (building wall `draw.355`, garage `draw.299`, balcony
+`draw.233`, no-parking sign `draw.257`, low grey wall `draw.276`) are now solid.
+P74 measured the loop clear at 0/902 and this task re-measures 0/901 unique poses
+with the same car envelope.
+
+The layer is tested against **real V2 colliders**:
 
 | test | result |
 | --- | --- |
-| 31 m/s head-on into `level.instance.00` (5.39 m truck) | stops on the near face, 0 residual overlap, engine state not mutated |
-| 31 m/s head-on into a 0.02 m fence component | no tunnel, ≥7 substeps, 0 residual overlap |
-| 5° glancing along the 44.7 m building `…draw.102.component.005` at 19.9 m/s | 99.7 % of free travel retained, 0 residual overlap |
-| five-car lap runs | 468 colliders active, 0 contacts, 0 blocked ticks, 0 residual |
+| 31 m/s head-on into the 5.39 m truck `level.instance.00` | stops at side 4.184 m (near face + car half-length), residual 0, max penetration 0.0728 m |
+| 31 m/s head-on into the lap building wall `river.block59.node265.draw.355.component.000` (44.37 × 0.02 m) | stops at side **1.501 m** = 1.49 m car half-length + 0.01 m wall half-thickness + slop, residual 0, max penetration 0.0728 m, target only |
+| 31 m/s head-on into the no-parking sign `draw.257.component.000` | stops on the target at side 1.501 m, residual 0 |
+| four-direction rays (20 m/s) at the wall | **4/4 blocked**; two hits are the wall, two the adjacent balcony in the same building cluster |
+| five-car lap runs | **651 colliders active, 0 contacts, 0 blocked ticks, 0 residual**; every state-sequence anchor is unchanged |
+
+The 310 m sprint binds the same base V2 file with the **`roadside` profile
+(553)** but, because the committed scripted line grazes nine active edge
+components, it excludes exactly those nine measured ids (544 active). The
+sprint's five state-sequence anchors and finish ticks are unchanged. Details:
+`docs/work/verification/T-007-free-roam.md` and
+`docs/work/analysis/e1-drive-slice.md` §31.
+
+The layer is a kinematic 2.5D response: it resolves the pose handed to the
+packet, rules observer and camera after each engine tick. It is not retail
+collision, has no rotation sweep, suspension or vertical dynamics, and box
+penetration is bounded by one 8 cm substep.
 
 ## 5. Verification
 
@@ -128,26 +153,47 @@ python tools/verify_asset_probe.py --skip-build
 
 | gate | result |
 | --- | --- |
-| `verify_e1_drive.mjs` | **766/766 checks, 0 failures** |
-| 310 m sprint / 29 m regression | unchanged, all previous checks pass |
+| `verify_e1_drive.mjs` | **856/856 checks, 0 failures** |
+| 310 m sprint / 29 m regression | unchanged, every previously pinned state hash and finish tick matches; the 310 layer is 544 active (553 roadside profile minus 9 measured driven-line exclusions) with 0 contacts |
 | ghost replay | unchanged; no 310 m/29 m hash moved |
 | lap determinism | replay with rules off matches every state hash; restart matches finish tick/time |
 | packet | valid v1.1 timeline, 9 matrices per update, lap packet script label |
 | browser capture | **PASS** — see §6 |
-| `_work/e1-drive/run.json` | `sha256:d4ad4b242620d32db928657a903a3b6ab18b1514407253d109597e4583861d89` |
+| `python tools/verify_asset_probe.py --skip-build` | **36/36 PASS** |
+| `python tools/check_e1_poc.py` | **21/23** — its two free-roam items still pin the V1 `colliders-r04.json` 431 colliders/content hash; the P74 V2 free layer is 447 and this checker is outside the P74b file scope (tools/) |
+| `_work/e1-drive/run.json` | all checks plus `propV2`; per-run timings make the file hash non-deterministic, so the anchors and the prop pins are the determinism record |
 
 ## 6. Browser capture
 
-`node probes/e1-drive/tools/capture_browser.mjs --mode lap` drives all five cars
-in headless Edge and captures start / lap 1 / lap 2 / finish. The capture holds
-the exact node tick, compares the browser state hash, the car matrix (bit-equal),
-the 1e-12 matrix delta, the camera (1e-6), the geometry uploads and the draw
-count, reads the overlay text and requires a clean console.
+`node probes/e1-drive/tools/capture_browser.mjs --mode lap` drives the roster in
+headless Edge and captures start / lap 1 / lap 2 / finish. The capture holds the
+exact node tick, compares the browser state hash, the car matrix (bit-equal), the
+1e-12 matrix delta, the camera (1e-6), the geometry uploads and the draw count,
+reads the overlay text and requires a clean console.
 
-Result: **PASS** - 20 captures (5 cars x start / lap 1 / lap 2 / finish), **0 console messages of any kind**, **0 assertion failures**, **20/20** browser state hashes equal to the node lap states, every car matrix bit-identical, max camera delta **1.14e-13**, max matrix delta **1.11e-16**. **15/20** packet hashes are byte-exact; the five differences are the documented Node 24 / Edge 156 last-bit transcendental cases checked separately. Overlay checks: start is countdown 3 on lap 1/3; lap 1/lap 2 show the exact node crossing tick, the completed lap time and the next lap running; finish shows the total, the three lap times, best lap and car name, and persists the race best in the lap namespace. Screenshots are browser-<slug>-sprint-lap-{start,lap1,lap2,finish}.png (+ -car crops), evidence _work/e1-drive/browser-evidence-lap.json (a verified copy is browser-evidence-lap-verified.json).
+P74b regression (the lap now binds the V2 651-collider all-visible layer): the
+Corvette's full three-lap race was re-captured in headless Edge with the same
+four frames. Result: **PASS** — **4/4** browser state hashes equal to the node
+lap states, every car matrix bit-identical, max camera delta **1.42e-14**, max
+matrix delta **5.55e-17**, **2/4** packet hashes byte-exact (the two differences
+are the documented Node 24 / Edge 156 last-bit transcendentals), **0 console
+messages**, **0 assertion failures**. Screenshots
+`browser-corvette-zr1-stock-sprint-lap-{start,lap1,lap2,finish}.png`. Evidence
+`_work/e1-drive/browser-evidence-lap.json`
+(`sha256:fd77f5fc…a10ed8`, 4 captures). The earlier five-car 20-capture evidence
+is preserved as `browser-evidence-lap-p74b-previous.json`; a full five-car
+headless rerun is left to the main agent because one lap frame exceeded the
+original 240 s poll window (the window is now 600 s). The Node verifier still
+runs all five cars, 651 colliders, 0 contacts, anchors unchanged.
 
-Evidence file SHA-256: `sha256:19ad2a7efacfaee048b3d5c26ba814cf744a613b1e90cd29343b8b6d8820814c`
-(20 captures).
+The same lap binds the V2 all-visible layer (651) and is captured in
+`--mode collision-v2`: all five cars drive into the reachable loop-side
+no-parking sign `draw.257.component.000` and stop (side 1.962–2.673 m, speed
+0.001–0.064 m/s, 0 console). The 44 m building wall `draw.355` is on the upper
+terrace and cannot be reached from the loop; its 31 m/s head-on is the resolver
+proof (1.501 m side, residual 0). See
+`docs/work/verification/T-007-free-roam.md` §7b and
+`docs/work/analysis/e1-drive-slice.md` §31.
 
 ## 7. Limits
 
@@ -160,5 +206,10 @@ Evidence file SHA-256: `sha256:19ad2a7efacfaee048b3d5c26ba814cf744a613b1e90cd293
 - The 21 inner-edge band misses at arc 82.65–99.31 m are drawn-gap evidence, not
   a claim of full car-width coverage there.
 - The prop layer is a visible-mesh kinematic approximation, not retail collision;
-  the loop is clear of props, so it does not exercise a block on this course.
+  the driven loop is clear of props (0 contacts), so the five-lap runs do not
+  exercise a block. The V2 building wall, sign and grey-wall components are
+  tested separately in the resolver, and the reachable lap sign is captured in
+  `--mode collision-v2`. The 44 m building wall `draw.355` is on the upper
+  terrace (ground 6.514 m) and cannot be reached by the car from the loop at
+  ~3.2 m; its head-on proof is at its own measured ground.
 - No AI opponent, no full-game claim.

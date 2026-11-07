@@ -60,7 +60,8 @@ import {
   sprintScriptInput, SPRINT_PACKET_SCRIPT
 } from './sprint-script.js';
 import {
-  FREE_PROP_PINS, LAP_PROP_PINS, checkPropManifest, createPropLayer
+  COLLISION_PROBES, PropManifestError, applyDrivenLineExclusions, checkPropManifest, collisionProbePose,
+  createPropLayer, propPinsForCourse, propYawFromHeading
 } from './prop-layer.js';
 import {
   createWasmResetEngineSet, runTelemetrySeries, summariseTelemetryMetrics,
@@ -134,6 +135,26 @@ const COURSE_IS_SHORT = COURSE_PARAM === 'short';
 const COURSE_IS_LAP = COURSE_PARAM === 'lap';
 const COURSE_IS_FREE = COURSE_PARAM === 'free';
 const COURSE_KEY = COURSE_IS_SHORT ? 'short' : COURSE_IS_LAP ? 'lap' : COURSE_IS_FREE ? 'free' : '310m';
+// Capture-only collision probe (`?collisionprobe=lap-sign|free-pipe`). It starts
+// the real engine at a manifest-derived pose in front of a P74 V2 target, applies
+// throttle until the additive prop layer reports a contact and then brakes with
+// the handbrake. It is a presentation/diagnostic mode (`--mode collision-v2`): no race rules, no
+// finish, no timer; the engine and the prop layer are the same ones the game
+// uses. The start pose and both target ids are read from the manifest at run
+// time — no coordinate is typed in.
+const COLLISION_PROBE_PARAM = params.get('collisionprobe');
+if (COLLISION_PROBE_PARAM !== null && !(COLLISION_PROBE_PARAM in COLLISION_PROBES)) {
+  throw new Error('unknown collisionprobe ' + JSON.stringify(COLLISION_PROBE_PARAM) +
+    ' (use lap-sign or free-pipe)');
+}
+const COLLISION_PROBE = COLLISION_PROBE_PARAM !== null;
+const COLLISION_PROBE_SPEC = COLLISION_PROBE ? COLLISION_PROBES[COLLISION_PROBE_PARAM] : null;
+if (COLLISION_PROBE && COLLISION_PROBE_SPEC.course !== COURSE_PARAM) {
+  throw new Error('collisionprobe ' + COLLISION_PROBE_PARAM + ' needs ?course=' + COLLISION_PROBE_SPEC.course);
+}
+if (COLLISION_PROBE && params.has('hold') === false) {
+  throw new Error('collisionprobe needs ?hold=<tick> (the capture holds an integer tick)');
+}
 // Ghost / rival replay (P63): `G` toggles it, `?ghost=1` shows it from the start.
 // The ghost is a *recording of one completed run* (your fastest clean run, or the
 // committed deterministic reference trace), replayed through the same car mesh.
@@ -164,8 +185,6 @@ const SPAWN_URL = '/_work/e1-drive/spawn.json';
 const SPRINT_URL = COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
   : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json'
     : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json';
-const PROP_MANIFEST_URL = '/_work/prop-collision/colliders.json';
-const FREE_PROP_MANIFEST_URL = '/_work/free-roam-prop/colliders-r04.json';
 const PROP_RESOLVER_URL = '/prop-collision/lib/resolver.mjs';
 
 /** Best-time storage key: one record per course, never mixed. */
@@ -178,7 +197,8 @@ const state = {
   consumer: 'idle',
   error: null,
   adapter: null,
-  mode: LEGACY_DRIVE ? 'script:drive' : SCRIPTED_SPRINT ? (SPRINT_FALL ? 'script:sprint-fall' : 'script:sprint')
+  mode: COLLISION_PROBE ? 'collision-probe'
+    : LEGACY_DRIVE ? 'script:drive' : SCRIPTED_SPRINT ? (SPRINT_FALL ? 'script:sprint-fall' : 'script:sprint')
     : TELEMETRY ? 'telemetry' : SOAK ? 'soak' : 'keyboard-sprint',
   hold: HOLD,
   holdReached: HOLD === null ? false : HOLD === 0,
@@ -264,6 +284,7 @@ const state = {
   // auto-enables it, so existing captures and the legacy drive are unchanged.
   ghost: null,
   props: null,
+  collisionProbe: null,
   // Number of in-place world rebuilds (R / sprint restart). Never a page reload.
   restarts: 0,
   // Telemetry (`?telemetry=1` only).
@@ -328,6 +349,9 @@ function publish() {
   if (state.sprint) document.documentElement.dataset.sprint = state.sprint.phase;
   if (state.telemetry) document.documentElement.dataset.telemetry = state.telemetry.ready ? 'ready' : 'running';
   state.ghost = ghostSummary();
+  if (state.collisionProbe) {
+    state.collisionProbe.resolved = { x: state.position[0], z: state.position[2] };
+  }
   window.e1DriveProbe = state;
   const rows = [
     ['mode', state.mode + (state.hold === null ? '' : ' · hold ' + state.hold + (state.holdReached ? ' reached' : ''))],
@@ -397,10 +421,28 @@ function publish() {
       rows.push(['best', state.sprintBest === null ? '—' :
         state.sprintBest.toFixed(3) + ' s' + (state.sprintResult?.improved ? ' (new)' : '')]);
       if (state.props) {
-        rows.push(['props', state.props.profile + ' · ' + state.props.colliders + ' colliders · ' +
+        rows.push(['props', state.props.profile + ' · ' + state.props.colliders + ' colliders' +
+          (state.props.drivenLineExclusions
+            ? ' · ' + state.props.drivenLineExclusions + ' measured driven-line exclusions'
+            : '') + ' · ' +
           state.props.contacts + ' contacts · ' + state.props.blockedTicks + ' blocked ticks · ' +
           state.props.substeps + ' substeps']);
       }
+    }
+  }
+  if (state.collisionProbe) {
+    const probe = state.collisionProbe;
+    rows.push(['probe', 'COLLISION PROBE · ' + probe.label + ' · target ' + probe.target +
+      ' · start ' + probe.distanceMetres.toFixed(1) + ' m · tick ' + state.engineTick]);
+    rows.push(['result', state.props
+      ? (state.props.contacts > 0
+        ? 'contact · ' + state.props.contacts + ' contacts · ' + state.props.blockedTicks +
+          ' blocked ticks · resolved x ' + probe.resolved.x.toFixed(3) + ' z ' + probe.resolved.z.toFixed(3)
+        : 'approach · 0 contacts · x ' + probe.resolved.x.toFixed(3) + ' z ' + probe.resolved.z.toFixed(3))
+      : 'prop layer loading']);
+    if (state.props) {
+      rows.push(['props', state.props.profile + ' · ' + state.props.colliders + ' colliders · ' +
+        state.props.substeps + ' substeps · ' + state.props.manifest]);
     }
   }
   if (state.ghost) {
@@ -659,8 +701,14 @@ let sprintRules = null;
 let bestTimes = null;
 let pendingRespawn = null;
 let soakLayout = null;
-// Additive visible-prop layer (P66): lap mode only, all-visible profile.
+// Additive visible-prop layer (P74 V2): bound per course, resolved after the
+// engine tick. `propWorld` is kept for the capture-start clearance check.
 let propLayer = null;
+let propWorld = null;
+// Capture-only collision probe state: the manifest-derived start pose and the
+// layout whose measured ground is the layer's vertical reference.
+let collisionProbeStart = null;
+let collisionProbeLayout = null;
 // Ghost replay (P63): one record per car and course — the page's own fastest
 // clean run if it has one, otherwise the committed deterministic reference trace.
 let ghostStore = null;
@@ -1039,7 +1087,7 @@ async function loadEngine() {
     const layout = await sprintResponse.json();
     const checked = validateSprintLayout(layout, geometry, spawn);
     if (!checked.ok) throw new Error('sprint layout rejected: ' + checked.errors.join('; '));
-    sprintRules = createSprintRules(layout);
+    if (!COLLISION_PROBE) sprintRules = createSprintRules(layout);
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
     state.sprintCourseId = layout.courseId ?? null;
@@ -1068,32 +1116,46 @@ async function loadEngine() {
       countdownTicks: layout.countdown.ticks,
       rules: layout.rules
     };
-    // Visible-prop layer: the lap (P66 468-collider manifest) and free roam
-    // (P68b extended 431-collider manifest) both use the committed resolver
-    // read-only, with their own manifest/profile/hash pins. The engine remains
+    // Visible-prop layer (P74 V2). The 310 m sprint binds the base V2 manifest
+    // with the roadside profile (553 of 651 colliders: the four measured on-course
+    // arcs stay excluded), the lap binds the same manifest all-visible (651) and
+    // free roam binds the R04-V2 manifest all-visible (447). The engine remains
     // the physics authority; the layer only resolves the pose after the tick.
-    if (COURSE_IS_LAP || COURSE_IS_FREE) {
-      const pins = COURSE_IS_FREE ? FREE_PROP_PINS : LAP_PROP_PINS;
-      const manifestUrl = COURSE_IS_FREE ? FREE_PROP_MANIFEST_URL : PROP_MANIFEST_URL;
+    // A changed file, profile or collider count throws a typed PropManifestError;
+    // there is no fallback to an older manifest.
+    const pins = SOAK ? null : propPinsForCourse(COURSE_PARAM);
+    if (pins) {
       const [manifestResponse, resolver] = await Promise.all([
-        fetch(manifestUrl, { cache: 'no-store' }),
+        fetch('/' + pins.manifest, { cache: 'no-store' }),
         import(PROP_RESOLVER_URL)
       ]);
       if (!manifestResponse.ok) {
-        throw new Error('prop manifest fetch failed: HTTP ' + manifestResponse.status + ' (' + pins.manifest + ')');
+        throw new PropManifestError('manifest-fetch',
+          'prop manifest fetch failed: HTTP ' + manifestResponse.status + ' (' + pins.manifest + ')');
       }
       const text = await manifestResponse.text();
       if ('sha256:' + sha256Hex(text) !== pins.manifestFileSha256) {
-        throw new Error('prop manifest file does not match its pinned SHA-256 (' + pins.manifest + ')');
+        throw new PropManifestError('manifest-file-sha256',
+          'prop manifest file does not match its pinned SHA-256 (' + pins.manifest + ')');
       }
       const manifest = JSON.parse(text);
       const pinCheck = checkPropManifest(manifest, pins);
       if (!pinCheck.ok) {
-        throw new Error('prop manifest rejected: ' + pinCheck.errors.join('; '));
+        throw new PropManifestError('manifest-pins',
+          'prop manifest rejected: ' + pinCheck.errors.join('; '));
       }
-      const world = resolver.createWorld(manifest, { profile: pins.profile });
-      propLayer = createPropLayer({ world, carEnvelope: manifest.carEnvelope, pins });
+      propWorld = resolver.createWorld(
+        pins.profile === 'roadside' ? applyDrivenLineExclusions(manifest) : manifest,
+        { profile: pins.profile });
+      propLayer = createPropLayer({ world: propWorld, carEnvelope: manifest.carEnvelope, pins });
       state.props = propLayer.snapshot();
+      if (COLLISION_PROBE) {
+        collisionProbeLayout = layout;
+        collisionProbeStart = collisionProbePose(manifest, COLLISION_PROBE_SPEC);
+      }
+    } else if (COLLISION_PROBE) {
+      throw new PropManifestError('probe-pins-missing',
+        'collisionprobe ' + COLLISION_PROBE_PARAM + ' needs a P74 V2 prop layer');
     }
     let storage = null;
     try { storage = window.localStorage; } catch { storage = null; }
@@ -1109,7 +1171,33 @@ async function loadEngine() {
     // schedule runs drive/telemetry segments whose node anchors were recorded
     // at the legacy spawn heading, so its shared world keeps that heading.
     const start = layoutStartPosition(layout, spawn);
-    tick0 = createWorld(start.x, start.z, SOAK ? spawn.heading : start.heading);
+    if (COLLISION_PROBE) {
+      tick0 = createWorld(collisionProbeStart.x, collisionProbeStart.z, collisionProbeStart.headingRad);
+      const startEnvelope = state.props?.carEnvelope;
+      const startContacts = propWorld.contactsAll(tick0.position[0], tick0.position[2],
+        propYawFromHeading(collisionProbeStart.headingRad), groundYForState(tick0), startEnvelope);
+      if (startContacts.length) {
+        throw new PropManifestError('probe-start-blocked',
+          'collisionprobe start is inside ' + startContacts[0].colliderId + ' (' + collisionProbeStart.x + ', ' +
+          collisionProbeStart.z + ')');
+      }
+      state.collisionProbe = {
+        name: COLLISION_PROBE_PARAM,
+        label: COLLISION_PROBE_SPEC.label,
+        target: COLLISION_PROBE_SPEC.target,
+        axis: COLLISION_PROBE_SPEC.axis,
+        sign: COLLISION_PROBE_SPEC.sign,
+        distanceMetres: COLLISION_PROBE_SPEC.distanceMetres,
+        nearFaceMetres: collisionProbeStart.nearFaceMetres,
+        targetCenter: collisionProbeStart.targetCenter,
+        outward: collisionProbeStart.outward,
+        start: { x: collisionProbeStart.x, z: collisionProbeStart.z,
+          headingRad: collisionProbeStart.headingRad },
+        resolved: { x: tick0.position[0], z: tick0.position[2] }
+      };
+    } else {
+      tick0 = createWorld(start.x, start.z, SOAK ? spawn.heading : start.heading);
+    }
   } else {
     tick0 = createWorld(spawn.x, spawn.z, spawn.heading);
   }
@@ -1137,15 +1225,22 @@ async function loadEngine() {
 
 /** Local measured ground under a state (the prop layer's vertical reference). */
 function groundYForState(state) {
-  if (!sprintRules) return state.position[1] - 0.35;
-  if (isFreeLayout(sprintRules.layout)) return freeGroundAt(sprintRules.layout, state.position);
-  const arc = coursePosition(sprintRules.layout.course.samples, state.position).arc;
-  return courseGroundAt(sprintRules.layout, arc);
+  const layout = collisionProbeLayout ?? sprintRules?.layout ?? null;
+  if (!layout) return state.position[1] - 0.35;
+  if (isFreeLayout(layout)) return freeGroundAt(layout, state.position);
+  const arc = coursePosition(layout.course.samples, state.position).arc;
+  return courseGroundAt(layout, arc);
 }
 
 /** The input the current mode and rules allow for the step that reaches `tick`. */
 function currentInput(tick) {
   if (SOAK) return soakPhaseInput(tick);
+  if (COLLISION_PROBE) {
+    // Capture probe: full throttle until the additive layer reports the first
+    // contact, then brake and handbrake. The input is a function of the run state
+    // and tick only; the handbrake holds the stopped car on the measured slope.
+    return (state.props?.contacts ?? 0) > 0 ? [0, 1, 0, 1] : [1, 0, 0, 0];
+  }
   if (LEGACY_DRIVE) return scriptedInput(tick);
   if (SPRINT_FALL) {
     return sprintRules.respawns > 0 ? sprintRules.gateInput([1, 0, 0, 0]) : respawnScriptInput(tick);
@@ -1274,7 +1369,10 @@ async function startTimeline(tick0, {
     ? (COURSE_IS_LAP ? LAP_PACKET_SCRIPT : COURSE_IS_FREE ? FREE_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT)
     : undefined
 } = {}) {
-  const start = sprintRules ? layoutStartPosition(sprintRules.layout, spawn) : spawn;
+  const start = collisionProbeStart
+    ? { x: collisionProbeStart.x, z: collisionProbeStart.z, headingRad: collisionProbeStart.headingRad,
+      source: 'P74 collision-v2 capture probe (manifest-derived pose)' }
+    : sprintRules ? layoutStartPosition(sprintRules.layout, spawn) : spawn;
   session = createSession(geometry, tick0, {
     spawn: { x: start.x, z: start.z, headingRad: start.headingRad ?? start.heading,
       source: start.source ?? (sprintRules?.layout?.source?.spawnSource ?? spawn.source ?? 'probes/e1-drive/tools/spawn.mjs') },
@@ -1363,7 +1461,8 @@ function applyState(snapshot) {
   state.input = snapshot.input;
   state.phase = TELEMETRY ? 'telemetry'
     : SOAK ? (sprintRules ? sprintRules.phase : 'soak-drive')
-      : LEGACY_DRIVE ? phaseAt(snapshot.tick) : (sprintRules ? sprintRules.phase : 'keyboard');
+      : LEGACY_DRIVE ? phaseAt(snapshot.tick) : COLLISION_PROBE ? 'collision-probe'
+        : (sprintRules ? sprintRules.phase : 'keyboard');
   if (sprintRules) state.sprint = sprintRules.snapshot(snapshot);
 }
 
@@ -2373,7 +2472,7 @@ async function main() {
   if (HOLD !== null && LEGACY_DRIVE && HOLD > SCRIPT_TICKS) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sequence (' + SCRIPT_TICKS + ')');
   }
-  if (HOLD !== null && SCRIPTED_SPRINT && HOLD > (COURSE_IS_LAP ? LAP_SCRIPT_TICKS
+  if (HOLD !== null && SCRIPTED_SPRINT && !COLLISION_PROBE && HOLD > (COURSE_IS_LAP ? LAP_SCRIPT_TICKS
     : COURSE_IS_FREE ? FREE_SCRIPT_TICKS : 3600)) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sprint (' +
       (COURSE_IS_LAP ? LAP_SCRIPT_TICKS : COURSE_IS_FREE ? FREE_SCRIPT_TICKS : 3600) + ')');

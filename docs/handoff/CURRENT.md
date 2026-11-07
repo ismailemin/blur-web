@@ -146,6 +146,11 @@ unsupported, instance/normal yok. Doğrulama **12.367/12.367**. Kanıt:
 profil + agresif (1/10 fail); 26/26, 133.068 tick hash; 4 AI sprint/3 AI lap
 deterministik. Kanıt: `docs/work/analysis/ai-driver.md`.
 
+**P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
+free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
+0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,
+free/lap/props capture console 0; checker 23/23.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

@@ -54,8 +54,9 @@ import {
   SPRINT_PACKET_SCRIPT, respawnScriptInput, sprintScriptInput
 } from '../web/sprint-script.js';
 import {
-  FREE_PROP_PINS, LAP_PROP_PINS, PROP_MANIFEST, PROP_PROFILE, checkPropManifest, createPropLayer,
-  propYawFromHeading
+  COLLISION_PROBES, FREE_PROP_PINS, LAP_PROP_PINS, PROP_MANIFEST, PROP_PROFILE, PROP_PROFILE_ROADSIDE,
+  SPRINT_DRIVEN_EXCLUSION_CONTENT_SHA256, SPRINT_DRIVEN_EXCLUSIONS, SPRINT_PROP_PINS, applyDrivenLineExclusions,
+  checkPropManifest, collisionProbePose, createPropLayer, propPinsForCourse, propYawFromHeading
 } from '../web/prop-layer.js';
 import { createWorld as createPropWorld } from '../../prop-collision/lib/resolver.mjs';
 import { createBestTimes } from '../web/sprint-best.js';
@@ -69,7 +70,7 @@ import {
   TELEMETRY_MANOEUVRE, TELEMETRY_MANOEUVRE_ORDER, TELEMETRY_SPEC, tickAtSpeedKph
 } from '../web/telemetry.js';
 import { buildCorridorSurvey } from '../web/corridor-survey.js';
-import { runFreePropLayerTests, runPropLayerTests } from './prop_layer_tests.mjs';
+import { runFreePropLayerTests, runPropLayerTests, runV2PropLayerTests } from './prop_layer_tests.mjs';
 import { LIMIT_STATIONS, runLimitStation, stationPose, writeCorridorProbe } from './corridor_probe.mjs';
 import { TICK0_LIMITS } from './spawn.mjs';
 
@@ -97,7 +98,12 @@ const ONLY_CAR = option('--car', null);
 // Set before the lap runs: createWorld(manifest, {profile:'all-visible'}).
 let lapPropWorld = null;
 let lapPropManifest = null;
-// Set before the free-roam block: the P68b extended world and its manifest.
+// P74 base V2 manifest: the 310 m sprint uses the roadside profile. The profile
+// world is 553 colliders; the layer world excludes the 9 measured driven-line
+// components (544), exactly the set the committed scripted sprint touches.
+let sprintProfileWorld = null;
+let sprintPropWorld = null;
+// Set before the free-roam block: the P74 R04-V2 world and its manifest.
 let freePropWorld = null;
 let freePropManifest = null;
 
@@ -109,6 +115,7 @@ const check = (label, ok, detail = '') => {
 };
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
+const bareSha256 = (value) => String(value ?? '').replace(/^sha256:/, '');
 const round6Local = (value) => Math.round(value * 1e6) / 1e6;
 
 const wrapAngle = (value) => {
@@ -923,51 +930,94 @@ const lapLayout = deriveLapCourseLayout(geometry, lapLoops);
 const lapSpan = lapLayout.course.span;
 const lapGates = lapLayout.gates;
 
-// P66 visible-prop manifest (read-only). The lap enables the all-visible profile
-// only if loop-01 is clear; the scan below is the measured decision.
+// P74 V2 base manifest (read-only). The 310 m sprint binds `roadside` (553 of
+// 651: the four measured on-course arcs stay mapped but inactive), the lap binds
+// the same file with `all-visible` (651). Both worlds are built from the pinned
+// file/content hash; a different manifest is a hard failure.
 const PROP_FILE = path.join(ROOT, PROP_MANIFEST);
 const propBytes = readFileSync(PROP_FILE);
 const propFileSha = 'sha256:' + sha256(propBytes);
-if (propFileSha !== 'sha256:a98fb8eb7e7a6f6851e0c6b5671d40be2c346d0c28a2442df0fe6ab497317af4') {
-  throw new Error('the P66 collider manifest is not the recorded file: ' + propFileSha);
+if (propFileSha !== SPRINT_PROP_PINS.manifestFileSha256) {
+  throw new Error('the P74 V2 collider manifest is not the recorded file: ' + propFileSha);
 }
 const propManifest = JSON.parse(propBytes.toString('utf8'));
 lapPropManifest = propManifest;
-lapPropWorld = createPropWorld(propManifest, { profile: PROP_PROFILE });
-const loopPropRing = lapLayout.course.samples.length - 1;
-let loopPropSamples = 0;
-let loopPropBlocked = 0;
-const loopPropContacts = new Map();
-const loopPropBlockedArcs = [];
-const nearestCollider = { distanceMetres: Infinity, colliderId: null, classification: null, arc: null };
-for (let index = 0; index < loopPropRing; index++) {
-  const sample = lapLayout.course.samples[index];
-  const previous = lapLayout.course.samples[(index - 1 + loopPropRing) % loopPropRing];
-  const next = lapLayout.course.samples[(index + 1) % loopPropRing];
-  const heading = Math.atan2(next.x - previous.x, next.z - previous.z);
-  const contacts = lapPropWorld.contactsAll(sample.x, sample.z, propYawFromHeading(heading),
-    sample.groundY, propManifest.carEnvelope);
-  loopPropSamples++;
-  if (contacts.length) {
-    loopPropBlocked++;
-    loopPropBlockedArcs.push({ arc: sample.arc, colliders: contacts.map((contact) => contact.colliderId) });
-    for (const contact of contacts) {
-      loopPropContacts.set(contact.colliderId, (loopPropContacts.get(contact.colliderId) ?? 0) + 1);
-    }
-  }
-  for (const collider of propManifest.colliders) {
-    const aabb = collider.worldAabb;
-    const dx = Math.max(aabb.min[0] - sample.x, 0, sample.x - aabb.max[0]);
-    const dz = Math.max(aabb.min[2] - sample.z, 0, sample.z - aabb.max[2]);
-    const distance = Math.hypot(dx, dz);
-    if (distance < nearestCollider.distanceMetres) {
-      nearestCollider.distanceMetres = distance;
-      nearestCollider.colliderId = collider.id;
-      nearestCollider.classification = collider.classification;
-      nearestCollider.arc = sample.arc;
-    }
-  }
+const sprintPropCheck = checkPropManifest(propManifest, SPRINT_PROP_PINS);
+if (!sprintPropCheck.ok) throw new Error('the V2 roadside pins were rejected: ' + sprintPropCheck.errors.join('; '));
+const lapPropCheck = checkPropManifest(propManifest, LAP_PROP_PINS);
+if (!lapPropCheck.ok) throw new Error('the V2 lap pins were rejected: ' + lapPropCheck.errors.join('; '));
+sprintProfileWorld = createPropWorld(propManifest, { profile: SPRINT_PROP_PINS.profile });
+sprintPropWorld = createPropWorld(applyDrivenLineExclusions(propManifest),
+  { profile: SPRINT_PROP_PINS.profile });
+lapPropWorld = createPropWorld(propManifest, { profile: LAP_PROP_PINS.profile });
+
+/** Exact 2D distance from a point to an oriented collider footprint. */
+function pointToColliderDistance2D(collider, x, z) {
+  const dx = x - collider.cx;
+  const dz = z - collider.cz;
+  const du = dx * collider.ux + dz * collider.uz;
+  const dv = dx * collider.vx + dz * collider.vz;
+  const ou = Math.max(Math.abs(du) - collider.hu, 0);
+  const ov = Math.max(Math.abs(dv) - collider.hv, 0);
+  return Math.hypot(ou, ov);
 }
+
+/**
+ * Measure one measured line against a prop world: blocked car poses (centreline
+ * pose + car envelope) and the exact centreline-to-collider distance. The exact
+ * distance is a coarse clearance record, not the car clearance.
+ */
+function measurePropCourse(world, manifest, samples, { ring = false } = {}) {
+  const count = ring ? samples.length - 1 : samples.length;
+  let blocked = 0;
+  const contactIds = new Map();
+  const blockedRows = [];
+  let minDistanceMetres = Infinity;
+  let minColliderId = null;
+  let minArc = null;
+  for (let index = 0; index < count; index++) {
+    const sample = samples[index];
+    const previous = samples[ring ? (index - 1 + count) % count : Math.max(0, index - 1)];
+    const next = samples[ring ? (index + 1) % count : Math.min(samples.length - 1, index + 1)];
+    const heading = Math.atan2(next.x - previous.x, next.z - previous.z);
+    const contacts = world.contactsAll(sample.x, sample.z, propYawFromHeading(heading),
+      sample.groundY, manifest.carEnvelope);
+    if (contacts.length) {
+      blocked++;
+      blockedRows.push({ index, arc: sample.arc });
+      for (const contact of contacts) {
+        contactIds.set(contact.colliderId, (contactIds.get(contact.colliderId) ?? 0) + 1);
+      }
+    }
+    for (const collider of world.colliders) {
+      const distance = pointToColliderDistance2D(collider, sample.x, sample.z);
+      if (distance < minDistanceMetres) {
+        minDistanceMetres = distance;
+        minColliderId = collider.id;
+        minArc = sample.arc;
+      }
+    }
+  }
+  const arcs = [];
+  for (const row of blockedRows) {
+    const last = arcs[arcs.length - 1];
+    if (last && row.index === last.lastIndex + 1) {
+      last.lastIndex = row.index;
+      last.lastArc = row.arc;
+      last.samples++;
+    } else {
+      arcs.push({ firstIndex: row.index, lastIndex: row.index, firstArc: row.arc, lastArc: row.arc, samples: 1 });
+    }
+  }
+  return {
+    samples: count, blocked, contactIds: [...contactIds.keys()], arcs,
+    minDistanceMetres: round6Local(minDistanceMetres), minColliderId, minArc
+  };
+}
+
+const sprintRoadMeasure = measurePropCourse(sprintProfileWorld, propManifest, derivedLayout.course.samples);
+const sprintAllMeasure = measurePropCourse(lapPropWorld, propManifest, derivedLayout.course.samples);
+const loopPropMeasure = measurePropCourse(lapPropWorld, propManifest, lapLayout.course.samples, { ring: true });
 
 const sprintSpan = derivedLayout.course.span;
 const sprintGates = derivedLayout.gates;
@@ -1080,28 +1130,80 @@ check('the lap declares the P61 centre-line and car-width draw coverage',
       `${lapLayout.course.coverage.band.drawnSamples}/${lapLayout.course.coverage.band.samples} band (` +
       (lapLayout.course.coverage.band.coverageFraction * 100).toFixed(3) + '%)');
 
-// P66 visible-prop colliders: the lap uses the all-visible profile only because
-// the measured loop is clear. The nearest mapped collider must stay outside the
-// car envelope for every one of the 901 unique loop poses.
-check('the P66 all-visible collider manifest is the recorded one (468 colliders)',
-      propFileSha === 'sha256:a98fb8eb7e7a6f6851e0c6b5671d40be2c346d0c28a2442df0fe6ab497317af4' &&
+// P74 V2 base colliders: one file, three mode bindings. The 310 m line is clear
+// under `roadside`; the same file `all-visible` still blocks it at the four
+// mapped arcs, which is why the timed course keeps the roadside profile. The lap
+// uses `all-visible` because loop-01 is clear even with the 56 formerly missing
+// lap components enabled.
+check('the P74 base V2 manifest is the recorded one (651 colliders; roadside 553, all-visible 651)',
+      propFileSha === SPRINT_PROP_PINS.manifestFileSha256 &&
+      propFileSha === LAP_PROP_PINS.manifestFileSha256 &&
       propManifest.kind === 'prop-collision-colliders' && propManifest.version === 1 &&
-      propManifest.colliders.length === 468 && propManifest.profiles['all-visible'].colliders === 468 &&
-      propManifest.profiles.roadside.colliders === 373,
-      `${propFileSha}, ${propManifest.colliders.length} colliders, all-visible ${lapPropWorld.colliders.length}`);
-check('loop-01 is clear under the all-visible profile: 0 of 901 car poses blocked',
-      loopPropSamples === 901 && loopPropBlocked === 0 && loopPropContacts.size === 0,
-      `${loopPropBlocked}/${loopPropSamples} blocked, ${loopPropContacts.size} collider ids`);
-check('the nearest visible-prop collider is 69.5 m from loop-01 (outside the manifest region)',
-      nearestCollider.distanceMetres > 69 && nearestCollider.colliderId !== null,
-      `${nearestCollider.distanceMetres.toFixed(3)} m at arc ${nearestCollider.arc}, ` +
-      `${nearestCollider.colliderId} (${nearestCollider.classification})`);
-check('the lap keeps the 310 m sprint prop policy unchanged (lap all-visible, sprint roadside)',
-      PROP_PROFILE === 'all-visible' && lapPropWorld.profile === 'all-visible' &&
-      propManifest.profiles.roadside.active === true,
-      `lap ${PROP_PROFILE}, roadside ${propManifest.profiles.roadside.colliders} active`);
+      propManifest.variant === 'playable-regions-v2' &&
+      propManifest.colliders.length === 651 && propManifest.profiles.roadside.colliders === 553 &&
+      propManifest.profiles['all-visible'].colliders === 651 &&
+      bareSha256(propManifest.contentSha256) === bareSha256(SPRINT_PROP_PINS.manifestContentSha256) &&
+      sprintProfileWorld.profile === PROP_PROFILE_ROADSIDE && sprintProfileWorld.colliders.length === 553 &&
+      sprintPropWorld.colliders.length === 544 &&
+      lapPropWorld.profile === PROP_PROFILE && lapPropWorld.colliders.length === 651,
+      `${propFileSha}, ${propManifest.colliders.length} colliders, roadside ${sprintProfileWorld.colliders.length} ` +
+      `(544 after 9 measured driven-line exclusions), all-visible ${lapPropWorld.colliders.length}`);
 
-// The additive layer itself: real P66 colliders, a synthetic engine pose sequence.
+// The 310 exclusion set is a measured artifact, not a typed list: the deriver
+// sweeps the committed 310 m reference ghosts through the same roadside world.
+const SPRINT_EXCLUSION_FILE = path.join(OUT, 'sprint-driven-exclusions.json');
+if (!existsSync(SPRINT_EXCLUSION_FILE)) {
+  throw new Error('sprint-driven-exclusions.json missing — run `node probes/e1-drive/tools/derive_sprint_exclusions.mjs`');
+}
+const sprintExclusionBytes = readFileSync(SPRINT_EXCLUSION_FILE);
+const sprintExclusionDoc = JSON.parse(sprintExclusionBytes.toString('utf8'));
+const sprintExclusionIdsMatch = Array.isArray(sprintExclusionDoc.ids) &&
+  sprintExclusionDoc.ids.length === SPRINT_DRIVEN_EXCLUSIONS.length &&
+  sprintExclusionDoc.ids.every((id, index) => id === SPRINT_DRIVEN_EXCLUSIONS[index]);
+check('the 310 m driven-line exclusion set is the measured artifact (9 ids, pinned content hash)',
+      sprintExclusionDoc.kind === 'e1-drive.sprint-driven-exclusions' && sprintExclusionDoc.version === 1 &&
+      sprintExclusionDoc.manifestFileSha256 === SPRINT_PROP_PINS.manifestFileSha256 &&
+      bareSha256(sprintExclusionDoc.manifestContentSha256) === bareSha256(SPRINT_PROP_PINS.manifestContentSha256) &&
+      sprintExclusionDoc.profile === PROP_PROFILE_ROADSIDE &&
+      sprintExclusionDoc.roadsideActive === 553 && sprintExclusionDoc.excludedCount === 9 &&
+      sprintExclusionDoc.activeAfterExclusions === 544 &&
+      sprintExclusionDoc.exclusionContentSha256 === SPRINT_DRIVEN_EXCLUSION_CONTENT_SHA256 &&
+      sprintExclusionIdsMatch &&
+      SPRINT_DRIVEN_EXCLUSIONS.every((id) =>
+        propManifest.colliders.some((collider) => collider.id === id && collider.active === true)),
+      `${sprintExclusionDoc.excludedCount} ids, ${sprintExclusionDoc.activeAfterExclusions} active, ` +
+      `${sprintExclusionDoc.exclusionContentSha256}`);
+const ghostIndexFile = path.join(ROOT, 'probes/e1-drive/ghosts/index.json');
+const ghostIndexBytes = readFileSync(ghostIndexFile);
+const exclusionSourcesPinned = sprintExclusionDoc.source?.ghostsIndexSha256 === 'sha256:' + sha256(ghostIndexBytes) &&
+  sprintExclusionDoc.source?.cars?.length === 5 &&
+  sprintExclusionDoc.source.cars.every((entry) => {
+    const file = path.join(ROOT, 'probes/e1-drive/ghosts/' +
+      entry.ghost.split('/').pop());
+    return entry.ghostFileSha256 === 'sha256:' + sha256(readFileSync(file));
+  });
+check('the driven-line exclusion artifact was derived from the five committed 310 m ghosts',
+      exclusionSourcesPinned,
+      JSON.stringify({ index: sprintExclusionDoc.source?.ghostsIndexSha256,
+        cars: sprintExclusionDoc.source?.cars?.map((entry) => `${entry.slug}:${entry.contacts}`) }));
+check('the 310 m line is clear under the pinned roadside profile (0 of 1,245 car poses blocked)',
+      sprintRoadMeasure.samples === 1245 && sprintRoadMeasure.blocked === 0 &&
+      sprintRoadMeasure.contactIds.length === 0,
+      `${sprintRoadMeasure.blocked}/${sprintRoadMeasure.samples} blocked, nearest centre ` +
+      `${sprintRoadMeasure.minDistanceMetres} m to ${sprintRoadMeasure.minColliderId} at arc ${sprintRoadMeasure.minArc}`);
+check('the all-visible profile still blocks the 310 m line at the four mapped arcs (evidence, not shipped)',
+      sprintAllMeasure.blocked === 181 && sprintAllMeasure.arcs.length === 4 &&
+      Math.abs(sprintAllMeasure.arcs[0].firstArc - 52.897) < 0.5 &&
+      Math.abs(sprintAllMeasure.arcs[3].lastArc - 206.847) < 0.5,
+      `${sprintAllMeasure.blocked}/${sprintAllMeasure.samples} blocked in ${sprintAllMeasure.arcs.length} arcs: ` +
+      sprintAllMeasure.arcs.map((arc) => `${arc.firstArc.toFixed(3)}-${arc.lastArc.toFixed(3)} (${arc.samples})`).join(', '));
+check('loop-01 is clear under the lap\'s V2 all-visible layer (0 of 901 car poses blocked)',
+      loopPropMeasure.samples === 901 && loopPropMeasure.blocked === 0 &&
+      loopPropMeasure.contactIds.length === 0 && loopPropMeasure.minDistanceMetres > 0.7,
+      `${loopPropMeasure.blocked}/${loopPropMeasure.samples} blocked, nearest centre ` +
+      `${loopPropMeasure.minDistanceMetres} m to ${loopPropMeasure.minColliderId} at arc ${loopPropMeasure.minArc}`);
+
+// The additive layer itself: real P74 V2 colliders, a synthetic engine pose sequence.
 const propLayerTests = runPropLayerTests({
   world: lapPropWorld, manifest: propManifest, createPropLayer, propYawFromHeading
 });
@@ -1126,8 +1228,8 @@ check('prop layer: the engine state object is never mutated (additive post-tick 
 
 // ------------------------------------------------- free roam (P65/P68 basin)
 // `?course=free` is the picked free-roam mode: the committed spawn on the P65
-// R04 basin, contained by the P68b spawn component, with the P68b extended
-// 431-collider all-visible manifest. It has no gates, no finish and no lap; the
+// R04 basin, contained by the P68b spawn component, with the P74 R04-V2
+// all-visible manifest (447 colliders). It has no gates, no finish and no lap; the
 // timed 310 m/29 m courses and the 3-lap race above are untouched.
 const SPRINT_FREE_FILE = path.join(OUT, 'sprint-free.json');
 if (!existsSync(SPRINT_FREE_FILE)) {
@@ -1145,11 +1247,11 @@ const freePropFile = path.join(ROOT, FREE_PROP_PINS.manifest);
 const freePropBytes = readFileSync(freePropFile);
 const freePropFileSha = 'sha256:' + sha256(freePropBytes);
 if (freePropFileSha !== FREE_PROP_PINS.manifestFileSha256) {
-  throw new Error('the P68b collider manifest is not the recorded file: ' + freePropFileSha);
+  throw new Error('the P74 R04-V2 collider manifest is not the recorded file: ' + freePropFileSha);
 }
 freePropManifest = JSON.parse(freePropBytes.toString('utf8'));
 const freePropCheck = checkPropManifest(freePropManifest, FREE_PROP_PINS);
-if (!freePropCheck.ok) throw new Error('the P68b collider manifest was rejected: ' + freePropCheck.errors.join('; '));
+if (!freePropCheck.ok) throw new Error('the P74 R04-V2 collider manifest was rejected: ' + freePropCheck.errors.join('; '));
 freePropWorld = createPropWorld(freePropManifest, { profile: FREE_PROP_PINS.profile });
 const freePropContacts = (x, z, yaw, baseY) =>
   freePropWorld.contactsAll(x, z, yaw, baseY, freePropManifest.carEnvelope);
@@ -1171,12 +1273,12 @@ check('the P65 spawn basin artifact is the recorded one and R04 is the spawn reg
       freeBasin.bounds.every((value, index) => Math.abs(value - FREE_REGIONS_PATH.bounds[index]) < 1e-9),
       `${freeRegionsFileSha} / ${freeRegions.hash} / R04 ${freeBasin?.areaM2} m2 ` +
       `[${freeBasin?.bounds?.join(', ')}]`);
-check('the P68b extended all-visible manifest is the recorded one (431 colliders, variant free-roam-r04)',
+check('the P74 R04-V2 all-visible manifest is the recorded one (447 colliders, variant free-roam-r04)',
       freePropFileSha === FREE_PROP_PINS.manifestFileSha256 &&
       freePropManifest.variant === 'free-roam-r04' &&
-      freePropManifest.colliders.length === 431 &&
-      freePropManifest.profiles['all-visible'].colliders === 431 &&
-      freePropWorld.profile === 'all-visible' && freePropWorld.colliders.length === 431,
+      freePropManifest.colliders.length === 447 &&
+      freePropManifest.profiles['all-visible'].colliders === 447 &&
+      freePropWorld.profile === 'all-visible' && freePropWorld.colliders.length === 447,
       `${freePropFileSha}, ${freePropManifest.colliders.length} colliders, world ${freePropWorld.colliders.length}`);
 check('the free-roam layout is exactly the one derived from the P65 basin and this geometry (no hand-edited basin)',
       canonicalJson(freeFile) === canonicalJson(freeLayout),
@@ -1216,7 +1318,7 @@ check('the containment test lane is measured, not typed in: ground-supported, <=
       freeProbe.maxGroundStepMetres <= freeProbe.stepLimitMetres,
       `(${freeProbe.x}, ${freeProbe.z}) ${freeProbe.clearRunToBoundaryMetres} m, max step ` +
       `${freeProbe.maxGroundStepMetres} m/m`);
-check('the free-roam spawn is clear under the 431-collider all-visible layer (0 contacts)',
+check('the free-roam spawn is clear under the 447-collider R04-V2 all-visible layer (0 contacts)',
       freePropContacts(freeLayout.course.spawn.x, freeLayout.course.spawn.z,
         propYawFromHeading(freeLayout.course.spawn.headingRad), freeLayout.course.spawnGroundY).length === 0,
       `${freePropWorld.colliders.length} colliders, spawn ground ${freeLayout.course.spawnGroundY} m`);
@@ -1239,6 +1341,89 @@ check('free-roam prop layer: 31 m/s into a 0.02 m container panel does not tunne
       JSON.stringify({ id: freePropLayerTests.thin, side: freePropLayerTests.thinAt31.side,
         residual: freePropLayerTests.thinAt31.residual,
         maxPen: freePropLayerTests.thinAt31.maxPenetrationMetres }));
+
+// P74 V2 targets in the playable modes. The lap wall and free pipe are driven at
+// 31 m/s through the real layer; the sign and pole are driven in single-collider
+// worlds so the named target, not a cluster neighbour, is the stop. Rays are
+// cast from a clear origin in four directions; the first hit may be a neighbour
+// and is reported. Nothing here is a retail collision claim.
+const v2LayerTests = runV2PropLayerTests({
+  lapWorld: lapPropWorld, lapManifest: lapPropManifest, lapPins: LAP_PROP_PINS,
+  freeWorld: freePropWorld, freeManifest: freePropManifest, freePins: FREE_PROP_PINS,
+  createPropLayer, propYawFromHeading
+});
+const lapWallCollider = lapPropManifest.colliders.find((entry) => entry.id === v2LayerTests.lapWall.id);
+const freePipeDrive = v2LayerTests.freePipe.drive;
+check('P74 V2: 31 m/s into the lap building wall draw.355 stops outside the near face',
+      v2LayerTests.lapWall.drive.blockedTicks > 0 &&
+      v2LayerTests.lapWall.drive.contactIds.includes(v2LayerTests.lapWall.id) &&
+      v2LayerTests.lapWall.drive.side >
+        lapWallCollider.half[2] + lapPropManifest.carEnvelope.length / 2 - 0.02 &&
+      v2LayerTests.lapWall.drive.residual === 0 &&
+      v2LayerTests.lapWall.drive.maxPenetrationMetres <= 0.08 + 1e-6 &&
+      v2LayerTests.lapWall.drive.inputUnchanged === true,
+      JSON.stringify({ side: v2LayerTests.lapWall.drive.side,
+        nearFace: lapWallCollider.half[2] + lapPropManifest.carEnvelope.length / 2,
+        residual: v2LayerTests.lapWall.drive.residual,
+        maxPen: v2LayerTests.lapWall.drive.maxPenetrationMetres,
+        contacts: v2LayerTests.lapWall.drive.contactIds }));
+check('P74 V2: 31 m/s into the free-roam concrete pipe draw.95 stops without passing it',
+      freePipeDrive.blockedTicks > 0 && freePipeDrive.side > 0 &&
+      freePipeDrive.contactIds.some((id) => id.startsWith('river.block56.node289.draw.95.')) &&
+      freePipeDrive.residual === 0 && freePipeDrive.maxPenetrationMetres <= 0.08 + 1e-6 &&
+      freePipeDrive.inputUnchanged === true,
+      JSON.stringify({ side: freePipeDrive.side, residual: freePipeDrive.residual,
+        maxPen: freePipeDrive.maxPenetrationMetres, contacts: freePipeDrive.contactIds }));
+check('P74 V2: four-direction rays are blocked for the lap wall and the free pipe (8 of 8)',
+      v2LayerTests.lapWall.rays.blocked === 4 && v2LayerTests.freePipe.rays.blocked === 4 &&
+      [...v2LayerTests.lapWall.rays.rows, ...v2LayerTests.freePipe.rays.rows]
+        .every((row) => row.hit !== null && row.hit.distanceFromCentreMetres > 0.02),
+      JSON.stringify({
+        lap: v2LayerTests.lapWall.rays.rows.map((row) => row.hit?.colliderId ?? 'pass'),
+        free: v2LayerTests.freePipe.rays.rows.map((row) => row.hit?.colliderId ?? 'pass')
+      }));
+check('P74 V2: no tunnelling at 31 m/s; the car stays on the approach side (residual 0, 7 substeps/tick)',
+      v2LayerTests.lapWall.drive.substeps >= 120 * 7 &&
+      v2LayerTests.lapWall.drive.resolvedTravel < v2LayerTests.lapWall.drive.freeTravel * 0.5 &&
+      freePipeDrive.substeps >= 120 * 7 &&
+      freePipeDrive.resolvedTravel < freePipeDrive.freeTravel * 0.5 &&
+      v2LayerTests.lapWall.drive.side > 0 && freePipeDrive.side > 0,
+      JSON.stringify({ lap: { substeps: v2LayerTests.lapWall.drive.substeps,
+        free: v2LayerTests.lapWall.drive.freeTravel, resolved: v2LayerTests.lapWall.drive.resolvedTravel },
+        free: { substeps: freePipeDrive.substeps, freeTravel: freePipeDrive.freeTravel,
+          resolved: freePipeDrive.resolvedTravel } }));
+check('P74 V2: the lap no-parking sign (draw.257) and free steel pole (draw.283) stop a 31 m/s head-on',
+      v2LayerTests.lapSign.drive.contactIds.includes(v2LayerTests.lapSign.id) &&
+      v2LayerTests.lapSign.drive.side > 0 && v2LayerTests.lapSign.drive.residual === 0 &&
+      v2LayerTests.freePole.drive.contactIds.includes(v2LayerTests.freePole.id) &&
+      v2LayerTests.freePole.drive.side > 0 && v2LayerTests.freePole.drive.residual === 0,
+      JSON.stringify({
+        sign: { id: v2LayerTests.lapSign.id, side: v2LayerTests.lapSign.drive.side,
+          residual: v2LayerTests.lapSign.drive.residual },
+        pole: { id: v2LayerTests.freePole.id, side: v2LayerTests.freePole.drive.side,
+          residual: v2LayerTests.freePole.drive.residual }
+      }));
+
+// Capture-only collision probes: the start pose is derived from the manifest and
+// must be clear under the same layer. Coordinates are recorded, never typed in.
+const lapCollisionProbe = collisionProbePose(lapPropManifest, COLLISION_PROBES['lap-sign']);
+const freeCollisionProbe = collisionProbePose(freePropManifest, COLLISION_PROBES['free-pipe']);
+const lapProbeTarget = lapPropManifest.colliders.find((entry) => entry.id === lapCollisionProbe.target);
+const freeProbeTarget = freePropManifest.colliders.find((entry) => entry.id === freeCollisionProbe.target);
+const lapProbeContacts = lapPropWorld.contactsAll(lapCollisionProbe.x, lapCollisionProbe.z,
+  propYawFromHeading(lapCollisionProbe.headingRad), lapProbeTarget.vertical.groundY, lapPropManifest.carEnvelope);
+const freeProbeContacts = freePropWorld.contactsAll(freeCollisionProbe.x, freeCollisionProbe.z,
+  propYawFromHeading(freeCollisionProbe.headingRad), freeProbeTarget.vertical.groundY, freePropManifest.carEnvelope);
+check('the collision-v2 capture starts are manifest-derived and clear under their layers',
+      lapProbeContacts.length === 0 && freeProbeContacts.length === 0 &&
+      Math.abs(Math.hypot(lapCollisionProbe.x - lapProbeTarget.center[0],
+        lapCollisionProbe.z - lapProbeTarget.center[2]) - COLLISION_PROBES['lap-sign'].distanceMetres) < 1e-6 &&
+      Math.abs(Math.hypot(freeCollisionProbe.x - freeProbeTarget.center[0],
+        freeCollisionProbe.z - freeProbeTarget.center[2]) - COLLISION_PROBES['free-pipe'].distanceMetres) < 1e-6,
+      JSON.stringify({ lap: { x: round6Local(lapCollisionProbe.x), z: round6Local(lapCollisionProbe.z),
+        heading: round6Local(lapCollisionProbe.headingRad) },
+        free: { x: round6Local(freeCollisionProbe.x), z: round6Local(freeCollisionProbe.z),
+          heading: round6Local(freeCollisionProbe.headingRad) } }));
 
 // Independent measurement: barycentric area signs (not the tool's plane-lambda
 // form) and a plane height from the triangle normal. Every 0.1 m sample across
@@ -1847,14 +2032,18 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
   const createMs = Date.now() - t0;
 
   const rules = createSprintRules(layout);
-  const propLayer = isLapLayout(layout) && lapPropWorld
-    ? createPropLayer({ world: lapPropWorld, carEnvelope: lapPropManifest.carEnvelope, pins: LAP_PROP_PINS })
-    : isFreeLayout(layout) && freePropWorld
-      ? createPropLayer({ world: freePropWorld, carEnvelope: freePropManifest.carEnvelope, pins: FREE_PROP_PINS })
-      : null;
+  const propConfig = isFreeLayout(layout)
+    ? { world: freePropWorld, manifest: freePropManifest, pins: FREE_PROP_PINS }
+    : isLapLayout(layout)
+      ? { world: lapPropWorld, manifest: lapPropManifest, pins: LAP_PROP_PINS }
+      : layout.courseId === SHORT_COURSE_ID
+        ? null
+        : { world: sprintPropWorld, manifest: lapPropManifest, pins: SPRINT_PROP_PINS };
+  const propLayer = propConfig?.world
+    ? createPropLayer({ world: propConfig.world, carEnvelope: propConfig.manifest.carEnvelope, pins: propConfig.pins })
+    : null;
   const groundYFor = (state) => {
     if (isFreeLayout(layout)) return freeGroundAt(layout, state.position);
-    if (!isLapLayout(layout)) return state.position[1] - 0.35;
     const arc = coursePosition(layout.course.samples, state.position).arc;
     return courseGroundAt(layout, arc);
   };
@@ -2629,6 +2818,21 @@ for (const car of cars) {
         finish !== null && run.states[finish.tick].speed > 5,
         finish ? `${run.states[finish.tick].speed.toFixed(2)} m/s` : 'no finish');
 
+  check(`${car.name}: the V2 roadside layer is active and inert on the 310 m run`,
+        run.prop !== null && run.prop.profile === PROP_PROFILE_ROADSIDE &&
+        run.prop.colliders === 544 && run.prop.pinnedColliders === 544 &&
+        run.prop.profileColliders === 553 && run.prop.drivenLineExclusions === 9 &&
+        run.prop.manifest === PROP_MANIFEST && run.prop.contacts === 0 && run.prop.blockedTicks === 0 &&
+        run.prop.substeps > 0,
+        run.prop ? `${run.prop.colliders} colliders (${run.prop.profileColliders} profile, ` +
+          `${run.prop.drivenLineExclusions} excluded), ${run.prop.contacts} contacts, ` +
+          `${run.prop.substeps} substeps` : 'no prop layer');
+  check(`${car.name}: the 310 m run keeps its anchored state sequence and finish under the V2 layer`,
+        stateSequenceHash === PHYSICS_ANCHORS[car.slug].sprint310 && finish !== null &&
+        finish.timeSeconds > 5,
+        `${stateSequenceHash} vs ${PHYSICS_ANCHORS[car.slug].sprint310}, finish ` +
+        `${finish?.timeSeconds ?? 'none'} s at tick ${finish?.tick ?? 'none'}`);
+
   const sprintValidation = validatePacket(run.packet);
   check(`${car.name}: the sprint produces a valid packet v1.1 timeline`,
         sprintValidation.ok === true && run.packet.updates.length === run.states.length,
@@ -2664,6 +2868,7 @@ for (const car of cars) {
     respawns: run.respawns,
     ticks: run.rows,
     inputs: run.inputs,
+    prop: run.prop,
     captures
   }, null, 2) + '\n', 'utf8');
 
@@ -2706,6 +2911,9 @@ for (const car of cars) {
       validationErrors: sprintValidation.errors.length
     },
     runPath: path.relative(ROOT, sprintRunPath).split(path.sep).join('/'),
+    prop: run.prop ? { profile: run.prop.profile, manifest: run.prop.manifest,
+      colliders: run.prop.colliders, contacts: run.prop.contacts,
+      blockedTicks: run.prop.blockedTicks, substeps: run.prop.substeps } : null,
     ghost: ghostRecord ? {
       hash: ghostRecord.hash,
       tickCount: ghostRecord.tickCount,
@@ -2817,7 +3025,7 @@ for (const car of cars) {
 // ------------------------------------------------------------- free roam (?course=free)
 // The free-roam mode is a separate layout on the P65 R04 basin: no countdown,
 // no gates, no finish and no lap. Its only reset is the declared containment
-// rule, and its visible-prop layer is the P68b extended manifest (431
+// rule, and its visible-prop layer is the P74 R04-V2 all-visible manifest (447
 // colliders). The five roster cars drive the same deterministic, speed-capped
 // script; the state sequence is the raw engine sequence, so replaying the
 // recorded inputs without the rules/layer must reproduce every hash.
@@ -2855,7 +3063,7 @@ for (const car of cars) {
   const maxSpeed = Math.max(...run.states.map((state) => state.speed));
   // "Prop approach" capture frame: the tick (after the spawn) with the smallest
   // upper bound on the car-to-collider clearance, measured by growing the car
-  // envelope until the 431-collider world reports a contact. It is a frame
+  // envelope until the 447-collider world reports a contact. It is a frame
   // choice, not a contact: the run itself has 0 contacts.
   let propApproach = { tick: null, clearanceUpperBoundMetres: Infinity, colliderId: null };
   for (const state of run.states) {
@@ -2909,9 +3117,9 @@ for (const car of cars) {
   check(`${car.name}: free roam keeps wheel contact on every tick and no NaN`,
         contactTicks === run.states.length && nonFinite === 0,
         `${contactTicks}/${run.states.length} contact, ${nonFinite} non-finite`);
-  check(`${car.name}: the 431-collider all-visible layer is active and inert on the free drive`,
-        prop !== null && prop.profile === 'all-visible' && prop.colliders === 431 &&
-        prop.pinnedColliders === 431 && prop.manifest === FREE_PROP_PINS.manifest &&
+  check(`${car.name}: the 447-collider R04-V2 all-visible layer is active and inert on the free drive`,
+        prop !== null && prop.profile === 'all-visible' && prop.colliders === 447 &&
+        prop.pinnedColliders === 447 && prop.manifest === FREE_PROP_PINS.manifest &&
         prop.contacts === 0 && prop.blockedTicks === 0 && prop.substeps > 0,
         prop ? `${prop.colliders} colliders, ${prop.contacts} contacts, ${prop.substeps} substeps` : 'no layer');
   check(`${car.name}: replaying the free-drive inputs without the rules reproduces every state hash`,
@@ -3242,8 +3450,9 @@ for (const car of cars) {
         finish !== null && run.rules.maxLateralRunning <= lapLayout.course.lap.bandHalfWidthMetres + 1e-9,
         finish ? `max running lateral ${run.rules.maxLateralRunning.toFixed(3)} m of ` +
           `${lapLayout.course.lap.bandHalfWidthMetres} m` : 'no finish');
-  check(`${car.name}: the all-visible prop layer is active and inert on the clear loop`,
-        run.prop !== null && run.prop.profile === 'all-visible' && run.prop.colliders === 468 &&
+  check(`${car.name}: the V2 all-visible prop layer is active and inert on the clear loop`,
+        run.prop !== null && run.prop.profile === 'all-visible' && run.prop.colliders === 651 &&
+        run.prop.pinnedColliders === 651 && run.prop.manifest === PROP_MANIFEST &&
         run.prop.contacts === 0 && run.prop.blockedTicks === 0 && run.prop.substeps > 0,
         run.prop ? `${run.prop.colliders} colliders, ${run.prop.contacts} contacts, ` +
           `${run.prop.substeps} substeps` : 'no prop layer');
@@ -4880,6 +5089,35 @@ check('engine audio: _e1_engine_rpm() is -1 before a world and the live Engine()
 const report = {
   purpose: 'E1 drive slice: wasm vehicle physics -> render packet v1.1 -> WebGPU consumer, several XT cars',
   status: failures.length === 0 ? 'PASS' : 'FAIL',
+  propV2: {
+    kind: 'e1-drive.prop-collision-v2',
+    version: 1,
+    scope: 'read-only P74 V2 manifests bound per course; additive post-tick resolver; visible-mesh approximation',
+    pins: {
+      sprint: { ...SPRINT_PROP_PINS },
+      lap: { ...LAP_PROP_PINS },
+      free: { ...FREE_PROP_PINS }
+    },
+    drivenLineExclusions: {
+      artifact: path.relative(ROOT, SPRINT_EXCLUSION_FILE).split(path.sep).join('/'),
+      artifactSha256: 'sha256:' + sha256(sprintExclusionBytes),
+      ids: SPRINT_DRIVEN_EXCLUSIONS.slice(),
+      count: SPRINT_DRIVEN_EXCLUSIONS.length,
+      contentSha256: SPRINT_DRIVEN_EXCLUSION_CONTENT_SHA256,
+      reason: 'the committed scripted line grazes these nine active roadside colliders; excluding exactly them ' +
+        'keeps the anchored five-car sprint bit-identical while every other V2 structure is solid'
+    },
+    lineMeasurements: {
+      sprintRoadside: sprintRoadMeasure,
+      sprintAllVisible: sprintAllMeasure,
+      lapAllVisible: loopPropMeasure
+    },
+    targets: v2LayerTests,
+    collisionProbes: {
+      lapSign: { ...lapCollisionProbe, startContacts: lapProbeContacts.length },
+      freePipe: { ...freeCollisionProbe, startContacts: freeProbeContacts.length }
+    }
+  },
   module: {
     path: path.relative(ROOT, path.join(OUT, 'module/e1_drive.mjs')).split(path.sep).join('/'),
     wasmBytes: build.wasmBytes,
@@ -4998,6 +5236,30 @@ const report = {
     layout: sprintLayoutCheck,
     rules: derivedLayout.rules,
     countdown: derivedLayout.countdown,
+    prop: {
+      profile: SPRINT_PROP_PINS.profile,
+      manifest: SPRINT_PROP_PINS.manifest,
+      fileSha256: propFileSha,
+      contentSha256: SPRINT_PROP_PINS.manifestContentSha256,
+      colliders: propManifest.colliders.length,
+      activeRoadside: sprintProfileWorld.colliders.length,
+      drivenLineExclusions: SPRINT_DRIVEN_EXCLUSIONS.length,
+      activeAfterExclusions: sprintPropWorld.colliders.length,
+      drivenLineExclusionContentSha256: SPRINT_DRIVEN_EXCLUSION_CONTENT_SHA256,
+      lineSamples: sprintRoadMeasure.samples,
+      lineBlockedSamples: sprintRoadMeasure.blocked,
+      minCentreDistanceMetres: sprintRoadMeasure.minDistanceMetres,
+      minCentreColliderId: sprintRoadMeasure.minColliderId,
+      minCentreArc: sprintRoadMeasure.minArc,
+      allVisibleEvidence: {
+        blockedSamples: sprintAllMeasure.blocked,
+        arcs: sprintAllMeasure.arcs
+      },
+      note: 'the timed 310 m course keeps the V2 roadside profile (553 of 651): the four measured arcs ' +
+        '52.897-61.131, 114.277-121.763, 124.757-127.751 and 181.397-206.847 m stay mapped but inactive, ' +
+        'and 9 further colliders that the committed scripted line actually grazes are excluded by the ' +
+        'measured driven-line set (544 active). The manifest is unchanged.'
+    },
     ruleTests: {
       finishRejectedWithoutCheckpoints: true,
       outOfOrderCheckpointIgnored: true,
@@ -5050,18 +5312,15 @@ const report = {
         contentSha256: propManifest.contentSha256,
         colliders: propManifest.colliders.length,
         activeAllVisible: lapPropWorld.colliders.length,
-        loopSamples: loopPropSamples,
-        loopBlockedSamples: loopPropBlocked,
-        loopBlockedArcs: loopPropBlockedArcs,
-        loopContactIds: [...loopPropContacts.keys()],
-        nearestCollider: {
-          distanceMetres: round6Local(nearestCollider.distanceMetres),
-          colliderId: nearestCollider.colliderId,
-          classification: nearestCollider.classification,
-          arc: nearestCollider.arc
-        },
-        note: 'the P66 manifest covers visible props within 30 m of the 310 m course; loop-01 is 69.5 m ' +
-          'outside that region, so all-visible is safe on the loop but has no collider to hit there'
+        loopSamples: loopPropMeasure.samples,
+        loopBlockedSamples: loopPropMeasure.blocked,
+        loopBlockedArcs: loopPropMeasure.arcs,
+        loopContactIds: loopPropMeasure.contactIds,
+        minCentreDistanceMetres: loopPropMeasure.minDistanceMetres,
+        minCentreColliderId: loopPropMeasure.minColliderId,
+        minCentreArc: loopPropMeasure.minArc,
+        note: 'the P74 base V2 manifest covers the loop corridor (8 m) and the 310 m band (30 m); ' +
+          'the 56 formerly missing lap components are now solid, and all-visible is still clear on loop-01'
       },
       rules: lapLayout.rules,
       cars: lapResults,
@@ -5119,8 +5378,14 @@ const report = {
           maxPenetrationMetres: freePropLayerTests.thinAt31.maxPenetrationMetres,
           side: freePropLayerTests.thinAt31.side
         },
-        note: 'the P68b extended manifest is a region replacement for free roam; the timed 310 m course keeps ' +
-          'the committed 468-collider manifest'
+        targets: {
+          lapWall: v2LayerTests.lapWall,
+          freePipe: v2LayerTests.freePipe,
+          lapSign: v2LayerTests.lapSign,
+          freePole: v2LayerTests.freePole
+        },
+        note: 'the P74 R04-V2 manifest is a region replacement for free roam; the timed 310 m course keeps ' +
+          'the base V2 roadside profile (553 of 651 colliders)'
       },
       rules: freeLayout.rules,
       containsNamedGates: freeLayout.gates.length !== 0,
@@ -5325,7 +5590,9 @@ console.log(JSON.stringify({
       layoutHash: lapLayout.hash,
       lengthMetres: lapLayout.course.lap.lengthMetres,
       laps: lapLayout.course.lap.laps,
-      blockedArcs: loopPropBlockedArcs.length,
+      blockedSamples: loopPropMeasure.blocked,
+      blockedArcs: loopPropMeasure.arcs.length,
+      minCentreDistanceMetres: loopPropMeasure.minDistanceMetres,
       cars: lapResults.map((entry) => ({
         car: entry.name,
         slug: entry.slug,

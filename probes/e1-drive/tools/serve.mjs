@@ -5,7 +5,7 @@
 //   /_work/e1-drive/ -> _work/e1-drive/                 (module, geometry, level, packet, layouts)
 //   /ghosts/         -> probes/e1-drive/ghosts/         (committed reference ghost traces)
 //   /prop-collision/ -> probes/prop-collision/          (read-only P66 resolver + lib)
-//   /_work/free-roam-prop/ -> _work/free-roam-prop/     (P68b extended free-roam collider manifest)
+//   /_work/free-roam-prop/ -> _work/free-roam-prop/     (P74 R04-V2 free-roam collider manifest)
 //   /audio/          -> probes/audio/web/               (the committed engine-audio ES module)
 //   /_work/audio/    -> _work/audio/                    (decoded retail WAVs, read-only, not committed)
 //

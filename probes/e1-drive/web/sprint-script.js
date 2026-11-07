@@ -58,14 +58,15 @@ export const SPRINT_PACKET_SCRIPT =
  * basin. It has no path follower and no route: the input is a fixed function of
  * the tick, so two runs are identical by construction, and the verifier records
  * the resulting trajectory, its containment and its prop contacts. The phase
- * lengths were chosen by measurement on the P68b all-visible layer, not from a
- * route file: throttle, a tight left turn in the spawn bowl, a run west along
- * the bowl, and a stop before the west boundary. No physics value is involved.
+ * lengths were chosen by measurement on the P68b layer and re-checked on the
+ * P74 R04-V2 all-visible layer, not from a route file: throttle, a tight left
+ * turn in the spawn bowl, a run west along the bowl, and a stop before the west
+ * boundary. No physics value is involved.
  */
 export const FREE_SCRIPT_TICKS = 400;
 export const FREE_PACKET_SCRIPT =
   'free-roam: committed spawn (-88, 1050, pi/2), speed-capped tick-only diagnostic drive on the measured spawn ' +
-  'basin, no gates/finish/lap, P68b all-visible prop layer ' +
+  'basin, no gates/finish/lap, P74 R04-V2 all-visible prop layer ' +
   '(probes/e1-drive/web/sprint-script.js)';
 export const FREE_SCENARIO = Object.freeze({
   driveTicks: FREE_SCRIPT_TICKS,

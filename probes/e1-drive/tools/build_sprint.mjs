@@ -54,7 +54,7 @@ if (!existsSync(REGIONS_PATH)) {
   throw new Error('missing ' + FREE_REGIONS_PATH.file + ' — the P65 spawn basin is required for free roam');
 }
 if (!existsSync(FREE_PROP_PATH)) {
-  throw new Error('missing ' + FREE_PROP_PINS.manifest + ' — the P68b collider manifest is required for free roam');
+  throw new Error('missing ' + FREE_PROP_PINS.manifest + ' — the P74 R04-V2 collider manifest is required for free roam');
 }
 const geometryBytes = readFileSync(GEOMETRY);
 const geometry = JSON.parse(geometryBytes.toString('utf8'));
@@ -90,13 +90,13 @@ const regionsDoc = JSON.parse(regionsBytes.toString('utf8'));
 const freePropBytes = readFileSync(FREE_PROP_PATH);
 const freePropFileSha = 'sha256:' + sha256(freePropBytes);
 if (freePropFileSha !== FREE_PROP_PINS.manifestFileSha256) {
-  throw new Error('the P68b collider manifest is not the recorded file: ' + freePropFileSha +
+  throw new Error('the P74 R04-V2 collider manifest is not the recorded file: ' + freePropFileSha +
     ' (expected ' + FREE_PROP_PINS.manifestFileSha256 + ')');
 }
 const freePropManifest = JSON.parse(freePropBytes.toString('utf8'));
 const freePropCheck = checkPropManifest(freePropManifest, FREE_PROP_PINS);
 if (!freePropCheck.ok) {
-  throw new Error('the P68b collider manifest was rejected: ' + freePropCheck.errors.join('; '));
+  throw new Error('the P74 R04-V2 collider manifest was rejected: ' + freePropCheck.errors.join('; '));
 }
 const freePropWorld = createWorld(freePropManifest, { profile: FREE_PROP_PINS.profile });
 const freePropContacts = (x, z, yaw, baseY) =>
