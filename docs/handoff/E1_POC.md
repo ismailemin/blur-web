@@ -28,7 +28,8 @@ Gereksinim: güncel Chrome/Brave + WebGPU (`chrome://gpu`).
 | `/?course=free` | **Free-roam** (P65/P68 spawn havzası 7.702 m², truck/bina solid) |
 | `/?mp=1&host=1` | **M1 online race host** — oda kodu, lobby, 310 m |
 | `/?mp=1&room=CODE` | M1 guest — oda koduna katıl |
-| `/?mp=1&host=1&powerups=1` | **M2**: Mine/Shield/Repair, `E` ile kullan |
+| `/?mp=1&host=1&powerups=1` | **M2**: Mine/Shield/Repair/Nitro/Shock, `E` ile kullan |
+| `/?map=amboy&script=sprint` | **usa_amboy** haritası (2.060,6 m, 1.201 dokulu draw) |
 | `/?script=drive` | Deterministik 300 tick sürüş |
 | `/?script=sprint` | Deterministik sprint (5 araç) |
 | `/?script=sprint&course=lap` | Deterministik 3 tur (5 araç) |
@@ -130,6 +131,19 @@ http://127.0.0.1:8801/?mp=1&host=1&powerups=1
   PWR3'te çıkarıldı, entegrasyonu sonraki adım.
 - Shunt/Bolt/Barge ve projectile'lar bu dilimde **yok** (retail flip/tip,
   hedefleme ve hit-test verisi kanıtlanana kadar ertelendi).
+
+### Amboy haritası
+
+```text
+http://127.0.0.1:8801/?map=amboy&script=sprint
+```
+
+- Gerçek `usa_amboy` physics + **1.201 dokulu draw / 269.300 tri / 179 doku**
+- Ölçülmüş **2.060,595 m** point-to-point; 2 checkpoint, finish
+- Corvette scripted finish **222,05 s**; 0 respawn, 0 NaN
+- River varsayılan kalır; `?map=amboy` MP/telemetry/soak/survey ile birleşmez
+- Atlanan: 334 additive decal, 71 diagnostic, 27 section, 366 instance; vertex
+  normal yok (derivative normal); simple/instance collision yok
 
 Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
 Dodge 4,633 → Focus 5,133 s.

@@ -139,6 +139,53 @@ web/fixed-step.js (1/60, 4-tick cap, pause rule)            ▼
         └────────────────────► web/packet-consumer.js (WebGPU, geometry uploaded once)
 ```
 
+## Maps (M3 first map: `usa_amboy`)
+
+`?map=river` is the default and is byte-for-byte the existing M1 page (same
+paths, geometry, layouts, spawn, best-time keys and pins). `?map=amboy` swaps
+only the map half:
+
+| item | value |
+|---|---|
+| map package | `_work/map-slice/amboy-render` (AMB1) + `_work/map-slice/amboy` (MAP2/READ1) |
+| generated page input | `_work/e1-drive/amboy/map.json` + `layout.json` (`tools/build_map_amboy.mjs`) |
+| physics | `game-data/Blur/levels/usa_amboy/Level.levelphysics`, served read-only at `/map-data/usa_amboy/…` |
+| opaque draws | **1,201 / 269,300 triangles**, one merged mesh (529,624 vertices, 1,046,844 indices) |
+| textures | **179** merged RGBA8 mip0 blobs, 2,654,272 B (186 sources; 7 duplicate pairs) |
+| normals | **0 vertex normals**; the consumer's existing screen-space derivative normal path is used |
+| skipped | **334** additive/decal draws + **71** diagnostic draws (labelled; no fallback texture/colour) |
+| geometry blockers | **27** unsupported sections, **366** instance descriptions, `instancesApplied:false` |
+| collision | 63,708 static triangles; the Box, four Cylinders and the InstancedTriangleMesh are outside the triangle package |
+| path | measured **2,060.595408 m** point-to-point, spawn `(230, 1128)` heading `-2.35619449`, checkpoints `686.862337` / `1,373.667341` m |
+| rules | the same R1-style SprintRules: 90-tick countdown, ordered checkpoints, finish, respawn, best time |
+| best time | `e1-drive.sprint.best.v3.amboy` (separate from River) |
+
+The page loads the map document, verifies its content hash, the layout file hash,
+the source render/slice content pins and the physics SHA-256 before creating the
+world (`crypto.subtle`). A mismatch fails loudly; there is no fallback map.
+The Amboy controller uses a lower cruise speed and short pure pursuit
+(`AMBOY_CONTROL` in `web/sprint-script.js`) because the measured path turns back
+on itself several times; this is a controller choice, not a physics or map value.
+
+```powershell
+$node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
+& $node probes/e1-drive/tools/build_map_amboy.mjs          # writes _work/e1-drive/amboy/{map,layout}.json
+& $node probes/e1-drive/tools/verify_e1_map.mjs            # pins, 61/61 settle, scripted finish, replay
+& $node probes/e1-drive/tools/serve.mjs --port 8801        # /?map=amboy&script=sprint
+& $node probes/e1-drive/tools/capture_browser.mjs --mode map --port 8801
+```
+
+`verify_e1_map.mjs` records `_work/e1-drive/map-amboy-run.json` (the node anchor
+the browser capture compares against) and `_work/e1-drive/map-amboy-verify.json`.
+The verified scripted run finishes at **222.050 s / tick 13,413** with both
+checkpoints, 0 respawns, wheel contact on every tick and a bit-identical input
+replay. River's sprint/lap/free/MP modes are unchanged; run their existing gates
+to confirm the regression.
+
+Limits: the path is measured draw coverage, not a retail start line; there are no
+Amboy prop colliders, power-ups, opponents, AI, lap or retail race rules. This is
+one playable point-to-point map, not a full-game claim.
+
 ## Cars
 
 **Fifteen real cars** are selectable at runtime from the 62 `RP_CarDynamics`
@@ -281,6 +328,7 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 & $node probes/e1-drive/tools/capture_browser.mjs --mode sprint --course short  # 29 m regression
 & $node probes/e1-drive/tools/capture_browser.mjs --mode lap       # ?course=lap: start/lap1/lap2/finish per car
 & $node probes/e1-drive/tools/capture_browser.mjs --mode free      # ?course=free: spawn/mid/prop/reset per roster car
+& $node probes/e1-drive/tools/capture_browser.mjs --mode map       # ?map=amboy: start/checkpoint/mid/finish
 & $node probes/e1-drive/tools/capture_browser.mjs --mode props     # roster cars x tick-120/near-field truck/free-prop/sprint/lap
 & $node probes/e1-drive/tools/capture_browser.mjs --mode collision-v2 --port 8802  # lap sign + free concrete pipe: approach/stopped/settled
 & $node probes/e1-drive/tools/derive_sprint_exclusions.mjs         # measured 9-id 310 m driven-line exclusion artifact
@@ -1121,6 +1169,8 @@ deterministic reference ghost per car and course),
 (5-car free roam, console and 447-collider layer gates),
 `browser-evidence-collision-v2.json` + `browser-<slug>-collision-{lap-sign,free-pipe}-{approach,stopped,settled}.png`
 (30 collision-probe captures, console and stop gates),
+`browser-evidence-map-amboy.json` + `browser-<slug>-map-amboy-{start,checkpoint,mid,finish}.png`
+(M3 usa_amboy map capture, console and package/upload gates),
 `browser-<slug>-sprint-restart-{before,countdown,finish}.png`,
 `browser-<slug>-sprint-respawn.png`,
 `browser-<slug>-sprint-ghost.png` + `browser-<slug>-sprint-ghost-off.png` (G toggle),

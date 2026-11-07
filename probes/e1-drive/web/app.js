@@ -50,6 +50,8 @@ import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
 import { isFreeLayout, layoutStartHeading, layoutStartPosition, validateSprintLayout } from './sprint-layout.js';
 import { SPRINT_EVENT, courseGroundAt, coursePosition, createSprintRules, freeGroundAt } from './sprint-rules.js';
+import { MAPS, resolveMap } from './map-registry.js';
+import { bytesSha256, mergeMapGeometry, textSha256, validateAmboyPackage } from './map-amboy.js';
 import { createBestTimes } from './sprint-best.js';
 import {
   GHOST_CORNERS, GHOST_SOURCE, buildGhostArcTable, createGhostStore, decodeGhost, ghostFromRun,
@@ -145,6 +147,17 @@ const COURSE_IS_SHORT = COURSE_PARAM === 'short';
 const COURSE_IS_LAP = COURSE_PARAM === 'lap';
 const COURSE_IS_FREE = COURSE_PARAM === 'free';
 const COURSE_KEY = COURSE_IS_SHORT ? 'short' : COURSE_IS_LAP ? 'lap' : COURSE_IS_FREE ? 'free' : '310m';
+// Map registry (M3): `?map=river` (default) keeps the exact M1 paths, layouts and
+// pins. `?map=amboy` loads the committed usa_amboy map package. An unknown id is
+// a hard error; there is no silent fallback to River.
+const MAP = resolveMap(params.get('map'));
+const MAP_IS_AMBOY = MAP.id === 'amboy';
+const AMBOY_PACKET_SCRIPT =
+  'sprint: 3-2-1 countdown, pure-pursuit controller on the measured usa_amboy 2,060.595 m path, ' +
+  'brake after the finish (probes/e1-drive/web/sprint-script.js)';
+// The Amboy path is ~2 km at a controlled 12 m/s; the verified scripted finish
+// is tick 13,413. River's 3,600-tick bound stays exact.
+const MAX_SPRINT_SCRIPT_TICKS = MAP_IS_AMBOY ? 20000 : 3600;
 // Capture-only collision probe (`?collisionprobe=lap-sign|free-pipe`). It starts
 // the real engine at a manifest-derived pose in front of a P74 V2 target, applies
 // throttle until the additive prop layer reports a contact and then brakes with
@@ -226,6 +239,19 @@ if (MP && params.has('powerups') && params.get('powerups') !== '0' && params.get
 if (!MP && params.get('powerups') === '1') {
   throw new Error('?powerups=1 is the online race slice; add ?mp=1&host=1 or ?mp=1&room=CODE');
 }
+// usa_amboy (M3 first map) is a single-player point-to-point map package. The
+// River-only modes and courses are rejected explicitly rather than silently
+// loading a different map or course.
+if (MAP_IS_AMBOY) {
+  if (!MAP.courses.includes(COURSE_PARAM)) {
+    throw new Error('?map=amboy runs the measured 2,060.595 m course; drop ?course=' + COURSE_PARAM);
+  }
+  if (MP) throw new Error('?map=amboy is single-player; the M1 online race is the River 310 m course');
+  if (SCRIPT_PARAM === 'drive') throw new Error('?map=amboy runs the sprint; drop ?script=drive');
+  if (TELEMETRY || SOAK || SURVEY || COLLISION_PROBE) {
+    throw new Error('?map=amboy supports drive/sprint only; drop telemetry/soak/survey/collisionprobe');
+  }
+}
 const POWERUP_MARKER_MESH = 'e1.powerup.marker';
 const POWERUP_MARKER_SLOTS = 16;
 const POWERUP_RELAY_POLL_MS = 100;
@@ -247,16 +273,17 @@ const MP_CONTROL = MP && MP_PACE !== 1
 const MP_GRID_OPTIONS = Object.freeze({});
 
 const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
-const GEOMETRY_URL = '/_work/e1-drive/geometry.json';
-const LEVEL_URL = '/_work/e1-drive/Level.levelphysics';
-const SPAWN_URL = '/_work/e1-drive/spawn.json';
-const SPRINT_URL = COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
+const GEOMETRY_URL = MAP.geometryUrl;
+const BASE_GEOMETRY_URL = MAP.baseGeometryUrl ?? null;
+const LEVEL_URL = MAP.physicsUrl;
+const SPAWN_URL = MAP.spawnUrl;
+const SPRINT_URL = MAP.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
   : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json'
-    : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json';
+    : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json');
 const PROP_RESOLVER_URL = '/prop-collision/lib/resolver.mjs';
 
-/** Best-time storage key: one record per course, never mixed. */
-const SPRINT_BEST_KEY = 'e1-drive.sprint.best.v2.' + COURSE_KEY;
+/** Best-time storage key: one record per map/course, never mixed. */
+const SPRINT_BEST_KEY = MAP.bestKey ?? ('e1-drive.sprint.best.v2.' + COURSE_KEY);
 
 const canvas = document.getElementById('scene');
 const driver = new FixedStepDriver();
@@ -290,6 +317,8 @@ const state = {
   packetNodes: 0,
   wheelNodes: 0,
   trackVisual: null,
+  map: null,
+  mapCounts: null,
   trackDraws: 0,
   trackTriangles: 0,
   trackTexturedDraws: 0,
@@ -500,6 +529,15 @@ function publish() {
     ['car', state.car ? state.car.name + ' · ' + state.car.drivetrain + ' · ' + Math.round(state.car.mass) + ' kg · rec ' + state.car.recordIndex : '—'],
     ['audio', audioHudValue()]
   ];
+  if (MAP_IS_AMBOY && state.map) {
+    const counts = state.map.counts ?? {};
+    rows.push(['map', 'AMBOY · usa_amboy measured path ' + (state.sprintLayout?.span?.measuredLengthMetres ?? 0).toFixed(3) +
+      ' m · ' + counts.draws + ' opaque draws / ' + counts.drawTriangles + ' tri · ' +
+      counts.textures + ' tex / ' + (counts.textureBytes ?? 0) + ' B']);
+    rows.push(['layers', 'skipped: ' + counts.decalDraws + ' additive decals + ' + counts.diagnosticDraws +
+      ' diagnostic draws · ' + counts.blockedDraws + ' blocked total · ' + counts.collisionTriangles +
+      ' collision tri (simple shapes excluded)']);
+  }
   if (state.telemetry?.ready) {
     const metrics = state.telemetry.metrics;
     const seconds = (value) => (Number.isFinite(value) ? value.toFixed(3) : '—');
@@ -537,12 +575,15 @@ function publish() {
           state.props.substeps + ' substeps'
         : 'all-visible · loading']);
     } else {
-      rows.push(['course', COURSE_IS_LAP
-        ? 'loop-01 P61 · 3 laps · ' + course.lengthMetres.toFixed(1) + ' m · ?course=lap'
-        : COURSE_IS_SHORT
-          ? '29 m straight (regression) · ' + course.lengthMetres.toFixed(1) + ' m · ?course=short'
-          : '310 m P48 (default) · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(1) +
-            ' m measured · finish ' + (course.finishArc ?? course.lengthMetres).toFixed(1) + ' m']);
+      rows.push(['course', MAP_IS_AMBOY
+        ? 'USA Amboy measured path · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(3) +
+          ' m · ?map=amboy'
+        : COURSE_IS_LAP
+          ? 'loop-01 P61 · 3 laps · ' + course.lengthMetres.toFixed(1) + ' m · ?course=lap'
+          : COURSE_IS_SHORT
+            ? '29 m straight (regression) · ' + course.lengthMetres.toFixed(1) + ' m · ?course=short'
+            : '310 m P48 (default) · ' + (course.measuredLengthMetres ?? course.lengthMetres).toFixed(1) +
+              ' m measured · finish ' + (course.finishArc ?? course.lengthMetres).toFixed(1) + ' m']);
       rows.push(['sprint', sprint.phase + ' · ' + Number(timer).toFixed(3) + ' s' +
         (sprint.finished ? ' · FINISHED' : '') +
         (COURSE_IS_LAP ? ' · lap ' + sprint.lap + '/' + sprint.laps : '') +
@@ -1447,21 +1488,84 @@ async function loadEngine(carOverride = null) {
   state.car = carIdentity(car);
   populateSelector(roster, car);
 
-  const [geometryResponse, levelResponse, fieldsResponse, spawnResponse, sprintResponse] = await Promise.all([
+  const [geometryResponse, levelResponse, fieldsResponse, spawnResponse, sprintResponse, baseResponse] = await Promise.all([
     fetch(GEOMETRY_URL, { cache: 'no-store' }),
     fetch(LEVEL_URL, { cache: 'no-store' }),
     fetch(fieldsUrl(car), { cache: 'no-store' }),
-    fetch(SPAWN_URL, { cache: 'no-store' }),
-    SPRINT_MODE || SOAK ? fetch(SPRINT_URL, { cache: 'no-store' }) : Promise.resolve(null)
+    SPAWN_URL ? fetch(SPAWN_URL, { cache: 'no-store' }) : Promise.resolve(null),
+    SPRINT_MODE || SOAK ? fetch(SPRINT_URL, { cache: 'no-store' }) : Promise.resolve(null),
+    BASE_GEOMETRY_URL ? fetch(BASE_GEOMETRY_URL, { cache: 'no-store' }) : Promise.resolve(null)
   ]);
-  for (const [label, response] of [['geometry', geometryResponse], ['level', levelResponse],
-                                    ['car fields (' + car.slug + ')', fieldsResponse], ['spawn', spawnResponse]]) {
+  const responses = [['geometry', geometryResponse], ['level', levelResponse],
+    ['car fields (' + car.slug + ')', fieldsResponse]];
+  if (spawnResponse) responses.push(['spawn', spawnResponse]);
+  if (baseResponse) responses.push(['base geometry', baseResponse]);
+  for (const [label, response] of responses) {
     if (!response.ok) throw new Error(label + ' fetch failed: HTTP ' + response.status);
   }
-  geometry = await geometryResponse.json();
-  spawn = await spawnResponse.json();
   levelBytes = new Uint8Array(await levelResponse.arrayBuffer());
   fieldBytes = new Uint8Array(await fieldsResponse.arrayBuffer());
+
+  let preloadedLayout = null;
+  if (MAP_IS_AMBOY) {
+    // Package pins for the map document, layout, source render/slice and the
+    // Level.levelphysics bytes. A mismatch is a hard failure: no fallback map.
+    const mapText = await geometryResponse.text();
+    const mapDocument = JSON.parse(mapText);
+    if (!sprintResponse?.ok) {
+      throw new Error('Amboy layout fetch failed: HTTP ' + (sprintResponse?.status ?? 'missing') +
+        ' — run `node probes/e1-drive/tools/build_map_amboy.mjs`');
+    }
+    const layoutText = await sprintResponse.text();
+    const mapLayout = JSON.parse(layoutText);
+    const packageCheck = validateAmboyPackage(mapDocument, mapLayout, MAP.pins);
+    if (!packageCheck.ok) throw new Error('Amboy map package rejected: ' + packageCheck.errors.join('; '));
+    if (textSha256(layoutText) !== MAP.pins.layoutFileSha256) {
+      throw new Error('Amboy layout file does not match its pinned SHA-256');
+    }
+    const physicsSha = await bytesSha256(levelBytes);
+    if (physicsSha !== MAP.pins.physicsFileSha256) {
+      throw new Error('usa_amboy Level.levelphysics does not match its pinned SHA-256 (' + physicsSha + ')');
+    }
+    // The map document names its source packages; fetch and hash them so the page
+    // verifies the actual package bytes, not only the recorded identity.
+    const [renderSource, sliceSource] = await Promise.all([
+      fetch('/' + mapDocument.source.render.path, { cache: 'no-store' }),
+      fetch('/' + mapDocument.source.slice.path, { cache: 'no-store' })
+    ]);
+    if (!renderSource.ok || !sliceSource.ok) {
+      throw new Error('map-slice source package fetch failed: HTTP ' + renderSource.status + '/' + sliceSource.status);
+    }
+    const renderSha = await bytesSha256(new Uint8Array(await renderSource.arrayBuffer()));
+    const sliceSha = await bytesSha256(new Uint8Array(await sliceSource.arrayBuffer()));
+    if (renderSha !== MAP.pins.renderFileSha256) throw new Error('render.json does not match its pinned SHA-256');
+    if (sliceSha !== MAP.pins.sliceFileSha256) throw new Error('slice.json does not match its pinned SHA-256');
+    const baseGeometry = await baseResponse.json();
+    geometry = mergeMapGeometry(baseGeometry, mapDocument);
+    state.map = {
+      id: MAP.id,
+      label: MAP.label,
+      level: MAP.level,
+      hash: mapDocument.hash,
+      layoutHash: mapLayout.hash,
+      source: mapDocument.source,
+      counts: mapDocument.counts,
+      limits: mapDocument.mapRender.limits,
+      physicsSha256: physicsSha
+    };
+    // The committed spawn artifact is River-specific; the Amboy spawn is the
+    // measured layout's first point and tangent.
+    spawn = {
+      x: mapLayout.course.spawn.x,
+      z: mapLayout.course.spawn.z,
+      heading: mapLayout.course.spawn.headingRad,
+      source: mapLayout.source.spawnSource
+    };
+    preloadedLayout = mapLayout;
+  } else {
+    geometry = await geometryResponse.json();
+    spawn = await spawnResponse.json();
+  }
 
   let tick0;
   if (SPRINT_MODE || SOAK) {
@@ -1469,9 +1573,15 @@ async function loadEngine(carOverride = null) {
       throw new Error('sprint layout fetch failed: HTTP ' + sprintResponse.status +
         ' — run `node probes/e1-drive/tools/build_sprint.mjs` (or `node tools/verify_e1_drive.mjs` first)');
     }
-    const layout = await sprintResponse.json();
-    const checked = validateSprintLayout(layout, geometry, spawn);
-    if (!checked.ok) throw new Error('sprint layout rejected: ' + checked.errors.join('; '));
+    const layout = preloadedLayout ?? await sprintResponse.json();
+    if (MAP_IS_AMBOY) {
+      // The Amboy layout is validated above against the map package pins. Its
+      // gates are measured path stations, so the River geometry re-derivation
+      // (drawn/collision triangle coverage) does not apply.
+    } else {
+      const checked = validateSprintLayout(layout, geometry, spawn);
+      if (!checked.ok) throw new Error('sprint layout rejected: ' + checked.errors.join('; '));
+    }
     if (!COLLISION_PROBE) sprintRules = createSprintRules(layout);
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
@@ -1508,7 +1618,7 @@ async function loadEngine(carOverride = null) {
     // the physics authority; the layer only resolves the pose after the tick.
     // A changed file, profile or collider count throws a typed PropManifestError;
     // there is no fallback to an older manifest.
-    const pins = SOAK ? null : propPinsForCourse(COURSE_PARAM);
+    const pins = (SOAK || MAP_IS_AMBOY) ? null : propPinsForCourse(COURSE_PARAM);
     if (pins) {
       const [manifestResponse, resolver] = await Promise.all([
         fetch('/' + pins.manifest, { cache: 'no-store' }),
@@ -1557,6 +1667,12 @@ async function loadEngine(carOverride = null) {
       if (!remoteBody) throw new Error('geometry has no body for ' + car.slug);
       ghostWheelRest = Object.fromEntries(remoteBody.wheelGroups.map((group) =>
         [group.corner, group.matrixColumnMajor]));
+    } else if (MAP_IS_AMBOY) {
+      // No committed usa_amboy reference ghost exists; a River trace would be a
+      // wrong pose on this map. The HUD states why instead of guessing one.
+      ghost = { record: null, decoded: null, table: null, source: 'none', label: null,
+        reason: 'no committed usa_amboy reference ghost; River traces are not reusable on this map', note: null };
+      ghostEnabled = false;
     } else {
       // Ghost / rival replay: the stored best run, or the committed deterministic
       // reference trace. `?ghost=1` shows it from the start; otherwise `G` toggles.
@@ -1637,6 +1753,10 @@ async function loadEngine(carOverride = null) {
   };
   state.engineInfo = engine.info;
   state.spawn = spawn;
+  if (!state.map) {
+    state.map = { id: MAP.id, label: MAP.label, level: MAP.level };
+  }
+  state.mapCounts = state.map.counts ?? null;
   if (engine.info.car !== car.name) {
     throw new Error('engine decoded ' + JSON.stringify(engine.info.car) +
       ' but the roster asked for ' + JSON.stringify(car.name));
@@ -1720,7 +1840,7 @@ function handleSprintEvents(events) {
         persistent: submitted.persistent
       };
       if (MP) mpLocalFinish(event);
-      else recordGhostFinish(event);
+      else if (!MAP_IS_AMBOY) recordGhostFinish(event);
     }
   }
 }
@@ -1806,7 +1926,8 @@ async function respawnAt(target, nowUs) {
 async function startTimeline(tick0, {
   reload = false, rejoin = false,
   packetScript = SPRINT_MODE
-    ? (COURSE_IS_LAP ? LAP_PACKET_SCRIPT : COURSE_IS_FREE ? FREE_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT)
+    ? (MAP_IS_AMBOY ? AMBOY_PACKET_SCRIPT
+      : COURSE_IS_LAP ? LAP_PACKET_SCRIPT : COURSE_IS_FREE ? FREE_PACKET_SCRIPT : SPRINT_PACKET_SCRIPT)
     : undefined
 } = {}) {
   const start = collisionProbeStart
@@ -4366,9 +4487,9 @@ async function main() {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sequence (' + SCRIPT_TICKS + ')');
   }
   if (HOLD !== null && SCRIPTED_SPRINT && !COLLISION_PROBE && HOLD > (COURSE_IS_LAP ? LAP_SCRIPT_TICKS
-    : COURSE_IS_FREE ? FREE_SCRIPT_TICKS : 3600)) {
+    : COURSE_IS_FREE ? FREE_SCRIPT_TICKS : MAX_SPRINT_SCRIPT_TICKS)) {
     throw new Error('hold tick ' + HOLD + ' is beyond the scripted sprint (' +
-      (COURSE_IS_LAP ? LAP_SCRIPT_TICKS : COURSE_IS_FREE ? FREE_SCRIPT_TICKS : 3600) + ')');
+      (COURSE_IS_LAP ? LAP_SCRIPT_TICKS : COURSE_IS_FREE ? FREE_SCRIPT_TICKS : MAX_SPRINT_SCRIPT_TICKS) + ')');
   }
 
   state.consumer = 'running';

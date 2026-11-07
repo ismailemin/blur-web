@@ -204,6 +204,12 @@ Shock alanları çıkarıldı; **Shock gerçek hasar 50** (minor), Barge 100.
 Kural prototipi **19/19**, verifier **888/888**. Eksikler tipli. Kanıt:
 `docs/work/analysis/powerup-projectiles.md`.
 
+**MAP6 — Amboy oynanabilir:** `?map=amboy&script=sprint`: gerçek physics +
+**1.201 draw / 179 doku**, 2.060,595 m; Corvette **222,05 s**, 0 respawn;
+map verifier 23/23, River 2254/2254, capture console 0, suite 51/51.
+334 decal + 71 diagnostic atlandı; 27 section + 366 instance yok. Kanıt:
+`docs/work/verification/T-007-map-amboy.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

@@ -878,6 +878,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Kural prototipi **19/19**, verifier **888/888**; mevcut 1.783 değişmedi. Eksikler tipli (runtime charges/lifetime, fake-physics, hedef radius, icon binding).
 - Kanıt: `docs/work/analysis/powerup-projectiles.md`.
 
+## 7 Kasım 2026 — Amboy oynanabilir harita
+
+- `?map=amboy&script=sprint`: gerçek `usa_amboy` physics + **1.201 opaque draw / 269.300 tri / 179 doku**; 2.060,595 m ölçülmüş yol.
+- Corvette finish **222,050 s / tick 13.413**, checkpoint 68,617/131,617 s, 0 respawn, 0 NaN.
+- 334 decal + 71 diagnostic atlandı; 27 section + 366 instance yok; derivative normal; collision 63.708 tri.
+- Map verifier **23/23**, River 2254/2254, capture console 0, suite **51/51**, checker 23/23. Kanıt: `docs/work/verification/T-007-map-amboy.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

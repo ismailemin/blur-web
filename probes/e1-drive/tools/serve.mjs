@@ -1,6 +1,6 @@
 // Static server for the E1 drive slice.
 //
-// Serves exactly nine trees, all read-only:
+// Serves these trees, all read-only:
 //   /                -> probes/e1-drive/web/            (the page)
 //   /_work/e1-drive/ -> _work/e1-drive/                 (module, geometry, level, packet, layouts)
 //   /ghosts/         -> probes/e1-drive/ghosts/         (committed reference ghost traces)
@@ -12,6 +12,8 @@
 //   /race-rules/     -> probes/race-rules/              (M1 rules ES modules, read-only)
 //   /_work/powerups/ -> _work/powerups/                 (PWR1 manifest, read-only)
 //   /powerups/       -> probes/powerups/rules/engine.js (PWR1 rules prototype, read-only)
+//   /_work/map-slice/ -> _work/map-slice/               (committed map-slice packages, read-only)
+//   /map-data/       -> game-data/Blur/levels/          (level physics bytes, read-only; not committed)
 //
 // `/_powerups/relay` is a project-specific, ordered in-memory control relay for
 // the power-up slice: the host posts sequenced events, the guest posts use
@@ -47,6 +49,11 @@ const RACE_RULES = path.join(ROOT, 'probes/race-rules');
 const POWERUPS_WORK = path.join(ROOT, '_work/powerups');
 const POWERUPS_RULES = path.join(ROOT, 'probes/powerups/rules');
 const POWERUPS_RULE_FILES = new Set(['engine.js']);
+// M3 map packages and the read-only level physics bytes. The map-slice tree is
+// generated game-data output; `game-data/` is the installed game tree. Neither
+// is copied into the repository or written by the server.
+const MAP_SLICE_WORK = path.join(ROOT, '_work/map-slice');
+const MAP_DATA_LEVELS = path.join(ROOT, 'game-data/Blur/levels');
 // The page only needs the dependency-free client half of the transport probe.
 const NET_MVP_MODULES = new Set(['client.mjs', 'protocol.mjs', 'hash.mjs', 'race.mjs']);
 
@@ -208,6 +215,8 @@ export function startServer({ port = 8801 } = {}) {
     if (pathname === '/' || pathname === '/index.html') file = path.join(WEB, 'index.html');
     else if (pathname.startsWith('/_work/e1-drive/')) file = safeJoin(WORK, pathname.slice('/_work/e1-drive/'.length));
     else if (pathname.startsWith('/_work/powerups/')) file = safeJoin(POWERUPS_WORK, pathname.slice('/_work/powerups/'.length));
+    else if (pathname.startsWith('/_work/map-slice/')) file = safeJoin(MAP_SLICE_WORK, pathname.slice('/_work/map-slice/'.length));
+    else if (pathname.startsWith('/map-data/')) file = safeJoin(MAP_DATA_LEVELS, pathname.slice('/map-data/'.length));
     else if (pathname.startsWith('/powerups/')) {
       const name = pathname.slice('/powerups/'.length);
       if (POWERUPS_RULE_FILES.has(name)) file = path.join(POWERUPS_RULES, name);

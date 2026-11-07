@@ -50,6 +50,7 @@ def main():
         ('projectiles',[sys.executable,'probes/powerups/tools/verify_projectiles.py']),
         ('projectile-rules',['node','probes/powerups/rules/projectiles.test.mjs']),
         ('boost-model',['node','probes/e1-drive/tools/boost_model_tests.mjs']),
+        ('amboy-map',['node','probes/e1-drive/tools/verify_e1_map.mjs']),
         ('vehicle-pipeline',[sys.executable,'probes/vehicle-pipeline/tools/verify_vehicle_pipeline.py']),
         ('map-pipeline',[sys.executable,'probes/map-pipeline/tools/verify_maps.py']),
         ('prop-collision-v2',['node','probes/prop-collision/tools/verify_v2.mjs']),

@@ -2961,3 +2961,104 @@ guest counts were identical for the required set, including
    are unchanged; the AI driver was re-run on its existing five-reference-car
    selection and is 26/26. Only generated `_work` artifacts were regenerated;
    no probe source, tool or game data was edited.
+
+## 36. M3 first map: `usa_amboy` (`?map=amboy`)
+
+### 36.1 Scope and map registry
+
+The page now has a committed map registry (`probes/e1-drive/web/map-registry.js`).
+`?map=river` (the default) resolves to the exact M1 paths, layout, spawn,
+best-time key and pins used before this change. `?map=amboy` resolves to the
+generated map package under `_work/e1-drive/amboy/` and the read-only
+`game-data/Blur/levels/usa_amboy/Level.levelphysics` bytes served at
+`/map-data/usa_amboy/Level.levelphysics`.
+
+The registry carries hard pins for the generated map/layout content hashes and
+file SHA-256 values, the source `render.json`/`slice.json` file and content
+hashes, and the physics SHA-256. The page verifies the map/layout content hashes,
+the layout file SHA-256, the physics bytes and the fetched source package bytes
+(`crypto.subtle`) before `e1_create`. A mismatch is a hard failure; there is no
+silent fallback to River or to an older package.
+
+Amboy rejects `?mp=1`, `?telemetry=1`, `?soak=1`, `?survey=1`,
+`?collisionprobe=...` and River-only courses; those modes remain River-only.
+
+### 36.2 Package build
+
+`probes/e1-drive/tools/build_map_amboy.mjs` reads the committed MAP2/READ1 slice
+and AMB1 render package read-only and writes:
+
+| output | content |
+|---|---|
+| `_work/e1-drive/amboy/map.json` | one merged mesh (529,624 vertices, 1,046,844 indices), 1,201 opaque draws, 179 RGBA textures, hidden collision surface, blocked/decal labels, source pins |
+| `_work/e1-drive/amboy/layout.json` | 8,673 measured samples, spawn, two checkpoints, finish, R1-style rules, declared 6 m band and coverage label |
+
+The builder verifies every payload file against the package pins and refuses a
+different content hash. Current files:
+
+| file | bytes | SHA-256 | content hash |
+|---|---:|---|---|
+| `map.json` | 49,524,812 | `52acd103...e01a` | `9290bd3f...ffd4` |
+| `layout.json` | 1,198,445 | `b89ae430...4f8d` | `bccb6bed...f644` |
+
+The layout length measured from the float32 layout buffer is **2,060.595408 m**,
+2.8e-5 m above the declared 2,060.595 m. Checkpoint arcs are 686.862337 m and
+1,373.667341 m; the finish is the last sample. The spawn is `(230, 1128)` with
+the slice heading `-2.35619449 rad`. The 6 m band is a declared
+controller/respawn band, not a measured road width.
+
+### 36.3 Render upload
+
+The map branch in `web/packet-adapter.js` uploads **two meshes** (the single
+Amboy map mesh and the selected car body) and **one draw list**: 1,201 opaque
+draws x the 179 deduplicated textures. The 334 effect/decal draws and 71
+decoder/alpha/runtime draws are skipped with their committed labels; no fallback
+texture or colour is invented. `instancesApplied:false`; 27 sections and 366
+instance descriptions are not applied. No vertex normals exist, so the existing
+consumer screen-space derivative normal path is used.
+
+The 179 textures are uploaded as `rgba8unorm-srgb` with the consumer's derived
+mip chain (the same policy as the River track/car packs); the producer's
+`srgbHint`/`mipHint` remain hints, not applied values.
+
+### 36.4 Physics and scripted finish
+
+The engine loads the complete `Level.levelphysics` through `_e1_create`; the
+package collision buffers are hidden physics provenance only. Measured:
+
+| gate | result |
+|---|---|
+| spawn settle | 61/61 state hashes identical to `_work/map-slice/amboy/physics-settle.json`; 4/4 contacts, finite |
+| settle sequence | `sha256:d25c4592...53491b38` |
+| scripted sprint | finish **222.050 s / tick 13,413**; checkpoints 68.617 s / 131.617 s in order |
+| run quality | 0 respawns, max lateral 1.472 m, max speed 13.077 m/s, wheel contact on every tick, no NaN |
+| replay | the recorded input sequence reproduces every state hash in a fresh module |
+| run anchor | `sha256:696e5f14...9a36d4` |
+
+The script uses `AMBOY_CONTROL` (12 m/s cruise, short pure pursuit) because the
+measured path turns back on itself several times. This is a controller choice,
+not recovered map or vehicle data; physics is unchanged.
+
+### 36.5 Verification and capture
+
+`probes/e1-drive/tools/verify_e1_map.mjs` runs 23 checks: builder determinism,
+file/content pins, page validator, 61/61 settle hashes, scripted finish,
+checkpoints, 0 respawn, finite/contact, replay. Browser evidence is produced by
+`capture_browser.mjs --mode map` at start/checkpoint/mid/finish with console 0
+and screenshots under `_work/e1-drive/browser-corvette-zr1-stock-map-amboy-*.png`.
+The capture verdict is `clean-console-and-gates` (0 messages / 0 errors or
+warnings); the finish frame reports 222.050 s with both checkpoints.
+
+### 36.6 Limits
+
+1. First-map integration only: one map, one car at a time, no opponents, props,
+   power-ups, AI, lap or retail race director.
+2. The path is measured draw coverage, not a retail start line. The 6 m band is a
+   declared rule, not a measured width.
+3. 27 unsupported sections (billboards) and 366 instance descriptions can add
+   surfaces; collision excludes the Box, four Cylinders and the
+   InstancedTriangleMesh.
+4. 334 additive/decal draws and 71 diagnostic draws are skipped; no additive pass
+   exists.
+5. No vertex normals; derivative normals are the documented fallback.
+6. No full-game claim.

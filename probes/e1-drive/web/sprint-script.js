@@ -166,8 +166,7 @@ export const SPRINT_CONTROL = Object.freeze({
  * 0.8 m band is a declared respawn rule for the tight face clearance, not the
  * physical road width (P61 measured an 11.75 m flat band).
  */
-export const LAP_CONTROL = Object.freeze({
-  cruiseSpeed: 10,
+export const LAP_CONTROL = Object.freeze({  cruiseSpeed: 10,
   headingLookahead: 8,
   steerGain: 4.0,
   steerRatePerTick: 0.08,
@@ -193,6 +192,41 @@ export const LAP_CONTROL = Object.freeze({
   lapLookaheadBase: 2.5,
   lapLookaheadSpeed: 0.3,
   lapLookaheadMax: 7
+});
+
+/**
+ * Controller for the measured usa_amboy point-to-point path (M3). The path has
+ * tight hairpins (the 2 km measured line turns back on itself several times), so
+ * this controller uses short-horizon pure pursuit and a lower cruise speed
+ * instead of the 310 m Stanley tuning. These are controller choices, not
+ * recovered vehicle or map values; the engine physics is untouched.
+ */
+export const AMBOY_CONTROL = Object.freeze({
+  cruiseSpeed: 12,
+  headingLookahead: 10,
+  steerGain: 3.0,
+  steerRatePerTick: 0.08,
+  speedSteerCeiling: 3,
+  lateralGain: 2.0,
+  yawDamping: 0.8,
+  narrowBandMetres: 6,
+  narrowSpeed: 7,
+  minSpeed: 5,
+  launchHeadingError: 0.5,
+  launchSpeed: 5,
+  launchArcMetres: 15,
+  brakeGain: 0.55,
+  throttleDeadband: 0.6,
+  anticipationSeconds: 1.8,
+  anticipationMetres: 25,
+  lateralAccel: 2.5,
+  finishSpeed: 10,
+  finishSlowdownMetres: 18,
+  purePursuit: true,
+  lapPurePursuit: false,
+  lapLookaheadBase: 3,
+  lapLookaheadSpeed: 0.25,
+  lapLookaheadMax: 6
 });
 
 const wrapArc = (arc, length) => {
@@ -339,7 +373,7 @@ export function sprintControlTerms(state, layout, constants = null) {
   let lateralTerm = 0;
   let desired;
   let lookaheadMetres = 0;
-  if (lap && control.lapPurePursuit) {
+  if (lap && control.lapPurePursuit || control.purePursuit) {
     lookaheadMetres = clamp(control.lapLookaheadBase + control.lapLookaheadSpeed * speed,
       control.lapLookaheadBase, control.lapLookaheadMax);
     const target = pointAt(course.arc + lookaheadMetres);
@@ -418,7 +452,8 @@ export function sprintScriptInput(rules, state, constants = null) {
   }
   if (!state) throw new Error('the scripted long-course sprint needs the engine state');
   if (rules.phase !== 'running') return rules.gateInput(SPRINT_DESIRED_INPUT);
-  return rules.gateInput(sprintControl(state, rules.layout, constants));
+  const control = rules.layout?.courseId === 'amboy' ? AMBOY_CONTROL : constants;
+  return rules.gateInput(sprintControl(state, rules.layout, control));
 }
 
 /**

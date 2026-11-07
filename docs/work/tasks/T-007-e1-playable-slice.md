@@ -470,6 +470,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
   hedef radius/extents, E_PICKUP_TYPE, icon binding.
 - Kanıt: `docs/work/analysis/powerup-projectiles.md`.
 
+### E1al — Amboy oynanabilir harita (MAP6)  ✅
+- `?map=amboy&script=sprint`: gerçek `usa_amboy` physics + **1.201 opaque draw /
+  269.300 tri / 179 doku** (2,65 MB), 2.060,595 m ölçülmüş yol.
+- Corvette scripted finish **222,050 s / tick 13.413**, checkpoint 68,617 /
+  131,617 s, 0 respawn, 4/4 temas, 0 NaN; replay birebir.
+- 334 additive decal + 71 diagnostic atlandı (etiketli); 27 section + 366
+  instance yok; vertex normal yok (derivative normal); collision 63.708 tri.
+- Map verifier **23/23**; River regression **2254/2254**; capture console 0;
+  suite **51/51**; checker 23/23.
+- Kanıt: `docs/work/verification/T-007-map-amboy.md`,
+  `_work/e1-drive/browser-corvette-zr1-stock-map-amboy-mid.png`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

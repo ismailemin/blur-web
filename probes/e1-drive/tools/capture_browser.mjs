@@ -56,9 +56,9 @@ const edge = EDGE_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!edge) throw new Error('msedge.exe not found; pass --edge <path>');
 
 const MODE = option('--mode', 'drive');
-if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp', 'mp-powerups'].includes(MODE)) {
+if (!['drive', 'sprint', 'lap', 'free', 'props', 'collision-v2', 'respawn', 'telemetry', 'restart', 'telemetry-restart', 'survey', 'ghost', 'audio', 'quality', 'mp', 'mp-powerups', 'map'].includes(MODE)) {
   throw new Error('unknown --mode ' + JSON.stringify(MODE) +
-    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality, mp or mp-powerups)');
+    ' (drive, sprint, lap, free, props, collision-v2, respawn, telemetry, restart, telemetry-restart, survey, ghost, audio, quality, mp, mp-powerups or map)');
 }
 // `--mode mp`/`mp-powerups` use the documented M1 capture ports: game 8802, room 8811.
 const PORT = Number(option('--port', MODE === 'mp' || MODE === 'mp-powerups' ? '8802' : '8801'));
@@ -447,6 +447,8 @@ async function capture(car, label, tick, options = {}) {
       ghost: p.ghost ?? null,
       props: p.props ?? null,
       collisionProbe: p.collisionProbe ?? null,
+      map: p.map ?? null,
+      mapCounts: p.mapCounts ?? null,
       overlays: {
         countdownHidden: document.getElementById('countdown')?.hidden ?? null,
         countdownText: document.getElementById('countdown')?.textContent ?? null,
@@ -459,7 +461,7 @@ async function capture(car, label, tick, options = {}) {
         ghostTagText: document.getElementById('ghost-tag')?.textContent ?? null,
         hudText: document.getElementById('hud')?.textContent ?? null
       },
-      bestStored: (() => { try { return localStorage.getItem('${SPRINT_BEST_KEY}'); } catch { return null; } })(),
+      bestStored: (() => { try { return localStorage.getItem('${options.bestKey ?? SPRINT_BEST_KEY}'); } catch { return null; } })(),
       render: update ? {
         tick: update.tick,
         hash: update.hash,
@@ -1704,6 +1706,7 @@ if (MODE !== 'drive') {
     : MODE === 'quality' ? await qualityCapturePass()
     : MODE === 'ghost' ? await ghostCapturePass()
     : MODE === 'survey' ? await surveyCapturePass()
+    : MODE === 'map' ? await mapCapturePass()
     : MODE === 'respawn' ? await respawnCapturePass()
       : MODE === 'restart' ? await restartCapturePass()
         : MODE === 'telemetry-restart' ? await telemetryRestartCapturePass()
@@ -2062,6 +2065,144 @@ async function qualityCapturePass() {
  * Start / checkpoint / finish captures of the scripted sprint, using the node
  * sprint run (run.json → sprint.cars[].captures) as the expected state.
  */
+/**
+ * usa_amboy map capture (`--mode map`): the M3 first-map browser gate. One page
+ * loads `?map=amboy&script=sprint`, verifies the package pins in the page, drives
+ * the measured 2,060.595 m course and is held at the node run's start/checkpoint/
+ * mid/finish ticks. Compares the page's state hashes, layout hash, finish and
+ * upload/draw counts against `_work/e1-drive/map-amboy-run.json`.
+ */
+async function mapCapturePass() {
+  const runPath = path.join(OUT, 'map-amboy-run.json');
+  const mapPath = path.join(OUT, 'amboy/map.json');
+  if (!existsSync(runPath) || !existsSync(mapPath)) {
+    throw new Error('missing map run/map document; run `node probes/e1-drive/tools/verify_e1_map.mjs` first');
+  }
+  const mapRun = JSON.parse(readFileSync(runPath, 'utf8'));
+  const mapDoc = JSON.parse(readFileSync(mapPath, 'utf8'));
+  const car = run.cars.find((candidate) => candidate.slug === mapRun.car.slug);
+  if (!car) throw new Error('map run car ' + mapRun.car.slug + ' is not in the roster run');
+  const body = geometry.carBodies[car.slug];
+  if (!body) throw new Error('geometry has no body for ' + car.slug);
+  const rows = [];
+  const passFailures = [];
+  const passCheck = (label, ok, detail) => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
+  const expectedDraws = mapDoc.counts.draws + body.carDraws.length;
+  const uploadBytes = meshBytes({ ...mapDoc.meshes[0], uv: mapDoc.meshes[0].uv }) + meshBytes(body.mesh);
+
+  for (const spec of mapRun.captures) {
+    const label = 'map-amboy-' + spec.label;
+    const shot = await capture(car, label, spec.tick, {
+      script: 'sprint',
+      extraQuery: 'map=amboy',
+      longRun: true,
+      bestKey: 'e1-drive.sprint.best.v3.amboy'
+    });
+    const probe = shot.probe;
+    const state = probe.sprint;
+    const overlay = probe.overlays ?? {};
+    passCheck(`${label}: held at tick ${spec.tick}`, probe.holdReached === true && probe.displayTick === spec.tick,
+      `display ${probe.displayTick}`);
+    passCheck(`${label}: page reports the Amboy map`, probe.map?.id === 'amboy', JSON.stringify(probe.map?.id));
+    passCheck(`${label}: page reports the pinned layout hash`, probe.sprintLayoutHash === mapRun.layout.hash,
+      (probe.sprintLayoutHash ?? 'none') + ' vs ' + mapRun.layout.hash);
+    passCheck(`${label}: browser state hash equals the node run`, probe.tickHashes[spec.tick]?.stateHash === spec.stateHash,
+      (probe.tickHashes[spec.tick]?.stateHash ?? 'none') + ' vs ' + spec.stateHash);
+    passCheck(`${label}: geometry uploads are the map mesh + the car body`, probe.geometryUploads === 2,
+      String(probe.geometryUploads));
+    passCheck(`${label}: uploaded bytes are the map mesh + the car body`,
+      probe.geometryUploadBytes === uploadBytes, `${probe.geometryUploadBytes} vs ${uploadBytes}`);
+    passCheck(`${label}: draw count is 1,201 opaque map draws + the car`,
+      probe.draws === expectedDraws && probe.drawsIssued === probe.frames * probe.draws,
+      `${probe.draws} / ${expectedDraws}`);
+    passCheck(`${label}: track layer is the 1,201-draw / 348,948-triangle Amboy mesh`,
+      probe.trackDraws === 1201 && probe.trackTriangles === 348948 && probe.trackTextures === 179 &&
+      probe.trackTextureBytes === 2654272,
+      JSON.stringify({ draws: probe.trackDraws, tri: probe.trackTriangles, tex: probe.trackTextures, bytes: probe.trackTextureBytes }));
+    passCheck(`${label}: skipped layers are labelled`, probe.mapCounts?.blockedDraws === 405 &&
+      probe.mapCounts?.decalDraws === 334 && probe.mapCounts?.diagnosticDraws === 71,
+      JSON.stringify(probe.mapCounts));
+
+    if (spec.label === 'start') {
+      passCheck(`${label}: countdown is on screen and the timer has not started`,
+        state?.phase === 'countdown' && state.elapsedTicks === 0 && state.checkpointsPassed === 0 &&
+        overlay.countdownHidden === false && overlay.resultsHidden === true,
+        JSON.stringify({ phase: state?.phase, elapsed: state?.elapsedTicks }));
+    } else if (spec.label === 'checkpoint') {
+      passCheck(`${label}: a checkpoint is shown and the timer is running`,
+        state?.phase === 'running' && state.checkpointsPassed >= 1 && state.progress > 0.3 &&
+        overlay.resultsHidden === true,
+        JSON.stringify({ phase: state?.phase, cp: state?.checkpointsPassed, progress: state?.progress }));
+    } else if (spec.label === 'mid') {
+      passCheck(`${label}: mid-course frame is running near half progress`,
+        state?.phase === 'running' && state.checkpointsPassed >= 1 &&
+        state.progress >= 0.45 && state.progress <= 0.55 && overlay.resultsHidden === true,
+        JSON.stringify({ phase: state?.phase, cp: state?.checkpointsPassed, progress: state?.progress }));
+    } else if (spec.label === 'finish') {
+      passCheck(`${label}: the finish fires with both checkpoints and the node time`,
+        state?.finished === true && state.checkpointsPassed === 2 &&
+        Math.abs(state.finishTimeSeconds - mapRun.sprint.finish.timeSeconds) < 1e-6 &&
+        state.progress === 1,
+        JSON.stringify({ finished: state?.finished, cp: state?.checkpointsPassed, time: state?.finishTimeSeconds }));
+      passCheck(`${label}: the results overlay shows the time and car`,
+        overlay.resultsHidden === false && (overlay.resultsTime ?? '').includes(mapRun.sprint.finish.timeSeconds.toFixed(3)) &&
+        (overlay.resultsTime ?? '').includes(car.name),
+        JSON.stringify({ time: overlay.resultsTime }));
+    }
+    rows.push({
+      label, tick: spec.tick, url: shot.url, screenshot: shot.screenshot,
+      stateHash: probe.tickHashes[spec.tick]?.stateHash ?? null, nodeStateHash: spec.stateHash,
+      phase: state?.phase ?? null, progress: state?.progress ?? null,
+      checkpointsPassed: state?.checkpointsPassed ?? null, finished: state?.finished ?? null,
+      finishTimeSeconds: state?.finishTimeSeconds ?? null,
+      map: probe.map?.id ?? null, layoutHash: probe.sprintLayoutHash ?? null,
+      geometryUploads: probe.geometryUploads, geometryUploadBytes: probe.geometryUploadBytes,
+      draws: probe.draws, drawsIssued: probe.drawsIssued, frames: probe.frames,
+      trackDraws: probe.trackDraws, trackTriangles: probe.trackTriangles,
+      trackTextures: probe.trackTextures, trackTextureBytes: probe.trackTextureBytes,
+      overlays: overlay, messages: shot.messages
+    });
+  }
+
+  const allMessages = rows.flatMap((row) => row.messages);
+  const blocking = allMessages.filter((entry) => entry.source !== 'console.log');
+  passCheck('console is clean in every map capture', blocking.length === 0,
+    blocking.map((entry) => entry.source + ' ' + entry.text).join(' | '));
+  const evidence = {
+    browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT },
+    mode: 'map',
+    map: 'amboy',
+    package: {
+      mapHash: mapDoc.hash,
+      layoutHash: mapRun.layout.hash,
+      counts: mapDoc.counts,
+      source: mapDoc.source
+    },
+    run: { finish: mapRun.sprint.finish, checkpoints: mapRun.sprint.checkpoints,
+      stateSequenceHash: mapRun.sprint.stateSequenceHash, replayReproduced: mapRun.sprint.replayReproduced },
+    captures: rows,
+    console: { totalMessages: allMessages.length, errorsAndWarnings: blocking.length, messages: allMessages },
+    assertions: { ok: passFailures.length === 0, failures: passFailures },
+    verdict: blocking.length === 0 && passFailures.length === 0 ? 'clean-console-and-gates' : 'failed'
+  };
+  writeFileSync(path.join(OUT, 'browser-evidence-map-amboy.json'),
+    JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+  writeFileSync(path.join(LOGS, 'edge-map-amboy.log'), browserLog, 'utf8');
+  return {
+    ok: evidence.verdict === 'clean-console-and-gates',
+    summary: {
+      verdict: evidence.verdict,
+      consoleMessages: evidence.console.totalMessages,
+      errorsAndWarnings: evidence.console.errorsAndWarnings,
+      failures: passFailures,
+      captures: rows.map((row) => ({ label: row.label, tick: row.tick,
+        phase: row.phase, progress: row.progress, checkpoints: row.checkpointsPassed,
+        finished: row.finished, finishTimeSeconds: row.finishTimeSeconds,
+        screenshot: row.screenshot, messages: row.messages.length }))
+    }
+  };
+}
+
 async function sprintCapturePass() {
   const runDocument = JSON.parse(readFileSync(path.join(OUT, 'run.json'), 'utf8'));
   if (!runDocument.sprint?.cars) {

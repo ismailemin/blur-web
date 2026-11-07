@@ -292,50 +292,99 @@ export function createSession(geometry, tick0, options = {}) {
   if (!Array.isArray(body.carNodes) || !Array.isArray(body.wheelGroups) || body.wheelGroups.length !== 4) {
     throw new Error('geometry body ' + body.slug + ' does not carry four wheel groups');
   }
-  const levelDraws = geometry.levelDraws.map((draw) => ({
-    ...draw,
-    world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-    worldKind: 'baked-into-mesh'
-  }));
-
-  // The real River render geometry: committed level_inspect direct draws, drawn
-  // at their source world positions. The collision surface is not a draw; it
-  // travels in `physicsSurfaces` with visible:false as physics provenance.
-  const trackVisual = geometry.trackVisual;
-  if (!trackVisual || trackVisual.label !== 'asset-reader-direct-draws' ||
-      !Array.isArray(trackVisual.draws) || trackVisual.draws.length === 0) {
-    throw new Error('geometry does not carry the v4 real track visual (asset-reader-direct-draws); ' +
-      'rebuild it with `node probes/e1-drive/tools/build_geometry.mjs`');
-  }
-  const trackMesh = geometry.meshes.find((mesh) => mesh.id === trackVisual.meshId);
-  if (!trackMesh) throw new Error('geometry track visual names a missing mesh ' + trackVisual.meshId);
-  const collisionSurface = geometry.collisionSurface;
-  if (!collisionSurface || collisionSurface.visible !== false || !collisionSurface.mesh) {
-    throw new Error('geometry is missing the hidden physics collision surface; rebuild it with ' +
-      '`node probes/e1-drive/tools/build_geometry.mjs`');
-  }
-  const physicsSurfaces = [{
-    id: collisionSurface.id,
-    meshId: collisionSurface.meshId,
-    visible: false,
-    physicsOnly: true,
-    vertexCount: collisionSurface.vertexCount,
-    triangleCount: collisionSurface.triangleCount,
-    bounds: collisionSurface.bounds,
-    source: collisionSurface.source,
-    reason: collisionSurface.reason,
-    mesh: collisionSurface.mesh,
-    draw: {
-      ...collisionSurface.draw,
-      world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+  // Map package branch (M3): `geometry.mapRender` means the static half comes
+  // from a map render package (one merged mesh + one opaque draw list + its
+  // texture pack) instead of the River level-props/track-visual pair. The River
+  // path below is untouched when `mapRender` is absent.
+  const mapRender = geometry.mapRender ?? null;
+  let levelDraws;
+  let trackVisual;
+  let trackMesh;
+  let collisionSurface;
+  let trackDraws;
+  let staticDraws;
+  let physicsSurfaces;
+  if (mapRender) {
+    levelDraws = [];
+    trackVisual = mapRender;
+    if (mapRender.label !== 'amboy-direct-draws' || !Array.isArray(mapRender.draws) ||
+        mapRender.draws.length === 0) {
+      throw new Error('geometry mapRender is not the committed Amboy direct-draw package');
     }
-  }];
-  const trackDraws = trackVisual.draws.map((draw) => ({
-    ...draw,
-    world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-    worldKind: 'baked-into-mesh'
-  }));
-  const staticDraws = levelDraws.concat(trackDraws);
+    trackMesh = geometry.meshes.find((mesh) => mesh.id === mapRender.meshId);
+    if (!trackMesh) throw new Error('map render names a missing mesh ' + mapRender.meshId);
+    collisionSurface = mapRender.collisionSurface;
+    if (!collisionSurface || collisionSurface.visible !== false || !collisionSurface.mesh) {
+      throw new Error('map package is missing the hidden physics collision surface');
+    }
+    physicsSurfaces = [{
+      id: collisionSurface.id,
+      meshId: collisionSurface.meshId,
+      visible: false,
+      physicsOnly: true,
+      vertexCount: collisionSurface.vertexCount,
+      triangleCount: collisionSurface.triangleCount,
+      bounds: collisionSurface.bounds,
+      source: collisionSurface.source,
+      reason: collisionSurface.reason,
+      mesh: collisionSurface.mesh,
+      draw: {
+        ...collisionSurface.draw,
+        world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+      }
+    }];
+    trackDraws = mapRender.draws.map((draw) => ({
+      ...draw,
+      world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      worldKind: 'baked-into-mesh'
+    }));
+    staticDraws = trackDraws;
+  } else {
+    levelDraws = geometry.levelDraws.map((draw) => ({
+      ...draw,
+      world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      worldKind: 'baked-into-mesh'
+    }));
+
+    // The real River render geometry: committed level_inspect direct draws, drawn
+    // at their source world positions. The collision surface is not a draw; it
+    // travels in `physicsSurfaces` with visible:false as physics provenance.
+    trackVisual = geometry.trackVisual;
+    if (!trackVisual || trackVisual.label !== 'asset-reader-direct-draws' ||
+        !Array.isArray(trackVisual.draws) || trackVisual.draws.length === 0) {
+      throw new Error('geometry does not carry the v4 real track visual (asset-reader-direct-draws); ' +
+        'rebuild it with `node probes/e1-drive/tools/build_geometry.mjs`');
+    }
+    trackMesh = geometry.meshes.find((mesh) => mesh.id === trackVisual.meshId);
+    if (!trackMesh) throw new Error('geometry track visual names a missing mesh ' + trackVisual.meshId);
+    collisionSurface = geometry.collisionSurface;
+    if (!collisionSurface || collisionSurface.visible !== false || !collisionSurface.mesh) {
+      throw new Error('geometry is missing the hidden physics collision surface; rebuild it with ' +
+        '`node probes/e1-drive/tools/build_geometry.mjs`');
+    }
+    physicsSurfaces = [{
+      id: collisionSurface.id,
+      meshId: collisionSurface.meshId,
+      visible: false,
+      physicsOnly: true,
+      vertexCount: collisionSurface.vertexCount,
+      triangleCount: collisionSurface.triangleCount,
+      bounds: collisionSurface.bounds,
+      source: collisionSurface.source,
+      reason: collisionSurface.reason,
+      mesh: collisionSurface.mesh,
+      draw: {
+        ...collisionSurface.draw,
+        world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+      }
+    }];
+    trackDraws = trackVisual.draws.map((draw) => ({
+      ...draw,
+      world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      worldKind: 'baked-into-mesh'
+    }));
+    staticDraws = levelDraws.concat(trackDraws);
+  }
 
   const wheelByCorner = new Map(body.wheelGroups.map((group) => [group.corner, group]));
   for (const corner of WHEEL_CORNERS) {
@@ -385,7 +434,7 @@ export function createSession(geometry, tick0, options = {}) {
     lastTick: null
   };
 
-  const meshes = [geometry.meshes[0], trackMesh, body.mesh].map((mesh) => ({
+  const meshes = (mapRender ? [trackMesh, body.mesh] : [geometry.meshes[0], trackMesh, body.mesh]).map((mesh) => ({
     id: mesh.id,
     storage: mesh.storage,
     vertexCount: mesh.vertexCount,
@@ -405,14 +454,23 @@ export function createSession(geometry, tick0, options = {}) {
       throw new Error('mesh ' + mesh.id + ' has a UV stream that does not match its vertex count');
     }
   }
-  if (!Array.isArray(geometry.textures) || geometry.textures.length === 0 || !geometry.texturePack) {
-    throw new Error('geometry does not carry the v5 static albedo textures; rebuild it with ' +
-      '`node probes/e1-drive/tools/build_geometry.mjs`');
+  if (!geometry.texturePack) {
+    throw new Error('geometry does not carry a texture pack');
   }
-  if (!Array.isArray(geometry.levelTextures) || geometry.levelTextures.length !== 4 ||
-      !geometry.levelPropTexturePack) {
-    throw new Error('geometry does not carry the P73b level-instance prop BC1 pack; rebuild it with ' +
-      '`node probes/e1-drive/tools/build_geometry.mjs`');
+  if (mapRender) {
+    if (!Array.isArray(mapRender.textures) || mapRender.textures.length === 0) {
+      throw new Error('map render package carries no textures');
+    }
+  } else {
+    if (!Array.isArray(geometry.textures) || geometry.textures.length === 0 || !geometry.texturePack) {
+      throw new Error('geometry does not carry the v5 static albedo textures; rebuild it with ' +
+        '`node probes/e1-drive/tools/build_geometry.mjs`');
+    }
+    if (!Array.isArray(geometry.levelTextures) || geometry.levelTextures.length !== 4 ||
+        !geometry.levelPropTexturePack) {
+      throw new Error('geometry does not carry the P73b level-instance prop BC1 pack; rebuild it with ' +
+        '`node probes/e1-drive/tools/build_geometry.mjs`');
+    }
   }
   if (!Array.isArray(body.textures) || !body.texturePack || !body.mesh.uv) {
     throw new Error('geometry body ' + body.slug + ' does not carry its P52 albedo textures and UV0 stream; ' +
@@ -420,8 +478,10 @@ export function createSession(geometry, tick0, options = {}) {
   }
   // The packet carries the static level/track pack plus the four level-prop BC1
   // images and only the driven car's own images, so the upload stays bounded by
-  // one car instead of the roster.
-  const packetTextures = geometry.textures.concat(geometry.levelTextures, body.textures);
+  // one car instead of the roster. In map mode the map's own texture pack replaces
+  // the River track/level-prop packs.
+  const packetTextures = (mapRender ? mapRender.textures : geometry.textures.concat(geometry.levelTextures))
+    .concat(body.textures);
   const textureIds = new Set(packetTextures.map((texture) => texture.id));
   if (textureIds.size !== packetTextures.length) {
     throw new Error('the packet texture set contains duplicate ids');
@@ -824,7 +884,139 @@ export function createSession(geometry, tick0, options = {}) {
     }
   };
 
-  // Wheel nodes in a fixed order so the per-tick matrix list is deterministic.
+  // Map package (M3) provenance replaces the River-specific scope text. Every
+  // value below is read from the map package; nothing is inferred.
+  if (mapRender) {
+    const mapCounts = geometry.map?.counts ?? null;
+    packet.diagnostics.scope =
+      'usa_amboy first-RenderList direct LOD0 draws: ' + mapRender.drawCount + ' opaque draws / ' +
+      (mapRender.triangleTotal ?? 0) + ' triangles across ' + mapRender.texturePack.uniqueBlobs +
+      ' uploaded textures, plus the ' + body.name + ' body drawn as ' + body.carParts.length +
+      ' manifest parts / ' + body.carDraws.length + ' draws; the ' + mapRender.blocked.draws +
+      ' blocked draws (334 effect/decal, 71 diagnostic) are skipped with labels; no vertex normals are present, ' +
+      'so shading uses the consumer screen-space derivative normals; materials/blend/sampler state remain diagnostic';
+    packet.diagnostics.extras.map = {
+      level: 'usa_amboy',
+      package: 'amboy-render',
+      label: mapRender.label,
+      source: mapRender.source ?? null,
+      counts: mapCounts,
+      drawCount: mapRender.drawCount,
+      triangleCount: mapRender.triangleTotal,
+      texturedDrawCount: mapRender.texturedDrawCount,
+      vertexCount: mapRender.vertexCount,
+      textures: {
+        count: mapRender.texturePack.uniqueBlobs,
+        bytesMip0: mapRender.texturePack.bytesMip0,
+        format: mapRender.texturePack.format,
+        srgbVariant: mapRender.texturePack.srgbVariant,
+        srgbAppliedByProducer: mapRender.texturePack.srgbAppliedByProducer,
+        mipPolicy: mapRender.texturePack.mipPolicy
+      },
+      blocked: mapRender.blocked,
+      normals: mapRender.normals,
+      instances: mapRender.instances,
+      unsupportedSections: mapRender.unsupportedSections,
+      collisionSurface: {
+        visible: false,
+        physicsOnly: true,
+        vertexCount: mapRender.collisionSurface.vertexCount,
+        triangleCount: mapRender.collisionSurface.triangleCount,
+        source: mapRender.collisionSurface.source
+      },
+      limits: mapRender.limits
+    };
+    packet.diagnostics.extras.track = {
+      id: mapRender.meshId,
+      trackVisual: mapRender.label,
+      drawCount: mapRender.drawCount,
+      texturedDrawCount: mapRender.drawCount,
+      vertexCount: mapRender.vertexCount,
+      triangleCount: mapRender.triangleTotal,
+      bounds: mapRender.bounds,
+      uv: {
+        storage: trackMesh.uv.storage,
+        components: trackMesh.uv.components,
+        values: trackMesh.uv.values,
+        bytes: trackMesh.uv.bytes,
+        sha256: trackMesh.uv.sha256,
+        source: trackMesh.uv.source.provenance
+      },
+      textures: {
+        count: mapRender.texturePack.uniqueBlobs,
+        rgbaBytes: mapRender.texturePack.bytesMip0,
+        sampler: mapRender.texturePack.sampler,
+        coverage: null
+      },
+      sections: [],
+      reason: 'usa_amboy first-RenderList direct LOD0 draws from the committed map-slice render package; ' +
+        'every opaque draw carries its source index range, real UV0 and resolved static albedo identity',
+      coverage: null
+    };
+    packet.diagnostics.extras.textures.levelAndTrack = {
+      count: mapRender.texturePack.uniqueBlobs,
+      rgbaBytes: mapRender.texturePack.bytesMip0,
+      source: 'usa_amboy map-slice render package'
+    };
+    packet.diagnostics.extras.textures.reason =
+      'the packet carries the usa_amboy 179 merged RGBA8 mip0 albedo blobs plus only the driven car\'s ' +
+      'own P52 images; the producer records sRGB/mip generation as hints and the consumer applies its ' +
+      'documented sRGB + derived mip policy. Material colour, blend state and sampler wrap/filter are not applied';
+    packet.diagnostics.extras.textures.uploaded = {
+      count: packetTextures.length,
+      rgbaBytes: packetTextures.reduce((sum, texture) => sum + texture.rgbaBytes, 0)
+    };
+    packet.diagnostics.extras.collisionSurface = {
+      id: mapRender.collisionSurface.id,
+      visible: false,
+      physicsOnly: true,
+      vertexCount: mapRender.collisionSurface.vertexCount,
+      triangleCount: mapRender.collisionSurface.triangleCount,
+      bounds: mapRender.collisionSurface.bounds,
+      source: mapRender.collisionSurface.source,
+      reason: 'the simulated wheels trace usa_amboy/Level.levelphysics through the wasm physics; this ' +
+        'collision mesh is kept in packet.physicsSurfaces for provenance and is not in packet.meshes, ' +
+        'so it is neither uploaded nor drawn'
+    };
+    packet.diagnostics.extras.levelProps = {
+      meshId: mapRender.meshId,
+      drawCount: 0,
+      texturedDrawCount: 0,
+      diagnosticDrawCount: 0,
+      texturedTriangles: 0,
+      diagnosticTriangles: 0,
+      blockedInstances: [],
+      blockedReason: 'none: the usa_amboy package has no River level-prop layer',
+      manifest: null,
+      manifestSha256: null,
+      contentHash: null,
+      textures: 0,
+      textureBytes: 0,
+      uvVertices: 0,
+      uvValues: 0,
+      uvBytes: 0,
+      uvSha256: null,
+      sampler: null,
+      reason: 'the map package replaces the River level-prop/track packs'
+    };
+    packet.diagnostics.approximations = [
+      'usa_amboy direct draws sample their static g_tAlbedo image with the real UV0 stream and the consumer sRGB/mip policy; material colour, blend state and sampler wrap/filter remain unapplied',
+      'no vertex normals were decoded; shading uses screen-space derivatives of the world position (the existing consumer path)',
+      'the 334 effect/decal draws and 71 diagnostic draws are skipped with labels: no fallback texture or colour is invented',
+      'the 27 unsupported sections and 366 instance descriptions are not applied and can add surfaces',
+      'one directional light; no shadow, post-process, particle or effect pass exists in this consumer',
+      'wheel placement uses the manifest rest-pose translation; the spin angle is integrated from the physics wheel angular velocity'
+    ];
+    packet.diagnostics.limits = [
+      'usa_amboy first-RenderList direct LOD0 draws only: 27 unsupported sections and 366 instance descriptions are not applied',
+      'the path is measured (2,060.595 m), not a retail start line; this is one point-to-point sprint, not a lap',
+      'collision triangles exclude the Box, four Cylinders and the InstancedTriangleMesh; the engine still loads the complete Level.levelphysics',
+      'no Amboy prop colliders, power-ups, opponents, AI or race audio',
+      'one car at a time; the car body uses the selected roster car\'s own mesh'
+    ];
+  }
+
+
   const wheelNodesInOrder = [];
   for (const corner of WHEEL_CORNERS) {
     for (const spinning of [true, false]) {
