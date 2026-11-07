@@ -752,6 +752,14 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Lap 0/902 (min 3,044 m), free 0/121 (min 3,793 m), 310 roadside 0/1245 bloke; dört on-course arc bilinçli hariç. 8/8 head-on, 4 yön, 0 tunneling; **45/45**; V1 array byte-identical.
 - Kanıt: `probes/prop-collision/README.md` §P74, `_work/prop-collision/colliders-v2.json`, `_work/free-roam-prop/colliders-r04-v2.json`.
 
+## 7 Kasım 2026 — tam oyun / multiplayer planı
+
+- Hedef: iki tarayıcının oda koduyla aynı yarışı bitirdiği, içerik genişleyen bir sürüm. Plan: `docs/plan/FULL_GAME.md`.
+- Baseline: 4 mod, 5 araç, 1 harita, 838/838; eksik: netcode, power-up'lar, 19 harita, 62 araç, menü/lobby.
+- M1 kritik yol: oda servisi + iki istemci + `?mp=1` entegrasyonu; sonra power-up, harita, araç.
+- Paralel M0 akışları başlatıldı: `probes/net-mvp/`, `probes/map-pipeline/`, `probes/vehicle-pipeline/`, `probes/powerups/`.
+- Aynı `_work/e1-drive` doğrulama hattında eşzamanlı agent yok; probe'lar ayrık dizinlerde.
+
 ## 6 Kasım 2026 — level-instance UV0 reader
 
 - `scene_reader.cpp`: 22 level-instance draw → **22/22 UV0** (F16_2), material/albedo zinciri; UV stream **105.296 B**, hash `158a3ac8…`.

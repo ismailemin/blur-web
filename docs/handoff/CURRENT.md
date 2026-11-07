@@ -4,7 +4,7 @@
 **Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, **loop-01 3 tur**, **free-roam**, 5 dokulu araç, ghost, **motor sesi**, tarayıcıda test edilebilir.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
 **Son commit'ler:** `39bd1b6` free-roam, `ff8a336` prop colliders, `8ac0109` ghost, `c63d4a4` audio, `777748c` steering.
-**KAPANMA/RESUME:** [`RESUME_2026-11-06.md`](RESUME_2026-11-06.md) — kapanış kaydı; P67 sonradan düzeltildi ve commit edildi. Sıradaki: `?course=free`.
+**KAPANMA/RESUME:** [`RESUME_2026-11-06.md`](RESUME_2026-11-06.md) — kapanış kaydı; P67 sonradan düzeltildi ve commit edildi. Sıradaki: **tam oyun / multiplayer** (`docs/plan/FULL_GAME.md`).
 
 ## Şu an neredeyiz?
 
@@ -43,6 +43,13 @@
 - Doğrulama: `verify_asset_probe.py --skip-build` **28/28**, CTest **14/14**.
 
 ## Sıradaki iş
+
+**Tam oyun / multiplayer hedefi (7 Kasım 2026):** Plan
+`docs/plan/FULL_GAME.md`. İlk kapı **M1: iki tarayıcı, bir harita, mevcut 5
+araç, oda → hazır → yarış → sonuç**. İçerik genişlemesi (19 harita, 62 araç,
+silahlar/mayınlar/kalkanlar) M0 denetimleriyle başlıyor. Paralel akışlar:
+`probes/net-mvp/`, `probes/map-pipeline/`, `probes/vehicle-pipeline/`,
+`probes/powerups/`.
 
 **P67 — loop-01 3 tur + prop collision (TAMAM, doğrulandı):**
 `?course=lap` P61 `loop-01` (222,04 m) üzerinde 3 turluk yarış. 5 araç
