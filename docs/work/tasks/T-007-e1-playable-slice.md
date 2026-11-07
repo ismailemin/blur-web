@@ -378,6 +378,18 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - E1 entegrasyon gap'i: `?map=amboy`, packet producer, WebGPU upload, decal pass.
 - Kanıt: `docs/work/analysis/map-slice-amboy-render.md`.
 
+### E1ae — Gerçek pickup yerleşimi (PWR3)  ✅ veri
+- `usa_la_river` MP rotasında **54 PickupPosition** actor: Blindfire 12,
+  Shunt 9, Barge 7, Nitrous 7, Repair 6, Shield 6, Bomb 4, Shock 3.
+- 26'sı 8 shuffle grubunda (her grupta bir tip), 28'i sabit; min aralık 7,809 m.
+- Kaynak zinciri: `multiplayer.bin Route` → `amax.bin` → `actorpack.xt`
+  `LevelActorList` → `PickupPosition`; hepsi hash'li.
+- 310 m parkurla örtüşme **0** (en yakın 72,8 m); loop-01'de **2** (1,26/1,80 m);
+  retail 20 slotluk start grid loop-01'de.
+- Doğrulama **1.415/1.415**. Kanıt: `docs/work/analysis/pickup-placement.md`.
+- Not: PWR2'nin geçici 310 m arc yerleşimi gerçek veriyle örtüşmüyor; M2 için
+  loop-01/retail rota tercih edilmeli.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

@@ -468,7 +468,9 @@ should map onto those slots rather than introduce a second inventory model.
 
 ### 8.3 What must still be recovered before M2
 
-1. Pickup **placement** per track/mode (spawn points, rows, level actor data).
+1. Pickup **placement** per track/mode (spawn points, rows, level actor data) —
+   recovered by PWR3 for the raced `usa_la_river` route; see §11 and
+   `docs/work/analysis/pickup-placement.md`.
 2. `Normal` respawn seconds and the exact `AlwaysOn`/`None` semantics.
 3. Projectile lifetime, hit volume and line-of-sight rules.
 4. Charge/ammo rules (Blindfire levels vs HUD `blindfire1..3`).
@@ -529,3 +531,47 @@ Determinism: two consecutive builds produce the same `powerups.json` SHA-256
   the retail integer values are not invented.
 - **No e1-drive/asset-reader change.** This task produced data, a prototype and
   this document only.
+
+---
+
+## 11. Pickup placement (PWR3, 7 November 2026)
+
+**Date:** 7 November 2026
+**Owner:** PWR3 (sub-agent)
+**Scope:** `probes/powerups/**`, `_work/powerups/**`, `_work/logs/powerups/**`,
+this section and `docs/work/analysis/pickup-placement.md`. No change to
+e1-drive, race-rules, net-mvp, asset-reader, tools, other probes, `upstream/` or
+`game-data/`.
+**Result:** **54 `PickupPosition` actors** recovered for the raced
+`usa_la_river` multiplayer route (record 1643385212, `RouteNumber 3`) through
+`MultiplayerRace.route → Route.MultiplayerActorLists → LevelActorList 2512484467`.
+Types: Nitrous 7, Shock 3, Shunt 9, Blindfire 12, Barge 7, Bomb 4, Repair 6,
+Shield 6. Eight shuffle groups cover 26 placements (one of each allowed type per
+`(RowType, RowId)`); 28 placements are fixed-type. All overrides are neutral
+(`PickupActiveLevel 1`, zero timers, no shuffle flags).
+
+The retail set is **not on the 310 m collision-only course** (0 within 2.0 m;
+nearest 72.80 m). It does cross loop-01: 2 placements are within the 2.0 m
+pickup radius (nearest 1.26 m) and 5 within 10 m. The same route's 20-slot
+`StartPosition` list sits on loop-01 (0.285–34.50 m), which is why loop-01 is
+part of the retail start area while the 310 m spawn is not.
+
+Against the PWR2 provisional 6-slot plan (arcs `[40,90,140,190,240,280]`,
+types `[Bomb,Shield,Repair]×2`): **0/6** provisional slots have a recovered
+position within 2.0 m; the nearest provisional slot is **73.04 m** from a
+recovered placement. The plan stays correctly labelled `provisional` for the
+310 m course.
+
+The secondary River route 2942047131 (`RouteNumber 6`) has a 53-placement layout
+but is referenced by **0** multiplayer races; it is recorded, not used.
+
+Manifest: `_work/powerups/placements.json` (file
+`6458e37aebb84a0df52f9601ce4bc719cfd4624f81c37150c4a4e4f9211bfc05`, canonical
+`e5e2e449fed98c4b7a2d83255566978a2fd15bdf8f4b35f159cb0f4f0b2d3607`).
+Verifier: **1415/1415 PASS**. Full sources, table, respawn-group semantics,
+course projections, provisional diff and the M2/PWR2 integration contract are in
+`docs/work/analysis/pickup-placement.md`.
+
+**Limits:** placement data only; no renderer/full-game claim. The retail `.aid`
+route arc, `Normal` respawn seconds, runtime RNG order and probability
+normalisation remain unrecovered and are typed in the manifest.

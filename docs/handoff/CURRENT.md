@@ -164,6 +164,11 @@ Launcher oda servisini 8811'de açar. Kanıt:
 aynı; 17.813/17.813, iki build byte-identical. E1 gap: map registry/packet/
 upload. Kanıt: `docs/work/analysis/map-slice-amboy-render.md`.
 
+**PWR3 — pickup yerleşimi:** `usa_la_river` MP rotasında **54 PickupPosition**
+(8 tip, 26'sı 8 shuffle grubu); 310 m ile örtüşme 0 (en yakın 72,8 m), loop-01'de
+2 (1,26/1,80 m). Doğrulama **1.415/1.415**. Kanıt:
+`docs/work/analysis/pickup-placement.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

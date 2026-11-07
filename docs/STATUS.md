@@ -830,6 +830,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Geometry buffer'ları MAP2 ile byte-identical; UV 1.606/1.606 MAP3 ile aynı; iki build byte-identical.
 - Doğrulama **17.813/17.813**. E1 gap: `?map=amboy`, packet producer, GPU upload, decal pass. Kanıt: `docs/work/analysis/map-slice-amboy-render.md`.
 
+## 7 Kasım 2026 — gerçek pickup yerleşimi
+
+- `usa_la_river` MP rotasında **54 PickupPosition** (Blindfire 12, Shunt 9, Barge 7, Nitrous 7, Repair 6, Shield 6, Bomb 4, Shock 3); 26'sı 8 shuffle grubunda.
+- 310 m ile örtüşme 0 (en yakın 72,8 m); loop-01'de 2 (1,26/1,80 m). Retail 20 slotluk grid loop-01'de.
+- Doğrulama **1.415/1.415**. Kanıt: `docs/work/analysis/pickup-placement.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).
