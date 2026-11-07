@@ -130,12 +130,18 @@ class Object:
             return 8
         if ctype == 3:  # ActionOut: name
             return 4
-        if ctype in (4, 5, 9, 10, 12, 14, 16, 18):  # vector/event/coord/audio inputs
+        if ctype == 4:  # VectorIn: name + X/Y/Z AudioFloat
+            return 16
+        if ctype == 5:  # VectorOut: name + 3 x (S32, U32, F32)
+            return 40
+        if ctype in (9, 10, 12, 14, 16, 18):  # event/coord/audio inputs: name only
             return 4
         if ctype in (13, 15, 17, 19):  # audio outputs: name + input connector
             return 8
-        if ctype in (7, 11):  # control/coordinate outputs: name + option
+        if ctype == 7:  # ControlOutput (AUDIO_NEW_OUTPUT_OUTPUTS): name + Option
             return 12
+        if ctype == 11:  # CoordinateOutput: name + Com input
+            return 8
         if ctype == 6:  # ControlInput
             return 4
         if ctype == 8:  # EventInput
@@ -156,10 +162,14 @@ class Object:
             return 4 + 3 * 8 + 4
         if ctype == 37:  # Product: name + uNumInputs + inputs
             return 8 + u16(d, data + 4) * 8
-        if ctype in (36, 40, 41, 42):  # Sum/Exponent/Max/Min
+        if ctype in (36, 41, 42):  # Sum/Max/Min: name + uNumInputs + inputs
             return 8 + u16(d, data + 4) * 8
-        if ctype == 44:  # Gradient
+        if ctype == 40:  # Exponent: name + Control input + Option power
+            return 16
+        if ctype == 44:  # Gradient: name + Control input
             return 8
+        if ctype in (26, 27):  # LowPass/HighPass: name + Control input + Option cutoff
+            return 16
         if ctype == 21:  # PiecewiseLinearFunction: name, control, option, count
             return 20 + u16(d, data + 16) * 12
         if ctype == 57:  # PiecewiseLinearGraph
@@ -174,15 +184,17 @@ class Object:
             return 52 + u16(d, data + 48) * 4
         if ctype == 60:  # StereoOneShotSound
             return 52 + u16(d, data + 48) * 4
-        if ctype == 61:  # MonoOneShotSoundTable
-            return 52 + u16(d, data + 48) * 4
-        if ctype == 62:  # StereoOneShotSoundTable
-            return 52 + u16(d, data + 48) * 4
+        if ctype == 61:  # MonoOneShotSoundTable: Data=60, then InputWave[uWaves], U32[uEffects]
+            return 60 + u16(d, data + 56) * 4 + u16(d, data + 52) * 4
+        if ctype == 62:  # StereoOneShotSoundTable (same DataSize rule as mono)
+            return 60 + u16(d, data + 56) * 4 + u16(d, data + 52) * 4
         if ctype == 63:  # MonoLoopingSound
             return 60 + u16(d, data + 56) * 4
         if ctype == 64:  # StereoLoopingSound
             return 60 + u16(d, data + 56) * 4
         if ctype == 20:  # Variable
+            return 8
+        if ctype == 51:  # SampleAndHold: name + Control input
             return 8
         if ctype == 23:  # Source: name, size option, 33 floats, 11 connectors
             return 168
@@ -234,7 +246,7 @@ class Object:
             return 24 + u16(d, data + 20) * 4
         if ctype == 199:  # MessageDelay: name, option, event
             return 16
-        if ctype == 200:  # ImpactFilter: name, control, 2 options, event
+        if ctype == 198:  # ImpactFilter (Component.h:368): name, control, 2 options, event
             return 28
         if ctype == 190:  # eVector: name, 3 options, input vector
             return 32

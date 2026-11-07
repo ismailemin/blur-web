@@ -313,6 +313,17 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Selftest **22/22**; ana suite'e eklendi. API M1 entegrasyonuna hazır.
 - Kanıt: `docs/work/analysis/net-mvp.md`, `_work/net-mvp/browser-two-clients-finish.png`.
 
+### E1y — Tyre + collision sesi (A2)  ✅ modül hazır
+- 19 bank / **269 wave** decode; **53'ü bağlandı** (11 tyre loop + 42 collision
+  one-shot). `wheel_dry/offroad/common`, `car_collisions`, `do_*`.
+- Kanıtlanmış PLF eğrileri (dry/offroad speed/skid/pitch) ve 18 malzeme→çarpma
+  tablosu; desteklenmeyen malzeme `unsupported-material` (ses uydurulmaz).
+- Harness: dry/offroad/gravel/grass/sand/foliage RMS 0,01–0,145; impact 0,293;
+  mute 0; console **0**. Parser düzeltmeleri: `VectorIn::Data` 16 B, ADPCM son blok.
+- Kanıt: `docs/work/analysis/audio-tyre-collision.md`,
+  `_work/audio/tyre-collision-harness.png`.
+- Sıradaki: E1'de `setSurface`/`setSlip`/`triggerImpact` bağlantısı.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

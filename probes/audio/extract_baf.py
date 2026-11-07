@@ -125,18 +125,35 @@ def decode_adpcm_block(source: bytes, prev1: float, prev2: float, delta: float,
     return p1, p2, d
 
 
-def decode_adpcm(data: bytes, channels: int, samples: int) -> list[float]:
-    """Decode interleaved VAG blocks; returns per-channel-major float samples."""
+def decode_adpcm(data: bytes, channels: int, samples: int) -> tuple[list[float], dict]:
+    """Decode interleaved VAG blocks; returns (samples, extent diagnostics).
+
+    The retail decoder decodes whole 64-sample blocks and then either stops at
+    `mDestPCMSamples` or pads the tail with zeros (decoderadpcm4bit.cpp:133-136).
+    A header sample count that is not a multiple of 64 is therefore normal and
+    is not an error.
+    """
     block = BATCH_BYTES_MONO if channels == 1 else BATCH_BYTES_STEREO
     frames = len(data) // block
-    if frames * BATCH_SAMPLES != samples:
-        raise ValueError(f"ADPCM extent mismatch: {frames} blocks, {samples} samples")
+    if len(data) % block:
+        raise ValueError(f"ADPCM payload has {len(data) % block} trailing bytes")
+    decoded_frames = frames * BATCH_SAMPLES
+    extent = {
+        "blocks": frames,
+        "decodedFrames": decoded_frames,
+        "headerFrames": samples,
+        "trimmedFrames": max(0, decoded_frames - samples),
+        "paddedFrames": max(0, samples - decoded_frames),
+    }
     out: list[float] = []
     if channels == 1:
         p1 = p2 = 0.0
         delta = 1.0
         for f in range(frames):
             p1, p2, delta = decode_adpcm_block(data[f * 33:(f + 1) * 33], p1, p2, delta, out)
+        out = out[:samples]
+        if len(out) < samples:
+            out.extend([0.0] * (samples - len(out)))
     elif channels == 2:
         p1l = p2l = p1r = p2r = 0.0
         dl = dr = 1.0
@@ -146,11 +163,17 @@ def decode_adpcm(data: bytes, channels: int, samples: int) -> list[float]:
             base = f * BATCH_BYTES_STEREO
             p1l, p2l, dl = decode_adpcm_block(data[base:base + 33], p1l, p2l, dl, left)
             p1r, p2r, dr = decode_adpcm_block(data[base + 33:base + 66], p1r, p2r, dr, right)
-        for i in range(min(len(left), len(right))):
+        left = left[:samples]
+        right = right[:samples]
+        if len(left) < samples:
+            left.extend([0.0] * (samples - len(left)))
+        if len(right) < samples:
+            right.extend([0.0] * (samples - len(right)))
+        for i in range(samples):
             out.extend((left[i], right[i]))
     else:
         raise ValueError(f"unsupported ADPCM channels {channels}")
-    return out
+    return out, extent
 
 
 def parse_baf(data: bytes) -> dict:
@@ -208,8 +231,8 @@ def parse_baf(data: bytes) -> dict:
     }
 
 
-def wave_pcm(bank: bytes, info: dict, chunk: dict | None) -> tuple[list[float], int, int]:
-    """Return (samples, channels, sample_rate) for one wave."""
+def wave_pcm(bank: bytes, info: dict, chunk: dict | None) -> tuple[list[float], int, int, dict]:
+    """Return (samples, channels, sample_rate, extent) for one wave."""
     if info["format"] != 7:
         raise ValueError(f"wave {info['name']}: format {info['format']} not decoded")
     meta = info["adpcm"]
@@ -220,8 +243,8 @@ def wave_pcm(bank: bytes, info: dict, chunk: dict | None) -> tuple[list[float], 
     payload = bank[start:start + length]
     if len(payload) != length:
         raise ValueError(f"wave {info['name']}: payload out of bounds")
-    samples = decode_adpcm(payload, meta["channels"], meta["samples"])
-    return samples, meta["channels"], meta["sampleRate"]
+    samples, extent = decode_adpcm(payload, meta["channels"], meta["samples"])
+    return samples, meta["channels"], meta["sampleRate"], extent
 
 
 def write_wav(path: Path, samples: list[float], channels: int, rate: int) -> None:
@@ -268,6 +291,11 @@ def main() -> None:
     bank_sha = hashlib.sha256(bank).hexdigest()
     parsed = parse_baf(bank)
     (outdir / (args.asset.replace("\\", "_").strip("_") + ".baf")).write_bytes(bank)
+    # Report name follows the asset basename so extracting another bank does not
+    # overwrite the race_v8 evidence. For \audio\race_v8.baf this is exactly the
+    # historical `race_v8.baf.json`.
+    report_name = Path(args.asset.replace("\\", "/")).name + ".json"
+    report_path = outdir / report_name
 
     report = {
         "pak": args.pak, "asset": entry, "bankSha256": bank_sha,
@@ -288,7 +316,7 @@ def main() -> None:
     if args.list:
         for w in parsed["waves"]:
             print(w["index"], w["name"], w.get("adpcm"))
-        (outdir / "race_v8.baf.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({"bank": parsed["bankName"], "waves": len(parsed["waves"])}))
         return
 
@@ -298,7 +326,7 @@ def main() -> None:
             continue
         if info["format"] != 7:
             continue
-        samples, channels, rate = wave_pcm(bank, info, parsed["dataChunks"][info["index"]])
+        samples, channels, rate, extent = wave_pcm(bank, info, parsed["dataChunks"][info["index"]])
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in info["name"])
         wav = outdir / f"{safe}.wav"
         write_wav(wav, samples, channels, rate)
@@ -309,14 +337,14 @@ def main() -> None:
             "sha256": digest, "sampleRate": rate, "channels": channels,
             "samples": st["samples"], "durationSeconds": st["samples"] / channels / rate,
             "peak": st["peak"], "rms": st["rms"],
-            "adpcm": info["adpcm"],
+            "adpcm": info["adpcm"], "extent": extent,
         })
         print(f"{info['name']}: {channels}ch {rate}Hz {st['samples']/channels/rate:.3f}s "
               f"peak={st['peak']:.3f} rms={st['rms']:.4f} sha256={digest[:16]}")
 
     if not report["outputs"]:
         parser.error("no matching ADPCM waves")
-    (outdir / "race_v8.baf.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"bank sha256={bank_sha}")
 
 

@@ -19,6 +19,10 @@ through Web Audio with the exact retail curves.
 | `web/engine-audio.js` | **Standalone ES module** — six looping layers + exact retail PLF curves, gesture-gated start, typed failure states |
 | `web/index.html`, `web/module-harness.js` | Harness page for the module; exposes `window.engineAudioProbe` |
 | `capture_module.mjs` | Headless Edge verification of the module (no autoplay override, real click) |
+| `dump_tyre_collision.py` | Builds `_work/audio/tyre-collision-model.json` and the AOBJ script disassembly |
+| `web/tyre-collision-audio.js` | **Standalone ES module** — dry/offroad tyre loops + material-routed CollisionWorld one-shots, gesture-gated start, typed failures |
+| `web/tyre-collision.html`, `web/tyre-collision-harness.js` | Harness page; exposes `window.tyreCollisionProbe` |
+| `capture_tyre_collision.mjs` | Headless Edge verification of the tyre/collision module |
 
 ## Run
 
@@ -69,6 +73,26 @@ API, integration recipe, evidence and limits:
 `docs/work/analysis/audio-engine-module.md`. The P62 harness above is unchanged
 (`/` and `/harness.js` still serve the same bytes).
 
+## Tyre + collision module
+
+`probes/audio/web/tyre-collision-audio.js` extends the same pattern to the
+retail `Wheel_Dry` / `Wheel_OffRoad` loops and the `CollisionWorld` impact
+tables. It exposes `setSurface('dry'|'offroad')`, `setSlip(slip, speed)`,
+`triggerImpact(strength, material)`, `setMuted`, `dispose` and gesture-only
+`ensureStarted()`.
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+# decode the banks/graphs listed in the analysis doc, then:
+& $py probes/audio/dump_tyre_collision.py
+node probes/audio/serve.mjs --port 8810
+# open http://127.0.0.1:8810/web/tyre-collision.html and press "Start audio"
+node probes/audio/capture_tyre_collision.mjs
+```
+
+API, decoded material routing, evidence and limits:
+`docs/work/analysis/audio-tyre-collision.md`.
+
 ## Format notes
 
 - `root.pak` is PAK V2 with `packet-zlib` (`codec 4`).
@@ -84,6 +108,18 @@ API, integration recipe, evidence and limits:
   not affect the Engine1..7 curves used here.
 - `RaceV8_Engine_720` exists in the bank but has no `Engine0Sound`/`Engine0Volume`
   component in this graph, so it is not used by the model.
+- Tyre/collision waves use the same BAF/ADPCM format, but many have a header
+  sample count that is not a multiple of 64. `extract_baf.py` decodes whole
+  blocks and truncates/pads to the header count, matching
+  `decoderadpcm4bit.cpp:133-136`, and records the extent in the report.
+- `inspect_dat.py` now reads `VectorIn` (16 B), `VectorOut` (40 B),
+  `CoordinateOutput` (8 B), `ImpactFilter` (type 198, 28 B), `SampleAndHold`
+  (8 B), `Exponent` (16 B), low/high pass (16 B) and the one-shot sound-table
+  layout from the upstream headers. Before the `VectorIn` fix, four phantom
+  `ParameterIn` components shifted every later control index in the do_* graphs.
+- `collisionworld.dat` has 14 surface tables and an 18-value
+  `CollisionScript` material routing; the full mapping is in
+  `docs/work/analysis/audio-tyre-collision.md` §4.2.
 
 ## Limits
 

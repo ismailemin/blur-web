@@ -797,6 +797,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Harness **21/21** (4 istemci, 30 s, 1% loss + 80 ms, reconnect); browser 2 iframe **console 0**, 600/600 state, aynı final hash. Selftest **22/22**.
 - Ana suite'e eklendi. Kanıt: `docs/work/analysis/net-mvp.md`, `_work/net-mvp/browser-two-clients-finish.png`.
 
+## 7 Kasım 2026 — tyre + collision sesi
+
+- 19 bank / 269 wave decode; 53'ü modüle bağlandı (11 tyre loop + 42 impact one-shot). `VectorIn::Data` 16 B ve ADPCM son blok parser düzeltmeleri.
+- Dry/offroad/gravel/grass/sand/foliage RMS 0,01–0,145; impact 0,293; mute 0; **console 0**.
+- 18 malzeme→çarpma tablosu; desteklenmeyen malzeme tipli ret. Kanıt: `docs/work/analysis/audio-tyre-collision.md`.
+
 ## 7 Kasım 2026 — ana suite 36 kontrol
 
 - `tools/verify_asset_probe.py` artık power-up tanımları + kuralları, 62 araç matrisi, 19 harita matrisi ve V2 collider kapısını da çalıştırıyor.

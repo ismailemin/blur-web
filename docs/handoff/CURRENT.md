@@ -133,6 +133,10 @@ entegrasyonu için hazır. Kanıt: `docs/work/analysis/race-rules.md`.
 final hash. M1 entegrasyonu için API hazır. Kanıt:
 `docs/work/analysis/net-mvp.md`.
 
+**A2 — tyre + collision sesi:** 19 bank/269 wave; 53'ü bağlı (11 tyre loop +
+42 impact); kanıtlanmış PLF eğrileri + 18 malzeme tablosu; harness console 0.
+Kanıt: `docs/work/analysis/audio-tyre-collision.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56
