@@ -69,16 +69,21 @@ const respawnTarget = (playerId) => ({
 // ---------------------------------------------------------------- manifest/data
 check('manifest exposes the 11 PickupType entities', manifest.entities.length === 11, manifest.entities.length);
 check('manifest hash is present', typeof manifest.hashes?.manifestContent === 'string', manifest.hashes?.manifestContent);
-check('integrated slice is exactly Bomb/Shield/Repair',
-  JSON.stringify(POWERUP_SLICE_TYPES) === JSON.stringify(['Bomb', 'Shield', 'Repair']), POWERUP_SLICE_TYPES.join(','));
-for (const type of ['Nitrous', 'Shock', 'Shunt', 'Blindfire', 'Barge', 'SuperShield']) {
+check('integrated slice is exactly Bomb/Shield/Repair/Nitrous/Shock',
+  JSON.stringify(POWERUP_SLICE_TYPES) === JSON.stringify(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock']), POWERUP_SLICE_TYPES.join(','));
+for (const type of ['Shunt', 'Blindfire', 'Barge', 'SuperShield']) {
   check('deferred type ' + type + ' has a typed reason', typeof POWERUP_DEFERRED[type] === 'string' && POWERUP_DEFERRED[type].length > 20);
 }
+check('Nitro and Shock are no longer deferred',
+  !('Nitrous' in POWERUP_DEFERRED) && !('Shock' in POWERUP_DEFERRED),
+  JSON.stringify(Object.keys(POWERUP_DEFERRED)));
 
 const catalog = makeModel().catalog;
 const bomb = catalog.entities.get('Bomb').levels.Normal.values;
 const shield = catalog.entities.get('Shield').levels.Normal.values;
 const repair = catalog.entities.get('Repair').levels.Normal.values;
+const nitrous = catalog.entities.get('Nitrous').levels.Normal;
+const shock = catalog.entities.get('Shock').levels.Normal;
 check('Bomb Radius traced to PWR1', near(bomb.Radius, 1.0), bomb.Radius);
 check('Bomb OuterRadius traced to PWR1', near(bomb.OuterRadius, 3.5), bomb.OuterRadius);
 check('Bomb DamageInflicted traced to PWR1', near(bomb.DamageInflicted, 100), bomb.DamageInflicted);
@@ -88,6 +93,17 @@ check('Bomb PlaceBehindDistance traced to PWR1', near(bomb.PlaceBehindDistance, 
 check('Shield Health traced to PWR1', near(shield.Health, 50), shield.Health);
 check('Shield Lifetime traced to PWR1', near(shield.Lifetime, 6), shield.Lifetime);
 check('Repair AmountToRepair traced to PWR1', near(repair.AmountToRepair, 400), repair.AmountToRepair);
+check('Nitrous Duration traced to PWR1', near(nitrous.values.Duration, 1.3, 1e-6), nitrous.values.Duration);
+check('Nitrous class modifiers traced to PWR1',
+  near(nitrous.values.ClassAModifier, 1, 1e-6) && near(nitrous.values.ClassBModifier, 0.95, 1e-6) &&
+  near(nitrous.values.ClassCModifier, 0.9, 1e-6) && near(nitrous.values.ClassDModifier, 0.85, 1e-6),
+  JSON.stringify({ A: nitrous.values.ClassAModifier, B: nitrous.values.ClassBModifier,
+    C: nitrous.values.ClassCModifier, D: nitrous.values.ClassDModifier }));
+check('Shock radii/lifetime/damage traced to PWR1',
+  near(shock.values.InnerRadius, 7) && near(shock.values.OuterRadius, 14) &&
+  near(shock.values.Lifetime, 1.5) && near(shock.values.DamageInflicted, 100),
+  JSON.stringify({ inner: shock.values.InnerRadius, outer: shock.values.OuterRadius,
+    lifetime: shock.values.Lifetime, damage: shock.values.DamageInflicted }));
 check('PickupRadius traced to PWR1', near(catalog.system.radius, 2.0), catalog.system.radius);
 check('PickupDeactivateTimer traced to PWR1', near(catalog.system.deactivateSeconds, 0.6, 1e-6), catalog.system.deactivateSeconds);
 
@@ -224,7 +240,79 @@ check('provisional plan uses measured samples (arc/position match)',
   check('repaired event is emitted', hasEvent(events, 'repaired'));
 }
 
-// --------------------------------------------------- direct damage/wreck/respawn
+// ------------------------------------------------------------------- nitro
+{
+  const model = makeModel();
+  addPair(model);
+  model.grantItem('p1', 'Nitrous');
+  const events = model.requestUse('p1', { tick: 120, speedMps: 24.73, speedSource: 'test' });
+  const nitro = eventOf(events, 'nitro-activated');
+  check('nitro-activated is host-sequenced with the exact class-A target',
+    nitro && nitro.targetPlayer === 'p1' && near(nitro.targetMps, 52.758963, 1e-6) &&
+    near(nitro.speedMps, 24.73, 1e-6) && nitro.classLetter === 'A' &&
+    near(nitro.classModifier, 1, 1e-6) && nitro.ticks === 78 && near(nitro.magnitude, 300) &&
+    nitro.source === 'recovered' && nitro.targetSource === 'pwr1-hermite',
+    JSON.stringify(nitro && { targetMps: nitro.targetMps, speedMps: nitro.speedMps,
+      classLetter: nitro.classLetter, ticks: nitro.ticks, magnitude: nitro.magnitude }));
+  check('nitro-activated carries the full class target table',
+    near(nitro?.targetTable?.A?.targetMps, 52.758963, 1e-6) &&
+    near(nitro?.targetTable?.B?.targetMps, 50.121015, 1e-6) &&
+    near(nitro?.targetTable?.C?.targetMps, 47.483066, 1e-6) &&
+    near(nitro?.targetTable?.D?.targetMps, 44.845120, 1e-6),
+    JSON.stringify(nitro?.targetTable && Object.fromEntries(Object.entries(nitro.targetTable).map(([k, v]) => [k, v.targetMps]))));
+  check('nitro effect carries the force window and expiry',
+    model.effects.length === 1 && near(model.effects[0].expiresAt, 1.3, 1e-6) &&
+    model.effects[0].ticks === 78 && model.effects[0].forceWindowTicks === 30,
+    JSON.stringify(model.effects[0]));
+  const expired = model.tick(1.31, {}, respawnTarget);
+  check('nitro effect expires at the recovered Duration', hasEvent(expired, 'effect-expired'),
+    expired.map((event) => event.type).join(','));
+}
+
+// ------------------------------------------------------------------- shock
+{
+  const model = makeModel();
+  addPair(model, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 3, y: 0, z: 0 } });
+  model.grantItem('p1', 'Shock');
+  const events = model.requestUse('p1', {
+    position: { x: 3, y: 0, z: 0 }, tick: 60, speedMps: 24.73,
+    speeds: { p1: 24.73, p2: 24.73 }, speedSource: 'test'
+  });
+  const shock = eventOf(events, 'shock-activated');
+  const target = (shock?.targets ?? []).find((row) => row.targetPlayer === 'p2') ?? null;
+  check('shock-activated carries the recovered radii/lifetime/damage',
+    shock && shock.innerRadius === 7 && shock.outerRadius === 14 &&
+    shock.lifetime === 1.5 && shock.damage === 100 &&
+    shock.source === 'recovered' && shock.targetSource === 'pwr1-hermite',
+    JSON.stringify(shock && { inner: shock.innerRadius, outer: shock.outerRadius,
+      lifetime: shock.lifetime, damage: shock.damage }));
+  check('Shock target uses the exact curve and the 10 mph floor',
+    target && near(target.targetMps, 19.995236, 1e-6) &&
+    near(target.graphValue, 0.223640, 1e-6) && target.hit === 'inner',
+    JSON.stringify(target));
+  check('Shock applies DamageInflicted through the host health model',
+    hasEvent(events, 'damage') && hasEvent(events, 'wrecked') &&
+    model.players.get('p2').health === 0,
+    JSON.stringify({ health: model.players.get('p2').health, events: events.map((event) => event.type) }));
+  const expired = model.tick(1.51, {}, respawnTarget);
+  check('Shock effect expires at the recovered Lifetime',
+    hasEvent(expired, 'effect-expired'),
+    expired.map((event) => event.type).join(','));
+
+  const miss = makeModel();
+  addPair(miss, { p1: { x: 0, y: 0, z: 0 }, p2: { x: 30, y: 0, z: 0 } });
+  miss.grantItem('p1', 'Shock');
+  const missEvents = miss.requestUse('p1', {
+    position: { x: 0, y: 0, z: 0 }, tick: 0, speedMps: 24.73,
+    speeds: { p1: 24.73, p2: 24.73 }
+  });
+  check('Shock outside OuterRadius has no target and no damage',
+    (eventOf(missEvents, 'shock-activated')?.targets ?? []).length === 0 &&
+    !hasEvent(missEvents, 'damage'),
+    JSON.stringify(eventOf(missEvents, 'shock-activated')?.targets));
+}
+
+
 {
   const model = makeModel();
   addPair(model);

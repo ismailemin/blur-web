@@ -121,14 +121,15 @@ Host URL'sine `&powerups=1` ekle (guest de aynı odaya katılır):
 http://127.0.0.1:8801/?mp=1&host=1&powerups=1
 ```
 
-- Pickup'a yaklaş → tek slot dolar (Mine / Shield / Repair).
-- **E** ile kullan: mine arkaya bırakılır, shield aktifleşir, repair can basar.
+- Pickup'a yaklaş → tek slot dolar (Mine / Shield / Repair / Nitro / Shock).
+- **E** ile kullan: mine arkaya bırakılır, shield aktifleşir, repair can basar,
+  Nitro hızlandırır, Shock hedefi yavaşlatır.
 - HUD: health 100, shield, olay akışı; mine/shield/pickup diagnostic marker.
 - Wreck olursa R1 son checkpoint'ten respawn.
 - `provisional` etiketi: pickup yerleşimi geçici ölçülmüş arc; gerçek 54 nokta
   PWR3'te çıkarıldı, entegrasyonu sonraki adım.
-- Nitro/Shock/Shunt/Bolt/Barge bu dilimde **yok** (motor boost/impulse ve
-  hit-test verisi kanıtlanana kadar ertelendi).
+- Shunt/Bolt/Barge ve projectile'lar bu dilimde **yok** (retail flip/tip,
+  hedefleme ve hit-test verisi kanıtlanana kadar ertelendi).
 
 Telemetri 0–100 sırası: Audi 2,650 → Corvette 3,650 → Lotus 3,833 →
 Dodge 4,633 → Focus 5,133 s.

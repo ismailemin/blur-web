@@ -89,6 +89,9 @@ int  e1_step(void);                                   /* one C_Scene::Simulate(1
 const char* e1_get_state(void);                       /* JSON, this tick */
 const char* e1_info(void);                            /* car, ground, dt, tick, resets */
 float e1_engine_rpm(void);                            /* live Engine().RPM(); -1 before a world */
+int  e1_boost_queue(int kind, int startTick, int ticks, float targetMps,
+                    float magnitude, float dx, float dy, float dz);
+const char* e1_boost_state(void);                     /* JSON queue/effect read-back */
 const char* e1_ground_probe(float x, float z);        /* fill+trace at one point */
 const char* e1_last_error(void);
 ```
@@ -2801,3 +2804,160 @@ record is `docs/work/verification/T-007-vehicle-batch1.md`.
   The PoC checker is **20/23**: three hard-coded five-car checks in
   `tools/check_e1_poc.py` (selected count, P52 totals, RGBA total) need the main
   agent to generalize them.
+
+## 35. M2a — Nitro and Shock in the online race
+
+Status: implemented and verified, 7 November 2026, on top of the PWR2
+Mine/Shield/Repair slice. The full evidence record is
+`docs/work/verification/T-007-powerups.md` section 10. Nitro and Shock use the
+engine's own `C_Body::AddForce` **before** `C_Scene::Simulate`; there is no
+post-tick velocity or pose write, no engine source change and no new physics
+object.
+
+Scope labels: `nitro:true`, `shock:true`, `powerupTypes:[Bomb,Shield,Repair,Nitrous,Shock]`,
+`engineIntegration:true`, `hostRulesAuthority:true`, `clientJudgement:false`,
+`retailProtocol:false`, `projectileSlice:false`, `shunt:false`, `barge:false`,
+`classSource:'project-class-A-assumption'`, `browserClients:2`, `fullGame:false`.
+
+### 35.1 Module API
+
+`native/e1_drive_lib.cpp` adds two exports, both in the 186-object module:
+
+```c
+/* Queue one engine-integrated effect for a future receiver tick.
+ * kind 1 = NITRO (forward force while below target, 0.5 s/30-tick window),
+ * kind 2 = BRAKE (velocity-opposed force while above target),
+ * kind 3 = IMPULSE (one-shot AddImpulse). */
+int e1_boost_queue(int kind, int startTick, int ticks, float targetMps,
+                   float magnitude, float dx, float dy, float dz);
+
+/* JSON: {status, active, seq, kind, kindName, startTick, ticks, remaining,
+ *        applied, forceTicks, targetMps, magnitude, forceN, lastSpeed,
+ *        queued, tick, effects[]} */
+const char* e1_boost_state(void);
+```
+
+- `startTick >= gWorld.tick`, `ticks > 0`, finite values; otherwise the call
+  returns 0 and sets `e1_last_error`.
+- Up to four effects can be queued. `e1_create`/`e1_reset` clear the queue
+  through `BuildWorld`.
+- `e1_step` calls `ApplyBoostPreStep()` after the controls are set and **before**
+  `gWorld.scene->Simulate(1/60)`. The solver, tyre model and contact response
+  therefore see the force in the same step.
+- NITRO applies `magnitude * mass * adjust` along the horizontal body +Z axis
+  while forward speed is below `targetMps`; `adjust = 2` below half the target.
+  The force window is the first 30 ticks (0.5 s) of the effect, and the effect
+  remains active for its full `ticks` duration. BRAKE applies
+  `-(magnitude * mass * adjust / speed) * velocity` while speed is above the
+  target. IMPULSE normalises the direction and applies `magnitude` once.
+- `e1_boost_state().remaining` is in 60 Hz ticks; `applied`/`forceTicks` are the
+  measured window/force counts. The state is diagnostic only and does not feed
+  physics.
+
+### 35.2 Recovered values and exact targets
+
+`web/boost-model.js` evaluates the recovered `C_HermiteCurve::Evaluate` exactly:
+the serialized tangents are degrees and are converted with
+`tan(deg*pi/180)/3` before the cubic Hermite basis. It reads the Nitrous and
+Shock `balancingGraph` keyframes and `ClassA..D` modifiers from the PWR1
+manifest; no keyframe or target is re-typed.
+
+| item | value | source |
+|---|---|---|
+| Nitro force | `300 m/s^2 * mass * adjust` | `FakePhysics.cpp:191`, `:730-734` |
+| Nitro force window | 30 ticks (0.5 s) inside a 78-tick (1.3 s) effect | `_value`, `FakePhysics.cpp:711/748-751`; PWR1 `Duration` |
+| Nitro class-A target at 24.73 m/s | `52.758963 m/s` (118.018 mph) | exact curve, `graphValue 0.590092` |
+| class B/C/D at 24.73 m/s | `50.121015 / 47.483066 / 44.845120 m/s` | exact curve * 0.95/0.90/0.85 |
+| class-A target at 35.134 m/s | `64.484674 m/s` raw, capped to **55 m/s** | exact curve; project safety cap |
+| Shock target at 24.73 m/s | `19.995236 m/s` (44.728 mph) | exact Shock curve, `graphValue 0.223640` |
+| Shock floor | `speed - 10 mph` | `g_debugShockManagerMinSpeedScrub`, `ShockManager.cpp:52` |
+| Shock radii/lifetime/damage | `InnerRadius 7`, `OuterRadius 14`, `Lifetime 1.5 s`, `DamageInflicted 100` | PWR1 `ShockBalancingData` |
+
+The e1 roster does not record `AmaxVehicle::carClass`. M2a uses the exact
+class-A target and labels it in every event
+(`classSource:'project-assumption: AmaxVehicle::carClass is not recorded by the
+e1 roster; M2a uses the exact class-A target'`); all four class targets are
+carried in `targetTable` so the choice is auditable. The 55 m/s cap is a project
+safety value (BOOST1 section 6.3), not retail data; `capApplied` records when it
+binds.
+
+### 35.3 Host authority and event flow
+
+- The host validates the use, evaluates the target at the host-observed fire
+  speed, and emits `nitro-activated` or `shock-activated` with
+  `{targetPlayer, startTick, delayTicks, ticks, targetMps, magnitude, source,
+  targetSource, classLetter, targetTable}` (Nitro) or
+  `{targets:[{targetPlayer, targetMps, speedMps, hit, damage}], innerRadius,
+  outerRadius, lifetime, damage}` (Shock).
+- The host applies the event to **its own** car only. The guest applies the same
+  host-sequenced event to **its own** car at `localTick + delayTicks - 1`; the
+  host never simulates the guest body. The relative delay makes the event
+  robust to the two pages' different tick histories.
+- `effect-expired` is emitted by the host power-up model at 1.3 s (Nitro) or
+  1.5 s (Shock). The guest removes the effect from the snapshot and the wasm
+  effect expires independently on its own tick boundary.
+- Shock damage goes through the existing host health model (100 diagnostic HP);
+  a hit at 100 damage wrecks the target and the existing R1 respawn path applies.
+  The Shock hit test is a documented project planar distance inside the recovered
+  `OuterRadius`; PWR1 does not serialize the retail hit/falloff rule.
+
+### 35.4 Verification
+
+| Gate | Result | Evidence |
+|---|---|---|
+| wasm build | 1,012,634 B, SHA-256 `bcdc2d99…de265`, two links byte-identical | `_work/e1-drive/module/build.json` |
+| Boost Node tests | **31/31 PASS** | `_work/e1-drive/boost-node-report.json` |
+| Power-up Node tests | **79/79 PASS** (was 68) | `_work/e1-drive/powerups-node-report.json` |
+| E1 drive verifier | **2254/2254 PASS**, original anchors unchanged | `_work/e1-drive/run.json` |
+| Portable asset suite | **46/46 PASS** (concurrent map-slice additions; every step passes) | `_work/verification/suite.json` |
+| PoC readiness | **23/23 PASS** | `_work/logs/e1-drive/boost-check-e1-poc.log` |
+| Native CTest | **15/15 PASS** | `_work/logs/e1-drive/boost-ctest.log` |
+| Two-browser `mp-powerups` | **PASS**, `clean-console-and-gates`, console **0/0** | `_work/e1-drive/browser-evidence-mp-powerups.json` |
+| M1 two-browser regression | **PASS**, console 0/0 | `_work/e1-drive/browser-evidence-mp.json` |
+| Solo sprint regression | **PASS**, console 0 | `_work/e1-drive/browser-evidence-sprint.json` |
+
+The wasm boost run reproduces the BOOST1 fixture (Corvette ZR1 at
+`281.2833, 1823.6890`, heading 0, 180 full-throttle ticks, pre speed
+`25.1475315 m/s`). At the exact class-A target `53.21259 m/s` for that fire
+speed it measured `57.822 m/s` at 0.5 s, `51.370 m/s` at 1.3 s (baseline
+`33.076 m/s`, gain **+18.294 m/s**) and peak `58.608 m/s` (peak gain
+**+25.532 m/s**); the effect expired at tick 259, `remaining 0`, 0 NaN, and two
+fresh instances produced the same state hash. Shock at the exact
+`20.116619 m/s` target measured `18.283 m/s` at 1.3 s (baseline `33.076`,
+**-14.793 m/s**).
+
+The two-browser capture (room per run, ports 8803/8813) observed both Nitro
+events (host fire speed `10.15 m/s` target `44.704 m/s`, peak `48.49 m/s`;
+guest `12.51 m/s` target `44.704 m/s`, peak `48.82 m/s`) and both Shock events
+(guest target `8.02 m/s` at `12.50 m/s` fire speed, host target `9.30 m/s` at
+`13.77 m/s`; the 10 mph floor binds at those capture speeds; the exact
+sprint-speed value is `19.995 m/s` and is asserted in the Node test). Host and
+guest counts were identical for the required set, including
+`nitro-activated 2`, `shock-activated 2`, `wrecked 3`, `respawn 2`; console was
+0/0 and the relay reported 0 dropped. Screenshots are under
+`_work/e1-drive/browser-mp-powerups-nitro-*.png`, `…-shock-*.png`.
+
+### 35.5 Limits
+
+1. **Car class is a project assumption.** The exact curve evaluator and all
+   four class targets are recovered; the e1 roster does not record
+   `AmaxVehicle::carClass`, so M2a uses class A and labels it. No retail class
+   assignment is claimed.
+2. **No wall test.** The 55 m/s cap is arithmetic against the measured body
+   length (BOOST1 section 6.3); wall penetration is not measured.
+3. **Shock hit test is project-planar.** PWR1 serializes radii/lifetime/damage
+   but not the retail hit/falloff rule. M2a applies 100 damage to every target
+   inside `OuterRadius` by planar distance; no falloff curve is invented.
+4. **One car per page.** The host applies to its own car; the guest applies to
+   its own car. The M1 peer-state remote authority is unchanged.
+5. **Shunt, Barge, Blindfire and projectiles remain deferred** with typed
+   reasons (`POWERUP_DEFERRED`): retail Shunt is a fake-physics flip/tip plus a
+   projectile hit, and the impulse/hit timing is not recovered.
+6. **Same-machine capture.** Both pages run on one machine over the loopback
+   relay; WAN latency, cross-machine clocks and anti-cheat are not tested.
+7. **External pins refreshed.** Rebuilding the e1 module changes the module
+   identity pins in the generated `_work/map-slice/amboy` and `_work/ai-driver`
+   evidence. The map-slice physics hashes (`tick0`, `tick60`, state sequence)
+   are unchanged; the AI driver was re-run on its existing five-reference-car
+   selection and is 26/26. Only generated `_work` artifacts were regenerated;
+   no probe source, tool or game data was edited.

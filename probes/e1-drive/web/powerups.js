@@ -17,21 +17,28 @@
 // host loop around it (proximity collection, arm events, wreck/respawn), the
 // provisional measured-arc placement and a client event reducer.
 
+import {
+  M2_BOOST_DELAY_TICKS, M2_BOOST_LABELS, M2_BOOST_MAGNITUDE_MPS2, M2_NITRO_CAP_MPS,
+  M2_NITRO_CLASS, M2_NITRO_CLASS_SOURCE, M2_NITRO_DURATION_TICKS, M2_REFERENCE_SPRINT_SPEED_MPS,
+  M2_SHOCK_DURATION_TICKS, M2_SHOCK_MIN_SCRUB_MPH, keyframesFromLevel,
+  nitroClassTargetTable, nitroTargetForSpeed, shockTargetForSpeed
+} from './boost-model.js';
+
 export const POWERUP_SCHEMA = 'e1-drive.powerups/1';
-export const POWERUP_SLICE_TYPES = Object.freeze(['Bomb', 'Shield', 'Repair']);
+export const POWERUP_SLICE_TYPES = Object.freeze(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock']);
 export const POWERUP_SLICE_LABELS = Object.freeze({
   Bomb: 'MINE',
   Shield: 'SHIELD',
-  Repair: 'REPAIR'
+  Repair: 'REPAIR',
+  Nitrous: 'NITRO',
+  Shock: 'SHOCK'
 });
 
 // A collection of *provable* reasons, not a roadmap promise.
 export const POWERUP_DEFERRED = Object.freeze({
-  Nitrous: 'no proven engine boost hook: the wasm ABI has no verified speed/torque override, and the Nitrous balancing graph is not wired to a physics input.',
-  Shock: 'projectile/area lifetime exists but the hit test and falloff law are not serialized (PWR1 UNKNOWNS.projectileLifetime/damageFalloff).',
-  Shunt: 'projectile speed/damage are serialized; lifetime, hit volume and targeting are runtime-only.',
+  Shunt: 'retail Shunt is a projectile hit plus E_FAKE_PHYSICS_FLIP_FORWARD/TIP_FORWARD + damage; the impulse magnitude and hit timing are not recovered (only a labelled provisional 20 kN·s design exists).',
   Blindfire: 'projectile speed/damage are serialized; lifetime, bolt count/charges and targeting are runtime-only.',
-  Barge: 'mine push forces are serialized but there is no verified physics-impulse hook in the wasm ABI.',
+  Barge: 'retail Barge is a projectile/area push; the hit test and force application are not serialized.',
   SuperShield: 'single-player-only PickupType (no multiplayer flag); its boost/mass fields need the same missing physics hook.'
 });
 
@@ -39,7 +46,7 @@ export const POWERUP_DEFERRED = Object.freeze({
 // real level/actor placement separately; these arcs are a documented project
 // choice, not retail data. The plan is a pure function of the committed layout.
 export const POWERUP_PLACEMENT_ARCS = Object.freeze([40, 90, 140, 190, 240, 280]);
-export const POWERUP_PLACEMENT_TYPES = Object.freeze(['Bomb', 'Shield', 'Repair', 'Bomb', 'Shield', 'Repair']);
+export const POWERUP_PLACEMENT_TYPES = Object.freeze(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Bomb']);
 export const POWERUP_PLACEMENT_NOTE =
   'provisional measured-arc pickup placement (PWR3 owns the real level/actor placement; these arcs are project-specific, not retail)';
 
@@ -133,6 +140,19 @@ export function createPowerupModel({
   const bombDefinition = catalog.entities.get('Bomb');
   const bombLevel = bombDefinition?.levels?.Normal;
   const placeBehindDistance = bombLevel?.values?.PlaceBehindDistance ?? 0;
+  const nitroDefinition = catalog.entities.get('Nitrous');
+  const nitroLevel = nitroDefinition?.levels?.Normal;
+  const shockDefinition = catalog.entities.get('Shock');
+  const shockLevel = shockDefinition?.levels?.Normal;
+  const nitroKeyframes = keyframesFromLevel(nitroLevel);
+  const shockKeyframes = keyframesFromLevel(shockLevel);
+  const nitroModifiers = {
+    A: nitroLevel.values.ClassAModifier,
+    B: nitroLevel.values.ClassBModifier,
+    C: nitroLevel.values.ClassCModifier,
+    D: nitroLevel.values.ClassDModifier
+  };
+  const shockValues = shockLevel.values;
 
   const model = {
     schema: POWERUP_SCHEMA,
@@ -154,7 +174,41 @@ export function createPowerupModel({
       minePrime: 'prototype-assumption: MasterMinePrimeTimer is used as the arming delay',
       minePlacement: 'Bomb PlaceBehindDistance=' + placeBehindDistance + ' m behind the owner, using the engine forward axis',
       damageFalloff: 'not-serialized: full Bomb damage inside Radius, no damage outside OuterRadius, near-miss is a typed event',
+      nitro: 'Nitrous force = ' + M2_BOOST_MAGNITUDE_MPS2 + ' m/s^2 * mass * adjust before C_Scene::Simulate; target = exact PWR1 Hermite at the fire speed * ClassAModifier; 0.5 s force window in a 1.3 s effect; ' + M2_NITRO_CAP_MPS + ' m/s project cap',
+      nitroClass: M2_NITRO_CLASS_SOURCE,
+      shock: 'Shock is a speed scrub (E_FAKE_SPEED_BRAKE) to the exact PWR1 Shock curve target with the 10 mph floor; DamageInflicted=' + shockValues.DamageInflicted + ', InnerRadius=' + shockValues.InnerRadius + ', OuterRadius=' + shockValues.OuterRadius + ', Lifetime=' + shockValues.Lifetime + ' s',
+      shockTargeting: 'not-serialized: the Shock hit test/falloff is not in PWR1; M2a uses the recovered Inner/OuterRadius with planar distance and applies DamageInflicted to every target inside OuterRadius',
       tickRate: TICK_HZ
+    },
+    boost: {
+      nitro: {
+        keyframes: nitroKeyframes.map((frame) => ({ ...frame })),
+        classModifiers: { ...nitroModifiers },
+        classUsed: M2_NITRO_CLASS,
+        classSource: M2_NITRO_CLASS_SOURCE,
+        targetTable: nitroClassTargetTable(nitroKeyframes, M2_REFERENCE_SPRINT_SPEED_MPS, nitroModifiers),
+        magnitudeMps2: M2_BOOST_MAGNITUDE_MPS2,
+        forceWindowTicks: 30,
+        durationTicks: M2_NITRO_DURATION_TICKS,
+        capMps: M2_NITRO_CAP_MPS,
+        source: M2_BOOST_LABELS.source,
+        targetSource: M2_BOOST_LABELS.targetSource
+      },
+      shock: {
+        keyframes: shockKeyframes.map((frame) => ({ ...frame })),
+        magnitudeMps2: M2_BOOST_MAGNITUDE_MPS2,
+        durationTicks: M2_SHOCK_DURATION_TICKS,
+        minScrubMph: M2_SHOCK_MIN_SCRUB_MPH,
+        innerRadius: shockValues.InnerRadius,
+        outerRadius: shockValues.OuterRadius,
+        lifetime: shockValues.Lifetime,
+        damage: shockValues.DamageInflicted,
+        source: M2_BOOST_LABELS.source,
+        targetSource: M2_BOOST_LABELS.targetSource
+      },
+      delayTicks: M2_BOOST_DELAY_TICKS,
+      authority: M2_BOOST_LABELS.authority,
+      engineHook: 'e1_boost_queue before C_Scene::Simulate; no post-tick velocity or pose write'
     },
     placement: {
       mode: 'provisional-measured-arc',
@@ -278,9 +332,125 @@ export function createPowerupModel({
           z: player.position.z - forward.z * placeBehindDistance
         };
       }
+      const tick = Number.isFinite(request.tick)
+        ? request.tick
+        : Math.round(world.now * TICK_HZ);
+      const classLetter = request.classLetter ?? M2_NITRO_CLASS;
+      const speedMps = Number.isFinite(request.speedMps)
+        ? request.speedMps
+        : M2_REFERENCE_SPRINT_SPEED_MPS;
+      const speedSource = request.speedSource ?? (Number.isFinite(request.speedMps)
+        ? 'host-engine-state' : 'reference-310m-sprint');
+      const startTick = tick + M2_BOOST_DELAY_TICKS - 1;
+
       world.use(playerId, { slot, position: position ?? player.position });
-      const event = world.events[world.events.length - 1];
-      if (event?.type === 'mine-placed' && request.staged === true) event.staged = true;
+      const events = world.events.slice(start);
+
+      for (const event of events) {
+        if (event.type === 'nitro-activated') {
+          const effect = world.effects[world.effects.length - 1] ?? event.effect ?? null;
+          const target = nitroTargetForSpeed(nitroKeyframes, {
+            speedMps, classLetter, classModifiers: nitroModifiers, capMps: M2_NITRO_CAP_MPS
+          });
+          const table = nitroClassTargetTable(nitroKeyframes, speedMps, nitroModifiers);
+          Object.assign(event, {
+            targetPlayer: playerId,
+            kind: 'nitro',
+            startTick,
+            delayTicks: M2_BOOST_DELAY_TICKS,
+            ticks: M2_NITRO_DURATION_TICKS,
+            forceWindowTicks: 30,
+            targetMps: target.targetMps,
+            magnitude: M2_BOOST_MAGNITUDE_MPS2,
+            speedMps: target.speedMps,
+            speedSource,
+            classLetter,
+            classModifier: target.classModifier,
+            classSource: M2_NITRO_CLASS_SOURCE,
+            targetTable: table,
+            targetSource: M2_BOOST_LABELS.targetSource,
+            source: M2_BOOST_LABELS.source,
+            capMps: M2_NITRO_CAP_MPS,
+            capApplied: target.capApplied,
+            staged: request.staged === true
+          });
+          if (effect) Object.assign(effect, {
+            targetPlayerId: playerId,
+            ticks: M2_NITRO_DURATION_TICKS,
+            forceWindowTicks: 30,
+            targetMps: target.targetMps,
+            magnitude: M2_BOOST_MAGNITUDE_MPS2,
+            speedMps: target.speedMps,
+            classLetter,
+            classModifier: target.classModifier,
+            classSource: M2_NITRO_CLASS_SOURCE,
+            targetSource: M2_BOOST_LABELS.targetSource,
+            source: M2_BOOST_LABELS.source
+          });
+        }
+        if (event.type === 'shock-activated') {
+          const effect = event.effect ?? world.effects[world.effects.length - 1] ?? null;
+          const targets = [];
+          if (effect) {
+            for (const targetPlayer of world.players.values()) {
+              if (targetPlayer.id === playerId || !targetPlayer.alive) continue;
+              const distanceM = planarDistance(effect.position, targetPlayer.position);
+              if (distanceM > effect.outerRadius) continue;
+              const targetSpeedMps = Number.isFinite(request.speeds?.[targetPlayer.id])
+                ? request.speeds[targetPlayer.id]
+                : (targetPlayer.id === playerId ? speedMps : M2_REFERENCE_SPRINT_SPEED_MPS);
+              const target = shockTargetForSpeed(shockKeyframes, { speedMps: targetSpeedMps });
+              targets.push({
+                targetPlayer: targetPlayer.id,
+                distanceM: round6(distanceM),
+                hit: distanceM <= effect.innerRadius ? 'inner' : 'outer',
+                speedMps: target.speedMps,
+                targetMps: target.targetMps,
+                graphValue: target.graphValue,
+                floorMps: target.floorMps,
+                floorApplied: target.floorApplied,
+                damage: effect.damage,
+                speedSource: Number.isFinite(request.speeds?.[targetPlayer.id])
+                  ? 'host-engine-state' : 'reference-310m-sprint'
+              });
+            }
+          }
+          Object.assign(event, {
+            kind: 'shock',
+            startTick,
+            delayTicks: M2_BOOST_DELAY_TICKS,
+            ticks: M2_SHOCK_DURATION_TICKS,
+            magnitude: M2_BOOST_MAGNITUDE_MPS2,
+            targetSource: M2_BOOST_LABELS.targetSource,
+            source: M2_BOOST_LABELS.source,
+            innerRadius: shockValues.InnerRadius,
+            outerRadius: shockValues.OuterRadius,
+            lifetime: shockValues.Lifetime,
+            damage: shockValues.DamageInflicted,
+            targets,
+            targeting: 'project-planar-distance; PWR1 does not serialize the Shock hit test',
+            staged: request.staged === true
+          });
+          if (effect) Object.assign(effect, {
+            ticks: M2_SHOCK_DURATION_TICKS,
+            magnitude: M2_BOOST_MAGNITUDE_MPS2,
+            targets,
+            targetSource: M2_BOOST_LABELS.targetSource,
+            source: M2_BOOST_LABELS.source,
+            targeting: event.targeting
+          });
+          for (const target of targets) {
+            if (target.hit) {
+              world.damage(target.targetPlayer, shockValues.DamageInflicted, {
+                kind: 'Shock', effectId: effect?.id ?? null
+              });
+            }
+          }
+        }
+      }
+
+      const placed = events.find((event) => event.type === 'mine-placed') ?? null;
+      if (placed && request.staged === true) placed.staged = true;
       return world.events.slice(start);
     },
 
@@ -456,7 +626,19 @@ export function createPowerupModel({
           ownerId: effect.ownerId,
           expiresAt: round6(effect.expiresAt),
           capacity: effect.capacity ?? null,
-          maxCapacity: effect.maxCapacity ?? null
+          maxCapacity: effect.maxCapacity ?? null,
+          duration: effect.duration ?? null,
+          targetPlayerId: effect.targetPlayerId ?? null,
+          targetMps: effect.targetMps ?? null,
+          magnitude: effect.magnitude ?? null,
+          ticks: effect.ticks ?? null,
+          forceWindowTicks: effect.forceWindowTicks ?? null,
+          speedMps: effect.speedMps ?? null,
+          classLetter: effect.classLetter ?? null,
+          targetSource: effect.targetSource ?? null,
+          source: effect.source ?? null,
+          targets: effect.targets ? effect.targets.map((target) => ({ ...target })) : null,
+          targeting: effect.targeting ?? null
         })),
         eventCount: world.events.length
       };
@@ -502,6 +684,13 @@ const EVENT_TEXT = {
   'shield-absorbed': (event) => 'shield absorbed ' + (event.absorbed ?? 0) +
     ' · ' + (event.capacity ?? 0) + ' left',
   'shield-broken': () => 'shield broken',
+  'nitro-activated': (event) => 'NITRO · ' + (event.targetMps != null ? Number(event.targetMps).toFixed(2) : '—') +
+    ' m/s target · ' + (event.speedMps != null ? Number(event.speedMps).toFixed(2) : '—') + ' m/s fire speed',
+  'shock-activated': (event) => 'SHOCK · ' + (event.targets?.length ?? 0) + ' target(s) · ' +
+    (event.outerRadius ?? '—') + ' m outer',
+  'nitro-hit': (event) => 'NITRO applied · ' + (event.targetMps ?? '—') + ' m/s',
+  'shock-hit': (event) => 'SHOCK hit · ' + (event.targetPlayer ?? '—') + ' · ' +
+    (event.targetMps != null ? Number(event.targetMps).toFixed(2) : '—') + ' m/s',
   repaired: (event) => 'repaired +' + (event.amount ?? 0) + ' · ' + (event.health ?? '—') + ' HP',
   damage: (event) => 'damage -' + (event.amount ?? 0) + ' · ' + (event.health ?? '—') + ' HP',
   wrecked: () => 'WRECKED',
@@ -600,6 +789,10 @@ function applyEventOnly(view, event) {
     case 'shield-activated':
       if (event.effect) view.effects[event.effect.id] = { ...event.effect };
       break;
+    case 'nitro-activated':
+    case 'shock-activated':
+      if (event.effect) view.effects[event.effect.id] = { ...event.effect, ...(event.targets ? { targets: event.targets } : {}) };
+      break;
     case 'shield-absorbed': {
       const effect = view.effects[event.effectId];
       if (effect) effect.capacity = event.capacity;
@@ -642,12 +835,20 @@ export function shieldFor(view, playerId) {
     .find((effect) => effect.ownerId === playerId && (effect.kind === 'shield' || effect.kind === 'superShield')) ?? null;
 }
 
+/** The local player's active Nitro/Shock effect, if any. */
+export function boostFor(view, playerId) {
+  return Object.values(view?.effects ?? {})
+    .find((effect) => (effect.kind === 'nitro' || effect.kind === 'shock') &&
+      effect.ownerId === playerId) ?? null;
+}
+
 /** Compact HUD/evidence projection of the client view. */
 export function powerupViewSummary(view) {
   if (!view) return null;
   const local = view.localId ? view.players[view.localId] ?? null : null;
   const remote = view.remoteId ? view.players[view.remoteId] ?? null : null;
   const shield = view.localId ? shieldFor(view, view.localId) : null;
+  const boost = view.localId ? boostFor(view, view.localId) : null;
   return {
     now: view.now,
     localId: view.localId,
@@ -660,6 +861,10 @@ export function powerupViewSummary(view) {
       maxCapacity: shield.maxCapacity,
       expiresAt: shield.expiresAt,
       secondsLeft: Math.max(0, shield.expiresAt - view.now)
+    } : null,
+    boost: boost ? {
+      ...boost,
+      secondsLeft: Math.max(0, boost.expiresAt - view.now)
     } : null,
     pickups: Object.values(view.pickups),
     mines: Object.values(view.mines),

@@ -443,6 +443,22 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/analysis/map-slice-gracia.md`,
   `docs/work/analysis/map-slice-module-pin-policy.md`.
 
+### E1aj — Nitro + Shock (BOOST2)  ✅
+- `e1_boost_queue`/`e1_boost_state` export'ları; force `Simulate` öncesi,
+  reset'te temiz. wasm 1.012.634 B, A/B deterministic.
+- Nitro hedefleri: 24,73 m/s'de A **52,758963** / B 50,121 / C 47,483 / D 44,845
+  m/s; 1,3 s, 55 m/s cap. Shock: **19,995236 m/s**, 10 mph floor, r7/14, 1,5 s,
+  damage 100.
+- Gerçek wasm: Nitro +18,29 m/s (1,3 s), peak +25,53; Shock −14,79 m/s.
+- `?mp=1&powerups=1`: Nitro/Shock pickup + host event + HUD; capture host
+  10,15→48,49 / guest 12,51→48,82 m/s, console **0/0**.
+- Boost **31/31**, power-up **79/79**, verify **2254/2254**, suite **48/48**,
+  checker 23/23, CTest 15/15.
+- Sınır: class A proje varsayımı (4 hedef de taşınıyor); wall testi yok, cap
+  aritmetik; Shock hit-test proje-planar. Shunt/Bolt/Barge/projectile ertelendi.
+- Kanıt: `docs/work/verification/T-007-powerups.md`,
+  `_work/e1-drive/browser-mp-powerups-nitro-*.png`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

@@ -864,6 +864,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - **2.627 draw / 365.451 tri** gerçek albedo (734 doku); 953 engelli (518 Racification, 426 BC3 alfa, 5 boyut, 4 runtime).
 - Render paketi 28,8 MB; 26.797 + 32.782 + 45.590 doğrulama; suite 46/46. Modül pin politikası behavior-based. Kanıt: `docs/work/analysis/map-slice-gracia.md`.
 
+## 7 Kasım 2026 — Nitro + Shock
+
+- `e1_boost_queue`/`e1_boost_state`; force `Simulate` öncesi, reset'te temiz; wasm A/B deterministic.
+- Nitro hedefleri 52,759/50,121/47,483/44,845 m/s (A/B/C/D), 1,3 s, 55 cap; Shock 19,995 m/s, 10 mph floor, r7/14, 1,5 s, 100 dmg.
+- Gerçek wasm: Nitro +18,29 m/s (1,3 s), peak +25,53; Shock −14,79. Capture host 10,15→48,49, guest 12,51→48,82, console 0/0.
+- Boost **31/31**, power-up **79/79**, verify 2254/2254, suite 48/48, checker 23/23, CTest 15/15. Shunt/Bolt/Barge/projectile ertelendi.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

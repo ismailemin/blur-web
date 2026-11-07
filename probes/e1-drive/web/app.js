@@ -433,6 +433,8 @@ const state = {
     remoteWrecked: false,
     snapshot: null,
     view: null,
+    boost: null,
+    boostEventSeqs: [],
     relay: null,
     relayError: null,
     host: MP_HOST
@@ -1614,6 +1616,16 @@ async function loadEngine(carOverride = null) {
   engine = {
     info: JSON.parse(module.UTF8ToString(module._e1_info())),
     setInput: (input) => module._e1_set_input(input[0], input[1], input[2], input[3]),
+    boostQueue: (kind, startTick, ticks, targetMps, magnitude, dx = 0, dy = 0, dz = 0) =>
+      (typeof module._e1_boost_queue === 'function'
+        ? module._e1_boost_queue(kind, startTick, ticks, targetMps, magnitude, dx, dy, dz)
+        : 0),
+    boostState: () => {
+      if (typeof module._e1_boost_state !== 'function') return null;
+      try { return JSON.parse(module.UTF8ToString(module._e1_boost_state())); } catch { return null; }
+    },
+    boostLastError: () => (typeof module._e1_last_error === 'function'
+      ? module.UTF8ToString(module._e1_last_error()) : 'no e1 module'),
     step: () => {
       if (!module._e1_step()) throw new Error('e1_step failed: ' + module.UTF8ToString(module._e1_last_error()));
       return readState();
@@ -2807,6 +2819,9 @@ function mpAfterLocalTick(snapshot) {
   mpRememberState(snapshot);
   if (MP_HOST) mpHostRulesStep(snapshot);
   if (POWERUPS) mpPowerupHostTick(snapshot);
+  if (POWERUPS && state.powerups?.boost) {
+    state.powerups.boost.wasm = engine?.boostState?.() ?? state.powerups.boost.wasm;
+  }
   const phase = mpNet.phase;
   if (phase === 'running' && !state.mp.finishReported) {
     const input = {
@@ -3377,6 +3392,63 @@ function mpPowerupClearRemote(playerId) {
   consumer.setGhostFrame(null);
 }
 
+function mpQueueBoostFromEvent(event) {
+  if (!engine || !state.powerups) return false;
+  const localId = mpNet?.playerId ?? null;
+  if (!localId) return false;
+  const delay = Math.max(1, Number.isFinite(event.delayTicks) ? event.delayTicks : 4);
+  const startTick = state.engineTick + delay - 1;
+  let kind = 0;
+  let targetMps = 0;
+  let ticks = 0;
+  let magnitude = 0;
+  if (event.type === 'nitro-activated') {
+    if (event.targetPlayer !== localId) return false;
+    kind = 1;
+    targetMps = Number(event.targetMps);
+    ticks = Number(event.ticks);
+    magnitude = Number(event.magnitude);
+  } else if (event.type === 'shock-activated') {
+    const target = (event.targets ?? []).find((row) => row.targetPlayer === localId) ?? null;
+    if (!target) return false;
+    kind = 2;
+    targetMps = Number(target.targetMps);
+    ticks = Number(event.ticks);
+    magnitude = Number(event.magnitude);
+  } else {
+    return false;
+  }
+  if (!(targetMps > 0) || !(ticks > 0) || !(magnitude > 0)) {
+    state.powerups.notice = 'boost event rejected: missing target/ticks/magnitude';
+    return false;
+  }
+  const accepted = engine.boostQueue(kind, startTick, Math.round(ticks), targetMps, magnitude, 0, 0, 0);
+  if (!accepted) {
+    state.powerups.notice = 'boost queue rejected: ' + engine.boostLastError();
+    return false;
+  }
+  const wasm = engine.boostState();
+  state.powerups.boost = {
+    type: event.type,
+    eventSeq: event.seq ?? null,
+    targetPlayer: localId,
+    authorityStartTick: event.startTick ?? null,
+    localStartTick: startTick,
+    delayTicks: delay,
+    kind,
+    targetMps,
+    ticks: Math.round(ticks),
+    magnitude,
+    source: event.source ?? null,
+    targetSource: event.targetSource ?? null,
+    classLetter: event.classLetter ?? null,
+    wasm
+  };
+  state.powerups.notice = (event.type === 'nitro-activated' ? 'NITRO' : 'SHOCK') +
+    ' queued at tick ' + startTick + ' · target ' + targetMps.toFixed(2) + ' m/s';
+  return true;
+}
+
 function mpPowerupHandleEvents(events) {
   if (!state.powerups || !Array.isArray(events) || !events.length) return;
   const localId = mpNet?.playerId ?? null;
@@ -3384,6 +3456,12 @@ function mpPowerupHandleEvents(events) {
     state.powerups.lastEvents.push(event);
     if (state.powerups.lastEvents.length > 64) state.powerups.lastEvents.shift();
     state.powerups.counts[event.type] = (state.powerups.counts[event.type] ?? 0) + 1;
+    if ((event.type === 'nitro-activated' || event.type === 'shock-activated') &&
+        Number.isInteger(event.seq) && !state.powerups.boostEventSeqs.includes(event.seq)) {
+      state.powerups.boostEventSeqs.push(event.seq);
+      if (state.powerups.boostEventSeqs.length > 64) state.powerups.boostEventSeqs.shift();
+      mpQueueBoostFromEvent(event);
+    }
     if (event.type === 'wrecked') {
       if (event.targetId === localId) state.powerups.wrecked = true;
       else state.powerups.remoteWrecked = true;
@@ -3419,7 +3497,18 @@ function mpPowerupHandleIntent(message) {
   if (!MP_HOST || !powerupModel) return;
   const payload = message.payload;
   if (!payload || payload.type !== 'use') return;
-  const events = powerupModel.requestUse(message.from, { slot: payload.slot ?? 0 });
+  const latest = state.mp?.remote.latest?.state ?? null;
+  const speeds = {
+    [mpNet.playerId]: state.speed,
+    [message.from]: latest?.speed
+  };
+  const events = powerupModel.requestUse(message.from, {
+    slot: payload.slot ?? 0,
+    tick: state.engineTick + mpEngineTickOffset,
+    speedMps: latest?.speed,
+    speeds,
+    speedSource: 'host-observed-20Hz'
+  });
   if (events.length) mpPowerupHandleEvents(events);
   mpPowerupBroadcast(true);
 }
@@ -3519,6 +3608,7 @@ function mpPowerupHostTick(snapshot) {
   }
   const events = powerupModel.tick(POWERUP_TICK_SECONDS, states, mpPowerupRespawnTarget);
   state.powerups.snapshot = powerupModel.snapshot();
+  if (state.powerups.boost) state.powerups.boost.wasm = engine?.boostState?.() ?? state.powerups.boost.wasm;
   if (events.length) mpPowerupHandleEvents(events);
   mpPowerupBroadcast(false);
 }
@@ -3532,7 +3622,18 @@ function mpPowerupRequestUse() {
   }
   if (MP_HOST) {
     if (!powerupModel) return;
-    const events = powerupModel.requestUse(mpNet.playerId, { slot: 0 });
+    const latest = state.mp?.remote.latest?.state ?? null;
+    const speeds = {
+      [mpNet.playerId]: state.speed,
+      [mpRemotePlayerId]: latest?.speed
+    };
+    const events = powerupModel.requestUse(mpNet.playerId, {
+      slot: 0,
+      tick: state.engineTick + mpEngineTickOffset,
+      speedMps: state.speed,
+      speeds,
+      speedSource: 'host-engine-state'
+    });
     if (events.length) mpPowerupHandleEvents(events);
     mpPowerupBroadcast(true);
     return;
@@ -3546,7 +3647,9 @@ function mpPowerupRequestUse() {
 const POWERUP_MARKER_COLOURS = Object.freeze({
   Bomb: [1.0, 0.42, 0.08],
   Shield: [0.14, 0.76, 1.0],
-  Repair: [0.2, 0.95, 0.35]
+  Repair: [0.2, 0.95, 0.35],
+  Nitrous: [1.0, 0.85, 0.1],
+  Shock: [0.75, 0.25, 1.0]
 });
 
 function mpPowerupMarkerList() {
@@ -3585,14 +3688,17 @@ function mpPowerupMarkerList() {
     ?? state.mp?.remote.latest?.state?.position
     ?? null;
   for (const effect of effects) {
-    if (effect.kind !== 'shield' && effect.kind !== 'superShield') continue;
+    if (effect.kind !== 'shield' && effect.kind !== 'superShield' &&
+        effect.kind !== 'nitro' && effect.kind !== 'shock') continue;
     const owner = effect.ownerId === localId ? localPosition : remotePosition;
     if (!owner) continue;
     markers.push({
-      kind: 'shield',
+      kind: effect.kind,
       position: [owner[0], owner[1] + 0.9, owner[2]],
-      scale: 2.6,
-      colour: [0.14, 0.76, 1.0]
+      scale: effect.kind === 'shield' || effect.kind === 'superShield' ? 2.6 : 1.7,
+      colour: effect.kind === 'shield' || effect.kind === 'superShield'
+        ? [0.14, 0.76, 1.0]
+        : (effect.kind === 'nitro' ? [1.0, 0.85, 0.1] : [0.75, 0.25, 1.0])
     });
   }
   if (markers.length > POWERUP_MARKER_SLOTS) {
@@ -3612,12 +3718,15 @@ function mpPowerupHudModel() {
     const remote = snapshot.players.find((player) => player.id === remoteId) ?? null;
     const shield = snapshot.effects.find((effect) => effect.ownerId === localId &&
       (effect.kind === 'shield' || effect.kind === 'superShield')) ?? null;
+    const boost = snapshot.effects.find((effect) => effect.ownerId === localId &&
+      (effect.kind === 'nitro' || effect.kind === 'shock')) ?? null;
     return {
       source: 'host',
       now: snapshot.now,
       local,
       remote,
       shield: shield ? { ...shield, secondsLeft: Math.max(0, shield.expiresAt - snapshot.now) } : null,
+      boost: boost ? { ...boost, secondsLeft: Math.max(0, boost.expiresAt - snapshot.now) } : null,
       pickups: snapshot.pickups,
       mines: snapshot.mines,
       effects: snapshot.effects,
@@ -3650,13 +3759,19 @@ function publishPowerupHud() {
   const local = hud?.local ?? null;
   const item = local?.inventory?.[0] ?? null;
   const label = item ? (POWERUP_SLICE_LABELS[item.type] ?? item.type) : 'EMPTY';
+  const boost = hud?.boost ?? null;
+  const wasmBoost = engine?.boostState?.() ?? null;
   const icon = document.getElementById('powerup-slot-icon');
   if (icon) {
-    icon.textContent = item ? label.slice(0, 1) : '·';
-    icon.dataset.kind = item ? item.type.toLowerCase() : 'empty';
+    icon.textContent = item ? label.slice(0, 1) : (boost ? (boost.kind === 'nitro' ? 'N' : 'S') : '·');
+    icon.dataset.kind = item ? item.type.toLowerCase() : (boost ? boost.kind : 'empty');
   }
-  set('powerup-slot-name', item ? label + ' · ' + item.type : 'empty slot');
-  set('powerup-slot-timer', item ? 'E — use · host validates' : 'pick up a pickup on the measured course');
+  set('powerup-slot-name', item ? label + ' · ' + item.type : (boost ? (boost.kind === 'nitro' ? 'NITRO' : 'SHOCK') + ' active' : 'empty slot'));
+  set('powerup-slot-timer', boost
+    ? (boost.kind === 'nitro' ? 'NITRO' : 'SHOCK') + ' · ' + boost.secondsLeft.toFixed(2) + ' s' +
+      (Number.isFinite(boost.targetMps) ? ' · ' + Number(boost.targetMps).toFixed(2) + ' m/s' : '') +
+      (wasmBoost ? ' · wasm ' + (wasmBoost.remaining ?? 0) + 't / ' + (wasmBoost.applied ?? 0) + 'f' : '')
+    : (item ? 'E — use · host validates' : 'pick up a pickup on the measured course'));
   const health = local ? local.health : null;
   const maxHealth = local?.maxHealth ?? null;
   const percent = Number.isFinite(health) && Number.isFinite(maxHealth) && maxHealth > 0
@@ -3676,16 +3791,20 @@ function publishPowerupHud() {
   }
   const status = state.powerups.wrecked
     ? 'WRECKED — waiting for the host respawn event'
-    : (state.powerups.notice ?? 'ready · E uses the held item');
+    : (boost
+      ? (boost.kind === 'nitro' ? 'NITRO boosting' : 'SHOCK speed scrub') +
+        ' · ' + boost.secondsLeft.toFixed(2) + ' s · seq ' + (state.powerups.boost?.eventSeq ?? '—')
+      : (state.powerups.notice ?? 'ready · E uses the held item'));
   set('powerup-status', status);
   const placement = hud?.placement ?? state.powerups.placement;
   set('powerup-note', 'provisional measured-arc placement · ' + POWERUP_SLICE_TYPES.join('/') +
     ' · host events seq ' + (hud?.counts ? (state.powerups.lastEvents.at(-1)?.seq ?? 0) : 0) +
+    ' · Nitro target = exact PWR1 Hermite (class ' + (state.powerups.boost?.classLetter ?? 'A') + ', project class assumption)' +
     ' · diagnostic markers' + (placement?.mode ? ' · ' + placement.mode : '') +
     (hud?.relayError ? ' · relay: ' + hud.relayError : ''));
   const feed = (hud?.feed ?? []).slice(-6).map((entry) => '#' + entry.seq + ' ' + entry.text).join('\n');
   set('powerup-feed', feed || 'no power-up events yet');
-  root.dataset.state = state.powerups.wrecked ? 'wrecked' : (item ? 'armed' : 'ready');
+  root.dataset.state = state.powerups.wrecked ? 'wrecked' : (boost ? 'boosting' : (item ? 'armed' : 'ready'));
 }
 
 /** Compact capture/debug projection (never used by the render path). */
@@ -3702,6 +3821,7 @@ function mpPowerupCapture() {
     types: state.powerups.types,
     deferred: state.powerups.deferred,
     placement: hud?.placement ?? state.powerups.placement,
+    boostModel: powerupModel?.boost ?? null,
     labels: hud?.labels ?? state.powerups.snapshot?.labels ?? null,
     eventCount: powerupModel ? powerupModel.events.length : (powerupView?.lastEventSeq ?? 0),
     lastEventSeq: powerupModel ? powerupModel.events.length : (powerupView?.lastEventSeq ?? 0),
@@ -3711,6 +3831,8 @@ function mpPowerupCapture() {
     local: hud?.local ?? null,
     remote: hud?.remote ?? null,
     shield: hud?.shield ?? null,
+    boost: state.powerups.boost ?? null,
+    engineBoost: engine?.boostState?.() ?? null,
     pickups: hud?.pickups ?? [],
     mines: hud?.mines ?? [],
     effects: hud?.effects ?? [],
@@ -3783,6 +3905,44 @@ function mpInstallPowerupDebugApi() {
         x: latest.position[0] + forward.x * distance,
         y: latest.position[1],
         z: latest.position[2] + forward.z * distance
+      });
+    }),
+    boostState: () => engine?.boostState?.() ?? null,
+    nitroFor: (who = 'host') => hostEventWindow(() => {
+      const id = who === 'guest' ? mpRemotePlayerId : mpNet.playerId;
+      if (!id) throw new Error('no ' + who + ' player');
+      const latest = state.mp?.remote.latest?.state ?? null;
+      const speed = id === mpNet.playerId ? state.speed : latest?.speed;
+      powerupModel.clearInventory(id);
+      powerupModel.grantItem(id, 'Nitrous');
+      powerupModel.requestUse(id, {
+        slot: 0,
+        tick: state.engineTick + mpEngineTickOffset,
+        speedMps: speed,
+        speeds: { [mpNet.playerId]: state.speed, [mpRemotePlayerId]: latest?.speed },
+        speedSource: 'capture-current-state'
+      });
+    }),
+    shockOnTarget: (attacker = 'host', target = 'guest') => hostEventWindow(() => {
+      const attackerId = attacker === 'guest' ? mpRemotePlayerId : mpNet.playerId;
+      const targetId = target === 'guest' ? mpRemotePlayerId : mpNet.playerId;
+      if (!attackerId || !targetId) throw new Error('no attacker/target player');
+      const latest = state.mp?.remote.latest?.state ?? null;
+      const targetPosition = targetId === mpNet.playerId
+        ? { x: state.position[0], y: state.position[1], z: state.position[2] }
+        : (latest ? { x: latest.position[0], y: latest.position[1], z: latest.position[2] } : null);
+      if (!targetPosition) throw new Error('no guest state yet');
+      const attackerSpeed = attackerId === mpNet.playerId ? state.speed : latest?.speed;
+      powerupModel.clearInventory(attackerId);
+      powerupModel.grantItem(attackerId, 'Shock');
+      powerupModel.requestUse(attackerId, {
+        slot: 0,
+        position: targetPosition,
+        staged: true,
+        tick: state.engineTick + mpEngineTickOffset,
+        speedMps: attackerSpeed,
+        speeds: { [mpNet.playerId]: state.speed, [mpRemotePlayerId]: latest?.speed },
+        speedSource: 'capture-current-state'
       });
     }),
     broadcast: () => mpPowerupBroadcast(true)

@@ -97,7 +97,7 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 - [ ] İlk tuş/click sonrası motor sesi geliyor; RPM yükselince pitch yükseliyor; `M` sessize alıyor; `?audio=0` tamamen sessiz.
 - [ ] Truck/wreck'ler gerçek albedo ile dokulu (4 BC3 cab draw hariç); HUD'da diagnostic sayısı düşük.
 - [ ] M1: host `?mp=1&host=1` oda kodu veriyor; guest `?mp=1&room=CODE` katılıyor; ikisi READY → host START → iki sayfada aynı sonuç; console 0.
-- [ ] M2: `&powerups=1` ile pickup toplanıyor, `E` ile mine/shield/repair kullanılıyor; HUD health/shield/feed güncelleniyor; wreck → respawn; console 0.
+- [ ] M2: `&powerups=1` ile pickup toplanıyor, `E` ile mine/shield/repair/nitro/shock kullanılıyor; HUD health/shield/feed güncelleniyor; wreck → respawn; console 0.
 - [ ] Süre tablodaki değere ±0,01 s (scripted) veya makul (klavye).
 - [ ] `R`: aynı sayfada yeniden countdown; süre sıfırlanır, en iyi süre korunur.
 - [ ] Beş araç seçilebilir; her biri kendi gövdesi/tekerleriyle görünür.

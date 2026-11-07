@@ -316,7 +316,8 @@ $py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/depende
 # 10. M1 two-browser multiplayer capture (game 8802, room 8811)
 & $node probes/e1-drive/tools/capture_browser.mjs --mode mp --port 8802 --room-port 8811
 
-# 11. M2/PWR2 power-up capture (Mine/Shield/Repair, two browsers)
+# 11. M2/PWR2+PWR2a power-up capture (Mine/Shield/Repair/Nitro/Shock, two browsers)
+& $node probes/e1-drive/tools/boost_model_tests.mjs
 & $node probes/e1-drive/tools/powerups_model_tests.mjs
 & $node probes/e1-drive/tools/capture_browser.mjs --mode mp-powerups --port 8802 --room-port 8811
 ```
@@ -444,7 +445,7 @@ in `web/app.js`, `web/index.html`, `web/style.css`, `web/sprint-script.js`
 `tools/capture_browser.mjs` (Node protocol gate and `--mode mp`). The full
 verification record is `docs/work/verification/T-007-multiplayer.md`.
 
-## Power-ups (M2/PWR2) — Mine, Shield, Repair
+## Power-ups (M2/PWR2+PWR2a) - Mine, Shield, Repair, Nitro, Shock
 
 Status: M2 first slice, 7 November 2026. `?powerups=1` (multiplayer only,
 default off) adds a host-authoritative power-up world on top of the M1 race.
@@ -452,40 +453,76 @@ The full record is `docs/work/verification/T-007-powerups.md`.
 
 | Item | Behaviour |
 |---|---|
-| integrated types | **Bomb/Mine, Shield, Repair** (Nitro/Shock/Shunt/Blindfire/Barge/projectiles deferred) |
-| placement | six **provisional** items on the measured 310 m arcs 40/90/140/190/240/280 m; PWR3 owns real placement |
+| integrated types | **Bomb/Mine, Shield, Repair, Nitrous (Nitro), Shock** (Shunt/Blindfire/Barge/projectiles deferred) |
+| placement | six **provisional** items on the measured 310 m arcs 40/90/140/190/240/280 m cycling Bomb/Shield/Repair/Nitrous/Shock/Bomb; PWR3 owns real placement |
 | collection | host proximity against the recovered `PickupRadius=2.0 m`; one inventory slot; `pickup-rejected inventory-full` |
-| values | Bomb `Radius 1.0 / Outer 3.5 / Damage 100 / Lifespan 60 / Prime 0.3 / PlaceBehind 5`; Shield `Health 50 / Lifetime 6`; Repair `AmountToRepair 400`; deactivate `0.6 s` — all from `_work/powerups/powerups.json` |
-| use | guest sends a use intent; the host validates and broadcasts sequenced events (`mine-placed`, `mine-armed`, `mine-detonated`, `mine-expired`, `shield-activated`, `shield-absorbed`, `shield-broken`, `repaired`, `damage`, `wrecked`, `respawn`, `pickup*`, `use-rejected`) |
-| damage | 100 HP **diagnostic** pool; full Bomb damage inside `Radius`, typed `mine-near-miss` between `Radius` and `OuterRadius`, no damage outside `OuterRadius` |
+| values | Bomb `Radius 1.0 / Outer 3.5 / Damage 100 / Lifespan 60 / Prime 0.3 / PlaceBehind 5`; Shield `Health 50 / Lifetime 6`; Repair `AmountToRepair 400`; Nitro `300 m/s²`, 0.5 s force window, 1.3 s duration, exact PWR1 Hermite target (class A, 55 m/s project cap); Shock exact PWR1 curve target, 10 mph floor, `Inner 7 / Outer 14 / Lifetime 1.5 / Damage 100`; deactivate `0.6 s` — all from `_work/powerups/powerups.json` |
+| use | guest sends a use intent; the host validates and broadcasts sequenced events (`mine-placed`, `mine-armed`, `mine-detonated`, `mine-expired`, `shield-activated`, `shield-absorbed`, `shield-broken`, `repaired`, `nitro-activated`, `shock-activated`, `effect-expired`, `damage`, `wrecked`, `respawn`, `pickup*`, `use-rejected`) |
+| damage | 100 HP **diagnostic** pool; full Bomb damage inside `Radius`, typed `mine-near-miss` between `Radius` and `OuterRadius`, no damage outside `OuterRadius`; Shock applies its recovered 100 damage inside `OuterRadius` |
+| nitro / shock | host-sequenced; each page applies the event to its **own** car through `e1_boost_queue` **before** `C_Scene::Simulate` (no post-tick velocity/pose write); the host does not simulate the guest body |
 | wreck/respawn | `wrecked` at 0 HP, labelled 1.0 s diagnostic delay, `respawn` at the R1 `respawnTargetForGate(lastPassedGate)` target; the car is rebuilt through `respawnAt()` |
-| HUD | one-slot icon/letter + type, health, shield capacity/remaining seconds, status, last six sequenced events; icon is a labelled diagnostic glyph (retail `perk_icons` binding not recovered) |
-| effects | bounded octahedron marker pass (16 slots, ghost pipeline, no new buffer/texture): pickups, mines, shield bubble |
+| HUD | one-slot icon/letter + type, health, shield capacity/remaining seconds, active Nitro/Shock timer/status/target, last six sequenced events; icon is a labelled diagnostic glyph (retail `perk_icons` binding not recovered) |
+| effects | bounded octahedron marker pass (16 slots, ghost pipeline, no new buffer/texture): pickups, mines, shield bubbles and Nitro/Shock owner markers |
 | control channel | `/_powerups/relay`, an ordered in-memory HTTP relay beside the unchanged `probes/net-mvp` room service |
 
 The page must be served by `tools/serve.mjs`; it now serves
 `/_work/powerups/powerups.json`, `/powerups/engine.js` and `/_powerups/relay`.
 A server process started before this change must be restarted so it serves the
 new routes.
-The three new files are `web/powerups.js` (host model + client reducer),
-`tools/powerups_model_tests.mjs` (68 Node checks) and the capture mode below.
-Deferred types stay typed in `POWERUP_DEFERRED`; no damage, radius, timer or
-projectile rule is invented. No retail/full-game claim.
+The new files are `web/powerups.js` (host model + client reducer),
+`web/boost-model.js` (exact PWR1 Hermite targets + queue model),
+`tools/powerups_model_tests.mjs` (79 Node checks), the boost tests below and the
+capture mode. Deferred types stay typed in `POWERUP_DEFERRED`; no damage, radius,
+timer or projectile rule is invented. No retail/full-game claim.
+
+### Nitro and Shock (M2a)
+
+Nitro and Shock are host-sequenced engine effects, not input multipliers or
+post-tick writes:
+
+- `e1_boost_queue(kind, startTick, ticks, targetMps, magnitude, dx,dy,dz)` and
+  `e1_boost_state()` are exported by the wasm module. `e1_step` applies the
+  force **before** `C_Scene::Simulate`; `e1_create`/`e1_reset` clear the queue.
+- Nitro: `300 m/s² * mass * adjust` along horizontal body +Z, 0.5 s (30-tick)
+  force window inside a 1.3 s (78-tick) effect. The target is the exact PWR1
+  Hermite value at the fire speed: **52.758963 m/s** at the 24.73 m/s sprint
+  speed for class A (B/C/D 50.121015 / 47.483066 / 44.845120), capped at
+  **55 m/s** by a project safety value. The car's retail class is not recorded
+  by the e1 roster, so M2a uses class A and labels the choice in every event.
+- Shock: `E_FAKE_SPEED_BRAKE`-shaped force to the exact Shock curve target
+  (**19.995236 m/s** at the 24.73 m/s sprint speed) with the **10 mph** floor,
+  `Inner 7 / Outer 14 / Lifetime 1.5 s / Damage 100` from PWR1.
+- Authority: the host validates the use, sequences `nitro-activated` /
+  `shock-activated` (target, target speed, ticks, magnitude, fire speed, class
+  table) and emits `effect-expired`. Each page applies the event to its own car
+  at `localTick + delayTicks - 1`; the host does not simulate the guest body.
+- Measured wasm (BOOST1 fixture, pre speed 25.1475 m/s, class-A target
+  53.21259 m/s): 57.822 m/s at 0.5 s, 51.370 at 1.3 s (**+18.294** over the
+  33.076 baseline), peak 58.608 (**+25.532**), 0 NaN, deterministic in two
+  fresh instances. Shock at 20.116619 m/s measured 18.283 at 1.3 s
+  (**-14.793**).
+- Two-browser capture: host Nitro 10.15 → 48.49 m/s peak, guest Nitro
+  12.51 → 48.82; both Shock directions with 100 damage; console 0/0, relay 0
+  dropped, identical host/guest event counts. Screenshots
+  `browser-mp-powerups-nitro-*.png` / `…-shock-*.png`.
+
+The Shock hit test is a documented project planar distance inside the recovered
+`OuterRadius`; PWR1 does not serialize the retail hit/falloff rule. Shunt, Barge,
+Blindfire and projectiles remain deferred with typed reasons. Full record:
+`docs/work/verification/T-007-powerups.md` section 10 and
+`docs/work/analysis/e1-drive-slice.md` section 35.
 
 ```powershell
-# host / guest URLs (both pages add the flag)
-# http://127.0.0.1:8802/?mp=1&host=1&powerups=1&script=sprint
-# http://127.0.0.1:8802/?mp=1&room=CODE&powerups=1&script=sprint
-
+& $node probes/e1-drive/tools/boost_model_tests.mjs
 & $node probes/e1-drive/tools/powerups_model_tests.mjs
 & $node probes/e1-drive/tools/capture_browser.mjs --mode mp-powerups --port 8802 --room-port 8811
 ```
 
 The capture grants/uses items through the page's capture-only `window.__powerups`
-API: host mine placement, guest wreck/respawn, guest shield absorb/break and
-guest repair. It records the identical host/guest event counts, HUD text,
-marker-pass stats, relay stats, console and screenshots under
-`_work/e1-drive/browser-mp-powerups-*.png`.
+API: host/guest Nitro, host/guest Shock, host mine placement, guest
+wreck/respawn, guest shield absorb/break and guest repair. It records the
+identical host/guest event counts, HUD text, marker-pass stats, relay stats,
+console and screenshots under `_work/e1-drive/browser-mp-powerups-*.png`.
 
 ## The module API
 
@@ -501,6 +538,8 @@ harness, with the batch harness replaced by a library ABI:
 | `e1_get_state()` | JSON snapshot of this tick: position, the three body axes, velocity, angular velocity, ground-relative speed, four wheel records (contact, suspension, position, spin, surface, userData, ground normal), `finite`, `anyContact`, and the input actually applied. |
 | `e1_info()` | car name, XT handle id, ground/start Y, dt, settle-tick count, current tick, reset count, `sizeof(CarDynamicsXt)`. |
 | `e1_engine_rpm()` | the live `RacingPhysics::Car::Engine().RPM()` as a float; `-1` before a world is ready. This is the value the retail audio graph publishes as `RPMInput` (`BaseMessageHandler.cpp:1940/1970`); the page's engine audio consumes it once per frame. |
+| `e1_boost_queue(kind, startTick, ticks, targetMps, magnitude, dx, dy, dz)` | queue one engine-integrated effect for a receiver tick: `1` Nitro (forward force while below target, 30-tick force window), `2` brake (velocity-opposed force while above target), `3` one-shot impulse. Applied **before** `C_Scene::Simulate`; cleared by `e1_create`/`e1_reset`. |
+| `e1_boost_state()` | JSON read-back of the boost queue: `seq/kind/startTick/ticks/remaining/applied/forceTicks/forceN/targetMps/magnitude/lastSpeed/queued/effects[]` for the HUD and verifier; not on the physics path. |
 | `e1_ground_probe(x, z)` | the same fill+trace the wheel uses, as JSON: hit, height, normal, cached triangle count. Used to prove the spawn instead of guessing it. |
 | `e1_diag()` | diagnostic snapshot of the live world: scene/body/car pointers, the scene's scheduler group handle and policy, and the scheduler pool (size, free-list head, global counters, per-group queued/executing/dependencies/next/event). Used by `tools/repro_reset.mjs` and the verifier to prove rebuilds do not leak groups; not on the physics path. |
 | `e1_last_error()` | the message behind a 0 return. |

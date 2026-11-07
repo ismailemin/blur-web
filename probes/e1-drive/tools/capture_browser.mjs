@@ -1188,6 +1188,27 @@ async function mpPowerupsCapturePass() {
     }
     throw new Error(label + ' timed out; last ' + JSON.stringify(last?.counts ?? last?.status ?? null).slice(0, 300));
   };
+  const waitSpeed = async (handle, minimum, timeoutMs, label) => {
+    const deadline = Date.now() + timeoutMs;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await snapshotOf(handle);
+      if (last && Number.isFinite(last.local?.speed) && last.local.speed >= minimum) return last;
+      await sleep(80);
+    }
+    throw new Error(label + ' timed out; speed ' + (last?.local?.speed ?? 'null'));
+  };
+  const peakSpeed = async (handle, durationMs) => {
+    const deadline = Date.now() + durationMs;
+    let peak = 0;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await snapshotOf(handle);
+      if (Number.isFinite(last?.local?.speed)) peak = Math.max(peak, last.local.speed);
+      await sleep(60);
+    }
+    return { peak, lastSpeed: last?.local?.speed ?? null };
+  };
   const shot = async (handle, name) => {
     const result = await handle.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     writeFileSync(path.join(OUT, name), Buffer.from(result.data, 'base64'));
@@ -1228,13 +1249,15 @@ async function mpPowerupsCapturePass() {
     passCheck('both pages load the PWR1 manifest and rules prototype',
       hostLobby.powerups?.manifestHash && guestLobby.powerups?.manifestHash === hostLobby.powerups.manifestHash,
       JSON.stringify({ host: hostLobby.powerups?.manifestHash, guest: guestLobby.powerups?.manifestHash }));
-    passCheck('both pages expose exactly Mine/Shield/Repair',
-      JSON.stringify(hostLobby.powerups?.types) === JSON.stringify(['Bomb', 'Shield', 'Repair']) &&
-      JSON.stringify(guestLobby.powerups?.types) === JSON.stringify(['Bomb', 'Shield', 'Repair']),
+    passCheck('both pages expose exactly Mine/Shield/Repair/Nitro/Shock',
+      JSON.stringify(hostLobby.powerups?.types) === JSON.stringify(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock']) &&
+      JSON.stringify(guestLobby.powerups?.types) === JSON.stringify(['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock']),
       JSON.stringify(hostLobby.powerups?.types));
     passCheck('both pages state the deferred types and their reasons',
-      Object.keys(hostLobby.powerups?.deferred ?? {}).length >= 6 &&
-      /boost hook/.test(hostLobby.powerups?.deferred?.Nitrous ?? ''),
+      Object.keys(hostLobby.powerups?.deferred ?? {}).length >= 4 &&
+      /projectile/.test(hostLobby.powerups?.deferred?.Shunt ?? '') &&
+      !('Nitrous' in (hostLobby.powerups?.deferred ?? {})) &&
+      !('Shock' in (hostLobby.powerups?.deferred ?? {})),
       JSON.stringify(Object.keys(hostLobby.powerups?.deferred ?? {})));
     passCheck('power-up HUD is visible and labelled provisional',
       hostLobby.powerups?.hud?.hidden === false && /provisional/.test(hostLobby.powerups?.hud?.note ?? ''),
@@ -1269,10 +1292,55 @@ async function mpPowerupsCapturePass() {
       JSON.stringify(hostRunning.placement?.arcs) === JSON.stringify([40, 90, 140, 190, 240, 280]),
       JSON.stringify(hostRunning.placement?.arcs));
     passCheck('pickups carry only the integrated types',
-      hostRunning.pickups.every((pickup) => ['Bomb', 'Shield', 'Repair'].includes(pickup.type)),
+      hostRunning.pickups.every((pickup) => ['Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock'].includes(pickup.type)),
       hostRunning.pickups.map((pickup) => pickup.type).join(','));
     await shot(hostPage, 'browser-mp-powerups-spawn-host.png');
     await shot(guestPage, 'browser-mp-powerups-spawn-guest.png');
+
+    // -------------------------------------------------------- Nitro (host/guest)
+    const hostPreNitro = await waitSpeed(hostPage, 10, 30000, 'host speed for Nitro');
+    const hostNitroBefore = hostPreNitro.local.speed;
+    await hostPage.evaluate("window.__powerups.nitroFor('host'); null");
+    const hostNitro = await waitPower(hostPage, (power) => power.boost?.type === 'nitro-activated' &&
+      power.engineBoost && power.engineBoost.kind !== 0, 10000, 'host Nitro queued');
+    const hostNitroEvent = (hostNitro.events ?? []).filter((event) => event.type === 'nitro-activated').slice(-1)[0] ?? null;
+    const hostNitroPeak = await peakSpeed(hostPage, 1400);
+    passCheck('host Nitro is host-sequenced with the exact PWR1 target and class label',
+      hostNitroEvent?.targetPlayer != null && hostNitroEvent?.source === 'recovered' &&
+      hostNitroEvent?.targetSource === 'pwr1-hermite' && hostNitroEvent?.classLetter === 'A' &&
+      hostNitroEvent?.targetMps > hostNitroBefore && hostNitroEvent?.targetMps <= 55 &&
+      hostNitroEvent?.ticks === 78 && hostNitroEvent?.magnitude === 300,
+      JSON.stringify(hostNitroEvent && {
+        targetPlayer: hostNitroEvent.targetPlayer, targetMps: hostNitroEvent.targetMps,
+        speedMps: hostNitroEvent.speedMps, classLetter: hostNitroEvent.classLetter, ticks: hostNitroEvent.ticks
+      }));
+    passCheck('host Nitro produced a measured speed gain',
+      hostNitroPeak.peak >= hostNitroBefore + 8,
+      JSON.stringify({ before: hostNitroBefore, peak: hostNitroPeak.peak, last: hostNitroPeak.lastSpeed }));
+    await shot(hostPage, 'browser-mp-powerups-nitro-host.png');
+
+    const guestPreNitro = await waitSpeed(guestPage, 10, 30000, 'guest speed for Nitro');
+    const guestNitroBefore = guestPreNitro.local.speed;
+    await hostPage.evaluate("window.__powerups.grantGuest('Nitrous'); null");
+    await waitPower(guestPage, (power) => power.local?.inventory?.some((item) => item.type === 'Nitrous'),
+      15000, 'guest Nitrous in inventory');
+    await guestPage.evaluate('window.__powerups.use(); null');
+    const guestNitro = await waitPower(guestPage, (power) => power.boost?.type === 'nitro-activated' &&
+      power.engineBoost && power.engineBoost.kind !== 0, 20000, 'guest Nitro queued');
+    const guestNitroEvent = (guestNitro.events ?? []).filter((event) => event.type === 'nitro-activated').slice(-1)[0] ?? null;
+    const guestNitroPeak = await peakSpeed(guestPage, 1400);
+    passCheck('guest Nitro is applied by the guest to its own car from the host event',
+      guestNitroEvent?.targetPlayer === guestNitro.local?.id &&
+      guestNitro.boost?.targetPlayer === guestNitro.local?.id &&
+      guestNitro.boost?.authorityStartTick != null && guestNitro.boost?.localStartTick != null &&
+      guestNitro.boost.localStartTick >= guestNitro.boost.authorityStartTick - 120,
+      JSON.stringify(guestNitro.boost));
+    passCheck('guest Nitro produced a measured speed gain',
+      guestNitroPeak.peak >= guestNitroBefore + 8,
+      JSON.stringify({ before: guestNitroBefore, peak: guestNitroPeak.peak, last: guestNitroPeak.lastSpeed }));
+    await waitPower(hostPage, (power) => count(power, 'nitro-activated') >= 2, 10000, 'host sees both Nitros');
+    await waitPower(hostPage, (power) => count(power, 'effect-expired') >= 2, 6000, 'Nitro effects expire');
+    await shot(guestPage, 'browser-mp-powerups-nitro-guest.png');
 
     // ------------------------------------------------------------ mine placement
     await hostPage.evaluate("window.__powerups.grant('Bomb'); null");
@@ -1363,13 +1431,61 @@ async function mpPowerupsCapturePass() {
     await waitPower(hostPage, (power) => count(power, 'repaired') >= 1, 10000, 'host sees repaired');
     await shot(guestPage, 'browser-mp-powerups-repair-guest.png');
 
+    // ------------------------------------------------------- Shock (both ways)
+    const guestPreShock = await snapshotOf(guestPage);
+    const guestShockBefore = guestPreShock?.local?.speed ?? null;
+    await hostPage.evaluate("window.__powerups.shockOnTarget('host', 'guest'); null");
+    const guestShock = await waitPower(guestPage, (power) => count(power, 'shock-activated') >= 1,
+      20000, 'guest sees shock-activated');
+    const guestShockEvent = (guestShock.events ?? []).filter((event) => event.type === 'shock-activated').slice(-1)[0] ?? null;
+    const guestShockTarget = (guestShockEvent?.targets ?? []).find((row) => row.targetPlayer === guestShock.local?.id) ?? null;
+    passCheck('host Shock is a host-sequenced speed scrub with recovered damage/radii/lifetime',
+      guestShockEvent?.source === 'recovered' && guestShockEvent?.targetSource === 'pwr1-hermite' &&
+      guestShockEvent?.innerRadius === 7 && guestShockEvent?.outerRadius === 14 &&
+      guestShockEvent?.lifetime === 1.5 && guestShockEvent?.damage === 100 &&
+      guestShockTarget?.damage === 100 && guestShockTarget?.targetMps > 0 &&
+      guestShockTarget?.targetMps < guestShockTarget?.speedMps,
+      JSON.stringify(guestShockEvent && {
+        inner: guestShockEvent.innerRadius, outer: guestShockEvent.outerRadius,
+        lifetime: guestShockEvent.lifetime, damage: guestShockEvent.damage, target: guestShockTarget
+      }));
+    const guestWreckedByShock = await waitPower(guestPage, (power) => count(power, 'wrecked') >= 1 &&
+      power.local?.health === 0, 10000, 'guest damaged by Shock');
+    passCheck('Shock damage reached the guest through the host health model',
+      guestWreckedByShock.local?.health === 0,
+      JSON.stringify({ health: guestWreckedByShock.local?.health, counts: guestWreckedByShock.counts }));
+    await shot(guestPage, 'browser-mp-powerups-shock-guest.png');
+    await waitPower(guestPage, (power) => count(power, 'respawn') >= 2 && power.wrecked === false,
+      8000, 'guest respawn after Shock');
+
+    const hostPreShock = await snapshotOf(hostPage);
+    const hostShockBefore = hostPreShock?.local?.speed ?? null;
+    await hostPage.evaluate("window.__powerups.shockOnTarget('guest', 'host'); null");
+    const hostShock = await waitPower(hostPage, (power) => count(power, 'shock-activated') >= 2 &&
+      power.engineBoost?.kind === 2, 15000, 'host applies the guest Shock to its own car');
+    const hostShockEvent = (hostShock.events ?? []).filter((event) => event.type === 'shock-activated').slice(-1)[0] ?? null;
+    const hostShockTarget = (hostShockEvent?.targets ?? []).find((row) => row.targetPlayer === hostShock.local?.id) ?? null;
+    passCheck('guest Shock is applied by the host to its own car from the same host event model',
+      hostShockTarget?.damage === 100 && hostShock.boost?.type === 'shock-activated' &&
+      hostShock.engineBoost?.kind === 2 && hostShock.engineBoost?.targetMps > 0,
+      JSON.stringify({ target: hostShockTarget, boost: hostShock.boost, engine: hostShock.engineBoost }));
+    passCheck('Shock reduced the host speed or applied a measured brake force',
+      (Number.isFinite(hostShockBefore) && Number.isFinite(hostShock.engineBoost?.lastSpeed) &&
+        hostShock.engineBoost.lastSpeed < hostShockBefore + 0.5) ||
+      (hostShock.engineBoost?.forceTicks ?? 0) > 0,
+      JSON.stringify({ before: hostShockBefore, lastSpeed: hostShock.engineBoost?.lastSpeed,
+        forceTicks: hostShock.engineBoost?.forceTicks }));
+    await shot(hostPage, 'browser-mp-powerups-shock-host.png');
+    await waitPower(hostPage, (power) => count(power, 'effect-expired') >= 3, 6000, 'Shock effect expires');
+
     // --------------------------------------------------------------- evidence
     hostFinal = await snapshotOf(hostPage);
     guestFinal = await snapshotOf(guestPage);
     const hostPower = await powerOf(hostPage);
     const guestPower = await powerOf(guestPage);
     const required = ['pickup-spawned', 'mine-placed', 'mine-armed', 'mine-detonated', 'wrecked',
-      'respawn', 'shield-activated', 'shield-absorbed', 'shield-broken', 'repaired', 'damage'];
+      'respawn', 'shield-activated', 'shield-absorbed', 'shield-broken', 'repaired', 'damage',
+      'nitro-activated', 'shock-activated'];
     const hostCounts = Object.fromEntries(required.map((type) => [type, count(hostPower, type)]));
     const guestCounts = Object.fromEntries(required.map((type) => [type, count(guestPower, type)]));
     passCheck('all required host-authoritative event types occurred',
@@ -1378,6 +1494,9 @@ async function mpPowerupsCapturePass() {
     passCheck('the guest applied the same required event counts',
       required.every((type) => guestCounts[type] === hostCounts[type]),
       JSON.stringify({ host: hostCounts, guest: guestCounts }));
+    passCheck('Nitro and Shock effects emitted effect-expired on both pages',
+      count(hostPower, 'effect-expired') >= 1 && count(guestPower, 'effect-expired') >= 1,
+      JSON.stringify({ host: count(hostPower, 'effect-expired'), guest: count(guestPower, 'effect-expired') }));
     const hostAuthority = hostFinal?.you?.id ?? null;
     passCheck('client events carry host authority and strictly increase',
       hostAuthority !== null &&
@@ -1392,7 +1511,7 @@ async function mpPowerupsCapturePass() {
       hostPower.hud.hidden === false && guestPower.hud.hidden === false &&
       /health|HP/i.test(guestPower.hud.health ?? '') &&
       /no shield|s ·/.test(guestPower.hud.shield ?? '') &&
-      /mine|shield|repair/i.test(guestPower.hud.feed ?? ''),
+      /mine|shield|repair|nitro|shock|damage|wrecked/i.test(guestPower.hud.feed ?? ''),
       JSON.stringify({ host: hostPower.hud, guest: guestPower.hud }));
     passCheck('HUD states the provisional placement label',
       /provisional measured-arc placement/.test(guestPower.hud.note ?? ''),
@@ -1454,6 +1573,43 @@ async function mpPowerupsCapturePass() {
         repair: {
           healed: repaired,
           screenshot: shots['browser-mp-powerups-repair-guest.png']
+        },
+        nitro: {
+          host: {
+            event: hostNitroEvent,
+            before: hostNitroBefore,
+            peak: hostNitroPeak,
+            boost: hostNitro.boost,
+            engine: hostNitro.engineBoost
+          },
+          guest: {
+            event: guestNitroEvent,
+            before: guestNitroBefore,
+            peak: guestNitroPeak,
+            boost: guestNitro.boost,
+            engine: guestNitro.engineBoost
+          },
+          screenshots: {
+            host: shots['browser-mp-powerups-nitro-host.png'],
+            guest: shots['browser-mp-powerups-nitro-guest.png']
+          }
+        },
+        shock: {
+          guestTarget: {
+            event: guestShockEvent,
+            target: guestShockTarget,
+            before: guestShockBefore,
+            health: guestShock.local?.health ?? null,
+            screenshot: shots['browser-mp-powerups-shock-guest.png']
+          },
+          hostTarget: {
+            event: hostShockEvent,
+            target: hostShockTarget,
+            before: hostShockBefore,
+            boost: hostShock.boost,
+            engine: hostShock.engineBoost,
+            screenshot: shots['browser-mp-powerups-shock-host.png']
+          }
         }
       },
       final: {
@@ -1483,6 +1639,18 @@ async function mpPowerupsCapturePass() {
         manifestHash: evidence.manifest.hash,
         eventCounts: hostCounts,
         guestEventCounts: guestCounts,
+        nitro: {
+          host: { before: hostNitroBefore, peak: hostNitroPeak.peak, targetMps: hostNitroEvent?.targetMps,
+            speedMps: hostNitroEvent?.speedMps, classLetter: hostNitroEvent?.classLetter },
+          guest: { before: guestNitroBefore, peak: guestNitroPeak.peak, targetMps: guestNitroEvent?.targetMps,
+            speedMps: guestNitroEvent?.speedMps, classLetter: guestNitroEvent?.classLetter }
+        },
+        shock: {
+          guestTarget: { targetMps: guestShockTarget?.targetMps, speedMps: guestShockTarget?.speedMps,
+            health: guestShock.local?.health ?? null },
+          hostTarget: { before: hostShockBefore, targetMps: hostShockTarget?.targetMps,
+            engine: hostShock.engineBoost }
+        },
         huds: { host: hostPower.hud, guest: guestPower.hud },
         markers: { host: hostPower.markers, guest: guestPower.markers },
         relay: relayStats,

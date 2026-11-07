@@ -193,6 +193,12 @@ tri; yol **624,91 m** (%99,6); **2.627 draw / 365.451 tri** gerçek albedo
 doğrulama. Modül pin politikası behavior-based (61/61 tick hash). Kanıt:
 `docs/work/analysis/map-slice-gracia.md`.
 
+**BOOST2 — Nitro + Shock:** `e1_boost_queue`/`e1_boost_state`; Nitro hedefi
+52,759 (A) m/s, 1,3 s, 55 cap; Shock 19,995 m/s. Gerçek wasm +18,29 / −14,79
+m/s; `?powerups=1` içinde pickup/event/HUD; capture host 10,15→48,49, guest
+12,51→48,82 m/s, console 0/0. Boost 31/31, power-up 79/79, suite 48/48.
+Kanıt: `docs/work/verification/T-007-powerups.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

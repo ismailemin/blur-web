@@ -693,6 +693,323 @@ static void SampleCar( RacingPhysics::Car& car, TickState& t )
 	}
 }
 
+static void PutNumber( char*& p, char* end, float v );
+
+// ------------------------------------------------------------- boost effects
+//
+// One engine-integrated effect per queue slot. The force is applied in
+// e1_step() *before* C_Scene::Simulate, which is the retail
+// FakeVehicleSpeedState shape (FakePhysics.cpp:700-778): a forward force while
+// the car is below the target, or a velocity-opposed brake force while it is
+// above it. Nothing here writes a velocity or a pose after the solver.
+//
+// The queue is host-sequenced: the caller passes the receiver tick on which the
+// effect starts. A Nitro effect keeps the retail 0.5 s accelerating budget
+// (`_value`, FakePhysics.cpp:711/748-751) while remaining active for its full
+// duration (the recovered 1.3 s), so the force window and the effect window are
+// distinct, exactly as in the source.
+
+enum
+{
+	kBoostNitro = 1,
+	kBoostBrake = 2,
+	kBoostImpulse = 3,
+	kMaxBoostEffects = 4,
+	kBoostAccelerateBudgetTicks = 30 // 0.5 s at 60 Hz, retail `_value`
+};
+
+struct BoostEffect
+{
+	bool active;
+	int seq;
+	int kind;
+	int startTick;
+	int ticks;
+	int forceBudget; // NITRO: remaining 0.5 s budget ticks; -1 = no budget
+	float targetMps;
+	float magnitude;
+	float dir[3];
+	int appliedTicks;
+	int forceTicks;
+	float forceN;
+	bool impulseDone;
+	float lastSpeed;
+
+	BoostEffect()
+		: active( false ), seq( 0 ), kind( 0 ), startTick( 0 ), ticks( 0 ), forceBudget( -1 ),
+		  targetMps( 0 ), magnitude( 0 ), appliedTicks( 0 ), forceTicks( 0 ), forceN( 0 ),
+		  impulseDone( false ), lastSpeed( 0 )
+	{
+		dir[0] = dir[1] = dir[2] = 0;
+	}
+};
+
+struct BoostRuntime
+{
+	BoostEffect effects[kMaxBoostEffects];
+	int nextSeq;
+
+	BoostRuntime() : nextSeq( 0 ) {}
+};
+
+static BoostRuntime gBoost;
+static char s_boost[4096];
+
+static void ClearBoostQueue()
+{
+	gBoost = BoostRuntime();
+}
+
+static bool QueueBoost( int kind, int startTick, int ticks, float targetMps, float magnitude,
+                        float dx, float dy, float dz )
+{
+	if ( !gWorld.ready || !gWorld.car || !gWorld.body )
+	{
+		SetError( "e1_boost_queue before a successful e1_create/e1_reset" );
+		return false;
+	}
+	if ( kind != kBoostNitro && kind != kBoostBrake && kind != kBoostImpulse )
+	{
+		SetError( "e1_boost_queue: kind must be 1 (nitro), 2 (brake) or 3 (impulse)" );
+		return false;
+	}
+	if ( startTick < gWorld.tick )
+	{
+		SetError( "e1_boost_queue: startTick is before the current tick" );
+		return false;
+	}
+	if ( ticks <= 0 )
+	{
+		SetError( "e1_boost_queue: ticks must be > 0" );
+		return false;
+	}
+	const float values[5] = { targetMps, magnitude, dx, dy, dz };
+	for ( int i = 0; i < 5; ++i )
+	{
+		if ( !std::isfinite( (double)values[i] ) )
+		{
+			SetError( "e1_boost_queue: non-finite parameter" );
+			return false;
+		}
+	}
+	if ( kind == kBoostImpulse )
+	{
+		if ( std::fabs( magnitude ) < 1e-6f )
+		{
+			SetError( "e1_boost_queue: impulse magnitude must be non-zero" );
+			return false;
+		}
+		if ( ( dx * dx + dy * dy + dz * dz ) < 1e-12f )
+		{
+			SetError( "e1_boost_queue: impulse direction must be non-zero" );
+			return false;
+		}
+	}
+	else
+	{
+		if ( !( targetMps > 0.f ) )
+		{
+			SetError( "e1_boost_queue: targetMps must be > 0 for nitro/brake" );
+			return false;
+		}
+		if ( !( magnitude > 0.f ) )
+		{
+			SetError( "e1_boost_queue: magnitude must be > 0 for nitro/brake" );
+			return false;
+		}
+	}
+
+	int slot = -1;
+	for ( int i = 0; i < kMaxBoostEffects; ++i )
+	{
+		if ( !gBoost.effects[i].active )
+		{
+			slot = i;
+			break;
+		}
+	}
+	if ( slot < 0 )
+	{
+		SetError( "e1_boost_queue: queue full (4 effects)" );
+		return false;
+	}
+
+	BoostEffect& e = gBoost.effects[slot];
+	e = BoostEffect();
+	e.active = true;
+	e.seq = ++gBoost.nextSeq;
+	e.kind = kind;
+	e.startTick = startTick;
+	e.ticks = ticks;
+	e.targetMps = targetMps;
+	e.magnitude = magnitude;
+	e.dir[0] = dx;
+	e.dir[1] = dy;
+	e.dir[2] = dz;
+	e.forceBudget = ( kind == kBoostNitro )
+		? ( ticks < kBoostAccelerateBudgetTicks ? ticks : kBoostAccelerateBudgetTicks )
+		: -1;
+	return true;
+}
+
+// Apply every active effect for the tick about to be simulated. Called from
+// e1_step() before C_Scene::Simulate so the solver and the tyres see the force
+// in the same step.
+static void ApplyBoostPreStep()
+{
+	if ( !gWorld.ready || !gWorld.car || !gWorld.body ) return;
+	SharedPhysics::C_RigidBody& rb = gWorld.body->GetBody();
+	const int tick = gWorld.tick;
+
+	for ( int i = 0; i < kMaxBoostEffects; ++i )
+	{
+		BoostEffect& e = gBoost.effects[i];
+		if ( !e.active ) continue;
+		if ( tick < e.startTick ) continue;
+		if ( tick >= e.startTick + e.ticks )
+		{
+			e.active = false;
+			e.forceN = 0.f;
+			continue;
+		}
+
+		if ( e.kind == kBoostNitro )
+		{
+			Maths::HVec3 fwd = gWorld.car->GetAxis().Matrix3().AZ();
+			fwd.Y( 0.f );
+			const float fwdSpeed = (float)Maths::DotProduct( rb.m_LinearVelocity, fwd );
+			e.lastSpeed = fwdSpeed;
+			++e.appliedTicks;
+			if ( e.forceBudget > 0 && fwdSpeed < e.targetMps )
+			{
+				const float adjust = ( fwdSpeed < e.targetMps * 0.5f ) ? 2.f : 1.f;
+				const float force = e.magnitude * (float)rb.Mass() * adjust;
+				rb.AddForce( fwd * force );
+				e.forceN = force;
+				++e.forceTicks;
+			}
+			else
+			{
+				e.forceN = 0.f;
+			}
+			// The 0.5 s retail `_value` window is the first 30 ticks of the
+			// effect, whether or not the car is already at/above the target
+			// (the force itself is applied only while it is below it). This is
+			// the exact shape BOOST1 measured: force-target-50 applied force
+			// for 6 ticks, then the car coasted for the rest of the 1.3 s.
+			if ( e.forceBudget > 0 ) --e.forceBudget;
+		}
+		else if ( e.kind == kBoostBrake )
+		{
+			const float speed = (float)Maths::Magnitude( RacingPhysics::Vector3R( rb.m_LinearVelocity ) );
+			e.lastSpeed = speed;
+			++e.appliedTicks;
+			if ( speed > e.targetMps && speed > 1e-3f )
+			{
+				const float adjust = ( speed > e.targetMps * 2.f ) ? 2.f : 1.f;
+				const float force = e.magnitude * (float)rb.Mass() * adjust;
+				rb.AddForce( rb.m_LinearVelocity * ( -force / speed ) );
+				e.forceN = -force;
+				++e.forceTicks;
+			}
+			else
+			{
+				e.forceN = 0.f;
+			}
+		}
+		else if ( e.kind == kBoostImpulse && !e.impulseDone )
+		{
+			Maths::HVec3 dir( e.dir[0], e.dir[1], e.dir[2] );
+			const float length = (float)Maths::Magnitude( RacingPhysics::Vector3R( dir ) );
+			if ( length > 1e-6f ) dir = dir * ( e.magnitude / length );
+			rb.AddImpulse( dir );
+			e.forceN = e.magnitude;
+			e.impulseDone = true;
+			++e.appliedTicks;
+			e.active = false;
+		}
+	}
+}
+
+static const char* SerialiseBoostState()
+{
+	char* p = s_boost;
+	char* end = s_boost + sizeof s_boost - 1;
+
+	int current = -1;
+	for ( int i = 0; i < kMaxBoostEffects; ++i )
+	{
+		const BoostEffect& e = gBoost.effects[i];
+		if ( e.active && ( current < 0 || e.seq > gBoost.effects[current].seq ) ) current = i;
+	}
+	if ( current < 0 )
+	{
+		for ( int i = 0; i < kMaxBoostEffects; ++i )
+		{
+			const BoostEffect& e = gBoost.effects[i];
+			if ( e.seq > 0 && ( current < 0 || e.seq > gBoost.effects[current].seq ) ) current = i;
+		}
+	}
+
+	int activeCount = 0;
+	for ( int i = 0; i < kMaxBoostEffects; ++i ) if ( gBoost.effects[i].active ) ++activeCount;
+
+	const BoostEffect* c = current >= 0 ? &gBoost.effects[current] : 0;
+	const int remaining = ( c && c->active ) ? ( c->startTick + c->ticks - gWorld.tick ) : 0;
+	const char* kindName = !c ? "none"
+		: ( c->kind == kBoostNitro ? "nitro" : ( c->kind == kBoostBrake ? "brake" : "impulse" ) );
+
+	std::snprintf( p, (size_t)( end - p ),
+	               "{\"status\":\"%s\",\"active\":%d,\"seq\":%d,\"kind\":%d,\"kindName\":\"%s\","
+	               "\"startTick\":%d,\"ticks\":%d,\"remaining\":%d,\"applied\":%d,"
+	               "\"forceTicks\":%d,\"targetMps\":",
+	               gWorld.ready ? "ok" : "error", c && c->active ? 1 : 0,
+	               c ? c->seq : 0, c ? c->kind : 0, kindName,
+	               c ? c->startTick : 0, c ? c->ticks : 0,
+	               remaining > 0 ? remaining : 0, c ? c->appliedTicks : 0,
+	               c ? c->forceTicks : 0 );
+	p += std::strlen( p );
+	PutNumber( p, end, c ? c->targetMps : 0.f );
+	std::snprintf( p, (size_t)( end - p ), ",\"magnitude\":" );
+	p += std::strlen( p );
+	PutNumber( p, end, c ? c->magnitude : 0.f );
+	std::snprintf( p, (size_t)( end - p ), ",\"forceN\":" );
+	p += std::strlen( p );
+	PutNumber( p, end, c ? c->forceN : 0.f );
+	std::snprintf( p, (size_t)( end - p ), ",\"lastSpeed\":" );
+	p += std::strlen( p );
+	PutNumber( p, end, c ? c->lastSpeed : 0.f );
+	std::snprintf( p, (size_t)( end - p ),
+	               ",\"queued\":%d,\"tick\":%d,\"effects\":[", activeCount, gWorld.tick );
+	p += std::strlen( p );
+	bool firstEffect = true;
+	for ( int i = 0; i < kMaxBoostEffects; ++i )
+	{
+		const BoostEffect& e = gBoost.effects[i];
+		if ( e.seq <= 0 ) continue;
+		std::snprintf( p, (size_t)( end - p ),
+		               "%s{\"seq\":%d,\"kind\":%d,\"active\":%d,\"startTick\":%d,\"ticks\":%d,"
+		               "\"remaining\":%d,\"applied\":%d,\"forceTicks\":%d,\"forceBudget\":%d,\"targetMps\":",
+		               firstEffect ? "" : ",",
+		               e.seq, e.kind, e.active ? 1 : 0, e.startTick, e.ticks,
+		               e.active ? ( e.startTick + e.ticks - gWorld.tick > 0 ? e.startTick + e.ticks - gWorld.tick : 0 ) : 0,
+		               e.appliedTicks, e.forceTicks, e.forceBudget );
+		firstEffect = false;
+		p += std::strlen( p );
+		PutNumber( p, end, e.targetMps );
+		std::snprintf( p, (size_t)( end - p ), ",\"magnitude\":" );
+		p += std::strlen( p );
+		PutNumber( p, end, e.magnitude );
+		std::snprintf( p, (size_t)( end - p ), ",\"forceN\":" );
+		p += std::strlen( p );
+		PutNumber( p, end, e.forceN );
+		std::snprintf( p, (size_t)( end - p ), "}" );
+		p += std::strlen( p );
+	}
+	std::snprintf( p, (size_t)( end - p ), "]}" );
+	return s_boost;
+}
+
 static void ReleaseWorld()
 {
 	// The static instance owns the mesh bodies the wheel rays trace against, so it
@@ -729,6 +1046,7 @@ static bool BuildWorld()
 {
 	using namespace Maths;
 	ReleaseWorld();
+	ClearBoostQueue();
 
 	if ( !gWorld.levelCopy || gWorld.levelLen <= 0 )
 	{
@@ -1035,6 +1353,7 @@ int e1_create( const char* levelData, int levelLen, const char* fieldData, int f
 	gWorld.ready = false;
 	gWorld.tick = 0;
 	gWorld.resetCount = 0;
+	ClearBoostQueue();
 
 	// Parse and validate the car record first: a bad field list must not leave a
 	// half-built scene behind. The decoded record is written straight into the
@@ -1129,10 +1448,24 @@ int e1_step()
 	gWorld.car->DriverSettings().autoGears = true;
 	gWorld.car->DriverSettings().tractionControl = true;
 	gWorld.car->DriverSettings().ABS = true;
+	ApplyBoostPreStep();
 	gWorld.scene->Simulate( Maths::C_TimeS( kDt ) );
 	RacingPhysics::PhysicsTimer::Instance().UpdatePhysicsTimer();
 	gWorld.tick++;
 	return 1;
+}
+
+extern "C" __attribute__( ( visibility( "default" ) ) )
+int e1_boost_queue( int kind, int startTick, int ticks, float targetMps, float magnitude,
+                    float dx, float dy, float dz )
+{
+	return e1::QueueBoost( kind, startTick, ticks, targetMps, magnitude, dx, dy, dz ) ? 1 : 0;
+}
+
+extern "C" __attribute__( ( visibility( "default" ) ) )
+const char* e1_boost_state()
+{
+	return e1::SerialiseBoostState();
 }
 
 extern "C" __attribute__( ( visibility( "default" ) ) )
