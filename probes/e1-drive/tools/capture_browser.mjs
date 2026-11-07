@@ -69,9 +69,14 @@ const PROFILE = path.join(OUT, 'edge-profile-' + PORT);
 const VIEWPORT = { width: 1600, height: 900 };
 const TICKS = option('--ticks', '0,150,240,300').split(',').map(Number);
 const ONLY_CAR = option('--car', null);
-const MAP_ID = option('--map', 'amboy');
+const MAP_OPTION = option('--map', null);
+const MAP_ID = MAP_OPTION ?? (MODE === 'mp' ? 'river' : 'amboy');
 const MAP_ENTRY = MAPS[MAP_ID];
-if (!MAP_ENTRY || MAP_ENTRY.kind !== 'map-package') {
+if (MODE === 'mp') {
+  if (!MAP_ENTRY || MAP_ENTRY.multiplayer !== true) {
+    throw new Error('--map for --mode mp must name a multiplayer map (' + Object.values(MAPS).filter((entry) => entry.multiplayer).map((entry) => entry.id).join(', ') + '), got ' + JSON.stringify(MAP_ID));
+  }
+} else if (!MAP_ENTRY || MAP_ENTRY.kind !== 'map-package') {
   throw new Error('--map must name a map package (' + Object.values(MAPS).filter((entry) => entry.kind === 'map-package').map((entry) => entry.id).join(', ') + '), got ' + JSON.stringify(MAP_ID));
 }
 const EXTRA_QUERY = option('--extra-query', '');
@@ -793,6 +798,9 @@ async function audioCapturePass() {
  */
 async function mpCapturePass() {
   const passFailures = [];
+  const mpMapId = MAP_ID;
+  const mpTag = mpMapId === 'river' ? '' : '-' + mpMapId;
+  const mpPins = MAP_ENTRY.mpPins ?? null;
   const passCheck = (label, ok, detail = '') => { if (!ok) passFailures.push(label + (detail ? ': ' + detail : '')); };
   const distance3 = (a, b) => (Array.isArray(a) && Array.isArray(b)
     ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : null);
@@ -833,8 +841,9 @@ async function mpCapturePass() {
   };
   const shot = async (handle, name) => {
     const result = await handle.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-    const relative = '_work/e1-drive/' + name;
-    writeFileSync(path.join(OUT, name), Buffer.from(result.data, 'base64'));
+    const file = name.replace('.png', mpTag + '.png');
+    const relative = '_work/e1-drive/' + file;
+    writeFileSync(path.join(OUT, file), Buffer.from(result.data, 'base64'));
     shots[name] = relative;
     return relative;
   };
@@ -846,7 +855,7 @@ async function mpCapturePass() {
     const car = defaultSlug;
     const roomQuery = '&mpServer=' + encodeURIComponent(roomServer.wsUrl) + '&audio=0';
     const hostUrl = origin + '/?mp=1&host=1&script=sprint&car=' + encodeURIComponent(car) +
-      '&name=Host' + roomQuery;
+      '&map=' + encodeURIComponent(mpMapId) + '&name=Host' + roomQuery;
     await hostPage.send('Page.navigate', { url: hostUrl });
     hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.phase === 'lobby' && snapshot.engineReady,
       120000, 'host lobby + engine');
@@ -875,6 +884,44 @@ async function mpCapturePass() {
     passCheck('M1 uses one session car for both players',
       hostLobby.sessionCar !== null && hostLobby.sessionCar === guestLobby.sessionCar,
       `${hostLobby.sessionCar} / ${guestLobby.sessionCar}`);
+    // Exercise the host-only lobby switch and the per-client map reload. Start
+    // from the room's current map, switch to River and back to the captured map,
+    // then assert both pages re-verified before READY.
+    if (mpMapId !== 'river') {
+      await hostPage.evaluate('window.__mp.selectMap("river")');
+      await waitSnapshot(hostPage, (snapshot) => snapshot.mapId === 'river' && snapshot.mapReady,
+        90000, 'host switched to river');
+      await waitSnapshot(guestPage, (snapshot) => snapshot.mapId === 'river' && snapshot.mapReady,
+        90000, 'guest reloaded river');
+      await hostPage.evaluate('window.__mp.selectMap(' + JSON.stringify(mpMapId) + ')');
+      hostLobby = await waitSnapshot(hostPage, (snapshot) => snapshot.mapId === mpMapId && snapshot.mapReady,
+        120000, 'host switched back to ' + mpMapId);
+      guestLobby = await waitSnapshot(guestPage, (snapshot) => snapshot.mapId === mpMapId && snapshot.mapReady,
+        120000, 'guest reloaded ' + mpMapId);
+      passCheck('host map switch reloads and re-verifies the map on both pages',
+        hostLobby.mapReady === true && guestLobby.mapReady === true &&
+        hostLobby.map?.packageHash === mpPins?.packageHash &&
+        guestLobby.map?.packageHash === mpPins?.packageHash,
+        JSON.stringify({ host: hostLobby.mapId, guest: guestLobby.mapId }));
+    }
+    passCheck('lobby shows the host-selected map on both pages',
+      hostLobby.mapId === mpMapId && guestLobby.mapId === mpMapId && hostLobby.map?.id === mpMapId,
+      JSON.stringify({ host: hostLobby.mapId, guest: guestLobby.mapId, expected: mpMapId }));
+    passCheck('both pages report map-ready with the registry hashes',
+      hostLobby.mapReady === true && guestLobby.mapReady === true &&
+      hostLobby.map?.packageHash === mpPins?.packageHash &&
+      guestLobby.map?.packageHash === mpPins?.packageHash &&
+      hostLobby.map?.layoutHash === mpPins?.layoutHash &&
+      guestLobby.map?.layoutHash === mpPins?.layoutHash &&
+      hostLobby.map?.physicsHash === mpPins?.physicsHash &&
+      guestLobby.map?.physicsHash === mpPins?.physicsHash,
+      JSON.stringify({ host: hostLobby.map?.packageHash, guest: guestLobby.map?.packageHash }));
+    passCheck('map loading state records bytes and elapsed time',
+      Number.isFinite(hostLobby.map?.loadMs) && Number.isFinite(hostLobby.map?.bytes?.total) &&
+      hostLobby.map.bytes.total > 0 && Number.isFinite(guestLobby.map?.loadMs) &&
+      guestLobby.map.loadMs > 0,
+      JSON.stringify({ host: { ms: hostLobby.map?.loadMs, bytes: hostLobby.map?.bytes?.total },
+        guest: { ms: guestLobby.map?.loadMs, bytes: guestLobby.map?.bytes?.total } }));
     passCheck('lobby start is host-only and disabled before ready',
       hostLobby.overlays.startHidden === false && hostLobby.overlays.startDisabled === true &&
       guestLobby.overlays.startHidden === true,
@@ -904,8 +951,11 @@ async function mpCapturePass() {
     guestStarted = await waitSnapshot(guestPage, (snapshot) => snapshot.started && snapshot.engineTick >= 2,
       30000, 'guest race start');
     passCheck('host start broadcasts room.started to both pages', hostStarted.started && guestStarted.started);
+    passCheck('room.started carries the selected map on both pages',
+      hostStarted.mapId === mpMapId && guestStarted.mapId === mpMapId,
+      JSON.stringify({ host: hostStarted.mapId, guest: guestStarted.mapId, expected: mpMapId }));
 
-    const raceDeadline = Date.now() + 150000;
+    const raceDeadline = Date.now() + (mpMapId === 'amboy' ? 360000 : mpMapId === 'gracia' ? 200000 : 150000);
     let hostView = hostStarted;
     let guestView = guestStarted;
     while (Date.now() < raceDeadline) {
@@ -971,6 +1021,17 @@ async function mpCapturePass() {
       hostFinal.result.hash + ' / ' + guestFinal.result.hash);
     passCheck('host and guest render identical result rows',
       JSON.stringify(hostFinal.result.rows) === JSON.stringify(guestFinal.result.rows));
+    passCheck('shared result identifies the selected map/course',
+      hostFinal.result.courseId === (mpMapId === 'river' ? '310m' : mpMapId) &&
+      guestFinal.result.courseId === (mpMapId === 'river' ? '310m' : mpMapId),
+      JSON.stringify({ host: hostFinal.result.courseId, guest: guestFinal.result.courseId, expected: mpMapId }));
+    passCheck('both cars finish the measured course (no early/mid-race table)',
+      mpMapId === 'river'
+        ? hostFinal.sprint?.finishTick > 300 && guestFinal.sprint?.finishTick > 300
+        : mpMapId === 'amboy'
+          ? hostFinal.sprint?.finishTick > 12000 && guestFinal.sprint?.finishTick > 12000
+          : hostFinal.sprint?.finishTick > 3500 && guestFinal.sprint?.finishTick > 3500,
+      JSON.stringify({ hostTick: hostFinal.sprint?.finishTick, guestTick: guestFinal.sprint?.finishTick }));
     const hostRow = hostFinal.result.rows.find((row) => row.playerId === hostFinal.you.id);
     const guestRow = hostFinal.result.rows.find((row) => row.playerId === guestFinal.you.id);
     passCheck('finish order is host P1 and guest P2',
@@ -980,20 +1041,34 @@ async function mpCapturePass() {
     passCheck('both table rows are finished (no DNF)',
       hostFinal.result.rows.every((row) => row.status === 'finished'),
       hostFinal.result.rows.map((row) => row.status).join(','));
-    passCheck('host local finish time equals the shared table time',
+    passCheck('host row equals the host local finish within one tick',
+      Number.isInteger(hostFinal.finishTick) && Math.abs(hostFinal.finishTick - hostRow.tick) <= 1 &&
       hostFinal.sprint?.finishTimeSeconds !== null &&
-      Math.abs(hostFinal.sprint.finishTimeSeconds - hostRow.timeSeconds) < 1e-6,
-      `${hostFinal.sprint?.finishTimeSeconds} vs ${hostRow?.timeSeconds}`);
-    passCheck('guest local finish time equals the shared table time',
+      Math.abs(hostFinal.sprint.finishTimeSeconds - hostRow.timeSeconds) <= (1 / 60) + 1e-6,
+      `${hostFinal.finishTick} vs ${hostRow?.tick} · ${hostFinal.sprint?.finishTimeSeconds} vs ${hostRow?.timeSeconds}`);
+    passCheck('guest row equals the guest local finish within one tick',
+      Number.isInteger(guestFinal.finishTick) && Math.abs(guestFinal.finishTick - guestRow.tick) <= 1 &&
       guestFinal.sprint?.finishTimeSeconds !== null &&
-      Math.abs(guestFinal.sprint.finishTimeSeconds - guestRow.timeSeconds) < 1e-6,
-      `${guestFinal.sprint?.finishTimeSeconds} vs ${guestRow?.timeSeconds}`);
-    passCheck('host RaceSession validated the guest finish',
-      hostFinal.validation?.guestValidated === true && hostFinal.validation?.guestStatus === 'finished',
+      Math.abs(guestFinal.sprint.finishTimeSeconds - guestRow.timeSeconds) <= (1 / 60) + 1e-6,
+      `${guestFinal.finishTick} vs ${guestRow?.tick} · ${guestFinal.sprint?.finishTimeSeconds} vs ${guestRow?.timeSeconds}`);
+    passCheck('shared rows are ordered by finish time',
+      hostFinal.result.rows.every((row, index, rows) => index === 0 ||
+        (rows[index - 1].status === 'finished' && row.status === 'finished'
+          ? rows[index - 1].tick <= row.tick
+          : rows[index - 1].status === 'finished')) &&
+      hostRow.positionNumber === 1,
+      JSON.stringify(hostFinal.result.rows.map((row) => [row.positionNumber, row.tick, row.timeSeconds])));
+    passCheck('host RaceSession accepted the guest finish report while the race was open',
+      hostFinal.validation?.guestReportAccepted === true && hostFinal.validation?.guestValidated === true,
       JSON.stringify(hostFinal.validation));
-    passCheck('host finish detection is within 6 ticks of the guest report',
-      Number.isFinite(hostFinal.validation?.guestTickDelta) && Math.abs(hostFinal.validation.guestTickDelta) <= 6,
-      String(hostFinal.validation?.guestTickDelta));
+    passCheck('a guest report later than host detection is accepted (detection delta is diagnostic)',
+      Number.isFinite(hostFinal.validation?.guestReportedTick) &&
+      hostFinal.validation.guestReportedTick > (hostFinal.validation?.hostFinishTick ?? 0) &&
+      (hostFinal.validation?.guestDetectedFinishTick === null ||
+        Number.isFinite(hostFinal.validation?.guestDetectionDeltaTicks)),
+      JSON.stringify({ reported: hostFinal.validation?.guestReportedTick,
+        detected: hostFinal.validation?.guestDetectedFinishTick,
+        delta: hostFinal.validation?.guestDetectionDeltaTicks }));
     passCheck('both pages show the result overlay',
       hostFinal.overlays.resultsHidden === false && guestFinal.overlays.resultsHidden === false &&
       hostFinal.overlays.mpResultsHidden === false && (hostFinal.overlays.resultsTime ?? '').includes(hostRow.name),
@@ -1045,6 +1120,13 @@ async function mpCapturePass() {
       version: 1,
       browser: { executable: edge, mode: 'headless=new', viewport: VIEWPORT, pages: 2 },
       ports: { game: PORT, room: ROOM_PORT },
+      map: {
+        id: mpMapId,
+        pins: mpPins,
+        host: hostLobby?.map ?? null,
+        guest: guestLobby?.map ?? null,
+        loadMs: { host: hostLobby?.map?.loadMs ?? null, guest: guestLobby?.map?.loadMs ?? null }
+      },
       room: {
         code,
         wsUrl: roomServer.wsUrl,
@@ -1086,14 +1168,17 @@ async function mpCapturePass() {
       verdict: passFailures.length === 0 && hostPage.messages.length === 0 && guestPage.messages.length === 0
         ? 'clean-console-and-gates' : 'failed'
     };
-    writeFileSync(path.join(OUT, 'browser-evidence-mp.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
-    writeFileSync(path.join(LOGS, 'edge-mp.log'), browserLog +
+    writeFileSync(path.join(OUT, 'browser-evidence-mp' + mpTag + '.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+    writeFileSync(path.join(LOGS, 'edge-mp' + mpTag + '.log'), browserLog +
       '\nroom: ' + JSON.stringify(roomStats) + '\n', 'utf8');
     return {
       ok: evidence.verdict === 'clean-console-and-gates',
       summary: {
         verdict: evidence.verdict,
         room: code,
+        map: { id: mpMapId, loadMs: {
+          host: hostLobby.map?.loadMs ?? null, guest: guestLobby.map?.loadMs ?? null
+        }, bytes: hostLobby.map?.bytes ?? null },
         sharedHash: hostFinal.result.hash,
         rows: hostFinal.result.rows.map((row) => ({
           position: row.positionNumber, name: row.name, tick: row.tick, timeSeconds: row.timeSeconds
@@ -1125,8 +1210,8 @@ async function mpCapturePass() {
       verdict: 'failed',
       error: error.message
     };
-    writeFileSync(path.join(OUT, 'browser-evidence-mp.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
-    writeFileSync(path.join(LOGS, 'edge-mp.log'), browserLog + '\nERROR: ' + error.message + '\n', 'utf8');
+    writeFileSync(path.join(OUT, 'browser-evidence-mp' + mpTag + '.json'), JSON.stringify(evidence, null, 2) + '\n', 'utf8');
+    writeFileSync(path.join(LOGS, 'edge-mp' + mpTag + '.log'), browserLog + '\nERROR: ' + error.message + '\n', 'utf8');
     return {
       ok: false,
       summary: {

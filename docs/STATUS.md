@@ -892,6 +892,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 953 draw engelli (518 Racification, 426 BC3, 5 boyut, 4 runtime); 4 section + 2.714 instance yok; derivative normal.
 - Map verifier **23/23**, Amboy 23/23, River 2254/2254, capture console 0, suite **52/52**, checker 23/23. Kanıt: `docs/work/verification/T-007-map-gracia.md`.
 
+## 7 Kasım 2026 — MP harita seçimi
+
+- Oda `map` alanı: host River/Amboy/Gracia seçer; guest salt-okunur; paket/layout/physics hash uyuşmazsa `MAP_PACKAGE_MISMATCH`.
+- 3 harita 2 oyunculu: River 14,667/16,400 s; Amboy 222,000/237,567 s; Gracia 66,317/69,183 s; console **0/0**, sonuçlar birebir.
+- Finish kontratı: host otoritesi, guest kendi raporu, geç rapor açık odada kabul, kapalı odada ret.
+- **2265/2265**, suite 51/51, checker 23/23, harita 23/23 + 23/23. Kalan: Gracia host grid tick 91 airborne respawn (provisional grid).
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

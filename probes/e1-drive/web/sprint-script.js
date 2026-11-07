@@ -454,8 +454,24 @@ export function sprintScriptInput(rules, state, constants = null) {
   }
   if (!state) throw new Error('the scripted long-course sprint needs the engine state');
   if (rules.phase !== 'running') return rules.gateInput(SPRINT_DESIRED_INPUT);
-  const control = rules.layout?.courseId === 'amboy' || rules.layout?.courseId === 'gracia'
-    ? AMBOY_CONTROL : constants;
+  const packageControl = rules.layout?.courseId === 'amboy' || rules.layout?.courseId === 'gracia'
+    ? AMBOY_CONTROL : null;
+  // The M1/M3 capture pace scales the speed targets only (never physics). River
+  // receives the already-scaled constants from app.js; package maps select the
+  // measured-path controller here, so apply the same diagnostic scaling.
+  const pace = Number(constants?.pace);
+  const control = packageControl
+    ? (Number.isFinite(pace) && pace !== 1
+      ? Object.freeze({
+        ...packageControl,
+        cruiseSpeed: packageControl.cruiseSpeed * pace,
+        minSpeed: packageControl.minSpeed * pace,
+        finishSpeed: packageControl.finishSpeed * pace,
+        narrowSpeed: packageControl.narrowSpeed * pace,
+        launchSpeed: packageControl.launchSpeed * pace
+      })
+      : packageControl)
+    : constants;
   return rules.gateInput(sprintControl(state, rules.layout, control));
 }
 

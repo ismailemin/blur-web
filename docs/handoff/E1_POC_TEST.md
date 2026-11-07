@@ -97,6 +97,7 @@ uzun olabilir; scripted modda tablodan ±0,01 s sapma kabul edilir.
 - [ ] İlk tuş/click sonrası motor sesi geliyor; RPM yükselince pitch yükseliyor; `M` sessize alıyor; `?audio=0` tamamen sessiz.
 - [ ] Truck/wreck'ler gerçek albedo ile dokulu (4 BC3 cab draw hariç); HUD'da diagnostic sayısı düşük.
 - [ ] M1: host `?mp=1&host=1` oda kodu veriyor; guest `?mp=1&room=CODE` katılıyor; ikisi READY → host START → iki sayfada aynı sonuç; console 0.
+- [ ] MP harita: host lobby'de Amboy/Gracia seçiyor; guest aynı haritayı görüyor; paket hash uyuşmazsa başlatma reddediliyor; iki sayfada aynı sonuç.
 - [ ] M2: `&powerups=1` ile pickup toplanıyor, `E` ile mine/shield/repair/nitro/shock kullanılıyor; HUD health/shield/feed güncelleniyor; wreck → respawn; console 0.
 - [ ] `?map=amboy&script=sprint`: 2.060,6 m yol, 2 checkpoint, finish; console 0; River varsayılan bozulmuyor.
 - [ ] `?map=gracia&script=sprint`: 624,9 m yol, 2 checkpoint, finish; console 0.

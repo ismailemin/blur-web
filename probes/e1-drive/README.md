@@ -448,14 +448,15 @@ unmodified.
 
 ### Session flow
 
-1. Each page loads the engine and the measured course **before** opening the room
-   socket (the 45 MB geometry parse would otherwise starve the room heartbeat).
-2. Host `?mp=1&host=1` creates a room and becomes slot 1; guest
-   `?mp=1&room=CODE` joins slot 2. The lobby shows the roster, slot, host marker,
-   ready state, room code and connection status.
-3. Host presses start only when every connected player is ready; the room
-   service enforces the same rule. `room.started` gives both pages the same seed
-   and tick rate.
+1. Host `?mp=1&host=1` creates a room and becomes slot 1; guest
+   `?mp=1&room=CODE` joins slot 2. The host's `?map=river|amboy|gracia` is the
+   initial room map; a guest must not pass `?map=` (it inherits the room).
+2. After the join, each page resolves `room.map` through `web/map-registry.js`,
+   fetches and verifies that map package, and only then reports itself ready.
+   The lobby shows the host-selected map (guest read-only) and its load status.
+3. Host presses start only when every connected player is ready **and** this page
+   has verified the room map hashes; the room service enforces the same ready
+   rule. `room.started` gives both pages the same seed, tick rate and map id.
 4. Both pages start the local wasm engine on the provisional race-rules grid
    (2.2 m spacing, two per row; project-specific, not a retail start table) and
    the 90-tick countdown. Each sends its **60 Hz input** and **20 Hz state**
@@ -468,6 +469,42 @@ unmodified.
    `room.finished` broadcast is turned into the same pure result table on both
    pages; the overlay shows positions, ticks and race times. The host's
    `RaceSession` validation is recorded in the HUD/evidence.
+
+### Room map selection (M3)
+
+The room protocol already carries a `map` selector (`room.create`,
+`player.select`, `room.started`); no new wire message is added.
+
+| map id | course | lobby behaviour |
+|---|---|---|
+| `river` | measured 310 m River P48 | default, M1 unchanged |
+| `amboy` | measured 2,060.595 m Amboy path | host-selectable |
+| `gracia` | measured 624.914 m Gracia path | host-selectable |
+
+- **Host-only.** `player.select {map}` is host-only in the room service; the
+  lobby control is disabled for guests, who see the broadcast value.
+- **Typed record.** Each client derives
+  `{id, layoutHash, packageHash, physicsHash}` from the committed
+  `map-registry.js` `mpPins` (River has no package document, so its record pins
+  the geometry document, layout and physics file). `room.started` carries the map
+  id; the record is resolved from the same registry on every client, so no
+  protocol change is needed.
+- **map-ready.** A page loads the package, measures the actual hashes, compares
+  them with the record, and only then enables READY. The existing room ready flag
+  is the `map-ready` report; the host start gate requires every player ready and
+  its own verified record. A mismatch is a typed
+  `MAP_PACKAGE_MISMATCH` refusal, never a silent River fallback.
+- **Map switch.** A host map change clears both ready flags and reloads the
+  selected package on both pages (serialized per page, with a loading status and
+  measured bytes/time). Late changes after `room.started` are not supported.
+- **Finish/result.** The reported finish tick is derived from the local race time
+  (`round(seconds·60)+countdown`), so a respawn rebuild cannot shift the table by
+  a tick. The guest's own report is the result row and is accepted while the room
+  is open; a report after `room.finished` is rejected with `MP_ROOM_CLOSED`. The
+  host's projected detection is a diagnostic, not a 6-tick acceptance gate.
+- **Power-ups stay River-only** in this gate (`?powerups=1` with Amboy/Gracia is
+  rejected); no AI is added.
+
 
 ### Authority, sync and correction
 
@@ -500,9 +537,11 @@ unmodified.
 
 ### M1 scope and limits
 
-- **One map, one car for both bodies.** The session loads the host's car; the
-  guest's lobby car pick is metadata (the guest must open with the same
-  `?car=`). Power-ups and AI are M2.
+- **One room map, one car for both bodies.** The session loads the host's car;
+  the guest's lobby car pick is metadata (the guest must open with the same
+  `?car=`). The map is host-selected per room (River/Amboy/Gracia); map switches
+  apply only before `room.started`. Power-ups stay River-only in this gate; AI is
+  still out of scope.
 - **WebSocket loopback room service**, not UDP/WebRTC. No STUN/TURN, no NAT
   test, no TLS/auth/accounts/database; the room code is a lookup key.
 - **Peer-state remote authority.** The host runs the authoritative rules/result
@@ -522,13 +561,15 @@ unmodified.
 - **No full-game claim.** This is one measured River course, one 310 m sprint,
   one opponent slot and no power-ups.
 
-Files added/changed: `web/mp-client.js` (room wrapper + pure result builder),
-`web/mp-remote.js` (interpolation/correction + nine node matrices), the MP hooks
-in `web/app.js`, `web/index.html`, `web/style.css`, `web/sprint-script.js`
-(optional scripted-pace constants), `tools/serve.mjs` (read-only `/net-mvp/` and
-`/race-rules/` routes plus `--with-room`), and `tools/verify_e1_drive.mjs` /
-`tools/capture_browser.mjs` (Node protocol gate and `--mode mp`). The full
-verification record is `docs/work/verification/T-007-multiplayer.md`.
+Files added/changed: `web/mp-client.js` (room wrapper, map record/refusal + pure
+result builder), `web/mp-remote.js` (interpolation/correction + nine node
+matrices), `web/map-registry.js` (MP map pins), the MP hooks in `web/app.js`,
+`web/index.html`, `web/style.css`, `web/sprint-script.js` (optional scripted-pace
+constants), `tools/serve.mjs` (read-only `/net-mvp/` and `/race-rules/` routes
+plus `--with-room`), and `tools/verify_e1_drive.mjs` /
+`tools/capture_browser.mjs` (Node protocol/map gate and `--mode mp [--map]`). The
+full verification record is `docs/work/verification/T-007-multiplayer.md` and
+`docs/work/verification/T-007-mp-maps.md`.
 
 ## Power-ups (M2/PWR2+PWR2a) - Mine, Shield, Repair, Nitro, Shock
 

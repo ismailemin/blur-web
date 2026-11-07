@@ -215,6 +215,13 @@ map verifier 23/23, River 2254/2254, capture console 0, suite 51/51.
 Amboy 23/23, River 2254/2254, console 0, suite 52/52. Kanıt:
 `docs/work/verification/T-007-map-gracia.md`.
 
+**MP8 — MP harita seçimi:** Host lobby'de River/Amboy/Gracia seçer; paket/
+layout/physics hash uyuşmazsa `MAP_PACKAGE_MISMATCH`. 3 harita 2 oyunculu:
+River 14,667/16,400; Amboy 222,000/237,567; Gracia 66,317/69,183 s; console
+0/0, sonuçlar birebir. Finish kontratı host-otoriteli + geç guest raporu.
+**2265/2265**; suite 51/51; checker 23/23. Kanıt:
+`docs/work/verification/T-007-mp-maps.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

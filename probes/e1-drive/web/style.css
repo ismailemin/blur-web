@@ -289,7 +289,7 @@ html[data-telemetry] #legend { display: none; }
 }
 #mp-lobby button:disabled { opacity: 0.45; cursor: default; }
 #mp-lobby button[hidden] { display: none; }
-#mp-lobby #mp-car {
+#mp-lobby #mp-car, #mp-lobby #mp-map {
   max-width: 38ch;
   padding: 2px 6px;
   background: #0f1a22;

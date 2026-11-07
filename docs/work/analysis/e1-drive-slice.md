@@ -3070,3 +3070,87 @@ The map integration was generalized rather than copied: `tools/map_package_build
 Gracia inputs: `_work/map-slice/gracia` + `gracia-render`. The generated map document is 72,616,715 B (2,627 opaque draws / 365,451 triangles / 734 textures / 3,247,360 B), the layout is 312,569 B (2,571 samples, 624.913781 m). 953 blocked draws are labelled (518 Racification, 426 BC3-alpha, 5 decoder-size, 4 runtime); 4 unsupported sections and 2,714 instance descriptions are not applied; there are no vertex normals.
 
 Physics settles 61/61 on the package hashes (`sha256:4fd8ae0c...6e8e30`) at spawn `(336, -23)` heading `2.15879893`. The scripted sprint finishes at **66.266667 s / tick 4,066** with both checkpoints, 0 respawns and a bit-identical replay. Browser capture is `clean-console-and-gates` (console 0) at start/checkpoint/mid/finish. Gracia map verifier 23/23; River verifier 2254/2254; suite 50/50; checker 23/23. Evidence: `docs/work/verification/T-007-map-gracia.md`.
+
+## 37. M3 - the online room selects a map (River / Amboy / Gracia)
+
+The room protocol already carries a `map` selector in `room.create`,
+`player.select` and the `room.started` room view. M3 uses that field instead of
+adding a wire message.
+
+### 37.1 Contract
+
+- **Host-only selection.** The lobby select is enabled only for the host;
+  `player.select {map}` remains host-only in the unchanged room service. Guests
+  see the broadcast value and cannot override it through `?map=`.
+- **Typed record.** Each client derives
+  `{id, packageHash, layoutHash, physicsHash}` from `web/map-registry.js`
+  `mpPins`. River has no package document, so its record pins the committed
+  `geometry.json`, the 310 m layout and `Level.levelphysics`.
+- **map-ready.** The page loads the room map, measures the actual hashes and only
+  then enables READY. The existing room ready flag is the map-ready report; the
+  host start gate requires every player ready and its own verified record.
+- **Refusal.** A record mismatch throws `MpMapError` with
+  `MAP_PACKAGE_MISMATCH`; the lobby shows the field/value diff. There is no
+  River fallback.
+- **Switch.** A host map change clears ready on both pages and serializes one
+  reload per page, with a loading status and measured bytes/time. Changing the
+  map after `room.started` is not supported.
+- **Finish report.** The reported tick is derived from the local race time
+  (`round(seconds·60)+countdown`), so a respawn rebuild cannot introduce a
+  one-tick table difference. The guest's own report is the result row and is
+  accepted while the room is open; a report after `room.finished` is rejected
+  with `MP_ROOM_CLOSED`. Host-side projected detection is a diagnostic, not a
+  start/finish gate.
+
+### 37.2 Rules mapping
+
+The released `probes/race-rules` allow-list predates M3 and only accepts
+`310m`/`lap`. The page projects an Amboy/Gracia point-to-point layout through the
+equivalent sprint mode (`courseId` copy `310m`, `sourceCourseId` kept,
+`verifyLayoutHash:false`, samples/gates/hash untouched). This is a rules-mode
+mapping, not a geometry, physics or map value. `buildMpResult` still uses the
+original layout and therefore reports the real `courseId` and finish gate.
+
+### 37.3 Node gates
+
+| gate | result |
+|---|---|
+| `verify_e1_drive.mjs` | **2265/2265** checks, 0 failures (22 MP protocol, 7 map-record checks) |
+| map records | River/Amboy/Gracia pin records match the committed file hashes |
+| refusal | identical records agree; a mutated physics/layout record throws `MpMapError` / `MAP_PACKAGE_MISMATCH` |
+| room selection | host selects Amboy, guest sees it, guest selection rejected `NET_NOT_HOST`, `room.started` carries the id |
+| shared result | `buildMpResult` on Amboy/Gracia layouts keeps the measured finish gate and race times |
+| finish contract | time-derived reported tick; late guest report accepted while open; closed-room report rejected `MP_ROOM_CLOSED` |
+
+### 37.4 Browser races
+
+Two real wasm pages, the unchanged room service and a host-selected map. Both
+pages report the same map record before READY; the host runs `RaceSession` and
+both overlays render the same shared table.
+
+| map | host row | guest row | console |
+|---|---|---|---|
+| River | tick 970 / 14.666667 s | tick 1074 / 16.400000 s | 0/0 |
+| Amboy | tick 13,410 / 222.000000 s | tick 14,344 / 237.566667 s | 0/0 |
+| Gracia | tick 4,069 / 66.316667 s | tick 4,241 / 69.183333 s | 0/0 |
+
+Both rows equal the local finish time within one tick (exactly in these runs);
+shared rows/hashes are identical on both pages. On Gracia the host's slot-1 grid
+pose went airborne at tick 91 and rebuilt, pausing the host's local race clock;
+the host projection is recorded as a **-132 tick** diagnostic (detected race tick
+4,019 vs the guest's reported 4,151, and -193 in an earlier run) while the
+guest's own report is accepted because the room is still open. Evidence:
+`docs/work/verification/T-007-mp-maps.md`.
+
+
+### 37.5 Limits
+
+1. Two players, one room map, one car for both bodies; no mid-race switch.
+2. Amboy/Gracia power-ups are not placed; `?powerups=1` is rejected on those
+   maps. No AI.
+3. The host still runs only its own physics body (peer-state guest), so this is
+   not host-simulated two-body authority or anti-cheat.
+4. Package loading is a blocking fetch/parse per page with a visible loading
+   status; there is no streaming, progressive upload or map download.
+5. No full-game claim.
+

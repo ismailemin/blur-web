@@ -494,6 +494,21 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Kanıt: `docs/work/verification/T-007-map-gracia.md`,
   `_work/e1-drive/browser-*-map-gracia-mid.png`.
 
+### E1an — MP harita seçimi (MP8/PWR2)  ✅
+- Oda `map` alanı: host lobby'de **river/amboy/gracia** seçer; guest salt-okunur.
+- Her istemci paket/layout/physics hash'ini ölçer; uyuşmazsa
+  `MAP_PACKAGE_MISMATCH` (sessiz River fallback yok). READY = map-ready.
+- Finish kontratı: host otoritesi, guest kendi raporunu verir; geç rapor açık
+  odada kabul, kapalı odada `MP_ROOM_CLOSED`; 1 tick yuvarlama toleransı.
+- **3 harita 2 oyunculu:** River 14,667/16,400 s; Amboy 222,000/237,567 s;
+  Gracia 66,317/69,183 s; üçü de console **0/0**, sonuçlar birebir.
+- `verify_e1_drive` **2265/2265**; suite **51/51**; checker 23/23; harita
+  23/23 + 23/23.
+- Kanıt: `docs/work/verification/T-007-mp-maps.md`,
+  `_work/e1-drive/browser-mp-*-{amboy,gracia}.png`.
+- Kalan: Gracia host grid pozisyonu tick 91'de airborne respawn tetikliyor
+  (provisional grid); düzeltme ayrı iş. Amboy/Gracia'da power-up/AI yok.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

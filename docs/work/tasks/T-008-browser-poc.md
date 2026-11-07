@@ -88,6 +88,7 @@ sürüşü deneyebileceği PoC.
 | Projectile verisi | PWR4 | ✅ 19/19, 888/888 |
 | Amboy oynanabilir | MAP6 | ✅ 2.060,6 m, 23/23 |
 | Gracia oynanabilir | MAP7 | ✅ 624,9 m, 2.627 draw, 23/23 |
+| MP harita seçimi | MP8 | ✅ 3 harita, 2265/2265 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

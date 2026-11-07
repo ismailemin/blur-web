@@ -76,9 +76,12 @@ import { TICK0_LIMITS } from './spawn.mjs';
 import { startRoomServer } from '../../net-mvp/server.mjs';
 import { NetClient, NetError } from '../../net-mvp/client.mjs';
 import {
-  MP_ANGLE_THRESHOLD_RAD, MP_BLEND_TICKS, MP_POSITION_THRESHOLD_METRES, MP_STATE_EVERY_TICKS, MP_TICK_HZ,
-  MpSession, buildMpResult, defaultRoomUrl, normalizeRoomCode, sessionCarForRoom
+  MP_ANGLE_THRESHOLD_RAD, MP_BLEND_TICKS, MP_MAP_MISMATCH, MP_POSITION_THRESHOLD_METRES, MP_ROOM_CLOSED,
+  MP_STATE_EVERY_TICKS, MP_TICK_HZ, MpMapError, MpSession, assertMpMapAgreement, buildMpResult,
+  compareMpMapRecords, defaultRoomUrl, mpFinishTick, mpMapRecord, normalizeMpMapId, normalizeRoomCode,
+  sessionCarForRoom
 } from '../web/mp-client.js';
+import { MAPS, MP_MAP_IDS } from '../web/map-registry.js';
 import { RemoteDisplay } from '../web/mp-remote.js';
 import { CourseModel, RaceSession } from '../../race-rules/index.mjs';
 
@@ -91,6 +94,9 @@ const GEOMETRY = path.join(OUT, 'geometry.json');
 const TRACK_TEXTURE_MANIFEST = path.join(OUT, 'track-textures.json');
 const ROSTER = path.join(OUT, 'cars.json');
 const LEVEL = path.join(ROOT, 'game-data/Blur/levels/usa_la_river/Level.levelphysics');
+
+/** SHA-256 of a local file, in the registry's `sha256:` form. */
+const sha256File = (file) => 'sha256:' + createHash('sha256').update(readFileSync(file)).digest('hex');
 
 // The T-007/E1d single-car result. The Corvette's physics must not change when
 // the slice grows a roster, so its state sequence hash is pinned here.
@@ -5334,6 +5340,26 @@ let mpNodeReport = null;
       JSON.stringify({ sessionCar: mpNode.room.sessionCar, hostCar: mpNode.room.hostCar,
         guestCar: mpNode.room.guestCar }));
 
+    // Room map selection (M3): the protocol map field is host-only, guests see
+    // the broadcast, and the selected id survives into room.started.
+    const mapBefore = mpHost.room?.map ?? null;
+    await mpHost.selectMap('amboy');
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const mapAfterHost = { host: mpHost.room?.map, guest: mpGuest.room?.map };
+    let guestMapSelectError = null;
+    try { await mpGuest.selectMap('gracia'); }
+    catch (error) { guestMapSelectError = error instanceof NetError ? error.code : error.name; }
+    mpNode.map = {
+      before: mapBefore,
+      selected: 'amboy',
+      afterHost: mapAfterHost,
+      guestRejected: guestMapSelectError,
+      records: Object.fromEntries(MP_MAP_IDS.map((id) => [id, mpMapRecord(id)]))
+    };
+    check('mp: host selects the room map and the guest sees it; guest selection is rejected',
+      mapAfterHost.host === 'amboy' && mapAfterHost.guest === 'amboy' && guestMapSelectError === 'NET_NOT_HOST',
+      JSON.stringify({ before: mapBefore, after: mapAfterHost, guestRejected: guestMapSelectError }));
+
     try { await mpGuest.start(); mpNode.rejections.nonHostStart = null; }
     catch (error) { mpNode.rejections.nonHostStart = error instanceof NetError ? error.code : error.name; }
     check('mp: a non-host start is rejected with NET_NOT_HOST',
@@ -5351,6 +5377,12 @@ let mpNodeReport = null;
       started.seed === 'blur-mp-node-v1' && started.startTick === 1 && started.tickHz === 60 &&
       mpGuest.startedInfo?.seed === started.seed && mpHost.phase === 'running' && mpGuest.phase === 'running',
       JSON.stringify({ host: started, guest: mpGuest.startedInfo }));
+    check('mp: room.started carries the selected map id and the registry hash record',
+      started.room?.map === 'amboy' && mpGuest.startedInfo?.mapId === 'amboy' &&
+      mpGuest.startedInfo?.map?.packageHash === mpMapRecord('amboy').packageHash &&
+      mpHost.startedInfo?.map?.layoutHash === mpMapRecord('amboy').layoutHash,
+      JSON.stringify({ startedMap: started.room?.map, guest: mpGuest.startedInfo?.mapId,
+        packageHash: mpGuest.startedInfo?.map?.packageHash }));
 
     const samples = sprintFile.course.samples;
     const sampleAtArc = (arc) => {
@@ -5433,22 +5465,40 @@ let mpNodeReport = null;
     await mpHost.waitForStreams(4000);
     await mpGuest.waitForStreams(4000);
     const hostFinishTick = 120;
-    const guestFinishTick = hostFinishTick + 12;
+    // The guest report may be much later than any host-side projection (a host
+    // rebuild can pause its local race clock). It is accepted while the race is
+    // still open, not only inside a 6-tick detection window.
+    const guestFinishTick = hostFinishTick + 193;
     const hostHash = hashOfLocal({ kind: 'e1-drive.mp.finish.test', player: 'host', tick: hostFinishTick });
     const guestHash = hashOfLocal({ kind: 'e1-drive.mp.finish.test', player: 'guest', tick: guestFinishTick });
     await mpHost.reportFinished({ tick: hostFinishTick, hash: hostHash });
-    await mpGuest.reportFinished({ tick: guestFinishTick, hash: guestHash });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const hostOnlyPhase = mpHost.room?.phase ?? null;
     mpNode.finish = {
+      hostOnlyPhase,
       roomPhase: mpHost.room?.phase ?? null,
       results: mpEvents.results,
       hostTick: hostFinishTick,
-      guestTick: guestFinishTick
+      guestTick: guestFinishTick,
+      guestReportDelayTicks: guestFinishTick - hostFinishTick
     };
+    check('mp: the room stays open for a late guest report after the host finishes',
+      hostOnlyPhase === 'running', String(hostOnlyPhase));
+    await mpGuest.reportFinished({ tick: guestFinishTick, hash: guestHash });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    mpNode.finish.roomPhase = mpHost.room?.phase ?? null;
+    mpNode.finish.results = mpEvents.results;
     check('mp: both client.finished reports reach the room and finish it',
       mpHost.room?.phase === 'finished' && mpGuest.room?.phase === 'finished' &&
-      Array.isArray(mpEvents.results) && mpEvents.results.length === 2,
+      Array.isArray(mpEvents.results) && mpEvents.results.length === 2 &&
+      mpEvents.results.find((row) => row.playerId === mpGuest.playerId)?.tick === guestFinishTick,
       JSON.stringify(mpNode.finish));
+    let closedReport = null;
+    try {
+      await mpGuest.reportFinished({ tick: guestFinishTick + 1, hash: guestHash });
+    } catch (error) { closedReport = error.code ?? error.name; }
+    check('mp: a finish report after the room closed is rejected with MP_ROOM_CLOSED',
+      closedReport === MP_ROOM_CLOSED, String(closedReport));
     const resultOne = buildMpResult({
       layout: sprintFile,
       room: mpHost.room,
@@ -5472,7 +5522,7 @@ let mpNodeReport = null;
     check('mp: finish ticks map to equal race times (countdown subtracted) and host is P1',
       resultOne.rows[0].positionNumber === 1 && resultOne.rows[0].tick === hostFinishTick &&
       Math.abs(resultOne.rows[0].timeSeconds - (hostFinishTick - (sprintFile.countdown?.ticks ?? 0)) / MP_TICK_HZ) < 1e-6 &&
-      resultOne.rows[1].positionNumber === 2,
+      resultOne.rows[1].positionNumber === 2 && resultOne.rows[1].tick === guestFinishTick,
       JSON.stringify(resultOne.rows.map((row) => [row.positionNumber, row.name, row.tick, row.timeSeconds])));
 
     // Reconnect while the room is finished is still a valid resume; the room
@@ -5566,10 +5616,133 @@ let mpNodeReport = null;
   writeFileSync(path.join(OUT, 'mp-node-report.json'), JSON.stringify(mpNode, null, 2) + '\n', 'utf8');
 }
 
+// ------------------------------------------------------------------ MP map gate
+// The room map record, its committed package pins and the typed mismatch
+// refusal. This block never loads the 49–73 MB map documents into memory; it
+// pins their file bytes (the content hashes are verified by verify_e1_map on
+// both maps) and verifies the layout/physics bytes the room actually compares.
+let mpMapReport = null;
+{
+  const mpMapChecksBefore = checks.length;
+  const mapFiles = {
+    river: {
+      package: path.join(OUT, 'geometry.json'),
+      layout: path.join(OUT, 'sprint.json'),
+      physics: path.join(ROOT, 'game-data/Blur/levels/usa_la_river/Level.levelphysics')
+    },
+    amboy: {
+      package: path.join(OUT, 'amboy/map.json'),
+      layout: path.join(OUT, 'amboy/layout.json'),
+      physics: path.join(ROOT, 'game-data/Blur/levels/usa_amboy/Level.levelphysics')
+    },
+    gracia: {
+      package: path.join(OUT, 'gracia/map.json'),
+      layout: path.join(OUT, 'gracia/layout.json'),
+      physics: path.join(ROOT, 'game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics')
+    }
+  };
+  const records = {};
+  const fileHashes = {};
+  for (const id of MP_MAP_IDS) {
+    const files = mapFiles[id];
+    const record = mpMapRecord(id);
+    records[id] = record;
+    const missing = Object.entries(files).filter(([, file]) => !existsSync(file)).map(([kind, file]) => kind + ' ' + file);
+    const hashes = missing.length ? null : {
+      package: sha256File(files.package),
+      layout: sha256File(files.layout),
+      physics: sha256File(files.physics)
+    };
+    fileHashes[id] = hashes;
+    check('mp-map: ' + id + ' registry record and committed files agree',
+      missing.length === 0 && hashes !== null &&
+      record.packageFileSha256 === hashes.package &&
+      record.layoutFileSha256 === hashes.layout &&
+      record.physicsFileSha256 === hashes.physics &&
+      typeof record.packageHash === 'string' && typeof record.layoutHash === 'string' &&
+      typeof record.physicsHash === 'string',
+      JSON.stringify({ missing, record, hashes }));
+  }
+  const expected = records.amboy;
+  const actual = { ...expected, source: 'measured-bytes' };
+  const agreement = compareMpMapRecords(expected, actual);
+  const mismatch = compareMpMapRecords(expected, { ...actual, physicsHash: 'sha256:0000000000000000' });
+  let refusal = null;
+  try { assertMpMapAgreement(expected, { ...actual, layoutHash: 'sha256:1111111111111111' }, 'node test'); }
+  catch (error) { refusal = { name: error.name, code: error.code, timed: error instanceof MpMapError }; }
+  check('mp-map: hash agreement accepts equal records and refuses a mismatch with MAP_PACKAGE_MISMATCH',
+    agreement.ok === true && mismatch.ok === false && mismatch.code === MP_MAP_MISMATCH &&
+    mismatch.mismatches.some((row) => row.field === 'physicsHash') &&
+    refusal?.code === MP_MAP_MISMATCH && refusal?.name === 'MpMapError',
+    JSON.stringify({ agreement, mismatch, refusal }));
+  const room = {
+    code: 'NODE1',
+    hostId: 'p1',
+    phase: 'finished',
+    map: 'amboy',
+    players: [
+      { id: 'p1', slot: 1, name: 'Host', car: 'corvette-zr1-stock', host: true, connected: true },
+      { id: 'p2', slot: 2, name: 'Guest', car: 'corvette-zr1-stock', host: false, connected: true }
+    ]
+  };
+  const results = [
+    { playerId: 'p1', tick: 14000, hash: 'sha256:aaaaaaaa' },
+    { playerId: 'p2', tick: 14600, hash: 'sha256:bbbbbbbb' }
+  ];
+  const amboyLayout = JSON.parse(readFileSync(mapFiles.amboy.layout, 'utf8'));
+  const graciaLayout = JSON.parse(readFileSync(mapFiles.gracia.layout, 'utf8'));
+  const amboyResult = buildMpResult({ layout: amboyLayout, room, results });
+  const graciaResult = buildMpResult({ layout: graciaLayout, room, results });
+  const lastGate = amboyLayout.gates[amboyLayout.gates.length - 1];
+  check('mp-map: the shared result builder works on the Amboy and Gracia layouts',
+    amboyResult.courseId === 'amboy' && graciaResult.courseId === 'gracia' &&
+    amboyResult.rows.every((row) => row.status === 'finished') &&
+    amboyResult.rows[0].positionNumber === 1 && amboyResult.rows[1].positionNumber === 2 &&
+    Math.abs(amboyResult.rows[0].timeSeconds - (14000 - (amboyLayout.countdown?.ticks ?? 0)) / MP_TICK_HZ) < 1e-6 &&
+    amboyResult.finishGate[0] === Math.round(lastGate.x * 1e6) / 1e6 &&
+    amboyResult.finishGate[2] === Math.round(lastGate.z * 1e6) / 1e6,
+    JSON.stringify({ amboy: amboyResult.hash, gracia: graciaResult.hash,
+      finish: amboyResult.finishGate, rows: amboyResult.rows.map((row) => [row.name, row.timeSeconds]) }));
+  // The released race-rules layer predates M3: its course-id allow-list is
+  // `310m`/`lap`. The page projects a package layout through the equivalent
+  // point-to-point sprint mode with the samples/gates/hash untouched.
+  const projected = { ...amboyLayout, sourceCourseId: amboyLayout.courseId, courseId: '310m' };
+  const projectedModel = new CourseModel(projected, { verifyLayoutHash: false });
+  check('mp-map: package layouts project to the released rules sprint mode without changing gates',
+    projectedModel.courseId === '310m' && projectedModel.mode === 'sprint' &&
+    projectedModel.checkpointCount === 2 && projectedModel.startGate.id === 'start' &&
+    projectedModel.finishGate.id === 'finish' &&
+    projectedModel.samples.length === amboyLayout.course.samples.length &&
+    projectedModel.samples[0].x === amboyLayout.course.samples[0].x,
+    JSON.stringify({ courseId: projectedModel.courseId, checkpoints: projectedModel.checkpointCount,
+      samples: projectedModel.samples.length }));
+  check('mp-map: reported finish ticks derive from race time (host respawn has no off-by-one)',
+    mpFinishTick(14.666667, 90) === 970 &&
+    mpFinishTick(222, 90) === 13410 &&
+    mpFinishTick(66.316667, 90) === 4069 &&
+    mpFinishTick(69.183333, 90) === 4241,
+    JSON.stringify({ river: mpFinishTick(14.666667, 90), amboy: mpFinishTick(222, 90),
+      graciaHost: mpFinishTick(66.316667, 90), graciaGuest: mpFinishTick(69.183333, 90) }));
+  mpMapReport = {
+    kind: 'e1-drive.mp-map',
+    version: 1,
+    ids: MP_MAP_IDS.slice(),
+    records,
+    fileHashes,
+    agreement: { ok: agreement.ok, mismatch: mismatch.mismatches },
+    refusal,
+    results: { amboy: amboyResult.hash, gracia: graciaResult.hash },
+    checks: checks.length - mpMapChecksBefore,
+    failures: checks.slice(mpMapChecksBefore).filter((entry) => !entry.ok).map((entry) => entry.label)
+  };
+  writeFileSync(path.join(OUT, 'mp-map-node-report.json'), JSON.stringify(mpMapReport, null, 2) + '\n', 'utf8');
+}
+
 const report = {
   purpose: 'E1 drive slice: wasm vehicle physics -> render packet v1.1 -> WebGPU consumer, several XT cars',
   status: failures.length === 0 ? 'PASS' : 'FAIL',
   multiplayer: mpNodeReport,
+  mpMap: mpMapReport,
   propV2: {
     kind: 'e1-drive.prop-collision-v2',
     version: 1,
@@ -6030,7 +6203,14 @@ console.log(JSON.stringify({
     checks: mpNodeReport?.checks ?? 0,
     failures: mpNodeReport?.failures ?? [],
     resultHash: mpNodeReport?.result?.hash ?? null,
-    sessionHash: mpNodeReport?.session?.hash ?? null
+    sessionHash: mpNodeReport?.session?.hash ?? null,
+    map: mpNodeReport?.map ?? null
+  },
+  mpMap: {
+    checks: mpMapReport?.checks ?? 0,
+    failures: mpMapReport?.failures ?? [],
+    ids: mpMapReport?.ids ?? [],
+    results: mpMapReport?.results ?? null
   },
   wasm: `${report.module.wasmBytes} B ${report.module.wasmSha256.slice(0, 16)} (${report.module.objects} objects)`,
   roster: `${report.roster.counts.selected} cars of ${report.roster.counts.records} records`,

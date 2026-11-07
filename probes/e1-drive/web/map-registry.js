@@ -31,7 +31,22 @@ export const MAPS = Object.freeze({
     multiplayer: true,
     propLayer: true,
     ghost: true,
-    pins: null
+    pins: null,
+    // Multiplayer map record pins (M3). The M1 River route has no package
+    // document, so its record pins the committed geometry document, the 310 m
+    // layout and the Level.levelphysics file. They are used only by the room
+    // map-agreement check; the single-player River load path is unchanged.
+    mpPins: Object.freeze({
+      packageHash: 'sha256:0dcf3e38f5777f1751fedf6960a0f425e3dd1bf5fb3c3e53a974d49675904709',
+      layoutHash: 'sha256:9240e9c136059ccd209992999b8570860f99f1bedd4b4ec9ff0a56d5cf8cad53',
+      physicsHash: 'sha256:1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28',
+      packageFileSha256: 'sha256:0dcf3e38f5777f1751fedf6960a0f425e3dd1bf5fb3c3e53a974d49675904709',
+      layoutFileSha256: 'sha256:516647664f7ff3590db457f8685a3d4308b030b86fbf962f0e9bfa708da89e49',
+      physicsFileSha256: 'sha256:1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28',
+      packageBytes: 106864802,
+      layoutBytes: 386521,
+      physicsBytes: 1945409
+    })
   }),
   amboy: Object.freeze({
     id: 'amboy',
@@ -49,7 +64,7 @@ export const MAPS = Object.freeze({
     layoutUrl: '/_work/e1-drive/amboy/layout.json',
     bestKey: 'e1-drive.sprint.best.v3.amboy',
     courses: Object.freeze(['310']),
-    multiplayer: false,
+    multiplayer: true,
     propLayer: false,
     ghost: false,
     pins: Object.freeze({
@@ -80,6 +95,17 @@ export const MAPS = Object.freeze({
       sampleCount: 8673,
       renderLabel: 'amboy-direct-draws',
       courseId: 'amboy'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:9290bd3f91160f232d14e5fea14ed9253721fd91c2f3bb49daf0ca307244ffd4',
+      layoutHash: 'sha256:bccb6bed853827099e5efb55381cb638fda83690201ade40d80fbb095b08f644',
+      physicsHash: 'sha256:18c73e1cca6f13c5bbd4937454f25ec3163a67553fea6842a7797400af2175f2',
+      packageFileSha256: 'sha256:52acd10348ab1e747461eae3f5ec9854de1300910096dc50bc8ab7f06850e01a',
+      layoutFileSha256: 'sha256:b89ae430dff3aaea3511abc6244687430ec66433055bfbcb4eb63b3a1d364f8d',
+      physicsFileSha256: 'sha256:18c73e1cca6f13c5bbd4937454f25ec3163a67553fea6842a7797400af2175f2',
+      packageBytes: 49524812,
+      layoutBytes: 1198445,
+      physicsBytes: 4442528
     })
   }),
   gracia: Object.freeze({
@@ -97,7 +123,7 @@ export const MAPS = Object.freeze({
     layoutUrl: '/_work/e1-drive/gracia/layout.json',
     bestKey: 'e1-drive.sprint.best.v3.gracia',
     courses: Object.freeze(['310']),
-    multiplayer: false,
+    multiplayer: true,
     propLayer: false,
     ghost: false,
     pins: Object.freeze({
@@ -128,6 +154,17 @@ export const MAPS = Object.freeze({
       sampleCount: 2571,
       renderLabel: 'gracia-direct-draws',
       courseId: 'gracia'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:dc60abe8527d28d659af1dbed2098928214f31dc3b62d0984369b40238b1b831',
+      layoutHash: 'sha256:1aa622fd77a4637d5b2ddfd9292cc8cd3afd61df197db581db078826133faf30',
+      physicsHash: 'sha256:acfb58a20ff7adced0b2424dc39474509e6b4c4c805729fd9463bdd310a173c0',
+      packageFileSha256: 'sha256:562b56889b80d3368d5a1f08f009d6f351b6d3de33b3539df51c666a737a6a0d',
+      layoutFileSha256: 'sha256:e2f9a1114c283ca84838db96286c5482e9b7b6c4fec779b34bbb4a579991a3b8',
+      physicsFileSha256: 'sha256:acfb58a20ff7adced0b2424dc39474509e6b4c4c805729fd9463bdd310a173c0',
+      packageBytes: 72616715,
+      layoutBytes: 312569,
+      physicsBytes: 5569121
     })
   })
 });
@@ -139,4 +176,14 @@ export function resolveMap(value) {
     throw new Error('unknown map ' + JSON.stringify(value) + ' (use ' + MAP_IDS.join(', ') + ')');
   }
   return MAPS[value];
+}
+
+/** Map ids the online room may select. All three are MP-capable in M3. */
+export const MP_MAP_IDS = Object.freeze(MAP_IDS.filter((id) => MAPS[id].multiplayer === true));
+
+/** The pinned multiplayer record for a map id (null if the id is unknown). */
+export function mpPinsForMap(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (!MAP_IDS.includes(value)) return null;
+  return MAPS[value].mpPins ?? null;
 }

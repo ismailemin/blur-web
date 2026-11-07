@@ -96,6 +96,10 @@ Sınırlar: aynı araç (M1), tek harita (River 310 m), WebSocket loopback/LAN;
 WebRTC/TURN/NAT, power-up, AI rakip ve host migration M2/M3'te. Aynı ağda iki
 makine için 8811 portu açık olmalı.
 
+**MP harita seçimi (MP8):** Lobby'de host **River / Amboy / Gracia** seçebilir;
+guest seçimi görür. Paket/layout/physics hash'i uyuşmazsa başlatma reddedilir.
+Amboy/Gracia'da power-up ve AI yok; tek harita/oda.
+
 ### Aynı ağda iki makine
 
 Host makinede:

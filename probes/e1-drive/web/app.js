@@ -50,7 +50,7 @@ import { carIdentity, carLabel, fieldsUrl, loadRoster, resolveCar } from './cars
 import { PHASES, SCRIPT_TICKS, TICK_HZ, phaseAt, scriptedInput } from './drive-script.js';
 import { isFreeLayout, layoutStartHeading, layoutStartPosition, validateSprintLayout } from './sprint-layout.js';
 import { SPRINT_EVENT, courseGroundAt, coursePosition, createSprintRules, freeGroundAt } from './sprint-rules.js';
-import { MAPS, resolveMap } from './map-registry.js';
+import { MAPS, MP_MAP_IDS, resolveMap } from './map-registry.js';
 import { bytesSha256, mergeMapGeometry, textSha256, validateMapPackage } from './map-package.js';
 import { createBestTimes } from './sprint-best.js';
 import {
@@ -62,9 +62,10 @@ import {
   sprintScriptInput, SPRINT_PACKET_SCRIPT, SPRINT_CONTROL
 } from './sprint-script.js';
 import {
-  MpSession, MP_ANGLE_THRESHOLD_RAD, MP_BLEND_TICKS, MP_INPUT_HZ, MP_MAX_PLAYERS, MP_POSITION_THRESHOLD_METRES,
-  MP_REMOTE_DELAY_TICKS, MP_SCHEMA, MP_STATE_EVERY_TICKS, MP_TICK_HZ, buildMpResult, defaultRoomUrl,
-  normalizePlayerName, normalizeRoomCode, sessionCarForRoom
+  MpSession, MP_ANGLE_THRESHOLD_RAD, MP_BLEND_TICKS, MP_INPUT_HZ, MP_MAP_MISMATCH, MP_MAX_PLAYERS,
+  MP_POSITION_THRESHOLD_METRES, MP_REMOTE_DELAY_TICKS, MP_SCHEMA, MP_STATE_EVERY_TICKS, MP_TICK_HZ,
+  MpMapError, assertMpMapAgreement, buildMpResult, compareMpMapRecords, defaultRoomUrl, mpFinishTick,
+  mpMapRecord, normalizeMpMapId, normalizePlayerName, normalizeRoomCode, sessionCarForRoom
 } from './mp-client.js';
 import { RemoteDisplay, remoteNodeMatrixMap } from './mp-remote.js';
 import {
@@ -150,17 +151,20 @@ const COURSE_KEY = COURSE_IS_SHORT ? 'short' : COURSE_IS_LAP ? 'lap' : COURSE_IS
 // Map registry (M3): `?map=river` (default) keeps the exact M1 paths, layouts and
 // pins. `?map=amboy` and `?map=gracia` load their committed map packages. An
 // unknown id is a hard error; there is no silent fallback to River.
-const MAP = resolveMap(params.get('map'));
-const MAP_IS_AMBOY = MAP.id === 'amboy';
-const MAP_IS_GRACIA = MAP.id === 'gracia';
-const MAP_IS_PACKAGE = MAP.kind === 'map-package';
-const MAP_PACKET_SCRIPT =
+// The active map is mutable only for the online lobby: the host may switch
+// River/Amboy/Gracia before the race starts and every client reloads the room's
+// selected package. Solo pages never call `applyActiveMap`.
+let MAP = resolveMap(params.get('map'));
+let MAP_IS_AMBOY = MAP.id === 'amboy';
+let MAP_IS_GRACIA = MAP.id === 'gracia';
+let MAP_IS_PACKAGE = MAP.kind === 'map-package';
+let MAP_PACKET_SCRIPT =
   'sprint: 3-2-1 countdown, pure-pursuit controller on the measured ' + MAP.level + ' ' +
   (MAP_IS_AMBOY ? '2,060.595' : MAP_IS_GRACIA ? '624.914' : '') +
   ' m path, brake after the finish (probes/e1-drive/web/sprint-script.js)';
 // The map paths are up to ~2 km at a controlled 12 m/s; the verified Amboy
 // scripted finish is tick 13,413. River's 3,600-tick bound stays exact.
-const MAX_SPRINT_SCRIPT_TICKS = MAP_IS_PACKAGE ? 20000 : 3600;
+let MAX_SPRINT_SCRIPT_TICKS = MAP_IS_PACKAGE ? 20000 : 3600;
 // Capture-only collision probe (`?collisionprobe=lap-sign|free-pipe`). It starts
 // the real engine at a manifest-derived pose in front of a P74 V2 target, applies
 // throttle until the additive prop layer reports a contact and then brakes with
@@ -228,6 +232,12 @@ if (MP) {
       JSON.stringify(MP_REQUESTED_CODE) + ')');
   }
   if (!MP_HOST && !MP_CODE) throw new Error('a multiplayer guest needs ?room=CODE (the host allocates it)');
+  // The map is a room setting: only the host may propose it. A guest inherits
+  // the room map and must not be able to override it through the URL.
+  if (!MP_HOST && params.has('map')) {
+    throw new Error('guests inherit the room map; drop ?map=' +
+      JSON.stringify(params.get('map')) + ' (only the host selects it)');
+  }
   if (!Number.isFinite(MP_PACE) || MP_PACE < 0.5 || MP_PACE > 1.2) {
     throw new Error('mpPace must be a number in [0.5, 1.2]');
   }
@@ -242,16 +252,19 @@ if (MP && params.has('powerups') && params.get('powerups') !== '0' && params.get
 if (!MP && params.get('powerups') === '1') {
   throw new Error('?powerups=1 is the online race slice; add ?mp=1&host=1 or ?mp=1&room=CODE');
 }
-// usa_amboy / spa_barcelona_gracia (M3 map packages) are single-player
-// point-to-point maps. The River-only modes and courses are rejected explicitly
-// rather than silently loading a different map or course.
+// usa_amboy / spa_barcelona_gracia (M3 map packages) are point-to-point maps.
+// They run solo through `?map=` and the online room through `map` selection.
+// River-only modes and courses are rejected explicitly rather than silently
+// loading a different map or course.
 if (MAP_IS_PACKAGE) {
   if (!MAP.courses.includes(COURSE_PARAM)) {
     throw new Error('?map=' + MAP.id + ' runs the measured ' +
       (MAP_IS_AMBOY ? '2,060.595' : MAP_IS_GRACIA ? '624.914' : '') +
       ' m course; drop ?course=' + COURSE_PARAM);
   }
-  if (MP) throw new Error('?map=' + MAP.id + ' is single-player; the M1 online race is the River 310 m course');
+  if (POWERUPS && MAP.id !== 'river') {
+    throw new Error('power-ups are River-only in this gate; ?map=' + MAP.id + ' has no placed pickups');
+  }
   if (SCRIPT_PARAM === 'drive') throw new Error('?map=' + MAP.id + ' runs the sprint; drop ?script=drive');
   if (TELEMETRY || SOAK || SURVEY || COLLISION_PROBE) {
     throw new Error('?map=' + MAP.id + ' supports drive/sprint only; drop telemetry/soak/survey/collisionprobe');
@@ -269,7 +282,11 @@ const MP_CONTROL = MP && MP_PACE !== 1
     ...SPRINT_CONTROL,
     cruiseSpeed: SPRINT_CONTROL.cruiseSpeed * MP_PACE,
     minSpeed: SPRINT_CONTROL.minSpeed * MP_PACE,
-    finishSpeed: SPRINT_CONTROL.finishSpeed * MP_PACE
+    finishSpeed: SPRINT_CONTROL.finishSpeed * MP_PACE,
+    // The map-package controller (`AMBOY_CONTROL`) is selected inside
+    // `sprintScriptInput`; it reads this capture-only pace to scale its own
+    // speed targets. River ignores it and keeps the scaled constants above.
+    pace: MP_PACE
   })
   : null;
 // Provisional race-rules starting grid (2.2 m spacing, two per row). M1 starts
@@ -278,17 +295,44 @@ const MP_CONTROL = MP && MP_PACE !== 1
 const MP_GRID_OPTIONS = Object.freeze({});
 
 const ENGINE_MODULE = '/_work/e1-drive/module/e1_drive.mjs';
-const GEOMETRY_URL = MAP.geometryUrl;
-const BASE_GEOMETRY_URL = MAP.baseGeometryUrl ?? null;
-const LEVEL_URL = MAP.physicsUrl;
-const SPAWN_URL = MAP.spawnUrl;
-const SPRINT_URL = MAP.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
+let GEOMETRY_URL = MAP.geometryUrl;
+let BASE_GEOMETRY_URL = MAP.baseGeometryUrl ?? null;
+let LEVEL_URL = MAP.physicsUrl;
+let SPAWN_URL = MAP.spawnUrl;
+let SPRINT_URL = MAP.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
   : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json'
     : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json');
 const PROP_RESOLVER_URL = '/prop-collision/lib/resolver.mjs';
 
 /** Best-time storage key: one record per map/course, never mixed. */
-const SPRINT_BEST_KEY = MAP.bestKey ?? ('e1-drive.sprint.best.v2.' + COURSE_KEY);
+let SPRINT_BEST_KEY = MAP.bestKey ?? ('e1-drive.sprint.best.v2.' + COURSE_KEY);
+
+/**
+ * Activate a map for the online lobby. Mutates only the map-derived load
+ * constants; it never touches the room, the car or the rules. Solo pages keep
+ * their `?map=` map for the whole page lifetime.
+ */
+function applyActiveMap(value) {
+  const map = resolveMap(normalizeMpMapId(value) ?? 'river');
+  MAP = map;
+  MAP_IS_AMBOY = map.id === 'amboy';
+  MAP_IS_GRACIA = map.id === 'gracia';
+  MAP_IS_PACKAGE = map.kind === 'map-package';
+  MAP_PACKET_SCRIPT =
+    'sprint: 3-2-1 countdown, pure-pursuit controller on the measured ' + map.level + ' ' +
+    (MAP_IS_AMBOY ? '2,060.595' : MAP_IS_GRACIA ? '624.914' : '') +
+    ' m path, brake after the finish (probes/e1-drive/web/sprint-script.js)';
+  MAX_SPRINT_SCRIPT_TICKS = MAP_IS_PACKAGE ? 20000 : 3600;
+  GEOMETRY_URL = map.geometryUrl;
+  BASE_GEOMETRY_URL = map.baseGeometryUrl ?? null;
+  LEVEL_URL = map.physicsUrl;
+  SPAWN_URL = map.spawnUrl;
+  SPRINT_URL = map.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
+    : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json'
+      : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json');
+  SPRINT_BEST_KEY = map.bestKey ?? ('e1-drive.sprint.best.v2.' + COURSE_KEY);
+  return map;
+}
 
 const canvas = document.getElementById('scene');
 const driver = new FixedStepDriver();
@@ -416,6 +460,13 @@ const state = {
     you: null,
     players: [],
     ready: false,
+    // Room map agreement (M3): the expected registry record, the measured
+    // record, and the typed refusal if they differ. `mapReady` is the local
+    // `map-ready` report; the wire carries it as the room ready flag.
+    map: null,
+    mapReady: false,
+    mapError: null,
+    mapLoad: null,
     started: false,
     grid: null,
     sessionCar: null,
@@ -682,8 +733,9 @@ function publish() {
       rows.push(['mp host', 'RaceSession ' + (mp.validation.sessionPhase ?? '—') +
         ' · guest ' + (mp.validation.guestStatus ?? '—') +
         ' · host finish ' + (mp.validation.hostFinishTick ?? '—') +
-        ' · guest finish ' + (mp.validation.guestReportedTick ?? '—') +
-        ' · Δ ' + (mp.validation.guestTickDelta ?? '—')]);
+        ' · guest reported ' + (mp.validation.guestReportedTick ?? '—') +
+        ' · projected Δ ' + (mp.validation.guestDetectionDeltaTicks ?? '—') +
+        (mp.validation.guestReportAccepted ? ' · report accepted (open race)' : ' · report rejected')]);
     }
     if (mp.result) rows.push(['mp result', 'shared table ' + mp.result.hash.slice(7, 23) + '… · ' +
       mp.result.rows.map((row) => 'P' + row.positionNumber + ' ' + row.name +
@@ -853,15 +905,31 @@ function publishMpOverlays() {
   setText('mp-name', mp.name + (mp.you ? ' · P' + mp.you.slot : ''));
   setText('mp-role', mp.host ? 'host (authoritative result)' : 'guest (sends input + 20 Hz state)');
   const phaseLabel = mp.phase === 'connecting' ? 'connecting to the room service…'
-    : mp.phase === 'loading' ? 'loading the session car before joining the room…'
-      : mp.phase === 'lobby' ? (mp.engineReady ? 'in the lobby' : 'loading the engine…')
+    : mp.phase === 'loading' ? 'loading the room map package…'
+      : mp.phase === 'lobby' ? (mp.engineReady ? (mp.mapReady ? 'in the lobby · map verified' : 'verifying the room map…') : 'loading the engine…')
         : mp.phase === 'starting' ? 'race starting…'
           : mp.phase === 'reconnecting' ? 'RECONNECTING — the room keeps the slot for 30 s'
             : mp.phase === 'error' ? 'error'
               : mp.phase;
   setText('mp-connection', phaseLabel);
   setText('mp-lobby-status', mp.status ?? phaseLabel);
-
+  setText('mp-map-status', mpMapStatusText());
+  const mapSelect = document.getElementById('mp-map');
+  if (mapSelect) {
+    if (!mapSelect.options.length) {
+      for (const id of MP_MAP_IDS) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = MAPS[id].label + ' · ' + MAPS[id].level;
+        mapSelect.append(option);
+      }
+    }
+    mapSelect.value = mp.map?.id ?? mp.room?.map ?? 'river';
+    mapSelect.disabled = !mp.host || mp.phase !== 'lobby' || mp.started;
+    mapSelect.title = mp.host
+      ? 'host map selection (both clients verify the package before READY)'
+      : 'the host selects the room map';
+  }
   const roster = state.roster?.roster?.cars ?? [];
   const carSelect = document.getElementById('mp-car');
   if (carSelect && roster.length && carSelect.options.length !== roster.length) {
@@ -897,7 +965,7 @@ function publishMpOverlays() {
   if (readyButton) {
     const ready = selfRow?.ready === true;
     readyButton.textContent = ready ? 'CANCEL READY' : 'READY';
-    readyButton.disabled = mp.phase !== 'lobby' || !mp.engineReady;
+    readyButton.disabled = mp.phase !== 'lobby' || !mp.engineReady || !mp.mapReady;
     readyButton.dataset.ready = ready ? '1' : '0';
   }
   const startButton = document.getElementById('mp-start');
@@ -905,7 +973,7 @@ function publishMpOverlays() {
     const players = mp.room?.players ?? [];
     const allReady = players.length >= 2 && players.every((player) => player.ready && player.connected !== false);
     startButton.hidden = !mp.host;
-    startButton.disabled = !(mp.phase === 'lobby' && mp.engineReady && allReady);
+    startButton.disabled = !(mp.phase === 'lobby' && mp.engineReady && mp.mapReady && allReady);
     startButton.dataset.enabled = startButton.disabled ? '0' : '1';
   }
   setText('mp-server-note', 'room service ' + mp.url + ' · ' +
@@ -1165,6 +1233,178 @@ let mpResult = null;
 let mpFinishHash = null;
 let mpLastStatsAt = 0;
 let mpRemoteFinished = null;
+// Room map agreement: one serialized load per room map, so a host switch cannot
+// interleave two wasm/world loads. `mpRequestedMapId` is the latest target.
+let mpMapLoadState = null;
+let mpRequestedMapId = null;
+
+/** The record measured from the bytes this page actually loaded. */
+function mpActualMapRecord() {
+  if (!state.map) return null;
+  return {
+    id: MAP.id,
+    label: MAP.label,
+    level: MAP.level,
+    packageHash: state.map.hash ?? null,
+    layoutHash: state.sprintLayoutHash ?? state.map.layoutHash ?? null,
+    physicsHash: state.map.physicsSha256 ?? null,
+    packageFileSha256: state.map.packageFileSha256 ?? null,
+    layoutFileSha256: state.map.layoutFileSha256 ?? null,
+    physicsFileSha256: state.map.physicsSha256 ?? null,
+    packageBytes: state.map.bytes?.package ?? null,
+    layoutBytes: state.map.bytes?.layout ?? null,
+    physicsBytes: state.map.bytes?.physics ?? null,
+    loadMs: state.map.loadMs ?? null,
+    source: 'measured-bytes'
+  };
+}
+
+/** Compact map status string for the lobby overlay and the capture probe. */
+function mpMapStatusText() {
+  const map = state.mp?.map;
+  if (!map) return 'map not loaded';
+  const short = (hash) => (typeof hash === 'string' ? hash.slice(7, 19) + '…' : '—');
+  if (map.status === 'loading') {
+    return 'loading ' + map.id + ' · ' + (map.label ?? '') +
+      (map.expectedBytes ? ' · ' + (map.expectedBytes / 1048576).toFixed(1) + ' MB' : '') + '…';
+  }
+  if (map.status === 'refused') {
+    return 'REFUSED ' + (map.code ?? MP_MAP_MISMATCH) + ': ' + (map.error ?? 'map record mismatch');
+  }
+  return map.id + ' · verified · package ' + short(map.packageHash) +
+    ' · layout ' + short(map.layoutHash) + ' · physics ' + short(map.physicsHash) +
+    (Number.isFinite(map.loadMs) ? ' · ' + Math.round(map.loadMs) + ' ms' : '') +
+    (map.bytes?.total ? ' · ' + (map.bytes.total / 1048576).toFixed(1) + ' MB loaded' : '');
+}
+
+/**
+ * Load the room's selected map package, measure its hashes and compare them
+ * with the committed registry record. `map-ready` is reported by the caller
+ * (`state.mp.mapReady`), and only then may the page set the room ready flag.
+ */
+async function mpDoLoadRoomMap(id, { carSlug = null } = {}) {
+  const expected = mpMapRecord(id);
+  const expectedBytes = (expected.packageBytes ?? 0) + (expected.layoutBytes ?? 0) +
+    (expected.physicsBytes ?? 0);
+  state.mp.map = {
+    ...expected,
+    status: 'loading',
+    expectedBytes,
+    expected,
+    actual: null,
+    loadMs: null
+  };
+  state.mp.mapReady = false;
+  state.mp.mapError = null;
+  state.mp.engineReady = false;
+  state.mp.phase = 'loading';
+  state.mp.status = 'loading ' + expected.label + ' (' + (expectedBytes / 1048576).toFixed(1) + ' MB)…';
+  publish();
+  const startedAt = performance.now();
+  try {
+    applyActiveMap(id);
+    if (POWERUPS && id !== 'river') {
+      throw new MpMapError(MP_MAP_MISMATCH,
+        'power-ups are River-only in this gate; ' + expected.label + ' has no placed pickups');
+    }
+    const tick0 = await loadEngine(carSlug ?? state.mp.sessionCar ?? REQUESTED_CAR ?? null);
+    if (mpRequestedMapId !== id) return null;
+    mpSettledTick0 = tick0;
+    mpSessionCar = car.slug;
+    state.mp.sessionCar = mpSessionCar;
+    state.mp.engineReady = true;
+    const actual = mpActualMapRecord();
+    const check = compareMpMapRecords(expected, actual);
+    const loadMs = performance.now() - startedAt;
+    if (!check.ok) {
+      const error = new MpMapError(MP_MAP_MISMATCH,
+        'map package mismatch for ' + expected.label + ': ' +
+        check.mismatches.map((row) => row.field + ' expected ' + row.expected + ', loaded ' + row.actual).join('; '),
+        check);
+      state.mp.map = { ...expected, ...actual, expected, actual, status: 'refused',
+        code: MP_MAP_MISMATCH, error: error.message, mismatches: check.mismatches, loadMs };
+      state.mp.mapError = { code: MP_MAP_MISMATCH, message: error.message, mismatches: check.mismatches };
+      state.mp.mapReady = false;
+      state.mp.phase = 'error';
+      state.mp.status = 'map refused: ' + error.message;
+      throw error;
+    }
+    state.mp.map = {
+      ...expected,
+      ...actual,
+      expected,
+      actual,
+      status: 'ready',
+      code: null,
+      error: null,
+      mismatches: [],
+      loadMs,
+      bytes: state.map.bytes ?? null,
+      startedAt
+    };
+    state.mp.mapReady = true;
+    state.mp.phase = 'lobby';
+    state.mp.status = expected.label + ' map verified; press READY';
+    return state.mp.map;
+  } catch (error) {
+    if (mpRequestedMapId === id && state.mp.map?.status !== 'refused') {
+      state.mp.map = {
+        ...(state.mp.map ?? expected),
+        status: 'refused',
+        code: error.code ?? MP_MAP_MISMATCH,
+        error: error.message,
+        loadMs: performance.now() - startedAt
+      };
+      state.mp.mapError = { code: error.code ?? MP_MAP_MISMATCH, message: error.message };
+      state.mp.mapReady = false;
+      state.mp.engineReady = false;
+    }
+    throw error;
+  } finally {
+    publish();
+  }
+}
+
+/** Serialise room-map loads; a newer target queues behind the current load. */
+function mpEnsureRoomMap(id, options = {}) {
+  const target = normalizeMpMapId(id);
+  if (!target) return Promise.reject(new MpMapError('MAP_UNKNOWN', 'room did not publish a map id'));
+  mpRequestedMapId = target;
+  const previous = mpMapLoadState?.promise ?? Promise.resolve();
+  const promise = previous.catch(() => {}).then(() => {
+    if (mpRequestedMapId !== target) return null;
+    if (!options.force && state.mp.map?.status === 'ready' && state.mp.map.id === target) return state.mp.map;
+    return mpDoLoadRoomMap(target, options);
+  });
+  mpMapLoadState = { id: target, promise };
+  return promise.finally(() => {
+    if (mpMapLoadState?.promise === promise) mpMapLoadState = null;
+  });
+}
+
+/** After a room map switch, both clients must re-verify before they can ready. */
+function mpMapChangedInLobby(roomMapId) {
+  if (!state.mp || mpStarted || !roomMapId) return;
+  const loadedId = state.mp.map?.id ?? null;
+  if (loadedId === roomMapId && state.mp.map?.status === 'ready') return;
+  if (loadedId === roomMapId && state.mp.map?.status === 'loading') return;
+  if (loadedId === roomMapId && state.mp.map?.status === 'refused' &&
+      state.mp.map?.code === MP_MAP_MISMATCH) return;
+  if (state.mp.ready) {
+    state.mp.ready = false;
+    mpNet?.setReady(false).catch(() => {});
+  }
+  state.mp.mapReady = false;
+  state.mp.status = 'room map changed to ' + roomMapId + '; reloading…';
+  publish();
+  mpEnsureRoomMap(roomMapId, { carSlug: state.mp.sessionCar ?? null }).catch((error) => {
+    const code = error.code ?? MP_MAP_MISMATCH;
+    state.mp.mapError = { code, message: error.message };
+    state.mp.phase = 'error';
+    state.mp.status = 'map refused (' + code + '): ' + error.message;
+    publish();
+  });
+}
 
 /** The live retail RPM value; null before a world exists (never a guess). */
 function liveEngineRpm() {
@@ -1471,9 +1711,21 @@ function populateSelector(roster, selected) {
   });
 }
 
+/**
+ * Race-rules projection of a committed layout. The released rules layer only
+ * accepts `310m`/`lap`; a package layout is a point-to-point sprint, so it uses
+ * the equivalent `310m` mode while keeping the original samples, gates and hash.
+ * `verifyLayoutHash:false` is set at the call sites because the hash is the
+ * original package layout hash, not a re-hash of the projected id.
+ */
+function mpRulesLayout(layout) {
+  if (!layout) return layout;
+  if (layout.courseId === '310m' || layout.courseId === 'lap') return layout;
+  return { ...layout, sourceCourseId: layout.courseId, courseId: '310m' };
+}
+
 /** One world at an arbitrary spawn point: the same call `e1_create` the page loads with. */
-function createWorld(x, z, heading) {
-  const levelPtr = module._malloc(levelBytes.byteLength);
+function createWorld(x, z, heading) {  const levelPtr = module._malloc(levelBytes.byteLength);
   const fieldsPtr = module._malloc(fieldBytes.byteLength + 1);
   if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
   module.HEAPU8.set(levelBytes, levelPtr);
@@ -1486,6 +1738,7 @@ function createWorld(x, z, heading) {
 }
 
 async function loadEngine(carOverride = null) {
+  const loadStartedAt = performance.now();
   const factory = (await import(ENGINE_MODULE)).default;
   engineFactory = factory;
   module = await factory();
@@ -1510,27 +1763,35 @@ async function loadEngine(carOverride = null) {
   for (const [label, response] of responses) {
     if (!response.ok) throw new Error(label + ' fetch failed: HTTP ' + response.status);
   }
+  const geometryBytes = new Uint8Array(await geometryResponse.arrayBuffer());
+  const baseGeometryBytes = baseResponse ? new Uint8Array(await baseResponse.arrayBuffer()) : null;
+  // Hash fetched bytes through WebCrypto (native) before decoding them; the
+  // 49–106 MB package documents are far too large for the pure-JS fallback.
+  const geometrySha = await bytesSha256(geometryBytes);
+  const geometryText = new TextDecoder().decode(geometryBytes);
+  const baseGeometryText = baseGeometryBytes ? new TextDecoder().decode(baseGeometryBytes) : null;
   levelBytes = new Uint8Array(await levelResponse.arrayBuffer());
   fieldBytes = new Uint8Array(await fieldsResponse.arrayBuffer());
+  const physicsSha = await bytesSha256(levelBytes);
 
   let preloadedLayout = null;
+  let layoutText = null;
+  let sourceBytes = 0;
   if (MAP_IS_PACKAGE) {
     // Package pins for the map document, layout, source render/slice and the
     // Level.levelphysics bytes. A mismatch is a hard failure: no fallback map.
-    const mapText = await geometryResponse.text();
-    const mapDocument = JSON.parse(mapText);
+    const mapDocument = JSON.parse(geometryText);
     if (!sprintResponse?.ok) {
       throw new Error(MAP.label + ' layout fetch failed: HTTP ' + (sprintResponse?.status ?? 'missing') +
         ' — run `node probes/e1-drive/tools/build_map_' + MAP.id + '.mjs`');
     }
-    const layoutText = await sprintResponse.text();
+    layoutText = await sprintResponse.text();
     const mapLayout = JSON.parse(layoutText);
     const packageCheck = validateMapPackage(mapDocument, mapLayout, MAP.pins);
     if (!packageCheck.ok) throw new Error(MAP.label + ' map package rejected: ' + packageCheck.errors.join('; '));
     if (textSha256(layoutText) !== MAP.pins.layoutFileSha256) {
       throw new Error(MAP.label + ' layout file does not match its pinned SHA-256');
     }
-    const physicsSha = await bytesSha256(levelBytes);
     if (physicsSha !== MAP.pins.physicsFileSha256) {
       throw new Error(MAP.level + ' Level.levelphysics does not match its pinned SHA-256 (' + physicsSha + ')');
     }
@@ -1543,23 +1804,15 @@ async function loadEngine(carOverride = null) {
     if (!renderSource.ok || !sliceSource.ok) {
       throw new Error('map-slice source package fetch failed: HTTP ' + renderSource.status + '/' + sliceSource.status);
     }
-    const renderSha = await bytesSha256(new Uint8Array(await renderSource.arrayBuffer()));
-    const sliceSha = await bytesSha256(new Uint8Array(await sliceSource.arrayBuffer()));
+    const renderBytes = new Uint8Array(await renderSource.arrayBuffer());
+    const sliceBytes = new Uint8Array(await sliceSource.arrayBuffer());
+    sourceBytes = renderBytes.byteLength + sliceBytes.byteLength;
+    const renderSha = await bytesSha256(renderBytes);
+    const sliceSha = await bytesSha256(sliceBytes);
     if (renderSha !== MAP.pins.renderFileSha256) throw new Error('render.json does not match its pinned SHA-256');
     if (sliceSha !== MAP.pins.sliceFileSha256) throw new Error('slice.json does not match its pinned SHA-256');
-    const baseGeometry = await baseResponse.json();
+    const baseGeometry = JSON.parse(baseGeometryText);
     geometry = mergeMapGeometry(baseGeometry, mapDocument, { id: MAP.id, label: MAP.label, level: MAP.level });
-    state.map = {
-      id: MAP.id,
-      label: MAP.label,
-      level: MAP.level,
-      hash: mapDocument.hash,
-      layoutHash: mapLayout.hash,
-      source: mapDocument.source,
-      counts: mapDocument.counts,
-      limits: mapDocument.mapRender.limits,
-      physicsSha256: physicsSha
-    };
     // The committed spawn artifact is River-specific; the map spawn is the
     // measured layout's first point and tangent.
     spawn = {
@@ -1569,10 +1822,52 @@ async function loadEngine(carOverride = null) {
       source: mapLayout.source.spawnSource
     };
     preloadedLayout = mapLayout;
+    state.map = {
+      id: MAP.id,
+      label: MAP.label,
+      level: MAP.level,
+      hash: mapDocument.hash,
+      layoutHash: mapLayout.hash,
+      packageFileSha256: geometrySha,
+      layoutFileSha256: textSha256(layoutText),
+      physicsSha256: physicsSha,
+      source: mapDocument.source,
+      counts: mapDocument.counts,
+      limits: mapDocument.mapRender.limits,
+      bytes: {
+        package: geometryBytes.byteLength,
+        baseGeometry: baseGeometryBytes?.byteLength ?? 0,
+        layout: layoutText.length,
+        physics: levelBytes.byteLength,
+        carFields: fieldBytes.byteLength,
+        renderSource: sourceBytes,
+        total: geometryBytes.byteLength + (baseGeometryBytes?.byteLength ?? 0) + layoutText.length +
+          levelBytes.byteLength + fieldBytes.byteLength + sourceBytes
+      }
+    };
   } else {
-    geometry = await geometryResponse.json();
+    geometry = JSON.parse(geometryText);
     spawn = await spawnResponse.json();
+    state.map = {
+      id: MAP.id,
+      label: MAP.label,
+      level: MAP.level,
+      hash: geometrySha,
+      packageFileSha256: geometrySha,
+      physicsSha256: physicsSha,
+      bytes: {
+        package: geometryBytes.byteLength,
+        baseGeometry: 0,
+        layout: 0,
+        physics: levelBytes.byteLength,
+        carFields: fieldBytes.byteLength,
+        renderSource: 0,
+        total: geometryBytes.byteLength + levelBytes.byteLength + fieldBytes.byteLength
+      }
+    };
+    state.map.layoutFileSha256 = null;
   }
+  state.map.loadMs = performance.now() - loadStartedAt;
 
   let tick0;
   if (SPRINT_MODE || SOAK) {
@@ -1580,7 +1875,17 @@ async function loadEngine(carOverride = null) {
       throw new Error('sprint layout fetch failed: HTTP ' + sprintResponse.status +
         ' — run `node probes/e1-drive/tools/build_sprint.mjs` (or `node tools/verify_e1_drive.mjs` first)');
     }
-    const layout = preloadedLayout ?? await sprintResponse.json();
+    const layout = preloadedLayout ?? await (async () => {
+      layoutText = await sprintResponse.text();
+      return JSON.parse(layoutText);
+    })();
+    if (state.map?.bytes && !state.map.bytes.layout && layoutText) {
+      state.map.bytes.layout = layoutText.length;
+      state.map.bytes.total += layoutText.length;
+    }
+    if (state.map && !state.map.layoutFileSha256 && layoutText) {
+      state.map.layoutFileSha256 = textSha256(layoutText);
+    }
     if (MAP_IS_PACKAGE) {
       // The map layout is validated above against the map package pins. Its
       // gates are measured path stations, so the River geometry re-derivation
@@ -1593,6 +1898,7 @@ async function loadEngine(carOverride = null) {
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
     state.sprintCourseId = layout.courseId ?? null;
+    if (state.map) state.map.layoutHash = layout.hash;
     state.sprintLayout = {
       hash: layout.hash,
       courseId: layout.courseId ?? null,
@@ -1696,7 +2002,11 @@ async function loadEngine(carOverride = null) {
       // Provisional race-rules grid: two cars side by side on the measured start
       // line. Both pages compute the same grid from the same committed layout and
       // slot, so the local body and the host's rules see the same start point.
-      const model = new mpRaceRules.CourseModel(layout);
+      // The released race-rules allow-list predates M3 (`310m`/`lap`); the
+      // point-to-point package layout is passed through the equivalent sprint
+      // mode with the layout bytes/gates untouched and hash verification off.
+      // This is a rules-mode mapping, not a geometry or map value.
+      const model = new mpRaceRules.CourseModel(mpRulesLayout(layout), { verifyLayoutHash: false });
       const grid = model.startGrid(MP_MAX_PLAYERS, MP_GRID_OPTIONS);
       const index = Math.max(0, Math.min(grid.length - 1, (mpSlot ?? 1) - 1));
       const slot = grid[index];
@@ -3013,6 +3323,7 @@ function mpHostRulesStep(snapshot) {
     state.mp.hostEvents = (state.mp.hostEvents ?? []).concat(events).slice(-64);
   }
   if (state.mp.result && !state.mp.validation) mpComputeHostValidation();
+  else if (state.mp.validation) mpRefreshHostValidation();
 }
 
 /** Compose/refresh the remote display from the interpolation buffer. */
@@ -3062,9 +3373,16 @@ function mpUpdateRemoteFrame(renderTick) {
 /** Local finish: one canonical finish report; the shared table arrives later. */
 function mpLocalFinish(event) {
   if (!mpNet || !state.mp || state.mp.finishReported) return;
-  const logicalTick = event.tick + mpEngineTickOffset;
+  const countdownTicks = sprintRules?.layout?.countdown?.ticks ?? 0;
+  // The shared table is a function of the race time, so derive the reported
+  // tick from the authoritative local time. A respawn rebuild resets the wasm
+  // tick; adding the raw rebuild offset can be off by one tick.
+  const reported = mpFinishTick(event.timeSeconds, countdownTicks);
+  const rawTick = event.tick + mpEngineTickOffset;
+  const logicalTick = Number.isInteger(reported) && reported > countdownTicks ? reported : rawTick;
   state.mp.finishReported = true;
   state.mp.finishTick = logicalTick;
+  state.mp.finishTickRaw = rawTick;
   state.mp.finishTimeSeconds = event.timeSeconds;
   const hashes = state.tickHashes.filter((row) => row.tick <= event.tick).map((row) => row.stateHash);
   const sequenceHash = 'sha256:' + sha256Hex(hashes.join('\n'));
@@ -3117,6 +3435,12 @@ function mpApplyResult(message) {
  * Host validation record. It is recomputed while the host keeps ticking after
  * the room result so the guest's final state can still arrive (the relay and the
  * room finish broadcast are independent WebSocket messages).
+ *
+ * The guest's own finish report is the result row's tick/time. The host's
+ * projected detection is a diagnostic: a host rebuild can pause the local race
+ * clock, so the guest can be projected at a different tick. A report is accepted
+ * while the race is open (the room has not broadcast its result); only a report
+ * after the room closed is rejected by `MpSession.reportFinished`.
  */
 function mpComputeHostValidation() {
   if (!MP_HOST || !mpRace || !state.mp || state.mp.validation) return;
@@ -3124,25 +3448,28 @@ function mpComputeHostValidation() {
     const snapshot = mpRace.snapshot();
     const hostRow = snapshot.results.rows.find((row) => row.id === mpNet.playerId);
     const guestRow = snapshot.results.rows.find((row) => row.id === mpRemotePlayerId);
-    // The guest's final state and its client.finished report are independent
-    // messages. Keep the host session running until the ProgressTracker has
-    // actually observed the guest finish; only then publish the validation row.
-    if (guestRow?.status !== 'finished') return;
     const reported = state.mp.remote.finish?.tick ?? null;
     const countdownTicks = sprintRules.layout.countdown?.ticks ?? 0;
     const reportedRace = reported === null ? null : reported - countdownTicks;
+    const reportAccepted = Number.isInteger(reported) && reported > countdownTicks;
+    // The guest report may arrive after the host has finished; it is still
+    // accepted while the room is open. Do not require a 6-tick detection bound.
+    if (!reportAccepted) return;
     state.mp.validation = {
       sessionPhase: snapshot.phase,
       sessionRaceTick: snapshot.raceTick,
       sessionHash: mpRace.hash(),
       hostFinishTick: hostRow?.finishTick ?? null,
-      guestFinishTick: guestRow?.finishTick ?? null,
+      guestDetectedFinishTick: guestRow?.finishTick ?? null,
       guestStatus: guestRow?.status ?? null,
       guestReportedTick: reported,
       guestReportedRaceTick: reportedRace,
-      guestTickDelta: guestRow?.finishTick !== null && guestRow?.finishTick !== undefined && reportedRace !== null
+      guestDetectionDeltaTicks: guestRow?.finishTick !== null && guestRow?.finishTick !== undefined && reportedRace !== null
         ? guestRow.finishTick - reportedRace : null,
-      guestValidated: guestRow?.status === 'finished'
+      guestReportAccepted: reportAccepted,
+      guestValidated: reportAccepted &&
+        (guestRow?.status === 'finished' || snapshot.phase === 'running' || snapshot.phase === 'finished'),
+      acceptance: 'guest report accepted while the race is open; host projection delta is diagnostic'
     };
     state.mp.hostSession = {
       phase: snapshot.phase,
@@ -3152,6 +3479,31 @@ function mpComputeHostValidation() {
     };
   } catch (error) {
     state.mp.lastError = 'host validation failed: ' + error.message;
+  }
+}
+
+/** Refresh diagnostic host/guest detection after the result; never changes rows. */
+function mpRefreshHostValidation() {
+  if (!MP_HOST || !mpRace || !state.mp?.validation) return;
+  try {
+    const snapshot = mpRace.snapshot();
+    const hostRow = snapshot.results.rows.find((row) => row.id === mpNet.playerId);
+    const guestRow = snapshot.results.rows.find((row) => row.id === mpRemotePlayerId);
+    const reported = state.mp.remote.finish?.tick ?? null;
+    const countdownTicks = sprintRules.layout.countdown?.ticks ?? 0;
+    const reportedRace = reported === null ? null : reported - countdownTicks;
+    state.mp.validation.sessionRaceTick = snapshot.raceTick;
+    state.mp.validation.latestSessionHash = mpRace.hash();
+    if (hostRow?.finishTick !== null && hostRow?.finishTick !== undefined) {
+      state.mp.validation.hostFinishTick = hostRow.finishTick;
+    }
+    state.mp.validation.guestDetectedFinishTick = guestRow?.finishTick ?? null;
+    state.mp.validation.guestStatus = guestRow?.status ?? null;
+    state.mp.validation.guestDetectionDeltaTicks =
+      guestRow?.finishTick !== null && guestRow?.finishTick !== undefined && reportedRace !== null
+        ? guestRow.finishTick - reportedRace : null;
+  } catch (error) {
+    state.mp.lastError = 'host validation refresh failed: ' + error.message;
   }
 }
 
@@ -3188,7 +3540,11 @@ function handleMpEvent(type, payload) {
       }
       if (!mpStarted) state.mp.phase = 'lobby';
       if (!state.mp.engineReady) state.mp.status = 'in the lobby; loading the engine…';
-      else if (!state.mp.started) state.mp.status = state.mp.ready ? 'ready' : 'in the lobby';
+      else if (!state.mp.started) state.mp.status = state.mp.mapReady ? (state.mp.ready ? 'ready' : 'map verified; press READY') : 'verifying the room map…';
+      // Host map selection broadcasts a room update; every client reloads and
+      // re-verifies the package before it may set READY. The initial load is
+      // owned by startMultiplayer so it can use the room's session car.
+      if (state.mp.map) mpMapChangedInLobby(normalizeMpMapId(room.map));
       publish();
       break;
     }
@@ -3223,6 +3579,7 @@ function handleMpEvent(type, payload) {
     case 'peerFinished':
       state.mp.remote.finish = { tick: payload.tick, hash: payload.hash };
       mpRemoteFinished = payload;
+      if (MP_HOST) mpComputeHostValidation();
       publish();
       break;
     case 'reconnecting':
@@ -3273,6 +3630,11 @@ function mpBindUi() {
     ready.dataset.bound = '1';
     ready.addEventListener('click', () => {
       if (!mpNet || state.mp.phase !== 'lobby') return;
+      if (!state.mp.mapReady || !state.mp.engineReady) {
+        state.mp.status = 'READY needs a verified room map (' + mpMapStatusText() + ')';
+        publish();
+        return;
+      }
       const next = !(state.mp.ready === true);
       mpNet.setReady(next)
         .then(() => { state.mp.ready = next; publish(); })
@@ -3294,6 +3656,24 @@ function mpBindUi() {
         .catch((error) => { state.mp.lastError = error.message; state.mp.status = 'car select failed: ' + error.message; publish(); });
     });
   }
+  const mapSelect = document.getElementById('mp-map');
+  if (mapSelect && !mapSelect.dataset.bound) {
+    mapSelect.dataset.bound = '1';
+    mapSelect.addEventListener('change', () => {
+      if (!MP_HOST || !mpNet || state.mp.phase !== 'lobby' || state.mp.started) return;
+      const previous = state.mp.map?.id ?? null;
+      state.mp.status = 'selecting map ' + mapSelect.value + '…';
+      publish();
+      mpNet.selectMap(mapSelect.value)
+        .then(() => { void previous; publish(); })
+        .catch((error) => {
+          state.mp.lastError = error.message;
+          state.mp.status = 'map select failed: ' + error.message;
+          if (previous) mapSelect.value = previous;
+          publish();
+        });
+    });
+  }
 }
 
 /** Host-only start; the room service still enforces host + all-ready. */
@@ -3303,6 +3683,24 @@ async function mpStartRace() {
   const allReady = players.length >= 2 && players.every((player) => player.ready && player.connected !== false);
   if (mpNet.phase !== 'lobby' || !allReady) {
     state.mp.status = 'start needs two connected, ready players';
+    publish();
+    return;
+  }
+  if (!state.mp.mapReady || !state.mp.engineReady) {
+    state.mp.status = 'start needs this page to verify the room map first';
+    publish();
+    return;
+  }
+  const roomMapId = normalizeMpMapId(mpNet.room?.map);
+  try {
+    assertMpMapAgreement(mpMapRecord(roomMapId), mpActualMapRecord(), 'room start');
+  } catch (error) {
+    state.mp.mapReady = false;
+    state.mp.map = { ...(state.mp.map ?? {}), status: 'refused', code: error.code ?? MP_MAP_MISMATCH,
+      error: error.message, mismatches: error.detail?.mismatches ?? [] };
+    state.mp.mapError = { code: error.code ?? MP_MAP_MISMATCH, message: error.message };
+    state.mp.phase = 'error';
+    state.mp.status = 'start refused (' + (error.code ?? MP_MAP_MISMATCH) + '): ' + error.message;
     publish();
     return;
   }
@@ -3322,6 +3720,30 @@ async function mpStartRace() {
 /** Begin the local race on both pages when the room broadcasts `room.started`. */
 async function beginMultiplayerRace() {
   if (mpStarted || !state.mp?.engineReady || !sprintRules) return;
+  // The started room view is authoritative for the map id. Re-check the typed
+  // record against the bytes this page loaded; a mismatch is a typed refusal and
+  // the local race never starts (no silent River fallback).
+  const startedMapId = normalizeMpMapId(
+    mpNet?.startedInfo?.mapId ?? mpNet?.room?.map ?? state.mp.map?.id);
+  let expected = mpNet?.startedInfo?.map ?? null;
+  try {
+    if (!expected) expected = mpMapRecord(startedMapId);
+    assertMpMapAgreement(expected, mpActualMapRecord(), 'room.started map');
+    if (startedMapId !== state.mp.map?.id || !state.mp.mapReady) {
+      throw new MpMapError(MP_MAP_MISMATCH,
+        'room started ' + startedMapId + ' but this page verified ' + (state.mp.map?.id ?? 'none'));
+    }
+  } catch (error) {
+    state.mp.mapReady = false;
+    state.mp.map = { ...(state.mp.map ?? {}), status: 'refused',
+      code: error.code ?? MP_MAP_MISMATCH, error: error.message,
+      mismatches: error.detail?.mismatches ?? [] };
+    state.mp.mapError = { code: error.code ?? MP_MAP_MISMATCH, message: error.message };
+    state.mp.phase = 'error';
+    state.mp.status = 'start refused (' + (error.code ?? MP_MAP_MISMATCH) + '): ' + error.message;
+    publish();
+    return;
+  }
   mpStarted = true;
   state.mp.phase = 'running';
   state.mp.status = 'countdown';
@@ -3330,10 +3752,12 @@ async function beginMultiplayerRace() {
       const players = [...(mpNet?.room?.players ?? [])].sort((a, b) => a.slot - b.slot);
       const participants = players.map((player) => ({ id: player.id, slot: player.slot }));
       mpRace = new mpRaceRules.RaceSession({
-        layout: sprintRules.layout,
+        layout: mpRulesLayout(sprintRules.layout),
         participants,
-        config: { hostId: mpNet.playerId, minParticipants: 2, maxParticipants: 2 }
+        config: { hostId: mpNet.playerId, minParticipants: 2, maxParticipants: 2, verifyLayoutHash: false }
       });
+      state.mp.hostRuleCourseId = sprintRules.layout?.courseId ?? null;
+      state.mp.hostRuleMode = 'sprint (package layout projected to the released 310m allow-list)';
       for (const player of players) mpRace.command({ type: 'ready', from: player.id, ready: true });
       mpRace.command({ type: 'start', from: mpNet.playerId });
       // Consume the zero-tick loading phase so the session countdown starts on
@@ -3341,7 +3765,7 @@ async function beginMultiplayerRace() {
       mpRace.step(null);
       const guest = players.find((player) => player.id !== mpNet.playerId);
       if (guest) {
-        const model = new mpRaceRules.CourseModel(sprintRules.layout);
+        const model = new mpRaceRules.CourseModel(mpRulesLayout(sprintRules.layout), { verifyLayoutHash: false });
         const grid = model.startGrid(MP_MAX_PLAYERS, MP_GRID_OPTIONS);
         const slot = grid[Math.max(0, Math.min(grid.length - 1, guest.slot - 1))];
         state.mp.guestSpawnState = { position: [slot.x, slot.y, slot.z], contact: null };
@@ -4096,6 +4520,29 @@ function mpCaptureSnapshot() {
     engineReady: mp.engineReady,
     started: mp.started,
     sessionCar: mp.sessionCar,
+    mapId: mp.map?.id ?? null,
+    mapReady: mp.mapReady === true,
+    map: mp.map ? {
+      id: mp.map.id,
+      label: mp.map.label,
+      level: mp.map.level,
+      status: mp.map.status,
+      code: mp.map.code ?? null,
+      error: mp.map.error ?? null,
+      packageHash: mp.map.packageHash ?? null,
+      layoutHash: mp.map.layoutHash ?? null,
+      physicsHash: mp.map.physicsHash ?? null,
+      packageFileSha256: mp.map.packageFileSha256 ?? null,
+      layoutFileSha256: mp.map.layoutFileSha256 ?? null,
+      physicsFileSha256: mp.map.physicsFileSha256 ?? null,
+      expected: mp.map.expected ?? null,
+      actual: mp.map.actual ?? null,
+      mismatches: mp.map.mismatches ?? [],
+      loadMs: mp.map.loadMs ?? null,
+      bytes: mp.map.bytes ?? null,
+      expectedBytes: mp.map.expectedBytes ?? null
+    } : null,
+    mapError: mp.mapError ?? null,
     grid: mp.grid,
     players: (mp.room?.players ?? []).map((player) => ({
       id: player.id, slot: player.slot, name: player.name, car: player.car,
@@ -4112,14 +4559,19 @@ function mpCaptureSnapshot() {
       finishTick: sprint.finishTick,
       finished: sprint.finished,
       checkpointsPassed: sprint.checkpointsPassed,
+      respawns: sprint.respawns ?? 0,
       progress: sprint.progress,
       countdownLabel: sprint.countdownLabel
     } : null,
+    hostEvents: (mp.hostEvents ?? []).slice(-24),
+    sprintEvents: (state.sprintEvents ?? []).slice(-12),
     finishReported: mp.finishReported,
     finishTick: mp.finishTick,
+    finishTickRaw: mp.finishTickRaw ?? null,
     finishHash: mpFinishHash,
     result: mp.result ? {
       hash: mp.result.hash,
+      courseId: mp.result.courseId,
       order: mp.result.order,
       winnerId: mp.result.winnerId,
       rows: mp.result.rows
@@ -4181,7 +4633,17 @@ function mpCaptureSnapshot() {
 function mpInstallDebugApi() {
   window.__mp = {
     session: () => mpNet,
-    setReady: (ready) => (mpNet ? mpNet.setReady(Boolean(ready)) : Promise.reject(new Error('no room'))),
+    setReady: (ready) => {
+      if (ready && !state.mp?.mapReady) {
+        return Promise.reject(new MpMapError(MP_MAP_MISMATCH,
+          'READY needs a verified room map (' + mpMapStatusText() + ')'));
+      }
+      return mpNet ? mpNet.setReady(Boolean(ready)) : Promise.reject(new Error('no room'));
+    },
+    selectMap: (map) => (MP_HOST && mpNet ? mpNet.selectMap(map) : Promise.reject(new Error('only the host selects the map'))),
+    mapRecord: () => mpActualMapRecord(),
+    mapExpected: (map) => mpMapRecord(map),
+    verifyMap: (actual, expected) => compareMpMapRecords(expected ?? mpMapRecord(state.mp?.map?.id), actual ?? mpActualMapRecord()),
     start: () => mpStartRace(),
     drop: (options = {}) => (mpNet ? mpNet.net.simulateDrop(options) : Promise.reject(new Error('no room'))),
     snapshot: () => mpCaptureSnapshot(),
@@ -4206,28 +4668,22 @@ function mpInstallDebugApi() {
   };
 }
 
-/** `?mp=1` entry point: load the session car, connect/join, show the lobby. */
+/** `?mp=1` entry point: connect/join, load the room map, show the lobby. */
 async function startMultiplayer() {
   state.consumer = 'loading';
-  state.mp.phase = 'loading';
-  state.mp.status = 'loading the session car before joining the room…';
+  state.mp.phase = 'connecting';
+  state.mp.status = 'connecting to the room service…';
   publish();
   mpInstallDebugApi();
   try {
-    // The engine + 45 MB geometry load is the long blocking phase. Do it before
-    // opening the room socket so the 5 s room heartbeat is not starved by the
-    // synchronous load; the room connection then starts in the lobby.
     const raceRules = await import('/race-rules/index.mjs');
     mpRaceRules = raceRules;
     mpSlot = MP_HOST ? 1 : 2;
-    const tick0 = await loadEngine(REQUESTED_CAR ?? null);
-    mpSettledTick0 = tick0;
-    mpSessionCar = car.slug;
-    state.mp.sessionCar = mpSessionCar;
-    state.mp.engineReady = true;
-    if (POWERUPS) await initPowerups();
-    state.mp.status = 'engine loaded; connecting to the room service…';
-    publish();
+    // Resolve the requested car from the roster without creating a world yet,
+    // so the room is created with the exact session car slug.
+    const roster = await loadRoster();
+    const requestedCar = resolveCar(roster, REQUESTED_CAR ?? null);
+    state.mp.sessionCar = requestedCar.slug;
 
     const netModule = await import('/net-mvp/client.mjs');
     mpNet = new MpSession({
@@ -4236,28 +4692,33 @@ async function startMultiplayer() {
       name: MP_NAME,
       host: MP_HOST,
       code: MP_CODE,
-      car: mpSessionCar,
-      map: 'usa_la_river',
+      car: requestedCar.slug,
+      // Only the host proposes the map; the room's map field is authoritative
+      // for both pages after the join.
+      map: MP_HOST ? MAP.id : null,
       maxPlayers: MP_MAX_PLAYERS,
       onEvent: handleMpEvent
     });
+    state.mp.phase = 'loading';
+    state.mp.status = 'joining the room; the map package loads next…';
+    publish();
     const joined = await mpNet.open();
-    const roomCar = sessionCarForRoom(joined.room, mpSessionCar);
-    if (roomCar && roomCar !== mpSessionCar) {
-      throw new Error('M1 needs the same car for both players: this page loaded ' +
-        JSON.stringify(mpSessionCar) + ' but the room host car is ' + JSON.stringify(roomCar) +
-        '; reopen the guest with ?car=' + roomCar);
+    const roomMapId = normalizeMpMapId(joined.room.map);
+    if (!roomMapId) throw new Error('the room did not publish a map id');
+    const roomCar = sessionCarForRoom(joined.room, requestedCar.slug);
+    if (roomCar && roomCar !== requestedCar.slug) {
+      throw new Error('the online room needs the same car for both players: this page resolved ' +
+        JSON.stringify(requestedCar.slug) + ' but the room host car is ' + JSON.stringify(roomCar) +
+        '; reopen this page with ?car=' + roomCar);
     }
     if (joined.you.slot !== mpSlot) {
-      throw new Error('M1 expects the host in slot 1 and the guest in slot 2; this page joined slot ' +
+      throw new Error('the online room expects the host in slot 1 and the guest in slot 2; this page joined slot ' +
         joined.you.slot + (MP_HOST ? ' as host' : ' as guest'));
     }
     state.mp.room = joined.room;
     state.mp.you = joined.you;
     state.mp.players = [...joined.room.players];
     state.mp.requestedCodeMismatch = mpNet.requestedCodeMismatch;
-    state.mp.phase = 'lobby';
-    state.mp.status = state.mp.ready ? 'ready' : 'engine loaded; press READY';
     const remote = joined.room.players.find((player) => player.id !== joined.you.id);
     if (remote) {
       mpRemotePlayerId = remote.id;
@@ -4267,6 +4728,13 @@ async function startMultiplayer() {
       state.mp.remote.car = remote.car;
       state.mp.remote.connected = remote.connected !== false;
     }
+    // Load and verify the room's map before the lobby allows READY.
+    await mpEnsureRoomMap(roomMapId, { carSlug: roomCar ?? requestedCar.slug, force: true });
+    if (POWERUPS) await initPowerups();
+    state.mp.phase = 'lobby';
+    state.mp.status = state.mp.mapReady
+      ? 'engine loaded; map verified; press READY'
+      : 'map not verified; READY is disabled';
     mpRemoteDisplay = null;
     mpLocalHistory = new Map();
     if (POWERUPS) {
@@ -4362,12 +4830,16 @@ function frame(nowMs) {
           break;
         }
         if (sprintRules.phase === 'finished' && snapshot.tick - sprintRules.finishTick >= FINISH_TAIL_TICKS) {
-          // In an M1 room the host must keep its engine tick alive until the
+          // In an M1/M3 room the host must keep its engine tick alive until the
           // guest's finish is validated and the shared result arrives; the guest
-          // may hold once its own brake tail is done.
+          // may hold once its own brake tail is done. Package maps are up to
+          // 2,060 m, so a slower guest can finish tens of seconds later.
           const tail = snapshot.tick - sprintRules.finishTick;
+          const tailCap = MAP_IS_PACKAGE ? 4800 : 600;
+          const hostRulesRow = MP_HOST && mpRace ? mpRace.progress?.byId?.get(mpNet?.playerId) : null;
+          const hostRulesFinished = hostRulesRow?.status === 'finished';
           const keepHostRunning = MP && MP_HOST &&
-            state.mp?.validation?.guestValidated !== true && tail < 600;
+            (!hostRulesFinished || state.mp?.validation?.guestValidated !== true) && tail < tailCap;
           if (!keepHostRunning) {
             holdReached = true;
             state.holdReached = true;

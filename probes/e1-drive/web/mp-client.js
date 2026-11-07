@@ -15,10 +15,12 @@
 //     both clients render the same positions/times from the same bytes.
 
 import { hashOf } from './packet-hash.js';
+import { MP_MAP_IDS, resolveMap } from './map-registry.js';
 
 export const MP_KIND = 'e1-drive.mp/1';
 export const MP_SCHEMA = 'e1-drive.mp/1';
-export const MP_MAP = 'usa_la_river';
+export const MP_MAP = 'river';
+export const MP_LEGACY_MAP = 'usa_la_river';
 export const MP_MAX_PLAYERS = 2;
 export const MP_DEFAULT_ROOM_PORT = 8811;
 export const MP_TICK_HZ = 60;
@@ -33,6 +35,120 @@ export const MP_RESULT_KIND = 'e1-drive.mp.result';
 export const MP_RESULT_VERSION = 1;
 export const MP_RESULT_NOTE =
   'host-authoritative finish validation; both overlays render this table from the room finish broadcast';
+export const MP_ROOM_CLOSED = 'MP_ROOM_CLOSED';
+
+export class MpSessionError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'MpSessionError';
+    this.code = code;
+  }
+}
+
+/**
+ * Canonical reported finish tick from the authoritative local race time.
+ * A respawn rebuild resets the engine tick, so `event.tick` alone can differ
+ * from the race clock by a tick; the shared table and the finish report use
+ * this time-derived tick instead.
+ */
+export function mpFinishTick(timeSeconds, countdownTicks, tickHz = MP_TICK_HZ) {
+  if (!Number.isFinite(timeSeconds) || !Number.isFinite(countdownTicks) || !(tickHz > 0)) return null;
+  return Math.round(timeSeconds * tickHz) + Math.round(countdownTicks);
+}
+
+// --------------------------------------------------------------- room map record
+// The room protocol already carries a `map` selector in `room.create`,
+// `player.select` and the `room.started` room view. The selector is the map id
+// (`river`|`amboy`|`gracia`); the typed record below is the committed hash
+// agreement every client derives locally from `map-registry.js`. No new wire
+// message is added: `map-ready` is reported through the existing ready flag
+// after the client's own bytes match this record. A mismatch is a typed
+// refusal, never a River fallback.
+export const MP_MAP_MISMATCH = 'MAP_PACKAGE_MISMATCH';
+export const MP_MAP_NOT_MULTIPLAYER = 'MAP_NOT_MULTIPLAYER';
+export const MP_MAP_UNKNOWN = 'MAP_UNKNOWN';
+
+export class MpMapError extends Error {
+  constructor(code, message, detail = null) {
+    super(message);
+    this.name = 'MpMapError';
+    this.code = code;
+    this.detail = detail ?? null;
+  }
+}
+
+/** Normalise the room map selector; the legacy River selector maps to `river`. */
+export function normalizeMpMapId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const text = String(value).trim();
+  return text === MP_LEGACY_MAP ? MP_MAP : text;
+}
+
+/** The committed multiplayer record for a map id (throws a typed error). */
+export function mpMapRecord(value) {
+  const id = normalizeMpMapId(value);
+  if (id === null) throw new MpMapError(MP_MAP_UNKNOWN, 'room map id is missing');
+  if (!MP_MAP_IDS.includes(id)) {
+    throw new MpMapError(MP_MAP_UNKNOWN,
+      'unknown multiplayer map ' + JSON.stringify(value) + ' (use ' + MP_MAP_IDS.join(', ') + ')');
+  }
+  const map = resolveMap(id);
+  if (map.multiplayer !== true) {
+    throw new MpMapError(MP_MAP_NOT_MULTIPLAYER, map.label + ' is not enabled for the online room');
+  }
+  const pins = map.mpPins;
+  if (!pins) throw new MpMapError(MP_MAP_UNKNOWN, map.label + ' has no pinned multiplayer record');
+  return {
+    id: map.id,
+    label: map.label,
+    level: map.level,
+    packageHash: pins.packageHash ?? null,
+    layoutHash: pins.layoutHash ?? null,
+    physicsHash: pins.physicsHash ?? null,
+    packageFileSha256: pins.packageFileSha256 ?? null,
+    layoutFileSha256: pins.layoutFileSha256 ?? null,
+    physicsFileSha256: pins.physicsFileSha256 ?? null,
+    packageBytes: pins.packageBytes ?? null,
+    layoutBytes: pins.layoutBytes ?? null,
+    physicsBytes: pins.physicsBytes ?? null,
+    source: 'map-registry'
+  };
+}
+
+/**
+ * Compare the record carried by the room (registry-derived) with the record the
+ * page measured from the bytes it actually loaded. Only the three content
+ * hashes and the id are agreement fields; byte counts/timing are diagnostics.
+ */
+export function compareMpMapRecords(expected, actual) {
+  const fields = ['id', 'packageHash', 'layoutHash', 'physicsHash'];
+  const mismatches = [];
+  for (const field of fields) {
+    if (!expected || !actual || expected[field] !== actual[field]) {
+      mismatches.push({
+        field,
+        expected: expected?.[field] ?? null,
+        actual: actual?.[field] ?? null
+      });
+    }
+  }
+  return {
+    ok: mismatches.length === 0,
+    code: mismatches.length === 0 ? null : MP_MAP_MISMATCH,
+    mismatches
+  };
+}
+
+/** Throw the typed refusal the lobby/start gate uses when the hashes disagree. */
+export function assertMpMapAgreement(expected, actual, context = 'map package') {
+  const check = compareMpMapRecords(expected, actual);
+  if (!check.ok) {
+    const detail = check.mismatches.map((row) =>
+      row.field + ' expected ' + row.expected + ', loaded ' + row.actual).join('; ');
+    throw new MpMapError(MP_MAP_MISMATCH, context + ' mismatch: ' + detail, check);
+  }
+  return check;
+}
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -186,7 +302,7 @@ export class MpSession {
     this.host = Boolean(host);
     this.name = normalizePlayerName(name, host ? 'Host' : 'Guest');
     this.car = car;
-    this.map = map;
+    this.map = normalizeMpMapId(map) ?? MP_MAP;
     this.maxPlayers = maxPlayers;
     this.onEvent = onEvent;
     this.net = new NetClient({
@@ -220,9 +336,19 @@ export class MpSession {
       this._emit('lobby', { room, you, resumed });
     });
     net.on('started', (info) => {
-      this.startedInfo = info;
       this.room = net.room;
-      this._emit('started', info);
+      // The wire carries the map selector only. The typed record (id + layout,
+      // package and physics hashes) is derived from the committed registry on
+      // every client, so the check is deterministic without a protocol change.
+      const mapId = normalizeMpMapId(net.room?.map ?? info?.room?.map ?? this.map);
+      let map = null;
+      let mapError = null;
+      try { map = mapId === null ? null : mpMapRecord(mapId); }
+      catch (error) {
+        mapError = { code: error.code ?? MP_MAP_UNKNOWN, message: error.message };
+      }
+      this.startedInfo = { ...info, mapId, map, mapError };
+      this._emit('started', this.startedInfo);
     });
     net.on('stateApplied', (record) => this._emit('remoteState', record));
     net.on('inputApplied', (record) => this._emit('remoteInput', record));
@@ -261,6 +387,11 @@ export class MpSession {
   get phase() { return this.room?.phase ?? 'idle'; }
   get players() { return this.room?.players ?? []; }
   get sessionCar() { return sessionCarForRoom(this.room, this.car); }
+  get roomMapId() { return normalizeMpMapId(this.room?.map); }
+  get mapRecord() {
+    const id = this.roomMapId ?? this.map;
+    try { return id === null ? null : mpMapRecord(id); } catch { return null; }
+  }
 
   async open() {
     await this.net.connect();
@@ -288,12 +419,28 @@ export class MpSession {
 
   async setReady(ready) { return this.net.setReady(Boolean(ready)); }
   async selectCar(car) { return this.net.select({ car }); }
+  /** Host-only in the room service; validated here before it reaches the wire. */
+  async selectMap(map) {
+    const id = normalizeMpMapId(map);
+    if (id === null) throw new MpMapError(MP_MAP_UNKNOWN, 'map id is missing');
+    mpMapRecord(id);
+    return this.net.select({ map: id });
+  }
   async start(options = {}) { return this.net.start(options); }
   async leave() { return this.net.leave(); }
 
   sendInput(input, tick) { return this.net.sendInput(input, tick); }
   sendState(state) { return this.net.sendState(state); }
-  reportFinished(payload) { return this.net.reportFinished(payload); }
+  reportFinished(payload) {
+    // The race is open while the room is still running. Once the room has
+    // broadcast its result, a duplicate/late report is rejected instead of
+    // rewriting the closed table.
+    if (this.room?.phase === 'finished') {
+      return Promise.reject(new MpSessionError(MP_ROOM_CLOSED,
+        'the room result has already been broadcast; a late finish report is rejected'));
+    }
+    return this.net.reportFinished(payload);
+  }
   finalizeStreams() { return this.net.finalizeStreams(); }
   streamsConverged() { return this.net.streamsConverged(); }
   waitForStreams(timeoutMs = 8000) { return this.net.waitForStreams(timeoutMs); }
@@ -327,6 +474,8 @@ export function mpStatus(session, extra = {}) {
     requestedCode: session.requestedCode,
     requestedCodeMismatch: session.requestedCodeMismatch,
     sessionCar: session.sessionCar,
+    mapId: session.roomMapId ?? session.startedInfo?.mapId ?? session.map ?? null,
+    map: session.startedInfo?.map ?? session.mapRecord,
     players: rosterForResult(session.room),
     remote: remote ? { id: remote.id, slot: remote.slot, name: remote.name, car: remote.car, connected: remote.connected !== false } : null,
     stats,

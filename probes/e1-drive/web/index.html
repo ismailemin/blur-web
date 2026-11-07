@@ -39,6 +39,9 @@
     <span id="mp-role" class="mp-status">—</span></div>
   <div class="mp-row"><span class="mp-key">car</span><select id="mp-car" aria-label="lobby car metadata"></select>
     <span class="mp-note">M1 races one car for both players; this pick is lobby metadata</span></div>
+  <div class="mp-row"><span class="mp-key">map</span><select id="mp-map" aria-label="room map selection"></select>
+    <span id="mp-map-status" class="mp-status">map not loaded</span></div>
+  <div class="mp-note">Host-only map selection · River 310 m / Amboy 2,060.595 m / Gracia 624.914 m · both clients verify the map/layout/physics hashes before READY</div>
   <div id="mp-players" class="mp-players"></div>
   <div class="mp-row">
     <button id="mp-ready" type="button">READY</button>
@@ -46,7 +49,7 @@
     <span id="mp-lobby-status" class="mp-status">connecting…</span>
   </div>
   <div class="mp-note" id="mp-server-note"></div>
-  <div class="mp-note">310 m · River · 2 players · WebSocket loopback room service · power-ups: add <code>&amp;powerups=1</code> (Mine/Shield/Repair) · AI off</div>
+  <div class="mp-note">2 players · host-selected River/Amboy/Gracia · WebSocket loopback room service · power-ups: River only, add <code>&amp;powerups=1</code> (Mine/Shield/Repair) · AI off</div>
 </div>
 <div id="results" hidden>
   <h2>FINISH</h2>
