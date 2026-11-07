@@ -296,6 +296,14 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Doğrulama **1.783/1.783**, native XT schema agreement, iki build byte-identical.
 - Kanıt: `docs/work/analysis/powerups.md`, `_work/powerups/powerups.json`.
 
+### E1w — Çok oyunculu yarış kural katmanı (R1)  ✅
+- `probes/race-rules/`: RaceDirector, CourseModel, ProgressTracker, RespawnPolicy,
+  ResultModel, RaceSession — motor/render/ağ bağımlılığı yok.
+- 310 m ve loop-01, 2/3/4 oyuncu; sıralı checkpoint, yanlış yol, off-course,
+  respawn, tur, finish sırası, beraberlik, DNF/disconnect, restart, host otoritesi.
+- **67/67** kontrol, 1.376 per-tick replay hash, iki koşu byte-identical.
+- Kanıt: `docs/work/analysis/race-rules.md`; ana suite'e eklendi.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

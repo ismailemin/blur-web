@@ -124,6 +124,10 @@ AmaxEvent; menzil/süre/hasar/onarım/kalkan değerleri gerçek, bilinmeyenler
 tipli. Kural prototipi **9/9**, doğrulama **1.783/1.783**. Kanıt:
 `docs/work/analysis/powerups.md`.
 
+**R1 — yarış kural katmanı:** `probes/race-rules/` 5 modül + `RaceSession`;
+310 m ve loop-01, 2/3/4 oyuncu, **67/67** kontrol, 1.376 replay hash. M1
+entegrasyonu için hazır. Kanıt: `docs/work/analysis/race-rules.md`.
+
 **T-003 Stage A+B tamam:** gruplu AABB birleşimi + cross-chunk bundle;
 blok27 22, blok15 12, blok17 2, blok26+32 20 → **56 instance / 34.632 vertex /
 25.521 üçgen**. Suite 30/30, CTest 15/15; headless Edge/WebGPU 22/36/56

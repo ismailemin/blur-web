@@ -785,6 +785,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Menzil/süre/hasar/onarım/kalkan gerçek değerler; charge/ammo/hedefleme/HUD binding `unknown` olarak tipli.
 - Kural prototipi **9/9**, doğrulama **1.783/1.783**, native XT schema agreement. Kanıt: `docs/work/analysis/powerups.md`.
 
+## 7 Kasım 2026 — çok oyunculu yarış kural katmanı
+
+- `probes/race-rules/`: RaceDirector, CourseModel, ProgressTracker, RespawnPolicy, ResultModel, RaceSession; motor/render/ağ bağımlılığı yok.
+- 310 m + loop-01, 2/3/4 oyuncu: sıralı checkpoint, yanlış yol, off-course/respawn, tur, finish/beraberlik, DNF/disconnect, restart, host otoritesi.
+- **67/67** kontrol, 1.376 per-tick replay hash, iki koşu byte-identical; ana suite'e eklendi. Kanıt: `docs/work/analysis/race-rules.md`.
+
 ## 7 Kasım 2026 — ana suite 36 kontrol
 
 - `tools/verify_asset_probe.py` artık power-up tanımları + kuralları, 62 araç matrisi, 19 harita matrisi ve V2 collider kapısını da çalıştırıyor.
