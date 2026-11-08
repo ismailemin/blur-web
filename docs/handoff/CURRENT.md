@@ -30,6 +30,14 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **59 araç, 11 har
   0 konsol hatası; her biri `verify_e1_map` 22/22 ve kendi e2e senaryosu 12/12.
 - **Kapı kuralı:** geniş collision parkurları için `course.gateRule:
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
+- **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
+  nitro, shock, barge, kalkan, tamir, bitiş, geri sayım, wreck).
+- **Işık:** retail ambient render'a uygulandı (river 0.2532, amboy 0.1331,
+  gracia 0.1780, longbeach 0.7699). Lightmap decode tamam ama lightmap UV
+  (`TEXCOORD0.zw`) commit'li pakette yok; bu yüzden lightmap render'a bağlı
+  değil (tipli blocker).
+- **Multiplayer:** yeni haritalarda da çalışıyor (Oval, Amboy MP; 2 oyuncu,
+  0 hata).
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Amboy/Gracia power-up:** retail yerleşim bağlı — Amboy **82**, Gracia **59**
   pickup, misafir hepsini alıyor; oda bayrağıyla `?powerups=1` gerekmiyor.
