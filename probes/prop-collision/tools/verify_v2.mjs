@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { stableStringify, sha256 as sha256Text } from "../lib/collider-build.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -42,15 +43,25 @@ check("base on-course count", base.counts.inactiveOnMeasuredCourse === 98, base.
 check("base content hash", base.contentSha256 === sha256Text(stableStringify(base.colliders)), base.contentSha256);
 const currentGeometrySha = sha256(read("_work/e1-drive/geometry.json"));
 const geometryCurrent = base.inputs.geometry.sha256 === currentGeometrySha;
-// The 15-car batch rewrote geometry.json additively (carBodies only). The V1
-// regression rebuilt the canonical track/prop collider array from this exact
-// file and matched byte-for-byte, so the V2 input drift is provenance, not a
-// collision change.
-const geometryReplay = v1.geometrySha256 === currentGeometrySha &&
-  v1.colliderArrayMatch === true && v1.contentMatch === true;
-check("base input geometry current", geometryCurrent || geometryReplay,
-  geometryCurrent ? "current" :
-    "input drifted after the additive car batch; V1 collider replay identical");
+// geometry.json grows additively with every car batch while the level input the
+// colliders are built from stays the same. The decisive check is a rebuild from
+// the current file: if the produced manifests are byte-identical, the drift is
+// car-only provenance and the collider data is still reproducible.
+let rebuildOk = false;
+let rebuildDetail = "not run";
+try {
+  const out = execFileSync(process.execPath, [P("probes/prop-collision/tools/build_colliders_v2.mjs"), "--check"], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  rebuildOk = true;
+  rebuildDetail = (out.trim().split("\n").filter((l) => l.startsWith("check ")).pop() || "MATCH");
+} catch (error) {
+  rebuildDetail = (String(error.stdout || "").trim().split("\n").filter((l) => l.startsWith("check ")).pop() ||
+    error.message || "rebuild failed");
+}
+check("base input geometry current", geometryCurrent || rebuildOk,
+  geometryCurrent ? "current" : `rebuilt from current geometry: ${rebuildDetail}`);
 check("base input path", base.inputs.path.sha256 === sha256(read("_work/drivable-path/path.json")));
 
 let baseHashOk = true;

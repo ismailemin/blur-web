@@ -43,6 +43,7 @@ const REGION_PATH = path.join(ROOT, "_work", "free-roam-prop", "region.json");
 const COMMITTED_PATH = path.join(ROOT, "_work", "prop-collision", "colliders.json");
 const OUT_BASE = path.join(ROOT, "_work", "prop-collision", "colliders-v2.json");
 const OUT_R04 = path.join(ROOT, "_work", "free-roam-prop", "colliders-r04-v2.json");
+const CHECK_ONLY = process.argv.includes("--check");
 
 const PINNED_PATH = "81eac0ce413075de33e2b3c0e1c077412b35002420b199d9f05d2fdeef230e7f";
 const COMMITTED_SHA = "a98fb8eb7e7a6f6851e0c6b5671d40be2c346d0c28a2442df0fe6ab497317af4";
@@ -150,7 +151,13 @@ base.scope.variantNote =
   "free-roam manifest is loaded.";
 const baseText = `${JSON.stringify(base, null, 1)}\n`;
 fs.mkdirSync(path.dirname(OUT_BASE), { recursive: true });
-fs.writeFileSync(OUT_BASE, baseText);
+const baseExisting = fs.existsSync(OUT_BASE) ? JSON.parse(fs.readFileSync(OUT_BASE, "utf8")) : null;
+// The file embeds the input hashes, so a car-only geometry growth changes the
+// text while leaving the collider data identical. The invariant is the data.
+const baseMatchesExisting = !!baseExisting &&
+  baseExisting.contentSha256 === base.contentSha256 &&
+  (baseExisting.colliders || []).length === base.colliders.length;
+if (!CHECK_ONLY) fs.writeFileSync(OUT_BASE, baseText);
 const baseFileSha = sha256(Buffer.from(baseText));
 
 console.log(`geometry v${geometry.version} ${sha256(geometryBytes)}`);
@@ -165,6 +172,9 @@ console.log(`  by class ${JSON.stringify(base.counts.byClass)}`);
 console.log(`  content sha256:${base.contentSha256}`);
 console.log(`  file    ${OUT_BASE}`);
 console.log(`  file    sha256:${baseFileSha}  ${Buffer.byteLength(baseText)} B`);
+if (CHECK_ONLY) {
+  console.log(`  check   ${baseMatchesExisting ? "MATCH" : "DRIFT"} vs committed manifest`);
+}
 
 // --------------------------------------------------------------------------
 // free-roam V2 manifest: P68a region replacement
@@ -463,7 +473,11 @@ const r04 = {
 };
 const r04Text = `${JSON.stringify(r04, null, 1)}\n`;
 fs.mkdirSync(path.dirname(OUT_R04), { recursive: true });
-fs.writeFileSync(OUT_R04, r04Text);
+const r04Existing = fs.existsSync(OUT_R04) ? JSON.parse(fs.readFileSync(OUT_R04, "utf8")) : null;
+const r04MatchesExisting = !!r04Existing &&
+  r04Existing.contentSha256 === r04.contentSha256 &&
+  (r04Existing.colliders || []).length === r04.colliders.length;
+if (!CHECK_ONLY) fs.writeFileSync(OUT_R04, r04Text);
 const r04FileSha = sha256(Buffer.from(r04Text));
 
 console.log("");
@@ -475,3 +489,8 @@ console.log(`  blocked arcs (all-visible) ${r04.road.allVisibleBlockedArcs.lengt
 console.log(`  content sha256:${r04.contentSha256}`);
 console.log(`  file    ${OUT_R04}`);
 console.log(`  file    sha256:${r04FileSha}  ${Buffer.byteLength(r04Text)} B`);
+if (CHECK_ONLY) {
+  console.log("");
+  console.log(`check base ${baseMatchesExisting ? "MATCH" : "DRIFT"}  r04 ${r04MatchesExisting ? "MATCH" : "DRIFT"}`);
+  process.exitCode = baseMatchesExisting && r04MatchesExisting ? 0 : 1;
+}
