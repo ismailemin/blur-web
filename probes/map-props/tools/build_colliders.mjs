@@ -71,6 +71,7 @@ for (const mapKey of maps) {
       triangles: manifest.counts.triangles,
       byClass: manifest.counts.byClass,
       byStructureClass: manifest.counts.byStructureClass,
+      unsupported: manifest.counts.unsupported,
     },
     path: {
       lengthM: manifest.path.lengthM,
@@ -107,6 +108,7 @@ for (const mapKey of maps) {
     byStructureClass: manifest.counts.byStructureClass,
     excluded: manifest.counts.excluded,
     outOfRegion: manifest.counts.outOfRegionByClass,
+    unsupported: manifest.counts.unsupported,
     coverage: {
       componentsTotal: manifest.coverage.componentsTotal,
       componentsInRegion: manifest.coverage.componentsInRegion,
@@ -152,6 +154,7 @@ for (const mapKey of maps) {
     `draws ${manifest.coverage.drawsWithCollider}/${manifest.coverage.drawsInRegion}; ` +
     `vertical structures ${manifest.coverage.verticalStructuresWithCollider}/${manifest.coverage.verticalStructuresInRegion}`);
   console.log(`   excluded ${JSON.stringify(manifest.counts.excluded)}`);
+  console.log(`   unsupported ${JSON.stringify(manifest.counts.unsupported)}`);
   console.log(`   path ${manifest.path.lengthM} m / ${manifest.path.samples} samples`);
   console.log(`   all-visible blocked ${manifest.path.allVisibleBlockedSamples} samples in ${manifest.path.allVisibleBlockedArcs.length} arcs: ` +
     manifest.path.allVisibleBlockedArcs.map((a) => `${a.arcStart}-${a.arcEnd}(${a.colliders})`).join(", "));

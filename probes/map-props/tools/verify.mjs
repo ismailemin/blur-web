@@ -300,6 +300,48 @@ function verifyMap(mapKey) {
   check(`${prefix}classification.censusDraws`, m.classification.textureCensus.reduce((n, r) => n + r.draws, 0) === pkg.render.draws.length);
   check(`${prefix}classification.structureCensus`, m.classification.structureClassCensus.reduce((n, r) => n + r.components, 0) === m.colliders.length);
 
+  // ---- typed unsupported records with source byte positions ----
+  const UNSUPPORTED_REASONS = new Set([...EXCLUDE_REASONS, "diagnostic-not-visible-opaque", "out-of-region"]);
+  const indexFile = pkg.render.buffers.indices.path;
+  const indexBytes = pkg.render.buffers.indices.bytes;
+  const unsupported = Array.isArray(m.unsupported) ? m.unsupported : [];
+  const badUnsupported = [];
+  for (const u of unsupported) {
+    const problems = [];
+    if (u.type !== "unsupported") problems.push("type");
+    if (!UNSUPPORTED_REASONS.has(u.reason)) problems.push("reason");
+    if (u.source?.file !== indexFile) problems.push("source-file");
+    const off = u.source?.byteOffset ?? u.source?.byteOffsetMin;
+    const end = u.source?.byteOffsetMax ?? (u.source?.byteOffset + u.source?.byteLength);
+    if (!Number.isInteger(off) || off < 0) problems.push("byte-offset");
+    if (!Number.isInteger(end) || end < off || end > indexBytes) problems.push("byte-end");
+    if (problems.length) badUnsupported.push({ id: u.id, problems });
+  }
+  check(`${prefix}unsupported.array`, unsupported.length > 0, unsupported.length);
+  check(`${prefix}unsupported.records`, badUnsupported.length === 0, badUnsupported.slice(0, 10));
+  check(`${prefix}unsupported.sorted`, unsupported.every((u, i) => i === 0 || unsupported[i - 1].id < u.id));
+  check(`${prefix}unsupported.diagnosticDraws`,
+    unsupported.filter((u) => u.reason === "diagnostic-not-visible-opaque").length === pkg.diagnostics.draws.length,
+    { records: unsupported.filter((u) => u.reason === "diagnostic-not-visible-opaque").length, draws: pkg.diagnostics.draws.length });
+  check(`${prefix}unsupported.excludedReasons`,
+    Object.keys(m.counts.excluded).every((reason) => unsupported.some((u) => u.reason === reason && u.count === m.counts.excluded[reason])));
+  check(`${prefix}unsupported.outOfRegion`,
+    Object.keys(m.counts.outOfRegionByClass).every((cls) => unsupported.some((u) => u.reason === "out-of-region" && u.id === `out-of-region.${cls}` && u.count === m.counts.outOfRegionByClass[cls])));
+  check(`${prefix}unsupported.counts`, m.counts.unsupported?.total === unsupported.length &&
+    m.counts.unsupported?.diagnosticDraws === pkg.diagnostics.draws.length &&
+    m.counts.unsupported?.excludedComponents === m.excluded.length &&
+    m.counts.unsupported?.outOfRegionComponents === Object.values(m.counts.outOfRegionByClass).reduce((a, b) => a + b, 0),
+  m.counts.unsupported);
+  check(`${prefix}excluded.typed`, m.excluded.every((e) =>
+    e.type === "unsupported" && e.source?.file === indexFile &&
+    Number.isInteger(e.source?.byteOffset) && e.source.byteOffset >= 0 &&
+    Number.isInteger(e.source?.byteLength) && e.source.byteOffset + e.source.byteLength <= indexBytes),
+  m.excluded.filter((e) => e.type !== "unsupported" || !e.source).slice(0, 5).map((e) => e.id));
+  check(`${prefix}excluded.sourceMatchesDraw`, m.excluded.every((e) => {
+    const draw = renderById.get(e.source?.drawId);
+    return draw && e.source.byteOffset === draw.firstIndex * 4 && e.source.byteLength === draw.indexCount * 4;
+  }));
+
   // ---- path clearance recomputed with the committed resolver ----
   const pathIndex = buildPathIndex(pkg.path);
   const worldAll = createWorld(m, { profile: "all-visible" });
@@ -377,6 +419,29 @@ function verifyMap(mapKey) {
     recomputed: round6(minD), recorded: m.path.minClearanceM,
   });
   check(`${prefix}path.minClearanceCollider`, minId === m.path.minClearanceColliderId, { recomputed: minId, recorded: m.path.minClearanceColliderId });
+
+  // ---- drivable band and start grid ----
+  // Every collider must lie inside the documented drivable band (the measured
+  // path plus the region distance); a collider outside it would be unreachable
+  // and would mean the region rule was not applied.
+  const offBand = m.colliders.filter(
+    (c) => !(c.distanceToPath >= 0 && c.distanceToPath <= BUILD_DEFAULTS.regionDistance + 1e-3),
+  );
+  check(`${prefix}colliders.onDrivableBand`, offBand.length === 0, offBand.slice(0, 5).map((c) => c.id));
+  // A ground sample that fell back to the layout ground is allowed, but it must
+  // say so (`groundExact:false` + a recorded source); it is never silent.
+  const groundFallbacks = m.colliders.filter((c) => c.vertical.groundExact === false);
+  check(`${prefix}colliders.groundFallbackRecorded`,
+    groundFallbacks.every((c) => typeof c.vertical.groundSource === "string" && c.vertical.groundSource.length > 0),
+    groundFallbacks.slice(0, 5).map((c) => c.id));
+  // The start grid must be clear under both profiles: the spawn pose is a car
+  // envelope and no collider may overlap it.
+  const spawn = pkg.layout.spawn;
+  for (const profile of ["roadside", "all-visible"]) {
+    const spawnWorld = createWorld(m, { profile });
+    const spawnHits = spawnWorld.contactsAll(spawn.x, spawn.z, spawn.heading, spawn.ground, CAR_ENVELOPE);
+    check(`${prefix}startGrid.clear.${profile}`, spawnHits.length === 0, spawnHits.map((h) => h.colliderId));
+  }
 
   // ---- component-split cross-check against the committed implementation ----
   const accessor = meshAccessor({
@@ -556,6 +621,7 @@ const text = `${JSON.stringify(verify, null, 1)}\n`;
 fs.writeFileSync(path.join(OUT_DIR, "verify.json"), text);
 
 console.log(`checks ${verify.checks}, errors ${verify.errors}, status ${verify.status}`);
+console.log(`${verify.checks - verify.errors}/${verify.checks} checks passed`);
 for (const f of failures.slice(0, 20)) console.log(`  FAIL ${f.name}: ${JSON.stringify(f.detail)}`);
 for (const k of Object.keys(MAPS)) {
   const v = verify.maps[k];

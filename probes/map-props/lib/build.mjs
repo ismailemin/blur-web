@@ -218,6 +218,7 @@ export function deriveColliders(pkg, options = {}) {
   const colliders = [];
   const excluded = [];
   const outOfRegion = new Map();
+  const outOfRegionSource = new Map();
   const textureCensus = new Map();
   const structureCensus = new Map();
   const excludedCounts = new Map();
@@ -241,6 +242,22 @@ export function deriveColliders(pkg, options = {}) {
   const passThrough = [];
 
   const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
+
+  // Every component is traceable to the shared index buffer.  The byte offset
+  // is the start of the containing draw's index range; the component index
+  // identifies the vertex-connected component inside that range.  No byte
+  // position is invented: it is `firstIndex * 4` from the committed render
+  // package (Uint32 indices, 4 bytes each).
+  const indexFile = pkg.render.buffers.indices.path;
+  const sourceOf = (draw, componentIndex = null) => ({
+    package: pkg.meta.packageDir,
+    file: indexFile,
+    byteOffset: draw.firstIndex * 4,
+    byteLength: draw.indexCount * 4,
+    indexRange: [draw.firstIndex, draw.firstIndex + draw.indexCount],
+    drawId: draw.drawId,
+    componentIndex,
+  });
 
   for (const draw of pkg.render.draws) {
     componentStats.drawsTotal += 1;
@@ -273,6 +290,21 @@ export function deriveColliders(pkg, options = {}) {
       if (hullDist === null || hullDist > opts.regionDistance) {
         componentStats.componentsOutOfRegion += 1;
         bump(outOfRegion, cls.kind);
+        const row = outOfRegionSource.get(cls.kind) ?? {
+          count: 0,
+          byteOffsetMin: Infinity,
+          byteOffsetMax: -Infinity,
+          indexRangeMin: Infinity,
+          indexRangeMax: -Infinity,
+          draws: new Set(),
+        };
+        row.count += 1;
+        row.byteOffsetMin = Math.min(row.byteOffsetMin, draw.firstIndex * 4);
+        row.byteOffsetMax = Math.max(row.byteOffsetMax, (draw.firstIndex + draw.indexCount) * 4);
+        row.indexRangeMin = Math.min(row.indexRangeMin, draw.firstIndex);
+        row.indexRangeMax = Math.max(row.indexRangeMax, draw.firstIndex + draw.indexCount);
+        row.draws.add(draw.drawId);
+        outOfRegionSource.set(cls.kind, row);
         continue;
       }
       componentStats.componentsInRegion += 1;
@@ -311,7 +343,9 @@ export function deriveColliders(pkg, options = {}) {
 
       const base = {
         id,
-        source: "track-visual",
+        type: "unsupported",
+        source: sourceOf(draw, ci),
+        sourceKind: "track-visual",
         drawId: draw.drawId,
         section: draw.section ?? null,
         texture: name,
@@ -509,6 +543,7 @@ export function deriveColliders(pkg, options = {}) {
     colliders,
     excluded,
     outOfRegion: Object.fromEntries([...outOfRegion.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))),
+    outOfRegionSource: Object.fromEntries([...outOfRegionSource.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))),
     excludedCounts: Object.fromEntries([...excludedCounts.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))),
     textureCensus: [...textureCensus.values()].sort((a, b) => (a.kind < b.kind ? -1 : 1)),
     structureCensus: [...structureCensus.values()].sort((a, b) => (a.class < b.class ? -1 : 1)),
@@ -736,6 +771,82 @@ export function buildManifest(pkg, options = {}) {
     return { kind: row.kind, draws: row.draws, triangles: row.triangles, distinctTextures: textures.size };
   });
 
+  // ------------------------------------------------------------------
+  // typed unsupported records
+  //
+  // Every case that did not become a collider is named here with the source
+  // byte position it came from.  Nothing is guessed and nothing is silently
+  // dropped:
+  //   - diagnostic draws are not visible opaque geometry;
+  //   - in-region components excluded by the documented rules are listed
+  //     per component in `excluded[]` (each row is type:"unsupported") and
+  //     aggregated here by reason;
+  //   - out-of-region components are aggregated by class with the byte range
+  //     of the draws that contain them.
+  // ------------------------------------------------------------------
+  const indexFile = pkg.render.buffers.indices.path;
+  const indexBytes = pkg.render.buffers.indices.bytes;
+  const unsupported = [];
+  for (const d of pkg.diagnostics.draws) {
+    unsupported.push({
+      type: "unsupported",
+      id: `diagnostic.${d.drawId}`,
+      reason: "diagnostic-not-visible-opaque",
+      detail: `${d.status}: ${d.diagnostic?.reason ?? "not part of the visible opaque draw list"}`,
+      source: {
+        package: pkg.meta.packageDir,
+        file: indexFile,
+        byteOffset: d.firstIndex * 4,
+        byteLength: d.indexCount * 4,
+        indexRange: [d.firstIndex, d.firstIndex + d.indexCount],
+        drawId: d.drawId,
+        componentIndex: null,
+      },
+    });
+  }
+  for (const [reason, count] of Object.entries(derived.excludedCounts)) {
+    const rows = excluded.filter((e) => e.reason === reason);
+    const byteOffsetMin = Math.min(...rows.map((e) => e.source.byteOffset));
+    const byteOffsetMax = Math.max(...rows.map((e) => e.source.byteOffset + e.source.byteLength));
+    unsupported.push({
+      type: "unsupported",
+      id: `excluded.${reason}`,
+      reason,
+      count,
+      detail:
+        `${count} in-region components were not turned into a collider; each row in excluded[] ` +
+        "is type:\"unsupported\" with its own source byte position",
+      source: {
+        package: pkg.meta.packageDir,
+        file: indexFile,
+        byteOffsetMin,
+        byteOffsetMax,
+        draws: new Set(rows.map((e) => e.source.drawId)).size,
+      },
+    });
+  }
+  for (const [cls, row] of Object.entries(derived.outOfRegionSource)) {
+    unsupported.push({
+      type: "unsupported",
+      id: `out-of-region.${cls}`,
+      reason: "out-of-region",
+      count: row.count,
+      detail:
+        `${row.count} components of class "${cls}" are farther than ${opts.regionDistance} m from the ` +
+        "measured path; they are counted but not extracted into this collider layer",
+      source: {
+        package: pkg.meta.packageDir,
+        file: indexFile,
+        byteOffsetMin: row.byteOffsetMin,
+        byteOffsetMax: row.byteOffsetMax,
+        indexRangeMin: row.indexRangeMin,
+        indexRangeMax: row.indexRangeMax,
+        draws: row.draws.size,
+      },
+    });
+  }
+  unsupported.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
   const manifest = {
     schema: "blur.map-props/1",
     kind: "map-props-colliders",
@@ -903,6 +1014,12 @@ export function buildManifest(pkg, options = {}) {
       byStructureClass,
       excluded: derived.excludedCounts,
       outOfRegionByClass: derived.outOfRegion,
+      unsupported: {
+        total: unsupported.length,
+        diagnosticDraws: pkg.diagnostics.draws.length,
+        excludedComponents: excluded.length,
+        outOfRegionComponents: Object.values(derived.outOfRegion).reduce((a, b) => a + b, 0),
+      },
       bounds: { min: bounds.min.map(round6), max: bounds.max.map(round6) },
       boundsActive: boundsActive ? { min: boundsActive.min.map(round6), max: boundsActive.max.map(round6) } : null,
     },
@@ -942,6 +1059,7 @@ export function buildManifest(pkg, options = {}) {
     onMeasuredPath: path.onPathRows,
     colliders,
     excluded,
+    unsupported,
     contentSha256: sha256(stableStringify(colliders)),
   };
   return { manifest, derived, path };
