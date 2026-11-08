@@ -13,6 +13,14 @@
  *  - `update()` is idempotent: the same state writes no text and no attributes.
  *  - `destroy()` removes the resize listener and the mounted root.
  *
+ * Presentation additions (`blur.hud-runtime/1`, project art):
+ *  - speed gauge: CSS conic-gradient driven by `speedMps / maxSpeedMps`
+ *  - gear mapping: `0` -> N, negative -> R, `1..6` -> digit
+ *  - power-up charges node and a cooldown ring from `secondsLeft / cooldownSeconds`
+ *  - health/shield colour ramp via `data-level="ok|warn|critical|missing"`
+ *  - countdown overlay (`countdown: { label, secondsLeft }`)
+ *  - wrong-way banner (`wrongWay: true`)
+ *
  * Import contract:
  *   import { createHud, HUD_SCHEMA } from './runtime-hud.mjs';
  *   import { HUD_DOCUMENT } from './hud-document.mjs';
@@ -76,34 +84,96 @@ function parsePowerup(value, hudDoc) {
   let type = null;
   let charges = null;
   let secondsLeft = null;
+  let cooldownSeconds = null;
   if (typeof value === 'string') {
     type = value.length > 0 ? value : null;
   } else if (value && typeof value === 'object') {
     type = typeof value.type === 'string' && value.type.length > 0 ? value.type : null;
-    charges = finite(value.charges) ? value.charges : null;
-    secondsLeft = finite(value.secondsLeft) ? value.secondsLeft : null;
+    charges = finite(value.charges) && value.charges >= 0 ? value.charges : null;
+    secondsLeft = finite(value.secondsLeft) && value.secondsLeft >= 0 ? value.secondsLeft : null;
+    cooldownSeconds = finite(value.cooldownSeconds) && value.cooldownSeconds > 0
+      ? value.cooldownSeconds
+      : null;
   }
   if (type === null) {
     return {
       type: null,
       label: missingText,
       glyph: hudDoc.labels.emptyGlyph.text,
-      detail: '',
+      chargesText: missingText,
+      chargesMissing: true,
+      detail: missingText,
+      detailMissing: true,
+      cooldownPercent: null,
       kind: 'missing',
       missing: true
     };
   }
   const known = hudDoc.powerups[type] ?? null;
-  const parts = [];
-  if (charges !== null) parts.push(hudDoc.format.chargesPrefix + charges);
-  if (secondsLeft !== null) parts.push(secondsLeft.toFixed(2) + ' ' + hudDoc.format.secondsSuffix);
+  const cooldownPercent = secondsLeft !== null && cooldownSeconds !== null
+    ? clamp((secondsLeft / cooldownSeconds) * 100, 0, 100)
+    : null;
   return {
     type,
     label: known ? known.label : type,
     glyph: known ? known.glyph : hudDoc.labels.unknownGlyph.text,
-    detail: parts.join(' ' + hudDoc.format.detailSeparator + ' '),
+    chargesText: charges === null ? missingText : hudDoc.format.chargesPrefix + charges,
+    chargesMissing: charges === null,
+    detail: secondsLeft === null
+      ? missingText
+      : secondsLeft.toFixed(2) + ' ' + hudDoc.format.secondsSuffix,
+    detailMissing: secondsLeft === null,
+    cooldownPercent,
     kind: known ? type.toLowerCase() : 'unknown',
     missing: false
+  };
+}
+
+/**
+ * Gear display mapping: `0` -> `N`, any negative integer -> `R`, `1..gearMax`
+ * -> the digit. A non-integer or an out-of-range integer is unsupported and
+ * renders the missing placeholder with an explicit `data-gear` state.
+ */
+function parseGear(value, hudDoc) {
+  if (!finite(value) || !Number.isInteger(value)) {
+    return { text: null, state: 'missing' };
+  }
+  if (value === 0) return { text: hudDoc.format.gearNeutral, state: 'neutral' };
+  if (value < 0) return { text: hudDoc.format.gearReverse, state: 'reverse' };
+  const max = Number.isInteger(hudDoc.format.gearMax) ? hudDoc.format.gearMax : 6;
+  if (value <= max) return { text: String(value), state: 'forward' };
+  return { text: null, state: 'out-of-range' };
+}
+
+/** Colour-ramp bucket for a meter. Thresholds are project choices, not retail. */
+function meterLevel(percent) {
+  if (percent === null) return 'missing';
+  if (percent >= 60) return 'ok';
+  if (percent >= 30) return 'warn';
+  return 'critical';
+}
+
+/**
+ * Countdown overlay hook. Visible when `label` or `secondsLeft` is present;
+ * a missing half renders `—` with `data-missing="1"` instead of a guess.
+ */
+function parseCountdown(value, hudDoc) {
+  const missingText = hudDoc.labels.missing.text;
+  const source = value && typeof value === 'object' ? value : null;
+  const label = source && typeof source.label === 'string' && source.label.length > 0
+    ? source.label
+    : null;
+  const seconds = source && finite(source.secondsLeft) && source.secondsLeft >= 0
+    ? source.secondsLeft
+    : null;
+  return {
+    visible: label !== null || seconds !== null,
+    label: label === null ? missingText : label,
+    labelMissing: label === null,
+    secondsText: seconds === null
+      ? missingText
+      : seconds.toFixed(1) + ' ' + hudDoc.format.secondsSuffix,
+    secondsMissing: seconds === null
   };
 }
 
@@ -193,7 +263,8 @@ export function createHud(options = EMPTY) {
   }
   for (const key of [
     'rootAria', 'position', 'lap', 'time', 'best', 'speedUnit', 'gear', 'powerup',
-    'health', 'shield', 'feed', 'missing', 'emptyGlyph', 'unknownGlyph'
+    'health', 'shield', 'feed', 'wrongWay', 'countdown', 'speedGauge', 'cooldown',
+    'charges', 'missing', 'emptyGlyph', 'unknownGlyph'
   ]) {
     if (labelText(hudDoc.labels[key], null) === null) {
       throw new TypeError('createHud({ doc, host, now }): doc.labels.' + key + ' is missing');
@@ -306,15 +377,35 @@ export function createHud(options = EMPTY) {
 
   const speedCard = element('div', 'blur-hud__card blur-hud__card--speed');
   speedCard.setAttribute('data-element', 'speed');
+  const speedGauge = element('div', 'blur-hud__gauge', 'blur-hud-speed-gauge');
+  speedGauge.setAttribute('data-gauge', 'speed');
+  speedGauge.setAttribute('role', 'progressbar');
+  speedGauge.setAttribute('aria-label', labelText(hudDoc.labels.speedGauge, missingText));
+  speedGauge.setAttribute('aria-valuemin', '0');
+  speedGauge.setAttribute('aria-valuemax', '100');
+  speedGauge.setAttribute('data-missing', '1');
+  const speedGaugeTrack = element('div', 'blur-hud__gauge-track');
+  speedGaugeTrack.setAttribute('aria-hidden', 'true');
+  const speedGaugeTicks = element('div', 'blur-hud__gauge-ticks');
+  speedGaugeTicks.setAttribute('aria-hidden', 'true');
+  const speedGaugeFill = element('div', 'blur-hud__gauge-fill');
+  speedGaugeFill.setAttribute('aria-hidden', 'true');
+  const speedGaugeDial = element('div', 'blur-hud__gauge-dial');
   const speedNode = textField('span', 'blur-hud__value blur-hud__value--speed',
     'blur-hud-speed', 'speed');
   const speedUnitNode = staticLabel('span', 'blur-hud__unit', 'blur-hud-speed-unit', hudDoc.labels.speedUnit);
   speedUnitNode.setAttribute('data-field', 'speed-unit');
-  speedCard.appendChild(speedNode);
-  speedCard.appendChild(speedUnitNode);
+  speedGaugeDial.appendChild(speedNode);
+  speedGaugeDial.appendChild(speedUnitNode);
+  speedGauge.appendChild(speedGaugeTrack);
+  speedGauge.appendChild(speedGaugeTicks);
+  speedGauge.appendChild(speedGaugeFill);
+  speedGauge.appendChild(speedGaugeDial);
+  speedCard.appendChild(speedGauge);
 
   const gearCard = element('div', 'blur-hud__card blur-hud__card--gear');
   gearCard.setAttribute('data-element', 'gear');
+  gearCard.setAttribute('data-gear', 'missing');
   const gearLabel = staticLabel('span', 'blur-hud__label', null, hudDoc.labels.gear);
   const gearNode = textField('span', 'blur-hud__value', 'blur-hud-gear', 'gear');
   gearCard.appendChild(gearLabel);
@@ -332,15 +423,35 @@ export function createHud(options = EMPTY) {
   powerupCard.setAttribute('data-kind', 'missing');
   powerupCard.setAttribute('aria-label', labelText(hudDoc.labels.powerup, missingText));
   const powerupLabel = staticLabel('span', 'blur-hud__label', null, hudDoc.labels.powerup);
+  const powerupRow = element('div', 'blur-hud__powerup-row');
+  const cooldownRing = element('div', 'blur-hud__ring', 'blur-hud-powerup-cooldown');
+  cooldownRing.setAttribute('data-gauge', 'cooldown');
+  cooldownRing.setAttribute('role', 'progressbar');
+  cooldownRing.setAttribute('aria-label', labelText(hudDoc.labels.cooldown, missingText));
+  cooldownRing.setAttribute('aria-valuemin', '0');
+  cooldownRing.setAttribute('aria-valuemax', '100');
+  cooldownRing.setAttribute('data-missing', '1');
+  const cooldownTrack = element('div', 'blur-hud__ring-track');
+  cooldownTrack.setAttribute('aria-hidden', 'true');
+  const cooldownFill = element('div', 'blur-hud__ring-fill');
+  cooldownFill.setAttribute('aria-hidden', 'true');
+  cooldownRing.appendChild(cooldownTrack);
+  cooldownRing.appendChild(cooldownFill);
   const powerupGlyphNode = element('span', 'blur-hud__glyph', 'blur-hud-powerup-glyph');
   powerupGlyphNode.setAttribute('data-field', 'powerup-glyph');
   powerupGlyphNode.textContent = hudDoc.labels.emptyGlyph.text;
+  powerupRow.appendChild(cooldownRing);
+  powerupRow.appendChild(powerupGlyphNode);
   const powerupNode = textField('span', 'blur-hud__value', 'blur-hud-powerup', 'powerup');
+  const powerupChargesNode = textField('span', 'blur-hud__charges',
+    'blur-hud-powerup-charges', 'powerup-charges');
+  powerupChargesNode.setAttribute('aria-label', labelText(hudDoc.labels.charges, missingText));
   const powerupDetailNode = element('span', 'blur-hud__detail', 'blur-hud-powerup-detail');
   powerupDetailNode.setAttribute('data-field', 'powerup-detail');
   powerupCard.appendChild(powerupLabel);
-  powerupCard.appendChild(powerupGlyphNode);
+  powerupCard.appendChild(powerupRow);
   powerupCard.appendChild(powerupNode);
+  powerupCard.appendChild(powerupChargesNode);
   powerupCard.appendChild(powerupDetailNode);
   powerupCluster.appendChild(powerupCard);
   root.appendChild(powerupCluster);
@@ -384,6 +495,29 @@ export function createHud(options = EMPTY) {
   feedWrap.appendChild(feed);
   root.appendChild(feedWrap);
 
+  // ------------------------------------------------------- overlays (hooks)
+  const countdown = element('div', 'blur-hud__countdown', 'blur-hud-countdown');
+  countdown.setAttribute('data-element', 'countdown');
+  countdown.setAttribute('role', 'status');
+  countdown.setAttribute('aria-live', 'assertive');
+  countdown.setAttribute('aria-label', labelText(hudDoc.labels.countdown, missingText));
+  countdown.setAttribute('hidden', '');
+  const countdownLabelNode = textField('span', 'blur-hud__countdown-label',
+    'blur-hud-countdown-label', 'countdown-label');
+  const countdownSecondsNode = textField('span', 'blur-hud__countdown-seconds',
+    'blur-hud-countdown-seconds', 'countdown-seconds');
+  countdown.appendChild(countdownLabelNode);
+  countdown.appendChild(countdownSecondsNode);
+  root.appendChild(countdown);
+
+  const wrongWayNode = element('div', 'blur-hud__wrongway', 'blur-hud-wrongway');
+  wrongWayNode.setAttribute('data-element', 'wrongway');
+  wrongWayNode.setAttribute('role', 'status');
+  wrongWayNode.setAttribute('aria-live', 'assertive');
+  wrongWayNode.setAttribute('hidden', '');
+  wrongWayNode.textContent = labelText(hudDoc.labels.wrongWay, missingText);
+  root.appendChild(wrongWayNode);
+
   const fieldNodes = {
     speed: speedNode,
     speedUnit: speedUnitNode,
@@ -396,9 +530,12 @@ export function createHud(options = EMPTY) {
     bestLap: bestLapNode,
     powerup: powerupNode,
     powerupGlyph: powerupGlyphNode,
+    powerupCharges: powerupChargesNode,
     powerupDetail: powerupDetailNode,
     health: healthNode,
-    shield: shieldNode
+    shield: shieldNode,
+    countdownLabel: countdownLabelNode,
+    countdownSeconds: countdownSecondsNode
   };
 
   // --------------------------------------------------------------- writers
@@ -446,6 +583,59 @@ export function createHud(options = EMPTY) {
       cache[key + ':missing'] = flag;
       metrics.attrWrites += 1;
     }
+  }
+
+  /** Set a CSS custom property on both a real `CSSStyleDeclaration` and the shim. */
+  function setVar(node, name, value) {
+    if (node.style && typeof node.style.setProperty === 'function') {
+      node.style.setProperty(name, value);
+    } else if (node.style) {
+      node.style[name] = value;
+    }
+  }
+
+  /**
+   * CSS-only gauge/ring. `data-percent` is the snapshot source of truth; the
+   * `--gauge` custom property drives the conic-gradient fill.
+   */
+  function writeGauge(key, node, percent, missing) {
+    const pct = percent === null ? null : round1(clamp(percent, 0, 100));
+    const data = pct === null ? null : String(pct);
+    if (cache[key + ':pct'] !== data) {
+      if (data === null) node.removeAttribute('data-percent');
+      else node.setAttribute('data-percent', data);
+      cache[key + ':pct'] = data;
+      metrics.attrWrites += 1;
+    }
+    const css = pct === null ? '0' : String(pct);
+    if (cache[key + ':css'] !== css) {
+      setVar(node, '--gauge', css);
+      cache[key + ':css'] = css;
+      metrics.attrWrites += 1;
+    }
+    const aria = pct === null ? null : String(pct);
+    if (cache[key + ':aria'] !== aria) {
+      if (aria === null) node.removeAttribute('aria-valuenow');
+      else node.setAttribute('aria-valuenow', aria);
+      cache[key + ':aria'] = aria;
+      metrics.attrWrites += 1;
+    }
+    const flag = missing === true;
+    if (cache[key + ':missing'] !== flag) {
+      if (flag) node.setAttribute('data-missing', '1');
+      else node.removeAttribute('data-missing');
+      cache[key + ':missing'] = flag;
+      metrics.attrWrites += 1;
+    }
+  }
+
+  /** Toggle a boolean attribute (`hidden`) without touching it when unchanged. */
+  function writeFlag(key, node, name, flag) {
+    if (cache[key] === flag) return;
+    if (flag) node.setAttribute(name, '');
+    else node.removeAttribute(name);
+    cache[key] = flag;
+    metrics.attrWrites += 1;
   }
 
   function renderFeed(items, missing) {
@@ -500,13 +690,13 @@ export function createHud(options = EMPTY) {
     const mph = speed === null ? null : Math.round(speed * hudDoc.format.speedFactor);
     writeText('speed', speedNode, mph === null ? missingText : String(mph), mph === null);
 
-    let gearText = null;
-    if (finite(s.gear)) {
-      if (s.gear === 0) gearText = hudDoc.format.gearNeutral;
-      else if (s.gear < 0) gearText = hudDoc.format.gearReverse;
-      else gearText = String(s.gear);
-    }
-    writeText('gear', gearNode, gearText === null ? missingText : gearText, gearText === null);
+    const maxSpeed = finite(s.maxSpeedMps) && s.maxSpeedMps > 0 ? s.maxSpeedMps : null;
+    const speedGaugePercent = speed === null || maxSpeed === null ? null : (speed / maxSpeed) * 100;
+    writeGauge('speedGauge', speedGauge, speedGaugePercent, speedGaugePercent === null);
+
+    const gear = parseGear(s.gear, hudDoc);
+    writeText('gear', gearNode, gear.text === null ? missingText : gear.text, gear.text === null);
+    writeAttr('gearState', gearCard, 'data-gear', gear.state);
 
     const position = positiveInt(s.position) ? s.position : null;
     const fieldSize = positiveInt(s.fieldSize) ? s.fieldSize : null;
@@ -530,19 +720,31 @@ export function createHud(options = EMPTY) {
     const powerup = parsePowerup(s.powerup, hudDoc);
     writeText('powerup', powerupNode, powerup.label, powerup.missing);
     writeText('powerupGlyph', powerupGlyphNode, powerup.glyph, false);
-    writeText('powerupDetail', powerupDetailNode, powerup.detail, false);
+    writeText('powerupCharges', powerupChargesNode, powerup.chargesText, powerup.chargesMissing);
+    writeText('powerupDetail', powerupDetailNode, powerup.detail, powerup.detailMissing);
     writeAttr('powerupKind', powerupCard, 'data-kind', powerup.kind);
+    writeGauge('cooldown', cooldownRing, powerup.cooldownPercent, powerup.cooldownPercent === null);
 
     const health = parseMeter(s.health, hudDoc);
     writeText('health', healthNode, health.text, health.missing);
     writeBar('healthBar', healthBar.fill, health.percent, health.missing);
+    writeAttr('healthLevel', healthBar.fill, 'data-level', meterLevel(health.percent));
 
     const shield = parseMeter(s.shield, hudDoc);
     writeText('shield', shieldNode, shield.text, shield.missing);
     writeBar('shieldBar', shieldBar.fill, shield.percent, shield.missing);
+    writeAttr('shieldLevel', shieldBar.fill, 'data-level', meterLevel(shield.percent));
 
     const feedState = parseFeed(s.feed, hudDoc, nowValue);
     renderFeed(feedState.items, feedState.missing);
+
+    const countdownState = parseCountdown(s.countdown, hudDoc);
+    writeText('countdownLabel', countdownLabelNode, countdownState.label, countdownState.labelMissing);
+    writeText('countdownSeconds', countdownSecondsNode, countdownState.secondsText,
+      countdownState.secondsMissing);
+    writeFlag('countdownVisible', countdown, 'hidden', !countdownState.visible);
+
+    writeFlag('wrongWayVisible', wrongWayNode, 'hidden', s.wrongWay !== true);
 
     return true;
   }
@@ -552,7 +754,20 @@ export function createHud(options = EMPTY) {
     const aria = node.getAttribute('aria-valuenow');
     const missing = node.getAttribute('data-missing') === '1';
     const percent = aria === null ? null : Number(aria);
-    return { percent: Number.isFinite(percent) ? percent : null, missing };
+    return {
+      percent: Number.isFinite(percent) ? percent : null,
+      missing,
+      level: node.getAttribute('data-level') ?? 'missing'
+    };
+  }
+
+  function readGauge(node) {
+    const raw = node.getAttribute('data-percent');
+    const percent = raw === null ? null : Number(raw);
+    return {
+      percent: Number.isFinite(percent) ? percent : null,
+      missing: node.getAttribute('data-missing') === '1'
+    };
   }
 
   function snapshot() {
@@ -588,12 +803,25 @@ export function createHud(options = EMPTY) {
         powerup: powerupLabel.textContent,
         health: healthLabel.textContent,
         shield: shieldLabel.textContent,
-        feed: feedLabel.textContent
+        feed: feedLabel.textContent,
+        wrongWay: wrongWayNode.textContent
       },
       fields,
       bars: {
         health: readBar(healthBar.fill),
         shield: readBar(shieldBar.fill)
+      },
+      gauges: {
+        speed: readGauge(speedGauge),
+        cooldown: readGauge(cooldownRing)
+      },
+      countdown: {
+        visible: countdown.getAttribute('hidden') === null,
+        missing: countdownLabelNode.getAttribute('data-missing') === '1'
+          && countdownSecondsNode.getAttribute('data-missing') === '1'
+      },
+      wrongWay: {
+        visible: wrongWayNode.getAttribute('hidden') === null
       },
       feed: {
         items,

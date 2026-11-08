@@ -69,6 +69,11 @@ export const HUD_DOCUMENT = Object.freeze({
     health: retail('HUD_HEALTH', 'HEALTH'),
     shield: retail('HUD_ENERGY', 'SHIELD'),
     feed: project('Events', 'hud.loc has no feed heading; HUD_PT_* are the individual event strings'),
+    wrongWay: project('WRONG WAY', 'hud.loc has no wrong-way banner string; project constant'),
+    countdown: project('Countdown', 'accessibility label for the countdown overlay; hud.loc has no countdown heading'),
+    speedGauge: project('Speed gauge', 'accessibility label for the CSS speed gauge; hud.loc has only the HUD_0_SPEED_MPH readout'),
+    cooldown: project('Cooldown', 'accessibility label for the power-up cooldown ring; hud.loc has no cooldown label'),
+    charges: project('Charges', 'accessibility label for the power-up charge count; hud.loc has no charge label'),
     missing: placeholder('—'),
     unknownGlyph: placeholder('?'),
     emptyGlyph: placeholder('·')
@@ -111,6 +116,8 @@ export const HUD_DOCUMENT = Object.freeze({
     speedFactor: 2.2369362920544,
     gearNeutral: 'N',
     gearReverse: 'R',
+    /** Highest forward gear the HUD maps to a digit; above this is out of range. */
+    gearMax: 6,
     chargesPrefix: '×',
     detailSeparator: '·',
     secondsSuffix: 's',

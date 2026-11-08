@@ -2,9 +2,18 @@
  *
  * The DOM and every label come from `runtime-hud.mjs` / `hud-document.mjs`.
  * This file only lays them out: a full-screen, pointer-transparent overlay with
- * four corner clusters. Colours and type are project choices, labelled as such;
- * no retail colour or font metric is claimed here.
+ * four corner clusters plus the countdown / wrong-way hooks.
+ *
+ * The speed gauge, cooldown ring, colour ramp, spacing, colours and type are
+ * project choices. No retail colour, font metric, gauge shape or icon is
+ * claimed here.
  */
+
+@property --gauge {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
 
 .blur-hud {
   position: fixed;
@@ -68,6 +77,7 @@
 #blur-hud-speed,
 #blur-hud-gear,
 #blur-hud-powerup,
+#blur-hud-powerup-charges,
 #blur-hud-health,
 #blur-hud-shield {
   font-size: 22px;
@@ -76,15 +86,153 @@
   line-height: 1.1;
 }
 
-#blur-hud-speed { font-size: 40px; letter-spacing: -0.02em; }
+/* ---------------------------------------------------------- speed gauge */
+
+.blur-hud__card--speed {
+  align-items: center;
+  padding: 6px;
+  min-width: 0;
+  background: none;
+  border: none;
+  backdrop-filter: none;
+}
+
+.blur-hud__gauge {
+  --gauge: 0;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 148px;
+  height: 148px;
+}
+
+.blur-hud__gauge-track,
+.blur-hud__gauge-ticks,
+.blur-hud__gauge-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 54%, #000 55%);
+  mask: radial-gradient(circle, transparent 54%, #000 55%);
+}
+
+.blur-hud__gauge-track {
+  background: conic-gradient(
+    from 135deg,
+    rgba(255, 255, 255, 0.16) 0deg 270deg,
+    transparent 270deg 360deg
+  );
+}
+
+.blur-hud__gauge-fill {
+  background: conic-gradient(
+    from 135deg,
+    #54d6ff 0deg,
+    #7ef0c0 calc(var(--gauge) * 2.7deg),
+    transparent calc(var(--gauge) * 2.7deg) 360deg
+  );
+  transition: --gauge 120ms linear;
+}
+
+.blur-hud__gauge-ticks {
+  background: repeating-conic-gradient(
+    from 135deg,
+    rgba(180, 220, 245, 0.55) 0deg 1deg,
+    transparent 1deg 13.5deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 44%, #000 45%, #000 50%, transparent 51%);
+  mask: radial-gradient(circle, transparent 44%, #000 45%, #000 50%, transparent 51%);
+}
+
+.blur-hud__gauge-dial {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+#blur-hud-speed { font-size: 38px; letter-spacing: -0.02em; }
 #blur-hud-speed-unit { font-size: 11px; letter-spacing: 0.16em; color: #8fb4cc; }
 
-.blur-hud__card--speed { align-items: flex-end; }
+.blur-hud__gauge[data-missing="1"] .blur-hud__gauge-fill { background: none; }
+.blur-hud__gauge[data-missing="1"] .blur-hud__gauge-track {
+  background: conic-gradient(
+    from 135deg,
+    rgba(255, 255, 255, 0.08) 0deg 270deg,
+    transparent 270deg 360deg
+  );
+}
+
+/* ----------------------------------------------------------------- gear */
+
 .blur-hud__card--gear { align-items: center; min-width: 56px; }
+.blur-hud__card--gear[data-gear="reverse"] #blur-hud-gear { color: #ffb066; }
+.blur-hud__card--gear[data-gear="neutral"] #blur-hud-gear { color: #9fc0d6; }
+
+/* -------------------------------------------------------------- power-up */
 
 .blur-hud__card--powerup { min-width: 132px; }
-#blur-hud-powerup-glyph { font-size: 20px; }
+
+.blur-hud__powerup-row {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin: 2px 0;
+}
+
+.blur-hud__ring {
+  --gauge: 0;
+  position: absolute;
+  inset: 0;
+  width: 56px;
+  height: 56px;
+}
+
+.blur-hud__ring-track,
+.blur-hud__ring-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 66%, #000 67%);
+  mask: radial-gradient(circle, transparent 66%, #000 67%);
+}
+
+.blur-hud__ring-track { background: rgba(255, 255, 255, 0.14); }
+
+.blur-hud__ring-fill {
+  background: conic-gradient(
+    from -90deg,
+    #ffd166 calc(var(--gauge) * 3.6deg),
+    transparent calc(var(--gauge) * 3.6deg)
+  );
+  transition: --gauge 120ms linear;
+}
+
+.blur-hud__ring[data-missing="1"] .blur-hud__ring-fill { background: none; }
+
+.blur-hud__glyph {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 18px;
+  font-weight: 700;
+  background: rgba(84, 214, 255, 0.12);
+  border: 1px solid rgba(120, 190, 235, 0.28);
+}
+
+#blur-hud-powerup { font-size: 16px; }
+#blur-hud-powerup-charges { font-size: 16px; }
 #blur-hud-powerup-detail { font-size: 11px; color: #9fc0d6; }
+
+/* ---------------------------------------------------------------- meters */
 
 .blur-hud__meter { min-width: 140px; }
 .blur-hud__bar-track {
@@ -103,9 +251,14 @@
   background: linear-gradient(90deg, #54d6ff, #7ef0c0);
   transition: width 90ms linear;
 }
-.blur-hud__meter--health .blur-hud__bar-track > i {
-  background: linear-gradient(90deg, #ff8a5c, #ffd166);
-}
+
+/* Project colour ramp: ok / warn / critical. Not retail colours. */
+.blur-hud__bar-fill[data-level="ok"] { background: linear-gradient(90deg, #54d6ff, #7ef0c0); }
+.blur-hud__bar-fill[data-level="warn"] { background: linear-gradient(90deg, #ffd166, #ff9a5c); }
+.blur-hud__bar-fill[data-level="critical"] { background: linear-gradient(90deg, #ff6b6b, #ff3b3b); }
+.blur-hud__bar-fill[data-level="missing"] { background: rgba(255, 255, 255, 0.10); }
+
+/* ------------------------------------------------------------------ feed */
 
 .blur-hud__feed-wrap { min-width: 190px; max-width: 280px; }
 #blur-hud-feed {
@@ -122,9 +275,79 @@
 .blur-hud__feed-item[data-kind="shielded"] { color: #7ef0c0; }
 .blur-hud__feed-item[data-kind="wrecked"] { color: #ff6b6b; }
 
+/* ------------------------------------------------------------- overlays */
+
+.blur-hud__countdown {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 34px;
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 40%, rgba(10, 16, 24, 0.82), rgba(6, 10, 16, 0.55));
+  border: 1px solid rgba(120, 190, 235, 0.28);
+  text-align: center;
+}
+
+.blur-hud__countdown[hidden] { display: none; }
+
+.blur-hud__countdown-label {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.blur-hud__countdown-seconds {
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  color: #9fc0d6;
+  font-variant-numeric: tabular-nums;
+}
+
+.blur-hud__wrongway {
+  position: fixed;
+  top: 16%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 107, 107, 0.6);
+  background: rgba(60, 8, 12, 0.72);
+  color: #ff8f8f;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  animation: blur-hud-wrongway 900ms steps(2, end) infinite;
+}
+
+.blur-hud__wrongway[hidden] { display: none; }
+
+@keyframes blur-hud-wrongway {
+  50% { opacity: 0.35; }
+}
+
 .blur-hud [data-missing="1"] { color: #6f8496; }
 
 @media (max-width: 900px) {
-  .blur-hud { grid-template-columns: 1fr 1fr; grid-template-areas: "status feed" ". ." "power speed"; }
+  .blur-hud {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "status feed" ". ." "power speed";
+  }
   .blur-hud__cluster--meters { display: none; }
+  .blur-hud__gauge { width: 112px; height: 112px; }
+  #blur-hud-speed { font-size: 30px; }
+  .blur-hud__countdown-label { font-size: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blur-hud__gauge-fill,
+  .blur-hud__ring-fill,
+  .blur-hud__bar-track > i { transition: none; }
+  .blur-hud__wrongway { animation: none; }
 }
