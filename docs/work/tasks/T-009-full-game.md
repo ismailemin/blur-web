@@ -100,6 +100,14 @@ edilemeyen her öğe tipli `unsupported` olarak raporlanır.
 
 ## Durum
 
-- Dalga 1 çalışıyor; hiçbir ajan commit etmiyor.
-- Wave 0 (25 araç) ana ajanda; ardından Wave 1 (oyun kabuğu).
-- Kırmızı: `prop-collision-v2` pin, `check_e1_poc` 15→25 araç pinleri.
+- **Dalga 1 tamamlandı ve commit edildi** (`50afc31`, `fadabdd`, `2aa9de1`,
+  `70374f6`, `13cf0b1`): 25 araç, menü kabuğu, 8 oyunculu oda, tüm probe verisi.
+- **8 insan oyunculu oda kanıtlı:** `mp-eight` E2E 73/73; oda istatistiği
+  `connections:8, maxPlayersSeen:8, protocolErrors:0`.
+- **Dalga 2 (bu oturum):** kırmızı doğrulayıcılar + entegrasyon. Sıra
+  [`docs/handoff/NEXT.md`](../../handoff/NEXT.md) §1.
+- Hiçbir ajan commit etmiyor; ana ajan kapıdan sonra commit ediyor.
+- Kırmızı: race-rules `verify-modes` 235/249, instances determinizm/doku,
+  net-prediction sınırlı snapshot, robustness 135/168, map-pipeline
+  `verify_blocked` şeması, map-batch doğrulayıcısı yok.
+- Oturum kaydı: [`docs/work/logs/2026-11-08-mp-eight.md`](../logs/2026-11-08-mp-eight.md).

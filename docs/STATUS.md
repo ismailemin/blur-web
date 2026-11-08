@@ -1,3 +1,11 @@
+## 8 Kasım 2026 — 8 oyunculu oda + oyun kabuğu
+
+- **8 insan oyunculu oda kanıtlandı:** 8 gerçek tarayıcı sayfası aynı odada; her sayfa diğer 7 oyuncunun 20 Hz snapshot'ını alıyor. Yeni `mp-eight` E2E senaryosu **73/73 PASS**; oda istatistiği `connections:8, roomsCreated:1, maxPlayersSeen:8, protocolErrors:0`. Commit `13cf0b1`.
+- **Menü kabuğu sayfaya bağlandı:** boş URL menüyü açar (25 araç, 3 harita, mod/araç/harita/lobi); her yarış parametresi menüyü atlar, eski derin bağlantılar korunur. Başsız Edge: 0 konsol hatası. Commit `70374f6`.
+- **Regresyon yok:** `mp-two` 52/52, `mp-ai` 71/71, `check_e1_poc` 23/23, `verify_asset_probe --skip-build` 67/67.
+- **Kırmızı envanteri kayda geçti:** race-rules 235/249, instances determinizm/doku, net-prediction sınırlı snapshot, robustness 135/168, map-pipeline `verify_blocked` şeması, map-batch doğrulayıcısı yok.
+- Ayrıntı: `docs/work/logs/2026-11-08-mp-eight.md`; sıradaki işler: `docs/handoff/NEXT.md`.
+
 # Blur Web — çalışma kaydı
 
 ## 28 Ekim 2026 — ilk hazırlık
@@ -1034,5 +1042,6 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sunucu doğrulandı: `/` HTTP 200, `e1_drive.wasm` 1.003.249 B HTTP 200.
 - 5 araç seçici ve `?car=` URL'i; scripted mod `?script=drive&car=...`.
 - Kullanıcı testi için hazır; görsel sadakat/teker/engine draw-list işleri devam ediyor.
+
 
 

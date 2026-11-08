@@ -1,6 +1,46 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 6 Kasım 2026
+**Güncelleme:** 8 Kasım 2026 (akşam)
+**Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
+tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita.
+**Son commit'ler:** `13cf0b1` 8 oyunculu oda, `70374f6` oyun kabuğu,
+`fadabdd` wave-1 probe verisi, `2aa9de1` 8 oyunculu oda servisi + WSS deploy,
+`50afc31` wave-1 analiz dokümanları.
+**Bu oturumun kaydı:** [`docs/work/logs/2026-11-08-mp-eight.md`](../work/logs/2026-11-08-mp-eight.md)
+
+## Şu an neredeyiz? (kısa özet)
+
+**Çalışan ve kanıtlı:**
+
+- **8 insan oyunculu oda:** 8 gerçek tarayıcı sayfası aynı odada; her sayfa
+  diğer 7 oyuncunun 20 Hz snapshot'ını alıyor. `mp-eight` E2E **73/73 PASS**;
+  oda istatistiği `connections:8, roomsCreated:1, maxPlayersSeen:8,
+  protocolErrors:0`.
+- **Menü kabuğu:** boş URL menüyü açar (25 araç, 3 harita, mod/araç/harita
+  seçimi, lobi); her yarış parametresi menüyü atlar, eski derin bağlantılar
+  bozulmaz. Başsız Edge: 0 konsol hatası.
+- **2 oyunculu + AI:** `mp-two` 52/52, `mp-ai` 71/71 (2 insan + 2 AI).
+- **Taşınabilir kapı:** `verify_asset_probe --skip-build` **67/67**,
+  `check_e1_poc` **23/23**.
+- 25 araç, River/Amboy/Gracia oynanabilir; Longbeach paketi derliyor.
+
+**Kırmızı / eksik (öncelik sırası):**
+
+1. `probes/race-rules/verify-modes.mjs` — 235/249 (14 kırmızı: C06 sidecar
+   hash, C24, C49, C92, E04, E06, D205/D405/D805, D-T01/T02, P205/P405/P805).
+2. `probes/map-pipeline/tools/verify_blocked.py` — `KeyError:
+   'newOnlyCoverageFraction'`; `probes/map-batch` doğrulayıcısı yok.
+3. `probes/instances/tools/verify_instances_decals.py` — determinizm + doku +
+   decal UV hash.
+4. `probes/net-prediction/verify.mjs` — C211/C228/C245/C262 sınırlı snapshot.
+5. `probes/robustness/verify.mjs` — 135/168 envanter.
+6. Entegrasyon: PM1 prop collider (Amboy/Gracia), LM1 Amboy turu, PWR6
+   Amboy/Gracia pickup, HUD/materyal/ışık paritesi.
+7. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
+   (kullanıcıdan VPS/domain/TLS bekliyor).
+
+## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)
+
 **Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, **loop-01 3 tur**, **free-roam**, 5 dokulu araç, ghost, **motor sesi**, tarayıcıda test edilebilir.
 **Baseline commit:** `04276aa chore: baseline project docs, probes, and tools`
 **Son commit'ler:** `39bd1b6` free-roam, `ff8a336` prop colliders, `8ac0109` ghost, `c63d4a4` audio, `777748c` steering.
