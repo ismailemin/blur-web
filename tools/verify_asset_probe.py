@@ -105,6 +105,8 @@ def main():
         # Runtime modules the page can mount: lighting, car materials, HUD, the
         # nineteen-level decision table and the Gracia no-lap decision.
         ('lighting-runtime',['node','probes/lighting/tools/verify_runtime_lighting.mjs']),
+        ('lighting-lightmap',['node','probes/lighting/tools/verify_lightmap.mjs']),
+        ('audio-runtime',['node','probes/audio/tools/verify_runtime_audio.mjs']),
         ('car-materials-runtime',['node','probes/car-materials/tools/verify_runtime_materials.mjs']),
         ('hud-ui',['node','--test','probes/hud-ui/test/']),
         ('map-pipeline-decisions',[sys.executable,'probes/map-pipeline/tools/verify_map_decisions.py']),

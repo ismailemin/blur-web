@@ -48,6 +48,23 @@ material's `g_tLightmap` texture and the `TEXCOORD0.zw` lightmap UV, then apply
 the shader rule above. Until that lands, `state.lightingAgreement` keeps
 reporting `agree: false` and the diagnostic light stays labelled.
 
+### The blocker: the lightmap UV is not in the committed package
+
+The lightmap UV is `TEXCOORD0.zw`, but the map-slice UV0 stream is **2
+components** (`"role": "merged section UV0 pairs, 2 ..."` in every
+`_work/map-slice/<map>/slice.json`). The renderer therefore has no lightmap UV
+to sample with. Exporting the full 4-component TEXCOORD0 from the map-slice
+producer is the prerequisite; guessing a planar projection would be a fabricated
+UV, so it is not done.
+
+### What was applied instead
+
+The committed **ambient** term is now applied: the packet consumer's scene
+uniform uses the luminance of `lighting.ambient.upNormalAmbientScaled` instead of
+the old hardcoded `0.16`. Measured per map: river `0.2532`, amboy `0.1331`,
+gracia `0.1780`, longbeach `0.7699`. `state.ambientApplied` records the value and
+`consumer.stats.ambient` carries it into the probe.
+
 ## What the page records
 
 `state.lightingAgreement` (in the probe) carries, per map:
