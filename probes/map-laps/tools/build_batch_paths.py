@@ -83,6 +83,37 @@ LEVELS = {
         grid="_work/map-laps/downtown/grid.npz",
         course_name="usa_la_downtown collision-clear path",
     ),
+    "mharuna": dict(
+        map_id="mharuna",
+        level="jpn_mharuna",
+        batch="_work/map-batch/jpn_mharuna",
+        physics="game-data/Blur/levels/jpn_mharuna/Level.levelphysics",
+        out="probes/map-laps/data/mharuna-path.json",
+        grid="_work/map-laps/mharuna/grid.npz",
+        course_name="jpn_mharuna collision-clear path",
+    ),
+    "hackney": dict(
+        map_id="hackney",
+        level="uk_london_hackney",
+        batch="_work/map-batch/uk_london_hackney",
+        physics="game-data/Blur/levels/uk_london_hackney/Level.levelphysics",
+        out="probes/map-laps/data/hackney-path.json",
+        grid="_work/map-laps/hackney/grid.npz",
+        course_name="uk_london_hackney collision-clear path",
+        corridor_cells=28,
+        clearance_cells=6,
+    ),
+    "dumbo": dict(
+        map_id="dumbo",
+        level="usa_ny_dumbo",
+        batch="_work/map-batch/usa_ny_dumbo",
+        physics="game-data/Blur/levels/usa_ny_dumbo/Level.levelphysics",
+        out="probes/map-laps/data/dumbo-path.json",
+        grid="_work/map-laps/dumbo/grid.npz",
+        course_name="usa_ny_dumbo collision-clear path",
+        corridor_cells=28,
+        clearance_cells=6,
+    ),
 }
 
 # --------------------------------------------------------------------------
@@ -310,6 +341,8 @@ def build_grid(cfg, batch, log=print):
 # path
 # --------------------------------------------------------------------------
 def build_path(cfg, batch, R, log=print):
+    clearance_cells = int(cfg.get("clearance_cells", CLEARANCE_CELLS))
+    corridor_cells = int(cfg.get("corridor_cells", CORRIDOR_CELLS))
     base, H, xs, zs = R["base"], R["H"], R["xs"], R["zs"]
     path_doc = batch["path"]
     spawn = batch["spawn"]["layout"]["spawn"]
@@ -333,15 +366,15 @@ def build_path(cfg, batch, R, log=print):
     seed[jj[ok], ii[ok]] = True
     dist = lb.chamfer_cells(seed)
 
-    clear = erode(base, CLEARANCE_CELLS)
+    clear = erode(base, clearance_cells)
     spawn_snap = nearest_clear_cell(clear, start_cell[0], start_cell[1])
     finish_snap = nearest_clear_cell(clear, finish_cell[0], finish_cell[1])
     if spawn_snap is None or finish_snap is None:
         raise SystemExit("no eroded cell within 40 m of the committed endpoints")
 
-    mask = clear & (dist <= CORRIDOR_CELLS)
+    mask = clear & (dist <= corridor_cells)
     if not mask[spawn_snap[2], spawn_snap[1]] or not mask[finish_snap[2], finish_snap[1]]:
-        raise SystemExit("snapped endpoint is outside the %d-cell corridor" % CORRIDOR_CELLS)
+        raise SystemExit("snapped endpoint is outside the %d-cell corridor" % corridor_cells)
     gscore, came = lb.astar(mask, (spawn_snap[1], spawn_snap[2]),
                             (finish_snap[1], finish_snap[2]), penalty=dist)
     if gscore is None:
@@ -352,15 +385,15 @@ def build_path(cfg, batch, R, log=print):
                 blocked.append({"sampleIndex": index, "x": num(x, 6), "z": num(z, 6),
                                 "passable": bool(base[j, i]),
                                 "inClearance": bool(clear[j, i]),
-                                "inCorridor": bool(dist[j, i] <= CORRIDOR_CELLS)})
+                                "inCorridor": bool(dist[j, i] <= corridor_cells)})
         record = {
             "schema": "blur.map-laps.batch-blocked/1",
             "level": cfg["level"],
             "map": cfg["map_id"],
             "reason": ("no collision path at %d-cell clearance inside the %d-cell "
-                       "corridor" % (CLEARANCE_CELLS, CORRIDOR_CELLS)),
-            "clearanceCells": CLEARANCE_CELLS,
-            "corridorCells": CORRIDOR_CELLS,
+                       "corridor" % (clearance_cells, corridor_cells)),
+            "clearanceCells": clearance_cells,
+            "corridorCells": corridor_cells,
             "spawn": {"x": num(start[0], 6), "z": num(start[1], 6),
                       "snapMetres": num(spawn_snap[0], 4)},
             "finish": {"x": num(finish[0], 6), "z": num(finish[1], 6),
@@ -372,7 +405,7 @@ def build_path(cfg, batch, R, log=print):
         blocked_path.write_text(json.dumps(record, indent=1) + "\n", encoding="utf-8")
         raise SystemExit("no collision path at %d-cell clearance inside the %d-cell "
                          "corridor; %d blocked draw samples recorded in %s: %s"
-                         % (CLEARANCE_CELLS, CORRIDOR_CELLS, len(blocked),
+                         % (clearance_cells, corridor_cells, len(blocked),
                             blocked_path.relative_to(ROOT), json.dumps(blocked[:20])))
 
     cells = lb.trace_path(came, (finish_snap[1], finish_snap[2]), nx)
@@ -380,6 +413,14 @@ def build_path(cfg, batch, R, log=print):
     world = [(float(xs[i]), float(zs[j])) for i, j in simp]
     poly = [start] + world + [finish]
     samples_xy = lb.resample(poly, SAMPLE_STEP)
+    # Drop a duplicated final station: when the last collision point equals the
+    # finish pose the resampler emits the same point twice, which would give two
+    # samples with the same arc. CourseModel requires strictly increasing arcs.
+    deduped = [samples_xy[0]]
+    for point in samples_xy[1:]:
+        if math.hypot(point[0] - deduped[-1][0], point[1] - deduped[-1][1]) > 1e-6:
+            deduped.append(point)
+    samples_xy = deduped
     for index, (x, z) in enumerate(samples_xy):
         i, j = lb.cell_of(x, z, xs, zs)
         if not (0 <= i < nx and 0 <= j < nz and base[j, i]):
@@ -472,12 +513,25 @@ def build_document(cfg, batch, grid_path, R, built, log=print):
         x, z = samples_xy[index]
         tx, tz, window = tangent_at(samples_xy, index)
         heading = math.atan2(tx, tz)
+        # The approach point orients the gate line (the car must approach from
+        # the positive side). Walk back/forward until the point is at least 1 m
+        # from the gate: a path with a duplicated final sample would otherwise
+        # give a zero side and flip the gate, so the car crosses it in the
+        # "reverse" direction and the finish never fires.
+        def approach_point(start_index, direction):
+            x0, z0 = samples_xy[start_index]
+            k = start_index + direction
+            while 0 <= k < len(samples_xy):
+                if math.hypot(samples_xy[k][0] - x0, samples_xy[k][1] - z0) >= 1.0:
+                    return samples_xy[k]
+                k += direction
+            k = max(0, min(len(samples_xy) - 1, start_index + direction))
+            return samples_xy[k]
+
         if index == 0:
-            approach = samples_xy[1]
-        elif index == len(samples_xy) - 1:
-            approach = samples_xy[-2]
+            approach = approach_point(index, +1)
         else:
-            approach = samples_xy[index - 1]
+            approach = approach_point(index, -1)
         a, b = gate_line(x, z, tx, tz, GATE_HALF_WIDTH, approach)
         g = ground[index]
         check = raster_check(base, H, xs, zs, x, z, tx, tz, g)
@@ -1058,6 +1112,9 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
 
 
 

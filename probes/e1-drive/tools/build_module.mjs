@@ -79,7 +79,7 @@ const INCLUDE_DIRS = [
 const EXPORTS = [
   '_e1_create', '_e1_reset', '_e1_set_input', '_e1_step',
   '_e1_get_state', '_e1_info', '_e1_engine_rpm', '_e1_ground_probe', '_e1_last_error', '_e1_diag',
-  '_e1_ray_probe', '_e1_boost_queue', '_e1_boost_state',
+  '_e1_ray_probe', '_e1_boost_queue', '_e1_boost_state', '_e1_set_ground_hint',
   '_malloc', '_free'
 ];
 

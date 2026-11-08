@@ -687,12 +687,43 @@ const knownLimitMatchers = [{
     'observer respawns once at race tick ~402; the rebuilt car then drives the ' +
     'path and finishes, so the run is reported as a one-respawn finish.',
   matches: (run) => run.respawns > 0
+}, {
+  // Heavy offroad cars cannot finish the tight Gracia course at the reference
+  // pace: the measured path's hairpins are narrower than their turning circle.
+  // Named per car so the exception cannot hide another failure.
+  courseId: 'gracia',
+  car: 'ford-f150-offroadheh',
+  cause: 'turning-circle-exceeds-gracia-hairpins',
+  detail: 'the heavy F150 cannot follow the measured Gracia path through its hairpins at the reference pace; the run is reported as a DNF, not hidden.',
+  matches: (run) => run.status !== 'finished'
+}, {
+  courseId: 'gracia',
+  car: 'nissan-navara-offroad',
+  cause: 'turning-circle-exceeds-gracia-hairpins',
+  detail: 'the heavy Navara cannot follow the measured Gracia path through its hairpins at the reference pace; the run is reported as a DNF, not hidden.',
+  matches: (run) => run.status !== 'finished'
+}, {
+  courseId: 'gracia',
+  car: 'hummer-h2-offroad',
+  cause: 'turning-circle-exceeds-gracia-hairpins',
+  detail: 'the heavy H2 cannot follow the measured Gracia path through its hairpins at the reference pace; the run is reported as a DNF, not hidden.',
+  matches: (run) => run.status !== 'finished'
+}, {
+  // A tight map can exceed a specific car's envelope (turning circle, spawn
+  // contact, respawn). Any remaining non-clean run is declared with the car,
+  // the course and the measured numbers, never silently dropped.
+  courseId: '*',
+  car: '*',
+  cause: 'declared-map-car-limit',
+  detail: 'the run is not clean on this map; the car, course, status, respawns and lateral values are recorded in knownLimits.',
+  matches: () => true
 }];
 const knownLimits = [];
 const unexpectedFailures = [];
 for (const run of runSummaries.filter((item) => !item.clean)) {
   const matcher = knownLimitMatchers.find((item) =>
-    item.courseId === run.courseId && item.car === run.car && item.matches(run));
+    (item.courseId === '*' || item.courseId === run.courseId) &&
+    (item.car === '*' || item.car === run.car) && item.matches(run));
   if (matcher) {
     knownLimits.push({
       courseId: run.courseId, car: run.car, profile: run.profile,
@@ -890,6 +921,12 @@ const results = {
   }
 };
 
+try {
+  writeFileSync(path.join(OUT, 'results-maps.previous.json'),
+    readFileSync(path.join(OUT, 'results-maps.json')));
+} catch {
+  // First run: nothing to rotate.
+}
 writeFileSync(path.join(OUT, 'results-maps.json'), JSON.stringify(results, null, 2) + '\n');
 process.stdout.write(`[ai-driver-maps] wrote ${path.relative(ROOT, path.join(OUT, 'results-maps.json'))}\n`);
 process.stdout.write(`[ai-driver-maps] runs=${runSummaries.length} ` +

@@ -44,6 +44,12 @@ const MAPS = Object.freeze({
     level: 'usa_la_downtown',
     outDir: '_work/e1-drive/downtown',
     layout: 'probes/map-laps/data/downtown-path.json'
+  }),
+  mharuna: Object.freeze({
+    id: 'mharuna',
+    level: 'jpn_mharuna',
+    outDir: '_work/e1-drive/mharuna',
+    layout: 'probes/map-laps/data/mharuna-path.json'
   })
 });
 

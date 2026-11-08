@@ -123,3 +123,41 @@ export async function soloDowntown(ctx) {
     ctx.fmt(page.messages.slice(-4)));
   ctx.evidence.finish = done;
 }
+
+// `solo-mharuna`: the seventh playable map. The course is the committed
+// collision-derived path (309.170196 m) and the spawn sits at Y 1064, so the
+// page passes the measured ground to the engine's probe column.
+export async function soloMharuna(ctx) {
+  const anchor = ctx.anchors.mharuna;
+  const url = ctx.base + '/?map=mharuna&script=sprint&car=' +
+    encodeURIComponent(anchor.slug) + '&audio=0';
+  const page = await ctx.openPage('mharuna');
+  await page.navigate(url);
+  const running = await waitProbe(ctx, page, (probe) => probe.consumer === 'running' && probe.engineTick >= 2,
+    { timeoutMs: 120000, label: 'mharuna running' });
+  await ctx.shot(page, 'start');
+
+  ctx.A.check('mharuna: URL is the requested scripted sprint', running.url === url, running.url);
+  ctx.A.check('mharuna: map is mharuna', running.map?.id === 'mharuna', ctx.fmt(running.map));
+  ctx.A.check('mharuna: course is mharuna', running.sprint?.courseId === anchor.courseId,
+    running.sprint?.courseId);
+  ctx.A.check('mharuna: layout hash is the committed collision path',
+    running.sprintLayoutHash === anchor.layoutHash,
+    running.sprintLayoutHash + ' vs ' + anchor.layoutHash);
+
+  const done = await waitProbe(ctx, page, (probe) => probe.sprintResult !== null,
+    { timeoutMs: 180000, label: 'mharuna finish' });
+  await ctx.shot(page, 'finish');
+  const result = done.sprintResult;
+  ctx.A.check('mharuna: finish time is ' + anchor.timeSeconds + ' s',
+    Math.abs(result.timeSeconds - anchor.timeSeconds) <= anchor.timeToleranceSeconds,
+    'expected ' + anchor.timeSeconds + ' ± ' + anchor.timeToleranceSeconds + ', got ' + result.timeSeconds);
+  ctx.A.check('mharuna: two checkpoints were passed', result.checkpoints === anchor.checkpoints,
+    'got ' + result.checkpoints);
+  ctx.A.check('mharuna: no respawn', result.respawns === 0, 'respawns ' + result.respawns);
+  ctx.A.check('mharuna: results overlay is visible', done.overlays.resultsHidden === false,
+    ctx.fmt(done.overlays));
+  ctx.A.check('mharuna: no console error', page.messages.filter((m) => m.type === 'error').length === 0,
+    ctx.fmt(page.messages.slice(-4)));
+  ctx.evidence.finish = done;
+}

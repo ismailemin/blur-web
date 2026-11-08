@@ -14,7 +14,7 @@
 export const MAP_DEFAULT = 'river';
 
 /** Map ids accepted by `?map=`. */
-export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown']);
+export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna']);
 
 export const MAPS = Object.freeze({
   river: Object.freeze({
@@ -287,8 +287,8 @@ export const MAPS = Object.freeze({
     propLayer: false,
     ghost: false,
     pins: Object.freeze({
-      mapFileSha256: 'sha256:483a35bdbd019bee0dab2ec805224f39de80cce5d2930fde0be6a99f104d75fe',
-      mapContentHash: 'sha256:c9820ee9fcc74d5a013fc9de13211e629f42104821aafb589da6dcc604056064',
+      mapFileSha256: 'sha256:49821fef820989435ec6c6078351bf9d45313a69fef8e454e650e8695bb1a1c4',
+      mapContentHash: 'sha256:a6a8c0eb387d1979107e47019aba0d725f8d11c7c4205535056516b6079adf1f',
       layoutFileSha256: 'sha256:75e7c586b4b47488d995b8e800a9c65c071f9d57520f4b7a9ef0666413aa1de8',
       layoutContentHash: 'sha256:3eeaf7a1ca488d4475d52bc3aa6cce4eb01a3acc18d4b96d5710e04690d1973b',
       renderFileSha256: 'sha256:2bb867bfd74b2a8bb8d9f1e2d2b83c7cac28eef5987a75edde5908eb265b9564',
@@ -316,10 +316,10 @@ export const MAPS = Object.freeze({
       courseId: 'observatory'
     }),
     mpPins: Object.freeze({
-      packageHash: 'sha256:c9820ee9fcc74d5a013fc9de13211e629f42104821aafb589da6dcc604056064',
+      packageHash: 'sha256:a6a8c0eb387d1979107e47019aba0d725f8d11c7c4205535056516b6079adf1f',
       layoutHash: 'sha256:3eeaf7a1ca488d4475d52bc3aa6cce4eb01a3acc18d4b96d5710e04690d1973b',
       physicsHash: 'sha256:070874eedc63eac99f9a586b3581c2b8c9d396a433b7ee0bc4e3e16663c034d6',
-      packageFileSha256: 'sha256:483a35bdbd019bee0dab2ec805224f39de80cce5d2930fde0be6a99f104d75fe',
+      packageFileSha256: 'sha256:49821fef820989435ec6c6078351bf9d45313a69fef8e454e650e8695bb1a1c4',
       layoutFileSha256: 'sha256:7896c434d7ac8490cb0f0eaae8f0dca07cd05312c31f7f8371aa414d374dfb7a',
       physicsFileSha256: 'sha256:070874eedc63eac99f9a586b3581c2b8c9d396a433b7ee0bc4e3e16663c034d6',
       packageBytes: 22941483,
@@ -345,8 +345,8 @@ export const MAPS = Object.freeze({
     propLayer: false,
     ghost: false,
     pins: Object.freeze({
-      mapFileSha256: 'sha256:b9b86459a761eae56d5db6bff4bca276f90e5c9f7264ab4013208d6b02913282',
-      mapContentHash: 'sha256:674626dc8724eba329a608bba834bae5e3a45a344bb26d8d46d5190348be35d1',
+      mapFileSha256: 'sha256:8ca46733b7d0299035384e4a427222063492a6e49eb836a862696d5651d134d9',
+      mapContentHash: 'sha256:ee058a257b423b82fd356240ddfdb200d0de866986ad5fa600700270bb478e59',
       layoutFileSha256: 'sha256:bf1046d400b8de67adbd9326073706c6a84e5ff6680353a6fc76c4772bb31872',
       layoutContentHash: 'sha256:24b398a0b20e9f442f02b916332a04b340ec758c30684eebdbdc5ad6c8ed25b6',
       renderFileSha256: 'sha256:1a25ebec01303c93d51ebaeaea9632f5f0483ac1d39c4acf141601942f92cdd8',
@@ -374,15 +374,73 @@ export const MAPS = Object.freeze({
       courseId: 'downtown'
     }),
     mpPins: Object.freeze({
-      packageHash: 'sha256:674626dc8724eba329a608bba834bae5e3a45a344bb26d8d46d5190348be35d1',
+      packageHash: 'sha256:ee058a257b423b82fd356240ddfdb200d0de866986ad5fa600700270bb478e59',
       layoutHash: 'sha256:24b398a0b20e9f442f02b916332a04b340ec758c30684eebdbdc5ad6c8ed25b6',
       physicsHash: 'sha256:06f2e5222dbb8cfcc8fe4493f62161fb11d64310a09603502484dee8040c9fd1',
-      packageFileSha256: 'sha256:b9b86459a761eae56d5db6bff4bca276f90e5c9f7264ab4013208d6b02913282',
+      packageFileSha256: 'sha256:8ca46733b7d0299035384e4a427222063492a6e49eb836a862696d5651d134d9',
       layoutFileSha256: 'sha256:2b3d11f4a2334182fa44a539aef4fc2a4405f3cb2a0a62672647fe67f4689da6',
       physicsFileSha256: 'sha256:06f2e5222dbb8cfcc8fe4493f62161fb11d64310a09603502484dee8040c9fd1',
       packageBytes: 53389346,
       layoutBytes: 88659,
       physicsBytes: 6637886
+    })
+  }),
+
+  mharuna: Object.freeze({
+    id: 'mharuna',
+    label: 'Mount Haruna',
+    level: 'jpn_mharuna',
+    kind: 'map-package',
+    geometryUrl: '/_work/e1-drive/mharuna/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/jpn_mharuna/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/mharuna/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.mharuna',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:4bd9b7d32459d15b8a6173465bb9f631d17a86be783d4428cf6bbf865b66cb03',
+      mapContentHash: 'sha256:2918e6d6e374d4315926f6336a0b5399a81f9b267bb5b395cc2e908f8ea80ec3',
+      layoutFileSha256: 'sha256:4af1acf9eb454f1eabc47eec45c62873487d11fba21200d446530e794c364e6b',
+      layoutContentHash: 'sha256:21a2a30c94d46ad1905bd379138dcdce60ba550b25542201da58f5024e13b70e',
+      renderFileSha256: 'sha256:862f7c991a44db5888e468894fcfa0b364e889b0eb3d1016fed792fafd60765d',
+      renderContentHash: 'sha256:862f7c991a44db5888e468894fcfa0b364e889b0eb3d1016fed792fafd60765d',
+      sliceFileSha256: 'sha256:25897dcd3ab4e48796c72d981bc44ebfe1852530872d8b3abf27722fdfad3eef',
+      sliceContentHash: 'sha256:25897dcd3ab4e48796c72d981bc44ebfe1852530872d8b3abf27722fdfad3eef',
+      physicsFileSha256: 'sha256:c47d71aadc45f6c1e568c32054398e65f5341e7e0c69d70f91a85e967da87612',
+      physicsBytes: 3542863,
+      draws: 1581,
+      drawTriangles: 247355,
+      textures: 234,
+      textureBytes: 1332288,
+      vertices: 439562,
+      indices: 863349,
+      decalDraws: 0,
+      diagnosticDraws: 202,
+      blockedDraws: 202,
+      unsupportedSections: 34,
+      instanceDescriptions: 416,
+      collisionTriangles: 42038,
+      pathLengthMetres: 309.170196,
+      checkpointArcs: Object.freeze([67.304498, 171.944569]),
+      sampleCount: 1248,
+      renderLabel: 'mharuna-direct-draws',
+      courseId: 'mharuna'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:2918e6d6e374d4315926f6336a0b5399a81f9b267bb5b395cc2e908f8ea80ec3',
+      layoutHash: 'sha256:21a2a30c94d46ad1905bd379138dcdce60ba550b25542201da58f5024e13b70e',
+      physicsHash: 'sha256:c47d71aadc45f6c1e568c32054398e65f5341e7e0c69d70f91a85e967da87612',
+      packageFileSha256: 'sha256:4bd9b7d32459d15b8a6173465bb9f631d17a86be783d4428cf6bbf865b66cb03',
+      layoutFileSha256: 'sha256:cfadaf1656f2e20640a09b075bd5b16dd17a15c840d3bc4bf058812a97915af3',
+      physicsFileSha256: 'sha256:c47d71aadc45f6c1e568c32054398e65f5341e7e0c69d70f91a85e967da87612',
+      packageBytes: 39645432,
+      layoutBytes: 171808,
+      physicsBytes: 3542863
     })
   })
 });
@@ -405,6 +463,8 @@ export function mpPinsForMap(value) {
   if (!MAP_IDS.includes(value)) return null;
   return MAPS[value].mpPins ?? null;
 }
+
+
 
 
 

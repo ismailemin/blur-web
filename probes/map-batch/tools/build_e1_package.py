@@ -111,6 +111,34 @@ MAP_BUILDS = {
             "spawn, checkpoints and finish are the committed map-batch pose and collision-clear path, not a retail start line",
         ],
     ),
+    "mharuna": dict(
+        id="mharuna",
+        level="jpn_mharuna",
+        batch="_work/map-batch/jpn_mharuna",
+        out_dir="_work/e1-drive/mharuna",
+        layout="probes/map-laps/data/mharuna-path.json",
+        physics="game-data/Blur/levels/jpn_mharuna/Level.levelphysics",
+        mesh_id="mharuna.direct",
+        render_label="mharuna-direct-draws",
+        package_label="jpn_mharuna",
+        course_name="jpn_mharuna collision-clear path",
+        decal_status=None,
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-decoder-size-limit",
+                             "blocked-runtime-albedo-parameter", "blocked-no-static-albedo"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=416,
+        instance_sections=34,
+        unsupported_sections=34,
+        map_limits=[
+            "direct LOD0 draws only; 34 unsupported sections and 416 instance descriptions are not applied",
+            "the additive/effect and diagnostic draws are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "spawn, checkpoints and finish are the committed map-batch pose and collision-clear path, not a retail start line",
+        ],
+    ),
 }
 
 
@@ -192,12 +220,14 @@ LABELS = {
     "blocked-alpha-rule-missing": "alphaRuleMissing",
     "blocked-decoder-size-limit": "decoderSizeLimit",
     "blocked-runtime-albedo-parameter": "runtimeAlbedoParameter",
+    "blocked-no-static-albedo": "noStaticAlbedo",
 }
 
 GROUP_NAMES = {
     "blocked-alpha-rule-missing": "alphaRule",
     "blocked-decoder-size-limit": "decoderSize",
     "blocked-runtime-albedo-parameter": "runtimeAlbedo",
+    "blocked-no-static-albedo": "noStaticAlbedo",
 }
 
 
@@ -472,11 +502,14 @@ def build_map(map_id: str, check: bool = False, log=print):
 
     # ------------------------------------------------------------ blocked
     groups = draws["drawLists"]["blockedGroups"]
-    effect = groups.get(cfg["decal_status"])
-    if effect is None:
+    effect = groups.get(cfg["decal_status"]) if cfg.get("decal_status") else None
+    if cfg.get("decal_status") and effect is None:
         raise SystemExit("draws.json has no %s group" % cfg["decal_status"])
+    if effect is None:
+        # A map with no effect/decal draws records an explicit zero group.
+        effect = {"draws": 0, "triangles": 0, "indexRanges": []}
     diagnostic_groups = {}
-    diagnostic_counts = {"alphaRule": 0, "decoderSize": 0, "runtimeAlbedo": 0}
+    diagnostic_counts = {"alphaRule": 0, "decoderSize": 0, "runtimeAlbedo": 0, "noStaticAlbedo": 0}
     diagnostic_draws = 0
     diagnostic_triangles = 0
     for status in cfg["diagnostic_statuses"]:
@@ -734,3 +767,5 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+

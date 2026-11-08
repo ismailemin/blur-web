@@ -104,7 +104,13 @@ def num(value, nd=6):
     """
     if value is None:
         return None
-    rounded = round(float(value), nd)
+    value = float(value)
+    if not math.isfinite(value):
+        # A non-finite measurement means "no value in the search window" (for
+        # example no blocked cell within the clearance radius). It is serialised
+        # as null, never as a guessed number.
+        return None
+    rounded = round(value, nd)
     if rounded == 0:
         return 0
     if rounded == int(rounded) and abs(rounded) < 1e15:

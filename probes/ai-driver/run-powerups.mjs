@@ -867,6 +867,12 @@ const results = {
   },
 };
 
+try {
+  writeFileSync(path.join(OUT, 'results-powerups.previous.json'),
+    readFileSync(path.join(OUT, 'results-powerups.json')));
+} catch {
+  // First run: nothing to rotate.
+}
 writeFileSync(path.join(OUT, 'results-powerups.json'),
   JSON.stringify(results, null, 2) + '\n');
 process.stdout.write(`[ai-powerups] wrote _work/ai-driver/results-powerups.json ` +

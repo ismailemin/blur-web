@@ -88,6 +88,7 @@ INTEGRATED = {
     "usa_la_longbeachdocks": "longbeach",
     "usa_la_observatory": "observatory",
     "usa_la_downtown": "downtown",
+    "jpn_mharuna": "mharuna",
 }
 
 MIN_COVERED_PATH_M = 25.0

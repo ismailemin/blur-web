@@ -1911,6 +1911,7 @@ def verify_batch(rep: Report, results: dict) -> None:
         "usa_la_river": "river", "usa_amboy": "amboy",
         "spa_barcelona_gracia": "gracia", "usa_la_longbeachdocks": "longbeach",
         "usa_la_observatory": "observatory", "usa_la_downtown": "downtown",
+        "jpn_mharuna": "mharuna",
         },
         "registry/integrated",
         "parsed %d map records from %s" % (len(integrated),

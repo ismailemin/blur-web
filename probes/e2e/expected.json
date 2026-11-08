@@ -77,6 +77,15 @@
       "checkpoints": 2,
       "layoutHash": "sha256:24b398a0b20e9f442f02b916332a04b340ec758c30684eebdbdc5ad6c8ed25b6",
       "docRef": "docs/work/analysis/observatory-downtown-packages.md (153.860674 m collision path)"
+    },
+    "mharuna": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "mharuna",
+      "timeSeconds": 18.833333,
+      "timeToleranceSeconds": 1.5,
+      "checkpoints": 2,
+      "layoutHash": "sha256:21a2a30c94d46ad1905bd379138dcdce60ba550b25542201da58f5024e13b70e",
+      "docRef": "docs/work/analysis/mharuna-package.md (309.170196 m collision path, Y 1064)"
     }
   },
   "mp": {

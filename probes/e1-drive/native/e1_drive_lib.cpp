@@ -549,6 +549,11 @@ struct World
 
 	// pose
 	float startX, startZ, heading;
+	// Optional ground hint for the spawn probe. Some levels sit far above or
+	// below the fixed probe column (Mount Haruna's spawn is at Y=1064, London
+	// Hackney's at Y=-294); the page passes the layout's measured spawn ground
+	// so the probe column is centred on it. NaN means "use the fixed column".
+	float groundHint;
 
 	// per-reset objects
 	Gravity::C_Scene* scene;
@@ -583,6 +588,9 @@ struct World
 };
 
 static World gWorld;
+// Sentinel for "no ground hint": the probe keeps its fixed Y -170..130 column.
+static const float kNoGroundHint = -1.0e30f;
+static const bool s_groundHintInit = ( gWorld.groundHint = kNoGroundHint, true );
 static char s_state[8192];
 static char s_probe[2048];
 
@@ -1109,22 +1117,42 @@ static bool BuildWorld()
 		{
 			void* data[512];
 			SharedPhysics::C_SafeStack<true> stack( data, 512 );
-			Collision::C_LineCollisionCache cache( 128 );
-			const float probeTop = 130.0f;
-			const float probeHalfHeight = 150.0f;
-			Collision::C_CRAxisBox box;
-			box.centre = HVec3( gWorld.startX, probeTop - probeHalfHeight, gWorld.startZ );
-			box.extents = HVec3( 1.0f, probeHalfHeight, 1.0f );
 			const C_Normal down( Constants<HVec3>::UnitAxisNegativeY(), C_Normal::UNIT_LENGTH_VECTOR );
-			cache.Reset();
-			scene->FillCache( box, cache, stack, &gWorld.filter, down,
-			                  HF32( -Constants<HF32>::Quarter() ) );
-			Collision::C_Ray ray;
-			ray.InitialiseRay( C_Vertex( gWorld.startX, probeTop, gWorld.startZ ), down, 400.f, &gWorld.filter, 0.f );
-			ray.SetMaxCosAngle( -Constants<HF32>::Quarter() );
-			Collision::C_SingleTriangleCache tri;
-			cache.Trace( ray, &tri );
-			if ( ray.m_result.m_pShape == NULL )
+			// The fixed column spans Y -170..130. A level whose spawn sits outside
+			// it (Mount Haruna at 1064, London Hackney at -294, Highrise at 218)
+			// would report "no ground". The page can pass the measured spawn ground
+			// to centre the column; if it does not, a tall fallback column is tried
+			// before giving up.
+			const bool hasHint = gWorld.groundHint > -1.0e29f;
+			auto probeColumn = [&]( Collision::C_LineCollisionCache& cache,
+			                        float top, float halfHeight, float distance ) -> bool {
+				Collision::C_CRAxisBox box;
+				box.centre = HVec3( gWorld.startX, top - halfHeight, gWorld.startZ );
+				box.extents = HVec3( 1.0f, halfHeight, 1.0f );
+				cache.Reset();
+				scene->FillCache( box, cache, stack, &gWorld.filter, down,
+				                  HF32( -Constants<HF32>::Quarter() ) );
+				Collision::C_Ray ray;
+				ray.InitialiseRay( C_Vertex( gWorld.startX, top, gWorld.startZ ), down, distance,
+				                   &gWorld.filter, 0.f );
+				ray.SetMaxCosAngle( -Constants<HF32>::Quarter() );
+				Collision::C_SingleTriangleCache tri;
+				cache.Trace( ray, &tri );
+				if ( ray.m_result.m_pShape == NULL ) return false;
+				groundY = ray.m_result.m_contact.Y();
+				return true;
+			};
+			Collision::C_LineCollisionCache cache( 128 );
+			const float probeTop = hasHint ? gWorld.groundHint + 130.0f : 130.0f;
+			bool hit = probeColumn( cache, probeTop, 150.0f, 400.f );
+			if ( !hit && !hasHint )
+			{
+				// Tall fallback: a 2 m x 2 m column spanning Y -4000..4000 with a
+				// longer ray. Only runs when the fixed column missed.
+				Collision::C_LineCollisionCache tallCache( 512 );
+				hit = probeColumn( tallCache, 4000.0f, 4000.0f, 8000.f );
+			}
+			if ( !hit )
 			{
 				char msg[192];
 				std::snprintf( msg, sizeof msg,
@@ -1135,7 +1163,6 @@ static bool BuildWorld()
 				SetError( msg );
 				return false;
 			}
-			groundY = ray.m_result.m_contact.Y();
 		}
 
 		// Zeroed storage before the constructor, exactly like the T-005d harness's
@@ -1340,6 +1367,15 @@ extern "C" __attribute__( ( visibility( "default" ) ) )
 const char* e1_last_error()
 {
 	return e1::gWorld.error;
+}
+
+extern "C" __attribute__( ( visibility( "default" ) ) )
+void e1_set_ground_hint( float groundY )
+{
+	// The page passes the measured spawn ground so the ground probe column is
+	// centred on a level that sits outside the fixed Y -170..130 range. A NaN
+	// (or the sentinel) restores the fixed column.
+	e1::gWorld.groundHint = groundY;
 }
 
 extern "C" __attribute__( ( visibility( "default" ) ) )

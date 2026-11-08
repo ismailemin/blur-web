@@ -1443,6 +1443,11 @@ let mpEngineTickOffset = 0;
 // Measured length of the loaded course, captured when the layout is created.
 // Used only to scale the provisional power-up arcs on package maps.
 let COURSE_LENGTH_METRES = null;
+// The measured spawn ground, passed to the engine's ground probe so a level
+// whose spawn sits outside the fixed Y -170..130 column (Mount Haruna at 1064,
+// London Hackney at -294) can still be created. Null means "use the fixed
+// column", which is what every map below Y 130 does.
+let SPAWN_GROUND_HINT = null;
 
 // ------------------------------------------------------------------ engine audio
 // The verified module plays six decoded retail `Race_V8_Engine_*` loops and
@@ -2217,12 +2222,28 @@ function mpChooseMpGrid(layout, count = 2) {
 }
 
 /** One world at an arbitrary spawn point: the same call `e1_create` the page loads with. */
+/**
+ * The engine's fixed ground-probe column spans Y -170..130. Only override it
+ * when the measured spawn ground is outside that range (Mount Haruna at 1064,
+ * Highrise at 218, London Hackney at -294); every map inside the range keeps
+ * the exact probe the committed settle hashes were recorded with.
+ */
+function groundHintFor(value) {
+  if (!Number.isFinite(value)) return NaN;
+  return (value > 130 || value < -170) ? value : NaN;
+}
+
 function createWorld(x, z, heading) {
   const levelPtr = module._malloc(levelBytes.byteLength);
   const fieldsPtr = module._malloc(fieldBytes.byteLength + 1);
   if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
   module.HEAPU8.set(levelBytes, levelPtr);
   module.HEAPU8.set(fieldBytes, fieldsPtr);
+  // The ground probe column is centred on the measured spawn ground when the
+  // layout carries one; otherwise the engine keeps its fixed column.
+  if (typeof module._e1_set_ground_hint === 'function') {
+    module._e1_set_ground_hint(groundHintFor(SPAWN_GROUND_HINT));
+  }
   const ok = module._e1_create(levelPtr, levelBytes.byteLength, fieldsPtr, fieldBytes.byteLength, x, z, heading);
   module._free(levelPtr);
   module._free(fieldsPtr);
@@ -2586,6 +2607,9 @@ async function loadEngine(carOverride = null) {
     COURSE_LENGTH_METRES = layout?.course?.span?.lengthMetres ??
       layout?.course?.lap?.lengthMetres ??
       layout?.course?.samples?.[layout.course.samples.length - 1]?.arc ?? null;
+    SPAWN_GROUND_HINT = Number.isFinite(layout?.course?.spawnGroundY)
+      ? layout.course.spawnGroundY
+      : (Number.isFinite(layout?.course?.spawn?.ground) ? layout.course.spawn.ground : null);
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
     state.sprintCourseId = layout.courseId ?? null;

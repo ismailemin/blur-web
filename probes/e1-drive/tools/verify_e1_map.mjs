@@ -103,12 +103,25 @@ check('wasm module exists', existsSync(modulePath) && existsSync(wasmPath));
 const createModule = (await import(pathToFileURL(modulePath).href)).default;
 const module = await createModule();
 
+function groundHintFor(value) {
+  if (!Number.isFinite(value)) return NaN;
+  return (value > 130 || value < -170) ? value : NaN;
+}
+
 function createWorld(x, z, heading) {
   const levelPtr = module._malloc(levelBytes.byteLength);
   const fieldsPtr = module._malloc(fieldBytes.byteLength + 1);
   if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
   module.HEAPU8.set(levelBytes, levelPtr);
   module.HEAPU8.set(fieldBytes, fieldsPtr);
+  // Centre the ground probe on the measured spawn ground when the layout has
+  // one (Mount Haruna at Y 1064, London Hackney at Y -294).
+  if (typeof module._e1_set_ground_hint === 'function') {
+    const hint = Number.isFinite(layout?.course?.spawnGroundY)
+      ? layout.course.spawnGroundY
+      : (Number.isFinite(layout?.course?.spawn?.ground) ? layout.course.spawn.ground : NaN);
+    module._e1_set_ground_hint(groundHintFor(hint));
+  }
   const ok = module._e1_create(levelPtr, levelBytes.byteLength, fieldsPtr, fieldBytes.byteLength, x, z, heading);
   module._free(levelPtr);
   module._free(fieldsPtr);
@@ -215,6 +228,12 @@ if (finish) {
   const fieldsPtr = replayModule._malloc(replayFields.byteLength);
   replayModule.HEAPU8.set(replayLevel, levelPtr);
   replayModule.HEAPU8.set(replayFields, fieldsPtr);
+  if (typeof replayModule._e1_set_ground_hint === 'function') {
+    const hint = Number.isFinite(layout?.course?.spawnGroundY)
+      ? layout.course.spawnGroundY
+      : (Number.isFinite(layout?.course?.spawn?.ground) ? layout.course.spawn.ground : NaN);
+    replayModule._e1_set_ground_hint(groundHintFor(hint));
+  }
   const ok = replayModule._e1_create(levelPtr, replayLevel.byteLength, fieldsPtr, replayFields.byteLength,
     spawn.x, spawn.z, spawn.headingRad);
   replayModule._free(levelPtr);
@@ -328,3 +347,4 @@ console.log(JSON.stringify({
   files: verify.files
 }, null, 2));
 if (!verify.ok) process.exit(1);
+

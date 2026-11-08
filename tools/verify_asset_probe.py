@@ -59,6 +59,7 @@ def main():
         ('longbeach-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','longbeach']),
         ('observatory-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','observatory']),
         ('downtown-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','downtown']),
+        ('mharuna-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','mharuna']),
         ('longbeach-path',['node','probes/map-laps/tools/verify_longbeach_path.mjs']),
         ('vehicle-pipeline',[sys.executable,'probes/vehicle-pipeline/tools/verify_vehicle_pipeline.py']),
         ('vehicle-c-aliases',[sys.executable,'probes/vehicle-pipeline/tools/verify_c_aliases.py']),
