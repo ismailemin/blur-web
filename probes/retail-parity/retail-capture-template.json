@@ -1,0 +1,132 @@
+{
+  "kind": "retail-parity.capture-record",
+  "version": 1,
+  "instructions": "Fill one copy of this file per retail session. Values in <angle brackets> are placeholders. World coordinates are the engine level space used by the committed River asset; if the retail build has no free camera, leave cameraPosition/target null and set cameraTier to 2.",
+  "session": {
+    "date": "<YYYY-MM-DD>",
+    "operator": "<name>",
+    "game": "Blur",
+    "platform": "<PC / console>",
+    "build": "<version / patch / store>",
+    "map": "usa_la_river",
+    "mapName": "River",
+    "car": "Corvette ZR1 (stock)",
+    "paint": "<exact paint name/number>",
+    "wheels": "<stock or option>",
+    "resolution": [1600, 900],
+    "renderScale": 1.0,
+    "settings": {
+      "antiAliasing": "<value>",
+      "motionBlur": false,
+      "depthOfField": false,
+      "filmGrain": false,
+      "bloom": "<value>",
+      "vsync": false
+    },
+    "hud": {
+      "disabled": true,
+      "reason": "<menu option / not available>",
+      "hudRectanglePx": null
+    },
+    "assists": "<default / recorded>",
+    "opponentsWithin150m": false,
+    "cameraTier": 1,
+    "cameraTierNote": "1 = free/replay camera at the coordinates below; 2 = in-game chase camera only (poses A and C comparable, B and D not obtainable)"
+  },
+  "views": [
+    {
+      "view": "A",
+      "label": "start, car chase",
+      "carPosition": [-88.0, 6.1646, 1050.0],
+      "carYawRad": 0.767411,
+      "cameraPosition": [-94.2444, 9.5646, 1043.5224],
+      "target": [-87.9967, 7.1646, 1050.0005],
+      "yawRad": -2.374299,
+      "pitchRad": 0.260602,
+      "distanceM": 9.314505,
+      "verticalFovDeg": 45.0,
+      "frames": [
+        { "t": "+0.0s", "file": "retail_A_0s.png", "sha256": "<sha256>" },
+        { "t": "+0.5s", "file": "retail_A_0p5s.png", "sha256": "<sha256>" },
+        { "t": "+1.0s", "file": "retail_A_1s.png", "sha256": "<sha256>" },
+        { "t": "+2.0s", "file": "retail_A_2s.png", "sha256": "<sha256>" }
+      ]
+    },
+    {
+      "view": "B",
+      "label": "start, map overview",
+      "carPosition": [-88.0, 6.1646, 1050.0],
+      "carYawRad": 0.767411,
+      "cameraPosition": [-103.2707, 19.9646, 1034.1668],
+      "target": [-87.9967, 6.9646, 1050.0005],
+      "yawRad": -2.374184,
+      "pitchRad": 0.533708,
+      "distanceM": 25.553865,
+      "verticalFovDeg": 45.0,
+      "frames": [
+        { "t": "+0.0s", "file": "retail_B_0s.png", "sha256": "<sha256>" },
+        { "t": "+0.5s", "file": "retail_B_0p5s.png", "sha256": "<sha256>" },
+        { "t": "+1.0s", "file": "retail_B_1s.png", "sha256": "<sha256>" },
+        { "t": "+2.0s", "file": "retail_B_2s.png", "sha256": "<sha256>" }
+      ]
+    },
+    {
+      "view": "C",
+      "label": "exit 100 m, car chase",
+      "carPosition": [-18.4215, 5.7790, 1122.3702],
+      "carYawRad": 0.76742,
+      "cameraPosition": [-24.7066, 9.1790, 1115.9284],
+      "target": [-18.4215, 6.7790, 1122.3702],
+      "yawRad": -2.368511,
+      "pitchRad": 0.260602,
+      "distanceM": 9.314505,
+      "verticalFovDeg": 45.0,
+      "frames": [
+        { "t": "+0.0s", "file": "retail_C_0s.png", "sha256": "<sha256>" },
+        { "t": "+0.5s", "file": "retail_C_0p5s.png", "sha256": "<sha256>" },
+        { "t": "+1.0s", "file": "retail_C_1s.png", "sha256": "<sha256>" },
+        { "t": "+2.0s", "file": "retail_C_2s.png", "sha256": "<sha256>" }
+      ]
+    },
+    {
+      "view": "D",
+      "label": "exit 100 m, map overview",
+      "carPosition": [-18.4215, 5.7790, 1122.3702],
+      "carYawRad": 0.76742,
+      "cameraPosition": [-36.5506, 19.3790, 1103.3378],
+      "target": [-18.4982, 6.3790, 1122.0490],
+      "yawRad": -2.374112,
+      "pitchRad": 0.463648,
+      "distanceM": 29.068884,
+      "verticalFovDeg": 45.0,
+      "frames": [
+        { "t": "+0.0s", "file": "retail_D_0s.png", "sha256": "<sha256>" },
+        { "t": "+0.5s", "file": "retail_D_0p5s.png", "sha256": "<sha256>" },
+        { "t": "+1.0s", "file": "retail_D_1s.png", "sha256": "<sha256>" },
+        { "t": "+2.0s", "file": "retail_D_2s.png", "sha256": "<sha256>" }
+      ]
+    }
+  ],
+  "diff": {
+    "geometryPx": null,
+    "textureArtwork": "match | partial | missing | not-comparable",
+    "colourDeltaE2000": {
+      "paint": null,
+      "glass": null,
+      "road": null,
+      "verge": null,
+      "sky": null
+    },
+    "shadow": {
+      "present": null,
+      "directionDeltaDeg": null,
+      "lengthDeltaPercent": null
+    },
+    "propsPresent": null,
+    "decalsPresent": null,
+    "fovDeltaPercent": null,
+    "carCentreOffsetPercent": null,
+    "terrainVoid": null,
+    "hud": "off | recorded | excluded"
+  }
+}

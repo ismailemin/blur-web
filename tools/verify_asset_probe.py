@@ -61,6 +61,7 @@ def main():
         ('vehicle-batch3',[sys.executable,'probes/vehicle-pipeline/tools/verify_batch3.py']),
         ('map-pipeline',[sys.executable,'probes/map-pipeline/tools/verify_maps.py']),
         ('prop-collision-v2',['node','probes/prop-collision/tools/verify_v2.mjs']),
+        ('retail-parity-inventory',[sys.executable,'probes/retail-parity/tools/inventory.py']),
         ('race-rules',['node','probes/race-rules/verify.mjs']),
         ('net-mvp-selftest',['node','probes/net-mvp/selftest.mjs']),
         ('map-slice-amboy',[sys.executable,'probes/map-slice/tools/verify_slice.py','--package','_work/map-slice/amboy']),

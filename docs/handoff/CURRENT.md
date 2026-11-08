@@ -277,6 +277,14 @@ iki build identical. HUD adları/ikon anahtarları hazır. Kanıt:
 edilebilir; kural **17/17**, verifier **571/571**. Kanıt:
 `docs/work/analysis/supershield.md`.
 
+**PARITY1 — 1:1 denetim:** Corvette ZR1 + River 0–100 m. 38 veri sınıfı:
+**8 birebir / 8 kısmi / 22 eksik**. 516 draw = 394 track + 22 prop + 100 car;
+**365 dokulu / 151 diagnostic**. 4 sabit kamera pozu (A–D) ve bizim kareler
+`_work/retail-parity/screenshots/` (console 0, iki koşu byte-identical).
+Retail çekim protokolü + diff listesi `probes/retail-parity/retail-capture-template.json`.
+En büyük fark: materyal/boya/ışık-blend, ışık-gölge, normal, instance, decal.
+Kanıt: `docs/work/analysis/retail-parity.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,

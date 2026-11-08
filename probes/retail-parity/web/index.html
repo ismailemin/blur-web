@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>retail parity — fixed-pose reference frames</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  #frame { display: block; width: 100vw; height: 100vh; }
+  #tag {
+    position: fixed; left: 8px; top: 8px; padding: 3px 6px;
+    font: 12px/1.3 Consolas, monospace; color: #d8d8d8;
+    background: rgba(0,0,0,0.55); pointer-events: none; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="frame"></canvas>
+<div id="tag">loading…</div>
+<script type="module">
+// Fixed-pose reference frames for the retail-parity audit.
+//
+// This page is a read-only consumer: it imports the committed E1 packet
+// consumer / adapter / chunk merge code and the committed geometry chunks, then
+// renders the current slice from four declared camera poses. It changes nothing
+// in probes/e1-drive; every value it prints is a packet or track value.
+//
+// Poses (all 45 deg vertical FOV = the committed cameraIntrinsics):
+//   A start,  car chase   tick 0    (committed ChaseCamera from the recorded pose)
+//   B start,  map overview          fixed orbit around arc 50 m
+//   C exit,   car chase   tick 432  (sprint checkpoint 1, arc 100.108 m)
+//   D exit,   map overview          fixed orbit around arc 100 m
+//
+// The car pose at both ticks is the committed sprint run's recorded position and
+// axisZ; axisX/axisY are rebuilt with a world-up orthonormalisation, and the four
+// wheel records are the manifest rest translations in that basis. No physics is
+// stepped here, so this is a pose reconstruction, not a new simulation.
+
+import { PacketConsumer } from '/probes/e1-drive/web/packet-consumer.js';
+import { createSession } from '/probes/e1-drive/web/packet-adapter.js';
+import { assembleGeometry } from '/probes/e1-drive/web/geometry-chunks.js';
+import { orbitView, perspective } from '/probes/e1-drive/web/packet-camera.mjs';
+
+const LEVEL_URL = '/_work/e1-drive/level.geometry.json';
+const CAR_URL = '/_work/e1-drive/cars/corvette-zr1-stock.geometry.json';
+const INVENTORY_URL = '/_work/retail-parity/inventory.json';
+const SPRINT_URL = '/_work/e1-drive/sprint-corvette-zr1-stock.json';
+
+const canvas = document.getElementById('frame');
+const tag = document.getElementById('tag');
+const SHOW_TAG = new URLSearchParams(location.search).get('tag') !== '0';
+tag.style.display = SHOW_TAG ? 'block' : 'none';
+const consumer = new PacketConsumer(canvas);
+
+let geometry = null;
+let inventory = null;
+let sprint = null;
+const carSlug = 'corvette-zr1-stock';
+
+function normalise(v) {
+  const length = Math.hypot(...v);
+  return v.map((value) => value / length);
+}
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+function stateAt(rawTick) {
+  const body = geometry.carBodies[carSlug];
+  const forward = normalise(rawTick.axisZ);
+  const axisX = normalise(cross([0, 1, 0], forward));
+  const axisY = cross(forward, axisX);
+  const position = rawTick.position.slice();
+  // Manifest rest translations placed by the same body basis. Only the corner
+  // mapping consumes these; wheel spin is 0 at a still frame and is labelled.
+  const wheels = body.wheelGroups.map((group) => {
+    const t = group.translation;
+    return {
+      position: [
+        position[0] + axisX[0] * t[0] + axisY[0] * t[1] + forward[0] * t[2],
+        position[1] + axisX[1] * t[0] + axisY[1] * t[1] + forward[1] * t[2],
+        position[2] + axisX[2] * t[0] + axisY[2] * t[1] + forward[2] * t[2]
+      ],
+      angular: 0,
+      onGround: true
+    };
+  });
+  return {
+    tick: rawTick.tick,
+    position,
+    axisX,
+    axisY,
+    axisZ: forward,
+    wheels,
+    speed: 0,
+    contacts: '0000',
+    finite: 1,
+    anyContact: true
+  };
+}
+
+async function loadJson(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(url + ' HTTP ' + response.status);
+  return response.json();
+}
+
+async function init() {
+  const [level, car, inv, run] = await Promise.all([
+    loadJson(LEVEL_URL), loadJson(CAR_URL), loadJson(INVENTORY_URL), loadJson(SPRINT_URL)
+  ]);
+  geometry = assembleGeometry(level, car);
+  inventory = inv;
+  sprint = run;
+  tag.textContent = 'ready · ' + geometry.trackVisual.draws.length + ' track + ' +
+    geometry.levelDraws.length + ' props + ' + car.carDraws.length + ' car draws';
+  window.__parityReady = true;
+}
+
+function orbitPose(target, eye) {
+  const offset = [eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]];
+  const distance = Math.hypot(...offset);
+  const yaw = Math.atan2(offset[0], offset[2]);
+  const pitch = Math.asin(offset[1] / distance);
+  const built = orbitView(target, distance, yaw, pitch);
+  return { target, eye: built.eye, distance, yaw, pitch };
+}
+
+function poses() {
+  const start = inventory.poses.start;
+  const exit = inventory.poses.exit100;
+  const arc50 = inventory.poses.arc50;
+  // Road height: interpolated between the two measured car ground heights
+  // (6.1646 at arc 0, 5.7790 at arc 100); the inventory stores x/z only.
+  const y50 = 6.1646347 + (5.77901411 - 6.1646347) * 0.5;
+  const tangentStart = start.tangent;
+  const tangentExit = exit.tangent;
+  // Start map overview: aerial behind the stationary car, looking down the
+  // measured start tangent. Target is the recorded tick-0 car position.
+  const b = orbitPose(
+    [start.carPosition[0], start.carPosition[1] + 0.8, start.carPosition[2]],
+    [start.carPosition[0] - tangentStart[0] * 22, start.carPosition[1] + 13.8, start.carPosition[2] - tangentStart[1] * 22]
+  );
+  const d = orbitPose(
+    [exit.pathPoint[0], exit.carPosition[1] + 0.6, exit.pathPoint[1]],
+    [exit.pathPoint[0] - tangentExit[0] * 26, exit.carPosition[1] + 13.6, exit.pathPoint[1] - tangentExit[1] * 26]
+  );
+  return {
+    A: { mode: 'chase', tick: 0, raw: sprint.rawTicks[0] },
+    B: { mode: 'orbit', tick: 0, raw: sprint.rawTicks[0], orbit: b },
+    C: { mode: 'chase', tick: exit.tick, raw: sprint.rawTicks.find((row) => row.tick === exit.tick) },
+    D: { mode: 'orbit', tick: exit.tick, raw: sprint.rawTicks.find((row) => row.tick === exit.tick), orbit: d }
+  };
+}
+
+window.__parityPose = async function (key) {
+  if (!window.__parityReady) throw new Error('parity page is not ready');
+  const table = poses();
+  const pose = table[key];
+  if (!pose) throw new Error('unknown pose ' + key);
+  const state = stateAt(pose.raw);
+  const session = createSession(geometry, state, { car: { slug: carSlug } });
+  session.appendState(state);
+  // v1.1 requires at least two ticks; the second tick repeats the same pose, so
+  // the frame is still and no interpolation is involved.
+  session.appendState({ ...state, tick: state.tick + 1 });
+  const packet = session.finalise();
+  await consumer.load(packet);
+  if (pose.mode === 'orbit') {
+    consumer.usePacketCamera = false;
+    consumer.orbit = {
+      target: pose.orbit.target.slice(),
+      distance: pose.orbit.distance,
+      yaw: pose.orbit.yaw,
+      pitch: pose.orbit.pitch,
+      radius: consumer.orbit.radius
+    };
+    consumer.cameraShape = {
+      near: packet.camera.near,
+      far: packet.camera.far,
+      fovY: packet.camera.verticalFovRadians,
+      aspect: canvas.width / canvas.height
+    };
+  } else {
+    consumer.usePacketCamera = true;
+  }
+  consumer.renderFrame({ cursor: 0 });
+  await consumer.device.queue.onSubmittedWorkDone();
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const camera = packet.updates[0].camera;
+  // For an orbit pose the packet camera is not what was drawn; record the
+  // matrices the consumer actually used (same orbitView/perspective formulas).
+  let used = camera;
+  if (pose.mode === 'orbit') {
+    const built = orbitView(pose.orbit.target, pose.orbit.distance, pose.orbit.yaw, pose.orbit.pitch);
+    used = {
+      position: built.eye,
+      target: pose.orbit.target,
+      view: built.view,
+      projection: perspective(camera.verticalFovRadians, canvas.width / canvas.height, camera.near, camera.far),
+      near: camera.near,
+      far: camera.far,
+      verticalFovRadians: camera.verticalFovRadians,
+      aspect: canvas.width / canvas.height,
+      orbit: { yaw: pose.orbit.yaw, pitch: pose.orbit.pitch, distance: pose.orbit.distance }
+    };
+  }
+  const record = {
+    key,
+    mode: pose.mode,
+    tick: pose.tick,
+    carPosition: state.position,
+    packetDraws: packet.draws.length,
+    packetBytes: JSON.stringify(packet).length,
+    camera: {
+      position: used.position,
+      target: used.target,
+      view: used.view,
+      projection: used.projection,
+      near: used.near,
+      far: used.far,
+      verticalFovRadians: used.verticalFovRadians,
+      aspect: used.aspect,
+      orbit: used.orbit,
+      occlusion: camera.occlusion
+    },
+    poses: pose.orbit ?? null,
+    stats: {
+      draws: consumer.draws.length,
+      drawsIssued: consumer.stats.drawsIssued,
+      texturedDraws: consumer.stats.texturedDraws,
+      geometryUploads: consumer.stats.geometryUploads,
+      geometryUploadBytes: consumer.stats.geometryUploadBytes,
+      texturesUploaded: consumer.stats.texturesUploaded,
+      textureUploadBytes: consumer.stats.textureUploadBytes,
+      packetLoads: consumer.stats.packetLoads,
+      mipChainHash: consumer.stats.mipChainHash,
+      mipLevels: consumer.textureSampling?.mipLevelsTotal ?? null,
+      textureTotalBytes: consumer.textureSampling?.totalBytes ?? null,
+      anisotropyApplied: consumer.textureSampling?.anisotropyApplied ?? null
+    },
+    lighting: packet.lights[0]
+  };
+  tag.textContent = key + ' · tick ' + pose.tick + ' · draws ' + consumer.draws.length +
+    ' · textured ' + consumer.stats.texturedDraws + ' · ' + pose.mode;
+  window.__parityLast = record;
+  return record;
+};
+
+init().catch((error) => {
+  tag.textContent = 'FAILED: ' + error.message;
+  window.__parityError = error.message;
+  console.error(error);
+});
+</script>
+</body>
+</html>

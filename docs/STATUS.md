@@ -966,8 +966,13 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - `docs/plan/FULL_GAME.md` yenilendi (M0–M6, 19 akış, "multiplayer-testable" 9 madde).
 - `docs/plan/INTEGRATION_WAVES.md`: paylaşılan `e1-drive` için 10 sıralı dalga.
 - `docs/work/verification/mp-release-checklist.md`: A–G kabul listesi (kanıtsız madde yok).
-- 40 paralel ajan başlatıldı: araç/harita/prop/tur, boya-ışık-materyal, HUD/ses/VFX/UI art,
-  ağ (WSS/8 oyuncu/deploy), oyun kabuğu, mod/hasar/kamera/AI, streaming/paket/performans.
+- 55 paralel ajan başlatıldı: araç/harita/prop/tur, boya-ışık-materyal, HUD/ses/VFX/UI art,
+  ağ (WSS/8 oyuncu/WebRTC), oyun kabuğu, mod/hasar/kamera/AI, streaming/paket/performans,
+  kokpit/gösteri salonu/livery/minimap/sıralama.
+- **PARITY1 tamam:** 38 veri sınıfı → **8 birebir / 8 kısmi / 22 eksik**;
+  4 sabit kamera pozu + bizim kareler (`_work/retail-parity/screenshots/`, console 0);
+  retail çekim protokolü `probes/retail-parity/retail-capture-template.json`.
+  Kanıt: `docs/work/analysis/retail-parity.md`.
 - Kullanıcıdan beklenen yalnız: retail referans kareleri + internet host/TLS.
 
 ## 8 Kasım 2026 — SuperShield verisi
