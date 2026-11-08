@@ -143,6 +143,16 @@ class Resolver:
                 else:
                     state.update(known=False, slot=None,
                                  reason="Albedo parameter depends on unsupported scalar shape or runtime material data")
+            elif field["name"] == "g_tLightmap" and field["type"] == 7 and \
+                    field["count"] == 1 and field["values"]:
+                # The retail lightmap binding. Recorded separately from
+                # `otherTextures` so the albedo blocker reasons stay unchanged.
+                state["lightmap"] = {
+                    "parameter": field["name"],
+                    "slot": field["values"][0],
+                    "materialRow": index,
+                    "material": material["typeName"],
+                }
             elif ("Texture" in field["name"] or "Albedo" in field["name"]) and \
                     field["type"] == 7 and field["count"] == 1 and field["values"]:
                 state["otherTextures"].append({
@@ -155,7 +165,8 @@ class Resolver:
 
     def resolve(self, primitive: dict) -> dict:
         state = {"seen": False, "known": False, "slot": None, "row": -1,
-                 "material": None, "reason": None, "otherTextures": []}
+                 "material": None, "reason": None, "otherTextures": [],
+                 "lightmap": None}
         if primitive.get("instanceMaterial") is not None:
             self._apply(primitive["instanceMaterial"], state, [])
         self._apply(primitive["baseMaterial"], state, [])
@@ -589,6 +600,22 @@ def main() -> int:
                     aux_source = dict(render_list["sources"]["texture"][first["slot"]])
                     aux = {"parameter": first["parameter"], **texture_identity(
                         aux_source, archive, scene)}
+            # The retail lightmap is bound through the material's g_tLightmap
+            # field. Resolve the exact texture name from the RenderList texture
+            # source list, exactly like map_batch_lib.py; a material without the
+            # field records null (never a guessed name).
+            lightmap_name = None
+            lightmap_slot = None
+            lightmap_identity = None
+            lightmap = material.get("lightmap")
+            if lightmap:
+                slot = lightmap.get("slot")
+                if isinstance(slot, int) and 0 <= slot < len(render_list["sources"]["texture"]):
+                    lm_source = dict(render_list["sources"]["texture"][slot])
+                    lightmap_identity = texture_identity(lm_source, archive, scene)
+                    if lightmap_identity is not None:
+                        lightmap_name = lightmap_identity.get("name")
+                        lightmap_slot = slot
             row = {
                 "section": section["id"],
                 "drawIndex": draw_index,
@@ -606,6 +633,9 @@ def main() -> int:
                 "textureRgbaSha256": texture.get("rgbaSha256") if texture else None,
                 "textureRgbaFnv1a64": texture.get("rgbaFnv1a64") if texture else None,
                 "auxTexture": aux,
+                "lightmapName": lightmap_name,
+                "lightmapSlot": lightmap_slot,
+                "lightmapTexture": lightmap_identity,
                 "uv0Available": bool(native_draw.get("uv0Available")),
                 "uvHash": uv_hash,
             }
@@ -655,6 +685,9 @@ def main() -> int:
     status_effects = Counter()
     for row in draw_rows:
         status_effects[(row["status"], row["effect"])] += 1
+    lightmap_names = Counter(row["lightmapName"] for row in draw_rows
+                             if row["lightmapName"])
+    lightmap_missing = sum(1 for row in draw_rows if not row["lightmapName"])
     effect_layer_names = sorted({row["effect"] for row in draw_rows
                                  if row["status"] == "blocked-effect-not-static-albedo"})
     unsupported_count = len(slice_doc["draws"]["unsupportedSections"])
@@ -702,6 +735,7 @@ def main() -> int:
         "materialResolution": {
             "reader": "source-shaped replica of scene_reader.cpp bind_albedo(): instance -> base -> every active stream material, nested type-8 rows followed, last g_tAlbedo wins",
             "albedoParameters": ["g_tAlbedo", "g_MeshTexture"],
+            "lightmapParameter": "g_tLightmap (type-7 texture slot resolved through the RenderList texture source list, exactly like map_batch_lib.py)",
             "vehicleEffects": "the veh_ path is implemented and none of the %s draws "
                               "uses it" % format(len(draw_rows), ","),
         },
@@ -719,6 +753,9 @@ def main() -> int:
             "textureBytes": sum(texture.get("rgbaBytes", 0) for texture in textures),
             "bindableTextureBytes": sum(texture.get("rgbaBytes", 0) for texture in textures
                                         if texture["id"] in bindable_texture_ids),
+            "lightmapDraws": sum(lightmap_names.values()),
+            "lightmapMissingDraws": lightmap_missing,
+            "lightmapNames": dict(sorted(lightmap_names.items())),
             "statusEffects": {"%s | %s" % key: value
                               for key, value in sorted(status_effects.items())},
             "auxTextureGroups": [
@@ -734,6 +771,7 @@ def main() -> int:
         "limits": [
             "Data only: no renderer, GPU, browser, playable-game or full-game claim.",
             "Static g_tAlbedo/g_MeshTexture identity and UV0 only; g_tMaterial, material colour, blend, alpha test, shader stages, sampler wrap/filter, mips and sRGB are not applied.",
+            "The per-draw g_tLightmap name is the material texture identity only; the lightmap pixels, the TEXCOORD0.zw UV stream and the shader term are recorded by the render package and the lighting module, not bound here.",
             effect_limit,
             "First-RenderList direct LOD0 primitives only; instances and the %d "
             "unsupported sections are reported separately." % unsupported_count,

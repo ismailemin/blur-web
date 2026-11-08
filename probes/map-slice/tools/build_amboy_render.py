@@ -15,6 +15,8 @@ Output (default _work/map-slice/<short>-render):
   diagnostics.json                405 blocked draws + separate additive-decal list
   draws.positions.f32.bin         identical bytes to the slice buffer
   draws.uv0.f32.bin               identical bytes to the slice buffer
+  draws.lightmapUv.f32.bin        identical bytes to the slice buffer (retail
+                                  TEXCOORD0.zw lightmap UV, zero where absent)
   draws.indices.u32.bin           identical bytes to the slice buffer
   layout.points.f32.bin           8,673 x,z,h float32le points
   textures/tex-NNN.rgba           179 deduplicated bindable RGBA8 mip0 blobs
@@ -162,19 +164,31 @@ def build(out: Path) -> dict:
     # ---------------------------------------------------------------- buffers
     pos_path = SLICE_DIR / "draws.positions.f32.bin"
     uv_path = SLICE_DIR / "draws.uv0.f32.bin"
+    lm_path = SLICE_DIR / "draws.lightmapUv.f32.bin"
     idx_path = SLICE_DIR / "draws.indices.u32.bin"
+    if not lm_path.is_file():
+        raise SystemExit("%s has no draws.lightmapUv.f32.bin; rebuild the slice "
+                         "with extract_slice.py" % SLICE_DIR)
     pos_bytes = pos_path.read_bytes()
     uv_bytes = uv_path.read_bytes()
+    lm_bytes = lm_path.read_bytes()
     idx_bytes = idx_path.read_bytes()
     positions = np.frombuffer(pos_bytes, dtype="<f4")
     uv0 = np.frombuffer(uv_bytes, dtype="<f4")
+    lightmap_uv = np.frombuffer(lm_bytes, dtype="<f4")
     indices = np.frombuffer(idx_bytes, dtype="<u4")
     vertex_count = int(positions.size // 3)
     uv_vertex_count = int(uv0.size // 2)
+    lightmap_vertex_count = int(lightmap_uv.size // 2)
     index_count = int(indices.size)
     if vertex_count != uv_vertex_count:
         raise SystemExit("position/UV vertex count differs: %d / %d"
                          % (vertex_count, uv_vertex_count))
+    if vertex_count != lightmap_vertex_count:
+        raise SystemExit("position/lightmap-UV vertex count differs: %d / %d"
+                         % (vertex_count, lightmap_vertex_count))
+    if not np.isfinite(lightmap_uv).all():
+        raise SystemExit("lightmap UV stream contains a non-finite value")
     if LEVEL == "usa_amboy" and (vertex_count != 529624 or
                                  index_count != 1046844 or
                                  index_count // 3 != 348948):
@@ -188,6 +202,7 @@ def build(out: Path) -> dict:
         stale.unlink()
     (out / "draws.positions.f32.bin").write_bytes(pos_bytes)
     (out / "draws.uv0.f32.bin").write_bytes(uv_bytes)
+    (out / "draws.lightmapUv.f32.bin").write_bytes(lm_bytes)
     (out / "draws.indices.u32.bin").write_bytes(idx_bytes)
 
     # ----------------------------------------------------------------- layout
@@ -395,6 +410,8 @@ def build(out: Path) -> dict:
             "effect": binding_draw["effect"],
             "material": material.get("material"),
             "materialRow": material.get("row"),
+            "lightmapName": binding_draw.get("lightmapName"),
+            "lightmapSlot": binding_draw.get("lightmapSlot"),
             "uvHash": digest,
             "uvHashSource": "recomputed-from-merged-uv0-buffer",
             "status": BINDABLE,
@@ -742,6 +759,7 @@ def build(out: Path) -> dict:
         "units": {
             "position": "metres, left-handed level space (x, y, z)",
             "uv0": "normalised texture coordinates (u, v)",
+            "lightmapUv": "retail lightmap coordinates from TEXCOORD0.zw (u, v); not flipped",
             "index": "uint32 global vertex index",
             "heading": "radians",
         },
@@ -757,6 +775,8 @@ def build(out: Path) -> dict:
             "mipsGenerated": False,
             "instancesApplied": False,
             "normalsIncluded": False,
+            "lightmapUvIncluded": True,
+            "lightmapBoundInGpu": False,
             "partialSceneTraversal": True,
             "coordinateSpace": "source level coordinates, unchanged",
         },
@@ -768,6 +788,7 @@ def build(out: Path) -> dict:
             "slicePayloads": {
                 "positions": file_record(pos_path),
                 "uv0": file_record(uv_path),
+                "lightmapUv": file_record(lm_path),
                 "indices": file_record(idx_path),
                 "layoutPointsSha256": layout_src["pointsSha256"],
             },
@@ -785,6 +806,10 @@ def build(out: Path) -> dict:
             "triangleCount": index_count // 3,
             "bindableIndexCount": bindable_index_count,
             "bindableVerticesReferenced": len(referenced_vertices),
+            "lightmapDraws": sum(1 for draw in bindable_draws
+                                 if draw.get("lightmapName")),
+            "lightmapNames": sorted({draw["lightmapName"] for draw in bindable_draws
+                                     if draw.get("lightmapName")}),
             "textureSources": len(bindable_ids),
             "uniqueTextureBlobs": len(texture_items),
             "mergedTextureSources": len(bindable_ids) - len(texture_items),
@@ -814,6 +839,17 @@ def build(out: Path) -> dict:
                 "count": vertex_count,
                 "stride": 8,
                 "role": "merged section UV0, vertex-aligned with positions",
+            },
+            "lightmapUv": {
+                **file_record(out / "draws.lightmapUv.f32.bin", out),
+                "dtype": "float32",
+                "components": 2,
+                "count": vertex_count,
+                "stride": 8,
+                "role": "merged section retail lightmap UV (TEXCOORD0.zw), "
+                        "vertex-aligned with positions",
+                "source": "slice draws.lightmapUv.f32.bin, copied byte-for-byte; "
+                          "zero where the source UV0 type is not F16_4",
             },
             "indices": {
                 **file_record(out / "draws.indices.u32.bin", out),
@@ -875,16 +911,18 @@ def build(out: Path) -> dict:
                 "positionFormat": "float32x3",
                 "uv0Buffer": "draws.uv0.f32.bin",
                 "uv0Format": "float32x2",
+                "lightmapUvBuffer": "draws.lightmapUv.f32.bin",
+                "lightmapUvFormat": "float32x2",
                 "indexBuffer": "draws.indices.u32.bin",
                 "indexFormat": "uint32",
                 "vertexCount": vertex_count,
                 "indexCount": index_count,
-                "vertexBuffers": 2,
+                "vertexBuffers": 3,
                 "indexBuffers": 1,
                 "uploadOnce": True,
                 "drawList": "render.json#draws",
                 "blockedDrawList": "diagnostics.json#draws",
-                "note": "all draw lists index the same three buffers",
+                "note": "all draw lists index the same four buffers",
             },
             "textures": {
                 "table": "render.json#textures.items",
@@ -915,8 +953,11 @@ def build(out: Path) -> dict:
         "integrationGaps": integration_gaps,
         "limits": [
             "Data only: no renderer, GPU, browser, playable-game or full-game claim.",
-            "The three geometry buffers are byte-identical to the MAP2 slice "
+            "The four geometry buffers are byte-identical to the MAP2 slice "
             "buffers; no vertex was reordered or removed.",
+            "draws.lightmapUv.f32.bin is the reader's F16_4 UV0 .zw stream carried "
+            "by the slice; a draw with no g_tLightmap name keeps its UV but is not "
+            "bound to a lightmap texture by the consumer.",
             "Blocked draw ranges remain in the shared index buffer but are listed "
             "separately and never assigned an opaque albedo.",
             "Textures are the committed CPU BC decode of mip0 only; alpha, blend, "

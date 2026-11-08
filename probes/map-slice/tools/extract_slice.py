@@ -537,16 +537,20 @@ def draw_geometry(level_path: Path, draw_probes_path: Path) -> dict:
 
         draws = []
         for ordinal, draw in enumerate(native["draws"]):
-            albedo = draw["albedoTexture"]
             if not draw["uv0Available"]:
                 uv_missing += 1
+            # v1 package schema: a draw record carries no bound albedo image.
+            # The fixed reader's static albedo identity (including its
+            # shared-texture index in albedoTexture) is recorded in
+            # draws.nativeReaderRefresh and in the MAP3 binding manifest; it is
+            # never merged into these records, so `texturedDraws` stays 0.
             record = {
                 "sectionDrawIndex": ordinal,
                 "firstIndex": index_offset + int(draw["firstIndex"]),
                 "indexCount": int(draw["indexCount"]),
-                "albedoTexture": albedo,
-                "albedoParameter": draw.get("albedoParameter"),
-                "binding": draw["binding"],
+                "albedoTexture": None,
+                "albedoParameter": None,
+                "binding": "Level materials not applied in diagnostic preview",
                 "uv0Available": bool(draw["uv0Available"]),
                 "material": None,
                 "textureRef": None,

@@ -192,9 +192,10 @@ def draws_check(slice_doc: dict, package: Path) -> dict:
 
     positions: list[float] = []
     uv0: list[float] = []
+    lightmap_uv: list[float] = []
     indices: list[int] = []
     draws = []
-    textured = diagnostic = uv_missing = placeholders = 0
+    uv_missing = placeholders = 0
     section_offsets = {}
     stored_sections = {s["id"]: s for s in record["sections"]}
 
@@ -233,22 +234,29 @@ def draws_check(slice_doc: dict, package: Path) -> dict:
         draw_offset = len(draws)
         positions.extend(native["positions"])
         uv0.extend(native["uv0"])
+        # F16_4 UV0 carries the retail lightmap UV in .zw; a 2-component UV0
+        # contributes explicit zeros (recorded, never a guess).
+        lightmap = native.get("lightmapUv") or []
+        if lightmap:
+            check("draws." + section_index + ".lightmapUvCount",
+                  len(lightmap) == len(native["uv0"]))
+            lightmap_uv.extend(lightmap)
+        else:
+            lightmap_uv.extend([0.0] * len(native["uv0"]))
         indices.extend(int(i) + vertex_offset for i in native["indices"])
         placeholders += int(meta.get("placeholderUvVertices", 0) or 0)
         for ordinal, draw in enumerate(native["draws"]):
-            if draw["albedoTexture"] is None:
-                diagnostic += 1
-            else:
-                textured += 1
+            # v1 package schema: the draw record keeps albedoTexture null and
+            # the reader's identity stays in draws.nativeReaderRefresh.
             if not draw["uv0Available"]:
                 uv_missing += 1
             draws.append({
                 "sectionDrawIndex": ordinal,
                 "firstIndex": index_offset + int(draw["firstIndex"]),
                 "indexCount": int(draw["indexCount"]),
-                "albedoTexture": draw["albedoTexture"],
-                "albedoParameter": draw.get("albedoParameter"),
-                "binding": draw["binding"],
+                "albedoTexture": None,
+                "albedoParameter": None,
+                "binding": "Level materials not applied in diagnostic preview",
                 "uv0Available": bool(draw["uv0Available"]),
                 "material": None,
                 "textureRef": None,
@@ -269,8 +277,8 @@ def draws_check(slice_doc: dict, package: Path) -> dict:
         "vertexCount": len(positions) // 3,
         "triangleCount": len(indices) // 3,
         "drawCount": len(draws),
-        "texturedDraws": textured,
-        "diagnosticDraws": diagnostic,
+        "texturedDraws": 0,
+        "diagnosticDraws": len(draws),
         "uv0MissingDraws": uv_missing,
         "uv0PlaceholderVertices": placeholders,
     }
@@ -281,22 +289,29 @@ def draws_check(slice_doc: dict, package: Path) -> dict:
                                dtype="<f4")
     stored_uv0 = np.frombuffer((package / record["uv0"]["file"]).read_bytes(),
                                dtype="<f4")
+    stored_lm = np.frombuffer((package / record["lightmapUv"]["file"]).read_bytes(),
+                              dtype="<f4")
     stored_idx = np.frombuffer((package / record["indices"]["file"]).read_bytes(),
                                dtype="<u4")
     expected_pos = np.asarray(positions, dtype="<f4")
     expected_uv0 = np.asarray(uv0, dtype="<f4")
+    expected_lm = np.asarray(lightmap_uv, dtype="<f4")
     expected_idx = np.asarray(indices, dtype="<u4")
     check("draws.positions.binary", np.array_equal(stored_pos, expected_pos))
     check("draws.uv0.binary", np.array_equal(stored_uv0, expected_uv0))
+    check("draws.lightmapUv.binary", np.array_equal(stored_lm, expected_lm))
     check("draws.indices.binary", np.array_equal(stored_idx, expected_idx))
     check("draws.positions.hash",
           sha256_bytes(stored_pos.tobytes()) == record["positions"]["sha256"])
     check("draws.uv0.hash",
           sha256_bytes(stored_uv0.tobytes()) == record["uv0"]["sha256"])
+    check("draws.lightmapUv.hash",
+          sha256_bytes(stored_lm.tobytes()) == record["lightmapUv"]["sha256"])
     check("draws.indices.hash",
           sha256_bytes(stored_idx.tobytes()) == record["indices"]["sha256"])
     check("draws.positions.count", int(stored_pos.size) == metrics["vertexCount"] * 3)
     check("draws.uv0.count", int(stored_uv0.size) == metrics["vertexCount"] * 2)
+    check("draws.lightmapUv.count", int(stored_lm.size) == metrics["vertexCount"] * 2)
     check("draws.indices.count", int(stored_idx.size) == metrics["triangleCount"] * 3)
 
     check("draws.sectionCount", len(stored_sections) == len(section_offsets))
@@ -309,12 +324,14 @@ def draws_check(slice_doc: dict, package: Path) -> dict:
                     "drawOffset", "drawCount"):
             check("draws.section." + section_id + "." + key,
                   actual[key] == expected[key], f"{actual[key]} != {expected[key]}")
-    # Package draw records keep the v1 schema built from the committed pre-fix
-    # probe doc: albedoTexture is null and every draw is diagnostic. The fixed
-    # reader's static albedo identity (including its shared-texture index in
-    # albedoTexture) is recorded in draws.nativeReaderRefresh and the MAP3
-    # binding manifest, not merged into these records.
-    check("draws.allDirectDrawsDiagnostic", textured == 0 and diagnostic == len(draws))
+    # Package draw records keep the v1 schema: albedoTexture is null and every
+    # draw is diagnostic. The fixed reader's static albedo identity (including
+    # its shared-texture index in albedoTexture) is recorded in
+    # draws.nativeReaderRefresh and the MAP3 binding manifest, not merged into
+    # these records.
+    check("draws.allDirectDrawsDiagnostic",
+          record["texturedDraws"] == 0 and
+          record["diagnosticDraws"] == len(draws))
     check("draws.allUv0Present", uv_missing == 0)
     check("draws.noPlaceholderUv", placeholders == 0)
 

@@ -127,6 +127,7 @@ def main() -> int:
         resources = resource_prefix(node_raw, {"resourcePayloadOffset": 24,
                                                "scenePayloadOffset": 0}, streamed=True)
         render_list = read_lists(node_raw, resources)[0]
+        resolver = atb.Resolver(render_list, scene["effects"])
         geometry_raw = (stage / "geometry.chunk").read_bytes()
         stream_prefix(geometry_raw, records[section["geometryChunkIndex"]])
         geometry_resources = resource_prefix(
@@ -160,6 +161,23 @@ def main() -> int:
                   material["slot"] == row["material"]["slot"])
             check("material type %s#%d" % (section["id"], row["drawIndex"]),
                   material["material"] == row["material"]["material"])
+            # Recompute the retail lightmap identity from the material
+            # g_tLightmap slot through the RenderList texture source list.
+            lightmap = resolver.resolve(primitive)["lightmap"]
+            expected_name = None
+            expected_slot = None
+            if lightmap:
+                slot = lightmap.get("slot")
+                if isinstance(slot, int) and 0 <= slot < len(render_list["sources"]["texture"]):
+                    identity = atb.texture_identity(
+                        dict(render_list["sources"]["texture"][slot]), archive, scene)
+                    if identity is not None:
+                        expected_name = identity.get("name")
+                        expected_slot = slot
+            check("lightmap %s#%d" % (section["id"], row["drawIndex"]),
+                  row.get("lightmapName") == expected_name and
+                  row.get("lightmapSlot") == expected_slot,
+                  (row.get("lightmapName"), expected_name))
             material_checked += 1
 
     expected_draws = slice_doc["draws"]["drawCount"]
@@ -274,6 +292,15 @@ def main() -> int:
                   if row["status"] == "bindable-static-albedo"))
         check("bindable texture sources",
               manifest["counts"]["bindableTextureSources"] == len(bindable_ids))
+
+    lightmap_names = Counter(row["lightmapName"] for row in manifest["draws"]
+                             if row.get("lightmapName"))
+    check("lightmap counters",
+          manifest["counts"].get("lightmapDraws") == sum(lightmap_names.values()) and
+          manifest["counts"].get("lightmapNames") == dict(sorted(lightmap_names.items())),
+          manifest["counts"].get("lightmapDraws"))
+    check("lightmap names are lightmap textures",
+          all(name.startswith("lightmap_") for name in lightmap_names))
 
     # Blocker report: every unsupported section stops on a POSITION0 format and
     # resolves a static albedo on the texture side.

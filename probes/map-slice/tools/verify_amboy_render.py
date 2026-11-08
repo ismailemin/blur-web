@@ -3,8 +3,11 @@
 
 Re-reads the package and the original MAP2/MAP3 inputs, then recomputes:
 
-  * every geometry buffer, index range and UV0 hash (1,201 bindable draws);
+  * every geometry buffer, index range, UV0 hash and lightmap-UV stream
+    (1,201 bindable draws);
   * the 1,201 bindable / 405 blocked split and the 334-draw additive-decal list;
+  * the per-draw ``g_tLightmap`` name against the binding manifest and the
+    committed lighting table;
   * 186 texture sources merged into 179 RGBA mip0 blobs, with file hashes,
     dimensions, alpha and expected mip-chain byte counts;
   * layout point hash, spawn, checkpoints, finish, path length and heading;
@@ -29,6 +32,12 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
 TOOL = Path(__file__).resolve().parent / "build_amboy_render.py"
+LIGHTING = ROOT / "probes/lighting/data/runtime-lighting.json"
+LEVEL_TO_MAP = {
+    "usa_amboy": "amboy",
+    "spa_barcelona_gracia": "gracia",
+    "usa_la_longbeachdocks": "longbeach",
+}
 
 BINDABLE = "bindable-static-albedo"
 EFFECT = "blocked-effect-not-static-albedo"
@@ -183,6 +192,10 @@ def verify(package: Path, level: str | None = None) -> dict:
                  "srgbApplied", "mipsGenerated", "instancesApplied", "normalsIncluded"):
         expected = name in ("dataOnly",)
         c.check("scope." + name, manifest["scope"].get(name) is expected)
+    c.check("scope.lightmapUvIncluded",
+            manifest["scope"].get("lightmapUvIncluded") is True)
+    c.check("scope.lightmapBoundInGpu",
+            manifest["scope"].get("lightmapBoundInGpu") is False)
     c.check("scope.partialSceneTraversal", manifest["scope"].get("partialSceneTraversal") is True)
     c.check("scope.coordinateSpace", manifest["scope"].get("coordinateSpace") ==
             "source level coordinates, unchanged")
@@ -242,10 +255,14 @@ def verify(package: Path, level: str | None = None) -> dict:
 
     contract = manifest.get("uploadContract", {})
     c.check("upload.version", contract.get("version") == 1)
-    c.check("upload.vertexBuffers", contract["geometry"].get("vertexBuffers") == 2)
+    c.check("upload.vertexBuffers", contract["geometry"].get("vertexBuffers") == 3)
     c.check("upload.indexBuffers", contract["geometry"].get("indexBuffers") == 1)
     c.check("upload.positionFormat", contract["geometry"].get("positionFormat") == "float32x3")
     c.check("upload.uv0Format", contract["geometry"].get("uv0Format") == "float32x2")
+    c.check("upload.lightmapUvBuffer",
+            contract["geometry"].get("lightmapUvBuffer") == "draws.lightmapUv.f32.bin")
+    c.check("upload.lightmapUvFormat",
+            contract["geometry"].get("lightmapUvFormat") == "float32x2")
     c.check("upload.indexFormat", contract["geometry"].get("indexFormat") == "uint32")
     c.check("upload.uploadOnce", contract["geometry"].get("uploadOnce") is True)
     c.check("upload.texFormat", contract["textures"].get("uploadFormat") == "rgba8unorm")
@@ -278,6 +295,7 @@ def verify(package: Path, level: str | None = None) -> dict:
             source["slice"].get("contentSha256") == slice_doc["hashes"]["contentSha256"])
     for key, name in (("positions", "draws.positions.f32.bin"),
                       ("uv0", "draws.uv0.f32.bin"),
+                      ("lightmapUv", "draws.lightmapUv.f32.bin"),
                       ("indices", "draws.indices.u32.bin")):
         path = SLICE_DIR / name
         record = source["slicePayloads"][key]
@@ -292,15 +310,20 @@ def verify(package: Path, level: str | None = None) -> dict:
     # ------------------------------------------------------------- buffers
     pos = (package / "draws.positions.f32.bin").read_bytes()
     uv_bytes = (package / "draws.uv0.f32.bin").read_bytes()
+    lightmap_uv_bytes = (package / "draws.lightmapUv.f32.bin").read_bytes()
     idx_bytes = (package / "draws.indices.u32.bin").read_bytes()
     positions = np.frombuffer(pos, dtype="<f4")
     uv0 = np.frombuffer(uv_bytes, dtype="<f4")
+    lightmap_uv = np.frombuffer(lightmap_uv_bytes, dtype="<f4")
     indices = np.frombuffer(idx_bytes, dtype="<u4")
     c.check("buffer.positions.equalSlice", pos == (SLICE_DIR / "draws.positions.f32.bin").read_bytes())
     c.check("buffer.uv0.equalSlice", uv_bytes == (SLICE_DIR / "draws.uv0.f32.bin").read_bytes())
+    c.check("buffer.lightmapUv.equalSlice",
+            lightmap_uv_bytes == (SLICE_DIR / "draws.lightmapUv.f32.bin").read_bytes())
     c.check("buffer.indices.equalSlice", idx_bytes == (SLICE_DIR / "draws.indices.u32.bin").read_bytes())
     for name, record in (("positions", manifest["buffers"]["positions"]),
                          ("uv0", manifest["buffers"]["uv0"]),
+                         ("lightmapUv", manifest["buffers"]["lightmapUv"]),
                          ("indices", manifest["buffers"]["indices"])):
         path = package / record["path"]
         c.check("buffer.%s.path" % name, path.is_file())
@@ -313,14 +336,20 @@ def verify(package: Path, level: str | None = None) -> dict:
     expected_indices = slide["triangleCount"] * 3
     c.check("buffer.vertexCount", positions.size == expected_vertices * 3)
     c.check("buffer.uvCount", uv0.size == expected_vertices * 2)
+    c.check("buffer.lightmapUvCount", lightmap_uv.size == expected_vertices * 2)
     c.check("buffer.indexCount", indices.size == expected_indices)
     c.check("buffer.triangles", indices.size // 3 == slide["triangleCount"])
     c.check("buffer.indexMax", int(indices.max()) < expected_vertices,
             int(indices.max()))
     c.check("buffer.positionFinite", bool(np.isfinite(positions).all()))
     c.check("buffer.uvFinite", bool(np.isfinite(uv0).all()))
+    c.check("buffer.lightmapUvFinite", bool(np.isfinite(lightmap_uv).all()))
     c.check("buffer.positions.stride", manifest["buffers"]["positions"].get("stride") == 12)
     c.check("buffer.uv0.stride", manifest["buffers"]["uv0"].get("stride") == 8)
+    c.check("buffer.lightmapUv.stride",
+            manifest["buffers"]["lightmapUv"].get("stride") == 8)
+    c.check("buffer.lightmapUv.role",
+            "lightmap" in manifest["buffers"]["lightmapUv"].get("role", ""))
     c.check("buffer.indices.role",
             "global triangle index" in manifest["buffers"]["indices"].get("role", ""))
 
@@ -387,8 +416,41 @@ def verify(package: Path, level: str | None = None) -> dict:
         c.check("draw.%s.slot" % draw_id,
                 isinstance(slot, int) and
                 0 <= slot < manifest["counts"]["uniqueTextureBlobs"], slot)
+        c.check("draw.%s.lightmap" % draw_id,
+                draw.get("lightmapName") == binding_draw.get("lightmapName") and
+                draw.get("lightmapSlot") == binding_draw.get("lightmapSlot"),
+                (draw.get("lightmapName"), binding_draw.get("lightmapName")))
 
     c.check("draws.uvChecked", uv_checked == expected_bindable, uv_checked)
+
+    # ------------------------------------------------------------ lightmaps
+    # The per-draw name is the material g_tLightmap identity recorded by the
+    # binding manifest. It must appear in the committed lighting table with the
+    # same texture name; no name or dimension is invented here.
+    used_lightmaps = sorted({draw["lightmapName"] for draw in draws
+                             if draw.get("lightmapName")})
+    lightmap_draws = sum(1 for draw in draws if draw.get("lightmapName"))
+    c.check("counts.lightmapDraws",
+            counts.get("lightmapDraws") == lightmap_draws,
+            (counts.get("lightmapDraws"), lightmap_draws))
+    c.check("counts.lightmapNames",
+            counts.get("lightmapNames") == used_lightmaps,
+            counts.get("lightmapNames"))
+    c.check("lightmaps.bindingNames",
+            used_lightmaps == sorted({row["lightmapName"] for row in bindings["draws"]
+                                      if row.get("lightmapName") and
+                                      row["status"] == BINDABLE}))
+    map_id = LEVEL_TO_MAP.get(level)
+    if map_id and LIGHTING.is_file():
+        lighting = load_json(LIGHTING)
+        table = {texture["name"]: texture
+                 for texture in lighting["maps"][map_id]["lightmap"]["textures"]}
+        missing = [name for name in used_lightmaps if name not in table]
+        c.check("lightmaps.namesInCommittedTable", not missing, missing)
+        c.check("lightmaps.namesResolveToLightmaps",
+                all(name.startswith("lightmap_") for name in used_lightmaps))
+        c.check("lightmaps.drawsHaveUv",
+                lightmap_draws > 0 and expected_bindable > 0)
 
     # ---------------------------------------------------------- diagnostics
     diag_draws = diagnostics["draws"]
@@ -680,7 +742,7 @@ def verify(package: Path, level: str | None = None) -> dict:
             hashes.get("contentSha256") == sha256_bytes(canonical(body)))
     c.check("hashes.fileCount",
             len(hashes["files"]) ==
-            5 + len(items), len(hashes["files"]))
+            6 + len(items), len(hashes["files"]))
     package_files = file_map(package, ignore=("render.json", "verify.json"))
     c.check("hashes.noMissingFiles", set(package_files) == set(hashes["files"]))
     hash_bad = 0
@@ -771,6 +833,9 @@ def verify(package: Path, level: str | None = None) -> dict:
             "textureMip0Bytes": texture_bytes,
             "textureExpectedChainBytes": chain_bytes,
             "layoutPoints": len(points),
+            "lightmapDraws": lightmap_draws,
+            "lightmapNames": used_lightmaps,
+            "lightmapUvBytes": len(lightmap_uv_bytes),
         },
         "determinism": {
             "builds": 2,

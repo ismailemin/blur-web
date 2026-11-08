@@ -28,6 +28,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const sha256 = (buffer) => 'sha256:' + createHash('sha256').update(buffer).digest('hex');
 const readBytes = (relative) => readFileSync(path.join(ROOT, relative));
 
+// The decoded retail lightmap textures the opaque draws reference. The pixels
+// are exported by probes/lighting; this builder records the identity, the
+// dimensions and the URL the consumer fetches, exactly like the map-batch
+// `build_e1_package.py`.
+const LIGHTING_TABLE = 'probes/lighting/data/runtime-lighting.json';
+
 /** Per-map package shapes and the prose the map document records. */
 export const MAP_BUILDS = Object.freeze({
   amboy: Object.freeze({
@@ -38,8 +44,8 @@ export const MAP_BUILDS = Object.freeze({
     render: '_work/map-slice/amboy-render/render.json',
     diagnostics: '_work/map-slice/amboy-render/diagnostics.json',
     physics: 'game-data/Blur/levels/usa_amboy/Level.levelphysics',
-    sliceContent: '61915aedfaab43b6b327c3ef803c896ea55397bc7dc7a4d2757f340632043ec8',
-    renderContent: '626d39534bc3a37e5878c6801443c580aba576e45f3cba10ddb73a7edc50bf71',
+    sliceContent: '90ac3978f9a65c846b4c4759524022e792e35cb3076cfa0c0cd573222ec92af6',
+    renderContent: 'db75a1372280776dae4d2ff1c9a74472df308fd4c4cb524526b5ee5c88bac71e',
     meshId: 'amboy.direct',
     renderLabel: 'amboy-direct-draws',
     packageLabel: 'amboy-render',
@@ -81,8 +87,8 @@ export const MAP_BUILDS = Object.freeze({
     render: '_work/map-slice/gracia-render/render.json',
     diagnostics: '_work/map-slice/gracia-render/diagnostics.json',
     physics: 'game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics',
-    sliceContent: 'c1bdf1a7c91d0cd0d1866e28ab9140975401e9927f8466facded2cc5d6e89fef',
-    renderContent: '1fae82cf504afd9e3a88f55a0f310d7b09c8d42e494d23d775e80ef8b8516280',
+    sliceContent: '67e67999ce6c0bdec959d07be13daf20e075b56644249b29c6898e6e08d6032d',
+    renderContent: '418aff706e136006c0fe01896ba4bdcd0ba70af01e11b73e3955506b12de6186',
     meshId: 'gracia.direct',
     renderLabel: 'gracia-direct-draws',
     packageLabel: 'gracia-render',
@@ -130,8 +136,8 @@ export const MAP_BUILDS = Object.freeze({
     render: '_work/map-slice/longbeach-render/render.json',
     diagnostics: '_work/map-slice/longbeach-render/diagnostics.json',
     physics: 'game-data/Blur/levels/usa_la_longbeachdocks/Level.levelphysics',
-    sliceContent: 'c800503f986e94bd84fc16295f424a779e965cd9c499affdeb65edcf0d008f39',
-    renderContent: 'c8bfff56018c059efdf31ae749c353435aab25d8359577b307606d378c032199',
+    sliceContent: 'cabe52124b5506ae2c0801e2f652ce5369d3dfb54a4af15590b78e26e22ff695',
+    renderContent: '5ab20e8c66dec4d5954203f497c71e00d0c9a6fd62b47848b73e888a490d7fca',
     // The draw-covered path crosses a 10 cm curb at arc 226.8 m and the car
     // cannot pass; the committed collision-derived path clears it by 6.836 m.
     layoutSource: 'probes/map-laps/data/longbeach-path.json',
@@ -226,6 +232,7 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
   // Verify every render payload file this builder consumes against render.json.
   const positionsBytes = read('_work/map-slice/' + path.posix.basename(path.posix.dirname(PATHS.render)) + '/draws.positions.f32.bin');
   const uv0Bytes = read('_work/map-slice/' + path.posix.basename(path.posix.dirname(PATHS.render)) + '/draws.uv0.f32.bin');
+  const lightmapUvBytes = read('_work/map-slice/' + path.posix.basename(path.posix.dirname(PATHS.render)) + '/draws.lightmapUv.f32.bin');
   const indexBytes = read('_work/map-slice/' + path.posix.basename(path.posix.dirname(PATHS.render)) + '/draws.indices.u32.bin');
   const layoutBytes = read('_work/map-slice/' + path.posix.basename(path.posix.dirname(PATHS.render)) + '/layout.points.f32.bin');
   const diagnosticsBytes = read(PATHS.diagnostics);
@@ -244,6 +251,7 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
   };
   pinBuffer('positions', positionsBytes);
   pinBuffer('uv0', uv0Bytes);
+  pinBuffer('lightmapUv', lightmapUvBytes);
   pinBuffer('indices', indexBytes);
 
   if (sha256(layoutBytes) !== 'sha256:' + render.layout.pointsSha256) {
@@ -271,6 +279,8 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
     new Float32Array(positionsBytes.buffer, positionsBytes.byteOffset, positionsBytes.byteLength / 4));
   const uv0 = Float32Array.from(
     new Float32Array(uv0Bytes.buffer, uv0Bytes.byteOffset, uv0Bytes.byteLength / 4));
+  const lightmapUv = Float32Array.from(
+    new Float32Array(lightmapUvBytes.buffer, lightmapUvBytes.byteOffset, lightmapUvBytes.byteLength / 4));
   const indices = Uint32Array.from(
     new Uint32Array(indexBytes.buffer, indexBytes.byteOffset, indexBytes.byteLength / 4));
   const vertexCount = positions.length / 3;
@@ -279,6 +289,9 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
     throw new Error('geometry counts do not match render.json');
   }
   if (uv0.length !== vertexCount * 2) throw new Error('UV0 count does not match the vertex count');
+  if (lightmapUv.length !== vertexCount * 2) {
+    throw new Error('lightmap UV count does not match the vertex count');
+  }
 
   const MESH_ID = config.meshId;
   const mesh = {
@@ -302,15 +315,35 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
         provenance: config.uvProvenance
       }
     },
+    lightmapUv: {
+      storage: 'base64-float32le',
+      components: 2,
+      vertexCount,
+      values: vertexCount * 2,
+      bytes: lightmapUvBytes.byteLength,
+      data: lightmapUvBytes.toString('base64'),
+      sha256: 'sha256:' + sha256(lightmapUvBytes).slice(7),
+      source: {
+        provenance: 'map-slice merged draws.lightmapUv.f32.bin; the reader F16_4 UV0 .zw stream (retail g_tLightmap UV), zero where the UV0 type is not F16_4'
+      }
+    },
     coordinateSpace: 'world',
     source: {
       package: '_work/map-slice/' + config.packageLabel,
-      buffers: ['draws.positions.f32.bin', 'draws.uv0.f32.bin', 'draws.indices.u32.bin'],
+      buffers: ['draws.positions.f32.bin', 'draws.uv0.f32.bin',
+        'draws.lightmapUv.f32.bin', 'draws.indices.u32.bin'],
       note: config.uvNote
     }
   };
 
   // ------------------------------------------------------------------ draws
+  const lightmapUrl = (name) => '/_work/lighting/' + config.id + '/lightmap/' + name + '.rgba';
+  const lighting = JSON.parse(read(LIGHTING_TABLE).toString('utf8'));
+  const lightmapTable = lighting.maps?.[config.id]?.lightmap;
+  if (!lightmapTable) throw new Error('no committed lightmap table for ' + config.id);
+  const lightmapByName = new Map(
+    lightmapTable.textures.map((texture) => [texture.name, texture]));
+
   const boundsFor = (firstIndex, count) => {
     const min = [Infinity, Infinity, Infinity];
     const max = [-Infinity, -Infinity, -Infinity];
@@ -346,6 +379,8 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
       textureId: draw.textureId,
       textureSlot: draw.textureSlot,
       textureName: draw.textureName,
+      lightmapName: draw.lightmapName ?? null,
+      lightmapUrl: draw.lightmapName ? lightmapUrl(draw.lightmapName) : null,
       uvHash: draw.uvHash,
       section: draw.section,
       sectionDrawIndex: draw.sectionDrawIndex,
@@ -410,6 +445,30 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
     if (!merged) throw new Error('draw ' + draw.id + ' names unknown texture source ' + draw.textureId);
     draw.textureSourceId = draw.textureId;
     draw.textureId = merged;
+  }
+
+  // ------------------------------------------------------------- lightmaps
+  // The decoded retail lightmap textures the opaque draws reference. Each name
+  // must exist in the committed lighting table; no name or dimension is guessed.
+  const usedLightmaps = [...new Set(draws.map((draw) => draw.lightmapName).filter(Boolean))].sort();
+  const lightmaps = usedLightmaps.map((name) => {
+    const texture = lightmapByName.get(name);
+    if (!texture) throw new Error('lightmap ' + name + ' is not in the committed lighting table');
+    return {
+      name,
+      width: texture.width,
+      height: texture.height,
+      format: texture.format,
+      formatName: texture.formatName,
+      sha256: texture.sha256,
+      decodedRgbaSha256: texture.decodedRgbaSha256,
+      bytes: texture.decodedRgbaBytes,
+      url: lightmapUrl(name),
+      source: LIGHTING_TABLE
+    };
+  });
+  if (!lightmaps.length) {
+    throw new Error('no opaque draw references a committed lightmap for ' + config.id);
   }
 
   // ------------------------------------------------------------------ collision
@@ -739,6 +798,7 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
       triangleTotal: indexCount / 3,
       draws,
       textures,
+      lightmaps,
       sections: [],
       texturePack: {
         format: 'rgba8unorm',
