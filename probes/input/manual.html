@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blur Web input layer — manual controller check</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 14px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+         background: #101317; color: #d7dde5; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 18px; letter-spacing: .04em; text-transform: uppercase; }
+  h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #8fa3b8;
+       margin-top: 28px; border-bottom: 1px solid #26303b; padding-bottom: 6px; }
+  p, li { color: #aeb9c6; }
+  .row { display: grid; grid-template-columns: 190px 1fr; gap: 8px 14px; align-items: center; }
+  .row > span:first-child { color: #8fa3b8; }
+  .bar { position: relative; height: 18px; background: #1b222b; border: 1px solid #2a3542; }
+  .bar i { position: absolute; top: 0; bottom: 0; background: #4f9cf9; }
+  .bar b { position: absolute; top: 0; bottom: 0; width: 1px; background: #e0a84f; }
+  .value { font-variant-numeric: tabular-nums; }
+  .ok { color: #62c98a; } .warn { color: #e0a84f; } .bad { color: #ef6b73; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  button { background: #1c2530; color: #d7dde5; border: 1px solid #33414f;
+           padding: 6px 10px; cursor: pointer; font: inherit; }
+  button:hover { border-color: #4f9cf9; }
+  pre { background: #151a21; border: 1px solid #26303b; padding: 10px; overflow: auto;
+        max-height: 260px; }
+  code { color: #c9d6e4; }
+  .pill { display: inline-block; padding: 1px 7px; border: 1px solid #33414f; border-radius: 999px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Blur Web input layer — manual controller check</h1>
+  <p>
+    This page is the documented manual check for the gamepad path. The automated
+    verifier (<code>node probes/input/verify_input.mjs</code>) uses a synthetic
+    Gamepad API stub; <strong>it is not hardware verification</strong>. A human
+    with a physical controller must run this page and record what was observed.
+  </p>
+
+  <h2>Steps</h2>
+  <ol>
+    <li>Connect an XInput-compatible pad <em>before</em> opening the page, then press a button once
+        (the Gamepad API only exposes a pad after user activity).</li>
+    <li>Check the pad line below: it must name the device, show <code>standard</code> mapping and
+        <span class="ok">connected</span>.</li>
+    <li>Press RT slowly: <code>throttle</code> must rise from 0 to 1 in steps (not 0/1).
+        Press LT: <code>brake</code> must do the same.</li>
+    <li>Move the left stick: <code>steer</code> must stay 0 near the centre (25% radial deadzone)
+        and reach ±1 at the rim. The D-pad left/right must also steer.</li>
+    <li>Config 0: <code>B</code> is the handbrake, <code>A</code> uses a pickup, <code>RB</code>
+        fires <code>changeViewPressed</code> once per press. Config 1/2 change these; use the
+        buttons below.</li>
+    <li>Move the right stick: <code>lookX/lookY</code> must follow it. Hold <code>Tab</code>
+        (layout 1: <code>PageDown</code>): <code>rearView</code> becomes true and
+        <code>lookY</code> is forced to −1.</li>
+    <li>Unplug the pad while holding RT: the pad line must switch to
+        <span class="bad">disconnected</span> and every control must return to 0 on the next
+        sample. Reconnect: nothing may remain stuck.</li>
+    <li>Keyboard: layout 0 uses <code>Q</code>/<code>A</code>/arrow steering and
+        <code>ArrowDown</code> handbrake; layout 1 uses <code>W</code>/<code>S</code>/<code>A</code>
+        <code>D</code> and <code>Space</code>. Use the layout buttons below.</li>
+  </ol>
+
+  <h2>Runtime</h2>
+  <div class="row"><span>pad</span><span id="pad">—</span></div>
+  <div class="row"><span>mapping</span><span id="mapping">—</span></div>
+  <div class="row"><span>tick</span><span id="tick" class="value">—</span></div>
+  <div class="row"><span>source</span><span id="source">—</span></div>
+
+  <h2>Controls (engineInput order)</h2>
+  <div class="row"><span>throttle</span><span class="bar"><i id="bar-throttle"></i></span></div>
+  <div class="row"><span>brake</span><span class="bar"><i id="bar-brake"></i></span></div>
+  <div class="row"><span>steer</span><span class="bar"><i id="bar-steer"></i><b style="left:50%"></b></span></div>
+  <div class="row"><span>handbrake</span><span class="bar"><i id="bar-handbrake"></i></span></div>
+  <div class="row"><span>values</span><span id="values" class="value">—</span></div>
+
+  <h2>Camera</h2>
+  <div class="row"><span>look</span><span id="look" class="value">—</span></div>
+  <div class="row"><span>rear view</span><span id="rear" class="value">—</span></div>
+  <div class="row"><span>change view edge</span><span id="change" class="value">—</span></div>
+
+  <h2>Raw pad</h2>
+  <div class="row"><span>axes</span><span id="axes" class="value">—</span></div>
+  <div class="row"><span>buttons</span><span id="buttons" class="value">—</span></div>
+
+  <h2>Setup</h2>
+  <div class="controls">
+    <button data-layout="0">keyboard layout 0</button>
+    <button data-layout="1">keyboard layout 1</button>
+    <button data-pad="0">pad config 0</button>
+    <button data-pad="1">pad config 1</button>
+    <button data-pad="2">pad config 2</button>
+    <button id="clear">clear keys</button>
+  </div>
+  <div class="row"><span>bindings</span><span id="bindings">—</span></div>
+
+  <h2>State JSON (what replay/net would carry)</h2>
+  <pre id="json">—</pre>
+  <p class="pill">netInput is the exact net-mvp packet shape; engineInput is the e1_set_input order.</p>
+</main>
+<script type="module">
+import {
+  createInputLayer, browserGamepadSource, PAD_CONFIGS, KEYBOARD_LAYOUTS, canonicalJson
+} from './input.mjs';
+
+const layer = createInputLayer({
+  gamepadSource: browserGamepadSource(),
+  keyboardLayout: 0,
+  padConfig: 0,
+  shapePreview: true
+});
+layer.attach(window);
+
+const $ = (id) => document.getElementById(id);
+const setBar = (id, value, min = 0, max = 1) => {
+  const bar = $(id);
+  const ratio = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  bar.style.left = (min < 0 ? 50 : 0) + '%';
+  bar.style.width = (min < 0 ? ratio * 50 : ratio * 100) + '%';
+};
+
+for (const button of document.querySelectorAll('[data-layout]')) {
+  button.addEventListener('click', () => {
+    layer.setKeyboardLayout(Number(button.dataset.layout));
+    updateBindings();
+  });
+}
+for (const button of document.querySelectorAll('[data-pad]')) {
+  button.addEventListener('click', () => {
+    layer.setPadConfig(Number(button.dataset.pad));
+    updateBindings();
+  });
+}
+$('clear').addEventListener('click', () => layer.clearKeys());
+
+function updateBindings() {
+  const bindings = layer.serializeBindings();
+  $('bindings').textContent =
+    `keyboard layout ${bindings.keyboardLayout} (${KEYBOARD_LAYOUTS[bindings.keyboardLayout].name}) · ` +
+    `pad config ${bindings.padConfig} (${PAD_CONFIGS[bindings.padConfig].name}) · ` +
+    `deadzone ${bindings.deadzone}`;
+}
+updateBindings();
+
+function frame() {
+  const state = layer.sample();
+  const pad = state.devices.pad;
+  $('pad').innerHTML = pad.connected
+    ? `<span class="ok">connected</span> · index ${pad.index} · connects ${pad.connects} · disconnects ${pad.disconnects}`
+    : `<span class="bad">disconnected</span> · connects ${pad.connects} · disconnects ${pad.disconnects}` +
+      (pad.rejectedMappings ? ` · rejected mappings ${pad.rejectedMappings}` : '');
+  $('mapping').textContent = pad.mapping ?? '—';
+  $('tick').textContent = state.tick;
+  $('source').textContent = state.source;
+  setBar('bar-throttle', state.controls.throttle);
+  setBar('bar-brake', state.controls.brake);
+  setBar('bar-steer', state.controls.steer, -1, 1);
+  setBar('bar-handbrake', state.controls.handbrake);
+  $('values').textContent =
+    `thr ${state.controls.throttle.toFixed(3)} · brk ${state.controls.brake.toFixed(3)} · ` +
+    `str ${state.controls.steer.toFixed(3)} · hb ${state.controls.handbrake} ` +
+    `(raw ${state.controls.handbrakeRaw.toFixed(3)})`;
+  $('look').textContent = `${state.camera.lookX.toFixed(3)}, ${state.camera.lookY.toFixed(3)}`;
+  $('rear').textContent = String(state.camera.rearView);
+  $('change').textContent = String(state.camera.changeViewPressed);
+  $('axes').textContent = state.raw ? state.raw.padAxes.map((v) => v.toFixed(3)).join(' ') : '—';
+  $('buttons').textContent = state.raw
+    ? state.raw.padButtons.map((v) => v.toFixed(2)).join(' ')
+    : '—';
+  $('json').textContent = canonicalJson(state).replace(/","/g, '",\n  "');
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

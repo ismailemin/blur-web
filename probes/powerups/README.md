@@ -20,6 +20,9 @@ Data-only power-up recovery for the Blur Web project. Nothing here changes
 | `tools/build_supershield.py` | SS1 | SuperShield data/provenance manifest |
 | `tools/verify_supershield.py` | SS1 | independent direct-offset verifier for `supershield.json` |
 | `rules/supershield.js`, `rules/supershield.test.mjs` | SS1 | typed SuperShield model + 17 tests |
+| `tools/build_pickup_runtime.py` | PWR6 | final runtime placement set (byte offsets, yaw, structure, reachability) |
+| `tools/verify_pickup_runtime.py` | PWR6 | independent direct-offset verifier + two-build determinism |
+| `tools/pickup_runtime_common.py` | PWR6 | projection and collision/visible-geometry queries |
 
 ## SuperShield (SS1)
 
@@ -128,6 +131,44 @@ The retail routes are not the measured e1-drive paths. The primary Amboy route
 has 2 placements within 2.0 m of the measured centreline (nearest 0.45 m); the
 primary Gracia route has 1 (0.83 m). All other placements are off-path but have
 ground. Full contract: `docs/work/analysis/pickup-placement.md` §11–§14.
+
+## Runtime placement set for Amboy and Gracia (PWR6)
+
+`build_pickup_runtime.py` is the integration artifact: it re-decodes every
+retail `PickupPosition` of every raced route with absolute byte offsets, adds
+retail yaw, measures the slot against the measured e1-drive path, the committed
+collision mesh and the committed draw buffers, and publishes the ordered host
+set (spawn set, measured-course set, shuffle groups, typed exclusions/flags,
+River-identical respawn/reset rules).
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/powerups/tools/build_pickup_runtime.py --level usa_amboy
+& $py probes/powerups/tools/build_pickup_runtime.py --level spa_barcelona_gracia
+& $py probes/powerups/tools/verify_pickup_runtime.py --level usa_amboy
+& $py probes/powerups/tools/verify_pickup_runtime.py --level spa_barcelona_gracia
+```
+
+Outputs (not committed):
+
+- `_work/powerups/runtime-amboy.json` — routes 633252245 (83) and 2779865848
+  (52), each slot with provenance offsets, `yaw.radians`, row group,
+  measured-path distance/arc/signed cross, ground/cover/wall clearances and
+  `reachability`.
+- `_work/powerups/runtime-gracia.json` — routes 46220414 (59), 2844032875 (45)
+  and 3824353713 (40).
+- `_work/powerups/runtime-{amboy,gracia}.verify.json` — 8,268 and 8,852 checks,
+  PASS, two-build determinism.
+- `_work/powerups/pwr6-summary.json` — condensed tables.
+- `_work/logs/powerups/pwr6-*.log` — build, verify and River regression logs.
+
+Primary results: Amboy 82/83 spawnable (1 `PickupActiveLevel 0` excluded),
+2 placements within 2.0 m of the measured path (nearest 0.452 m); Gracia 59/59
+spawnable, 1 within 2.0 m (0.834 m). All 8 MP types are on both primary routes;
+the measured sub-course touches only Shunt/Blindfire (Amboy) and
+Blindfire/Bomb (Gracia). SuperShield stays a project extension with no slot.
+Full contract and tables: `docs/work/analysis/pickup-placement-all-maps.md`.
 
 ## PWR1 definitions
 

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blur Web — browser capability probe</title>
+<style>
+  body { margin: 0; padding: 24px; background: #0d1117; color: #d7dde5;
+         font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  h1 { font-size: 16px; letter-spacing: .08em; text-transform: uppercase; color: #9fd3ff; }
+  #state { margin: 12px 0; }
+  #out { white-space: pre-wrap; background: #11161d; border: 1px solid #243040;
+         padding: 16px; max-height: 70vh; overflow: auto; }
+  .ok { color: #6ee7a8; } .bad { color: #ff8b8b; }
+</style>
+</head>
+<body>
+<h1>Browser capability probe</h1>
+<div id="state">collecting…</div>
+<div id="out"></div>
+<script type="module" src="./capability.js"></script>
+</body>
+</html>

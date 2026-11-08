@@ -192,6 +192,8 @@ class Object:
             return 60 + u16(d, data + 56) * 4
         if ctype == 64:  # StereoLoopingSound
             return 60 + u16(d, data + 56) * 4
+        if ctype in (65, 66):  # Mono/StereoStreamingSound (same Data as looping)
+            return 60 + u16(d, data + 56) * 4
         if ctype == 20:  # Variable
             return 8
         if ctype == 51:  # SampleAndHold: name + Control input
@@ -248,6 +250,8 @@ class Object:
             return 16
         if ctype == 198:  # ImpactFilter (Component.h:368): name, control, 2 options, event
             return 28
+        if ctype == 192:  # DopplerShift: name + Option + 4 Com (DopplerShift.h:12-23)
+            return 20
         if ctype == 190:  # eVector: name, 3 options, input vector
             return 32
         raise NotImplementedError("no data-size rule")

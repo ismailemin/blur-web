@@ -68,18 +68,51 @@ def normalise(name: str) -> str:
 
 
 def map_car(car: dict, vehicles: list[dict], wheel_models: dict[str, str]) -> dict:
-    """Return the mapping record for one roster car; never guesses."""
-    wanted = normalise(car["name"]) + ".model"
+    """Return the mapping record for one roster car; never guesses.
+
+    A class-B car maps by the exact normalised record name. A class-C record has
+    no such file name; its roster entry may carry an explicit ``model`` plus the
+    ``modelMapping`` evidence that resolves it (AmaxVehicle.dynamics handle ->
+    RP_CarDynamics id, then the engine's tag -> ``models/vehicles/%s.model``
+    rule). The explicit model must equal that tag-derived name, so the override
+    cannot be a nearest-file guess.
+    """
+    override = car.get("model")
+    mapping = car.get("modelMapping")
+    if override:
+        wanted = Path(override.replace("\\", "/")).name.lower()
+        if not mapping:
+            raise SystemExit(f"{car['slug']}: roster model override has no modelMapping evidence")
+        if mapping.get("nameSimilarityUsed") is not False:
+            raise SystemExit(f"{car['slug']}: modelMapping must state nameSimilarityUsed:false")
+        if mapping.get("handleResolvesToExactRecordId") is not True:
+            raise SystemExit(f"{car['slug']}: modelMapping must prove the exact record id")
+        if mapping.get("recordIndex") != car["recordIndex"] or mapping.get("recordId") != car["recordId"]:
+            raise SystemExit(f"{car['slug']}: modelMapping does not describe this record")
+        tag_derived = normalise(mapping.get("amaxTag", "")) + ".model"
+        if tag_derived != wanted:
+            raise SystemExit(
+                f"{car['slug']}: modelMapping tag {mapping.get('amaxTag')!r} derives {tag_derived}, "
+                f"the roster model is {wanted}")
+        expected_path = "\\models\\vehicles\\" + wanted
+        rule = ("record-level mapping: AmaxVehicle.dynamics handle -> RP_CarDynamics id, then the engine's "
+                "tag -> \\models\\vehicles\\%s.model rule; never name similarity")
+    else:
+        if mapping:
+            raise SystemExit(f"{car['slug']}: modelMapping without an explicit model")
+        wanted = normalise(car["name"]) + ".model"
+        expected_path = VEHICLE_PREFIX + wanted
+        rule = "exact normalised model file name under \\models\\vehicles\\"
     exact = [row for row in vehicles if Path(row["path"]).name.lower() == wanted]
     prefix = [row for row in vehicles
-              if Path(row["path"]).name.lower().startswith(normalise(car["name"]))]
+              if Path(row["path"]).name.lower().startswith(wanted.split(".")[0])]
     record = {
         "slug": car["slug"],
         "name": car["name"],
         "record": {"index": car["recordIndex"], "id": car["recordId"]},
         "normalisedName": normalise(car["name"]),
-        "expectedPath": VEHICLE_PREFIX + wanted,
-        "rule": "exact normalised model file name under \\models\\vehicles\\",
+        "expectedPath": expected_path,
+        "rule": rule,
         "prefixCandidates": sorted(row["path"] for row in prefix),
         "wheelsResource": wheel_models.get(wanted),
         "wheelsResourceReason":
@@ -89,9 +122,11 @@ def map_car(car: dict, vehicles: list[dict], wheel_models: dict[str, str]) -> di
         "mapped": False,
         "reason": None,
     }
+    if mapping:
+        record["modelMapping"] = mapping
     if len(exact) != 1:
         record["reason"] = (
-            "no unique model file: expected " + VEHICLE_PREFIX + wanted +
+            "no unique model file: expected " + expected_path +
             ", found " + str(len(exact)) + " exact candidate(s)")
         return record
     row = exact[0]
@@ -154,12 +189,23 @@ def build_manifest(record: dict, force: bool) -> dict:
     out_dir = CARS_DIR / record["slug"]
     if force:
         shutil.rmtree(out_dir, ignore_errors=True)
-    mapping_text = (
-        f"roster name {record['name']} (record {record['record']['index']}/{record['record']['id']}) "
-        f"-> normalised '{record['normalisedName']}' -> exact pak entry {record['pakPath']} "
-        f"({record['logicalBytes']} logical bytes, SHA-256 {record['modelSha256']}); "
-        f"{len(record['prefixCandidates'])} prefix candidate(s) recorded and excluded by exact name"
-    )
+    if record.get("modelMapping"):
+        mapping = record["modelMapping"]
+        mapping_text = (
+            f"roster name {record['name']} (record {record['record']['index']}/{record['record']['id']}) "
+            f"-> explicit record-level model {record['pakPath']} ({record['logicalBytes']} logical bytes, "
+            f"SHA-256 {record['modelSha256']}); AmaxVehicle {mapping['amaxTag']} "
+            f"({mapping['amaxRecordId']}, dynamics ref {mapping['amaxRefIndex']}) carries this exact "
+            f"RP_CarDynamics id and the engine derives models/vehicles/%s.model from the tag; "
+            f"nameSimilarityUsed=false; {len(record['prefixCandidates'])} prefix candidate(s) recorded"
+        )
+    else:
+        mapping_text = (
+            f"roster name {record['name']} (record {record['record']['index']}/{record['record']['id']}) "
+            f"-> normalised '{record['normalisedName']}' -> exact pak entry {record['pakPath']} "
+            f"({record['logicalBytes']} logical bytes, SHA-256 {record['modelSha256']}); "
+            f"{len(record['prefixCandidates'])} prefix candidate(s) recorded and excluded by exact name"
+        )
     command = [
         sys.executable, str(BUILD),
         "--model", record["decodedModel"],

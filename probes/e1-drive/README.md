@@ -385,7 +385,7 @@ streaming/eviction in this pass. Full record:
 
 External pins at report time: the portable suite is **44/45** (the one failure is
 `prop-collision-v2` pinning the whole geometry file; its collider data is
-unchanged) and the PoC checker is **20/23** (three hard-coded five-car totals in
+unchanged), and the PoC checker is **20/23** (three hard-coded 15-car totals in
 `tools/check_e1_poc.py`). Both are owned outside this task; the exact pins are in
 `docs/work/verification/T-007-vehicle-batch1.md` §6.
 

@@ -1,0 +1,131 @@
+{
+  "kind": "blur.profile.contract",
+  "version": 1,
+  "module": "probes/profile/profile.mjs",
+  "schemaVersion": 1,
+  "keys": {
+    "profile": "blur.profile.v1",
+    "profileNamespacePattern": "blur.profile.v1.<namespace>",
+    "backup": "blur.profile.v1.backup",
+    "backupOverflow": [
+      "blur.profile.v1.backup.1",
+      "blur.profile.v1.backup.2"
+    ],
+    "legacyBestTimes": [
+      "e1-drive.sprint.best.v1",
+      "e1-drive.sprint.best.v2.310m",
+      "e1-drive.sprint.best.v2.short",
+      "e1-drive.sprint.best.v2.lap",
+      "e1-drive.sprint.best.v2.free",
+      "e1-drive.sprint.best.v3.amboy",
+      "e1-drive.sprint.best.v3.gracia"
+    ],
+    "legacyBestTime": "bestTime",
+    "ghostStorePrefix": "e1-drive.sprint.ghost.v1.",
+    "ghostIndexUrl": "/ghosts/index.json"
+  },
+  "saveTriggers": [
+    {
+      "event": "settings-change",
+      "when": "after a settings control commits, not on every input event",
+      "sections": ["settings"]
+    },
+    {
+      "event": "selection-change",
+      "when": "when the player confirms a car, map or mode",
+      "sections": ["progress"]
+    },
+    {
+      "event": "race-finish",
+      "when": "once per FINISH event, after the result panel has the final time",
+      "sections": ["records", "stats", "progress"]
+    },
+    {
+      "event": "ghost-recorded",
+      "when": "after the ghost store accepted a faster clean run",
+      "sections": ["records"]
+    },
+    {
+      "event": "reset",
+      "when": "after the player confirms the reset dialog",
+      "sections": ["settings", "progress", "records", "stats"]
+    }
+  ],
+  "failureUi": {
+    "quota-exceeded": {
+      "level": "error",
+      "message": "Progress could not be saved: browser storage is full.",
+      "detail": "Free space or export the profile, then retry. The current session keeps the new values.",
+      "action": "Retry"
+    },
+    "storage-unavailable": {
+      "level": "warning",
+      "message": "This browser is blocking local storage; progress will not survive a reload.",
+      "detail": "Private mode or a storage policy is blocking writes.",
+      "action": "Continue"
+    },
+    "saved-memory": {
+      "level": "warning",
+      "message": "Progress is kept for this session only.",
+      "detail": "The save reached memory but not durable storage.",
+      "action": "Retry / Continue"
+    },
+    "future-schema": {
+      "level": "error",
+      "message": "This profile was written by a newer build and was not loaded.",
+      "detail": "Update the game; this build will not overwrite the newer profile.",
+      "action": "Update"
+    },
+    "read-only": {
+      "level": "error",
+      "message": "The profile is read-only because it could not be recovered safely.",
+      "detail": "A backup is required before any reset or overwrite.",
+      "action": "Backup / Reset"
+    },
+    "corrupt-json": {
+      "level": "warning",
+      "message": "The saved profile was damaged and has been reset. A backup was kept.",
+      "detail": "The damaged bytes are in the backup key reported by load().",
+      "action": "Continue"
+    },
+    "invalid-schema": {
+      "level": "warning",
+      "message": "The saved profile had an unsupported shape and has been reset. A backup was kept.",
+      "detail": "The damaged bytes are in the backup key reported by load().",
+      "action": "Continue"
+    },
+    "backup-failed": {
+      "level": "error",
+      "message": "The profile could not be backed up, so it was not overwritten.",
+      "detail": "Free storage space before retrying the save or reset.",
+      "action": "Retry"
+    },
+    "invalid-profile": {
+      "level": "error",
+      "message": "The game produced an invalid profile and the save was refused.",
+      "detail": "This is a programming error; the stored profile is untouched.",
+      "action": "Report"
+    }
+  },
+  "ghostReference": {
+    "recordField": "records[<map>/<course>/<mode>/<car>].ghost",
+    "indexUrl": "/ghosts/index.json",
+    "localStoreKey": "e1-drive.sprint.ghost.v1.<course>",
+    "indexEntryFields": [
+      "file",
+      "sha256",
+      "ghostHash",
+      "layoutHash",
+      "timeSeconds",
+      "finishTick",
+      "tickCount"
+    ],
+    "rules": [
+      "The profile stores a pointer (file, SHA-256, canonical ghost hash, layout hash, time, ticks), never the ghost payload.",
+      "A reference record is only valid after the consumer re-hashes the file bytes against the index sha256 and re-hashes the decoded record against ghostHash.",
+      "A local ghost is read from the existing per-course ghost store; the profile never duplicates its base64 sample payload.",
+      "A ghost whose layoutHash differs from the active layout is rejected, not replayed.",
+      "If no ghost is available the record keeps ghost:null; the UI says so instead of guessing a pose."
+    ]
+  }
+}

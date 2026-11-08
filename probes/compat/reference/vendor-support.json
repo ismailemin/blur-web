@@ -1,0 +1,301 @@
+{
+  "schema": "blur.compat.vendor-support",
+  "version": 1,
+  "retrieved": "2026-11-08",
+  "rule": "This file records vendor/platform documentation only. Every row states its source and whether it was machine-tested by this probe. No version is inferred: when a source does not give a minimum, the row says so.",
+  "sources": [
+    {
+      "id": "caniuse-webgpu",
+      "url": "https://caniuse.com/webgpu",
+      "dataUrl": "https://raw.githubusercontent.com/Fyrd/caniuse/main/features-json/webgpu.json",
+      "retrieved": "2026-11-08",
+      "notes": {
+        "1": "Can be enabled in Firefox with the dom.webgpu.enabled flag.",
+        "2": "Can be enabled in Safari with the WebGPU feature flag.",
+        "3": "Can be enabled in some Chromium browsers (on Windows, MacOS, Linux) with the enable-unsafe-webgpu flag.",
+        "5": "Not enabled on Linux by default.",
+        "6": "Only enabled by default on Windows.",
+        "7": "Partial support refers to only being enabled by default on macOS 26 Tahoe or later.",
+        "8": "Only enabled by default on Windows as well as macOS 26 Tahoe or later on Apple Silicon.",
+        "9": "Support on Linux depends on hardware and drivers."
+      },
+      "ranges": {
+        "chrome": "113-143 supported (note 5: not enabled on Linux by default); 144-160 supported (note 9: Linux depends on hardware and drivers)",
+        "edge": "113-155 supported (note 5 applies to Chromium); 156 supported",
+        "firefox": "63-140 disabled by default (note 1: dom.webgpu.enabled); 141-144 partial + disabled by default (notes 1 and 6: Windows only); 145-162 partial (notes 1 and 8: Windows and macOS 26 Tahoe or later on Apple Silicon)",
+        "safari": "17.4-18.7 disabled by default (note 2); 26.0-27.3 partial (notes 2 and 7: only enabled by default on macOS 26 Tahoe or later)",
+        "ios_saf": "17.4-18.7 disabled by default (note 2); 26.0-27.2 supported",
+        "opera": "73-98 disabled by default (note 3); 99-139 supported (note 5: not enabled on Linux by default)",
+        "samsung": "4-23 not supported; 24-31 supported",
+        "and_chr": "157 supported",
+        "and_ff": "159 disabled by default"
+      }
+    },
+    {
+      "id": "mdn-webgpu-api",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API",
+      "retrieved": "2026-11-08",
+      "fact": "The WebGPU API is marked \"Limited availability\" (not Baseline) and requires a secure context in some or all supporting browsers. The page text states: \"Secure context: This feature is available only in secure contexts (HTTPS), in some or all supporting browsers.\""
+    },
+    {
+      "id": "mdn-firefox-141",
+      "url": "https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/141",
+      "retrieved": "2026-11-08",
+      "fact": "Firefox 141 (released 2025-07-22): \"The WebGPU API is now fully supported on Windows, in all contexts except for service workers.\""
+    }
+  ],
+  "rows": [
+    {
+      "id": "windows-edge",
+      "browser": "Microsoft Edge",
+      "engine": "Chromium",
+      "os": "Windows",
+      "minVersion": "113",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Chromium 113 shipped WebGPU on Windows. Measured natively on this machine at Edge 157.0.4341.42."
+    },
+    {
+      "id": "windows-chrome",
+      "browser": "Google Chrome",
+      "engine": "Chromium",
+      "os": "Windows",
+      "minVersion": "113",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Not installed on this machine; not machine-tested."
+    },
+    {
+      "id": "windows-brave",
+      "browser": "Brave",
+      "engine": "Chromium",
+      "os": "Windows",
+      "minVersion": null,
+      "status": "supported",
+      "basis": "vendor-documented+measured",
+      "sources": ["caniuse-webgpu"],
+      "note": "Brave is Chromium-based and inherits its WebGPU enablement. caniuse has no Brave row, so no separate Brave minimum is asserted; the measured build is 157.1.99.55."
+    },
+    {
+      "id": "windows-firefox",
+      "browser": "Mozilla Firefox",
+      "engine": "Gecko",
+      "os": "Windows",
+      "minVersion": "141",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["mdn-firefox-141", "caniuse-webgpu"],
+      "note": "MDN Firefox 141 release notes: WebGPU fully supported on Windows (all contexts except service workers). Not installed here; not machine-tested."
+    },
+    {
+      "id": "windows-firefox-old",
+      "browser": "Mozilla Firefox",
+      "engine": "Gecko",
+      "os": "Windows",
+      "maxVersion": "140",
+      "minVersion": null,
+      "status": "unsupported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Disabled by default; can be enabled with dom.webgpu.enabled (caniuse note 1)."
+    },
+    {
+      "id": "windows-opera",
+      "browser": "Opera",
+      "engine": "Chromium",
+      "os": "Windows",
+      "minVersion": "99",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Not installed on this machine; not machine-tested."
+    },
+    {
+      "id": "windows-safari",
+      "browser": "Safari",
+      "engine": "WebKit",
+      "os": "Windows",
+      "minVersion": null,
+      "status": "unsupported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Safari is not distributed for Windows."
+    },
+    {
+      "id": "macos-chrome",
+      "browser": "Google Chrome",
+      "engine": "Chromium",
+      "os": "macOS",
+      "minVersion": "113",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Not machine-tested."
+    },
+    {
+      "id": "macos-edge",
+      "browser": "Microsoft Edge",
+      "engine": "Chromium",
+      "os": "macOS",
+      "minVersion": "113",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Not machine-tested."
+    },
+    {
+      "id": "macos-firefox",
+      "browser": "Mozilla Firefox",
+      "engine": "Gecko",
+      "os": "macOS 26 Tahoe on Apple Silicon",
+      "minVersion": "145",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "caniuse note 8: enabled by default on Windows as well as macOS 26 Tahoe or later on Apple Silicon. Not machine-tested."
+    },
+    {
+      "id": "macos-firefox-old",
+      "browser": "Mozilla Firefox",
+      "engine": "Gecko",
+      "os": "macOS before 26 Tahoe, or Intel Mac",
+      "minVersion": null,
+      "status": "unsupported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Only reachable with dom.webgpu.enabled (caniuse note 1)."
+    },
+    {
+      "id": "macos-safari-26",
+      "browser": "Safari",
+      "engine": "WebKit",
+      "os": "macOS 26 Tahoe or later",
+      "minVersion": "26.0",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "caniuse marks Safari 26+ as partial solely because it is only enabled by default on macOS 26 Tahoe or later (note 7). Not machine-tested."
+    },
+    {
+      "id": "macos-safari-old",
+      "browser": "Safari",
+      "engine": "WebKit",
+      "os": "macOS before 26 Tahoe",
+      "minVersion": null,
+      "status": "unsupported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Disabled by default; can be enabled with the WebGPU feature flag (caniuse note 2)."
+    },
+    {
+      "id": "ios-safari-26",
+      "browser": "Safari",
+      "engine": "WebKit",
+      "os": "iOS/iPadOS 26 or later",
+      "minVersion": "26.0",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "caniuse: iOS Safari 26.0-27.2 supported. Not machine-tested."
+    },
+    {
+      "id": "ios-safari-old",
+      "browser": "Safari",
+      "engine": "WebKit",
+      "os": "iOS/iPadOS 17.4-18.7",
+      "minVersion": null,
+      "status": "unsupported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Disabled by default; WebGPU feature flag only (caniuse note 2)."
+    },
+    {
+      "id": "linux-chrome",
+      "browser": "Google Chrome",
+      "engine": "Chromium",
+      "os": "Linux",
+      "minVersion": "144",
+      "status": "partial",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "caniuse note 5: not enabled on Linux by default before 144; from 144 note 9: support depends on hardware and drivers. Before 144 the enable-unsafe-webgpu flag is required (note 3)."
+    },
+    {
+      "id": "linux-edge",
+      "browser": "Microsoft Edge",
+      "engine": "Chromium",
+      "os": "Linux",
+      "minVersion": "144",
+      "status": "partial",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Same Chromium Linux rule as Chrome; driver dependent, flag required on older builds."
+    },
+    {
+      "id": "linux-firefox",
+      "browser": "Mozilla Firefox",
+      "engine": "Gecko",
+      "os": "Linux",
+      "minVersion": null,
+      "status": "unsupported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "caniuse note 1/8: not enabled by default on Linux; dom.webgpu.enabled is required."
+    },
+    {
+      "id": "linux-safari",
+      "browser": "Safari",
+      "engine": "WebKit",
+      "os": "Linux",
+      "minVersion": null,
+      "status": "unsupported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "Safari is not distributed for Linux."
+    },
+    {
+      "id": "android-chrome",
+      "browser": "Chrome for Android",
+      "engine": "Chromium",
+      "os": "Android",
+      "minVersion": null,
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "caniuse lists the current Chrome for Android (157) as supported; it gives no minimum Android OS version, so none is asserted here. Not machine-tested."
+    },
+    {
+      "id": "android-firefox",
+      "browser": "Firefox for Android",
+      "engine": "Gecko",
+      "os": "Android",
+      "minVersion": null,
+      "status": "unsupported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "caniuse: Firefox for Android 159 disabled by default (dom.webgpu.enabled)."
+    },
+    {
+      "id": "android-samsung",
+      "browser": "Samsung Internet",
+      "engine": "Chromium",
+      "os": "Android",
+      "minVersion": "24",
+      "status": "supported",
+      "basis": "vendor-documented",
+      "sources": ["caniuse-webgpu"],
+      "note": "caniuse: Samsung Internet 24-31 supported. Not machine-tested."
+    }
+  ],
+  "originRule": {
+    "rule": "WebGPU and crypto.subtle are secure-context features. Only http://localhost, http://127.0.0.1 and file:// are potentially trustworthy origins; a plain-HTTP LAN address such as http://192.168.1.78:8801 is not. The measured LAN result is in the matrix, and the page fails with the crypto.subtle message before it ever asks for an adapter.",
+    "sources": ["mdn-webgpu-api"],
+    "statusByOrigin": {
+      "loopback-http": "supported",
+      "lan-http": "unsupported",
+      "https-any": "supported"
+    }
+  }
+}

@@ -18,15 +18,15 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
 $results = @()
 
-function Run-Step($name, $exe, $args) {
+function Run-Step($name, $exe, $arguments) {
     $log = Join-Path $logDir ($name + '.log')
     Write-Host ""
     Write-Host "== $name" -ForegroundColor Cyan
     $start = Get-Date
-    & $exe @args *> $log
+    & $exe @arguments *> $log
     $code = $LASTEXITCODE
     $seconds = [math]::Round(((Get-Date) - $start).TotalSeconds, 1)
-    $tail = (Get-Content $log -Tail 3) -join ' | '
+    $tail = if (Test-Path $log) { (Get-Content $log -Tail 3) -join ' | ' } else { 'no log' }
     Write-Host ("   exit=$code  {0}s  {1}" -f $seconds, $tail)
     $script:results += [pscustomobject]@{ step = $name; exit = $code; seconds = $seconds; log = $log; tail = $tail }
 }
@@ -36,7 +36,18 @@ if (-not $SkipBuild) {
 } else {
     Run-Step 'asset-probe' $py @('tools/verify_asset_probe.py', '--skip-build')
 }
-Run-Step 'ctest' 'ctest' @('--test-dir', '_work/build/asset-reader-native', '-C', 'Release', '--output-on-failure')
+$ctest = (Get-Command ctest -ErrorAction SilentlyContinue)
+if ($null -eq $ctest) {
+    $candidate = Get-ChildItem 'C:\Program Files*\CMake\bin\ctest.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($candidate) { $ctest = $candidate.FullName }
+}
+if ($ctest) {
+    Run-Step 'ctest' $ctest @('--test-dir', '_work/build/asset-reader-native', '-C', 'Release', '--output-on-failure')
+} else {
+    Write-Host ""
+    Write-Host '== ctest SKIPPED (ctest.exe not installed on this machine)' -ForegroundColor Yellow
+    $results += [pscustomobject]@{ step = 'ctest'; exit = 0; seconds = 0; log = ''; tail = 'skipped: ctest not installed' }
+}
 Run-Step 'check-e1-poc' $py @('tools/check_e1_poc.py')
 $node = Join-Path $root '_work/toolchains/emsdk/node/24.19.0_64bit/node.exe'
 if (-not (Test-Path $node)) { $node = 'node' }

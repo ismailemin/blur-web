@@ -1,0 +1,193 @@
+{
+  "schema": "blur.compat.requirements",
+  "version": 1,
+  "scope": "Static requirements of the committed E1 drive page (probes/e1-drive/web) as read from the source on 2026-11-08. Every entry cites the file:line that makes it a requirement. This file does not claim retail Blur behaviour; it describes what the current page needs from a browser.",
+  "source": {
+    "page": "probes/e1-drive/web/index.html",
+    "entry": "probes/e1-drive/web/app.js",
+    "consumer": "probes/e1-drive/web/packet-consumer.js",
+    "audio": "probes/audio/web/engine-audio.js",
+    "module": "_work/e1-drive/module/e1_drive.mjs",
+    "wasm": "_work/e1-drive/module/e1_drive.wasm",
+    "wasmBytes": 1012634,
+    "wasmSha256": "bcdc2d994a499cc399333b44cfc418d6594f8b5182a668c3a9df761d891de265"
+  },
+  "webgpu": {
+    "requiredFeatures": [],
+    "featureNote": "packet-consumer.js:566-568 calls navigator.gpu.requestAdapter() and adapter.requestDevice() with no descriptor. No optional WebGPU feature is required: no timestamp query, no f16, no storage buffers, no compatibility mode. The page therefore runs on a default device, which is capped by the WebGPU default limits (measured on this machine: maxBufferSize 268,435,456 B, maxTextureDimension2D 8192, maxBindGroups 4), not by the adapter's higher ceilings. Every required limit below is checked against both the adapter limits and the requested device limits.",
+    "requiredLimits": {
+      "maxBufferSize": 8866860,
+      "maxTextureDimension2D": 512,
+      "maxTextureArrayLayers": 1,
+      "maxBindGroups": 3,
+      "maxBindingsPerBindGroup": 3,
+      "maxUniformBuffersPerShaderStage": 2,
+      "maxUniformBufferBindingSize": 160,
+      "maxSampledTexturesPerShaderStage": 1,
+      "maxSamplersPerShaderStage": 1,
+      "maxVertexBuffers": 2,
+      "maxVertexAttributes": 2,
+      "maxVertexBufferArrayStride": 12,
+      "maxColorAttachments": 1,
+      "maxColorAttachmentBytesPerSample": 8,
+      "maxTextureDimension1D": 1,
+      "maxTextureDimension3D": 1,
+      "maxStorageBufferBindingSize": 0,
+      "maxComputeWorkgroupStorageSize": 0,
+      "maxComputeInvocationsPerWorkgroup": 0
+    },
+    "limitCitations": {
+      "maxBufferSize": "packet-consumer.js:766-777 (car/map index and vertex buffers; the largest is the Gracia merged index buffer, 1,651,896 x 4 = 6,607,584 B, and the positions buffer, 738,905 x 12 = 8,866,860 B; measured by tools/measure_requirements.mjs)",
+      "maxTextureDimension2D": "packet-consumer.js:855-869 creates one rgba8unorm-srgb texture per packet texture record; the largest committed uploaded image is 512 x 512 (level/track/car/map textures, measured)",
+      "maxTextureArrayLayers": "size [w, h, 1] at packet-consumer.js:856",
+      "maxBindGroups": "packet-consumer.js:607-609 pipeline layout uses three bind group layouts (draw, scene, texture)",
+      "maxBindGroupLayoutsPerPipeline": "packet-consumer.js:607-609",
+      "maxBindingsPerBindGroup": "packet-consumer.js:591-606: one binding in each of the three groups",
+      "maxUniformBuffersPerShaderStage": "packet-consumer.js:591-600: draw uniform (vertex+fragment) and scene uniform (fragment)",
+      "maxUniformBufferBindingSize": "packet-consumer.js:137-138,595,599,960: DRAW_UNIFORM_BYTES = 160 and scene minBindingSize = 48, binding size is 160",
+      "maxSampledTexturesPerShaderStage": "packet-consumer.js:601-606,872-878: one texture_2d<f32> in the fragment stage",
+      "maxSamplersPerShaderStage": "packet-consumer.js:601-606,872-878: one filtering sampler in the fragment stage",
+      "maxVertexBuffers": "packet-consumer.js:615-618: position buffer + uv buffer",
+      "maxVertexAttributes": "packet-consumer.js:616-617: float32x3 at location 0 and float32x2 at location 1",
+      "maxVertexBufferArrayStride": "packet-consumer.js:616-617: arrayStride 12 and 8",
+      "maxColorAttachments": "packet-consumer.js:620: a single colour target",
+      "maxColorAttachmentBytesPerSample": "packet-consumer.js:583-584: preferred canvas format (bgra8unorm or rgba8unorm, 4 B) and no additional targets",
+      "maxSamplerAnisotropy": "packet-consumer.js:569-574,665-673 reads adapter.limits.maxSamplerAnisotropy and clamps to 1 when it is absent. Current WebGPU has removed that limit from GPUSupportedLimits, so the measured value is null and the applied anisotropy is 1. Anisotropy is therefore optional and not a requirement.",
+      "maxTextureDimension1D": "unused (no 1D texture is created)",
+      "maxTextureDimension3D": "unused (no 3D texture is created)",
+      "maxStorageBufferBindingSize": "unused (no storage buffer is created)",
+      "maxComputeWorkgroupStorageSize": "unused (no compute pipeline is created)",
+      "maxComputeInvocationsPerWorkgroup": "unused (no compute pipeline is created)"
+    },
+    "hardAssumptions": [
+      {
+        "name": "minUniformBufferOffsetAlignment",
+        "requiredMaximum": 256,
+        "note": "DRAW_UNIFORM_STRIDE = 256 is hard-coded as the dynamic-offset stride (packet-consumer.js:137). A device whose minUniformBufferOffsetAlignment were larger than 256 would reject every dynamic offset. Core WebGPU default is 256; the probe records the measured value."
+      },
+      {
+        "name": "maxSamplerAnisotropy",
+        "required": false,
+        "note": "packet-consumer.js:571-574 reads this limit and falls back to 1. It is not exposed by current WebGPU implementations (measured: null), so textures are sampled without anisotropic filtering; this is a quality loss, not a boot blocker."
+      },
+      {
+        "name": "uniform buffer dynamic offsets",
+        "note": "packet-consumer.js:1598,1622,1644,1659 bind group 0 with a per-draw dynamic offset; the whole per-draw uniform buffer is (draws + ghost bands + power-up slots) x 256 bytes."
+      }
+    ],
+    "formats": {
+      "canvas": "navigator.gpu.getPreferredCanvasFormat() (packet-consumer.js:583)",
+      "depth": "depth24plus (packet-consumer.js:622,654,1478)",
+      "colour": "rgba8unorm-srgb textures (packet-consumer.js:245,855-859)",
+      "blend": "ghost pipeline src-alpha / one-minus-src-alpha (packet-consumer.js:647-651)"
+    },
+    "drawBudget": {
+      "riverMaxDraws": 539,
+      "amboyMaxDraws": 1324,
+      "graciaMaxDraws": 2750,
+      "uniformBytesWorstCase": 835072,
+      "largestBufferBytes": 8866860,
+      "note": "River = 22 level-instance draws + 394 track draws + 123 car draws (largest committed car chunk). Amboy = 1,201 map draws + 123 car draws. Gracia = 2,627 map draws + 123 car draws. Worst-case uniform buffer adds 4 remote bands x 123 draws + 16 power-up markers + 4 ring slots = 3,262 x 256 B = 835,072 B. tools/measure_requirements.mjs recomputes these from the committed artifacts; its output is _work/compat/render-requirements.json."
+    }
+  },
+  "wasm": {
+    "featuresRequired": [
+      "mvp",
+      "mutable-globals",
+      "sign-ext",
+      "bulk-memory",
+      "nontrapping-fptoint"
+    ],
+    "featuresNotUsed": [
+      "simd",
+      "threads",
+      "atomics",
+      "shared-memory",
+      "exception-handling",
+      "tail-call",
+      "reference-types",
+      "multi-value",
+      "memory64",
+      "extended-const"
+    ],
+    "evidence": "wasm-opt (binaryen in _work/toolchains/emsdk) validates e1_drive.wasm with --mvp-features --enable-bulk-memory --enable-bulk-memory-opt --enable-nontrapping-float-to-int --enable-sign-ext --enable-mutable-globals (exit 0); wasm-dis shows (memory $0 4096 8192) with no shared flag. The glue (e1_drive.mjs) reads import.meta.url and uses top-level await.",
+    "initialMemoryBytes": 268435456,
+    "maximumMemoryBytes": 536870912,
+    "memoryNote": "build_module.mjs:89-90 (-sINITIAL_MEMORY=268435456 -sMAXIMUM_MEMORY=536870912 -sALLOW_MEMORY_GROWTH=1); the page therefore needs a 256 MiB linear memory at start and up to 512 MiB, but no SharedArrayBuffer."
+  },
+  "javascript": {
+    "modules": "index.html:107 <script type=\"module\" src=\"./app.js\"> and static imports in app.js:44-97",
+    "dynamicImport": "app.js:2254 awaits import(ENGINE_MODULE)",
+    "topLevelAwait": "the Emscripten ES6 glue uses `await` at module top level; reading it as a module requires top-level await support",
+    "es2022Syntax": "app.js uses optional chaining, nullish coalescing, class fields and logical assignment; the probe records that the page module parsed"
+  },
+  "webApis": [
+    {
+      "api": "navigator.gpu",
+      "required": true,
+      "secureContext": true,
+      "citation": "packet-consumer.js:565 throws 'navigator.gpu is not available in this browser session'"
+    },
+    {
+      "api": "HTMLCanvasElement.getContext('webgpu')",
+      "required": true,
+      "citation": "packet-consumer.js:581-582 throws 'canvas has no webgpu context'"
+    },
+    {
+      "api": "crypto.subtle.digest('SHA-256')",
+      "required": true,
+      "secureContext": true,
+      "citation": "map-package.js:196-200 throws 'crypto.subtle is unavailable: the map physics pin cannot be verified'; app.js:2196-2308 verifies the chunk index, level chunk, car chunk and physics file with bytesSha256 on every load"
+    },
+    {
+      "api": "localStorage",
+      "required": false,
+      "citation": "app.js:2545 wraps it in try/catch; sprint-best.js:1 persists best times and ghost-replay.js:432 the fastest ghost; a missing store only disables those records"
+    },
+    {
+      "api": "AudioContext + decodeAudioData",
+      "required": false,
+      "citation": "probes/audio/web/engine-audio.js:255-256,433; app.js:1386-1393 leaves the page silent with a typed 'audio unavailable: <reason>' row"
+    },
+    {
+      "api": "WebSocket",
+      "required": false,
+      "citation": "app.js:225, mp-client.js creates the room socket; only the ?mp=1 modes need it"
+    },
+    {
+      "api": "fetch + Response.arrayBuffer",
+      "required": true,
+      "citation": "app.js:2280-2288 fetches the geometry chunks, car fields, spawn and layout"
+    },
+    {
+      "api": "URLSearchParams",
+      "required": true,
+      "citation": "app.js:98"
+    },
+    {
+      "api": "atob / btoa",
+      "required": true,
+      "citation": "packet-consumer.js:788,846 decode the base64 UV and texture payloads"
+    },
+    {
+      "api": "requestAnimationFrame",
+      "required": true,
+      "citation": "app.js:6769 frame loop; fixed-step.js"
+    },
+    {
+      "api": "PointerEvent + setPointerCapture",
+      "required": false,
+      "citation": "packet-consumer.js:539-553 camera orbit; keyboard driving works without it"
+    }
+  ],
+  "notRequired": [
+    "OffscreenCanvas (no use in probes/e1-drive/web)",
+    "Web Workers / module workers (no Worker construction in probes/e1-drive/web)",
+    "SharedArrayBuffer / WASM threads (memory is not shared)",
+    "WASM SIMD (wasm-opt validates without simd)",
+    "WebGL / WebGL2 (the renderer is WebGPU only)",
+    "IndexedDB, Cache API, Service Worker",
+    "import maps / import assertions / JSON modules",
+    "WebGPU optional features (none requested)"
+  ]
+}

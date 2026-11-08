@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "source": [
+    "probes/e1-drive/README.md — measured scripted sprint, 3-lap and free-roam tables",
+    "docs/handoff/E1_POC_TEST.md — per-car 310 m / lap times",
+    "docs/work/verification/T-007-multiplayer.md — M1 two-browser flow and the original 970 / 1074 rows",
+    "docs/work/verification/T-007-chunking.md §MP — current per-player-car rows 970 / 1042 (guest Audi, mpPace 0.85)",
+    "docs/work/verification/T-007-mp-ai.md — AI rows 953 / 970 / 1120 / 1128, Amboy 13,410 / 14,684, Gracia 4,065 / 4,253"
+  ],
+  "cars": {
+    "default": "corvette-zr1-stock",
+    "defaultName": "Corvette_ZR1_Stock",
+    "mpGuest": "audi-r8v10-stock",
+    "mpGuestName": "Audi_R8_V10_Stock"
+  },
+  "layouts": {
+    "310m": "_work/e1-drive/sprint.json",
+    "short": "_work/e1-drive/sprint-short.json",
+    "lap": "_work/e1-drive/sprint-lap.json",
+    "free": "_work/e1-drive/sprint-free.json"
+  },
+  "solo": {
+    "sprint": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "310m",
+      "timeSeconds": 14.65,
+      "tick": 969,
+      "timeToleranceSeconds": 0.001,
+      "checkpoints": 2,
+      "docRef": "README §Sprint rules, table row Corvette ZR1 (14.650 s / tick 969)"
+    },
+    "lap": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "lap",
+      "timeSeconds": 86.1,
+      "tick": 5256,
+      "timeToleranceSeconds": 0.001,
+      "laps": 3,
+      "lapTimesSeconds": [29.0, 28.55, 28.55],
+      "bestLapSeconds": 28.55,
+      "docRef": "README §Three-lap race, table row Corvette ZR1 (86.100 s / tick 5256)"
+    },
+    "free": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "free",
+      "propColliders": 447,
+      "minElapsedSeconds": 3,
+      "docRef": "README §Free roam (447 colliders, no finish, session clock)"
+    }
+  },
+  "mp": {
+    "river": {
+      "mapId": "river",
+      "courseId": "310m",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        { "role": "host", "tick": 970, "timeSeconds": 14.666667, "position": 1 },
+        { "role": "guest", "tick": 1042, "timeSeconds": 15.866667, "position": 2 }
+      ],
+      "docRef": "T-007-chunking §MP: host Corvette 14.667 s, guest Audi 15.867 s (per-player car physics after M1.1). T-007-multiplayer's 1074/16.400 s row is the pre-chunking same-physics measurement."
+    },
+    "amboy": {
+      "mapId": "amboy",
+      "courseId": "amboy",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        { "role": "host", "tick": 13410, "timeSeconds": 222.0, "position": 1 },
+        { "role": "guest", "tick": 14684, "timeSeconds": 243.233333, "position": 2 }
+      ],
+      "docRef": "T-007-mp-ai §4 (measured table, Amboy)"
+    },
+    "gracia": {
+      "mapId": "gracia",
+      "courseId": "gracia",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        { "role": "host", "tick": 4065, "timeSeconds": 66.25, "position": 1 },
+        { "role": "guest", "tick": 4253, "timeSeconds": 69.383333, "position": 2 }
+      ],
+      "docRef": "T-007-mp-ai §4 (measured table, Gracia)"
+    }
+  },
+  "mpAi": {
+    "mapId": "river",
+    "courseId": "310m",
+    "aiCount": 2,
+    "aiCars": ["audi-r8v10-stock", "dodge-challenger-stock"],
+    "aiProfiles": ["reference", "cautious"],
+    "guestPace": 0.8,
+    "rows": [
+      { "playerId": "ai-1", "tick": 953, "timeSeconds": 14.383333, "position": 1 },
+      { "role": "host", "tick": 970, "timeSeconds": 14.666667, "position": 2 },
+      { "role": "guest", "tick": 1120, "timeSeconds": 17.166667, "position": 3 },
+      { "playerId": "ai-2", "tick": 1128, "timeSeconds": 17.3, "position": 4 }
+    ],
+    "docRef": "T-007-mp-ai §4 River measured table"
+  },
+  "modeMatrix": {
+    "starts": [
+      { "id": "river-310-keyboard", "url": "/?audio=0", "mapId": "river", "courseId": "310m" },
+      { "id": "river-310-script", "url": "/?script=sprint&audio=0", "mapId": "river", "courseId": "310m" },
+      { "id": "river-lap", "url": "/?course=lap&audio=0", "mapId": "river", "courseId": "lap" },
+      { "id": "river-free", "url": "/?course=free&audio=0", "mapId": "river", "courseId": "free" },
+      { "id": "amboy-310-script", "url": "/?map=amboy&script=sprint&audio=0", "mapId": "amboy", "courseId": "amboy" },
+      { "id": "gracia-310-script", "url": "/?map=gracia&script=sprint&audio=0", "mapId": "gracia", "courseId": "gracia" }
+    ],
+    "rejections": [
+      {
+        "id": "amboy-lap-rejected",
+        "url": "/?map=amboy&course=lap&audio=0",
+        "match": "map=amboy runs the measured 2,060.595 m course; drop \\?course=lap"
+      },
+      {
+        "id": "amboy-free-rejected",
+        "url": "/?map=amboy&course=free&audio=0",
+        "match": "map=amboy runs the measured 2,060.595 m course; drop \\?course=free"
+      },
+      {
+        "id": "gracia-lap-rejected",
+        "url": "/?map=gracia&course=lap&audio=0",
+        "match": "map=gracia runs the measured 624.914 m course; drop \\?course=lap"
+      },
+      {
+        "id": "gracia-telemetry-rejected",
+        "url": "/?map=gracia&telemetry=1&audio=0",
+        "match": "map=gracia supports drive/sprint only; drop telemetry/soak/survey/collisionprobe"
+      },
+      {
+        "id": "guest-map-override-rejected",
+        "url": "/?mp=1&room=ABCDE&map=river&audio=0",
+        "match": "guests inherit the room map; drop \\?map=\"river\""
+      }
+    ]
+  },
+  "tolerances": {
+    "tickExact": true,
+    "timeSeconds": 0.001,
+    "mpRowTickExact": true
+  }
+}

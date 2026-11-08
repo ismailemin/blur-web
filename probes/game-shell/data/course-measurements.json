@@ -1,0 +1,32 @@
+{
+  "kind": "game-shell.course-measurements",
+  "version": 1,
+  "source": {
+    "river": {
+      "310": "docs/work/verification/T-007-310m-course.md:46 (310.395196 m measured)",
+      "lap": "docs/work/verification/T-007-lap-mode.md:18 (222.040211 m closed loop)",
+      "short": "docs/handoff/E1_POC.md:58 (29 m regression straight)",
+      "freeAreaM2": "docs/work/verification/T-007-free-roam.md:45 (7,702.25 m2 committed spawn component)"
+    },
+    "amboy": {
+      "310": "probes/e1-drive/web/map-registry.js MAPS.amboy.pins.pathLengthMetres (2,060.595408 m)"
+    },
+    "gracia": {
+      "310": "probes/e1-drive/web/map-registry.js MAPS.gracia.pins.pathLengthMetres (624.913781 m)"
+    }
+  },
+  "maps": {
+    "river": {
+      "310": 310.395196,
+      "short": 29,
+      "lap": 222.040211,
+      "freeAreaM2": 7702.25
+    },
+    "amboy": {
+      "310": 2060.595408
+    },
+    "gracia": {
+      "310": 624.913781
+    }
+  }
+}
