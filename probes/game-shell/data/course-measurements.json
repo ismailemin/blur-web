@@ -27,6 +27,18 @@
     },
     "mharuna": {
       "310": "_work/e1-drive/mharuna/layout.json course.span.lengthMetres (309.170196 m, collision-clear path); probes/map-laps/data/mharuna-path.json agrees; the 345.818326 m draw path is not the authority"
+    },
+    "highrise": {
+      "310": "probes/e1-drive/web/map-registry.js MAPS.highrise.pins.pathLengthMetres (14.26866 m); _work/e1-drive/highrise/layout.json course.span.lengthMetres agrees; probes/map-laps/data/highrise-path.json agrees"
+    },
+    "shutoko": {
+      "310": "probes/e1-drive/web/map-registry.js MAPS.shutoko.pins.pathLengthMetres (279.005135 m); _work/e1-drive/shutoko/layout.json course.span.lengthMetres agrees; probes/map-laps/data/shutoko-path.json agrees"
+    },
+    "oval": {
+      "310": "probes/e1-drive/web/map-registry.js MAPS.oval.pins.pathLengthMetres (753.021127 m); _work/e1-drive/oval/layout.json course.span.lengthMetres agrees; probes/map-laps/data/oval-path.json agrees"
+    },
+    "amboy-mp": {
+      "310": "probes/e1-drive/web/map-registry.js MAPS['amboy-mp'].pins.pathLengthMetres (122.293808 m); _work/e1-drive/amboy-mp/layout.json course.span.lengthMetres agrees; probes/map-laps/data/amboy-mp-path.json agrees"
     }
   },
   "maps": {
@@ -54,6 +66,18 @@
     },
     "mharuna": {
       "310": 309.170196
+    },
+    "highrise": {
+      "310": 14.26866
+    },
+    "shutoko": {
+      "310": 279.005135
+    },
+    "oval": {
+      "310": 753.021127
+    },
+    "amboy-mp": {
+      "310": 122.293808
     }
   },
   "gates": {
@@ -91,6 +115,26 @@
       "source": "_work/e1-drive/mharuna/layout.json gates (310 m point-to-point)",
       "checkpointArcs": [67.304498, 171.944569],
       "finishArc": 309.170196
+    },
+    "highrise": {
+      "source": "_work/e1-drive/highrise/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [6.457107, 8.207107],
+      "finishArc": 14.26866
+    },
+    "shutoko": {
+      "source": "_work/e1-drive/shutoko/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [62.633926, 152.974197],
+      "finishArc": 279.005135
+    },
+    "oval": {
+      "source": "_work/e1-drive/oval/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [160.668873, 411.801432],
+      "finishArc": 753.021127
+    },
+    "amboy-mp": {
+      "source": "_work/e1-drive/amboy-mp/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [26.551563, 66.991298],
+      "finishArc": 122.293808
     }
   }
 }

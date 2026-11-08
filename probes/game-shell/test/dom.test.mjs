@@ -27,8 +27,9 @@ function mountShell(initial, extra = {}) {
 test('car grid renders every roster car with real fields and an explicit icon placeholder', () => {
   const { shell, host } = mountShell({ screen: 'car-select', mode: 'sprint', carSlug: 'corvette-zr1-stock' });
   const tiles = host.querySelectorAll('[data-car-slug]');
-  assert.equal(tiles.length, 57);
-  assert.equal(host.querySelectorAll('.gs-car-art-label').length, 57);
+  assert.equal(tiles.length, 59);
+  assert.equal(host.querySelectorAll('.gs-car-art-label').length, 59);
+  assert.equal(host.querySelector('[data-grid="cars"]').dataset.gridColumns, '7');
   for (const car of data.roster.cars) {
     const tile = host.querySelector('[data-car-slug="' + car.slug + '"]');
     assert.ok(tile, car.slug + ' tile');
@@ -42,8 +43,8 @@ test('car grid renders every roster car with real fields and an explicit icon pl
     assert.ok(text.includes('6-speed') || text.includes('7-speed'), car.slug + ' gearbox');
   }
   assert.equal(host.querySelector('[data-focus="car-search"]').value, '');
-  assert.match(host.querySelector('.gs-screen-head').textContent, /All 57 committed roster cars/);
-  assert.match(host.querySelector('.gs-footer-meta').textContent, /57 cars\s+\/\s+7 maps/);
+  assert.match(host.querySelector('.gs-screen-head').textContent, /All 59 committed roster cars/);
+  assert.match(host.querySelector('.gs-footer-meta').textContent, /59 cars\s+\/\s+11 maps/);
   shell.destroy();
 });
 
@@ -62,11 +63,11 @@ test('search and filters update the tile count and restore input focus', () => {
   assert.equal(host.querySelectorAll('[data-car-slug]').length, 14);
   shell.setCarFilter({ drivetrain: 'all', carClass: 'unclassified' });
   assert.equal(host.querySelectorAll('[data-car-slug]').length, 0);
-  assert.match(host.querySelector('.gs-empty').textContent, /still has 57 cars/);
+  assert.match(host.querySelector('.gs-empty').textContent, /still has 59 cars/);
   shell.destroy();
 });
 
-test('mode and car navigation reaches map select and all seven maps are enabled for sprint', () => {
+test('mode and car navigation reaches map select and all eleven maps are enabled for sprint', () => {
   const { shell, host } = mountShell({ screen: 'main-menu' });
   assert.equal(host.querySelectorAll('.gs-mode-card').length, 0);
   host.querySelector('[data-focus="play"]').click();
@@ -78,8 +79,10 @@ test('mode and car navigation reaches map select and all seven maps are enabled 
   assert.equal(shell.getState().carSlug, 'audi-r8v10-stock');
   host.querySelector('[data-focus="car-next"]').click();
   assert.equal(shell.getState().screen, 'map-select');
-  assert.equal(host.querySelectorAll('.gs-map-card').length, 7);
-  for (const id of ['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna']) {
+  assert.equal(host.querySelectorAll('.gs-map-card').length, 11);
+  assert.equal(host.querySelector('[data-grid="maps"]').dataset.gridColumns, '3');
+  for (const id of ['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
+    'highrise', 'shutoko', 'oval', 'amboy-mp']) {
     assert.equal(host.querySelector('[data-focus="map-' + id + '"]').disabled, false, id);
   }
   host.querySelector('[data-focus="map-amboy"]').click();
@@ -88,16 +91,16 @@ test('mode and car navigation reaches map select and all seven maps are enabled 
   shell.destroy();
 });
 
-test('lap mode enables River and Amboy and disables the five sprint-only maps with reasons', () => {
+test('lap mode enables River and Amboy and disables the nine sprint-only maps with reasons', () => {
   const { shell, host } = mountShell({ screen: 'map-select', mode: 'lap', carSlug: 'corvette-zr1-stock', mapId: 'river' });
-  assert.equal(host.querySelectorAll('.gs-map-card').length, 7);
+  assert.equal(host.querySelectorAll('.gs-map-card').length, 11);
   assert.equal(host.querySelector('[data-focus="map-river"]').disabled, false);
   assert.equal(host.querySelector('[data-focus="map-amboy"]').disabled, false);
-  for (const id of ['gracia', 'longbeach', 'observatory', 'downtown', 'mharuna']) {
+  for (const id of ['gracia', 'longbeach', 'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp']) {
     assert.equal(host.querySelector('[data-focus="map-' + id + '"]').disabled, true, id);
   }
   const reasons = host.querySelectorAll('.gs-disabled-reason');
-  assert.equal(reasons.length, 5);
+  assert.equal(reasons.length, 9);
   assert.match(reasons[0].textContent, /Unavailable:/);
   assert.match(reasons[0].textContent, /lists courses \[310\]/);
   assert.match(reasons[0].textContent, /no 3-lap loop layout/);
@@ -239,7 +242,7 @@ test('focus is trapped, arrow keys rove the grid, Escape goes back', () => {
 test('arrow keys move focus between car tiles', () => {
   const { shell, host, document } = mountShell({ screen: 'car-select', mode: 'sprint', carSlug: 'corvette-zr1-stock' });
   const tiles = host.querySelectorAll('[data-car-slug]');
-  assert.equal(tiles.length, 57);
+  assert.equal(tiles.length, 59);
   assert.equal(tiles[0].dataset.gridColumns, '7');
   const root = host.querySelector('.gs-app') ?? host.firstChild;
   tiles[0].focus();
@@ -248,7 +251,7 @@ test('arrow keys move focus between car tiles', () => {
   root.dispatchEvent({ type: 'keydown', key: 'ArrowDown' });
   assert.equal(document.activeElement, tiles[8]);
   root.dispatchEvent({ type: 'keydown', key: 'End' });
-  assert.equal(document.activeElement, tiles[56]);
+  assert.equal(document.activeElement, tiles[58]);
   shell.destroy();
 });
 

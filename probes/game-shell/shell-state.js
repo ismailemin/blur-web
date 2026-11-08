@@ -4,9 +4,9 @@
 // module and the Node tests exercise every transition without a browser.
 //
 // Data bindings (all real, none invented here):
-//   * cars  -> probes/e1-drive/cars/roster.json (57 committed RP_CarDynamics
-//              records; 62 records exist, 5 are unsupported by the builder)
-//   * maps  -> probes/e1-drive/web/map-registry.js (7 registered maps)
+//   * cars  -> probes/e1-drive/cars/roster.json (59 committed RP_CarDynamics
+//              records; 62 records exist, 3 are unsupported by the builder)
+//   * maps  -> probes/e1-drive/web/map-registry.js (11 registered maps)
 //   * class -> the vehicle pipeline content class A/B/C, generated from the
 //              committed roster + vehicle-batch spec by
 //              probes/game-shell/tools/build-car-classes.mjs

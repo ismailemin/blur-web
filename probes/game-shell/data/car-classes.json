@@ -9,7 +9,7 @@
   },
   "counts": {
     "A": 5,
-    "B": 38,
+    "B": 40,
     "C": 14,
     "unclassified": 0
   },
@@ -70,7 +70,9 @@
     "hennessey-vipervenom1000coupe-stock": "B",
     "opel-astraextreme-stockgrippy": "C",
     "ford-gt-stock": "B",
-    "dodge-vipergtsr-stock": "B"
+    "dodge-vipergtsr-stock": "B",
+    "ratrod-na-stock": "B",
+    "toyota-supra-smooth": "B"
   },
   "provenance": {
     "corvette-zr1-stock": "roster.selection: the first five are the T-007 reference anchors",
@@ -129,7 +131,9 @@
     "hennessey-vipervenom1000coupe-stock": "vehicle-batch/spec/cars.json: record 69 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
     "opel-astraextreme-stockgrippy": "vehicle-batch/spec/cars.json: record 71 class C - no exact normalised `\\models\\vehicles\\<name>.model` entry",
     "ford-gt-stock": "vehicle-batch/spec/cars.json: record 73 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
-    "dodge-vipergtsr-stock": "vehicle-batch/spec/cars.json: record 78 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step"
+    "dodge-vipergtsr-stock": "vehicle-batch/spec/cars.json: record 78 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
+    "ratrod-na-stock": "vehicle-batch/spec/cars.json: record 38 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
+    "toyota-supra-smooth": "vehicle-batch/spec/cars.json: record 79 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step"
   },
   "unclassified": {}
 }
