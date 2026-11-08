@@ -25,8 +25,28 @@ they bake the sun into lightmaps / light samples. A renderer without the
 lightmap decode would go black if it used that colour. The page therefore keeps
 the packet's diagnostic light and says so.
 
-`probes/lighting/runtime-lighting.mjs` lists the lightmap decode in its `missing`
-array (`not-decoded`), so this is a documented gap, not an assumption.
+## Update: the lightmap is now decoded
+
+`probes/lighting` decoded the lightmap set: **455 retail textures** across the
+four maps (DXT5/BC3, mip 0), bound through material `g_tLightmap`:
+
+| map | textures | dimensions | set sha256 |
+| --- | ---: | --- | --- |
+| river | 132 | 127 × 256², 5 × 512² | `84e50944…` |
+| amboy | 96 | 92 × 256², 4 × 512² | `5ccaf5a0…` |
+| gracia | 113 | 113 × 256² | `9def070c…` |
+| longbeach | 114 | 112 × 256², 2 × 512² | `6da2bbc3…` |
+
+`lighting.lightmap` is a `texture-set` with `decoded: true`, the per-texture
+source offsets, `sha256` and `decodedRgbaSha256`, and the shader rule
+(`SunSkyLightmap` on `.g`/`.b`, or `RGBLightmapNormalisedGamma` on
+`(.rgb*.a)^2`). `lightmap-decode` is no longer in `missing`.
+
+**The page still renders with the packet light.** Wiring the decoded lightmap
+into the packet consumer is the remaining step: the consumer must bind the
+material's `g_tLightmap` texture and the `TEXCOORD0.zw` lightmap UV, then apply
+the shader rule above. Until that lands, `state.lightingAgreement` keeps
+reporting `agree: false` and the diagnostic light stays labelled.
 
 ## What the page records
 

@@ -45,6 +45,9 @@ const PROP = path.join(ROOT, 'probes/prop-collision');
 const PROP_WORK = path.join(ROOT, '_work/prop-collision');
 const FREE_PROP_WORK = path.join(ROOT, '_work/free-roam-prop');
 const AUDIO = path.join(ROOT, 'probes/audio/web');
+// The retail event catalog lives at the probe root (`runtime-audio.mjs` + its
+// `data/runtime-audio.json`), next to the engine module under `web/`.
+const AUDIO_PROBE = path.join(ROOT, 'probes/audio');
 const AUDIO_WORK = path.join(ROOT, '_work/audio');
 const NET_MVP = path.join(ROOT, 'probes/net-mvp');
 const RACE_RULES = path.join(ROOT, 'probes/race-rules');
@@ -344,7 +347,16 @@ export function startServer({ port = 8801 } = {}) {
     else if (pathname.startsWith('/_work/free-roam-prop/')) file = safeJoin(FREE_PROP_WORK, pathname.slice('/_work/free-roam-prop/'.length));
     else if (pathname.startsWith('/_work/map-props/')) file = safeJoin(MAP_PROPS_WORK, pathname.slice('/_work/map-props/'.length));
     else if (pathname.startsWith('/_work/map-batch/')) file = safeJoin(MAP_BATCH_WORK, pathname.slice('/_work/map-batch/'.length));
-    else if (pathname.startsWith('/audio/')) file = safeJoin(AUDIO, pathname.slice('/audio/'.length));
+    else if (pathname.startsWith('/audio/')) {
+      const relative = pathname.slice('/audio/'.length);
+      // `runtime-audio.mjs` and `data/*.json` are the retail event catalog at
+      // the probe root; everything else is the engine module under `web/`.
+      if (relative === 'runtime-audio.mjs' || relative.startsWith('data/')) {
+        file = safeJoin(AUDIO_PROBE, relative);
+      } else {
+        file = safeJoin(AUDIO, relative);
+      }
+    }
     else if (pathname.startsWith('/_work/audio/')) file = safeJoin(AUDIO_WORK, pathname.slice('/_work/audio/'.length));
     else if (pathname.startsWith('/net-mvp/')) {
       const name = pathname.slice('/net-mvp/'.length);

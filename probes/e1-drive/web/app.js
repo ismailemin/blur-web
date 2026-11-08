@@ -1747,6 +1747,7 @@ function driveEngineAudio() {
 function startEngineAudio() {
   if (!AUDIO_ENABLED || !engineAudio) return;
   if (engineAudio.state === 'loading' || engineAudio.state === 'running' || engineAudio.state === 'disposed') return;
+  startEventAudio();
   engineAudio.ensureStarted().then((status) => {
     if (status.state === 'running') {
       engineAudio.setMuted(audioMuted);
@@ -1761,9 +1762,70 @@ function startEngineAudio() {
   });
 }
 
+// ---------------------------------------------------------------- event audio
+// The 23-event retail catalog (`probes/audio/runtime-audio.mjs`). It is created
+// lazily on the same gesture that starts the engine audio, because a browser
+// AudioContext needs a user gesture. A missing catalog is a typed state, never a
+// synthesised beep.
+let eventAudio = null;
+let eventAudioStarting = null;
+
+function startEventAudio() {
+  if (!AUDIO_ENABLED || eventAudio || eventAudioStarting) return;
+  eventAudioStarting = import('/audio/runtime-audio.mjs').then(({ createAudio }) => {
+    const ctx = new AudioContext();
+    eventAudio = createAudio({ ctx, baseUrl: '/_work/audio/' });
+    state.eventAudio = { state: 'ready', schema: eventAudio.schema ?? null };
+    publish();
+    return eventAudio;
+  }).catch((error) => {
+    state.eventAudio = { state: 'unavailable', reason: error.message };
+    publish();
+    return null;
+  });
+}
+
+/** Play one catalog event; a missing catalog or a rejected event is silent. */
+function playEventAudio(id, options) {
+  if (!eventAudio || audioMuted || !id) return;
+  try {
+    const handle = eventAudio.play(id, options);
+    if (handle && typeof handle.catch === 'function') handle.catch(() => {});
+  } catch {
+    // A typed `unknown-event` / `context-not-running` is not a page error.
+  }
+}
+
+/** Map a power-up engine event to a catalog event id (null = no sound). */
+function powerupSoundFor(event) {
+  if (!event || typeof event.type !== 'string') return null;
+  const type = String(event.pickupType ?? event.mine?.mineType ?? '').toLowerCase();
+  switch (event.type) {
+    case 'pickup':
+      return type ? { id: 'pickup-' + type } : null;
+    case 'projectile-fired':
+      return type ? { id: 'weapon-' + type } : null;
+    case 'mine-placed':
+      return { id: 'weapon-mine' };
+    case 'nitro-activated':
+      return { id: 'weapon-nitro' };
+    case 'shock-activated':
+      return { id: 'weapon-shock' };
+    case 'barge-activated':
+      return { id: 'weapon-barge' };
+    case 'shield-activated':
+      return { id: 'weapon-shield' };
+    case 'repaired':
+      return { id: 'weapon-repair' };
+    case 'wrecked':
+      return { id: 'wreck' };
+    default:
+      return null;
+  }
+}
+
 /** `M`: mute/unmute through the module's master gain. Works before start. */
-function toggleAudioMute() {
-  audioMuted = !audioMuted;
+function toggleAudioMute() {  audioMuted = !audioMuted;
   if (engineAudio) audioMuted = engineAudio.setMuted(audioMuted);
   publishAudioState();
   publish();
@@ -2875,6 +2937,9 @@ function handleSprintEvents(events) {
   for (const event of events) {
     state.sprintEvents.push(event);
     if (state.sprintEvents.length > 64) state.sprintEvents.shift();
+    if (event.type === SPRINT_EVENT.GO) playEventAudio('countdown');
+    else if (event.type === SPRINT_EVENT.FINISH) playEventAudio('finish');
+    else if (event.type === SPRINT_EVENT.RESPAWN) playEventAudio('impact', { size: 'medium', strength: 12 });
     state.sprintBanner = {
       kind: event.type === SPRINT_EVENT.RESPAWN ? 'respawn' : event.type === SPRINT_EVENT.CHECKPOINT ? 'checkpoint'
         : event.type === SPRINT_EVENT.LAP ? 'lap' : 'other',
@@ -5847,6 +5912,8 @@ function mpPowerupHandleEvents(events) {
     state.powerups.lastEvents.push(event);
     if (state.powerups.lastEvents.length > 64) state.powerups.lastEvents.shift();
     state.powerups.counts[event.type] = (state.powerups.counts[event.type] ?? 0) + 1;
+    const sound = powerupSoundFor(event);
+    if (sound) playEventAudio(sound.id, sound.options);
     if ((event.type === 'nitro-activated' || event.type === 'shock-activated' || event.type === 'shunt-hit') &&
         Number.isInteger(event.seq) && !state.powerups.boostEventSeqs.includes(event.seq)) {
       state.powerups.boostEventSeqs.push(event.seq);

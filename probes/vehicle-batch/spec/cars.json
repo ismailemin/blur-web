@@ -3352,7 +3352,7 @@
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -3394,8 +3394,8 @@
    "recordId": 1806083404,
    "recordIndex": 38,
    "recordName": "RatRod_NA_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 58,
+   "scope": "roster",
    "slug": "ratrod-na-stock",
    "wheel": {
     "decodedPath": null,
@@ -6704,7 +6704,7 @@
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -6746,8 +6746,8 @@
    "recordId": 4203637251,
    "recordIndex": 79,
    "recordName": "Toyota_Supra_Smooth",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 59,
+   "scope": "roster",
    "slug": "toyota-supra-smooth",
    "wheel": {
     "decodedPath": null,
@@ -6878,9 +6878,9 @@
   "classA": 5,
   "classB": 42,
   "classC": 15,
-  "inRoster": 57,
+  "inRoster": 59,
   "records": 62,
-  "remaining": 5,
+  "remaining": 3,
   "wheelProofKnown": 21,
   "withBody": 61,
   "withHud": 61
@@ -6943,7 +6943,7 @@
   },
   "roster": {
    "path": "probes/e1-drive/cars/roster.json",
-   "sha256": "6c9acfa0618e5e3b7d89ac10535bb62a457faa218e88933b85c4b8e70c125aaa"
+   "sha256": "ed999dc526e2f5d20ffa82bc956cc2e501565a5514dc4535a0b10f26765ef845"
   }
  },
  "version": 1

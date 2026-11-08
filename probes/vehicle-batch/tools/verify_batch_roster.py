@@ -123,7 +123,8 @@ def verify_document(gate: Gate, spec: dict, roster: dict, document: dict,
                (document.get("spec") or {}).get("sha256") == sha256_file(
                    ROOT / document["spec"]["path"]),
                (document.get("spec") or {}).get("sha256"))
-    gate.check("roster.entries=5", len(entries) == 5, len(entries))
+    gate.check("roster.entries=remaining", len(entries) == len(expected_indexes),
+               f"{len(entries)} entries vs {len(expected_indexes)} remaining")
     gate.check("roster.order", entry_indexes == expected_indexes,
                f"{len(entry_indexes)} entries")
     gate.check("roster.uniqueSlugs",
@@ -139,7 +140,8 @@ def verify_document(gate: Gate, spec: dict, roster: dict, document: dict,
 
     roster_indexes = {car["recordIndex"] for car in roster["cars"]}
     all_indexes = set(spec_by_index)
-    gate.check("roster.committedCount", len(roster["cars"]) == 57,
+    gate.check("roster.committedCount",
+               len(roster["cars"]) == (document.get("counts") or {}).get("inRoster"),
                len(roster["cars"]))
     gate.check("roster.noOverlap",
                not (set(entry_indexes) & roster_indexes),
@@ -243,9 +245,14 @@ def verify_document(gate: Gate, spec: dict, roster: dict, document: dict,
 
     counts = document.get("counts") or {}
     gate.check("counts.records", counts.get("records") == 62, counts.get("records"))
-    gate.check("counts.inRoster", counts.get("inRoster") == 57,
+    # Derive the roster split from the committed roster instead of pinning a
+    # number that changes whenever a car is integrated.
+    committed_roster = json.loads(
+        (ROOT / "probes/e1-drive/cars/roster.json").read_text(encoding="utf-8"))
+    in_roster = len(committed_roster["cars"])
+    gate.check("counts.inRoster", counts.get("inRoster") == in_roster,
                counts.get("inRoster"))
-    gate.check("counts.remaining", counts.get("remaining") == 5,
+    gate.check("counts.remaining", counts.get("remaining") == 62 - in_roster,
                counts.get("remaining"))
     gate.check("counts.selected", counts.get("selected") == len(entries),
                counts.get("selected"))
