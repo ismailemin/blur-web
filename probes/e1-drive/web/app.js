@@ -351,6 +351,37 @@ let SPRINT_URL = LAP_LAYOUT_URL ?? MAP.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e
     : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json');
 const PROP_RESOLVER_URL = '/prop-collision/lib/resolver.mjs';
 
+// The renderer takes its directional light from the packet. The committed
+// lighting table is the same retail source; this comparison records whether
+// the two agree instead of assuming it.
+let lightingModulePromise = null;
+async function lightingAgreement(packetLight, mapId) {
+  if (!packetLight?.direction || !packetLight?.colour) return { mapId, status: 'no-packet-light' };
+  lightingModulePromise ??= import('/lighting/runtime-lighting.mjs');
+  const module = await lightingModulePromise;
+  const table = module.lightingFor(mapId);
+  const sun = table.sun;
+  const maxDirectionDelta = Math.max(...[0, 1, 2].map((index) =>
+    Math.abs(packetLight.direction[index] - sun.direction[index])));
+  const maxColourDelta = Math.max(...[0, 1, 2].map((index) =>
+    Math.abs(packetLight.colour[index] - sun.colour[index])));
+  const agree = maxDirectionDelta <= 1e-3 && maxColourDelta <= 1e-3;
+  const baked = sun.colour.every((value) => value === 0);
+  return {
+    mapId,
+    source: 'packet',
+    packet: { direction: packetLight.direction.slice(0, 3), colour: packetLight.colour.slice(0, 3) },
+    committed: { direction: sun.direction, colour: sun.colour },
+    maxDirectionDelta,
+    maxColourDelta,
+    agree,
+    note: baked
+      ? 'the retail sun colour is [0,0,0] because this map bakes the sun into lightmaps; '
+        + 'the page uses the packet diagnostic light until the lightmap decode exists'
+      : 'the retail sun is a live directional colour; a mismatch means the packet light is diagnostic'
+  };
+}
+
 /** Best-time storage key: one record per map/course, never mixed. */
 let SPRINT_BEST_KEY = MAP.bestKey ?? ('e1-drive.sprint.best.v2.' + COURSE_KEY);
 
@@ -2991,6 +3022,13 @@ async function startTimeline(tick0, {
   state.parts = partsInfo?.partCount ?? 0;
   state.carDraws = partsInfo?.drawCount ?? 0;
   state.packetNodes = session.packet.nodes.length;
+  // Lighting agreement: the renderer takes its directional light from the
+  // packet. Compare it with the committed lighting table so the page can state
+  // whether the two agree instead of assuming it.
+  state.lightingAgreement = { mapId: MAP.id, status: 'pending' };
+  lightingAgreement(session.packet.lights?.[0] ?? null, MAP.id)
+    .then((value) => { state.lightingAgreement = value; })
+    .catch((error) => { state.lightingAgreement = { mapId: MAP.id, error: error.message }; });
   state.wheelNodes = session.packet.diagnostics.extras.wheels.wheelNodes.length;
   const trackInfo = session.packet.diagnostics.extras.track;
   state.trackVisual = trackInfo?.trackVisual ?? null;
@@ -3212,6 +3250,13 @@ async function runTelemetryMode() {
   state.parts = partsInfo?.partCount ?? 0;
   state.carDraws = partsInfo?.drawCount ?? 0;
   state.packetNodes = session.packet.nodes.length;
+  // Lighting agreement: the renderer takes its directional light from the
+  // packet. Compare it with the committed lighting table so the page can state
+  // whether the two agree instead of assuming it.
+  state.lightingAgreement = { mapId: MAP.id, status: 'pending' };
+  lightingAgreement(session.packet.lights?.[0] ?? null, MAP.id)
+    .then((value) => { state.lightingAgreement = value; })
+    .catch((error) => { state.lightingAgreement = { mapId: MAP.id, error: error.message }; });
   state.wheelNodes = session.packet.diagnostics.extras.wheels.wheelNodes.length;
   const trackInfo = session.packet.diagnostics.extras.track;
   state.trackVisual = trackInfo?.trackVisual ?? null;
@@ -7031,3 +7076,4 @@ async function main() {
 }
 
 main().catch((error) => fail(error.message));
+

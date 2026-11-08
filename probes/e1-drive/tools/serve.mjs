@@ -57,6 +57,9 @@ const MAP_LAPS = path.join(ROOT, 'probes/map-laps');
 const MAP_PROPS_WORK = path.join(ROOT, '_work/map-props');
 // The runtime HUD module (DOM-only) is served read-only from probes/hud-ui.
 const HUD_UI = path.join(ROOT, 'probes/hud-ui');
+// Runtime lighting / material tables (data-only modules) are served read-only.
+const LIGHTING = path.join(ROOT, 'probes/lighting');
+const CAR_MATERIALS = path.join(ROOT, 'probes/car-materials');
 // PWR1 read-only inputs for the power-up slice: the manifest the model consumes
 // and the committed rules prototype (never copied or edited here).
 const POWERUPS_WORK = path.join(ROOT, '_work/powerups');
@@ -352,6 +355,12 @@ export function startServer({ port = 8801 } = {}) {
     } else if (pathname.startsWith('/hud-ui/')) {
       const relative = pathname.slice('/hud-ui/'.length);
       if (relative.endsWith('.mjs') || relative.endsWith('.js')) file = safeJoin(HUD_UI, relative);
+    } else if (pathname.startsWith('/lighting/')) {
+      const relative = pathname.slice('/lighting/'.length);
+      if (relative.endsWith('.mjs')) file = safeJoin(LIGHTING, relative);
+    } else if (pathname.startsWith('/car-materials/')) {
+      const relative = pathname.slice('/car-materials/'.length);
+      if (relative.endsWith('.mjs')) file = safeJoin(CAR_MATERIALS, relative);
     } else file = safeJoin(WEB, pathname.slice(1));
 
     if (!file || !existsSync(file) || !statSync(file).isFile()) {
