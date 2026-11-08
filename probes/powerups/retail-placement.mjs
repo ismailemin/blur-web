@@ -113,11 +113,11 @@ export const RETAIL_PLACEMENT_DATA = deepFreeze({
       "bytes": 1215413
     },
     "_work/e1-drive/amboy/layout.json": {
-      "sha256": "b89ae430dff3aaea3511abc6244687430ec66433055bfbcb4eb63b3a1d364f8d",
+      "sha256": "9193a4c7495458631576168c8761827a5a7b14de664de08874b3fd3e6c8808d7",
       "bytes": 1198445
     },
     "_work/e1-drive/gracia/layout.json": {
-      "sha256": "e2f9a1114c283ca84838db96286c5482e9b7b6c4fec779b34bbb4a579991a3b8",
+      "sha256": "87f8c724d596cab7b1fe414621cd950bef00a82986462bac8dc186cae949079a",
       "bytes": 312569
     },
     "_work/e1-drive/sprint.json": {
@@ -133,7 +133,7 @@ export const RETAIL_PLACEMENT_DATA = deepFreeze({
       "measuredLayout": {
         "id": "amboy",
         "path": "_work/e1-drive/amboy/layout.json",
-        "sha256": "b89ae430dff3aaea3511abc6244687430ec66433055bfbcb4eb63b3a1d364f8d",
+        "sha256": "9193a4c7495458631576168c8761827a5a7b14de664de08874b3fd3e6c8808d7",
         "bytes": 1198445,
         "lengthMetres": 2060.595408,
         "sampleCount": 8673,
@@ -1081,7 +1081,7 @@ export const RETAIL_PLACEMENT_DATA = deepFreeze({
       "measuredLayout": {
         "id": "gracia",
         "path": "_work/e1-drive/gracia/layout.json",
-        "sha256": "e2f9a1114c283ca84838db96286c5482e9b7b6c4fec779b34bbb4a579991a3b8",
+        "sha256": "87f8c724d596cab7b1fe414621cd950bef00a82986462bac8dc186cae949079a",
         "bytes": 312569,
         "lengthMetres": 624.913781,
         "sampleCount": 2571,
