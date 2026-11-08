@@ -1,7 +1,31 @@
+param(
+    [int]$Port = 8801,
+    [int]$RoomPort = 8811,
+    [switch]$KeepStale
+)
+
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $node = Join-Path $root '_work/toolchains/emsdk/node/24.19.0_64bit/node.exe'
 if (-not (Test-Path $node)) { $node = 'node' }
+
+function Stop-Port($port, $label) {
+    $listeners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+    if (-not $listeners) { return }
+    if ($KeepStale) {
+        throw "$label port $port is already in use; stop it first or drop -KeepStale."
+    }
+    foreach ($pid in ($listeners | Select-Object -ExpandProperty OwningProcess -Unique)) {
+        try {
+            $proc = Get-Process -Id $pid -ErrorAction Stop
+            Write-Host "Stopping stale $label listener on $port (PID $pid, $($proc.ProcessName))" -ForegroundColor Yellow
+        } catch {
+            Write-Host "Stopping stale $label listener on $port (PID $pid)" -ForegroundColor Yellow
+        }
+        taskkill /PID $pid /T /F 2>&1 | Out-Null
+    }
+    Start-Sleep -Milliseconds 500
+}
 
 $required = @(
     '_work/e1-drive/module/e1_drive.mjs',
@@ -29,10 +53,20 @@ if ($missing.Count -gt 0) {
     exit 2
 }
 
-Write-Host 'E1 PoC  ->  http://127.0.0.1:8801/' -ForegroundColor Green
-Write-Host 'Scripted ->  http://127.0.0.1:8801/?script=drive&car=audi-r8v10-stock'
-Write-Host 'MP host  ->  http://127.0.0.1:8801/?mp=1&host=1'
-Write-Host 'MP guest ->  http://127.0.0.1:8801/?mp=1&room=<CODE>'
-Write-Host 'Room service: ws://127.0.0.1:8811/ws'
-Write-Host 'Stop with Ctrl+C.'
-& $node (Join-Path $root 'probes/e1-drive/tools/serve.mjs') --port 8801 --with-room --room-port 8811
+Stop-Port $Port 'static'
+Stop-Port $RoomPort 'room'
+
+$base = "http://127.0.0.1:$Port/"
+Write-Host ''
+Write-Host "E1 PoC       ->  $base" -ForegroundColor Green
+Write-Host "Manual drive ->  ${base}" -ForegroundColor Green
+Write-Host "Lap race     ->  ${base}?course=lap"
+Write-Host "Free roam    ->  ${base}?course=free"
+Write-Host "Amboy        ->  ${base}?map=amboy"
+Write-Host "Gracia       ->  ${base}?map=gracia"
+Write-Host "MP host      ->  ${base}?mp=1&host=1"
+Write-Host "MP guest     ->  ${base}?mp=1&room=<CODE>"
+Write-Host "Room service ->  ws://127.0.0.1:$RoomPort/ws"
+Write-Host 'Stop with Ctrl+C (or tools/stop_e1_poc.ps1).'
+Write-Host ''
+& $node (Join-Path $root 'probes/e1-drive/tools/serve.mjs') --port $Port --with-room --room-port $RoomPort
