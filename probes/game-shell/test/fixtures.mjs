@@ -16,9 +16,10 @@ let cached = null;
 export function dataset() {
   if (cached) return cached;
   const roster = readJson('probes/e1-drive/cars/roster.json');
+  const spec = readJson('probes/vehicle-batch/spec/cars.json');
   const classes = readJson('probes/game-shell/data/car-classes.json');
   const measurements = readJson('probes/game-shell/data/course-measurements.json');
-  cached = { roster, classes, measurements, maps: MAPS };
+  cached = { roster, spec, classes, measurements, maps: MAPS };
   return cached;
 }
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AI_MAX,
+  CAR_CLASSES,
   ERROR,
   MODE_ORDER,
   SCREENS,
@@ -28,13 +29,13 @@ import { dataset, makeState, walkTo } from './fixtures.mjs';
 
 const data = dataset();
 
-test('roster normalisation covers all 25 cars with real fields and data classes', () => {
+test('roster normalisation covers all 57 cars with real fields and data classes', () => {
   const cars = normalizeCars(data.roster, data.classes.classes);
-  assert.equal(cars.length, 25);
-  assert.equal(new Set(cars.map((car) => car.slug)).size, 25);
-  const counts = { A: 0, B: 0, C: 0 };
+  assert.equal(cars.length, 57);
+  assert.equal(new Set(cars.map((car) => car.slug)).size, 57);
+  const counts = { A: 0, B: 0, C: 0, unclassified: 0 };
   for (const car of cars) {
-    assert.ok(['A', 'B', 'C'].includes(car.carClass), car.slug + ' class');
+    assert.ok(CAR_CLASSES.includes(car.carClass), car.slug + ' class');
     counts[car.carClass] += 1;
     assert.ok(['RWD', 'FWD', 'AWD'].includes(car.drivetrain), car.slug + ' drivetrain');
     assert.ok(Number.isFinite(car.massKg) && car.massKg > 0, car.slug + ' mass');
@@ -42,44 +43,80 @@ test('roster normalisation covers all 25 cars with real fields and data classes'
     assert.equal(car.icon, 'not-decoded');
     assert.equal(car.layoutParsed, true, car.slug + ' layout');
   }
-  assert.deepEqual(counts, { A: 5, B: 13, C: 7 });
+  assert.deepEqual(counts, { A: 5, B: 38, C: 14, unclassified: 0 });
   assert.deepEqual(data.classes.counts, counts);
 });
 
-test('map registry binds every map and its real course support', () => {
+test('the generated cars.json record shape is normalised without losing identity', () => {
+  const cars = normalizeCars({
+    roster: {
+      cars: [{
+        slug: 'corvette-zr1-stock',
+        name: 'Corvette_ZR1_Stock',
+        order: 0,
+        record: { index: 37, id: 1554942492, name: 'Corvette_ZR1_Stock' },
+        layout: 'RWD, 1600 kg, 6-speed'
+      }]
+    }
+  }, { 'corvette-zr1-stock': 'A' });
+  assert.equal(cars.length, 1);
+  assert.equal(cars[0].recordIndex, 37);
+  assert.equal(cars[0].recordId, 1554942492);
+  assert.equal(cars[0].carClass, 'A');
+  assert.equal(cars[0].drivetrain, 'RWD');
+});
+
+test('map registry binds every registered map and its real course support', () => {
   const state = makeState();
-  assert.equal(state.maps.length, 3);
-  assert.deepEqual(state.maps.map((map) => map.id), ['river', 'amboy', 'gracia']);
+  assert.equal(state.maps.length, 7);
+  assert.deepEqual(state.maps.map((map) => map.id),
+    ['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna']);
   const river = state.maps.find((map) => map.id === 'river');
   const amboy = state.maps.find((map) => map.id === 'amboy');
   const gracia = state.maps.find((map) => map.id === 'gracia');
+  const longbeach = state.maps.find((map) => map.id === 'longbeach');
+  const observatory = state.maps.find((map) => map.id === 'observatory');
+  const downtown = state.maps.find((map) => map.id === 'downtown');
+  const mharuna = state.maps.find((map) => map.id === 'mharuna');
   assert.deepEqual(river.courses, ['310', 'short', 'lap', 'free']);
-  assert.deepEqual(amboy.courses, ['310']);
+  assert.deepEqual(amboy.courses, ['310', 'lap']);
   assert.deepEqual(gracia.courses, ['310']);
   for (const mode of MODE_ORDER) assert.equal(mapSupportsMode(river, mode), true, 'river ' + mode);
   assert.equal(mapSupportsMode(amboy, 'sprint'), true);
   assert.equal(mapSupportsMode(amboy, 'multiplayer'), true);
-  assert.equal(mapSupportsMode(amboy, 'lap'), false);
+  assert.equal(mapSupportsMode(amboy, 'lap'), true);
   assert.equal(mapSupportsMode(amboy, 'free'), false);
   assert.equal(mapSupportsMode(gracia, 'lap'), false);
   assert.equal(measuredLength(river, 'sprint').text, '310.395 m');
   assert.equal(measuredLength(river, 'lap').text, '222.040 m');
   assert.equal(measuredLength(amboy, 'sprint').text, '2,060.595 m');
+  assert.equal(measuredLength(amboy, 'lap').text, '284.452 m');
   assert.equal(measuredLength(gracia, 'sprint').text, '624.914 m');
+  assert.equal(measuredLength(longbeach, 'sprint').text, '785.823 m');
+  assert.equal(measuredLength(observatory, 'sprint').text, '536.622 m');
+  assert.equal(measuredLength(downtown, 'sprint').text, '153.861 m');
+  assert.equal(measuredLength(mharuna, 'sprint').text, '309.170 m');
   assert.equal(measuredLength(river, 'free').text, '7,702.25 m2 basin');
+  for (const map of [longbeach, observatory, downtown, mharuna]) {
+    assert.equal(mapSupportsMode(map, 'sprint'), true, map.id);
+    assert.equal(mapSupportsMode(map, 'multiplayer'), true, map.id);
+    assert.equal(mapSupportsMode(map, 'lap'), false, map.id);
+  }
 });
 
 test('unsupported map/mode pairs produce the visible reason instead of switching', () => {
   const state = makeState({ screen: 'map-select', mode: 'lap', carSlug: 'corvette-zr1-stock', mapId: 'river' });
-  const after = reduce(state, { type: 'map/select', mapId: 'amboy' });
+  const after = reduce(state, { type: 'map/select', mapId: 'gracia' });
   assert.equal(after.screen, 'map-select');
   assert.equal(after.mapId, 'river');
   assert.equal(after.notice.code, ERROR.UNSUPPORTED_COMBINATION);
-  assert.match(after.notice.message, /Amboy lists courses \[310\]/);
-  assert.match(after.notice.message, /point-to-point/);
+  assert.match(after.notice.message, /Gracia lists courses \[310\]/);
+  assert.match(after.notice.message, /no 3-lap loop layout/);
   const reason = unsupportedReason(state.maps.find((map) => map.id === 'amboy'), 'free');
-  assert.match(reason, /point-to-point/);
+  assert.match(reason, /Amboy lists courses \[310, lap\]/);
+  assert.match(reason, /no free roam layout/);
   assert.equal(unsupportedReason(state.maps.find((map) => map.id === 'river'), 'lap'), null);
+  assert.equal(unsupportedReason(state.maps.find((map) => map.id === 'amboy'), 'lap'), null);
 });
 
 test('every legal screen edge exists and illegal edges are rejected', () => {
@@ -130,16 +167,24 @@ test('solo sprint path reaches every screen and rematches without a reload', () 
   assert.equal(state.screen, 'main-menu');
 });
 
-test('lap and free modes only start on River', () => {
-  for (const mode of ['lap', 'free']) {
-    let state = makeState({ screen: 'map-select', mode, carSlug: 'corvette-zr1-stock', mapId: 'river' });
-    assert.equal(startRejection(state).ok, true, mode + ' river');
-    const blocked = makeState({ screen: 'map-select', mode, carSlug: 'corvette-zr1-stock', mapId: 'amboy' });
-    const gate = startRejection(blocked);
-    assert.equal(gate.ok, false);
-    assert.equal(gate.code, ERROR.UNSUPPORTED_COMBINATION);
-    assert.match(gate.reason, /point-to-point/);
+test('lap starts on River and Amboy; free roam stays River-only', () => {
+  for (const mapId of ['river', 'amboy']) {
+    const state = makeState({ screen: 'map-select', mode: 'lap', carSlug: 'corvette-zr1-stock', mapId });
+    assert.equal(startRejection(state).ok, true, 'lap ' + mapId);
   }
+  const blockedLap = makeState({ screen: 'map-select', mode: 'lap', carSlug: 'corvette-zr1-stock', mapId: 'gracia' });
+  const lapGate = startRejection(blockedLap);
+  assert.equal(lapGate.ok, false);
+  assert.equal(lapGate.code, ERROR.UNSUPPORTED_COMBINATION);
+  assert.match(lapGate.reason, /no 3-lap loop layout/);
+
+  const free = makeState({ screen: 'map-select', mode: 'free', carSlug: 'corvette-zr1-stock', mapId: 'river' });
+  assert.equal(startRejection(free).ok, true, 'free river');
+  const blockedFree = makeState({ screen: 'map-select', mode: 'free', carSlug: 'corvette-zr1-stock', mapId: 'amboy' });
+  const freeGate = startRejection(blockedFree);
+  assert.equal(freeGate.ok, false);
+  assert.equal(freeGate.code, ERROR.UNSUPPORTED_COMBINATION);
+  assert.match(freeGate.reason, /no free roam layout/);
 });
 
 test('back navigation follows the documented targets', () => {
@@ -162,19 +207,21 @@ test('back navigation follows the documented targets', () => {
 
 test('filters and sorting are deterministic and cover the whole roster', () => {
   const state = makeState({ screen: 'car-select', mode: 'sprint' });
-  assert.equal(filterCars(state.cars, state.filters).length, 25);
-  assert.equal(filterCars(state.cars, { query: 'corvette' }).length, 2);
+  assert.equal(filterCars(state.cars, state.filters).length, 57);
+  assert.equal(filterCars(state.cars, { query: 'corvette' }).length, 4);
   assert.equal(filterCars(state.cars, { carClass: 'A' }).length, 5);
-  assert.equal(filterCars(state.cars, { carClass: 'B' }).length, 13);
-  assert.equal(filterCars(state.cars, { carClass: 'C' }).length, 7);
-  assert.equal(filterCars(state.cars, { drivetrain: 'AWD' }).length, 6);
-  assert.equal(filterCars(state.cars, { drivetrain: 'FWD' }).length, 1);
-  assert.equal(filterCars(state.cars, { drivetrain: 'RWD' }).length, 18);
+  assert.equal(filterCars(state.cars, { carClass: 'B' }).length, 38);
+  assert.equal(filterCars(state.cars, { carClass: 'C' }).length, 14);
+  assert.equal(filterCars(state.cars, { carClass: 'unclassified' }).length, 0);
+  assert.equal(filterCars(state.cars, { drivetrain: 'AWD' }).length, 14);
+  assert.equal(filterCars(state.cars, { drivetrain: 'FWD' }).length, 4);
+  assert.equal(filterCars(state.cars, { drivetrain: 'RWD' }).length, 39);
   const byMass = filterCars(state.cars, { sort: 'mass' });
   assert.equal(byMass[0].slug, 'volkswagen-beetle-offroad');
   assert.equal(byMass[0].massKg, 660);
   const byClass = filterCars(state.cars, { sort: 'class' });
   assert.deepEqual(byClass.slice(0, 5).map((car) => car.carClass), ['A', 'A', 'A', 'A', 'A']);
+  assert.deepEqual(byClass.slice(-14).map((car) => car.carClass), Array(14).fill('C'));
   const names = filterCars(state.cars, { sort: 'name' }).map((car) => car.name);
   assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
 });
@@ -373,13 +420,13 @@ test('every screen maps to a deterministic URL route', () => {
 });
 
 test('grid navigation and gamepad intents are edge-triggered', () => {
-  assert.equal(nextGridIndex(0, 25, 'ArrowRight', 5), 1);
-  assert.equal(nextGridIndex(0, 25, 'ArrowDown', 5), 5);
-  assert.equal(nextGridIndex(4, 25, 'ArrowRight', 5), 5);
-  assert.equal(nextGridIndex(0, 25, 'ArrowLeft', 5), 0);
-  assert.equal(nextGridIndex(24, 25, 'ArrowDown', 5), 24);
-  assert.equal(nextGridIndex(3, 25, 'Home', 5), 0);
-  assert.equal(nextGridIndex(3, 25, 'End', 5), 24);
+  assert.equal(nextGridIndex(0, 57, 'ArrowRight', 7), 1);
+  assert.equal(nextGridIndex(0, 57, 'ArrowDown', 7), 7);
+  assert.equal(nextGridIndex(6, 57, 'ArrowRight', 7), 7);
+  assert.equal(nextGridIndex(0, 57, 'ArrowLeft', 7), 0);
+  assert.equal(nextGridIndex(56, 57, 'ArrowDown', 7), 56);
+  assert.equal(nextGridIndex(3, 57, 'Home', 7), 0);
+  assert.equal(nextGridIndex(3, 57, 'End', 7), 56);
   const buttons = (pressed) => pressed.map((value) => ({ pressed: value }));
   assert.equal(gamepadIntent(buttons([true, false]), [], { buttons: [false, false], axes: [] }), 'confirm');
   assert.equal(gamepadIntent(buttons([true, false]), [], { buttons: [true, false], axes: [] }), null);

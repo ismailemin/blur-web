@@ -1,7 +1,8 @@
 {
   "kind": "game-shell.course-measurements",
-  "version": 1,
+  "version": 2,
   "source": {
+    "rule": "Every length is copied from a committed measurement: a registry pin, a committed map-laps path/lap document, or the committed E1 layout builder output. Gate arcs come from the same layout's gates array. No length or arc is estimated, rounded from a different course, or inherited from another map.",
     "river": {
       "310": "docs/work/verification/T-007-310m-course.md:46 (310.395196 m measured)",
       "lap": "docs/work/verification/T-007-lap-mode.md:18 (222.040211 m closed loop)",
@@ -9,10 +10,23 @@
       "freeAreaM2": "docs/work/verification/T-007-free-roam.md:45 (7,702.25 m2 committed spawn component)"
     },
     "amboy": {
-      "310": "probes/e1-drive/web/map-registry.js MAPS.amboy.pins.pathLengthMetres (2,060.595408 m)"
+      "310": "probes/e1-drive/web/map-registry.js MAPS.amboy.pins.pathLengthMetres (2,060.595408 m); _work/e1-drive/amboy/layout.json course.span.lengthMetres agrees",
+      "lap": "probes/map-laps/data/amboy-loop01-lap.json course.span.lengthMetres (284.452387 m, loop-01); served by MAPS.amboy.lapLayoutUrl"
     },
     "gracia": {
-      "310": "probes/e1-drive/web/map-registry.js MAPS.gracia.pins.pathLengthMetres (624.913781 m)"
+      "310": "probes/e1-drive/web/map-registry.js MAPS.gracia.pins.pathLengthMetres (624.913781 m); _work/e1-drive/gracia/layout.json course.span.lengthMetres agrees"
+    },
+    "longbeach": {
+      "310": "_work/e1-drive/longbeach/layout.json course.span.lengthMetres (785.82323 m, collision-clear path); probes/map-laps/data/longbeach-path.json agrees; the 818.371718 m draw path is not the authority"
+    },
+    "observatory": {
+      "310": "_work/e1-drive/observatory/layout.json course.span.lengthMetres (536.621709 m, collision-clear path); probes/map-laps/data/observatory-path.json agrees; the 562.352380 m draw path is not the authority"
+    },
+    "downtown": {
+      "310": "_work/e1-drive/downtown/layout.json course.span.lengthMetres (153.860674 m, collision-clear path); probes/map-laps/data/downtown-path.json agrees; the 160.007143 m draw path is not the authority"
+    },
+    "mharuna": {
+      "310": "_work/e1-drive/mharuna/layout.json course.span.lengthMetres (309.170196 m, collision-clear path); probes/map-laps/data/mharuna-path.json agrees; the 345.818326 m draw path is not the authority"
     }
   },
   "maps": {
@@ -23,10 +37,60 @@
       "freeAreaM2": 7702.25
     },
     "amboy": {
-      "310": 2060.595408
+      "310": 2060.595408,
+      "lap": 284.452387
     },
     "gracia": {
       "310": 624.913781
+    },
+    "longbeach": {
+      "310": 785.82323
+    },
+    "observatory": {
+      "310": 536.621709
+    },
+    "downtown": {
+      "310": 153.860674
+    },
+    "mharuna": {
+      "310": 309.170196
+    }
+  },
+  "gates": {
+    "river": {
+      "source": "_work/e1-drive/sprint.json gates (310 m sprint; finish is measuredEnd - 10 m)",
+      "checkpointArcs": [100.107736, 200.074803],
+      "finishArc": 300.159666
+    },
+    "amboy": {
+      "source": "_work/e1-drive/amboy/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [686.862337, 1373.667341],
+      "finishArc": 2060.595408
+    },
+    "gracia": {
+      "source": "_work/e1-drive/gracia/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [208.343387, 416.652048],
+      "finishArc": 624.913781
+    },
+    "longbeach": {
+      "source": "_work/e1-drive/longbeach/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [262.055868, 523.76805],
+      "finishArc": 785.82323
+    },
+    "observatory": {
+      "source": "_work/e1-drive/observatory/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [114.838678, 308.628092],
+      "finishArc": 536.621709
+    },
+    "downtown": {
+      "source": "_work/e1-drive/downtown/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [32.931883, 84.117373],
+      "finishArc": 153.860674
+    },
+    "mharuna": {
+      "source": "_work/e1-drive/mharuna/layout.json gates (310 m point-to-point)",
+      "checkpointArcs": [67.304498, 171.944569],
+      "finishArc": 309.170196
     }
   }
 }

@@ -13,6 +13,7 @@
 import {
   AI_MAX,
   AI_PROFILES,
+  CAR_CLASSES,
   DEFAULT_LOADING_TIMEOUT_MS,
   ERROR,
   MODE_ORDER,
@@ -59,7 +60,11 @@ const FOCUSABLE = [
 ].join(', ');
 
 const DRIVETRAINS = ['all', 'RWD', 'FWD', 'AWD'];
-const CLASSES = ['all', 'A', 'B', 'C'];
+const CLASSES = ['all', ...CAR_CLASSES];
+// Must match `.gs-car-grid` at the 1600x900 target in shell.css so arrow-key
+// navigation moves by the number of columns the user actually sees.
+const CAR_GRID_COLUMNS = 7;
+const MAP_GRID_COLUMNS = 3;
 const SORTS = [
   ['roster', 'Roster order'],
   ['name', 'Name'],
@@ -279,9 +284,10 @@ export function mount(host, options = {}) {
     role: 'status',
     attrs: { 'aria-live': 'polite', 'aria-atomic': 'true' }
   });
+  const footerMeta = h(doc, 'span', { class: 'gs-footer-meta', text: 'target 1600x900' });
   const footer = h(doc, 'footer', { class: 'gs-footer' }, [
     h(doc, 'span', { text: 'Arrow keys move  /  Enter selects  /  Esc goes back  /  Tab stays in this screen' }),
-    h(doc, 'span', { class: 'gs-footer-meta', text: 'target 1600x900  /  25 cars  /  3 maps' })
+    footerMeta
   ]);
   root.append(header, live, main, footer);
   host.appendChild(root);
@@ -407,6 +413,9 @@ export function mount(host, options = {}) {
     root.dataset.screen = state.screen;
     renderHeader();
     live.textContent = noticeText();
+    footerMeta.textContent = 'target 1600x900  /  ' + (state.cars.length && state.maps.length
+      ? state.cars.length + ' cars  /  ' + state.maps.length + ' maps'
+      : 'reading committed data');
 
     let screen = null;
     switch (state.screen) {
@@ -504,7 +513,7 @@ export function mount(host, options = {}) {
     ]));
     section.appendChild(h(doc, 'div', { class: 'gs-panel gs-menu-note' }, [
       h(doc, 'h2', { class: 'gs-panel-title', text: 'WHAT THIS SCREEN IS' }),
-      h(doc, 'p', { text: 'A shell-only preview. The car grid has no decoded icon art and says so on every tile. The three maps are the real registry entries with their measured lengths and course lists. No engine frame, no game capture and no retail claim is made here.' })
+      h(doc, 'p', { text: 'A shell-only preview. The car grid has no decoded icon art and says so on every tile. The ' + state.maps.length + ' maps are the real registry entries with their measured lengths and course lists. No engine frame, no game capture and no retail claim is made here.' })
     ]));
     return section;
   }
@@ -546,13 +555,13 @@ export function mount(host, options = {}) {
       ]));
     });
     section.appendChild(grid);
-    section.appendChild(h(doc, 'p', { class: 'gs-footnote', text: 'Sprint and multiplayer use the 310 m course. 3-Lap needs the River loop. Free Roam needs the River basin. Amboy and Gracia expose only the 310 m point-to-point path.' }));
+    section.appendChild(h(doc, 'p', { class: 'gs-footnote', text: 'Sprint and multiplayer use each map\'s measured 310 m point-to-point course. 3-Lap needs a measured loop (River loop-01, Amboy loop-01). Free Roam needs the River basin. A map without the requested course stays visible and disabled with the reason.' }));
     return section;
   }
 
   function renderCarSelect() {
     const section = h(doc, 'section', { class: 'gs-screen gs-screen-cars' });
-    section.appendChild(screenHeading(doc, 'Choose a car', 'All 25 decoded RP_CarDynamics records. Filtering and sorting never change the roster data.', 'STEP 2 / 4'));
+    section.appendChild(screenHeading(doc, 'Choose a car', 'All ' + state.cars.length + ' committed roster cars. Filtering and sorting never change the roster data.', 'STEP 2 / 4'));
     appendChild(doc, section, noticeBanner(doc, state.notice, () => dispatch({ type: 'notice/clear' })));
 
     const filters = state.filters;
@@ -572,7 +581,8 @@ export function mount(host, options = {}) {
           }
         })
       ]),
-      selectField(doc, 'Data class', filters.carClass, CLASSES.map((value) => [value, value === 'all' ? 'All classes' : 'Class ' + value]),
+      selectField(doc, 'Data class', filters.carClass, CLASSES.map((value) => [value,
+        value === 'all' ? 'All classes' : value === 'unclassified' ? 'Unclassified' : 'Class ' + value]),
         (value) => dispatch({ type: 'filters/set', patch: { carClass: value } }), 'car-class'),
       selectField(doc, 'Drivetrain', filters.drivetrain, DRIVETRAINS.map((value) => [value, value === 'all' ? 'All drivetrains' : value]),
         (value) => dispatch({ type: 'filters/set', patch: { drivetrain: value } }), 'car-drivetrain'),
@@ -603,7 +613,7 @@ export function mount(host, options = {}) {
     } else {
       const grid = h(doc, 'div', {
         class: 'gs-car-grid',
-        dataset: { grid: 'cars', gridColumns: '5' },
+        dataset: { grid: 'cars', gridColumns: String(CAR_GRID_COLUMNS) },
         attrs: { 'aria-label': 'roster cars' }
       });
       cars.forEach((car, index) => {
@@ -616,7 +626,7 @@ export function mount(host, options = {}) {
             carSlug: car.slug,
             grid: 'cars',
             gridIndex: index,
-            gridColumns: 5
+            gridColumns: String(CAR_GRID_COLUMNS)
           },
           attrs: {
             'aria-pressed': selected ? 'true' : 'false',
@@ -677,7 +687,7 @@ export function mount(host, options = {}) {
 
     const grid = h(doc, 'div', {
       class: 'gs-map-grid',
-      dataset: { grid: 'maps', gridColumns: '3' },
+      dataset: { grid: 'maps', gridColumns: String(MAP_GRID_COLUMNS) },
       attrs: { 'aria-label': 'maps' }
     });
     state.maps.forEach((map, index) => {
@@ -690,7 +700,7 @@ export function mount(host, options = {}) {
         class: 'gs-map-card' + (selected ? ' is-selected' : '') + (supported ? '' : ' is-disabled'),
         type: 'button',
         disabled: !supported,
-        dataset: { focus: 'map-' + map.id, grid: 'maps', gridIndex: index, gridColumns: 3 },
+        dataset: { focus: 'map-' + map.id, grid: 'maps', gridIndex: index, gridColumns: String(MAP_GRID_COLUMNS) },
         attrs: {
           'aria-pressed': selected ? 'true' : 'false',
           'aria-describedby': reason ? reasonId : null

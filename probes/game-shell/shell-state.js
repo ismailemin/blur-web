@@ -4,10 +4,12 @@
 // module and the Node tests exercise every transition without a browser.
 //
 // Data bindings (all real, none invented here):
-//   * cars  -> probes/e1-drive/cars/roster.json (25 RP_CarDynamics records)
-//   * maps  -> probes/e1-drive/web/map-registry.js (River/Amboy/Gracia)
+//   * cars  -> probes/e1-drive/cars/roster.json (57 committed RP_CarDynamics
+//              records; 62 records exist, 5 are unsupported by the builder)
+//   * maps  -> probes/e1-drive/web/map-registry.js (7 registered maps)
 //   * class -> the vehicle pipeline content class A/B/C, generated from the
-//              committed roster by probes/game-shell/tools/build-car-classes.mjs
+//              committed roster + vehicle-batch spec by
+//              probes/game-shell/tools/build-car-classes.mjs
 //   * length-> measured course values passed in as `measurements`
 //
 // The content class is the vehicle-pipeline completeness class (A = proven,
@@ -34,7 +36,7 @@ export const MODES = Object.freeze({
     label: '3-Lap',
     course: 'lap',
     tagline: 'Closed loop, three laps',
-    description: 'The measured 222.040 m loop-01 layout, three laps, best-lap timing. River only.'
+    description: 'The measured 222.040 m River loop-01 or the 284.452 m Amboy loop-01, three laps, best-lap timing.'
   }),
   free: Object.freeze({
     id: 'free',
@@ -48,7 +50,7 @@ export const MODES = Object.freeze({
     label: 'Multiplayer',
     course: '310',
     tagline: 'Host-authoritative online room',
-    description: 'Two humans plus 0-3 host AI on one of the three MP maps. The room uses the measured 310 m sprint.'
+    description: 'Two humans plus 0-3 host AI on any registered map. The room uses that map\'s measured 310 m sprint.'
   })
 });
 
@@ -70,6 +72,9 @@ export const AI_SPAWN_UNSUPPORTED = 'ai-spawn-unsupported';
 export const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const ROOM_CODE_LENGTH = 5;
 export const DEFAULT_LOADING_TIMEOUT_MS = 15000;
+
+/** Vehicle-pipeline content classes plus the explicit "no class" value. */
+export const CAR_CLASSES = Object.freeze(['A', 'B', 'C', 'unclassified']);
 
 export const ERROR = Object.freeze({
   BOOT_FAILED: 'SHELL_BOOT_FAILED',
@@ -191,12 +196,18 @@ export function normalizeCars(input, classes = {}) {
     const layout = parseLayout(entry.layout);
     const klass = entry.carClass ?? entry.class ?? classes[slug] ?? null;
     const name = String(entry.name ?? slug);
+    // `roster.json` stores the record identity at the top level; the generated
+    // `_work/e1-drive/cars.json` nests it under `record`. Read both, never guess.
+    const recordIndex = Number.isInteger(entry.recordIndex)
+      ? entry.recordIndex
+      : Number.isInteger(entry.record?.index) ? entry.record.index : null;
+    const recordId = entry.recordId ?? entry.record?.id ?? null;
     return {
       slug,
       name,
-      rosterIndex: Number.isInteger(entry.recordIndex) ? entry.recordIndex : index,
-      recordId: entry.recordId ?? null,
-      recordIndex: entry.recordIndex ?? null,
+      rosterIndex: recordIndex ?? index,
+      recordId,
+      recordIndex,
       carClass: klass,
       class: klass,
       drivetrain: layout.drivetrain,
@@ -269,7 +280,8 @@ export function unsupportedReason(map, mode) {
   }
   if (!map.courses.includes(MODES[mode].course)) {
     const packageNote = map.kind === 'map-package'
-      ? ' - the E1 package exposes only its measured 310 point-to-point course (no loop or free-roam layout)'
+      ? ' - the E1 package exposes only ' + map.courses.map((course) => courseLabel(course)).join(', ') +
+        ' (no ' + courseLabel(MODES[mode].course) + ' layout)'
       : '';
     return map.label + ' lists courses [' + map.courses.join(', ') + ']; ' + MODES[mode].label +
       " needs course '" + MODES[mode].course + "'" + packageNote;
@@ -326,7 +338,13 @@ export function filterCars(cars, filters = {}) {
   const sort = filters.sort ?? 'roster';
   const result = cars.filter((car) => {
     if (query && !car.searchText.includes(query)) return false;
-    if (carClass !== 'all' && car.carClass !== carClass) return false;
+    if (carClass !== 'all') {
+      if (carClass === 'unclassified') {
+        if (car.carClass !== null && car.carClass !== 'unclassified') return false;
+      } else if (car.carClass !== carClass) {
+        return false;
+      }
+    }
     if (drivetrain !== 'all' && car.drivetrain !== drivetrain) return false;
     return true;
   });
