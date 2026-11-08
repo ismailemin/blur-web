@@ -24,6 +24,16 @@ function host() {
   return element;
 }
 
+/** Load the HUD stylesheet once (project style, not retail art). */
+function hudStyles() {
+  if (document.querySelector('link[data-hud-style]')) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = '/hud-ui/runtime-hud.css';
+  link.dataset.hudStyle = '1';
+  document.head.appendChild(link);
+}
+
 function finite(value) {
   return Number.isFinite(value) ? value : null;
 }
@@ -70,6 +80,7 @@ export function hudState(state) {
  * The caller drives `update` once per rendered frame.
  */
 export function mountRetailHud(options = {}) {
+  hudStyles();
   const hud = createHud({
     doc: HUD_DOCUMENT,
     host: options.host ?? host(),
@@ -83,9 +94,10 @@ export function mountRetailHud(options = {}) {
   };
 }
 
-/** True when the URL asked for the retail HUD. */
+/** True when the page should show the retail HUD (default) rather than the
+ * debug chrome. `?hud=debug` opts out; `?hud=retail` is the explicit form. */
 export function retailHudRequested(search = location.search) {
-  return new URLSearchParams(search).get('hud') === 'retail';
+  return new URLSearchParams(search).get('hud') !== 'debug';
 }
 
 export { MPS_TO_MPH };

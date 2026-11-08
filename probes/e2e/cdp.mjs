@@ -283,7 +283,17 @@ export class CdpBrowser {
       const file = path.join(profileDir, 'DevToolsActivePort');
       const appeared = await waitForFile(file, 30000);
       if (appeared) {
-        httpPort = Number(readFileSync(file, 'utf8').split(/\r?\n/)[0]);
+        // The browser can hold the file for a moment while writing it; a busy
+        // read is retried instead of failing the whole scenario.
+        for (let attempt = 0; attempt < 40; attempt++) {
+          try {
+            httpPort = Number(readFileSync(file, 'utf8').split(/\r?\n/)[0]);
+            break;
+          } catch (error) {
+            if (error.code !== 'EBUSY' && error.code !== 'EPERM') throw error;
+            await sleep(250);
+          }
+        }
       }
     }
     if (!Number.isInteger(httpPort) || httpPort <= 0) {

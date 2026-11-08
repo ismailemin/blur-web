@@ -358,7 +358,9 @@ export function startServer({ port = 8801 } = {}) {
       if (relative.endsWith('.json')) file = safeJoin(MAP_LAPS, relative);
     } else if (pathname.startsWith('/hud-ui/')) {
       const relative = pathname.slice('/hud-ui/'.length);
-      if (relative.endsWith('.mjs') || relative.endsWith('.js')) file = safeJoin(HUD_UI, relative);
+      if (relative.endsWith('.mjs') || relative.endsWith('.js') || relative.endsWith('.css')) {
+        file = safeJoin(HUD_UI, relative);
+      }
     } else if (pathname.startsWith('/lighting/')) {
       const relative = pathname.slice('/lighting/'.length);
       if (relative.endsWith('.mjs')) file = safeJoin(LIGHTING, relative);

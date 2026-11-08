@@ -513,3 +513,12 @@ html[data-menu] #mp-lobby,
 html[data-menu] #mp-remotes,
 html[data-menu] #results,
 html[data-menu] #error { display: none !important; }
+
+/* Retail HUD is the default race view; the debug chrome is hidden while it is
+   mounted. ?hud=debug keeps the old view. Game overlays (countdown, results,
+   error, MP lobby) stay visible. */
+html[data-retail-hud] #hud,
+html[data-retail-hud] #legend,
+html[data-retail-hud] #keys,
+html[data-retail-hud] #cars,
+html[data-retail-hud] #telemetry { display: none !important; }
