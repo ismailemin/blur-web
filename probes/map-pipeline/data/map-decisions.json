@@ -1,5 +1,5 @@
 {
- "canonicalSha256": "f04446eaca4fec9558a3e6b2b3ca52a718c1021f558d60b02654204dbb912707",
+ "canonicalSha256": "1f57c8aec46000b8423d0df3fa754c4035d94d7609b914bec3f8b80b90a4ebdb",
  "generatedBy": "probes/map-pipeline/tools/build_map_decisions.py",
  "levels": [
   {
@@ -2885,19 +2885,26 @@
    "sha256": "124f01c0013a4578e2229016b0d1f8d82bfd850bb3bcaa597573f1afbadd733b"
   },
   "batchSummary": {
-   "bytes": 46501,
+   "contentSha256": "6f95d082b3ee9d688bfa6e2da09190f45d581120344e80792f61ce80dbd9001a",
    "path": "_work/map-batch/batch-summary.json",
-   "sha256": "389347021f324355c4c16bc66896dce3e9557363b81f42f06d6d314fb0cd498d"
+   "pin": "content",
+   "volatileFields": [
+    "timings",
+    "totalSeconds"
+   ]
   },
   "batchVerify": {
-   "bytes": 2320,
+   "contentSha256": "a263827e7d2fa93a949a11fdf88d611792d058c2355894cc059ccd2c85846408",
    "path": "_work/map-batch/verify.json",
-   "sha256": "fb35dec72186c68a39906d486fa6b86676c8eecc951c342491169dcbb1b12c0d"
+   "pin": "content",
+   "volatileFields": [
+    "seconds"
+   ]
   },
   "blockedInventory": {
    "bytes": 62184,
    "path": "_work/map-pipeline/blocked/inventory-19.json",
-   "sha256": "20e516f10019d2db914599a2ffeeb63b808f38871c4d9f6eda3aa74cc95662ae"
+   "sha256": "5fc2d25cc636ff2a7c6d7ea57354b47e044bbed9eb2524b1d21fa2883f0c8e38"
   },
   "inventory": {
    "bytes": 159627,

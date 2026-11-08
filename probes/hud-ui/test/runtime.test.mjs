@@ -77,6 +77,8 @@ test('module surface and mount contract', () => {
   assert.throws(() => createHud({ host: {} }), TypeError);
 
   const { document, host, hud, listeners } = mount();
+  const badHost = document.createElement('div');
+  assert.throws(() => createHud({ doc: { labels: {} }, host: badHost }), TypeError);
   assert.equal(hud.schema, HUD_SCHEMA);
   assert.equal(typeof hud.update, 'function');
   assert.equal(typeof hud.snapshot, 'function');

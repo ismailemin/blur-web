@@ -319,3 +319,62 @@ byte-identical, and equal to the committed file).
 `build_amboy_lap.py --check` compares the generated document with the
 committed file and exits 1 if it is stale; the verifier already runs the
 builder twice, so a hand-edited document fails both gates.
+
+## 11. Gracia no-closed-lap decision document
+
+`probes/map-laps/data/gracia-no-lap.json` is the committed decision that
+`spa_barcelona_gracia` has **no closed lap on its course**. It is a
+`map-laps.no-lap` v1 document, not a lap layout: it records every candidate
+loop, its measured length, the exact check that rejects it, the source hashes
+and `verdict: "no-closed-lap"`.
+
+| field | value |
+| --- | --- |
+| output | `probes/map-laps/data/gracia-no-lap.json` |
+| bytes / file SHA-256 | 226,414 / `sha256:d945634c9c6c7784c5e86e63933f2604335086c1e1c568bc411861583ce6ed6e` |
+| canonical `hash` | `sha256:ae63a172e25d01ee21af12d7d953f9863bc985a58f40df591b2eb0e887f642ff` |
+| verdict | **`no-closed-lap`** |
+| course component | **171**, 64,566 cells / 16,141.5 m2, the spawn and all 541 measured path samples |
+| course islands | 1 enclosed island, **2.25 m2** - below the 100 m2 extraction threshold |
+| loops found | 3, **0 on the course**, **0 meeting all seven bar criteria** |
+| verifier | **83/83 checks passed** |
+
+The bar is the same seven criteria that `usa_amboy` loop-01 meets: on-course,
+closed seam <= 1.0 m, ring survives >= 3 clearance erosions, 150..1500 m, exact
+triangles PASS, engine trace 0 / 0, draw coverage 1.0 with 0 gaps.
+
+| loop | component | length | survives | coverage | exact | engine | reachable | gap to course | failed |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | --- |
+| loop-01 | 180 | 67.8883 m | 2 | **1.000** | PASS 9/9 | 136 samples, 0 / 0 | **no** | **1.581139 m** | on-course, ring, length |
+| loop-03 | 293 | 61.0356 m | 6 | 0.209 | PASS 9/9 | 123 samples, 0 / 0 | **no** | 315.012698 m | on-course, length, coverage |
+| loop-02 | 79 | 60.5854 m | 2 | 0.000 | PASS 9/9 | 122 samples, 0 / 0 | **no** | 420.810230 m | on-course, ring, length, coverage |
+
+**loop-01 is the near-miss and the decisive case.** It is fully drawn, passes
+the exact-triangle verifier and the engine trace, but it is not on the course:
+it sits in component 180, which is **1.581139 m** from the course component
+across three cells that the P48 passability rule rejects. Those cells are
+`step-or-grade` (no wall, no void), with a raster neighbour dh of **5.179 cm per
+0.5 m cell** against the **2.5 cm / 5 %** limit. On the exact collision
+triangles the same ramp is **6.18 % average** and **9.76 % over 0.5 m** - both
+above the 5 % rule. The 8-connected BFS from the committed spawn reaches
+exactly the 64,566 cells of component 171 and **none** of loop-01's cells, so
+the loop cannot be entered without leaving the passable surface. It also
+survives only 2 clearance erosions (the bar needs >= 3) and is 67.8883 m, below
+the 150 m ranking window.
+
+The other two loops are farther (315.0 m and 420.8 m) and fail draw coverage
+(0.209 and 0.000). No loop is invented and the Amboy bar is not weakened: the
+course component simply has no enclosed island large enough for the same
+island-based search to extract a ring.
+
+`verify_gracia_no_lap.mjs` (83 checks) re-derives the decision from the
+committed document, the probe artifacts and `grid.npz`: the canonical hash and
+every source SHA-256; the course component and its island count; the BFS
+reachability of every loop from the spawn; the nearest gap, blocked-cell kinds
+and raster neighbour dh; the exact-triangle gap profile and its 6.18 % / 9.76 %
+grades; every candidate's seven criteria; and determinism (the builder twice,
+byte-identical, plus `--check`). It prints `N/M checks passed` and exits 1 on
+failure. A tampered `verdict` drops it to 78/83 and exit 1.
+
+Scope labels are the same as the rest of the probe: collision only, no draw
+geometry read, no renderer, vehicle-physics or game claim, no lap driven.

@@ -71,6 +71,34 @@ def source(path: Path) -> dict:
             "sha256": sha256_file(path)}
 
 
+def content_hash(doc, volatile: set[str]) -> str:
+    """Hash a document with volatile timing fields removed.
+
+    `batch-summary.json` carries per-level timings and `verify.json` carries a
+    wall-clock `seconds`; neither is a decision input. Pinning only the stable
+    content keeps the decision document reproducible after the batch verifier
+    rewrites its timing field.
+    """
+    def strip(value):
+        if isinstance(value, dict):
+            return {key: strip(item) for key, item in value.items()
+                    if key not in volatile}
+        if isinstance(value, list):
+            return [strip(item) for item in value]
+        return value
+
+    text = json.dumps(strip(doc), sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def content_source(path: Path, volatile: set[str]) -> dict:
+    return {"path": rel(path),
+            "contentSha256": content_hash(load_json(path), volatile),
+            "volatileFields": sorted(volatile),
+            "pin": "content"}
+
+
 def level_dirs() -> list[str]:
     return sorted(path.name for path in (ROOT / "game-data/Blur/levels").iterdir()
                   if path.is_dir())
@@ -481,9 +509,11 @@ def build_document() -> dict:
             "maps": source(src["paths"]["maps"]),
             "inventory": source(src["paths"]["inventory"]),
             "blockedInventory": source(src["paths"]["blocked"]),
-            "batchSummary": source(src["paths"]["batch"]),
+            "batchSummary": content_source(src["paths"]["batch"],
+                                           {"timings", "totalSeconds"}),
             "batchDeterminism": source(src["paths"]["determinism"]),
-            "batchVerify": source(src["paths"]["batchVerify"]),
+            "batchVerify": content_source(src["paths"]["batchVerify"],
+                                          {"seconds"}),
             "mapRegistry": source(src["paths"]["registry"]),
             "localization": source(src["paths"]["localization"]),
         },

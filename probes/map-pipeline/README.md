@@ -167,6 +167,9 @@ The full 19-level extraction is recorded in
   not "no draw exists in the level".
 - Composite sub-meshes are counted but not transformed/applied; fluid meshes are
   parsed and excluded from drivable surface.
-- No level is claimed playable by this probe. A is the already integrated
-  `usa_la_river` slice; B needs a layout/reader step; C is blocked at the
-  measured draw coverage with the exact reason recorded.
+- The A/B/C matrix is the earlier map-pipeline ranking, not integration state:
+  A is River, B needs a layout/reader step, C is blocked at the measured draw
+  coverage. The decision document records **3 playable maps** (`river`,
+  `amboy`, `gracia`) because they are integrated in the E1 registry and their
+  map-batch packages verify. Longbeach has a package but no E1 registry entry,
+  so it is blocked by two integration items.

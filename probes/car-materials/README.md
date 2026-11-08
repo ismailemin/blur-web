@@ -37,7 +37,7 @@ recover.
 
 | input | use |
 | --- | --- |
-| `_work/car-parts/cars/index.json` | five-car mapping, model/manifest hashes |
+| `_work/car-parts/cars/index.json` | 25-car model/manifest hashes and the record-level `amaxTag` link |
 | `_work/car-parts/cars/<slug>/manifest.json` | part/draw ownership |
 | `_work/car-parts/cars/<slug>/scene-report.json` | committed `scene_inspect.exe` output |
 | `_work/car-materials/roster/cars/<slug>/materials.json` | P52 runtime-only draw classification |
@@ -46,7 +46,6 @@ recover.
 | `_work/build/asset-reader-native/Release/texture_inspect.exe --raw` | PC descriptor + chain → RGBA |
 | `tools/inspect_car_materials.py` | independent source-shaped material/LOD parser (imported, not modified) |
 | `probes/e1-drive/cars/roster.json` | authoritative 25 slugs and roster order |
-| `_work/car-parts/cars/index.json` | record-level `amaxTag` link for the seven decorated roster names |
 | `gamedata.pak` `\gamedata\xt\amax.bin` | `AmaxVehicle` paint-job and material-override handles |
 | `gamedata.pak` `\gamedata\xt\vehicles.bin` | `VEH_PaintJob`, `VEH_Curve`, `VEH_MaterialGlass|Light|Alloy` |
 

@@ -159,13 +159,12 @@ def main(argv=None):
           all(row.get("blocker") for row in rows
               if row.get("verdict") == "unsupported"))
 
-    # source pins
+    # source pins. The batch summary and batch verifier carry wall-clock timing
+    # fields that are not decision inputs; they are pinned by stable content.
     for key, path in (("maps", src["paths"]["maps"]),
                       ("inventory", src["paths"]["inventory"]),
                       ("blockedInventory", src["paths"]["blocked"]),
-                      ("batchSummary", src["paths"]["batch"]),
                       ("batchDeterminism", src["paths"]["determinism"]),
-                      ("batchVerify", src["paths"]["batchVerify"]),
                       ("mapRegistry", src["paths"]["registry"]),
                       ("localization", src["paths"]["localization"])):
         pin = doc.get("sources", {}).get(key)
@@ -173,6 +172,19 @@ def main(argv=None):
               pin.get("sha256") == sha256_file(path) and
               pin.get("bytes") == path.stat().st_size,
               "" if pin is None else str(pin.get("sha256")))
+    for key, path, volatile in (
+            ("batchSummary", src["paths"]["batch"], {"timings", "totalSeconds"}),
+            ("batchVerify", src["paths"]["batchVerify"], {"seconds"})):
+        pin = doc.get("sources", {}).get(key)
+        check("source content pin " + key, pin is not None and
+              pin.get("pin") == "content" and
+              pin.get("volatileFields") == sorted(volatile) and
+              pin.get("contentSha256") ==
+              lib.content_hash(load_json(path), volatile),
+              "" if pin is None else str(pin.get("contentSha256")))
+        check("source content pin " + key + " has no volatile file hash",
+              pin is not None and "sha256" not in pin and "bytes" not in pin,
+              str(sorted(pin)) if pin else "")
 
     # canonical hash and byte-identical rebuild
     check("canonical hash", doc.get("canonicalSha256") == lib.canonical_hash(doc),
@@ -513,6 +525,10 @@ def main(argv=None):
                 check("showroom blocker reason",
                       blocker.get("reason") == "showroom is not a race/sprint map",
                       str(blocker.get("reason")))
+                check("showroom source record",
+                      source.get("recordId") ==
+                      "levels[showroom].singleBlocker",
+                      str(source.get("recordId")))
                 check("showroom mode item",
                       "showroom-mode" in inv["playableDistanceItems"],
                       str(inv["playableDistanceItems"]))

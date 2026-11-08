@@ -59,8 +59,8 @@ function formatRaceTime(seconds) {
 
 /** `ss.mmm` below a minute, `m:ss.mmm` above it. */
 function formatLapTime(seconds) {
-  if (seconds >= 60) return formatRaceTime(seconds);
   const ms = Math.round(seconds * 1000);
+  if (ms >= 60000) return formatRaceTime(seconds);
   const secs = Math.floor(ms / 1000);
   return (secs < 10 ? '0' : '') + secs + '.' + pad3(ms % 1000);
 }

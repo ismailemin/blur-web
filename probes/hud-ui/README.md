@@ -51,6 +51,11 @@ hud.destroy();                   // removes the root and the resize listener
 element, if the document is not the committed HUD document, or if the host
 already owns a runtime HUD. Call `destroy()` before mounting again.
 
+The module is a static ES module. If the driving page is served from
+`probes/e1-drive/web/`, import it as `../../hud-ui/runtime-hud.mjs` with the
+repository root as the server root, or copy `runtime-hud.mjs` and
+`hud-document.mjs` next to the page.
+
 ## State contract
 
 | Field | Accepted value | Rendering |

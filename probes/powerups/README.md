@@ -28,6 +28,9 @@ Data-only power-up recovery for the Blur Web project. Nothing here changes
 | `tools/runtime_placement_module.template.mjs` | PWR7 | template for the generated browser module |
 | `data/runtime-placement.json` | PWR7 | committed generated placement data |
 | `runtime-placement.mjs` | PWR7 | browser-importable `placementsFor(mapId, layout)` |
+| `tools/build_pickup_routes.mjs` | PWR8 | retail `.aid` route network + per-pickup arc/projection |
+| `tools/verify_pickup_routes.mjs` | PWR8 | independent pak/`.aid` re-decode + projection verifier |
+| `data/pickup-routes.json` | PWR8 | committed retail route network and per-pickup arc |
 
 ## SuperShield (SS1)
 
@@ -226,6 +229,114 @@ Scope labels:
 - **Counts:** Amboy 82 pickups / 1 unsupported, Gracia 59 / 0, River 54 / 0
   (both `310m` and `lap`). Verifier **7,828/7,828** checks, two builds
   byte-identical.
+
+## Retail pickup routes (PWR8)
+
+PWR6/PWR7 measured every retail pickup against the *measured* e1-drive
+sub-course. Only 2/82 (Amboy) and 2/59 (Gracia) are within 5 m of it, because
+the measured layout is a sub-course of the retail route. The retail slots do lie
+on the retail route, and that route is recoverable from committed data.
+
+Source chain (all read-only):
+
+`amax.bin Route` record → `Route.Name` → `LevelState.cpp:298`
+(`.\gamedata\levels\<city>\<route>.aid`) → `gamedata.pak` entry →
+`AI_Amax.cpp:1595-2163` (`LoadVersionSix`) → `AITrackDataRoutes` /
+`AITrackDataSegments` / `AITrackDataLines`.
+
+| map | route record | route name | `.aid` entry | routes | pickups |
+| --- | ---: | --- | --- | ---: | ---: |
+| amboy | 633252245 | `USA_Amboy_3` | `\gamedata\levels\usa_amboy\usa_amboy_3.aid` | 46 | 82 |
+| gracia | 46220414 | `SPA_Barcelona_Gracia_2` | `\gamedata\levels\spa_barcelona_gracia\spa_barcelona_gracia_2.aid` | 13 | 59 |
+| river | 1643385212 | `USA_LA_River_3` | `\gamedata\levels\usa_la_river\usa_la_river_3.aid` | 22 | 54 |
+
+```powershell
+node probes/powerups/tools/build_pickup_routes.mjs
+node probes/powerups/tools/verify_pickup_routes.mjs
+```
+
+Result:
+
+| map | on-route (corridor) | off-route | route network ≤2 m / ≤5 m / ≤10 m | corridor max |
+| --- | ---: | ---: | --- | ---: |
+| amboy | **82/82** | 0 | 24 / 49 / 68 | 0.000 m |
+| gracia | **59/59** | 0 | 14 / 28 / 46 | 0.000 m |
+| river | **54/54** | 0 | 21 / 28 / 44 | 0.000 m |
+
+Verifier: **1,610/1,610** checks, two builds byte-identical
+(`sha256 005a2276…`, 1,147,276 bytes). An independent Python cross-check with
+the committed `probes/course/tools/aid_decode.py` agrees on all 81 routes
+(points, widths, racing offsets, byte offsets, lengths) and all 195 pickups
+(route, segment, corridor distance, racing-line distance, arc).
+
+Import contract:
+
+```js
+import { readFileSync } from 'node:fs';
+const doc = JSON.parse(readFileSync('probes/powerups/data/pickup-routes.json', 'utf8'));
+const map = doc.maps['amboy'];
+// map.aid:  { pakPath, sha256, logicalBytes, revision, routeCount, ... }
+// map.routes[]: { index, name, flags, flagNames, closed, closureMetres,
+//                 segmentCount, lineCount, byteOffset, firstSegmentByteOffset,
+//                 segmentStrideBytes, endByteOffset, routeLengthM, lengthMetres,
+//                 stepMinMetres, stepMaxMetres,
+//                 points: [[x, y, z, arc], ...],   // racing line, line index 5
+//                 widths: [w, ...],                // serialized segment width
+//                 racingOffsets: [o, ...] }        // serialized racing-line offset
+// map.pickups[]: { id, uid, type, position: [x, y, z],
+//                  route, routeIndex, segment, arc, offset, lateral, width, along,
+//                  containingRoutes: [{ name, index, width }, ...],
+//                  distanceToRouteNetwork, distanceToAssignedRacingLine,
+//                  distanceToCorridor, onRoute, status }
+// map.offRoute[]: { id, uid, distance }
+// map.counts: { retailPlacements, onRoute, offRoute, corridorMaxMetres,
+//               within2mOfRouteNetwork, within5mOfRouteNetwork,
+//               within10mOfRouteNetwork, medianDistanceToRouteNetwork }
+```
+
+Scope labels:
+
+- **Recovered, not synthesized:** every point is
+  `origin + normalize(tangentX, -tangentZ) * width * line[5].offset` with
+  `origin = (xFile, -zFile)` and `y = line[5].height`, exactly
+  `AITrackDataSegments::GetPositionFromOffset` (`trackdata.h:477-490`). The
+  builder re-implements the committed `probes/course/tools/aid_decode.py`
+  reader; the verifier re-implements it a second time.
+- **Route network, not one loop:** the race loop is `MainLoop`
+  (amboy 1,713 segments / 6,746.7 m, gracia 1,268 / 4,986.2 m, river 1,062).
+  The retail slots also sit on the alternate and catch routes of the same
+  `.aid`, so the artifact keeps all 46/13/22 routes. `MainLoop` alone is within
+  2 m for only 6/82 (amboy) and 5/59 (gracia), and its corridor contains only
+  **43/82** (amboy), **48/59** (gracia) and **41/54** (river) of the retail
+  slots; the rest are on the alternate/catch branches. That is why the network,
+  not the loop, is the correct carrier.
+- **Overlapping corridors:** a slot can sit inside several corridors at once
+  (`MainLoop` + `Logic` + an alternate). `containingRoutes` lists every carrier,
+  exact containment first and narrowest first; `route` is the most specific one.
+  `Logic` is a wide catch-all (median width 111 m amboy, 227 m gracia) and is
+  never preferred over a real road.
+- **On-route rule:** the engine's own segment quad
+  (`AITrackDataSegments::GetSegmentBounds` / `InSegmentWidths`,
+  `trackdata.h:1055-1122`): lateral offset in `[0, 1] * width`, longitudinal in
+  `[-2, +2] m` around a 4 m sample. `corridorMetres: 0.5` is numerical slack;
+  every slot is genuinely inside a quad (`corridorMaxMetres: 0`), not snapped.
+- **Distances are reported, never applied:** `position` is the retail
+  `WorldMatrix.aw` copied from `runtime-placement.json`. `arc`, `offset`,
+  `lateral` and the distances are metadata. Nothing is moved.
+- **Racing line vs corridor:** `distanceToRouteNetwork` is the planar distance
+  to the nearest racing-line polyline of the whole network (median 3.57 m
+  amboy, 5.25 m gracia). It is large because the serialized corridor is
+  14.5-74.8 m wide on the three `MainLoop`s (median 28.8-36.1 m) and the
+  pickups sit off the AI racing line; the corridor test is the on-track test.
+- **`y` is the racing-line height**, not ground: the retail pickup origin sits
+  about 3 m above it (the collection box is an oriented box at
+  `WorldMatrix.aw`). Vertical placement stays PWR6's job.
+- **Excluded slot:** amboy uid `4231571987` (`PickupActiveLevel 0`) is not in
+  the committed `runtime-placement.json`, so it is not in this artifact. It also
+  falls inside the corridor (checked against `_work/powerups/runtime-amboy.json`,
+  not committed).
+- **Not a renderer claim:** this is decoded route geometry and planar
+  projection only. No draw, GPU, physics or gameplay claim.
 
 ## PWR1 definitions
 
