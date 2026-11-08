@@ -323,10 +323,10 @@ unchanged; their MP identity still matches.
 **100 captures (25 cars × start/mid/checkpoint/finish)**, `verdict:
 clean-console-and-gates`, **console 0 messages / 0 errors or warnings**,
 `assertions.ok:true`, 25/25 finish frames with 2/2 checkpoints, **100/100 car
-matrix exact**, 3 geometry uploads per page, 9 matrices per tick, 0 blocked
-ticks. 59/100 whole-packet hashes are exactly equal; the rest differ only in the
-documented last-bit `Math.atan2`/`Math.sin` difference (the state hash, car
-matrix and 1e-12 matrix/camera tolerances are the gates). Evidence:
+matrix exact**, 3 geometry uploads per page, 9 matrices per tick. 59/100
+whole-packet hashes are exactly equal; the rest differ only in the documented
+last-bit `Math.atan2`/`Math.sin` difference (the state hash, car matrix and
+1e-12 matrix/camera tolerances are the gates). Evidence:
 `_work/e1-drive/browser-evidence-sprint-batch2.json` (1,005,285 B, SHA-256
 `7627a41b…`).
 

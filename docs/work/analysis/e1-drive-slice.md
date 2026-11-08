@@ -3489,4 +3489,7 @@ The portable suite stops at `prop-collision-v2` (44/45) because its V1
 regression pins the whole 15-car `geometry.json` hash; the collider data and the
 23 driven-line exclusions are unchanged. `tools/check_e1_poc.py` still asserts
 three hard-coded 15-car totals. Both files are outside this task's ownership and
-need a re-pin by their owners; details are in the batch-2 verification document.
+need a re-pin by their owners. The remaining suite steps were run individually;
+`net-mvp-selftest` also fails inside its own concurrently edited
+`probes/net-mvp/server.mjs` (`createServer` missing), outside this task. Details
+are in the batch-2 verification document.
