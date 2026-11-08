@@ -209,6 +209,14 @@ EXPECTED_SHORT_KINDS = ["start", "checkpoint", "checkpoint", "finish"]
 WEB_FILES = [
     "probes/e1-drive/web/index.html",
     "probes/e1-drive/web/style.css",
+    # `boot.js` is the page entry: race URLs import `app.js`, a bare load mounts
+    # the game shell through `menu.js`. `app.js` must stay present for every
+    # existing deep link.
+    "probes/e1-drive/web/boot.js",
+    "probes/e1-drive/web/menu.js",
+    "probes/game-shell/shell.js",
+    "probes/game-shell/shell-state.js",
+    "probes/game-shell/shell.css",
     "probes/e1-drive/web/app.js",
     "probes/e1-drive/web/cars.js",
     "probes/e1-drive/web/packet-adapter.js",
@@ -1028,16 +1036,23 @@ def check_web(report):
         if not (ROOT / name).is_file():
             missing.append(name)
     index = ROOT / "probes/e1-drive/web/index.html"
+    boot = ROOT / "probes/e1-drive/web/boot.js"
     problems = list(missing)
     if index.is_file():
         text = index.read_text(encoding="utf-8", errors="replace")
         if 'id="scene"' not in text:
             problems.append("index.html has no #scene canvas")
+        if "./boot.js" not in text:
+            problems.append("index.html does not load ./boot.js")
+    if boot.is_file():
+        text = boot.read_text(encoding="utf-8", errors="replace")
         if "./app.js" not in text:
-            problems.append("index.html does not load ./app.js")
+            problems.append("boot.js does not import ./app.js for race URLs")
+        if "./menu.js" not in text:
+            problems.append("boot.js does not import ./menu.js for a bare load")
     if problems:
         return report.fail(item, label, "missing/invalid: " + ", ".join(problems), missing or [rel(index)])
-    return report.ok(item, label, str(len(WEB_FILES)) + " files present, index loads ./app.js", [rel(index)])
+    return report.ok(item, label, str(len(WEB_FILES)) + " files present, index loads ./boot.js", [rel(index)])
 
 
 def _http_get(url, timeout=1.0):
@@ -1066,7 +1081,7 @@ def check_server(report):
     problems = []
     if status != 200:
         problems.append("index HTTP " + str(status))
-    if b'id="scene"' not in body or b"./app.js" not in body:
+    if b'id="scene"' not in body or b"./boot.js" not in body:
         problems.append("index body is not the E1 page")
     if index.is_file() and body != index.read_bytes():
         problems.append("served index.html differs from probes/e1-drive/web/index.html")
@@ -1078,6 +1093,9 @@ def check_server(report):
         ("/_work/e1-drive/spawn.json", WORK / "spawn.json"),
         ("/_work/e1-drive/sprint.json", WORK / "sprint.json"),
         ("/_work/e1-drive/sprint-short.json", WORK / "sprint-short.json"),
+        # The bare-load shell is mounted from these two routes.
+        ("/game-shell/shell.js", ROOT / "probes/game-shell/shell.js"),
+        ("/game-shell/shell.css", ROOT / "probes/game-shell/shell.css"),
     ]
     for url, local in probes:
         if not local.is_file():

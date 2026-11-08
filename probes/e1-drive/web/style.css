@@ -492,3 +492,24 @@ html[data-mp] #cars { display: none; }
 }
 #mp-results .mp-result-dnf { color: #e88a8a; }
 
+
+/* ------------------------------------------------------------------ game shell
+   A bare page load mounts the shell (menu -> mode -> car -> map -> race). The
+   driving slice's chrome is hidden then; race URLs never set data-menu. */
+#game-menu { position: fixed; inset: 0; z-index: 40; }
+html[data-menu] #scene { visibility: hidden; }
+html[data-menu] #hud,
+html[data-menu] #legend,
+html[data-menu] #keys,
+html[data-menu] #cars,
+html[data-menu] #telemetry,
+html[data-menu] #survey-banner,
+html[data-menu] #countdown,
+html[data-menu] #event,
+html[data-menu] #ghost-tag,
+html[data-menu] #remote-tag,
+html[data-menu] #powerup-hud,
+html[data-menu] #mp-lobby,
+html[data-menu] #mp-remotes,
+html[data-menu] #results,
+html[data-menu] #error { display: none !important; }

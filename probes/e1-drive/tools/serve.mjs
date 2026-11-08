@@ -48,6 +48,9 @@ const AUDIO = path.join(ROOT, 'probes/audio/web');
 const AUDIO_WORK = path.join(ROOT, '_work/audio');
 const NET_MVP = path.join(ROOT, 'probes/net-mvp');
 const RACE_RULES = path.join(ROOT, 'probes/race-rules');
+// The game shell module (menu/mode/car/map/lobby) is served read-only; the
+// e1-drive page mounts it from `/game-shell/shell.js` on a bare load.
+const GAME_SHELL = path.join(ROOT, 'probes/game-shell');
 // PWR1 read-only inputs for the power-up slice: the manifest the model consumes
 // and the committed rules prototype (never copied or edited here).
 const POWERUPS_WORK = path.join(ROOT, '_work/powerups');
@@ -331,6 +334,11 @@ export function startServer({ port = 8801 } = {}) {
     } else if (pathname.startsWith('/race-rules/')) {
       const relative = pathname.slice('/race-rules/'.length);
       if (relative.endsWith('.mjs')) file = safeJoin(RACE_RULES, relative);
+    } else if (pathname.startsWith('/game-shell/')) {
+      const relative = pathname.slice('/game-shell/'.length);
+      if (relative.endsWith('.js') || relative.endsWith('.css') || relative.endsWith('.json')) {
+        file = safeJoin(GAME_SHELL, relative);
+      }
     } else file = safeJoin(WEB, pathname.slice(1));
 
     if (!file || !existsSync(file) || !statSync(file).isFile()) {
