@@ -114,8 +114,8 @@
    "detourRuns": 1,
    "maxLateralOffsetMetres": 9.5,
    "pathFile": "probes/map-laps-aid/data/downtown-mp-aid-path.json",
-   "pathFileSha256": "sha256:4b04ad914b58d18f67c90edc0c4b029a2c9c4c1e68bf09a2a7a22f2122e65a27",
-   "pathContentHash": "sha256:ca771a575293c68fed149373dced4d1148fb7bd1967b038d7b2fa7a823a4630e"
+   "pathFileSha256": "sha256:5aa5f4522759130c08ed4a35300e0d3709afd8777ddc9f21e2194f177ce0c25b",
+   "pathContentHash": "sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779"
   },
   {
    "level": "usa_ny_dumbo",
@@ -147,8 +147,8 @@
    "detourRuns": 0,
    "maxLateralOffsetMetres": 0,
    "pathFile": "probes/map-laps-aid/data/dumbo-aid-path.json",
-   "pathFileSha256": "sha256:9043eb18027459c8cf59a25a5517582cf8ee255a5ed6c7932f521fa46610da8b",
-   "pathContentHash": "sha256:6b894f65d60582db924811aeee49e0b7c1831f11e2c399710fc5b165ff6b0a33"
+   "pathFileSha256": "sha256:6f9b500f43b6a6537ca42f0ef200e19e172d8e3310451c64630ccb55e1f20f86",
+   "pathContentHash": "sha256:526736bf09cb7b168a2cd12685859eb2386a215c904fe852f2dba403254f2bf3"
   },
   {
    "level": "uk_london_hackney",

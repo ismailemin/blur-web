@@ -58,7 +58,7 @@ DEFAULT_OUT = ROOT / "probes/car-materials/data/runtime-materials.json"
 
 MANIFEST_SCHEMA = "blur.car-materials-runtime-manifest/1"
 RUNTIME_SCHEMA = "blur.car-materials-runtime/1"
-CAR_COUNT = 59
+CAR_COUNT = 61
 
 # Part codes resolved per car (CodeProcessor.cpp:74-143,218-278).
 GLASS_PART = 23       # window

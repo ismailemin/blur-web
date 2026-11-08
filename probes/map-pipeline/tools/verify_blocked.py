@@ -47,7 +47,8 @@ PROBE_DIRS = {
 PLAYABLE = {"usa_la_river", "usa_amboy", "spa_barcelona_gracia", "usa_la_longbeachdocks",
             "usa_la_observatory", "usa_la_downtown", "jpn_mharuna",
             "usa_la_multiplayer_highrise", "jpn_tokyo_shutoko",
-            "spa_barcelona_oval", "usa_amboy_multiplayer"}
+            "spa_barcelona_oval", "usa_amboy_multiplayer",
+            "usa_ny_dumbo", "usa_la_downtown_multiplayer"}
 
 
 def sha256(path: Path) -> str:

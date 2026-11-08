@@ -36,15 +36,15 @@
   },
   "render": {
    "path": "_work/map-batch/usa_la_downtown_multiplayer/draws.json",
-   "bytes": 182726,
-   "sha256": "sha256:eb4c4890babf0f7976ccf08053579c6dd9fe48aabacc8f7861d8caa4db33238e",
-   "contentHash": "sha256:eb4c4890babf0f7976ccf08053579c6dd9fe48aabacc8f7861d8caa4db33238e",
+   "bytes": 182735,
+   "sha256": "sha256:d2b3881cec09dd2dc316ebc8832397c3877620e49add980ac9ff5a2b3f8d088e",
+   "contentHash": "sha256:d2b3881cec09dd2dc316ebc8832397c3877620e49add980ac9ff5a2b3f8d088e",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
    "path": "_work/map-batch/usa_la_downtown_multiplayer/blockers.json",
-   "bytes": 2930,
-   "sha256": "sha256:9a37b010b70a8c1eaf49506f3458dfcbc5baaf8fe450119fb8f45e778d2be52c"
+   "bytes": 2931,
+   "sha256": "sha256:f5790e730262ce0690613c2b85b8415ee3e24274ea3a2929fc843355648505b5"
   },
   "textures": {
    "path": "_work/map-batch/usa_la_downtown_multiplayer/textures/index.json",
@@ -6238,5 +6238,5 @@
    "a driven or AI-simulated check of the detour line; the detour is a geometric lateral shift inside the declared respawn band, not a driven racing line"
   ]
  },
- "hash": "sha256:ca771a575293c68fed149373dced4d1148fb7bd1967b038d7b2fa7a823a4630e"
+ "hash": "sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779"
 }

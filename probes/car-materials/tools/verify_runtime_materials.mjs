@@ -37,7 +37,7 @@ const DATA_PLACEHOLDER = '/*__RUNTIME_MATERIALS_DATA__*/';
 
 const MANIFEST_SCHEMA = 'blur.car-materials-runtime-manifest/1';
 const RUNTIME_SCHEMA = 'blur.car-materials-runtime/1';
-const CAR_COUNT = 59;
+const CAR_COUNT = 61;
 const RAMP_WIDTH = 512;
 const RAMP_HEIGHT = 1;
 const BASE_COLOUR_TEXEL = RAMP_WIDTH - 1;

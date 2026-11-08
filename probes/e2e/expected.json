@@ -122,6 +122,24 @@
       "checkpoints": 2,
       "layoutHash": "sha256:372a222388f1e5e60a11fdf66d0742f4dadde0daf4597b5f12adbd12b077fef5",
       "docRef": "docs/work/analysis/remaining-maps.md (122.293808 m collision path)"
+    },
+    "dumbo": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "dumbo",
+      "timeSeconds": 16.75,
+      "timeToleranceSeconds": 1.5,
+      "checkpoints": 2,
+      "layoutHash": "sha256:526736bf09cb7b168a2cd12685859eb2386a215c904fe852f2dba403254f2bf3",
+      "docRef": "probes/map-laps-aid/data/dumbo-aid-path.json (361.999436 m retail AI racing line)"
+    },
+    "downtown-mp": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "downtown-mp",
+      "timeSeconds": 7.95,
+      "timeToleranceSeconds": 1.5,
+      "checkpoints": 2,
+      "layoutHash": "sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779",
+      "docRef": "probes/map-laps-aid/data/downtown-mp-aid-path.json (86.452776 m retail AI racing line with a bounded detour)"
     }
   },
   "mp": {

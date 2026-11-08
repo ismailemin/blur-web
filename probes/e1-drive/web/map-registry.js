@@ -15,7 +15,7 @@ export const MAP_DEFAULT = 'river';
 
 /** Map ids accepted by `?map=`. */
 export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
-  'highrise', 'shutoko', 'oval', 'amboy-mp']);
+  'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp']);
 
 export const MAPS = Object.freeze({
   river: Object.freeze({
@@ -674,6 +674,121 @@ export const MAPS = Object.freeze({
       packageBytes: 15472686,
       layoutBytes: 74242,
       physicsBytes: 1414477
+    })
+  }),
+
+  'dumbo': Object.freeze({
+    id: 'dumbo',
+    label: 'Dumbo',
+    level: 'usa_ny_dumbo',
+    kind: 'map-package',
+    geometryUrl: '/_work/e1-drive/dumbo/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/usa_ny_dumbo/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/dumbo/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.dumbo',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:163602f73d3653c972606b02da99dc1d39e4172955e4ff190162eaa4ffce70a2',
+      mapContentHash: 'sha256:6b0e8d50b02e1b35cf0b48bd65ab9dd093a577931a11f65775b018e6a78e0060',
+      layoutFileSha256: 'sha256:6f9b500f43b6a6537ca42f0ef200e19e172d8e3310451c64630ccb55e1f20f86',
+      layoutContentHash: 'sha256:526736bf09cb7b168a2cd12685859eb2386a215c904fe852f2dba403254f2bf3',
+      renderFileSha256: 'sha256:ccd6c47cde2a6c478828cc70e9781e94c021cd3da1c83a9f49cbab9bf7db378e',
+      renderContentHash: 'sha256:ccd6c47cde2a6c478828cc70e9781e94c021cd3da1c83a9f49cbab9bf7db378e',
+      sliceFileSha256: 'sha256:157467db0efc6f79d1afe9b89e2f4ae9eba91e03e11e48fe8a7c57d941b02b52',
+      sliceContentHash: 'sha256:157467db0efc6f79d1afe9b89e2f4ae9eba91e03e11e48fe8a7c57d941b02b52',
+      physicsFileSha256: 'sha256:2022e8d1ea89b6cdc1d541866987af2d49da863b1f187aa92e05a9c11b555994',
+      physicsBytes: 3670228,
+      draws: 1790,
+      drawTriangles: 264825,
+      textures: 1023,
+      textureBytes: 3808640,
+      vertices: 491625,
+      indices: 1088475,
+      decalDraws: 385,
+      diagnosticDraws: 268,
+      blockedDraws: 653,
+      unsupportedSections: 11,
+      instanceDescriptions: 7953,
+      collisionTriangles: 46243,
+      pathLengthMetres: 361.999436,
+      checkpointArcs: Object.freeze([160.749632, 199.999614]),
+      sampleCount: 1449,
+      renderLabel: 'dumbo-direct-draws',
+      courseId: 'dumbo'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:6b0e8d50b02e1b35cf0b48bd65ab9dd093a577931a11f65775b018e6a78e0060',
+      layoutHash: 'sha256:526736bf09cb7b168a2cd12685859eb2386a215c904fe852f2dba403254f2bf3',
+      physicsHash: 'sha256:2022e8d1ea89b6cdc1d541866987af2d49da863b1f187aa92e05a9c11b555994',
+      packageFileSha256: 'sha256:163602f73d3653c972606b02da99dc1d39e4172955e4ff190162eaa4ffce70a2',
+      layoutFileSha256: 'sha256:9043eb18027459c8cf59a25a5517582cf8ee255a5ed6c7932f521fa46610da8b',
+      physicsFileSha256: 'sha256:2022e8d1ea89b6cdc1d541866987af2d49da863b1f187aa92e05a9c11b555994',
+      packageBytes: 54619689,
+      layoutBytes: 197466,
+      physicsBytes: 3670228
+    })
+  }),
+  'downtown-mp': Object.freeze({
+    id: 'downtown-mp',
+    label: 'LA Downtown MP',
+    level: 'usa_la_downtown_multiplayer',
+    kind: 'map-package',
+    geometryUrl: '/_work/e1-drive/downtown-mp/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/usa_la_downtown_multiplayer/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/downtown-mp/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.downtown-mp',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:0c231d54a6521ff70ac406a95d8e6f8e5036715a232b0aa3e4befc55059e8b8b',
+      mapContentHash: 'sha256:d60ab79e98991eec97ed86be41bbfb72e0947483a0e4910b414be52bf3d1102d',
+      layoutFileSha256: 'sha256:5aa5f4522759130c08ed4a35300e0d3709afd8777ddc9f21e2194f177ce0c25b',
+      layoutContentHash: 'sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779',
+      renderFileSha256: 'sha256:d2b3881cec09dd2dc316ebc8832397c3877620e49add980ac9ff5a2b3f8d088e',
+      renderContentHash: 'sha256:d2b3881cec09dd2dc316ebc8832397c3877620e49add980ac9ff5a2b3f8d088e',
+      sliceFileSha256: 'sha256:50fcda4063d81c1b46aff4dabda75dfd325e2c735fb1bf4dabd9221cf5c1a753',
+      sliceContentHash: 'sha256:50fcda4063d81c1b46aff4dabda75dfd325e2c735fb1bf4dabd9221cf5c1a753',
+      physicsFileSha256: 'sha256:cf061ec616fca71feddabf8197f86080d73eb65957dce5be6b62588326b493ce',
+      physicsBytes: 513843,
+      draws: 207,
+      drawTriangles: 21092,
+      textures: 121,
+      textureBytes: 300096,
+      vertices: 37861,
+      indices: 70002,
+      decalDraws: 0,
+      diagnosticDraws: 23,
+      blockedDraws: 23,
+      unsupportedSections: 0,
+      instanceDescriptions: 420,
+      collisionTriangles: 12706,
+      pathLengthMetres: 86.452776,
+      checkpointArcs: Object.freeze([27.10202, 66.218505]),
+      sampleCount: 334,
+      renderLabel: 'downtown-mp-direct-draws',
+      courseId: 'downtown-mp'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:d60ab79e98991eec97ed86be41bbfb72e0947483a0e4910b414be52bf3d1102d',
+      layoutHash: 'sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779',
+      physicsHash: 'sha256:cf061ec616fca71feddabf8197f86080d73eb65957dce5be6b62588326b493ce',
+      packageFileSha256: 'sha256:0c231d54a6521ff70ac406a95d8e6f8e5036715a232b0aa3e4befc55059e8b8b',
+      layoutFileSha256: 'sha256:4b04ad914b58d18f67c90edc0c4b029a2c9c4c1e68bf09a2a7a22f2122e65a27',
+      physicsFileSha256: 'sha256:cf061ec616fca71feddabf8197f86080d73eb65957dce5be6b62588326b493ce',
+      packageBytes: 4565448,
+      layoutBytes: 148900,
+      physicsBytes: 513843
     })
   })
 });

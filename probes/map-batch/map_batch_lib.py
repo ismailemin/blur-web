@@ -93,6 +93,8 @@ INTEGRATED = {
     "jpn_tokyo_shutoko": "shutoko",
     "spa_barcelona_oval": "oval",
     "usa_amboy_multiplayer": "amboy-mp",
+    "usa_ny_dumbo": "dumbo",
+    "usa_la_downtown_multiplayer": "downtown-mp",
 }
 
 MIN_COVERED_PATH_M = 25.0

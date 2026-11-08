@@ -36,15 +36,15 @@
   },
   "render": {
    "path": "_work/map-batch/usa_ny_dumbo/draws.json",
-   "bytes": 1999979,
-   "sha256": "sha256:d1bafea4d713f251e30a079c677e3e6c73eb2bdda1997a2ef94e51200cce46fb",
-   "contentHash": "sha256:d1bafea4d713f251e30a079c677e3e6c73eb2bdda1997a2ef94e51200cce46fb",
+   "bytes": 1999982,
+   "sha256": "sha256:ccd6c47cde2a6c478828cc70e9781e94c021cd3da1c83a9f49cbab9bf7db378e",
+   "contentHash": "sha256:ccd6c47cde2a6c478828cc70e9781e94c021cd3da1c83a9f49cbab9bf7db378e",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
    "path": "_work/map-batch/usa_ny_dumbo/blockers.json",
-   "bytes": 6487,
-   "sha256": "sha256:560e3f1c06d5b35e91606585b56c70e55ffbf6f7fb8b2b906d248f5e0ab66ff6"
+   "bytes": 6488,
+   "sha256": "sha256:7beb557d0c83005ae2c3ab30e14eb697d5e7dc9641d371d1dacb3b815d42d1c2"
   },
   "textures": {
    "path": "_work/map-batch/usa_ny_dumbo/textures/index.json",
@@ -12154,5 +12154,5 @@
    "a driven or AI-simulated check of the detour line; the detour is a geometric lateral shift inside the declared respawn band, not a driven racing line"
   ]
  },
- "hash": "sha256:6b894f65d60582db924811aeee49e0b7c1831f11e2c399710fc5b165ff6b0a33"
+ "hash": "sha256:526736bf09cb7b168a2cd12685859eb2386a215c904fe852f2dba403254f2bf3"
 }

@@ -89,7 +89,9 @@ const SCENARIOS = {
   'solo-highrise': { group: 'slow', timeout: 300000, run: soloMapScenario('highrise') },
   'solo-shutoko': { group: 'slow', timeout: 300000, run: soloMapScenario('shutoko') },
   'solo-oval': { group: 'slow', timeout: 300000, run: soloMapScenario('oval') },
-  'solo-amboy-mp': { group: 'slow', timeout: 300000, run: soloMapScenario('amboy-mp') }
+  'solo-amboy-mp': { group: 'slow', timeout: 300000, run: soloMapScenario('amboy-mp') },
+  'solo-dumbo': { group: 'slow', timeout: 300000, run: soloMapScenario('dumbo') },
+  'solo-downtown-mp': { group: 'slow', timeout: 300000, run: soloMapScenario('downtown-mp') }
 };
 const DEFAULT_SCENARIOS = ['solo-sprint', 'solo-lap', 'solo-free', 'mp-two'];
 const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix', 'mp-eight'];
@@ -243,6 +245,8 @@ function loadAnchors() {
     shutoko: { ...expected.solo.shutoko },
     oval: { ...expected.solo.oval },
     'amboy-mp': { ...expected.solo['amboy-mp'] },
+    dumbo: { ...expected.solo.dumbo },
+    'downtown-mp': { ...expected.solo['downtown-mp'] },
     mp: expected.mp,
     mpAi: expected.mpAi
   };

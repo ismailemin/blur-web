@@ -10063,6 +10063,280 @@
         }
       }
     },
+    "ford-supervan-stock": {
+      "alloy": {
+        "derived": {
+          "colour": [
+            0.18947899341583252,
+            0.18947899341583252,
+            0.18947899341583252
+          ],
+          "specInt": 1.0,
+          "specPow": 5.0
+        },
+        "raw": {
+          "colour": [
+            0.18947899341583252,
+            0.18947899341583252,
+            0.18947899341583252
+          ],
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "partName": "alloy",
+          "recordId": 1369583467,
+          "recordIndex": 113,
+          "specInt": 1.0,
+          "specPow": 5.0
+        }
+      },
+      "amaxRecordId": 4255416600,
+      "amaxTag": "Ford_Supervan_Stock",
+      "glass": {
+        "derived": {
+          "blend": {
+            "alphaTest": true,
+            "dest": "InvSrcAlpha",
+            "src": "One"
+          },
+          "maxAlpha": 0.800000011920929,
+          "maxReflectivity": 0.8500000238418579,
+          "minAlpha": 0.30000001192092896,
+          "minReflectivity": 0.3499999940395355,
+          "tint": [
+            0.0,
+            0.04513699933886528,
+            0.04493099823594093
+          ]
+        },
+        "raw": {
+          "lookupPath": "global.part",
+          "maxAlpha": 0.800000011920929,
+          "maxReflectivity": 0.8500000238418579,
+          "minAlpha": 0.30000001192092896,
+          "minReflectivity": 0.3499999940395355,
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "partName": "window",
+          "recordId": 871304661,
+          "recordIndex": 76,
+          "tint": [
+            0.0,
+            0.04513699933886528,
+            0.04493099823594093
+          ]
+        }
+      },
+      "light": {
+        "derived": {
+          "emissive": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "emissiveStrength": 1.0
+        },
+        "raw": {
+          "intensity": 1.0,
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "partName": "headlight",
+          "recordId": 801785371,
+          "recordIndex": 73,
+          "tint": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "present": false,
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input.",
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "sourceField": "VEH_PaintJob.metallic"
+        },
+        {
+          "field": "roughness",
+          "present": false,
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted.",
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "sourceField": "VEH_PaintJob.roughness"
+        }
+      ],
+      "name": "Ford_Supervan_Stock",
+      "paint": {
+        "derived": {
+          "baseColour": [
+            0.012983032342173012,
+            0.03560131487502034,
+            0.2704977910130658,
+            1.0
+          ],
+          "sample": {
+            "encoding": "srgb-byte -> linear-rgb; alpha is the opaque paint alpha",
+            "rampIndex": 511,
+            "rule": "tex2Dlod(PaintTextureSampler, (saturate(dot(N,V)), 0)) with CLAMP samples the last texel at NdotV->1",
+            "uv": [
+              1.0,
+              0.0
+            ]
+          }
+        },
+        "raw": {
+          "colourCurve": {
+            "handle": 177,
+            "id": 2150568003,
+            "keyFrames": [
+              {
+                "inTangent": 0.0,
+                "outTangent": 45.0,
+                "time": 0.0,
+                "value": 0.0
+              },
+              {
+                "inTangent": 46.58485412597656,
+                "outTangent": 0.0,
+                "time": 1.0,
+                "value": 1.0
+              }
+            ],
+            "pack": "\\gamedata\\xt\\vehicles.bin",
+            "packKey": "vehicles",
+            "provenance": {
+              "bytes": 40,
+              "dataOffset": 28356,
+              "field": "keyFrames",
+              "offset": 28356,
+              "pack": "\\gamedata\\xt\\vehicles.bin",
+              "packSha256": "0df491ea827de543cdd774bd484896e7050fa9012493662fac50c58d4595faf6",
+              "recordId": 2150568003,
+              "recordIndex": 177,
+              "recordType": "VEH_Curve"
+            },
+            "recordId": 2150568003,
+            "recordIndex": 177
+          },
+          "colours": [
+            [
+              0.11788199841976166,
+              0.2111310064792633,
+              0.5600590109825134
+            ],
+            [
+              0.08351100236177444,
+              0.13659100234508514,
+              0.33521100878715515
+            ]
+          ],
+          "paintJob": {
+            "fallbackUsed": false,
+            "handle": 4755,
+            "name": "Ford Blue",
+            "pack": "\\gamedata\\xt\\vehicles.bin",
+            "recordId": 3847752771,
+            "recordIndex": 339,
+            "selection": "first-paint-job"
+          },
+          "ramp": {
+            "base64": "FSJV7BUiVesVIlXqFSJV6RUiVekVI1boFSNW5xUjVuYVI1bmFSNW5RUjVuQVI1bjFSNW4xUjV+IVI1fhFSNX4BUjV+AVI1ffFSNX3hUjV90VI1fdFSNX3BUjWNsVI1jaFSNY2hUjWNkVI1jYFSNY1xUjWNcVI1jWFSRZ1RUkWdUVJFnUFSRZ0xUkWdIVJFnSFSRZ0RUkWdAVJFnQFSRazxYkWs4WJFrNFiRazRYkWswWJFrLFiRayxYkWsoWJFrJFiRbyRYkW8gWJFvHFiRbxxYkW8YWJFvFFiRbxRYkW8QWJVzDFiVcwxYlXMIWJVzBFiVcwRYlXMAWJVy/FiVcvxYlXL4WJV29FiVdvRYlXbwWJV27FiVduxYlXboWJV26FiVduRYlXbgWJV64FiVetxYlXrYWJV62FiVetRYlXrUWJV60FiVesxYlX7MWJl+yFiZfsRYmX7EWJl+wFiZfsBYmX68WJl+uFiZfrhYmYK0WJmCtFiZgrBYmYKsWJmCrFyZgqhcmYKoXJmCpFyZgqRcmYagXJmGnFyZhpxcmYaYXJmGmFyZhpRcmYaUXJmGkFyZioxcnYqMXJ2KiFydiohcnYqEXJ2KhFydioBcnYqAXJ2KfFydjnhcnY54XJ2OdFydjnRcnY5wXJ2OcFydjmxcnY5sXJ2OaFydkmhcnZJkXJ2SZFydkmBcnZJgXJ2SXFydklxcnZJYXJ2SWFydllRcoZZUXKGWUFyhllBcoZZMXKGWTFyhlkhcoZZIXKGWRFyhmkRcoZpAXKGaQFyhmjxcoZo8XKGaOFyhmjhcoZo0XKGaNFyhnjBgoZ4wYKGeLGChnixgoZ4oYKGeKGChniRgoZ4kYKGeIGCloiBgpaIgYKWiHGClohxgpaIYYKWiGGClohRgpaIUYKWiEGClphBgpaYQYKWmDGClpgxgpaYIYKWmCGClpgRgpaYEYKWqAGClqgBgpaoAYKWp/GClqfxgpan4YKWp+GClqfhgpan0YKWt9GCprfBgqa3wYKmt7GCprexgqa3sYKmt6GCprehgqa3kYKmx5GCpseRgqbHgYKmx4GCpsdxgqbHcYKmx3GCpsdhgqbHYYKm12GCptdRgqbXUYKm10GCptdBgqbXQYKm1zGSptcxkqbXMZKm5yGStuchkrbnEZK25xGStucRkrbnAZK25wGStucBkrbm8ZK29vGStvbxkrb24ZK29uGStvbhkrb20ZK29tGStvbRkrb2wZK3BsGStwbBkrcGsZK3BrGStwaxkrcGoZK3BqGStwahkrcGkZK3FpGStxaRkscWgZLHFoGSxxaBkscWcZLHFnGSxxZxkscWYZLHJmGSxyZhkscmUZLHJlGSxyZRkscmQZLHJkGSxyZBkscmQZLHJjGSxzYxksc2MZLHNiGSxzYhksc2IZLHNiGSxzYRksc2EZLHNhGSx0YBktdGAaLXRgGi10YBotdF8aLXRfGi10XxotdF4aLXReGi11XhotdV4aLXVdGi11XRotdV0aLXVdGi11XBotdVwaLXVcGi12XBotdlsaLXZbGi12WxotdlsaLXZaGi12WhotdloaLXZaGi13WRoud1kaLndZGi53WRoud1gaLndYGi53WBoud1gaLndYGi54VxoueFcaLnhXGi54VxoueFYaLnhWGi54VhoueFYaLnhVGi55VRoueVUaLnlVGi55VRoueVQaLnlUGi55VBoueVQaLnlUGi56UxouelMaL3pTGi96UxovelMaL3pSGi96UhsvelIbL3pSGy97Uhsve1EbL3tRGy97URsve1EbL3tRGy97UBsve1AbL3tQGy98UBsvfFAbL3xQGy98TxsvfE8bL3xPGy98TxsvfE8bL3xPGy99ThsvfU4bMH1OGzB9ThswfU4bMH1OGzB9TRswfU0bMH1NGzB9TRswfk0bMH5NGzB+TBswfkwbMH5MGzB+TBswfkwbMH5MGzB+TBswf0sbMH9LGzB/Sxswf0sbMH9LGzB/Sxswf0sbMH9KGzB/ShswgEobMIBKGzGAShsxgEobMYBKGzGASRsxgEkbMYBJGzGASRsxgUkbMYFJGzGBSRwxgUkcMYFJHDGBSBwxgUgcMYFIHDGBSBwxgkgcMYJIHDGCSBwxgkgcMYJHHDGCRxwxgkccMYJHHDGCRxwxg0ccMYNHHDKDRxwyg0ccMoNHHDKDRhwyg0YcMoNGHDKDRhwyhEYcMoRGHDKERhwyhEYcMoRGHDKERhwyhEYcMoRFHDKERRwyhUUcMoVFHDKFRRwyhUUcMoVFHDKFRRwyhUUcMoVFHDKFRRwyhkUcMoZFHDOGRBwzhkQcM4ZEHDOGRBwzhkQcM4ZEHDOGRBwzh0QcM4dEHDOHRBwzh0QcM4dEHDOHRBwzh0QcM4dEHTOHQx0ziEMdM4hDHTOIQx0ziEMdM4hDHTOIQx0ziEMdM4hDHTOIQx0ziUMdM4lDHTOJQx00iUMdNIlDHTSJQx00iUMdNIlDHTSJQx00ikMdNIpDHTSKQx00ikIdNIpCHTSKQh00ikIdNIpCHTSKQh00i0IdNItCHTSLQh00i0IdNItCHTSLQh00i0IdNItCHTSLQh00jEIdNIxCHTSMQh01jEIdNYxCHTWMQh01jEIdNYxCHTWMQh01jUIdNY1CHTWNQh01jUIdNY1CHTWNQh01jUIdNY1CHTWNQh01jkIdNY5CHTWOQh01jkIeNY5CHjWOQh41jkI=",
+            "format": "RGBA8",
+            "height": 1,
+            "sha256": "612e18d40e40a59c49a27e007b48abc1167b3f0a46f0c12407a135d65f0ff0fc",
+            "width": 512
+          },
+          "reflectivityCurve": {
+            "handle": 100,
+            "id": 1136866445,
+            "keyFrames": [
+              {
+                "inTangent": 40.601104736328125,
+                "outTangent": 0.0,
+                "time": 0.0,
+                "value": 0.25999999046325684
+              },
+              {
+                "inTangent": 57.652557373046875,
+                "outTangent": 87.64682006835938,
+                "time": 1.0,
+                "value": 0.9268289804458618
+              }
+            ],
+            "pack": "\\gamedata\\xt\\vehicles.bin",
+            "packKey": "vehicles",
+            "provenance": {
+              "bytes": 40,
+              "dataOffset": 22712,
+              "field": "keyFrames",
+              "offset": 22712,
+              "pack": "\\gamedata\\xt\\vehicles.bin",
+              "packSha256": "0df491ea827de543cdd774bd484896e7050fa9012493662fac50c58d4595faf6",
+              "recordId": 1136866445,
+              "recordIndex": 100,
+              "recordType": "VEH_Curve"
+            },
+            "recordId": 1136866445,
+            "recordIndex": 100
+          },
+          "scuffColour": [
+            0.20000000298023224,
+            0.20000000298023224,
+            0.20000000298023224
+          ],
+          "undercoatColour": [
+            0.3499999940395355,
+            0.3499999940395355,
+            0.3499999940395355
+          ]
+        }
+      },
+      "slug": "ford-supervan-stock",
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 4255416600,
+        "amaxTag": "Ford_Supervan_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 4755,
+          "name": "Ford Blue",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 3847752771,
+          "recordIndex": 339,
+          "selection": "first-paint-job"
+        }
+      }
+    },
     "hennessey-vipervenom1000coupe-stock": {
       "alloy": {
         "derived": {
@@ -10629,6 +10903,280 @@
           "pack": "\\gamedata\\xt\\vehicles.bin",
           "recordId": 1904320417,
           "recordIndex": 164,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "hummer-h2-rat": {
+      "alloy": {
+        "derived": {
+          "colour": [
+            0.18947899341583252,
+            0.18947899341583252,
+            0.18947899341583252
+          ],
+          "specInt": 1.0,
+          "specPow": 5.0
+        },
+        "raw": {
+          "colour": [
+            0.18947899341583252,
+            0.18947899341583252,
+            0.18947899341583252
+          ],
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "partName": "alloy",
+          "recordId": 1369583467,
+          "recordIndex": 113,
+          "specInt": 1.0,
+          "specPow": 5.0
+        }
+      },
+      "amaxRecordId": 556104623,
+      "amaxTag": "Hummer_H2_Rat",
+      "glass": {
+        "derived": {
+          "blend": {
+            "alphaTest": true,
+            "dest": "InvSrcAlpha",
+            "src": "One"
+          },
+          "maxAlpha": 0.800000011920929,
+          "maxReflectivity": 0.8500000238418579,
+          "minAlpha": 0.30000001192092896,
+          "minReflectivity": 0.3499999940395355,
+          "tint": [
+            0.0,
+            0.04513699933886528,
+            0.04493099823594093
+          ]
+        },
+        "raw": {
+          "lookupPath": "global.part",
+          "maxAlpha": 0.800000011920929,
+          "maxReflectivity": 0.8500000238418579,
+          "minAlpha": 0.30000001192092896,
+          "minReflectivity": 0.3499999940395355,
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "partName": "window",
+          "recordId": 871304661,
+          "recordIndex": 76,
+          "tint": [
+            0.0,
+            0.04513699933886528,
+            0.04493099823594093
+          ]
+        }
+      },
+      "light": {
+        "derived": {
+          "emissive": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "emissiveStrength": 1.0
+        },
+        "raw": {
+          "intensity": 1.0,
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "partName": "headlight",
+          "recordId": 801785371,
+          "recordIndex": 73,
+          "tint": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "present": false,
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input.",
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "sourceField": "VEH_PaintJob.metallic"
+        },
+        {
+          "field": "roughness",
+          "present": false,
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted.",
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "sourceField": "VEH_PaintJob.roughness"
+        }
+      ],
+      "name": "Hummer_H2_Rat",
+      "paint": {
+        "derived": {
+          "baseColour": [
+            0.9911020971138298,
+            0.9911020971138298,
+            0.9911020971138298,
+            1.0
+          ],
+          "sample": {
+            "encoding": "srgb-byte -> linear-rgb; alpha is the opaque paint alpha",
+            "rampIndex": 511,
+            "rule": "tex2Dlod(PaintTextureSampler, (saturate(dot(N,V)), 0)) with CLAMP samples the last texel at NdotV->1",
+            "uv": [
+              1.0,
+              0.0
+            ]
+          }
+        },
+        "raw": {
+          "colourCurve": {
+            "handle": 177,
+            "id": 2150568003,
+            "keyFrames": [
+              {
+                "inTangent": 0.0,
+                "outTangent": 45.0,
+                "time": 0.0,
+                "value": 0.0
+              },
+              {
+                "inTangent": 46.58485412597656,
+                "outTangent": 0.0,
+                "time": 1.0,
+                "value": 1.0
+              }
+            ],
+            "pack": "\\gamedata\\xt\\vehicles.bin",
+            "packKey": "vehicles",
+            "provenance": {
+              "bytes": 40,
+              "dataOffset": 28356,
+              "field": "keyFrames",
+              "offset": 28356,
+              "pack": "\\gamedata\\xt\\vehicles.bin",
+              "packSha256": "0df491ea827de543cdd774bd484896e7050fa9012493662fac50c58d4595faf6",
+              "recordId": 2150568003,
+              "recordIndex": 177,
+              "recordType": "VEH_Curve"
+            },
+            "recordId": 2150568003,
+            "recordIndex": 177
+          },
+          "colours": [
+            [
+              1.0,
+              1.0,
+              1.0
+            ],
+            [
+              0.0,
+              0.0,
+              0.0
+            ]
+          ],
+          "paintJob": {
+            "fallbackUsed": false,
+            "handle": 1849,
+            "name": "Matte Rat",
+            "pack": "\\gamedata\\xt\\vehicles.bin",
+            "recordId": 1492180403,
+            "recordIndex": 125,
+            "selection": "first-paint-job"
+          },
+          "ramp": {
+            "base64": "AAAAEQAAABEBAQERAQEBEQICAhECAgIRAwMDEQMDAxEEBAQRBAQEEQUFBREFBQURBgYGEQYGBhEHBwcRBwcHEQgICBEICAgRCQkJEQkJCREKCgoRCwsLEQsLCxEMDAwRDAwMEQ0NDRENDQ0RDg4OEQ4ODhEPDw8RDw8PERAQEBEQEBARERERERERERESEhIREhISERMTExETExMRFBQUERQUFBEVFRURFRUVERYWFhEWFhYRFxcXERcXFxEYGBgRGRkZERkZGREaGhoRGhoaERsbGxEbGxsRHBwcERwcHBEdHR0RHR0dER4eHhEeHh4RHx8fER8fHxEgICARICAgESEhIREhISERIiIiESIiIhEjIyMRIyMjESQkJBEkJCQRJSUlESUlJREmJiYRJiYmEScnJxEnJycRKCgoECgoKBApKSkQKSkpECoqKhAqKioQKysrECwsLBAsLCwQLS0tEC0tLRAuLi4QLi4uEC8vLxAvLy8QMDAwEDAwMBAxMTEQMTExEDIyMhAyMjIQMzMzEDMzMxA0NDQQNDQ0EDU1NRA1NTUQNjY2EDY2NhA3NzcQNzc3EDg4OBA4ODgQOTk5EDk5ORA6OjoQOjo6EDs7OxA7OzsQPDw8EDw8PA89PT0PPT09Dz4+Pg8+Pj4PPz8/Dz8/Pw9AQEAPQEBAD0FBQQ9BQUEPQkJCD0JCQg9DQ0MPQ0NDD0RERA9EREQPRUVFD0VFRQ9GRkYPRkZGD0dHRw9HR0cPSEhID0hISA9JSUkPSUlJD0pKSg9KSkoPS0tLDktLSw5MTEwOTExMDk1NTQ5NTU0OTk5ODk5OTg5PT08OT09PDlBQUA5QUFAOUVFRDlFRUQ5SUlIOUlJSDlNTUw5TU1MOVFRUDlRUVA5VVVUOVVVVDlZWVg5WVlYOV1dXDVdXVw1YWFgNWFhYDVlZWQ1ZWVkNWlpaDVpaWg1bW1sNW1tbDVxcXA1cXFwNXV1dDV1dXQ1eXl4NXl5eDV9fXw1fX18NYGBgDWBgYA1hYWENYWFhDGJiYgxiYmIMY2NjDGNjYwxkZGQMZGRkDGVlZQxlZWUMZmZmDGZmZgxnZ2cMZ2dnDGhoaAxoaGgMaWlpDGlpaQxqamoMampqDGtrawxra2sLbGxsC2xsbAttbW0LbW1tC25ubgtubm4Lb29vC29vbwtwcHALcHBwC3FxcQtxcXELcnJyC3Jycgtzc3MLc3NzC3R0dAt0dHQLdXV1CnV1dQp2dnYKdnZ2CnZ2dgp3d3cKd3d3Cnh4eAp4eHgKeXl5Cnl5eQp6enoKenp6Cnt7ewp7e3sKfHx8Cnx8fAp9fX0KfX19Cn5+fgl+fn4Jf39/CX9/fwmAgIAJgICACYGBgQmBgYEJgoKCCYKCggmDg4MJg4ODCYSEhAmEhIQJhYWFCYWFhQmGhoYJhoaGCYeHhwiHh4cIiIiICIiIiAiJiYkIiYmJCIqKigiKiooIi4uLCIuLiwiMjIwIjIyMCI2NjQiNjY0Ijo6OCI6OjgiPj48Ij4+PCJCQkAiQkJAHkJCQB5GRkQeRkZEHkpKSB5KSkgeTk5MHk5OTB5SUlAeUlJQHlZWVB5WVlQeWlpYHlpaWB5eXlweXl5cHmJiYB5iYmAeZmZkGmZmZBpqamgaampoGm5ubBpubmwacnJwGnJycBp2dnQadnZ0Gnp6eBp6engafn58Gn5+fBqCgoAagoKAGoaGhBqGhoQaioqIGoqKiBaOjowWjo6MFpKSkBaSkpAWlpaUFpaWlBaampgWmpqYFp6enBaenpwWnp6cFqKioBaioqAWpqakFqampBaqqqgWqqqoFq6urBaurqwWsrKwErKysBK2trQStra0Erq6uBK6urgSvr68Er6+vBLCwsASwsLAEsbGxBLGxsQSysrIEsrKyBLOzswSzs7MEtLS0BLS0tAS1tbUEtbW1BLa2tgO2trYDt7e3A7e3twO4uLgDuLi4A7m5uQO5ubkDurq6A7q6ugO7u7sDu7u7A7y8vAO8vLwDvLy8A729vQO9vb0Dvr6+A76+vgO/v78Dv7+/A8DAwAPAwMACwcHBAsHBwQLCwsICwsLCAsPDwwLDw8MCxMTEAsTExALFxcUCxcXFAsbGxgLGxsYCx8fHAsfHxwLIyMgCyMjIAsnJyQLJyckCysrKAsrKygLLy8sCy8vLAszMzALMzMwCzc3NAs3NzQHOzs4Bzs7OAc/PzwHPz88B0NDQAdDQ0AHR0dEB0dHRAdLS0gHS0tIB09PTAdPT0wHU1NQB1NTUAdTU1AHV1dUB1dXVAdbW1gHW1tYB19fXAdfX1wHY2NgB2NjYAdnZ2QHZ2dkB2traAdra2gHb29sB29vbAdzc3AHc3NwA3d3dAN3d3QDe3t4A3t7eAN/f3wDf398A4ODgAODg4ADh4eEA4eHhAOLi4gDi4uIA4+PjAOPj4wDk5OQA5OTkAOXl5QDl5eUA5ubmAObm5gDn5+cA5+fnAOjo6ADo6OgA6enpAOnp6QDq6uoA6urqAOvr6wDr6+sA7OzsAOzs7ADt7e0A7e3tAO7u7gDu7u4A7+/vAO/v7wDw8PAA8PDwAPHx8QDx8fEA8vLyAPLy8gDz8/MA8/PzAPT09AD09PQA9fX1APX19QD29vYA9vb2APf39wD39/cA+Pj4APj4+AD5+fkA+fn5APr6+gD6+voA+/v7APv7+wD8/PwA/Pz8AP39/QD9/f0A/v7+AP7+/gA=",
+            "format": "RGBA8",
+            "height": 1,
+            "sha256": "7d64d89362eccdf0fd24f30c25733846b8171ddffa4fa9ad162a01494cb4a1be",
+            "width": 512
+          },
+          "reflectivityCurve": {
+            "handle": 342,
+            "id": 3901659043,
+            "keyFrames": [
+              {
+                "inTangent": 3.5764269828796387,
+                "outTangent": 0.0,
+                "time": 0.0,
+                "value": 0.0
+              },
+              {
+                "inTangent": -1.9748389720916748,
+                "outTangent": 0.0,
+                "time": 1.0,
+                "value": 0.06707300245761871
+              }
+            ],
+            "pack": "\\gamedata\\xt\\vehicles.bin",
+            "packKey": "vehicles",
+            "provenance": {
+              "bytes": 40,
+              "dataOffset": 40844,
+              "field": "keyFrames",
+              "offset": 40844,
+              "pack": "\\gamedata\\xt\\vehicles.bin",
+              "packSha256": "0df491ea827de543cdd774bd484896e7050fa9012493662fac50c58d4595faf6",
+              "recordId": 3901659043,
+              "recordIndex": 342,
+              "recordType": "VEH_Curve"
+            },
+            "recordId": 3901659043,
+            "recordIndex": 342
+          },
+          "scuffColour": [
+            0.20000000298023224,
+            0.20000000298023224,
+            0.20000000298023224
+          ],
+          "undercoatColour": [
+            0.3499999940395355,
+            0.3499999940395355,
+            0.3499999940395355
+          ]
+        }
+      },
+      "slug": "hummer-h2-rat",
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 556104623,
+        "amaxTag": "Hummer_H2_Rat",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 1849,
+          "name": "Matte Rat",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1492180403,
+          "recordIndex": 125,
           "selection": "first-paint-job"
         }
       }
@@ -16505,7 +17053,7 @@
     }
   ],
   "roster": {
-    "carCount": 59,
+    "carCount": 61,
     "order": [
       "corvette-zr1-stock",
       "lotus-exige-cup260-stock",
@@ -16565,10 +17113,12 @@
       "ford-gt-stock",
       "dodge-vipergtsr-stock",
       "ratrod-na-stock",
-      "toyota-supra-smooth"
+      "toyota-supra-smooth",
+      "hummer-h2-rat",
+      "ford-supervan-stock"
     ],
     "path": "probes/e1-drive/cars/roster.json",
-    "sha256": "ed999dc526e2f5d20ffa82bc956cc2e501565a5514dc4535a0b10f26765ef845"
+    "sha256": "691c1ce9dd2b2cdcd550ffe391160772b618d7c2e5927e5b3acf9c25c7ecc39c"
   },
   "schema": "blur.car-materials-runtime-manifest/1",
   "scope": "Retail paint, glass, light and alloy material values for the 25-car roster, decoded from the shipped XT packs. Values are copied verbatim or derived by a documented rule; fields the format does not serialize are absent and listed in `missing`.",
