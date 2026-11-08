@@ -484,6 +484,7 @@ def draw_geometry(level_path: Path, draw_probes_path: Path) -> dict:
 
     all_positions: list[float] = []
     all_uv0: list[float] = []
+    all_lightmap_uv: list[float] = []
     all_indices: list[int] = []
     sections = []
     global_draws = []
@@ -521,6 +522,14 @@ def draw_geometry(level_path: Path, draw_probes_path: Path) -> dict:
         draw_offset = len(global_draws)
         all_positions.extend(native["positions"])
         all_uv0.extend(native["uv0"])
+        # F16_4 UV0 carries the lightmap UV in .zw; keep it as a parallel stream.
+        lightmap_uv = native.get("lightmapUv") or []
+        if lightmap_uv:
+            if len(lightmap_uv) != len(native["uv0"]):
+                raise SystemExit("FAILED: lightmap UV count mismatch at " + str(native_path))
+            all_lightmap_uv.extend(lightmap_uv)
+        else:
+            all_lightmap_uv.extend([0.0] * len(native["uv0"]))
         all_indices.extend(int(i) + vertex_offset for i in native["indices"])
         placeholder_vertices += int(meta.get("placeholderUvVertices", 0) or 0)
         instance_descriptions += int(meta.get("instanceDescriptionsSkipped", 0) or 0) + \
@@ -628,6 +637,7 @@ def draw_geometry(level_path: Path, draw_probes_path: Path) -> dict:
         "instanceDescriptionsSkipped": instance_descriptions,
         "positions": all_positions,
         "uv0": all_uv0,
+        "lightmapUv": all_lightmap_uv,
         "indices": all_indices,
         "draws": global_draws,
         "sections": sections,
@@ -847,6 +857,7 @@ def main(argv):
     draws = draw_geometry(render_path, DRAW_PROBES)
     draw_pos = write_bin(out / "draws.positions.f32.bin", f32(draws["positions"]))
     draw_uv0 = write_bin(out / "draws.uv0.f32.bin", f32(draws["uv0"]))
+    draw_lightmap_uv = write_bin(out / "draws.lightmapUv.f32.bin", f32(draws["lightmapUv"]))
     draw_idx = write_bin(out / "draws.indices.u32.bin", u32(draws["indices"]))
     refresh = draws["nativeReaderRefresh"]
     identity = refresh["identity"]
@@ -1128,6 +1139,9 @@ def main(argv):
             "instanceDescriptionsSkipped": draws["instanceDescriptionsSkipped"],
             "positions": {**draw_pos, "role": "merged section vertex tables"},
             "uv0": {**draw_uv0, "role": "merged section UV0 pairs, 2 floats per vertex"},
+            "lightmapUv": {**draw_lightmap_uv,
+                           "role": "merged section lightmap UV pairs (F16_4 UV0 .zw), 2 floats per vertex",
+                           "source": "native reader lightmapUv (TEXCOORD0.zw); zero when the UV0 type is not F16_4"},
             "indices": {**draw_idx, "role": "merged section triangle lists, global vertex indices"},
             "normals": {
                 "status": "not-exported",

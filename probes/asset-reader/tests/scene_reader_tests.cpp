@@ -57,7 +57,7 @@ Bytes fixture(uint32_t vertex_byte_offset=0,uint16_t last_index=2,bool nonfinite
     Bytes vb;for(int i=0;i<6;i++){
         if(half_positions){const uint16_t encoded[]={0,0x3c00,0x4000,0x4200,0x4400,0x4500};word(vb,nonfinite&&i==0?0x7c00:encoded[i]);word(vb,i%2?0x3c00:0);word(vb,0);word(vb,0);}
         else{real(vb,nonfinite&&i==0?std::numeric_limits<float>::quiet_NaN():float(i));real(vb,float(i%2));real(vb,0);}
-        if(with_uv){if(opts.uv_type==5){real(vb,float(i)/2);real(vb,-float(i));}else{word(vb,0x3800);word(vb,0xbc00);if(opts.uv_type==9){word(vb,0x7c00);word(vb,0x7c00);}}}
+        if(with_uv){if(opts.uv_type==5){real(vb,float(i)/2);real(vb,-float(i));}else{word(vb,0x3800);word(vb,0xbc00);if(opts.uv_type==9){word(vb,0x0000);word(vb,0x3c00);}}}
     }blob(s,vb);}
     vector(s,1);byte(s,2);marker(s,1);integer(s,3);integer(s,0);Bytes ib;word(ib,0);word(ib,1);word(ib,last_index);blob(s,ib);
     vector(s,1);byte(s,3);string(s,"RenderingData::RenderListNode_Common");marker(s);marker(s,4);cull(s);
@@ -92,7 +92,7 @@ void material_and_uv_tests(){
     FixtureOptions opts;opts.uv=true;auto result=configured(opts);check(ok(result),result.c_str());
     check(has(result,"\"uv0\":[0,-0,0.5,-1,1,-2,1.5,-3,2,-4,2.5,-5]"),"Original float UVs changed");
     check(has(result,"\"uv0Available\":true,\"albedoParameter\":\"g_tAlbedo\""),"Declared prop UV binding absent");
-    opts.uv_type=9;result=configured(opts);check(ok(result)&&has(result,"\"uv0\":[0.5,-1,0.5,-1"),"F16_4 UV .xy decoding failed or unused .zw interpreted");
+    opts.uv_type=9;result=configured(opts);check(ok(result)&&has(result,"\"uv0\":[0.5,-1,0.5,-1")&&has(result,"\"lightmapUv\":[0,1,0,1"),"F16_4 UV .xy decoding failed or .zw lightmap UV not exported");
     opts.declared_uv_type=8;check(!ok(configured(opts)),"Mismatched UV declaration type accepted");opts.declared_uv_type=-1;
     opts.declared_uv_offset=8;check(!ok(configured(opts)),"Mismatched UV declaration offset accepted");opts.declared_uv_offset=-1;
     opts.declared_uv_stream=3;result=configured(opts);check(ok(result)&&has(result,"\"uv0Available\":false")&&has(result,"\"albedoTexture\":null"),"Unmerged separate UV stream claimed original mapping");opts.declared_uv_stream=0;

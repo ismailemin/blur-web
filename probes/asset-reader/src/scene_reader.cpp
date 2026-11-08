@@ -88,7 +88,7 @@ struct MaterialRow {std::string type_name;std::vector<MaterialAction> actions;};
 struct AlbedoState{bool seen=false,known=false;int32_t value=-1,row=-1;std::string reason;};
 struct MaterialState{AlbedoState prop,vehicle;};
 struct Resource {int32_t block,index;};
-struct Draw {uint32_t first,count;int32_t albedo=-1;std::string binding;bool uv_available=false;std::string albedo_parameter;int32_t resource_block=-1,resource_index=-1;int32_t material_row=-1;std::string material;uint64_t uv_hash=0;bool uv_hashed=false;std::string binding_status;std::string binding_reason;};
+struct Draw {uint32_t first,count;int32_t albedo=-1;std::string binding;bool uv_available=false;int32_t uv_type=-1;std::string uv_semantics;std::string albedo_parameter;int32_t resource_block=-1,resource_index=-1;int32_t material_row=-1;std::string material;uint64_t uv_hash=0;bool uv_hashed=false;std::string binding_status;std::string binding_reason;};
 // Direct-draw and instance exports share this field set. Identity resolution is
 // reported as-is; blocked draws keep an explicit reason and no invented texture.
 void write_draw_json(std::ostringstream& out,const Draw& d){
@@ -98,6 +98,8 @@ void write_draw_json(std::ostringstream& out,const Draw& d){
     if(d.albedo_parameter.empty())out<<"null";else out<<'"'<<escape(d.albedo_parameter.c_str())<<'"';
     out<<",\"resourceBlock\":";if(d.resource_block<0)out<<"null";else out<<d.resource_block;
     out<<",\"resourceIndex\":";if(d.resource_index<0)out<<"null";else out<<d.resource_index;
+    if(d.uv_type==9)out<<",\"uvType\":9";
+    if(!d.uv_semantics.empty())out<<",\"uvSemantics\":["<<d.uv_semantics<<"]";
     out<<",\"material\":";if(d.material.empty())out<<"null";else out<<'"'<<escape(d.material.c_str())<<'"';
     out<<",\"materialRow\":"<<d.material_row<<",\"uvHash\":";
     if(d.uv_hashed)out<<'"'<<"0x"<<hex16(d.uv_hash)<<'"';else out<<"null";
@@ -155,7 +157,7 @@ struct Decoder {
     uint32_t declarations=0,block=0,node_index=0;std::string scene_name,node_name;
     std::vector<std::string> effect_names;
     std::vector<std::vector<DeclarationElement>> declaration_elements;
-    std::vector<float> positions,uvs;std::vector<uint32_t> triangles;std::vector<Texture> textures;std::vector<Draw> draws;
+    std::vector<float> positions,uvs,lightmap_uvs;std::vector<uint32_t> triangles;std::vector<Texture> textures;std::vector<Draw> draws;
     std::vector<MaterialRow> constants;std::vector<Resource> texture_sources,vertex_sources,index_sources;std::string binding_error="Render-list material tail not parsed";bool binding_tail=false;
     int32_t expected_resource_block=0;
     uint32_t resource_blocks=0,loaded_blocks=0,instance_count=0,instance_batch_count=0,base_primitive_count=0;
@@ -525,8 +527,31 @@ struct Decoder {
         }
         stack.pop_back();
     }
-    bool draw_uv_available(const Primitive& p,const Stream& position,const VB& vb) {
+    // The UV0 element type, so a consumer can tell F16_4 (which carries the
+    // lightmap UV in .zw) from F16_2/F32_2. Returns -1 when no usable UV0.
+    int32_t uv_type_of(const Primitive& p,const Stream& position,const VB& vb) {
+        (void)vb;
         const DeclarationElement* declared=nullptr;
+        for(const auto& e:declaration_elements[size_t(p.declaration)])if(e.value.usage==5&&e.value.index==0){if(declared)r.fail("Duplicate UV0 declaration");declared=&e;}
+        if(!declared)return -1;
+        const auto& uv=declared->value;
+        if(uv.method!=0||(uv.type!=5&&uv.type!=8&&uv.type!=9))return -1;
+        if(declared->stream!=position.index)return -1;
+        return uv.type;
+    }
+    // Every TEXCOORD semantic on the declaration as a flat [index,type,stream]
+    // triple. A second UV set is where a lightmap UV would live when UV0 is only
+    // 2 components. Flat arrays keep the draw object free of nested braces.
+    std::string uv_semantics_of(const Primitive& p) {
+        std::string out;
+        for(const auto& e:declaration_elements[size_t(p.declaration)])if(e.value.usage==5){
+            if(!out.empty())out+=',';
+            out+="["+std::to_string(e.value.index)+","+std::to_string(e.value.type)+","+
+                 std::to_string(e.stream)+"]";
+        }
+        return out;
+    }
+    bool draw_uv_available(const Primitive& p,const Stream& position,const VB& vb) {        const DeclarationElement* declared=nullptr;
         for(const auto& e:declaration_elements[size_t(p.declaration)])if(e.value.usage==5&&e.value.index==0){if(declared)r.fail("Duplicate UV0 declaration");declared=&e;}
         if(!declared)return false;
         const auto& uv=declared->value;
@@ -593,7 +618,7 @@ struct Decoder {
             const bool has_uv=uv&&uv->method==0&&(uv->type==8||uv->type==9||uv->type==5);
             if(has_uv&&uint32_t(uv->offset)+(uv->type==8?4u:8u)>vb.stride)r.fail("UV0 exceeds vertex stride");
             if(has_uv)valid_uv_vertices+=vb.count;else placeholder_uv_vertices+=vb.count;
-            size_t saved=r.p;for(uint32_t v=0;v<vb.count;v++){r.p=vb.data+size_t(v)*vb.stride+position->offset;for(int a=0;a<3;a++)positions.push_back(half_position?half(r.u16()):r.f32());if(has_uv){r.p=vb.data+size_t(v)*vb.stride+uv->offset;for(int a=0;a<2;a++)uvs.push_back(uv->type==5?r.f32():half(r.u16()));}else{uvs.push_back(0);uvs.push_back(0);}}r.p=saved;
+            size_t saved=r.p;for(uint32_t v=0;v<vb.count;v++){r.p=vb.data+size_t(v)*vb.stride+position->offset;for(int a=0;a<3;a++)positions.push_back(half_position?half(r.u16()):r.f32());if(has_uv){r.p=vb.data+size_t(v)*vb.stride+uv->offset;for(int a=0;a<2;a++)uvs.push_back(uv->type==5?r.f32():half(r.u16()));if(uv->type==9){lightmap_uvs.push_back(half(r.u16()));lightmap_uvs.push_back(half(r.u16()));}else{lightmap_uvs.push_back(0);lightmap_uvs.push_back(0);}}else{uvs.push_back(0);uvs.push_back(0);lightmap_uvs.push_back(0);lightmap_uvs.push_back(0);}}r.p=saved;
         }
         for(const auto& p:primitives){const auto first=static_cast<uint32_t>(triangles.size());if(p.declaration<0||uint32_t(p.declaration)>=declarations||p.ib<0||size_t(p.ib)>=index_sources.size()||p.lods.empty())r.fail("Invalid primitive resource reference");if(p.topology!=0&&p.topology!=1)r.fail("Unsupported primitive topology");
             // POSITION0 follows its declaration's stream, not stream-array order.
@@ -607,7 +632,7 @@ struct Decoder {
             for(uint32_t j=0;j<lod.count;j++){r.p=ib.data+size_t(lod.offset+j)*ib.width;auto index=ib.width==2?r.u16():r.u32();if(index<lod.min||index>=lod.min+lod.vertices||index>=vb.count-vertex_shift)r.fail("Index outside primitive vertex range");values.push_back(index+bases[size_t(vr.index)]+vertex_shift);}r.p=saved;
             const uint32_t step=p.topology==0?3u:1u;for(uint32_t j=2;j<values.size();j+=step){auto a=values[j-2],b=values[j-1],c=values[j];if(p.topology==1&&j%2)std::swap(a,b);if(a==b||b==c||a==c)continue;if(triangles.size()>6000000-3)r.fail("Output triangle limit");triangles.insert(triangles.end(),{a,b,c});}
             Draw draw{first,static_cast<uint32_t>(triangles.size())-first,-1,""};
-            draw.uv_available=draw_uv_available(p,s,vb);bind_albedo(p,draw,expose_resource_parameter);
+            draw.uv_available=draw_uv_available(p,s,vb);draw.uv_type=uv_type_of(p,s,vb);draw.uv_semantics=uv_semantics_of(p);bind_albedo(p,draw,expose_resource_parameter);
             if(draw.uv_available){draw.uv_hash=uv_range_hash(uvs,triangles,draw.first,draw.count);draw.uv_hashed=true;}
             if(draw.albedo>=0)draw.binding_status=draw.uv_available?"static-shared-albedo-resolved":"blocked";
             else if(draw.resource_block>=0&&draw.resource_index>=0)draw.binding_status=draw.uv_available?"static-resource-albedo-resolved":"blocked";
@@ -624,8 +649,12 @@ struct Decoder {
         std::array<float,3> lo{INFINITY,INFINITY,INFINITY},hi{-INFINITY,-INFINITY,-INFINITY};for(size_t i=0;i<positions.size();i++){lo[i%3]=std::min(lo[i%3],positions[i]);hi[i%3]=std::max(hi[i%3],positions[i]);}
         std::ostringstream out;out.imbue(std::locale::classic());out<<std::setprecision(std::numeric_limits<float>::max_digits10)<<"{\"status\":\"ok\",\"positions\":[";
         for(size_t i=0;i<positions.size();i++){if(i)out<<',';out<<positions[i];}out<<"],\"indices\":[";for(size_t i=0;i<triangles.size();i++){if(i)out<<',';out<<triangles[i];}
-        out<<"],\"uv0\":[";for(size_t i=0;i<uvs.size();i++){if(i)out<<',';out<<uvs[i];}out<<"],\"sharedTextures\":[";for(size_t i=0;i<textures.size();i++){if(i)out<<',';const auto&t=textures[i];out<<"{\"name\":\""<<escape(t.name.c_str())<<"\",\"hash\":"<<t.hash<<",\"dataOffset\":"<<t.offset<<",\"dataBytes\":"<<t.bytes<<'}';}
-        out<<"],\"draws\":[";for(size_t i=0;i<draws.size();i++){if(i)out<<',';const auto&d=draws[i];out<<"{\"firstIndex\":"<<d.first<<",\"indexCount\":"<<d.count<<",\"albedoTexture\":";if(d.albedo<0)out<<"null";else out<<d.albedo;out<<",\"binding\":\""<<escape(d.binding.c_str())<<"\",\"uv0Available\":"<<(d.uv_available?"true":"false")<<",\"albedoParameter\":";if(d.albedo_parameter.empty())out<<"null";else out<<'\"'<<d.albedo_parameter<<'\"';out<<",\"resourceBlock\":";if(d.resource_block<0)out<<"null";else out<<d.resource_block;out<<",\"resourceIndex\":";if(d.resource_index<0)out<<"null";else out<<d.resource_index;out<<'}';}
+        out<<"],\"uv0\":[";for(size_t i=0;i<uvs.size();i++){if(i)out<<',';out<<uvs[i];}out<<"]";
+        // F16_4 UV0 carries the lightmap UV in .zw; export it separately so the
+        // existing 2-component uv0 contract and its consumers stay unchanged.
+        if(!lightmap_uvs.empty()){out<<",\"lightmapUv\":[";for(size_t i=0;i<lightmap_uvs.size();i++){if(i)out<<',';out<<lightmap_uvs[i];}out<<"]";}
+        out<<",\"sharedTextures\":[";for(size_t i=0;i<textures.size();i++){if(i)out<<',';const auto&t=textures[i];out<<"{\"name\":\""<<escape(t.name.c_str())<<"\",\"hash\":"<<t.hash<<",\"dataOffset\":"<<t.offset<<",\"dataBytes\":"<<t.bytes<<'}';}
+        out<<"],\"draws\":[";for(size_t i=0;i<draws.size();i++){if(i)out<<',';const auto&d=draws[i];out<<"{\"firstIndex\":"<<d.first<<",\"indexCount\":"<<d.count<<",\"albedoTexture\":";if(d.albedo<0)out<<"null";else out<<d.albedo;out<<",\"binding\":\""<<escape(d.binding.c_str())<<"\",\"uv0Available\":"<<(d.uv_available?"true":"false")<<",\"albedoParameter\":";if(d.albedo_parameter.empty())out<<"null";else out<<'\"'<<d.albedo_parameter<<'\"';out<<",\"resourceBlock\":";if(d.resource_block<0)out<<"null";else out<<d.resource_block;out<<",\"resourceIndex\":";if(d.resource_index<0)out<<"null";else out<<d.resource_index;if(d.uv_type==9)out<<",\"uvType\":9";if(!d.uv_semantics.empty())out<<",\"uvSemantics\":["<<d.uv_semantics<<"]";out<<'}';}
         out<<"],\"bounds\":{\"min\":["<<lo[0]<<','<<lo[1]<<','<<lo[2]<<"],\"max\":["<<hi[0]<<','<<hi[1]<<','<<hi[2]<<"]},\"metadata\":{\"fixtureOnly\":false,\"partialSceneTraversal\":true,\"resourceBlock\":0,\"nodeIndex\":"<<node_index<<",\"vertexCount\":"<<positions.size()/3<<",\"triangleCount\":"<<triangles.size()/3<<",\"primitiveCount\":"<<primitives.size()<<",\"uv0ValidVertices\":"<<valid_uv_vertices<<",\"uv0PlaceholderVertices\":"<<placeholder_uv_vertices<<",\"uv0PlaceholderPolicy\":\"zero pairs; unavailable draws cannot bind albedo\",\"runtimeMaterialsApplied\":false,\"runtimePaintColourRecovered\":false,\"runtimePaintTextureRecovered\":false,\"parsedUntilOffset\":"<<r.p<<",\"coordinateSpace\":\"object-local\",\"nodeTransformsApplied\":false,\"material\":\"diagnostic-only\",\"scope\":\"first resource block first render list base primitives LOD0\"}}";return out.str();
     }
 };
@@ -778,7 +807,9 @@ std::string level_mesh(const unsigned char* level,size_t level_size,const unsign
     out<<"{\"status\":\"ok\",\"positions\":[";
     for(size_t i=0;i<mesh.positions.size();++i){if(i)out<<',';out<<mesh.positions[i];}out<<"],\"indices\":[";
     for(size_t i=0;i<mesh.triangles.size();++i){if(i)out<<',';out<<mesh.triangles[i];}out<<"],\"uv0\":[";
-    for(size_t i=0;i<mesh.uvs.size();++i){if(i)out<<',';out<<mesh.uvs[i];}out<<"],\"sharedTextures\":[";for(size_t i=0;i<mesh.textures.size();++i){if(i)out<<',';const auto&t=mesh.textures[i];out<<"{\"name\":\""<<escape(t.name.c_str())<<"\",\"hash\":"<<t.hash<<",\"dataOffset\":"<<t.offset<<",\"dataBytes\":"<<t.bytes<<'}';}out<<"],\"draws\":[";
+    for(size_t i=0;i<mesh.uvs.size();++i){if(i)out<<',';out<<mesh.uvs[i];}out<<"]";
+    if(!mesh.lightmap_uvs.empty()){out<<",\"lightmapUv\":[";for(size_t i=0;i<mesh.lightmap_uvs.size();++i){if(i)out<<',';out<<mesh.lightmap_uvs[i];}out<<"]";}
+    out<<",\"sharedTextures\":[";for(size_t i=0;i<mesh.textures.size();++i){if(i)out<<',';const auto&t=mesh.textures[i];out<<"{\"name\":\""<<escape(t.name.c_str())<<"\",\"hash\":"<<t.hash<<",\"dataOffset\":"<<t.offset<<",\"dataBytes\":"<<t.bytes<<'}';}out<<"],\"draws\":[";
     for(size_t i=0;i<mesh.draws.size();++i){if(i)out<<',';write_draw_json(out,mesh.draws[i]);}
     out<<"],\"bounds\":{\"min\":["<<lo[0]<<','<<lo[1]<<','<<lo[2]<<"],\"max\":["<<hi[0]<<','<<hi[1]<<','<<hi[2]<<"]},\"metadata\":{\"fixtureOnly\":false,\"partialSceneTraversal\":true,"
        <<"\"geometryBlock\":"<<geometry_block<<",\"nodeBlock\":"<<node_block<<",\"nodeIndex\":"<<nodes.node_index
