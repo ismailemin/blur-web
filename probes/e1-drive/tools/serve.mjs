@@ -55,6 +55,8 @@ const GAME_SHELL = path.join(ROOT, 'probes/game-shell');
 const MAP_LAPS = path.join(ROOT, 'probes/map-laps');
 // Amboy/Gracia prop colliders (built by probes/map-props) live in _work.
 const MAP_PROPS_WORK = path.join(ROOT, '_work/map-props');
+// The runtime HUD module (DOM-only) is served read-only from probes/hud-ui.
+const HUD_UI = path.join(ROOT, 'probes/hud-ui');
 // PWR1 read-only inputs for the power-up slice: the manifest the model consumes
 // and the committed rules prototype (never copied or edited here).
 const POWERUPS_WORK = path.join(ROOT, '_work/powerups');
@@ -347,6 +349,9 @@ export function startServer({ port = 8801 } = {}) {
     } else if (pathname.startsWith('/map-laps/')) {
       const relative = pathname.slice('/map-laps/'.length);
       if (relative.endsWith('.json')) file = safeJoin(MAP_LAPS, relative);
+    } else if (pathname.startsWith('/hud-ui/')) {
+      const relative = pathname.slice('/hud-ui/'.length);
+      if (relative.endsWith('.mjs') || relative.endsWith('.js')) file = safeJoin(HUD_UI, relative);
     } else file = safeJoin(WEB, pathname.slice(1));
 
     if (!file || !existsSync(file) || !statSync(file).isFile()) {

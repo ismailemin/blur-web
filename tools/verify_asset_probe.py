@@ -93,6 +93,13 @@ def main():
         ('map-laps-amboy-lap',['node','probes/map-laps/tools/verify_amboy_lap.mjs']),
         ('map-props',['node','probes/map-props/tools/verify.mjs']),
         ('powerups-runtime-placement',['node','probes/powerups/tools/verify_runtime_placement.mjs']),
+        # Runtime modules the page can mount: lighting, car materials, HUD, the
+        # nineteen-level decision table and the Gracia no-lap decision.
+        ('lighting-runtime',['node','probes/lighting/tools/verify_runtime_lighting.mjs']),
+        ('car-materials-runtime',['node','probes/car-materials/tools/verify_runtime_materials.mjs']),
+        ('hud-ui',['node','--test','probes/hud-ui/test/']),
+        ('map-pipeline-decisions',[sys.executable,'probes/map-pipeline/tools/verify_map_decisions.py']),
+        ('map-laps-gracia-nolap',['node','probes/map-laps/tools/verify_gracia_no_lap.mjs']),
     ])
     results=[]
     for name,command in steps:
@@ -103,7 +110,7 @@ def main():
         (evidence/'suite.json').write_text(json.dumps({'utc':datetime.now(timezone.utc).isoformat(),'checks':results},indent=2)+'\n',encoding='utf-8')
         print(f'{name}: {"PASS" if completed.returncode==0 else "FAIL"}',flush=True)
         if completed.returncode:
-            print(log.read_text(encoding='utf-8')[-4000:])
+            print(log.read_text(encoding='utf-8',errors='replace')[-4000:])
             raise SystemExit(completed.returncode)
     print(f'Passed {len(results)} checks. Browser/GPU visual checks are separate.')
 

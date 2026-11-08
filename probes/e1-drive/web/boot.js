@@ -8,7 +8,7 @@
 // read by the driving slice.
 
 const RACE_PARAMS = [
-  'race', 'map', 'course', 'script', 'mp', 'car', 'ai', 'powerups',
+  'race', 'map', 'course', 'script', 'mp', 'car', 'ai', 'powerups', 'hud',
   'telemetry', 'soak', 'survey', 'hold', 'sprintfall', 'collisionprobe'
 ];
 

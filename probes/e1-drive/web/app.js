@@ -95,6 +95,9 @@ import {
 // `probes/audio/web/` by tools/serve.mjs; it creates no AudioContext until a
 // real gesture calls `ensureStarted()`.
 import { createEngineAudio } from '/audio/engine-audio.js';
+import { mountRetailHud, retailHudRequested } from './hud-mount.js';
+const RETAIL_HUD = retailHudRequested();
+let retailHud = null;
 const params = new URLSearchParams(location.search);
 const SCRIPT_PARAM = params.get('script');
 const TELEMETRY = params.get('telemetry') === '1';
@@ -6370,6 +6373,8 @@ function mpCaptureSnapshot() {
     schema: mp.schema,
     constants: { maxPlayers: MP_MAX_PLAYERS, aiMax: MP_AI_MAX },
     roomPowerups: mp.room?.powerups === true,
+    retailHud: retailHud ? retailHud.snapshot() : null,
+    retailHudError: state.retailHudError ?? null,
     phase: mp.phase,
     status: mp.status,
     error: mp.error,
@@ -6919,6 +6924,25 @@ function frameInner(nowMs) {
     state.uniformBytes = consumer.stats.uniformBytes;
     state.drawsIssued = consumer.stats.drawsIssued;
     if (state.consumer !== 'error') state.consumer = 'running';
+    // Optional retail HUD (`?hud=retail`): the committed DOM module, fed from
+    // the same state the debug overlay reads. Opt-in so every existing capture
+    // keeps its exact overlay.
+    if (RETAIL_HUD) {
+      if (!retailHud) {
+        try {
+          retailHud = mountRetailHud();
+          document.documentElement.dataset.retailHud = '1';
+          // The probe can read the rendered HUD without walking the DOM itself.
+          state.retailHudSnapshot = () => (retailHud ? retailHud.snapshot() : null);
+        } catch (error) {
+          state.retailHudError = error.message;
+          console.warn('retail HUD mount failed: ' + error.message);
+        }
+      }
+      if (retailHud) {
+        try { retailHud.update(state); } catch (error) { state.retailHudError = error.message; }
+      }
+    }
     publish();
   }
   requestAnimationFrame(frame);

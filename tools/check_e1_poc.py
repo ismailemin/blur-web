@@ -214,6 +214,7 @@ WEB_FILES = [
     # existing deep link.
     "probes/e1-drive/web/boot.js",
     "probes/e1-drive/web/menu.js",
+    "probes/e1-drive/web/hud-mount.js",
     "probes/game-shell/shell.js",
     "probes/game-shell/shell-state.js",
     "probes/game-shell/shell.css",
