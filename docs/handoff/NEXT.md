@@ -23,9 +23,13 @@ dalgaları). Sıra bağlayıcıdır: bir dalga yeşil olmadan sonraki başlamaz.
 - **Dalga 3:** pickup rotası (1610/1610), Gracia no-lap kararı (83/83), ışık
   (973/973), araç materyali (3505/3505), HUD (12 test) ve 19 harita kararı
   (2062/2062); HUD varsayılan (`3e70b3d`).
-- **Haritalar 4→7:** Long Beach (`d8101c2`), Hollywood Hills (`302e5d8`),
-  LA Downtown (`5cf4da5`), Mount Haruna (`8f3a1c0`). Motor zemin sondası
-  `e1_set_ground_hint` ile yükseltilmiş seviyeleri destekliyor.
+- **Haritalar 4→11:** Long Beach, Hollywood Hills, LA Downtown, Mount Haruna,
+  Highrise, Tokyo Shutoko, Barcelona Oval, Amboy MP. Motor zemin sondası
+  `e1_set_ground_hint` ile yükseltilmiş seviyeleri destekliyor; geniş parkurlar
+  `course.gateRule: "arc-progression"` kullanıyor.
+- **Araçlar 57→59:** ratrod ve supra staged (`8ec7352`).
+- **Lightmap decode:** 455 retail doku (9292/9292). Ses kataloğu 23 olay
+  (6567/6567). AI altı haritada 684 koşu (30/30).
 
 ## 1. Paralel dalga (bu gece, ayrık dizinler)
 

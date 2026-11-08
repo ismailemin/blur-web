@@ -1,8 +1,8 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 8 Kasım 2026 (gece)
+**Güncelleme:** 8 Kasım 2026 (gece, geç)
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
-tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **57 araç, 7 harita**.
+tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **59 araç, 11 harita**.
 **Son commit'ler:** `13cf0b1` 8 oyunculu oda, `70374f6` oyun kabuğu,
 `2a8c714` 57 araç, `d8101c2` Long Beach, `302e5d8` Hollywood Hills,
 `5cf4da5` Downtown, `8f3a1c0` Mount Haruna (yedinci harita).
@@ -20,20 +20,16 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **57 araç, 7 hari
 - **Menü kabuğu:** boş URL menüyü açar (57 araç, 7 harita, mod/araç/harita
   seçimi, lobi); her yarış parametresi menüyü atlar. `?join=1` misafir akışı.
   Başsız Edge: 0 konsol hatası.
-- **Araçlar:** sürüş diliminde **57 araç** (25 → 57); yeni araçlarla sprint
-  çalışıyor (14.45–15.4 s, 0 hata). 5 araç tipli gerekçeyle desteklenmiyor.
+- **Araçlar:** sürüş diliminde **59 araç** (25 → 57 → 59); yeni araçlarla
+  sprint çalışıyor (14.45–15.4 s, 0 hata). 3 araç tipli gerekçeyle
+  desteklenmiyor: `defaultcar` (gövde modeli yok), `hummer-h2-rat` (caliper
+  parent zinciri), `ford-supervan-stock` (tekerlek eleman sayısı).
 - **Amboy 3 tur:** `?map=amboy&course=lap` → 3 tur, 0 respawn, ~112 s.
-- **Long Beach 4. harita:** `?map=longbeach&script=sprint` → 785.82 m,
-  **57.07 s, 0 respawn**; draw yolu 227 m'deki 10 cm kaldırıma takılıyordu,
-  collision rasterından üretilen yol 6.836 m açıklıkla geçiyor.
-- **Hollywood Hills 5. harita:** `?map=observatory&script=sprint` → 536.62 m,
-  **34.2 s, 0 respawn**; e2e `solo-observatory` 12/12.
-- **LA Downtown 6. harita:** `?map=downtown&script=sprint` → 153.86 m,
-  **12.83 s, 0 respawn**; e2e `solo-downtown` 12/12. Checkpoint'ler artık
-  viraj yerine düz kesimlerde (nominal 1/3 ve 2/3'ün ±%12'sinde en düz örnek).
-- **Mount Haruna 7. harita:** `?map=mharuna&script=sprint` → 309.17 m,
-  **18.83 s, 0 respawn**; e2e `solo-mharuna` 12/12. Spawn Y 1064'te olduğu için
-  motora `e1_set_ground_hint` eklendi (sabit sonda sütunu Y -170..130).
+- **Haritalar 4→11:** Long Beach, Hollywood Hills, LA Downtown, Mount Haruna,
+  Highrise, Tokyo Shutoko, Barcelona Oval, Amboy MP. Hepsi 0 respawn ve
+  0 konsol hatası; her biri `verify_e1_map` 22/22 ve kendi e2e senaryosu 12/12.
+- **Kapı kuralı:** geniş collision parkurları için `course.gateRule:
+  "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Amboy/Gracia power-up:** retail yerleşim bağlı — Amboy **82**, Gracia **59**
   pickup, misafir hepsini alıyor; oda bayrağıyla `?powerups=1` gerekmiyor.

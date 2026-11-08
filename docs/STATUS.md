@@ -1,3 +1,17 @@
+## 8 Kasım 2026 — 11 harita, 59 araç, lightmap ve ses kataloğu
+
+- **Haritalar 7 → 11:** Highrise (14.27 m, 3.45 s), Tokyo Shutoko (279.01 m, 21.83 s), Barcelona Oval (753.02 m, 39.52 s) ve Amboy MP (122.29 m, 13.53 s) eklendi; hepsi **0 respawn, 0 konsol hatası**, `verify_e1_map` 22/22, kendi e2e senaryosu 12/12.
+- **Kapı kuralı:** geniş collision parkurlarında sürülen çizgi kapı yayını geçip 8 m çizgi parçasını kesmeyebiliyordu; layout artık `course.gateRule: "arc-progression"` bildiriyor ve koridor içinde kapı yayına ulaşmak geçiş sayılıyor. Önceki haritaların anchor'ları değişmedi.
+- **Araçlar 57 → 59:** `ratrod-na-stock` (tekerlek ekseni parent zarfından kanıtlandı) ve `toyota-supra-smooth` (boş index aralıklı 2 draw kayıtlı şekilde atlanıyor). Sprint 14.92 / 14.95 s, 0 hata. Kalan 3 araç tipli gerekçeyle desteklenmiyor.
+- **Lightmap decode:** 455 retail lightmap dokusu (DXT5/BC3) çözüldü; `verify_lightmap` 9292/9292, `verify_lighting` 7490/7490, `verify_runtime_lighting` 16108/16108.
+- **Ses kataloğu:** 23 olay, 85 retail dalga; `verify_runtime_audio` 6567/6567.
+- **HUD:** hız göstergesi, vites, sıra/tur, güç yuvası + bekleme halkası, hasar/kalkan rampası, geri sayım, ters yön; 19/19 test, sayfaya bağlı.
+- **Menü:** 57 → 59 araç, 7 harita; 41/41 test, başsız Edge 0 konsol hatası.
+- **Fiziksel pickup:** arc-korrespondans tablosu; Gracia 5/59, Amboy 0/82, River 0/54 fiziksel olarak yerleştirilebiliyor (ölçülen parkur retail AI hattından uzak). 2621/2621.
+- **AI:** altı haritada 684 koşu, dört yeni haritada 114/114 temiz; `verify-maps` 30/30.
+- **Kapılar:** `map-batch` 1450/1450 (11 playable), `verify_map_decisions` 1809/1809, `verify_blocked` PASS, `verify_batch_paths` 406/406, `verify_remaining_paths` 124/124.
+- **Kalan 8 seviye tipli blocker:** hackney, dumbo, brighton, sausalito, russianhill, downtown-mp, bowl, showroom. Ayrıntı: `docs/work/analysis/remaining-maps.md`.
+
 ## 8 Kasım 2026 — yedinci harita (Mount Haruna) + paralel dalga
 
 - **Mount Haruna oynanabilir:** `?map=mharuna&script=sprint` → **309.17 m, 18.83 s, 2 checkpoint, 0 respawn, 0 konsol hatası**. `verify_e1_map --map mharuna` 22/22; e2e `solo-mharuna` 12/12.
@@ -1069,6 +1083,7 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sunucu doğrulandı: `/` HTTP 200, `e1_drive.wasm` 1.003.249 B HTTP 200.
 - 5 araç seçici ve `?car=` URL'i; scripted mod `?script=drive&car=...`.
 - Kullanıcı testi için hazır; görsel sadakat/teker/engine draw-list işleri devam ediyor.
+
 
 
 
