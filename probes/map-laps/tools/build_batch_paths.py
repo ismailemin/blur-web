@@ -95,7 +95,7 @@ CORRIDOR_CELLS = 14                 # 7.0 m half-width around the draw path
 CORRIDOR_PENALTY = 0.2              # cost per draw-path cell of deviation
 GATE_HALF_WIDTH = 4.0               # 8 m gate line
 BAND_HALF_WIDTH = 6.0               # page validator's declared 6 m band
-CORRIDOR_HALF_WIDTH = 4.0           # declared respawn band = measured clearance
+CORRIDOR_HALF_WIDTH = 12.0          # declared respawn band; a tight street course needs recovery room
 TANGENT_WINDOW = 5.0
 NEAREST_BLOCKED_RADIUS = 30         # 15 m search window for the clearance probe
 
@@ -440,8 +440,33 @@ def build_document(cfg, batch, grid_path, R, built, log=print):
                 and value <= finish_connector_arc + 1e-9)
 
     # ---------------------------------------------------------------- gates
-    i1 = min(range(len(arc)), key=lambda k: abs(arc[k] - length / 3.0))
-    i2 = min(range(len(arc)), key=lambda k: abs(arc[k] - 2.0 * length / 3.0))
+    # A checkpoint must sit on a straight section: a gate inside a hairpin is
+    # cut by the driven line and the finish then reports checkpoints-missing.
+    # Search +/- 12 % of the nominal third for the sample with the smallest
+    # heading change over a 5 m window.
+    def straightest(nominal_arc):
+        low = max(0.0, nominal_arc - 0.12 * length)
+        high = min(length, nominal_arc + 0.12 * length)
+        best_index = min(range(len(arc)), key=lambda k: abs(arc[k] - nominal_arc))
+        best_turn = None
+        for k in range(len(arc)):
+            if arc[k] < low or arc[k] > high:
+                continue
+            a = max(0, k - 10)
+            b = min(len(samples_xy) - 1, k + 10)
+            ax, az = samples_xy[a]
+            bx, bz = samples_xy[b]
+            cx, cz = samples_xy[k]
+            turn = abs(math.atan2(bx - cx, bz - cz) - math.atan2(cx - ax, cz - az))
+            if turn > math.pi:
+                turn = 2 * math.pi - turn
+            if best_turn is None or turn < best_turn:
+                best_turn = turn
+                best_index = k
+        return best_index
+
+    i1 = straightest(length / 3.0)
+    i2 = straightest(2.0 * length / 3.0)
 
     def make_gate(index, kind, gate_id, sample_index, gate_arc):
         x, z = samples_xy[index]
@@ -769,7 +794,7 @@ def build_document(cfg, batch, grid_path, R, built, log=print):
                          "in source.endpoints"),
         "gateLineSource": ("5 m tangent window, 8 m line, oriented so the approach "
                            "side is positive"),
-        "checkpointStationSource": ("samples closest to one-third / two-thirds of the "
+        "checkpointStationSource": ("straightest sample within +/-12 % of one-third / two-thirds of the "
                                     "measured collision arc"),
     }
 
@@ -1033,5 +1058,7 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
 
 

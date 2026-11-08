@@ -101,7 +101,8 @@ def main(argv=None):
 
     playable = {"river": "usa_la_river", "amboy": "usa_amboy", "gracia": "spa_barcelona_gracia",
                 "longbeach": "usa_la_longbeachdocks",
-                "observatory": "usa_la_observatory"}
+                "observatory": "usa_la_observatory",
+                "downtown": "usa_la_downtown"}
     playable_levels = {playable[mid] for mid in read_playable_ids() if mid in playable}
 
     probe_levels = {
@@ -287,4 +288,5 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 

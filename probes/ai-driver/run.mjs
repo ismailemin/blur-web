@@ -746,6 +746,15 @@ const results = {
   }
 };
 
+// Rotate the previous result so `verify.mjs` can compare two consecutive
+// process-separated runs (V25). A stale file from an older roster would make
+// the comparison meaningless.
+try {
+  const current = readFileSync(path.join(OUT, 'results.json'));
+  writeFileSync(path.join(OUT, 'results.previous.json'), current);
+} catch {
+  // First run: there is nothing to rotate.
+}
 writeFileSync(path.join(OUT, 'results.json'), JSON.stringify(results, null, 2) + '\n');
 process.stdout.write(`[ai-driver] wrote ${path.relative(ROOT, path.join(OUT, 'results.json'))}\n`);
 process.stdout.write(`[ai-driver] runs=${runSummaries.length} clean=${runSummaries.filter((run) => run.clean).length} ` +

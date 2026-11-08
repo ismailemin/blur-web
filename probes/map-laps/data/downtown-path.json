@@ -199,7 +199,7 @@
   "spawnSource": "position and heading: the committed spawn.json pose (layout.spawn); the start gate's line uses the collision path's 5 m tangent",
   "groundSource": "P48 collision raster H at each 0.25 m sample's 0.5 m cell (4 decimals); the committed spawn/finish ground is recorded in source.endpoints",
   "gateLineSource": "5 m tangent window, 8 m line, oriented so the approach side is positive",
-  "checkpointStationSource": "samples closest to one-third / two-thirds of the measured collision arc"
+  "checkpointStationSource": "straightest sample within +/-12 % of one-third / two-thirds of the measured collision arc"
  },
  "course": {
   "rule": "point-to-point collision-clear path; the spawn is the committed spawn pose and the finish is the committed draw-path end; every interior sample is on the P48 passable raster eroded by 10 cells (>= 5.0 m) inside a 14-cell corridor around the committed draw-covered path",
@@ -247,8 +247,8 @@
    "note": "not a road-width claim"
   },
   "corridor": {
-   "rule": "off-course respawn band is a declared +/-4.0 m around the collision-clear path",
-   "halfWidthMetres": 4,
+   "rule": "off-course respawn band is a declared +/-12.0 m around the collision-clear path",
+   "halfWidthMetres": 12,
    "source": {
     "minRasterClearanceM": 5.5,
     "clearanceLowerBoundM": 5,
@@ -4671,28 +4671,28 @@
    "id": "checkpoint-1",
    "kind": "checkpoint",
    "index": 1,
-   "sampleIndex": 206,
-   "arc": 51.343617,
-   "x": 688.857143,
-   "z": 102.428571,
-   "groundY": 111.7114,
-   "height": 111.7114,
-   "headingRad": -2.51128726,
+   "sampleIndex": 132,
+   "arc": 32.931883,
+   "x": 699.931507,
+   "z": 117.136986,
+   "groundY": 111.7314,
+   "height": 111.7314,
+   "headingRad": -2.492597095,
    "tangent": {
-    "tx": -0.589391497,
-    "tz": -0.807847549,
-    "windowMetres": 4.872
+    "tx": -0.604386481,
+    "tz": -0.796691271,
+    "windowMetres": 4.986
    },
    "widthMetres": 8,
    "requestedWidthMetres": 8,
    "narrowed": false,
    "a": [
-    685.625753,
-    104.786137
+    696.744742,
+    119.554532
    ],
    "b": [
-    692.088533,
-    100.071005
+    703.118272,
+    114.71944
    ],
    "coverage": {
     "measured": false,
@@ -4701,12 +4701,12 @@
    },
    "groundCheck": {
     "rasterCell": [
-     2098,
-     1565
+     2120,
+     1594
     ],
     "passable": true,
-    "rasterHeightM": 111.711436,
-    "groundY": 111.7114,
+    "rasterHeightM": 111.731352,
+    "groundY": 111.7314,
     "groundDeltaM": 0,
     "lineStations": 33,
     "linePassableStations": 33,
@@ -4719,12 +4719,12 @@
    "id": "checkpoint-2",
    "kind": "checkpoint",
    "index": 2,
-   "sampleIndex": 412,
-   "arc": 102.561932,
-   "x": 657.959799,
-   "z": 61.580402,
-   "groundY": 111.7149,
-   "height": 111.7149,
+   "sampleIndex": 338,
+   "arc": 84.117373,
+   "x": 669.115578,
+   "z": 76.268844,
+   "groundY": 111.7194,
+   "height": 111.7194,
    "headingRad": -2.492043231,
    "tangent": {
     "tx": -0.604827647,
@@ -4735,12 +4735,12 @@
    "requestedWidthMetres": 8,
    "narrowed": false,
    "a": [
-    654.774373,
-    63.999713
+    665.930152,
+    78.688155
    ],
    "b": [
-    661.145225,
-    59.161091
+    672.301003,
+    73.849534
    ],
    "coverage": {
     "measured": false,
@@ -4749,12 +4749,12 @@
    },
    "groundCheck": {
     "rasterCell": [
-     2036,
-     1483
+     2058,
+     1513
     ],
     "passable": true,
-    "rasterHeightM": 111.714944,
-    "groundY": 111.7149,
+    "rasterHeightM": 111.719399,
+    "groundY": 111.7194,
     "groundDeltaM": 0,
     "lineStations": 33,
     "linePassableStations": 33,
@@ -4841,7 +4841,7 @@
    "one point-to-point sprint on the collision-clear path, not a lap and not a retail start line",
    "the path is the P48 passable raster eroded by 10 cells (>= 5.0 m) inside a 14-cell corridor around the committed draw-covered path",
    "the committed spawn/finish poses are joined to the eroded path by 7.500 m / 10.700 m connectors; the connectors are laterally car-width passable but do not carry the full isotropic margin",
-   "the 6 m band is the page validator's declared controller/respawn band; the measured respawn corridor is 4.0 m and the measured interior clearance is 5.500 m",
+   "the 6 m band is the page validator's declared controller/respawn band; the measured respawn corridor is 12.0 m and the measured interior clearance is 5.500 m",
    "the path clears the narrowest draw-path pinch (1.000 m) by 5.500 m (stated margin 5.0 m)",
    "gates are rules geometry only; no gate mesh is added to the render packet",
    "the 1 excluded collision shapes are not in the raster; no prop collider, opponent, AI or race audio is added"
@@ -4862,5 +4862,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:7a190613586e8edcc6bc2f774e3f4f222a25f74b9ec3025c811acf69ac3a4b4e"
+ "hash": "sha256:6cef8983c1eee7f5b0d06f991f78e0cb2176280831caa0af26364a9b0dc69d9e"
 }

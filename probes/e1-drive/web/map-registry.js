@@ -14,7 +14,7 @@
 export const MAP_DEFAULT = 'river';
 
 /** Map ids accepted by `?map=`. */
-export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach', 'observatory']);
+export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown']);
 
 export const MAPS = Object.freeze({
   river: Object.freeze({
@@ -289,8 +289,8 @@ export const MAPS = Object.freeze({
     pins: Object.freeze({
       mapFileSha256: 'sha256:483a35bdbd019bee0dab2ec805224f39de80cce5d2930fde0be6a99f104d75fe',
       mapContentHash: 'sha256:c9820ee9fcc74d5a013fc9de13211e629f42104821aafb589da6dcc604056064',
-      layoutFileSha256: 'sha256:3bc626b448c233a4d1263a322b2d2d86ff8802f6606eab8e614555b4fe2e1054',
-      layoutContentHash: 'sha256:168c7dba2fb2123dea8fed4a8e0a645616be8886557d0714f672ddb9d4e0ddbc',
+      layoutFileSha256: 'sha256:75e7c586b4b47488d995b8e800a9c65c071f9d57520f4b7a9ef0666413aa1de8',
+      layoutContentHash: 'sha256:3eeaf7a1ca488d4475d52bc3aa6cce4eb01a3acc18d4b96d5710e04690d1973b',
       renderFileSha256: 'sha256:2bb867bfd74b2a8bb8d9f1e2d2b83c7cac28eef5987a75edde5908eb265b9564',
       renderContentHash: 'sha256:2bb867bfd74b2a8bb8d9f1e2d2b83c7cac28eef5987a75edde5908eb265b9564',
       sliceFileSha256: 'sha256:15566ff24ae1ce55e70b52361ba43a2e2cc525d80ddc4030eda5546c48a2fabd',
@@ -310,23 +310,81 @@ export const MAPS = Object.freeze({
       instanceDescriptions: 0,
       collisionTriangles: 111496,
       pathLengthMetres: 536.621709,
-      checkpointArcs: Object.freeze([178.809347, 357.8057]),
+      checkpointArcs: Object.freeze([114.838678, 308.628092]),
       sampleCount: 2161,
       renderLabel: 'observatory-direct-draws',
       courseId: 'observatory'
     }),
     mpPins: Object.freeze({
       packageHash: 'sha256:c9820ee9fcc74d5a013fc9de13211e629f42104821aafb589da6dcc604056064',
-      layoutHash: 'sha256:168c7dba2fb2123dea8fed4a8e0a645616be8886557d0714f672ddb9d4e0ddbc',
+      layoutHash: 'sha256:3eeaf7a1ca488d4475d52bc3aa6cce4eb01a3acc18d4b96d5710e04690d1973b',
       physicsHash: 'sha256:070874eedc63eac99f9a586b3581c2b8c9d396a433b7ee0bc4e3e16663c034d6',
       packageFileSha256: 'sha256:483a35bdbd019bee0dab2ec805224f39de80cce5d2930fde0be6a99f104d75fe',
-      layoutFileSha256: 'sha256:3bc626b448c233a4d1263a322b2d2d86ff8802f6606eab8e614555b4fe2e1054',
+      layoutFileSha256: 'sha256:7896c434d7ac8490cb0f0eaae8f0dca07cd05312c31f7f8371aa414d374dfb7a',
       physicsFileSha256: 'sha256:070874eedc63eac99f9a586b3581c2b8c9d396a433b7ee0bc4e3e16663c034d6',
       packageBytes: 22941483,
-      layoutBytes: 270484,
+      layoutBytes: 270521,
       physicsBytes: 4715868
     })
   }),
+
+  downtown: Object.freeze({
+    id: 'downtown',
+    label: 'LA Downtown',
+    level: 'usa_la_downtown',
+    kind: 'map-package',
+    geometryUrl: '/_work/e1-drive/downtown/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/usa_la_downtown/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/downtown/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.downtown',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:b031df8f8a61ef9a4235ec71b919f61e9a351643645bbd99009ab7a4048067fd',
+      mapContentHash: 'sha256:a2bd4b74341647d29a66269313410ba80d77d6fea95ec98ff77abfcdff564b4a',
+      layoutFileSha256: 'sha256:0245455952dc73469187777a5883cf261d996acc59bbd5984d10f3ac41f9da76',
+      layoutContentHash: 'sha256:6cef8983c1eee7f5b0d06f991f78e0cb2176280831caa0af26364a9b0dc69d9e',
+      renderFileSha256: 'sha256:97e52ed190b4dc4389063412f111361cc5dfc6911bb5ee245d3f10c0c6ecc80e',
+      renderContentHash: 'sha256:97e52ed190b4dc4389063412f111361cc5dfc6911bb5ee245d3f10c0c6ecc80e',
+      sliceFileSha256: 'sha256:51613cd7395abc2072091079af8a0e2738b400e6edc30d8ee5e4383b44adf17b',
+      sliceContentHash: 'sha256:51613cd7395abc2072091079af8a0e2738b400e6edc30d8ee5e4383b44adf17b',
+      physicsFileSha256: 'sha256:06f2e5222dbb8cfcc8fe4493f62161fb11d64310a09603502484dee8040c9fd1',
+      physicsBytes: 6637886,
+      draws: 1668,
+      drawTriangles: 195589,
+      textures: 736,
+      textureBytes: 7529152,
+      vertices: 440144,
+      indices: 987021,
+      decalDraws: 428,
+      diagnosticDraws: 216,
+      blockedDraws: 644,
+      unsupportedSections: 4,
+      instanceDescriptions: 15002,
+      collisionTriangles: 118351,
+      pathLengthMetres: 153.860674,
+      checkpointArcs: Object.freeze([32.931883, 84.117373]),
+      sampleCount: 620,
+      renderLabel: 'downtown-direct-draws',
+      courseId: 'downtown'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:a2bd4b74341647d29a66269313410ba80d77d6fea95ec98ff77abfcdff564b4a',
+      layoutHash: 'sha256:6cef8983c1eee7f5b0d06f991f78e0cb2176280831caa0af26364a9b0dc69d9e',
+      physicsHash: 'sha256:06f2e5222dbb8cfcc8fe4493f62161fb11d64310a09603502484dee8040c9fd1',
+      packageFileSha256: 'sha256:b031df8f8a61ef9a4235ec71b919f61e9a351643645bbd99009ab7a4048067fd',
+      layoutFileSha256: 'sha256:2b3d11f4a2334182fa44a539aef4fc2a4405f3cb2a0a62672647fe67f4689da6',
+      physicsFileSha256: 'sha256:06f2e5222dbb8cfcc8fe4493f62161fb11d64310a09603502484dee8040c9fd1',
+      packageBytes: 53389346,
+      layoutBytes: 88659,
+      physicsBytes: 6637886
+    })
+  })
 });
 
 /** Resolve a `?map=` value, defaulting to River and rejecting unknown ids. */

@@ -85,3 +85,41 @@ export async function soloObservatory(ctx) {
     ctx.fmt(page.messages.slice(-4)));
   ctx.evidence.finish = done;
 }
+
+// `solo-downtown`: the sixth playable map. The course is the committed
+// collision-derived path (153.860674 m); the checkpoints sit on straight
+// sections so the driven line crosses both gates.
+export async function soloDowntown(ctx) {
+  const anchor = ctx.anchors.downtown;
+  const url = ctx.base + '/?map=downtown&script=sprint&car=' +
+    encodeURIComponent(anchor.slug) + '&audio=0';
+  const page = await ctx.openPage('downtown');
+  await page.navigate(url);
+  const running = await waitProbe(ctx, page, (probe) => probe.consumer === 'running' && probe.engineTick >= 2,
+    { timeoutMs: 120000, label: 'downtown running' });
+  await ctx.shot(page, 'start');
+
+  ctx.A.check('downtown: URL is the requested scripted sprint', running.url === url, running.url);
+  ctx.A.check('downtown: map is downtown', running.map?.id === 'downtown', ctx.fmt(running.map));
+  ctx.A.check('downtown: course is downtown', running.sprint?.courseId === anchor.courseId,
+    running.sprint?.courseId);
+  ctx.A.check('downtown: layout hash is the committed collision path',
+    running.sprintLayoutHash === anchor.layoutHash,
+    running.sprintLayoutHash + ' vs ' + anchor.layoutHash);
+
+  const done = await waitProbe(ctx, page, (probe) => probe.sprintResult !== null,
+    { timeoutMs: 180000, label: 'downtown finish' });
+  await ctx.shot(page, 'finish');
+  const result = done.sprintResult;
+  ctx.A.check('downtown: finish time is ' + anchor.timeSeconds + ' s',
+    Math.abs(result.timeSeconds - anchor.timeSeconds) <= anchor.timeToleranceSeconds,
+    'expected ' + anchor.timeSeconds + ' ± ' + anchor.timeToleranceSeconds + ', got ' + result.timeSeconds);
+  ctx.A.check('downtown: two checkpoints were passed', result.checkpoints === anchor.checkpoints,
+    'got ' + result.checkpoints);
+  ctx.A.check('downtown: no respawn', result.respawns === 0, 'respawns ' + result.respawns);
+  ctx.A.check('downtown: results overlay is visible', done.overlays.resultsHidden === false,
+    ctx.fmt(done.overlays));
+  ctx.A.check('downtown: no console error', page.messages.filter((m) => m.type === 'error').length === 0,
+    ctx.fmt(page.messages.slice(-4)));
+  ctx.evidence.finish = done;
+}

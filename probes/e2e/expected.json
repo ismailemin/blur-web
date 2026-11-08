@@ -63,11 +63,20 @@
     "observatory": {
       "slug": "corvette-zr1-stock",
       "courseId": "observatory",
-      "timeSeconds": 81.516667,
+      "timeSeconds": 34.2,
       "timeToleranceSeconds": 2.0,
       "checkpoints": 2,
-      "layoutHash": "sha256:168c7dba2fb2123dea8fed4a8e0a645616be8886557d0714f672ddb9d4e0ddbc",
+      "layoutHash": "sha256:3eeaf7a1ca488d4475d52bc3aa6cce4eb01a3acc18d4b96d5710e04690d1973b",
       "docRef": "docs/work/analysis/observatory-downtown-packages.md (536.621709 m collision path)"
+    },
+    "downtown": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "downtown",
+      "timeSeconds": 12.833333,
+      "timeToleranceSeconds": 1.0,
+      "checkpoints": 2,
+      "layoutHash": "sha256:6cef8983c1eee7f5b0d06f991f78e0cb2176280831caa0af26364a9b0dc69d9e",
+      "docRef": "docs/work/analysis/observatory-downtown-packages.md (153.860674 m collision path)"
     }
   },
   "mp": {

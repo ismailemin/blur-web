@@ -87,6 +87,7 @@ INTEGRATED = {
     "spa_barcelona_gracia": "gracia",
     "usa_la_longbeachdocks": "longbeach",
     "usa_la_observatory": "observatory",
+    "usa_la_downtown": "downtown",
 }
 
 MIN_COVERED_PATH_M = 25.0
