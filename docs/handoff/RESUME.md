@@ -16,7 +16,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **HUD** | Hız göstergesi, vites, sıra/tur, güç yuvası, hasar/kalkan, geri sayım; 19/19 test. |
 | **Multiplayer** | 8 oyunculu oda (`mp-eight` 95/95); Amboy'da `?powerups=1` ile 82 pickup / 8 tip. |
 | **E2E** | 17 senaryo; her biri tek başına yeşil. Son toplu koşuda `solo-dumbo`/`solo-downtown-mp` sunucu ölünce `ERR_CONNECTION_REFUSED` aldı; sunucu açıkken **12/12** geçti. |
-| **Kapı** | `gate-full16.log` yalnızca `vehicle-batch-roster`'da kırmızıydı; spec yenilendi, `verify_batch_roster` **61/61**. `gate-full17.log` doğrulama için koşuyor. |
+| **Kapı** | **`verify_asset_probe --skip-build` 95/95 PASS** (`gate-full17.log`, exit 0). `vehicle-batch-roster` 61/61. |
 
 ## Son commit'ler
 
@@ -51,9 +51,9 @@ node probes/e2e/run.mjs --scenarios solo-dumbo,solo-downtown-mp --base http://12
 
 ## Sıradaki işler (öncelik sırası)
 
-1. **Kapıyı yeşile al.** `gate-full17.log`'a bak. Kırmızı varsa büyük olasılıkla
-   yine bir "stale pin"dir; ilgili üreticiyi çalıştır
-   (`docs/work/verification/refresh-work-artifacts.md` sırası).
+1. **Kapı yeşil** (`gate-full17.log`, 95/95). Yeni bir değişiklikten sonra
+   yeniden koş; kırmızı çıkarsa büyük olasılıkla "stale pin"dir; ilgili
+   üreticiyi çalıştır (`docs/work/verification/refresh-work-artifacts.md`).
 2. **Menüyü 61 araç / 13 haritaya çek.** `probes/game-shell` hâlâ 59/11
    verisiyle; `car-classes.json` ve `course-measurements.json` güncellenmeli,
    `capture-shell.mjs` beklentileri 61/13 olmalı.
