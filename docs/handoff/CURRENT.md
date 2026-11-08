@@ -27,7 +27,7 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Amboy/Gracia power-up:** oda bayrağıyla 6 pickup, misafir de alıyor.
 - **2 oyunculu + AI:** `mp-two` 52/52, `mp-ai` 71/71.
-- **Taşınabilir kapı:** `verify_asset_probe --skip-build` **81/81**,
+- **Taşınabilir kapı:** `verify_asset_probe --skip-build` **84/84**,
   `check_e1_poc` **23/23**.
 - **Tüm probe doğrulayıcıları yeşil:** race-rules 249/249, map-pipeline 930/930
   + kararlar 2466/2466, map-batch 1450/1450, instances 510/510,
