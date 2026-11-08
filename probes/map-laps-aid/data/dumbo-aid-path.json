@@ -118,8 +118,19 @@
    "segmentLengthMetres": 361.999436,
    "spawnProjectionMetres": 11.2225,
    "finishProjectionMetres": 399.3514,
+   "pathStartProjectionMetres": 11.2225,
+   "pathFinishProjectionMetres": 399.3514,
+   "projectionNote": "the spawn/finish projections are the racing-line points nearest the committed poses; the path projections include the lateral detour offset",
    "selectionRule": "closed non-logic route (ROUTE_LOOPED without ROUTE_LOGIC_ZONE) at least 300 m long whose racing line passes nearest the committed spawn; ties go to the longer route then the lower route index",
-   "projectionRule": "the racing line is used unchanged when its car half-width band is passable; otherwise each 0.25 m station is shifted laterally within min(10 m, serialized width / 2) to the nearest band-clear position by a deterministic dynamic program",
+   "projectionRule": "the racing line is used unchanged when its car half-width band is passable; otherwise a station moves along its own normal to a band-clear position inside the declared +/-12 m respawn band (0.25 m steps) by a deterministic second-order dynamic program; consecutive detour points are at most 0.5 m apart and the line returns to the racing line when it becomes clear",
+   "detourRule": "bounded lateral detour: a station whose racing point is not car-half-width clear moves along its own normal to the nearest continuous band-clear position inside the declared +/-12 m respawn band; the detour is continuous (<= 0.5 m between consecutive samples) and returns to the racing line when the racing point becomes clear; every detour point is validated with the line's own local tangent",
+   "detourSearchMetres": 12,
+   "detourStepMetres": 0.25,
+   "detourMaxJumpMetres": 0.5,
+   "detourStationCount": 0,
+   "detourRunCount": 0,
+   "detourMaxLateralOffsetMetres": 0,
+   "detours": [],
    "lateralOffsetMin": 0,
    "lateralOffsetMax": 0,
    "lateralOffsetMean": 0,
@@ -1593,15 +1604,16 @@
    "interiorMinSample": 0,
    "lateralBandMetres": 1.138,
    "lateralBandSamples": 1449,
-   "lateralBandBlocked": 0
+   "lateralBandBlocked": 0,
+   "lateralBandFrame": "the detoured line's own local tangent (0.5 m central difference) at every sample"
   },
   "corridor": {
    "aidPath": "\\gamedata\\levels\\usa_ny_dumbo\\usa_ny_dumbo_2.aid",
    "aidRoute": "MainLoop",
    "aidWidthMinMetres": 13.099,
    "aidWidthMaxMetres": 59.257,
-   "lateralSearchMetres": 10,
-   "note": "the .aid serialized width is the AI corridor; the path is the racing line (line index 5) shifted laterally only when the racing line's car band is blocked"
+   "lateralSearchMetres": 12,
+   "note": "the .aid serialized width is the AI corridor; the path is the racing line (line index 5) shifted along its own normal only when the racing line's car band is blocked, inside the declared +/-12 m respawn band"
   },
   "endpoints": {
    "spawn": {
@@ -1627,12 +1639,14 @@
     "x": 764.351338,
     "z": 237.848484,
     "metres": 11.2225,
+    "racingLineProjectionMetres": 11.2225,
     "arc": 3652.77622
    },
    "finishProjection": {
     "x": 807.731043,
     "z": -112.64104,
     "metres": 399.3514,
+    "racingLineProjectionMetres": 399.3514,
     "arc": 4014.779431
    },
    "rule": "the path starts at the point on the retail racing line nearest the committed spawn and ends at the point nearest the committed draw-path end; the committed poses are recorded, not moved"
@@ -1658,13 +1672,13 @@
    "z": 237.848484,
    "headingRad": 2.469978313
   },
-  "spawnSource": "the path start is the point on the retail racing line nearest the committed spawn.json pose; the committed pose is recorded in source.endpoints.spawn",
+  "spawnSource": "the path start is the point on the retail racing line nearest the committed spawn.json pose, shifted along the racing-line normal when that point is not band-clear; the committed pose is recorded in source.endpoints.spawn",
   "groundSource": "P48 collision raster H at each 0.25 m sample's 0.5 m cell (4 decimals); the committed spawn/finish ground is recorded in source.endpoints",
   "gateLineSource": "5 m tangent window, 8 m line, narrowed to the widest line that is at least 50 % passable with a fully passable car-half-width centre; oriented so the approach side is positive",
   "checkpointStationSource": "straightest sample within +/-12 % of one-third / two-thirds of the measured racing-line arc"
  },
  "course": {
-  "rule": "retail AI racing-line segment; the path starts at the point on the .aid racing line (line index 5) nearest the committed spawn and ends at the point nearest the committed draw-path end; every 0.25 m sample is on the P48 passable raster and its car half-width lateral band is passable; no point is invented",
+  "rule": "retail AI racing-line segment; the path starts at the point on the .aid racing line (line index 5) nearest the committed spawn and ends at the point nearest the committed draw-path end; every 0.25 m sample is on the P48 passable raster and its car half-width lateral band is passable; a blocked station moves along its own normal to a band-clear position inside the declared +/-12 m respawn band; no point is invented",
   "name": "usa_ny_dumbo retail racing-line path",
   "spawn": {
    "x": 764.351338,
@@ -1694,6 +1708,15 @@
   "finishArc": 361.999436,
   "sampleStepMetres": 0.25,
   "sampleCount": 1449,
+  "detour": {
+   "stations": 0,
+   "runs": 0,
+   "maxLateralOffsetMetres": 0,
+   "searchMetres": 12,
+   "stepMetres": 0.25,
+   "maxJumpMetres": 0.5,
+   "rule": "a station whose racing point is not car-half-width clear moves along its own normal to the nearest continuous band-clear position inside the declared +/-12 m respawn band; consecutive detour points are at most 0.5 m apart; the line returns to the racing line when the racing point becomes clear"
+  },
   "span": {
    "startArc": 0,
    "finishArc": 361.999436,
@@ -1701,7 +1724,8 @@
    "measuredLengthMetres": 361.999436,
    "drawPathLengthMetres": 1292.449927,
    "finishClearanceMetres": 399.3514,
-   "note": "arcs are measured along the retail racing-line segment; the committed draw path is 1292.449927 m and is not the authority; the segment ends 399.351 m from the committed draw-path end"
+   "racingLineFinishProjectionMetres": 399.3514,
+   "note": "arcs are measured along the detoured racing-line segment; the committed draw path is 1292.449927 m and is not the authority; the path end is 399.351 m from the committed draw-path end (the racing-line point nearest it is 399.351 m away; the difference is the finish detour offset)"
   },
   "band": {
    "halfWidthMetres": 6,
@@ -12106,8 +12130,9 @@
   "limits": [
    "one point-to-point sprint on the retail AI racing-line segment, not a lap and not a retail start line",
    "the path is the .aid MainLoop racing line (line index 5) between the point nearest the committed spawn and the point nearest the committed draw-path end",
-   "the path start is 11.222 m from the committed spawn and the path end is 399.351 m from the committed draw-path end; the committed poses are recorded, not moved",
+   "the path start is 11.222 m from the committed spawn and the path end is 399.351 m from the committed draw-path end (racing-line projections: 11.222 m and 399.351 m); the committed poses are recorded, not moved",
    "the path is validated by the 1.138 m car half-width lateral band at every 0.25 m sample; there is no isotropic erosion margin",
+   "0 of 1449 samples are detoured up to 0.000 m along the racing-line normal inside the declared +/-12 m respawn band; the detour is continuous (<= 0.5 m between consecutive samples) and returns to the racing line when the racing point becomes clear",
    "the 6 m band is the page validator's declared controller/respawn band; the measured respawn corridor is 12.0 m",
    "gates are rules geometry only; no gate mesh is added to the render packet",
    "the 15 excluded collision shapes are not in the raster; no prop collider, opponent, AI or race audio is added"
@@ -12125,8 +12150,9 @@
   "missingData": [
    "decoded InstancedTriangleMesh / FluidMesh collision shapes (14x Box, 1x FluidMesh)",
    "draw coverage of the racing-line path at 0.25 m samples and across the 8 m gate lines",
-   "retail start-line / route record for the map (the .aid route is the AI racing line, not the start line)"
+   "retail start-line / route record for the map (the .aid route is the AI racing line, not the start line)",
+   "a driven or AI-simulated check of the detour line; the detour is a geometric lateral shift inside the declared respawn band, not a driven racing line"
   ]
  },
- "hash": "sha256:f2015e5b99af0be85bf6a1fae056e6fcf791bd186201c66107ceb0fc2ce42cbf"
+ "hash": "sha256:6b894f65d60582db924811aeee49e0b7c1831f11e2c399710fc5b165ff6b0a33"
 }

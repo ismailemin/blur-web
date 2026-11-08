@@ -1,5 +1,5 @@
 {
- "schema": "blur.map-laps-aid.aid-paths/1",
+ "schema": "blur.map-laps-aid.aid-paths/2",
  "source": {
   "builder": "probes/map-laps-aid/tools/build_aid_paths.py",
   "aidDecoder": "probes/course/tools/aid_decode.py",
@@ -7,6 +7,7 @@
   "aidFilename": "upstream/BlurRebuilt/code/amax/game/GameLogic/Structures/LevelState.cpp:298",
   "pak": "game-data/Blur/cache/gamedata.pak",
   "routes": "_work/powerups/routes.json",
+  "detourRule": "a station whose racing point is not car-half-width clear moves along its own normal to the nearest continuous band-clear position inside the declared +/-12 m respawn band (0.25 m steps); consecutive detour points are at most 0.5 m apart; the line returns to the racing line when the racing point becomes clear",
   "note": "lengths are the committed path documents; blocked reasons are the builder's typed records, never paraphrased"
  },
  "scope": {
@@ -36,7 +37,8 @@
     "stationCount": null,
     "spawnDistanceMetres": null,
     "maxSpawnOffsetMetres": null,
-    "lateralSearchMetres": null,
+    "detourSearchMetres": null,
+    "detourMaxJumpMetres": null,
     "blockedStations": null,
     "blockedSamples": null
    },
@@ -72,11 +74,12 @@
     "stationCount": 8662,
     "spawnDistanceMetres": null,
     "maxSpawnOffsetMetres": null,
-    "lateralSearchMetres": 10,
-    "blockedStations": 952,
+    "detourSearchMetres": 12,
+    "detourMaxJumpMetres": null,
+    "blockedStations": 810,
     "blockedSamples": null
    },
-   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position at station 609 of 8662 (73.592, -174.810); 10 m of the serialized 20.6 m width was searched and 952 stations have no band-clear position",
+   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the declared +/-12 m respawn band at station 609 of 8662 (73.592, -174.810); 810 stations have no band-clear position",
    "pathFile": null,
    "pathFileSha256": null,
    "pathContentHash": null
@@ -84,10 +87,15 @@
   {
    "level": "usa_la_downtown_multiplayer",
    "mapId": "downtown-mp",
-   "verdict": "blocked",
-   "lengthMetres": null,
-   "samples": 0,
-   "gateArcs": [],
+   "verdict": "path",
+   "lengthMetres": 86.452776,
+   "samples": 334,
+   "gateArcs": [
+    0,
+    27.10202,
+    66.218505,
+    86.452776
+   ],
    "aid": {
     "pakPath": "\\gamedata\\levels\\usa_la_downtown_multiplayer\\usa_la_downtown_multiplayer_figureof8.aid",
     "sha256": "sha256:6e08d63fc9b9831162ef190d443e9aea404c15bfa8455c58ed17a1ccebe64e6a",
@@ -98,24 +106,16 @@
     "flags": 1,
     "segmentCount": 393,
     "loopLengthMetres": 1566.233272,
-    "spawnProjectionMetres": 1.1894
+    "spawnProjectionMetres": 1.1894,
+    "finishProjectionMetres": 0.0975
    },
-   "blocker": {
-    "stage": "resampled-band",
-    "x": 233.226968,
-    "z": -162.573127,
-    "stationIndex": 112,
-    "stationCount": 334,
-    "spawnDistanceMetres": null,
-    "maxSpawnOffsetMetres": null,
-    "lateralSearchMetres": null,
-    "blockedStations": null,
-    "blockedSamples": 20
-   },
-   "reason": "the projected racing-line path fails the car half-width (1.138 m) lateral band at 20 of 334 resampled samples; first at station 112 (233.227, -162.573)",
-   "pathFile": null,
-   "pathFileSha256": null,
-   "pathContentHash": null
+   "reason": "the retail racing line is car-half-width clear on this segment after 231 detour stations (max 9.500 m); the path starts at the point nearest the committed spawn and ends at the point nearest the committed draw-path end",
+   "detours": 231,
+   "detourRuns": 1,
+   "maxLateralOffsetMetres": 9.5,
+   "pathFile": "probes/map-laps-aid/data/downtown-mp-aid-path.json",
+   "pathFileSha256": "sha256:4b04ad914b58d18f67c90edc0c4b029a2c9c4c1e68bf09a2a7a22f2122e65a27",
+   "pathContentHash": "sha256:ca771a575293c68fed149373dced4d1148fb7bd1967b038d7b2fa7a823a4630e"
   },
   {
    "level": "usa_ny_dumbo",
@@ -142,10 +142,13 @@
     "spawnProjectionMetres": 11.2225,
     "finishProjectionMetres": 399.3514
    },
-   "reason": "the retail racing line is car-half-width clear on this segment; the path starts at the point nearest the committed spawn and ends at the point nearest the committed draw-path end",
+   "reason": "the retail racing line is car-half-width clear on this segment after 0 detour stations (max 0.000 m); the path starts at the point nearest the committed spawn and ends at the point nearest the committed draw-path end",
+   "detours": 0,
+   "detourRuns": 0,
+   "maxLateralOffsetMetres": 0,
    "pathFile": "probes/map-laps-aid/data/dumbo-aid-path.json",
-   "pathFileSha256": "sha256:14bee4c51e8f41f44c10d186a09fa0ac432e26453b81ed14bc31d4e5bf5ae79c",
-   "pathContentHash": "sha256:f2015e5b99af0be85bf6a1fae056e6fcf791bd186201c66107ceb0fc2ce42cbf"
+   "pathFileSha256": "sha256:9043eb18027459c8cf59a25a5517582cf8ee255a5ed6c7932f521fa46610da8b",
+   "pathContentHash": "sha256:6b894f65d60582db924811aeee49e0b7c1831f11e2c399710fc5b165ff6b0a33"
   },
   {
    "level": "uk_london_hackney",
@@ -174,11 +177,12 @@
     "stationCount": 10012,
     "spawnDistanceMetres": null,
     "maxSpawnOffsetMetres": null,
-    "lateralSearchMetres": 8.711,
-    "blockedStations": 222,
+    "detourSearchMetres": 12,
+    "detourMaxJumpMetres": null,
+    "blockedStations": 221,
     "blockedSamples": null
    },
-   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position at station 2890 of 10012 (-227.278, -133.765); 9 m of the serialized 17.4 m width was searched and 222 stations have no band-clear position",
+   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the declared +/-12 m respawn band at station 2890 of 10012 (-227.278, -133.765); 221 stations have no band-clear position",
    "pathFile": null,
    "pathFileSha256": null,
    "pathContentHash": null
@@ -210,7 +214,8 @@
     "stationCount": null,
     "spawnDistanceMetres": 175.1396,
     "maxSpawnOffsetMetres": 25.0,
-    "lateralSearchMetres": null,
+    "detourSearchMetres": null,
+    "detourMaxJumpMetres": null,
     "blockedStations": null,
     "blockedSamples": null
    },
@@ -246,11 +251,12 @@
     "stationCount": 18196,
     "spawnDistanceMetres": null,
     "maxSpawnOffsetMetres": null,
-    "lateralSearchMetres": 7.152,
-    "blockedStations": 7909,
+    "detourSearchMetres": 12,
+    "detourMaxJumpMetres": null,
+    "blockedStations": 7799,
     "blockedSamples": null
    },
-   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position at station 4 of 18196 (709.521, -1434.502); 7 m of the serialized 14.3 m width was searched and 7909 stations have no band-clear position",
+   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the declared +/-12 m respawn band at station 4 of 18196 (709.521, -1434.502); 7799 stations have no band-clear position",
    "pathFile": null,
    "pathFileSha256": null,
    "pathContentHash": null
@@ -258,8 +264,8 @@
  ],
  "summary": {
   "counts": {
-   "path": 1,
-   "blocked": 6
+   "path": 2,
+   "blocked": 5
   },
   "levelCount": 7
  }

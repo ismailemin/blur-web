@@ -1,0 +1,6242 @@
+{
+ "kind": "e1-drive.sprint",
+ "version": 1,
+ "courseId": "downtown-mp",
+ "scope": {
+  "collisionOnly": true,
+  "drawGeometryRead": false,
+  "drawPathReadForCorridor": false,
+  "drawCoverageSource": "not measured for this racing-line path",
+  "retailRacingLine": true,
+  "retailStartLine": false,
+  "rendererClaim": false,
+  "vehiclePhysics": false,
+  "gameRun": false,
+  "pathDriven": false,
+  "engineTrace": "not run by this builder; the path is a geometric raster result, not a driven lap",
+  "note": "a data layout, not an e1-drive integration: no gate mesh, no race director, no lap timing, no car simulated. The path is the retail AI racing line projected onto collision, not a retail start line."
+ },
+ "source": {
+  "map": "downtown-mp",
+  "level": "usa_la_downtown_multiplayer",
+  "probe": "probes/map-laps-aid (retail AI racing line projected onto collision)",
+  "probeScope": "retailRacingLineCollisionProjection",
+  "physics": {
+   "path": "game-data/Blur/levels/usa_la_downtown_multiplayer/Level.levelphysics",
+   "bytes": 513843,
+   "sha256": "sha256:cf061ec616fca71feddabf8197f86080d73eb65957dce5be6b62588326b493ce"
+  },
+  "slice": {
+   "path": "_work/map-batch/usa_la_downtown_multiplayer/collision.json",
+   "bytes": 2652,
+   "sha256": "sha256:50fcda4063d81c1b46aff4dabda75dfd325e2c735fb1bf4dabd9221cf5c1a753",
+   "contentHash": "sha256:50fcda4063d81c1b46aff4dabda75dfd325e2c735fb1bf4dabd9221cf5c1a753",
+   "contentHashSource": "the map-batch package records no canonical content hash for collision.json; its committed file pin is used",
+   "note": "the collision slice document; the map-batch manifest is not pinned here because it pins map-registry.js, which pins this package"
+  },
+  "render": {
+   "path": "_work/map-batch/usa_la_downtown_multiplayer/draws.json",
+   "bytes": 182726,
+   "sha256": "sha256:eb4c4890babf0f7976ccf08053579c6dd9fe48aabacc8f7861d8caa4db33238e",
+   "contentHash": "sha256:eb4c4890babf0f7976ccf08053579c6dd9fe48aabacc8f7861d8caa4db33238e",
+   "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
+  },
+  "blockers": {
+   "path": "_work/map-batch/usa_la_downtown_multiplayer/blockers.json",
+   "bytes": 2930,
+   "sha256": "sha256:9a37b010b70a8c1eaf49506f3458dfcbc5baaf8fe450119fb8f45e778d2be52c"
+  },
+  "textures": {
+   "path": "_work/map-batch/usa_la_downtown_multiplayer/textures/index.json",
+   "bytes": 153674,
+   "sha256": "sha256:cd901f1d803604f5dab74fdfbeba87d9815bafe28be44ec9cb594a5cb5dda936"
+  },
+  "spawnDocument": {
+   "path": "_work/map-batch/usa_la_downtown_multiplayer/spawn.json",
+   "bytes": 9225,
+   "sha256": "sha256:d6ef56264674f547f97ff32b0d2ba16321a4c7b512c2752e3db0c16ed15d2901"
+  },
+  "drawPathDocument": {
+   "path": "_work/map-batch/usa_la_downtown_multiplayer/path.json",
+   "bytes": 41640,
+   "sha256": "sha256:2a1c99e0b8140c0ad717a5d11cf9cbabe2de7cc73805c9825b56f48df7b76dca"
+  },
+  "raster": {
+   "path": "_work/map-laps/downtown-mp/grid.npz",
+   "fileSha256": "sha256:e3e04e6973244cc8d3632e07989c6ddae3ee5b83e771b9ee9ade35fe71447317",
+   "cell": 0.5,
+   "surfaceMinNormalY": 0.94,
+   "stepLimit": 0.05,
+   "gradeLimit": 0.05,
+   "wallDilateMetres": 0.5,
+   "staticTriangles": 12706,
+   "notInRaster": "the committed collision buffer ships 1 static triangle-mesh shapes; 0 excluded shapes () are not in the buffer and are not in the raster",
+   "source": "P48 passable raster built from the committed collision.positions.f32.bin / collision.indices.u32.bin triangle buffer"
+  },
+  "sliceCollision": {
+   "positions": {
+    "path": "_work/map-batch/usa_la_downtown_multiplayer/collision.positions.f32.bin",
+    "bytes": 84576,
+    "sha256": "sha256:6df2f532fc8de6e9e483cdd0685db30708ffafeed95c4f94e34e6195cfee5706"
+   },
+   "indices": {
+    "path": "_work/map-batch/usa_la_downtown_multiplayer/collision.indices.u32.bin",
+    "bytes": 152472,
+    "sha256": "sha256:1651e2c894dfba6bce7bbb27d54f42f145e054028880f8d30e9b0bd4b38540a5"
+   },
+   "note": "the same 12706 triangles as the raster; the buffer is the committed collision surface"
+  },
+  "aid": {
+   "pakPath": "\\gamedata\\levels\\usa_la_downtown_multiplayer\\usa_la_downtown_multiplayer_figureof8.aid",
+   "pakOffset": 13971456,
+   "fatIndex": 551,
+   "pathCrc32": "df0d85d4",
+   "storedBytes": 132087,
+   "logicalBytes": 270410,
+   "sha256": "sha256:6e08d63fc9b9831162ef190d443e9aea404c15bfa8455c58ed17a1ccebe64e6a",
+   "revision": 6,
+   "routeCount": 3,
+   "parsedBytes": 270410,
+   "routeName": "Mainracing",
+   "routeIndex": 0,
+   "routeRecordId": 4228808123,
+   "routeNumber": 1,
+   "cityName": "USA_LA_Downtown_Multiplayer",
+   "flags": 1,
+   "flagNames": [
+    "ROUTE_LOOPED"
+   ],
+   "segmentCount": 393,
+   "lineIndex": 5,
+   "lineName": "RACING",
+   "stepSizeM": 4,
+   "loopLengthMetres": 1566.233272,
+   "spawnNearestArc": 281.936492,
+   "finishNearestArc": 365.229791,
+   "segmentArcStart": 281.936492,
+   "segmentArcEnd": 365.229791,
+   "segmentLengthMetres": 86.452776,
+   "spawnProjectionMetres": 1.1894,
+   "finishProjectionMetres": 0.0975,
+   "pathStartProjectionMetres": 1.1894,
+   "pathFinishProjectionMetres": 9.5976,
+   "projectionNote": "the spawn/finish projections are the racing-line points nearest the committed poses; the path projections include the lateral detour offset",
+   "selectionRule": "closed non-logic route (ROUTE_LOOPED without ROUTE_LOGIC_ZONE) at least 300 m long whose racing line passes nearest the committed spawn; ties go to the longer route then the lower route index",
+   "projectionRule": "the racing line is used unchanged when its car half-width band is passable; otherwise a station moves along its own normal to a band-clear position inside the declared +/-12 m respawn band (0.25 m steps) by a deterministic second-order dynamic program; consecutive detour points are at most 0.5 m apart and the line returns to the racing line when it becomes clear",
+   "detourRule": "bounded lateral detour: a station whose racing point is not car-half-width clear moves along its own normal to the nearest continuous band-clear position inside the declared +/-12 m respawn band; the detour is continuous (<= 0.5 m between consecutive samples) and returns to the racing line when the racing point becomes clear; every detour point is validated with the line's own local tangent",
+   "detourSearchMetres": 12,
+   "detourStepMetres": 0.25,
+   "detourMaxJumpMetres": 0.5,
+   "detourStationCount": 231,
+   "detourRunCount": 1,
+   "detourMaxLateralOffsetMetres": 9.5,
+   "detours": [
+    {
+     "station": 103,
+     "racingPoint": {
+      "x": 235.061774,
+      "z": -161.275209
+     },
+     "detourPoint": {
+      "x": 234.910419,
+      "z": -161.076233
+     },
+     "lateralOffset": -0.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 104,
+     "racingPoint": {
+      "x": 234.862798,
+      "z": -161.426565
+     },
+     "detourPoint": {
+      "x": 234.711443,
+      "z": -161.227588
+     },
+     "lateralOffset": -0.25,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 105,
+     "racingPoint": {
+      "x": 234.663822,
+      "z": -161.57792
+     },
+     "detourPoint": {
+      "x": 234.512467,
+      "z": -161.378944
+     },
+     "lateralOffset": -0.25,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 106,
+     "racingPoint": {
+      "x": 234.464846,
+      "z": -161.729276
+     },
+     "detourPoint": {
+      "x": 234.31349,
+      "z": -161.530299
+     },
+     "lateralOffset": -0.25,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 107,
+     "racingPoint": {
+      "x": 234.26587,
+      "z": -161.880631
+     },
+     "detourPoint": {
+      "x": 234.114514,
+      "z": -161.681655
+     },
+     "lateralOffset": -0.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 108,
+     "racingPoint": {
+      "x": 234.066894,
+      "z": -162.031987
+     },
+     "detourPoint": {
+      "x": 233.915538,
+      "z": -161.83301
+     },
+     "lateralOffset": -0.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 109,
+     "racingPoint": {
+      "x": 233.866116,
+      "z": -162.180712
+     },
+     "detourPoint": {
+      "x": 233.735311,
+      "z": -161.967663
+     },
+     "lateralOffset": -0.25,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 110,
+     "racingPoint": {
+      "x": 233.653067,
+      "z": -162.311517
+     },
+     "detourPoint": {
+      "x": 233.522262,
+      "z": -162.098468
+     },
+     "lateralOffset": -0.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 111,
+     "racingPoint": {
+      "x": 233.440018,
+      "z": -162.442322
+     },
+     "detourPoint": {
+      "x": 233.309213,
+      "z": -162.229273
+     },
+     "lateralOffset": -0.25,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 112,
+     "racingPoint": {
+      "x": 233.226968,
+      "z": -162.573127
+     },
+     "detourPoint": {
+      "x": 233.096163,
+      "z": -162.360078
+     },
+     "lateralOffset": -0.25,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 113,
+     "racingPoint": {
+      "x": 233.013919,
+      "z": -162.703932
+     },
+     "detourPoint": {
+      "x": 232.883114,
+      "z": -162.490883
+     },
+     "lateralOffset": -0.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 114,
+     "racingPoint": {
+      "x": 232.800869,
+      "z": -162.834737
+     },
+     "detourPoint": {
+      "x": 232.670064,
+      "z": -162.621688
+     },
+     "lateralOffset": -0.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 115,
+     "racingPoint": {
+      "x": 232.58782,
+      "z": -162.965542
+     },
+     "detourPoint": {
+      "x": 232.457015,
+      "z": -162.752493
+     },
+     "lateralOffset": -0.25,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 116,
+     "racingPoint": {
+      "x": 232.374771,
+      "z": -163.096347
+     },
+     "detourPoint": {
+      "x": 232.243966,
+      "z": -162.883298
+     },
+     "lateralOffset": -0.25,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 117,
+     "racingPoint": {
+      "x": 232.161721,
+      "z": -163.227152
+     },
+     "detourPoint": {
+      "x": 232.030916,
+      "z": -163.014103
+     },
+     "lateralOffset": -0.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 118,
+     "racingPoint": {
+      "x": 231.948672,
+      "z": -163.357957
+     },
+     "detourPoint": {
+      "x": 231.817867,
+      "z": -163.144908
+     },
+     "lateralOffset": -0.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 119,
+     "racingPoint": {
+      "x": 231.735623,
+      "z": -163.488763
+     },
+     "detourPoint": {
+      "x": 231.474012,
+      "z": -163.062664
+     },
+     "lateralOffset": -0.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 120,
+     "racingPoint": {
+      "x": 231.522573,
+      "z": -163.619568
+     },
+     "detourPoint": {
+      "x": 231.260963,
+      "z": -163.193469
+     },
+     "lateralOffset": -0.5,
+     "reason": "continuity ramp to or from an adjacent detour station; the racing point itself is band-clear"
+    },
+    {
+     "station": 121,
+     "racingPoint": {
+      "x": 231.309524,
+      "z": -163.750373
+     },
+     "detourPoint": {
+      "x": 231.047914,
+      "z": -163.324274
+     },
+     "lateralOffset": -0.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 122,
+     "racingPoint": {
+      "x": 231.096474,
+      "z": -163.881178
+     },
+     "detourPoint": {
+      "x": 230.834864,
+      "z": -163.455079
+     },
+     "lateralOffset": -0.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 123,
+     "racingPoint": {
+      "x": 230.883425,
+      "z": -164.011983
+     },
+     "detourPoint": {
+      "x": 230.621815,
+      "z": -163.585884
+     },
+     "lateralOffset": -0.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 124,
+     "racingPoint": {
+      "x": 230.670376,
+      "z": -164.142788
+     },
+     "detourPoint": {
+      "x": 230.408766,
+      "z": -163.716689
+     },
+     "lateralOffset": -0.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 125,
+     "racingPoint": {
+      "x": 230.456442,
+      "z": -164.272015
+     },
+     "detourPoint": {
+      "x": 230.22942,
+      "z": -163.826525
+     },
+     "lateralOffset": -0.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 126,
+     "racingPoint": {
+      "x": 230.233697,
+      "z": -164.385526
+     },
+     "detourPoint": {
+      "x": 230.006675,
+      "z": -163.940036
+     },
+     "lateralOffset": -0.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 127,
+     "racingPoint": {
+      "x": 230.010952,
+      "z": -164.499037
+     },
+     "detourPoint": {
+      "x": 229.670419,
+      "z": -163.830802
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 128,
+     "racingPoint": {
+      "x": 229.788207,
+      "z": -164.612548
+     },
+     "detourPoint": {
+      "x": 229.447674,
+      "z": -163.944313
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 129,
+     "racingPoint": {
+      "x": 229.565462,
+      "z": -164.726059
+     },
+     "detourPoint": {
+      "x": 229.224929,
+      "z": -164.057825
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 130,
+     "racingPoint": {
+      "x": 229.342718,
+      "z": -164.83957
+     },
+     "detourPoint": {
+      "x": 229.002184,
+      "z": -164.171336
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 131,
+     "racingPoint": {
+      "x": 229.119973,
+      "z": -164.953081
+     },
+     "detourPoint": {
+      "x": 228.77944,
+      "z": -164.284847
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 132,
+     "racingPoint": {
+      "x": 228.897228,
+      "z": -165.066592
+     },
+     "detourPoint": {
+      "x": 228.556695,
+      "z": -164.398358
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 133,
+     "racingPoint": {
+      "x": 228.674483,
+      "z": -165.180103
+     },
+     "detourPoint": {
+      "x": 228.33395,
+      "z": -164.511869
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 134,
+     "racingPoint": {
+      "x": 228.451738,
+      "z": -165.293614
+     },
+     "detourPoint": {
+      "x": 228.111205,
+      "z": -164.62538
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 135,
+     "racingPoint": {
+      "x": 228.228994,
+      "z": -165.407125
+     },
+     "detourPoint": {
+      "x": 227.88846,
+      "z": -164.738891
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 136,
+     "racingPoint": {
+      "x": 228.006249,
+      "z": -165.520636
+     },
+     "detourPoint": {
+      "x": 227.665716,
+      "z": -164.852402
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 137,
+     "racingPoint": {
+      "x": 227.783504,
+      "z": -165.634147
+     },
+     "detourPoint": {
+      "x": 227.442971,
+      "z": -164.965913
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 138,
+     "racingPoint": {
+      "x": 227.560759,
+      "z": -165.747658
+     },
+     "detourPoint": {
+      "x": 227.220226,
+      "z": -165.079424
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 139,
+     "racingPoint": {
+      "x": 227.338014,
+      "z": -165.861169
+     },
+     "detourPoint": {
+      "x": 226.997481,
+      "z": -165.192935
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 140,
+     "racingPoint": {
+      "x": 227.11527,
+      "z": -165.97468
+     },
+     "detourPoint": {
+      "x": 226.774736,
+      "z": -165.306446
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 141,
+     "racingPoint": {
+      "x": 226.892525,
+      "z": -166.088191
+     },
+     "detourPoint": {
+      "x": 226.551992,
+      "z": -165.419957
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 142,
+     "racingPoint": {
+      "x": 226.662196,
+      "z": -166.185325
+     },
+     "detourPoint": {
+      "x": 226.372866,
+      "z": -165.49338
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 143,
+     "racingPoint": {
+      "x": 226.431548,
+      "z": -166.281768
+     },
+     "detourPoint": {
+      "x": 226.142217,
+      "z": -165.589823
+     },
+     "lateralOffset": -0.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 144,
+     "racingPoint": {
+      "x": 226.200899,
+      "z": -166.378211
+     },
+     "detourPoint": {
+      "x": 225.815126,
+      "z": -165.455618
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 145,
+     "racingPoint": {
+      "x": 225.970251,
+      "z": -166.474655
+     },
+     "detourPoint": {
+      "x": 225.584477,
+      "z": -165.552061
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 146,
+     "racingPoint": {
+      "x": 225.739602,
+      "z": -166.571098
+     },
+     "detourPoint": {
+      "x": 225.353829,
+      "z": -165.648505
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 147,
+     "racingPoint": {
+      "x": 225.508954,
+      "z": -166.667542
+     },
+     "detourPoint": {
+      "x": 225.123181,
+      "z": -165.744948
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 148,
+     "racingPoint": {
+      "x": 225.278306,
+      "z": -166.763985
+     },
+     "detourPoint": {
+      "x": 224.892532,
+      "z": -165.841391
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 149,
+     "racingPoint": {
+      "x": 225.047657,
+      "z": -166.860428
+     },
+     "detourPoint": {
+      "x": 224.661884,
+      "z": -165.937835
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 150,
+     "racingPoint": {
+      "x": 224.817009,
+      "z": -166.956872
+     },
+     "detourPoint": {
+      "x": 224.431235,
+      "z": -166.034278
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 151,
+     "racingPoint": {
+      "x": 224.58636,
+      "z": -167.053315
+     },
+     "detourPoint": {
+      "x": 224.200587,
+      "z": -166.130721
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 152,
+     "racingPoint": {
+      "x": 224.355712,
+      "z": -167.149758
+     },
+     "detourPoint": {
+      "x": 223.969939,
+      "z": -166.227165
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 153,
+     "racingPoint": {
+      "x": 224.125064,
+      "z": -167.246202
+     },
+     "detourPoint": {
+      "x": 223.73929,
+      "z": -166.323608
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 154,
+     "racingPoint": {
+      "x": 223.894415,
+      "z": -167.342645
+     },
+     "detourPoint": {
+      "x": 223.508642,
+      "z": -166.420052
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 155,
+     "racingPoint": {
+      "x": 223.663767,
+      "z": -167.439088
+     },
+     "detourPoint": {
+      "x": 223.277993,
+      "z": -166.516495
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 156,
+     "racingPoint": {
+      "x": 223.433119,
+      "z": -167.535532
+     },
+     "detourPoint": {
+      "x": 223.047345,
+      "z": -166.612938
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 157,
+     "racingPoint": {
+      "x": 223.20247,
+      "z": -167.631975
+     },
+     "detourPoint": {
+      "x": 222.816697,
+      "z": -166.709382
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 158,
+     "racingPoint": {
+      "x": 222.96831,
+      "z": -167.71941
+     },
+     "detourPoint": {
+      "x": 222.62782,
+      "z": -166.779162
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 159,
+     "racingPoint": {
+      "x": 222.733247,
+      "z": -167.804532
+     },
+     "detourPoint": {
+      "x": 222.392758,
+      "z": -166.864284
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 160,
+     "racingPoint": {
+      "x": 222.498185,
+      "z": -167.889655
+     },
+     "detourPoint": {
+      "x": 222.157696,
+      "z": -166.949406
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 161,
+     "racingPoint": {
+      "x": 222.263123,
+      "z": -167.974777
+     },
+     "detourPoint": {
+      "x": 221.922634,
+      "z": -167.034529
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 162,
+     "racingPoint": {
+      "x": 222.028061,
+      "z": -168.059899
+     },
+     "detourPoint": {
+      "x": 221.687572,
+      "z": -167.119651
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 163,
+     "racingPoint": {
+      "x": 221.792999,
+      "z": -168.145022
+     },
+     "detourPoint": {
+      "x": 221.45251,
+      "z": -167.204773
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 164,
+     "racingPoint": {
+      "x": 221.557937,
+      "z": -168.230144
+     },
+     "detourPoint": {
+      "x": 221.217448,
+      "z": -167.289896
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 165,
+     "racingPoint": {
+      "x": 221.322875,
+      "z": -168.315266
+     },
+     "detourPoint": {
+      "x": 220.982386,
+      "z": -167.375018
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 166,
+     "racingPoint": {
+      "x": 221.087813,
+      "z": -168.400389
+     },
+     "detourPoint": {
+      "x": 220.747323,
+      "z": -167.46014
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 167,
+     "racingPoint": {
+      "x": 220.852751,
+      "z": -168.485511
+     },
+     "detourPoint": {
+      "x": 220.512261,
+      "z": -167.545263
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 168,
+     "racingPoint": {
+      "x": 220.617689,
+      "z": -168.570633
+     },
+     "detourPoint": {
+      "x": 220.277199,
+      "z": -167.630385
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 169,
+     "racingPoint": {
+      "x": 220.382627,
+      "z": -168.655756
+     },
+     "detourPoint": {
+      "x": 220.042137,
+      "z": -167.715507
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 170,
+     "racingPoint": {
+      "x": 220.147565,
+      "z": -168.740878
+     },
+     "detourPoint": {
+      "x": 219.807075,
+      "z": -167.80063
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 171,
+     "racingPoint": {
+      "x": 219.912502,
+      "z": -168.826001
+     },
+     "detourPoint": {
+      "x": 219.572013,
+      "z": -167.885752
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 172,
+     "racingPoint": {
+      "x": 219.67744,
+      "z": -168.911123
+     },
+     "detourPoint": {
+      "x": 219.336951,
+      "z": -167.970875
+     },
+     "lateralOffset": -1,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 173,
+     "racingPoint": {
+      "x": 219.442378,
+      "z": -168.996245
+     },
+     "detourPoint": {
+      "x": 219.016766,
+      "z": -167.820935
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 174,
+     "racingPoint": {
+      "x": 219.205175,
+      "z": -169.075004
+     },
+     "detourPoint": {
+      "x": 218.833732,
+      "z": -167.881468
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 175,
+     "racingPoint": {
+      "x": 218.966468,
+      "z": -169.149293
+     },
+     "detourPoint": {
+      "x": 218.595025,
+      "z": -167.955756
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 176,
+     "racingPoint": {
+      "x": 218.72776,
+      "z": -169.223582
+     },
+     "detourPoint": {
+      "x": 218.356317,
+      "z": -168.030045
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 177,
+     "racingPoint": {
+      "x": 218.489053,
+      "z": -169.29787
+     },
+     "detourPoint": {
+      "x": 218.11761,
+      "z": -168.104333
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 178,
+     "racingPoint": {
+      "x": 218.250346,
+      "z": -169.372159
+     },
+     "detourPoint": {
+      "x": 217.878903,
+      "z": -168.178622
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 179,
+     "racingPoint": {
+      "x": 218.011638,
+      "z": -169.446447
+     },
+     "detourPoint": {
+      "x": 217.640195,
+      "z": -168.252911
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 180,
+     "racingPoint": {
+      "x": 217.772931,
+      "z": -169.520736
+     },
+     "detourPoint": {
+      "x": 217.401488,
+      "z": -168.327199
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 181,
+     "racingPoint": {
+      "x": 217.534224,
+      "z": -169.595025
+     },
+     "detourPoint": {
+      "x": 217.162781,
+      "z": -168.401488
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 182,
+     "racingPoint": {
+      "x": 217.295516,
+      "z": -169.669313
+     },
+     "detourPoint": {
+      "x": 216.924073,
+      "z": -168.475776
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 183,
+     "racingPoint": {
+      "x": 217.056809,
+      "z": -169.743602
+     },
+     "detourPoint": {
+      "x": 216.685366,
+      "z": -168.550065
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 184,
+     "racingPoint": {
+      "x": 216.818102,
+      "z": -169.81789
+     },
+     "detourPoint": {
+      "x": 216.446659,
+      "z": -168.624354
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 185,
+     "racingPoint": {
+      "x": 216.579394,
+      "z": -169.892179
+     },
+     "detourPoint": {
+      "x": 216.207951,
+      "z": -168.698642
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 186,
+     "racingPoint": {
+      "x": 216.340687,
+      "z": -169.966468
+     },
+     "detourPoint": {
+      "x": 215.969244,
+      "z": -168.772931
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 187,
+     "racingPoint": {
+      "x": 216.101979,
+      "z": -170.040756
+     },
+     "detourPoint": {
+      "x": 215.730536,
+      "z": -168.84722
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 188,
+     "racingPoint": {
+      "x": 215.863272,
+      "z": -170.115045
+     },
+     "detourPoint": {
+      "x": 215.491829,
+      "z": -168.921508
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 189,
+     "racingPoint": {
+      "x": 215.624565,
+      "z": -170.189334
+     },
+     "detourPoint": {
+      "x": 215.253122,
+      "z": -168.995797
+     },
+     "lateralOffset": -1.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 190,
+     "racingPoint": {
+      "x": 215.384897,
+      "z": -170.260299
+     },
+     "detourPoint": {
+      "x": 214.997608,
+      "z": -168.811159
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 191,
+     "racingPoint": {
+      "x": 215.143373,
+      "z": -170.324847
+     },
+     "detourPoint": {
+      "x": 214.756085,
+      "z": -168.875707
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 192,
+     "racingPoint": {
+      "x": 214.90185,
+      "z": -170.389395
+     },
+     "detourPoint": {
+      "x": 214.514561,
+      "z": -168.940255
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 193,
+     "racingPoint": {
+      "x": 214.660327,
+      "z": -170.453943
+     },
+     "detourPoint": {
+      "x": 214.273038,
+      "z": -169.004803
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 194,
+     "racingPoint": {
+      "x": 214.418803,
+      "z": -170.518491
+     },
+     "detourPoint": {
+      "x": 214.031515,
+      "z": -169.069351
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 195,
+     "racingPoint": {
+      "x": 214.17728,
+      "z": -170.58304
+     },
+     "detourPoint": {
+      "x": 213.789991,
+      "z": -169.133899
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 196,
+     "racingPoint": {
+      "x": 213.935756,
+      "z": -170.647588
+     },
+     "detourPoint": {
+      "x": 213.548468,
+      "z": -169.198447
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 197,
+     "racingPoint": {
+      "x": 213.694233,
+      "z": -170.712136
+     },
+     "detourPoint": {
+      "x": 213.306944,
+      "z": -169.262995
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 198,
+     "racingPoint": {
+      "x": 213.45271,
+      "z": -170.776684
+     },
+     "detourPoint": {
+      "x": 213.065421,
+      "z": -169.327544
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 199,
+     "racingPoint": {
+      "x": 213.211186,
+      "z": -170.841232
+     },
+     "detourPoint": {
+      "x": 212.823898,
+      "z": -169.392092
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 200,
+     "racingPoint": {
+      "x": 212.969663,
+      "z": -170.90578
+     },
+     "detourPoint": {
+      "x": 212.582374,
+      "z": -169.45664
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 201,
+     "racingPoint": {
+      "x": 212.72814,
+      "z": -170.970328
+     },
+     "detourPoint": {
+      "x": 212.340851,
+      "z": -169.521188
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 202,
+     "racingPoint": {
+      "x": 212.486616,
+      "z": -171.034876
+     },
+     "detourPoint": {
+      "x": 212.099328,
+      "z": -169.585736
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 203,
+     "racingPoint": {
+      "x": 212.245093,
+      "z": -171.099424
+     },
+     "detourPoint": {
+      "x": 211.857804,
+      "z": -169.650284
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 204,
+     "racingPoint": {
+      "x": 212.003569,
+      "z": -171.163973
+     },
+     "detourPoint": {
+      "x": 211.616281,
+      "z": -169.714832
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 205,
+     "racingPoint": {
+      "x": 211.762046,
+      "z": -171.228521
+     },
+     "detourPoint": {
+      "x": 211.374757,
+      "z": -169.77938
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 206,
+     "racingPoint": {
+      "x": 211.520356,
+      "z": -171.29239
+     },
+     "detourPoint": {
+      "x": 211.192294,
+      "z": -169.828705
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 207,
+     "racingPoint": {
+      "x": 211.276408,
+      "z": -171.347067
+     },
+     "detourPoint": {
+      "x": 210.948346,
+      "z": -169.883382
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 208,
+     "racingPoint": {
+      "x": 211.032461,
+      "z": -171.401744
+     },
+     "detourPoint": {
+      "x": 210.704398,
+      "z": -169.938059
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 209,
+     "racingPoint": {
+      "x": 210.788513,
+      "z": -171.456421
+     },
+     "detourPoint": {
+      "x": 210.460451,
+      "z": -169.992736
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 210,
+     "racingPoint": {
+      "x": 210.544566,
+      "z": -171.511098
+     },
+     "detourPoint": {
+      "x": 210.216503,
+      "z": -170.047413
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 211,
+     "racingPoint": {
+      "x": 210.300618,
+      "z": -171.565776
+     },
+     "detourPoint": {
+      "x": 209.972556,
+      "z": -170.10209
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 212,
+     "racingPoint": {
+      "x": 210.056671,
+      "z": -171.620453
+     },
+     "detourPoint": {
+      "x": 209.728608,
+      "z": -170.156767
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 213,
+     "racingPoint": {
+      "x": 209.812723,
+      "z": -171.67513
+     },
+     "detourPoint": {
+      "x": 209.484661,
+      "z": -170.211444
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 214,
+     "racingPoint": {
+      "x": 209.568775,
+      "z": -171.729807
+     },
+     "detourPoint": {
+      "x": 209.240713,
+      "z": -170.266121
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 215,
+     "racingPoint": {
+      "x": 209.324828,
+      "z": -171.784484
+     },
+     "detourPoint": {
+      "x": 208.996765,
+      "z": -170.320798
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 216,
+     "racingPoint": {
+      "x": 209.08088,
+      "z": -171.839161
+     },
+     "detourPoint": {
+      "x": 208.752818,
+      "z": -170.375475
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 217,
+     "racingPoint": {
+      "x": 208.836933,
+      "z": -171.893838
+     },
+     "detourPoint": {
+      "x": 208.50887,
+      "z": -170.430153
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 218,
+     "racingPoint": {
+      "x": 208.592985,
+      "z": -171.948515
+     },
+     "detourPoint": {
+      "x": 208.264923,
+      "z": -170.48483
+     },
+     "lateralOffset": -1.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 219,
+     "racingPoint": {
+      "x": 208.349038,
+      "z": -172.003192
+     },
+     "detourPoint": {
+      "x": 207.966298,
+      "z": -170.295559
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 220,
+     "racingPoint": {
+      "x": 208.10509,
+      "z": -172.057869
+     },
+     "detourPoint": {
+      "x": 207.722351,
+      "z": -170.350236
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 221,
+     "racingPoint": {
+      "x": 207.861142,
+      "z": -172.112546
+     },
+     "detourPoint": {
+      "x": 207.478403,
+      "z": -170.404913
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 222,
+     "racingPoint": {
+      "x": 207.617195,
+      "z": -172.167223
+     },
+     "detourPoint": {
+      "x": 207.234455,
+      "z": -170.45959
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 223,
+     "racingPoint": {
+      "x": 207.371798,
+      "z": -172.214811
+     },
+     "detourPoint": {
+      "x": 207.053666,
+      "z": -170.49397
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 224,
+     "racingPoint": {
+      "x": 207.125964,
+      "z": -172.260258
+     },
+     "detourPoint": {
+      "x": 206.807831,
+      "z": -170.539418
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 225,
+     "racingPoint": {
+      "x": 206.880129,
+      "z": -172.305706
+     },
+     "detourPoint": {
+      "x": 206.561997,
+      "z": -170.584865
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 226,
+     "racingPoint": {
+      "x": 206.634295,
+      "z": -172.351153
+     },
+     "detourPoint": {
+      "x": 206.316163,
+      "z": -170.630313
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 227,
+     "racingPoint": {
+      "x": 206.388461,
+      "z": -172.396601
+     },
+     "detourPoint": {
+      "x": 206.070328,
+      "z": -170.67576
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 228,
+     "racingPoint": {
+      "x": 206.142626,
+      "z": -172.442048
+     },
+     "detourPoint": {
+      "x": 205.824494,
+      "z": -170.721208
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 229,
+     "racingPoint": {
+      "x": 205.896792,
+      "z": -172.487496
+     },
+     "detourPoint": {
+      "x": 205.57866,
+      "z": -170.766655
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 230,
+     "racingPoint": {
+      "x": 205.650958,
+      "z": -172.532943
+     },
+     "detourPoint": {
+      "x": 205.332825,
+      "z": -170.812103
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 231,
+     "racingPoint": {
+      "x": 205.405123,
+      "z": -172.578391
+     },
+     "detourPoint": {
+      "x": 205.086991,
+      "z": -170.85755
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 232,
+     "racingPoint": {
+      "x": 205.159289,
+      "z": -172.623838
+     },
+     "detourPoint": {
+      "x": 204.841157,
+      "z": -170.902998
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 233,
+     "racingPoint": {
+      "x": 204.913455,
+      "z": -172.669286
+     },
+     "detourPoint": {
+      "x": 204.595322,
+      "z": -170.948445
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 234,
+     "racingPoint": {
+      "x": 204.66762,
+      "z": -172.714733
+     },
+     "detourPoint": {
+      "x": 204.349488,
+      "z": -170.993893
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 235,
+     "racingPoint": {
+      "x": 204.421786,
+      "z": -172.76018
+     },
+     "detourPoint": {
+      "x": 204.103653,
+      "z": -171.03934
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 236,
+     "racingPoint": {
+      "x": 204.175951,
+      "z": -172.805628
+     },
+     "detourPoint": {
+      "x": 203.857819,
+      "z": -171.084788
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 237,
+     "racingPoint": {
+      "x": 203.930117,
+      "z": -172.851075
+     },
+     "detourPoint": {
+      "x": 203.611985,
+      "z": -171.130235
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 238,
+     "racingPoint": {
+      "x": 203.684283,
+      "z": -172.896523
+     },
+     "detourPoint": {
+      "x": 203.36615,
+      "z": -171.175682
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 239,
+     "racingPoint": {
+      "x": 203.437825,
+      "z": -172.938263
+     },
+     "detourPoint": {
+      "x": 203.175929,
+      "z": -171.207971
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 240,
+     "racingPoint": {
+      "x": 203.190641,
+      "z": -172.975677
+     },
+     "detourPoint": {
+      "x": 202.928745,
+      "z": -171.245385
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 241,
+     "racingPoint": {
+      "x": 202.943456,
+      "z": -173.013091
+     },
+     "detourPoint": {
+      "x": 202.68156,
+      "z": -171.282799
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 242,
+     "racingPoint": {
+      "x": 202.696272,
+      "z": -173.050504
+     },
+     "detourPoint": {
+      "x": 202.434376,
+      "z": -171.320212
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 243,
+     "racingPoint": {
+      "x": 202.449087,
+      "z": -173.087918
+     },
+     "detourPoint": {
+      "x": 202.187191,
+      "z": -171.357626
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 244,
+     "racingPoint": {
+      "x": 202.201902,
+      "z": -173.125332
+     },
+     "detourPoint": {
+      "x": 201.940006,
+      "z": -171.39504
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 245,
+     "racingPoint": {
+      "x": 201.954718,
+      "z": -173.162746
+     },
+     "detourPoint": {
+      "x": 201.692822,
+      "z": -171.432454
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 246,
+     "racingPoint": {
+      "x": 201.707533,
+      "z": -173.200159
+     },
+     "detourPoint": {
+      "x": 201.445637,
+      "z": -171.469867
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 247,
+     "racingPoint": {
+      "x": 201.460349,
+      "z": -173.237573
+     },
+     "detourPoint": {
+      "x": 201.198453,
+      "z": -171.507281
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 248,
+     "racingPoint": {
+      "x": 201.213164,
+      "z": -173.274987
+     },
+     "detourPoint": {
+      "x": 200.951268,
+      "z": -171.544695
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 249,
+     "racingPoint": {
+      "x": 200.96598,
+      "z": -173.312401
+     },
+     "detourPoint": {
+      "x": 200.704084,
+      "z": -171.582109
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 250,
+     "racingPoint": {
+      "x": 200.718795,
+      "z": -173.349814
+     },
+     "detourPoint": {
+      "x": 200.456899,
+      "z": -171.619522
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 251,
+     "racingPoint": {
+      "x": 200.47161,
+      "z": -173.387228
+     },
+     "detourPoint": {
+      "x": 200.209714,
+      "z": -171.656936
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 252,
+     "racingPoint": {
+      "x": 200.224426,
+      "z": -173.424642
+     },
+     "detourPoint": {
+      "x": 199.96253,
+      "z": -171.69435
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 253,
+     "racingPoint": {
+      "x": 199.977241,
+      "z": -173.462055
+     },
+     "detourPoint": {
+      "x": 199.715345,
+      "z": -171.731763
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 254,
+     "racingPoint": {
+      "x": 199.730057,
+      "z": -173.499469
+     },
+     "detourPoint": {
+      "x": 199.468161,
+      "z": -171.769177
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 255,
+     "racingPoint": {
+      "x": 199.482689,
+      "z": -173.535531
+     },
+     "detourPoint": {
+      "x": 199.275797,
+      "z": -171.797804
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 256,
+     "racingPoint": {
+      "x": 199.234443,
+      "z": -173.565087
+     },
+     "detourPoint": {
+      "x": 199.027551,
+      "z": -171.82736
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 257,
+     "racingPoint": {
+      "x": 198.986196,
+      "z": -173.594643
+     },
+     "detourPoint": {
+      "x": 198.779304,
+      "z": -171.856916
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 258,
+     "racingPoint": {
+      "x": 198.737949,
+      "z": -173.624199
+     },
+     "detourPoint": {
+      "x": 198.531057,
+      "z": -171.886472
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 259,
+     "racingPoint": {
+      "x": 198.489703,
+      "z": -173.653755
+     },
+     "detourPoint": {
+      "x": 198.28281,
+      "z": -171.916028
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 260,
+     "racingPoint": {
+      "x": 198.241456,
+      "z": -173.683311
+     },
+     "detourPoint": {
+      "x": 198.034564,
+      "z": -171.945584
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 261,
+     "racingPoint": {
+      "x": 197.993209,
+      "z": -173.712867
+     },
+     "detourPoint": {
+      "x": 197.786317,
+      "z": -171.97514
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 262,
+     "racingPoint": {
+      "x": 197.744962,
+      "z": -173.742423
+     },
+     "detourPoint": {
+      "x": 197.53807,
+      "z": -172.004696
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 263,
+     "racingPoint": {
+      "x": 197.496716,
+      "z": -173.771979
+     },
+     "detourPoint": {
+      "x": 197.289824,
+      "z": -172.034252
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 264,
+     "racingPoint": {
+      "x": 197.248469,
+      "z": -173.801535
+     },
+     "detourPoint": {
+      "x": 197.041577,
+      "z": -172.063808
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 265,
+     "racingPoint": {
+      "x": 197.000222,
+      "z": -173.831091
+     },
+     "detourPoint": {
+      "x": 196.79333,
+      "z": -172.093364
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 266,
+     "racingPoint": {
+      "x": 196.751975,
+      "z": -173.860647
+     },
+     "detourPoint": {
+      "x": 196.545083,
+      "z": -172.12292
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 267,
+     "racingPoint": {
+      "x": 196.503729,
+      "z": -173.890203
+     },
+     "detourPoint": {
+      "x": 196.296837,
+      "z": -172.152476
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 268,
+     "racingPoint": {
+      "x": 196.255482,
+      "z": -173.919759
+     },
+     "detourPoint": {
+      "x": 196.04859,
+      "z": -172.182032
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 269,
+     "racingPoint": {
+      "x": 196.007235,
+      "z": -173.949315
+     },
+     "detourPoint": {
+      "x": 195.800343,
+      "z": -172.211588
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 270,
+     "racingPoint": {
+      "x": 195.758988,
+      "z": -173.978871
+     },
+     "detourPoint": {
+      "x": 195.552096,
+      "z": -172.241144
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 271,
+     "racingPoint": {
+      "x": 195.510742,
+      "z": -174.008427
+     },
+     "detourPoint": {
+      "x": 195.30385,
+      "z": -172.2707
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 272,
+     "racingPoint": {
+      "x": 195.261784,
+      "z": -174.031157
+     },
+     "detourPoint": {
+      "x": 195.106366,
+      "z": -172.288072
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 273,
+     "racingPoint": {
+      "x": 195.012772,
+      "z": -174.053359
+     },
+     "detourPoint": {
+      "x": 194.857354,
+      "z": -172.310274
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 274,
+     "racingPoint": {
+      "x": 194.76376,
+      "z": -174.075562
+     },
+     "detourPoint": {
+      "x": 194.608342,
+      "z": -172.332477
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 275,
+     "racingPoint": {
+      "x": 194.514748,
+      "z": -174.097764
+     },
+     "detourPoint": {
+      "x": 194.35933,
+      "z": -172.354679
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 276,
+     "racingPoint": {
+      "x": 194.265736,
+      "z": -174.119967
+     },
+     "detourPoint": {
+      "x": 194.110318,
+      "z": -172.376882
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 277,
+     "racingPoint": {
+      "x": 194.016724,
+      "z": -174.142169
+     },
+     "detourPoint": {
+      "x": 193.861306,
+      "z": -172.399085
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 278,
+     "racingPoint": {
+      "x": 193.767712,
+      "z": -174.164372
+     },
+     "detourPoint": {
+      "x": 193.612294,
+      "z": -172.421287
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 279,
+     "racingPoint": {
+      "x": 193.518699,
+      "z": -174.186575
+     },
+     "detourPoint": {
+      "x": 193.363281,
+      "z": -172.44349
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 280,
+     "racingPoint": {
+      "x": 193.269687,
+      "z": -174.208777
+     },
+     "detourPoint": {
+      "x": 193.114269,
+      "z": -172.465692
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 281,
+     "racingPoint": {
+      "x": 193.020675,
+      "z": -174.23098
+     },
+     "detourPoint": {
+      "x": 192.865257,
+      "z": -172.487895
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 282,
+     "racingPoint": {
+      "x": 192.771663,
+      "z": -174.253182
+     },
+     "detourPoint": {
+      "x": 192.616245,
+      "z": -172.510097
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 283,
+     "racingPoint": {
+      "x": 192.522651,
+      "z": -174.275385
+     },
+     "detourPoint": {
+      "x": 192.367233,
+      "z": -172.5323
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 284,
+     "racingPoint": {
+      "x": 192.273639,
+      "z": -174.297587
+     },
+     "detourPoint": {
+      "x": 192.118221,
+      "z": -172.554502
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 285,
+     "racingPoint": {
+      "x": 192.024627,
+      "z": -174.31979
+     },
+     "detourPoint": {
+      "x": 191.869209,
+      "z": -172.576705
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 286,
+     "racingPoint": {
+      "x": 191.775614,
+      "z": -174.341993
+     },
+     "detourPoint": {
+      "x": 191.620196,
+      "z": -172.598908
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 287,
+     "racingPoint": {
+      "x": 191.526602,
+      "z": -174.364195
+     },
+     "detourPoint": {
+      "x": 191.371184,
+      "z": -172.62111
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 288,
+     "racingPoint": {
+      "x": 191.27724,
+      "z": -174.381842
+     },
+     "detourPoint": {
+      "x": 191.16429,
+      "z": -172.635491
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 289,
+     "racingPoint": {
+      "x": 191.027761,
+      "z": -174.397977
+     },
+     "detourPoint": {
+      "x": 190.914811,
+      "z": -172.651626
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 290,
+     "racingPoint": {
+      "x": 190.778282,
+      "z": -174.414113
+     },
+     "detourPoint": {
+      "x": 190.665332,
+      "z": -172.667762
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 291,
+     "racingPoint": {
+      "x": 190.528804,
+      "z": -174.430249
+     },
+     "detourPoint": {
+      "x": 190.415854,
+      "z": -172.683898
+     },
+     "lateralOffset": -1.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 292,
+     "racingPoint": {
+      "x": 190.279325,
+      "z": -174.446385
+     },
+     "detourPoint": {
+      "x": 190.150239,
+      "z": -172.450555
+     },
+     "lateralOffset": -2,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 293,
+     "racingPoint": {
+      "x": 190.029846,
+      "z": -174.46252
+     },
+     "detourPoint": {
+      "x": 189.884625,
+      "z": -172.217212
+     },
+     "lateralOffset": -2.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 294,
+     "racingPoint": {
+      "x": 189.780367,
+      "z": -174.478656
+     },
+     "detourPoint": {
+      "x": 189.61901,
+      "z": -171.983869
+     },
+     "lateralOffset": -2.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 295,
+     "racingPoint": {
+      "x": 189.530889,
+      "z": -174.494792
+     },
+     "detourPoint": {
+      "x": 189.353396,
+      "z": -171.750526
+     },
+     "lateralOffset": -2.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 296,
+     "racingPoint": {
+      "x": 189.28141,
+      "z": -174.510927
+     },
+     "detourPoint": {
+      "x": 189.087781,
+      "z": -171.517183
+     },
+     "lateralOffset": -3,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 297,
+     "racingPoint": {
+      "x": 189.031931,
+      "z": -174.527063
+     },
+     "detourPoint": {
+      "x": 188.822167,
+      "z": -171.28384
+     },
+     "lateralOffset": -3.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 298,
+     "racingPoint": {
+      "x": 188.782452,
+      "z": -174.543199
+     },
+     "detourPoint": {
+      "x": 188.556553,
+      "z": -171.050496
+     },
+     "lateralOffset": -3.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 299,
+     "racingPoint": {
+      "x": 188.532974,
+      "z": -174.559334
+     },
+     "detourPoint": {
+      "x": 188.290938,
+      "z": -170.817153
+     },
+     "lateralOffset": -3.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 300,
+     "racingPoint": {
+      "x": 188.283495,
+      "z": -174.57547
+     },
+     "detourPoint": {
+      "x": 188.025324,
+      "z": -170.58381
+     },
+     "lateralOffset": -4,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 301,
+     "racingPoint": {
+      "x": 188.034016,
+      "z": -174.591606
+     },
+     "detourPoint": {
+      "x": 187.759709,
+      "z": -170.350467
+     },
+     "lateralOffset": -4.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 302,
+     "racingPoint": {
+      "x": 187.784537,
+      "z": -174.607742
+     },
+     "detourPoint": {
+      "x": 187.494095,
+      "z": -170.117124
+     },
+     "lateralOffset": -4.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 303,
+     "racingPoint": {
+      "x": 187.535059,
+      "z": -174.623877
+     },
+     "detourPoint": {
+      "x": 187.22848,
+      "z": -169.883781
+     },
+     "lateralOffset": -4.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 304,
+     "racingPoint": {
+      "x": 187.285393,
+      "z": -174.636524
+     },
+     "detourPoint": {
+      "x": 187.07357,
+      "z": -169.641013
+     },
+     "lateralOffset": -5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 305,
+     "racingPoint": {
+      "x": 187.035618,
+      "z": -174.647115
+     },
+     "detourPoint": {
+      "x": 186.813203,
+      "z": -169.401829
+     },
+     "lateralOffset": -5.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 306,
+     "racingPoint": {
+      "x": 186.785842,
+      "z": -174.657706
+     },
+     "detourPoint": {
+      "x": 186.552836,
+      "z": -169.162644
+     },
+     "lateralOffset": -5.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 307,
+     "racingPoint": {
+      "x": 186.536067,
+      "z": -174.668298
+     },
+     "detourPoint": {
+      "x": 186.29247,
+      "z": -168.92346
+     },
+     "lateralOffset": -5.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 308,
+     "racingPoint": {
+      "x": 186.286291,
+      "z": -174.678889
+     },
+     "detourPoint": {
+      "x": 186.032103,
+      "z": -168.684275
+     },
+     "lateralOffset": -6,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 309,
+     "racingPoint": {
+      "x": 186.036515,
+      "z": -174.68948
+     },
+     "detourPoint": {
+      "x": 185.771736,
+      "z": -168.445091
+     },
+     "lateralOffset": -6.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 310,
+     "racingPoint": {
+      "x": 185.78674,
+      "z": -174.700071
+     },
+     "detourPoint": {
+      "x": 185.511369,
+      "z": -168.205907
+     },
+     "lateralOffset": -6.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 311,
+     "racingPoint": {
+      "x": 185.536964,
+      "z": -174.710662
+     },
+     "detourPoint": {
+      "x": 185.251003,
+      "z": -167.966722
+     },
+     "lateralOffset": -6.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 312,
+     "racingPoint": {
+      "x": 185.287189,
+      "z": -174.721253
+     },
+     "detourPoint": {
+      "x": 184.990636,
+      "z": -167.727538
+     },
+     "lateralOffset": -7,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 313,
+     "racingPoint": {
+      "x": 185.037413,
+      "z": -174.731845
+     },
+     "detourPoint": {
+      "x": 184.730269,
+      "z": -167.488354
+     },
+     "lateralOffset": -7.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 314,
+     "racingPoint": {
+      "x": 184.787638,
+      "z": -174.742436
+     },
+     "detourPoint": {
+      "x": 184.469902,
+      "z": -167.249169
+     },
+     "lateralOffset": -7.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 315,
+     "racingPoint": {
+      "x": 184.537862,
+      "z": -174.753027
+     },
+     "detourPoint": {
+      "x": 184.209536,
+      "z": -167.009985
+     },
+     "lateralOffset": -7.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 316,
+     "racingPoint": {
+      "x": 184.288087,
+      "z": -174.763618
+     },
+     "detourPoint": {
+      "x": 183.949169,
+      "z": -166.7708
+     },
+     "lateralOffset": -8,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 317,
+     "racingPoint": {
+      "x": 184.038311,
+      "z": -174.774209
+     },
+     "detourPoint": {
+      "x": 183.688802,
+      "z": -166.531616
+     },
+     "lateralOffset": -8.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 318,
+     "racingPoint": {
+      "x": 183.788535,
+      "z": -174.7848
+     },
+     "detourPoint": {
+      "x": 183.428436,
+      "z": -166.292432
+     },
+     "lateralOffset": -8.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 319,
+     "racingPoint": {
+      "x": 183.53876,
+      "z": -174.795392
+     },
+     "detourPoint": {
+      "x": 183.17866,
+      "z": -166.303023
+     },
+     "lateralOffset": -8.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 320,
+     "racingPoint": {
+      "x": 183.288922,
+      "z": -174.804255
+     },
+     "detourPoint": {
+      "x": 183.027821,
+      "z": -166.058151
+     },
+     "lateralOffset": -8.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 321,
+     "racingPoint": {
+      "x": 183.039033,
+      "z": -174.811715
+     },
+     "detourPoint": {
+      "x": 182.777933,
+      "z": -166.065611
+     },
+     "lateralOffset": -8.75,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 322,
+     "racingPoint": {
+      "x": 182.789145,
+      "z": -174.819175
+     },
+     "detourPoint": {
+      "x": 182.520584,
+      "z": -165.823183
+     },
+     "lateralOffset": -9,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 323,
+     "racingPoint": {
+      "x": 182.539256,
+      "z": -174.826635
+     },
+     "detourPoint": {
+      "x": 182.263235,
+      "z": -165.580754
+     },
+     "lateralOffset": -9.25,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 324,
+     "racingPoint": {
+      "x": 182.289367,
+      "z": -174.834095
+     },
+     "detourPoint": {
+      "x": 182.005887,
+      "z": -165.338325
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 325,
+     "racingPoint": {
+      "x": 182.039479,
+      "z": -174.841555
+     },
+     "detourPoint": {
+      "x": 181.755998,
+      "z": -165.345785
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 326,
+     "racingPoint": {
+      "x": 181.78959,
+      "z": -174.849015
+     },
+     "detourPoint": {
+      "x": 181.506109,
+      "z": -165.353245
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 327,
+     "racingPoint": {
+      "x": 181.539701,
+      "z": -174.856475
+     },
+     "detourPoint": {
+      "x": 181.256221,
+      "z": -165.360705
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 328,
+     "racingPoint": {
+      "x": 181.289813,
+      "z": -174.863935
+     },
+     "detourPoint": {
+      "x": 181.006332,
+      "z": -165.368165
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 329,
+     "racingPoint": {
+      "x": 181.039924,
+      "z": -174.871395
+     },
+     "detourPoint": {
+      "x": 180.756443,
+      "z": -165.375625
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 330,
+     "racingPoint": {
+      "x": 180.790035,
+      "z": -174.878855
+     },
+     "detourPoint": {
+      "x": 180.506555,
+      "z": -165.383085
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 331,
+     "racingPoint": {
+      "x": 180.540147,
+      "z": -174.886315
+     },
+     "detourPoint": {
+      "x": 180.256666,
+      "z": -165.390545
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 332,
+     "racingPoint": {
+      "x": 180.290258,
+      "z": -174.893775
+     },
+     "detourPoint": {
+      "x": 180.006777,
+      "z": -165.398005
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    },
+    {
+     "station": 333,
+     "racingPoint": {
+      "x": 180.040369,
+      "z": -174.901235
+     },
+     "detourPoint": {
+      "x": 179.756889,
+      "z": -165.405465
+     },
+     "lateralOffset": -9.5,
+     "reason": "the racing point is not car-half-width clear; the detour is the nearest continuous band-clear lateral position in the declared +/-12 m respawn band"
+    }
+   ],
+   "lateralOffsetMin": -9.5,
+   "lateralOffsetMax": 0,
+   "lateralOffsetMean": -1.5666,
+   "shiftedSamples": 231,
+   "lateralOffsets": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.25,
+    -0.5,
+    -0.5,
+    -0.5,
+    -0.5,
+    -0.5,
+    -0.5,
+    -0.5,
+    -0.5,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -0.75,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.25,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.5,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -1.75,
+    -2,
+    -2.25,
+    -2.5,
+    -2.75,
+    -3,
+    -3.25,
+    -3.5,
+    -3.75,
+    -4,
+    -4.25,
+    -4.5,
+    -4.75,
+    -5,
+    -5.25,
+    -5.5,
+    -5.75,
+    -6,
+    -6.25,
+    -6.5,
+    -6.75,
+    -7,
+    -7.25,
+    -7.5,
+    -7.75,
+    -8,
+    -8.25,
+    -8.5,
+    -8.5,
+    -8.75,
+    -8.75,
+    -9,
+    -9.25,
+    -9.5,
+    -9.5,
+    -9.5,
+    -9.5,
+    -9.5,
+    -9.5,
+    -9.5,
+    -9.5,
+    -9.5,
+    -9.5
+   ]
+  },
+  "clearance": {
+   "cells": 0,
+   "lowerBoundMetres": 0,
+   "metric": "no isotropic erosion; the path is validated by the car half-width lateral band at every 0.25 m sample",
+   "carHalfWidthM": 1.138,
+   "carHalfLengthM": 1.7905,
+   "carCircumradiusM": 2.121541,
+   "carEnvelope": {
+    "length": 2.981,
+    "width": 1.676,
+    "safetyMargin": 0.3,
+    "source": "documented maximum XT envelope plus a labelled 0.30 m margin; not a recovered retail hull"
+   },
+   "interiorMinClearanceM": 1.118,
+   "interiorMinSample": 319,
+   "lateralBandMetres": 1.138,
+   "lateralBandSamples": 334,
+   "lateralBandBlocked": 0,
+   "lateralBandFrame": "the detoured line's own local tangent (0.5 m central difference) at every sample"
+  },
+  "corridor": {
+   "aidPath": "\\gamedata\\levels\\usa_la_downtown_multiplayer\\usa_la_downtown_multiplayer_figureof8.aid",
+   "aidRoute": "Mainracing",
+   "aidWidthMinMetres": 41.276,
+   "aidWidthMaxMetres": 49.926,
+   "lateralSearchMetres": 12,
+   "note": "the .aid serialized width is the AI corridor; the path is the racing line (line index 5) shifted along its own normal only when the racing line's car band is blocked, inside the declared +/-12 m respawn band"
+  },
+  "endpoints": {
+   "spawn": {
+    "x": 252,
+    "z": -142,
+    "headingRad": -2.35619449,
+    "groundY": 0,
+    "rasterCell": [
+     1094,
+     102
+    ]
+   },
+   "finish": {
+    "x": 180,
+    "z": -175,
+    "groundY": 0.13,
+    "rasterCell": [
+     950,
+     36
+    ]
+   },
+   "spawnProjection": {
+    "x": 250.895368,
+    "z": -141.559127,
+    "metres": 1.1894,
+    "racingLineProjectionMetres": 1.1894,
+    "arc": 281.936492
+   },
+   "finishProjection": {
+    "x": 179.756889,
+    "z": -165.405465,
+    "metres": 9.5976,
+    "racingLineProjectionMetres": 0.0975,
+    "arc": 365.229791
+   },
+   "rule": "the path starts at the point on the retail racing line nearest the committed spawn and ends at the point nearest the committed draw-path end; the committed poses are recorded, not moved"
+  },
+  "obstruction": {
+   "label": "narrowest retail racing-line clearance to a blocked raster cell",
+   "racingLine": {
+    "sampleIndex": 190,
+    "clearanceM": 0
+   },
+   "path": {
+    "minInteriorClearanceM": 1.118,
+    "sampleIndex": 319,
+    "arc": 82.604515,
+    "x": 183.17866,
+    "z": -166.303023
+   },
+   "statedMarginM": 0,
+   "source": "P48 raster blocked-cell distance on the 0.5 m grid; the path is validated by the car half-width lateral band, not an isotropic erosion margin"
+  },
+  "spawn": {
+   "x": 250.895368,
+   "z": -141.559127,
+   "headingRad": -2.745845997
+  },
+  "spawnSource": "the path start is the point on the retail racing line nearest the committed spawn.json pose, shifted along the racing-line normal when that point is not band-clear; the committed pose is recorded in source.endpoints.spawn",
+  "groundSource": "P48 collision raster H at each 0.25 m sample's 0.5 m cell (4 decimals); the committed spawn/finish ground is recorded in source.endpoints",
+  "gateLineSource": "5 m tangent window, 8 m line, narrowed to the widest line that is at least 50 % passable with a fully passable car-half-width centre; oriented so the approach side is positive",
+  "checkpointStationSource": "straightest sample within +/-12 % of one-third / two-thirds of the measured racing-line arc"
+ },
+ "course": {
+  "rule": "retail AI racing-line segment; the path starts at the point on the .aid racing line (line index 5) nearest the committed spawn and ends at the point nearest the committed draw-path end; every 0.25 m sample is on the P48 passable raster and its car half-width lateral band is passable; a blocked station moves along its own normal to a band-clear position inside the declared +/-12 m respawn band; no point is invented",
+  "name": "usa_la_downtown_multiplayer retail racing-line path",
+  "spawn": {
+   "x": 250.895368,
+   "z": -141.559127,
+   "headingRad": -2.745845997
+  },
+  "spawnGroundY": 0,
+  "start": {
+   "x": 250.895368,
+   "z": -141.559127,
+   "arc": 0,
+   "groundY": 0
+  },
+  "finish": {
+   "x": 179.756889,
+   "z": -165.405465,
+   "arc": 86.452776,
+   "groundY": 0.0029
+  },
+  "measuredEnd": {
+   "x": 179.756889,
+   "z": -165.405465,
+   "arc": 86.452776,
+   "groundY": 0.0029
+  },
+  "lengthMetres": 86.452776,
+  "finishArc": 86.452776,
+  "sampleStepMetres": 0.25,
+  "sampleCount": 334,
+  "detour": {
+   "stations": 231,
+   "runs": 1,
+   "maxLateralOffsetMetres": 9.5,
+   "searchMetres": 12,
+   "stepMetres": 0.25,
+   "maxJumpMetres": 0.5,
+   "rule": "a station whose racing point is not car-half-width clear moves along its own normal to the nearest continuous band-clear position inside the declared +/-12 m respawn band; consecutive detour points are at most 0.5 m apart; the line returns to the racing line when the racing point becomes clear"
+  },
+  "span": {
+   "startArc": 0,
+   "finishArc": 86.452776,
+   "lengthMetres": 86.452776,
+   "measuredLengthMetres": 86.452776,
+   "drawPathLengthMetres": 154.882251,
+   "finishClearanceMetres": 9.5976,
+   "racingLineFinishProjectionMetres": 0.0975,
+   "note": "arcs are measured along the detoured racing-line segment; the committed draw path is 154.882251 m and is not the authority; the path end is 9.598 m from the committed draw-path end (the racing-line point nearest it is 0.098 m away; the difference is the finish detour offset)"
+  },
+  "band": {
+   "halfWidthMetres": 6,
+   "source": "declared controller and respawn band for this path; the page validator requires the committed 6 m value",
+   "note": "not a road-width claim"
+  },
+  "corridor": {
+   "rule": "off-course respawn band is a declared +/-12.0 m around the retail racing-line path",
+   "halfWidthMetres": 12,
+   "source": {
+    "minRasterClearanceM": 1.118,
+    "clearanceLowerBoundM": 0,
+    "carHalfWidthM": 1.138,
+    "carCircumradiusM": 2.121541,
+    "note": "declared respawn rule at the measured 1.118 m raster clearance; the path is validated by the 1.138 m car half-width lateral band, not an isotropic margin"
+   }
+  },
+  "endpointConnectors": {
+   "spawn": {
+    "arc": 0,
+    "metres": 0,
+    "samples": 0
+   },
+   "finish": {
+    "arc": 86.452776,
+    "metres": 0,
+    "samples": 0
+   },
+   "note": "the path starts and ends on the retail racing line; there are no endpoint connectors"
+  },
+  "coverage": {
+   "measured": false,
+   "source": "not measured",
+   "note": "draw coverage of this racing-line path was not measured; the committed draw path's coverage does not apply to this line"
+  },
+  "samples": [
+   {
+    "arc": 0,
+    "x": 250.895368,
+    "z": -141.559127,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 0.25,
+    "x": 250.802698,
+    "z": -141.791317,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 0.5,
+    "x": 250.710028,
+    "z": -142.023507,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 0.75,
+    "x": 250.617358,
+    "z": -142.255697,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 1,
+    "x": 250.524688,
+    "z": -142.487888,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 1.25,
+    "x": 250.432018,
+    "z": -142.720078,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 1.5,
+    "x": 250.339348,
+    "z": -142.952268,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 1.75,
+    "x": 250.246678,
+    "z": -143.184458,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 2,
+    "x": 250.154007,
+    "z": -143.416648,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 2.25,
+    "x": 250.061337,
+    "z": -143.648838,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 2.5,
+    "x": 249.968667,
+    "z": -143.881028,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 2.75,
+    "x": 249.875997,
+    "z": -144.113218,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 3,
+    "x": 249.783327,
+    "z": -144.345409,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 3.25,
+    "x": 249.690657,
+    "z": -144.577599,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 3.499964,
+    "x": 249.596544,
+    "z": -144.809169,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 3.749964,
+    "x": 249.49186,
+    "z": -145.036196,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 3.999964,
+    "x": 249.387176,
+    "z": -145.263223,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 4.249964,
+    "x": 249.282493,
+    "z": -145.49025,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 4.499964,
+    "x": 249.177809,
+    "z": -145.717277,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 4.749964,
+    "x": 249.073126,
+    "z": -145.944304,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 4.999964,
+    "x": 248.968442,
+    "z": -146.171332,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 5.249964,
+    "x": 248.863758,
+    "z": -146.398359,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 5.499964,
+    "x": 248.759075,
+    "z": -146.625386,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 5.749964,
+    "x": 248.654391,
+    "z": -146.852413,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 5.999964,
+    "x": 248.549708,
+    "z": -147.07944,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 6.249964,
+    "x": 248.445024,
+    "z": -147.306468,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 6.499964,
+    "x": 248.34034,
+    "z": -147.533495,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 6.749964,
+    "x": 248.235657,
+    "z": -147.760522,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 6.999964,
+    "x": 248.130973,
+    "z": -147.987549,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 7.249964,
+    "x": 248.02629,
+    "z": -148.214576,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 7.49888,
+    "x": 247.909394,
+    "z": -148.434337,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 7.74888,
+    "x": 247.759791,
+    "z": -148.634634,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 7.99888,
+    "x": 247.610188,
+    "z": -148.834931,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 8.24888,
+    "x": 247.460586,
+    "z": -149.035229,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 8.49888,
+    "x": 247.310983,
+    "z": -149.235526,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 8.74888,
+    "x": 247.16138,
+    "z": -149.435823,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 8.99888,
+    "x": 247.011777,
+    "z": -149.636121,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 9.24888,
+    "x": 246.862175,
+    "z": -149.836418,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 9.49888,
+    "x": 246.712572,
+    "z": -150.036715,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 9.74888,
+    "x": 246.562969,
+    "z": -150.237013,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 9.99888,
+    "x": 246.413367,
+    "z": -150.43731,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 10.24888,
+    "x": 246.263764,
+    "z": -150.637607,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 10.49888,
+    "x": 246.114161,
+    "z": -150.837905,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 10.74888,
+    "x": 245.964558,
+    "z": -151.038202,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 10.99888,
+    "x": 245.814956,
+    "z": -151.238499,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 11.24888,
+    "x": 245.665353,
+    "z": -151.438797,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 11.498627,
+    "x": 245.507562,
+    "z": -151.632383,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 11.748627,
+    "x": 245.340553,
+    "z": -151.818415,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 11.998627,
+    "x": 245.173544,
+    "z": -152.004448,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 12.248627,
+    "x": 245.006535,
+    "z": -152.19048,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 12.498627,
+    "x": 244.839526,
+    "z": -152.376512,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 12.748627,
+    "x": 244.672517,
+    "z": -152.562544,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 12.998627,
+    "x": 244.505508,
+    "z": -152.748576,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 13.248627,
+    "x": 244.338499,
+    "z": -152.934609,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 13.498627,
+    "x": 244.17149,
+    "z": -153.120641,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 13.748627,
+    "x": 244.004481,
+    "z": -153.306673,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 13.998627,
+    "x": 243.837472,
+    "z": -153.492705,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 14.248627,
+    "x": 243.670462,
+    "z": -153.678738,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 14.498627,
+    "x": 243.503453,
+    "z": -153.86477,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 14.748627,
+    "x": 243.336444,
+    "z": -154.050802,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 14.998627,
+    "x": 243.169435,
+    "z": -154.236834,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 15.248627,
+    "x": 243.002426,
+    "z": -154.422866,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 15.498502,
+    "x": 242.825446,
+    "z": -154.599262,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 15.748502,
+    "x": 242.64522,
+    "z": -154.77252,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 15.998502,
+    "x": 242.464993,
+    "z": -154.945778,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 16.248502,
+    "x": 242.284766,
+    "z": -155.119036,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 16.498502,
+    "x": 242.104539,
+    "z": -155.292293,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 16.748502,
+    "x": 241.924312,
+    "z": -155.465551,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 16.998502,
+    "x": 241.744085,
+    "z": -155.638809,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 17.248502,
+    "x": 241.563858,
+    "z": -155.812067,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 17.498502,
+    "x": 241.383631,
+    "z": -155.985324,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 17.748502,
+    "x": 241.203404,
+    "z": -156.158582,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 17.998502,
+    "x": 241.023177,
+    "z": -156.33184,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 18.248502,
+    "x": 240.84295,
+    "z": -156.505098,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 18.498502,
+    "x": 240.662723,
+    "z": -156.678356,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 18.748502,
+    "x": 240.482496,
+    "z": -156.851613,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 18.998502,
+    "x": 240.30227,
+    "z": -157.024871,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 19.248502,
+    "x": 240.122043,
+    "z": -157.198129,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 19.498498,
+    "x": 239.930271,
+    "z": -157.358508,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 19.748498,
+    "x": 239.738423,
+    "z": -157.518803,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 19.998498,
+    "x": 239.546575,
+    "z": -157.679098,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 20.248498,
+    "x": 239.354727,
+    "z": -157.839393,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 20.498498,
+    "x": 239.162879,
+    "z": -157.999687,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 20.748498,
+    "x": 238.971031,
+    "z": -158.159982,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 20.998498,
+    "x": 238.779184,
+    "z": -158.320277,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 21.248498,
+    "x": 238.587336,
+    "z": -158.480572,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 21.498498,
+    "x": 238.395488,
+    "z": -158.640866,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 21.748498,
+    "x": 238.20364,
+    "z": -158.801161,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 21.998498,
+    "x": 238.011792,
+    "z": -158.961456,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 22.248498,
+    "x": 237.819945,
+    "z": -159.121751,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 22.498498,
+    "x": 237.628097,
+    "z": -159.282045,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 22.748498,
+    "x": 237.436249,
+    "z": -159.44234,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 22.998498,
+    "x": 237.244401,
+    "z": -159.602635,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 23.248466,
+    "x": 237.051536,
+    "z": -159.761654,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 23.498466,
+    "x": 236.85256,
+    "z": -159.91301,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 23.748466,
+    "x": 236.653584,
+    "z": -160.064365,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 23.998466,
+    "x": 236.454608,
+    "z": -160.215721,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 24.248466,
+    "x": 236.255631,
+    "z": -160.367076,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 24.498466,
+    "x": 236.056655,
+    "z": -160.518432,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 24.748466,
+    "x": 235.857679,
+    "z": -160.669787,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 24.998466,
+    "x": 235.658703,
+    "z": -160.821143,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 25.248466,
+    "x": 235.459727,
+    "z": -160.972498,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 25.498466,
+    "x": 235.260751,
+    "z": -161.123854,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 25.85202,
+    "x": 234.910419,
+    "z": -161.076233,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 26.10202,
+    "x": 234.711443,
+    "z": -161.227588,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 26.35202,
+    "x": 234.512467,
+    "z": -161.378944,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 26.60202,
+    "x": 234.31349,
+    "z": -161.530299,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 26.85202,
+    "x": 234.114514,
+    "z": -161.681655,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 27.10202,
+    "x": 233.915538,
+    "z": -161.83301,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 27.326993,
+    "x": 233.735311,
+    "z": -161.967663,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 27.576993,
+    "x": 233.522262,
+    "z": -162.098468,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 27.826993,
+    "x": 233.309213,
+    "z": -162.229273,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 28.076993,
+    "x": 233.096163,
+    "z": -162.360078,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 28.326993,
+    "x": 232.883114,
+    "z": -162.490883,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 28.576993,
+    "x": 232.670064,
+    "z": -162.621688,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 28.826993,
+    "x": 232.457015,
+    "z": -162.752493,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 29.076993,
+    "x": 232.243966,
+    "z": -162.883298,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 29.326993,
+    "x": 232.030916,
+    "z": -163.014103,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 29.576993,
+    "x": 231.817867,
+    "z": -163.144908,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 29.930546,
+    "x": 231.474012,
+    "z": -163.062664,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 30.180546,
+    "x": 231.260963,
+    "z": -163.193469,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 30.430546,
+    "x": 231.047914,
+    "z": -163.324274,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 30.680546,
+    "x": 230.834864,
+    "z": -163.455079,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 30.930546,
+    "x": 230.621815,
+    "z": -163.585884,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 31.180546,
+    "x": 230.408766,
+    "z": -163.716689,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 31.390853,
+    "x": 230.22942,
+    "z": -163.826525,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 31.640853,
+    "x": 230.006675,
+    "z": -163.940036,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 31.994406,
+    "x": 229.670419,
+    "z": -163.830802,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 32.244406,
+    "x": 229.447674,
+    "z": -163.944313,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 32.494406,
+    "x": 229.224929,
+    "z": -164.057825,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 32.744406,
+    "x": 229.002184,
+    "z": -164.171336,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 32.994406,
+    "x": 228.77944,
+    "z": -164.284847,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 33.244406,
+    "x": 228.556695,
+    "z": -164.398358,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 33.494406,
+    "x": 228.33395,
+    "z": -164.511869,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 33.744406,
+    "x": 228.111205,
+    "z": -164.62538,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 33.994406,
+    "x": 227.88846,
+    "z": -164.738891,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 34.244406,
+    "x": 227.665716,
+    "z": -164.852402,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 34.494406,
+    "x": 227.442971,
+    "z": -164.965913,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 34.744406,
+    "x": 227.220226,
+    "z": -165.079424,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 34.994406,
+    "x": 226.997481,
+    "z": -165.192935,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 35.244406,
+    "x": 226.774736,
+    "z": -165.306446,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 35.494406,
+    "x": 226.551992,
+    "z": -165.419957,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 35.687996,
+    "x": 226.372866,
+    "z": -165.49338,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 35.937996,
+    "x": 226.142217,
+    "z": -165.589823,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 36.291549,
+    "x": 225.815126,
+    "z": -165.455618,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 36.541549,
+    "x": 225.584477,
+    "z": -165.552061,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 36.791549,
+    "x": 225.353829,
+    "z": -165.648505,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 37.041549,
+    "x": 225.123181,
+    "z": -165.744948,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 37.291549,
+    "x": 224.892532,
+    "z": -165.841391,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 37.541549,
+    "x": 224.661884,
+    "z": -165.937835,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 37.791549,
+    "x": 224.431235,
+    "z": -166.034278,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 38.041549,
+    "x": 224.200587,
+    "z": -166.130721,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 38.291549,
+    "x": 223.969939,
+    "z": -166.227165,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 38.541549,
+    "x": 223.73929,
+    "z": -166.323608,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 38.791549,
+    "x": 223.508642,
+    "z": -166.420052,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 39.041549,
+    "x": 223.277993,
+    "z": -166.516495,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 39.291549,
+    "x": 223.047345,
+    "z": -166.612938,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 39.541549,
+    "x": 222.816697,
+    "z": -166.709382,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 39.742904,
+    "x": 222.62782,
+    "z": -166.779162,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 39.992904,
+    "x": 222.392758,
+    "z": -166.864284,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 40.242904,
+    "x": 222.157696,
+    "z": -166.949406,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 40.492904,
+    "x": 221.922634,
+    "z": -167.034529,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 40.742904,
+    "x": 221.687572,
+    "z": -167.119651,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 40.992904,
+    "x": 221.45251,
+    "z": -167.204773,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 41.242904,
+    "x": 221.217448,
+    "z": -167.289896,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 41.492904,
+    "x": 220.982386,
+    "z": -167.375018,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 41.742904,
+    "x": 220.747323,
+    "z": -167.46014,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 41.992904,
+    "x": 220.512261,
+    "z": -167.545263,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 42.242904,
+    "x": 220.277199,
+    "z": -167.630385,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 42.492904,
+    "x": 220.042137,
+    "z": -167.715507,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 42.742904,
+    "x": 219.807075,
+    "z": -167.80063,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 42.992904,
+    "x": 219.572013,
+    "z": -167.885752,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 43.242904,
+    "x": 219.336951,
+    "z": -167.970875,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 43.596457,
+    "x": 219.016766,
+    "z": -167.820935,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 43.789242,
+    "x": 218.833732,
+    "z": -167.881468,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 44.039242,
+    "x": 218.595025,
+    "z": -167.955756,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 44.289242,
+    "x": 218.356317,
+    "z": -168.030045,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 44.539242,
+    "x": 218.11761,
+    "z": -168.104333,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 44.789242,
+    "x": 217.878903,
+    "z": -168.178622,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 45.039242,
+    "x": 217.640195,
+    "z": -168.252911,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 45.289242,
+    "x": 217.401488,
+    "z": -168.327199,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 45.539242,
+    "x": 217.162781,
+    "z": -168.401488,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 45.789242,
+    "x": 216.924073,
+    "z": -168.475776,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 46.039242,
+    "x": 216.685366,
+    "z": -168.550065,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 46.289242,
+    "x": 216.446659,
+    "z": -168.624354,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 46.539242,
+    "x": 216.207951,
+    "z": -168.698642,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 46.789242,
+    "x": 215.969244,
+    "z": -168.772931,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 47.039242,
+    "x": 215.730536,
+    "z": -168.84722,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 47.289242,
+    "x": 215.491829,
+    "z": -168.921508,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 47.539242,
+    "x": 215.253122,
+    "z": -168.995797,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 47.854485,
+    "x": 214.997608,
+    "z": -168.811159,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 48.104485,
+    "x": 214.756085,
+    "z": -168.875707,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 48.354485,
+    "x": 214.514561,
+    "z": -168.940255,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 48.604485,
+    "x": 214.273038,
+    "z": -169.004803,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 48.854485,
+    "x": 214.031515,
+    "z": -169.069351,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 49.104485,
+    "x": 213.789991,
+    "z": -169.133899,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 49.354485,
+    "x": 213.548468,
+    "z": -169.198447,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 49.604485,
+    "x": 213.306944,
+    "z": -169.262995,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 49.854485,
+    "x": 213.065421,
+    "z": -169.327544,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 50.104485,
+    "x": 212.823898,
+    "z": -169.392092,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 50.354485,
+    "x": 212.582374,
+    "z": -169.45664,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 50.604485,
+    "x": 212.340851,
+    "z": -169.521188,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 50.854485,
+    "x": 212.099328,
+    "z": -169.585736,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 51.104485,
+    "x": 211.857804,
+    "z": -169.650284,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 51.354485,
+    "x": 211.616281,
+    "z": -169.714832,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 51.604485,
+    "x": 211.374757,
+    "z": -169.77938,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 51.793498,
+    "x": 211.192294,
+    "z": -169.828705,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 52.043498,
+    "x": 210.948346,
+    "z": -169.883382,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 52.293498,
+    "x": 210.704398,
+    "z": -169.938059,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 52.543498,
+    "x": 210.460451,
+    "z": -169.992736,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 52.793498,
+    "x": 210.216503,
+    "z": -170.047413,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 53.043498,
+    "x": 209.972556,
+    "z": -170.10209,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 53.293498,
+    "x": 209.728608,
+    "z": -170.156767,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 53.543498,
+    "x": 209.484661,
+    "z": -170.211444,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 53.793498,
+    "x": 209.240713,
+    "z": -170.266121,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 54.043498,
+    "x": 208.996765,
+    "z": -170.320798,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 54.293498,
+    "x": 208.752818,
+    "z": -170.375475,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 54.543498,
+    "x": 208.50887,
+    "z": -170.430153,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 54.793498,
+    "x": 208.264923,
+    "z": -170.48483,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 55.147051,
+    "x": 207.966298,
+    "z": -170.295559,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 55.397051,
+    "x": 207.722351,
+    "z": -170.350236,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 55.647051,
+    "x": 207.478403,
+    "z": -170.404913,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 55.897051,
+    "x": 207.234455,
+    "z": -170.45959,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 56.081081,
+    "x": 207.053666,
+    "z": -170.49397,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 56.331081,
+    "x": 206.807831,
+    "z": -170.539418,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 56.581081,
+    "x": 206.561997,
+    "z": -170.584865,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 56.831081,
+    "x": 206.316163,
+    "z": -170.630313,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 57.081081,
+    "x": 206.070328,
+    "z": -170.67576,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 57.331081,
+    "x": 205.824494,
+    "z": -170.721208,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 57.581081,
+    "x": 205.57866,
+    "z": -170.766655,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 57.831081,
+    "x": 205.332825,
+    "z": -170.812103,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 58.081081,
+    "x": 205.086991,
+    "z": -170.85755,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 58.331081,
+    "x": 204.841157,
+    "z": -170.902998,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 58.581081,
+    "x": 204.595322,
+    "z": -170.948445,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 58.831081,
+    "x": 204.349488,
+    "z": -170.993893,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 59.081081,
+    "x": 204.103653,
+    "z": -171.03934,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 59.331081,
+    "x": 203.857819,
+    "z": -171.084788,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 59.581081,
+    "x": 203.611985,
+    "z": -171.130235,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 59.831081,
+    "x": 203.36615,
+    "z": -171.175682,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 60.024023,
+    "x": 203.175929,
+    "z": -171.207971,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 60.274023,
+    "x": 202.928745,
+    "z": -171.245385,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 60.524023,
+    "x": 202.68156,
+    "z": -171.282799,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 60.774023,
+    "x": 202.434376,
+    "z": -171.320212,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 61.024023,
+    "x": 202.187191,
+    "z": -171.357626,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 61.274023,
+    "x": 201.940006,
+    "z": -171.39504,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 61.524023,
+    "x": 201.692822,
+    "z": -171.432454,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 61.774023,
+    "x": 201.445637,
+    "z": -171.469867,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 62.024023,
+    "x": 201.198453,
+    "z": -171.507281,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 62.274023,
+    "x": 200.951268,
+    "z": -171.544695,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 62.524023,
+    "x": 200.704084,
+    "z": -171.582109,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 62.774023,
+    "x": 200.456899,
+    "z": -171.619522,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 63.024023,
+    "x": 200.209714,
+    "z": -171.656936,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 63.274023,
+    "x": 199.96253,
+    "z": -171.69435,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 63.524023,
+    "x": 199.715345,
+    "z": -171.731763,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 63.774023,
+    "x": 199.468161,
+    "z": -171.769177,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 63.968505,
+    "x": 199.275797,
+    "z": -171.797804,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 64.218505,
+    "x": 199.027551,
+    "z": -171.82736,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 64.468505,
+    "x": 198.779304,
+    "z": -171.856916,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 64.718505,
+    "x": 198.531057,
+    "z": -171.886472,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 64.968505,
+    "x": 198.28281,
+    "z": -171.916028,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 65.218505,
+    "x": 198.034564,
+    "z": -171.945584,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 65.468505,
+    "x": 197.786317,
+    "z": -171.97514,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 65.718505,
+    "x": 197.53807,
+    "z": -172.004696,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 65.968505,
+    "x": 197.289824,
+    "z": -172.034252,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 66.218505,
+    "x": 197.041577,
+    "z": -172.063808,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 66.468505,
+    "x": 196.79333,
+    "z": -172.093364,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 66.718505,
+    "x": 196.545083,
+    "z": -172.12292,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 66.968505,
+    "x": 196.296837,
+    "z": -172.152476,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 67.218505,
+    "x": 196.04859,
+    "z": -172.182032,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 67.468505,
+    "x": 195.800343,
+    "z": -172.211588,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 67.718505,
+    "x": 195.552096,
+    "z": -172.241144,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 67.968505,
+    "x": 195.30385,
+    "z": -172.2707,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 68.166751,
+    "x": 195.106366,
+    "z": -172.288072,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 68.416751,
+    "x": 194.857354,
+    "z": -172.310274,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 68.666751,
+    "x": 194.608342,
+    "z": -172.332477,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 68.916751,
+    "x": 194.35933,
+    "z": -172.354679,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 69.166751,
+    "x": 194.110318,
+    "z": -172.376882,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 69.416751,
+    "x": 193.861306,
+    "z": -172.399085,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 69.666751,
+    "x": 193.612294,
+    "z": -172.421287,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 69.916751,
+    "x": 193.363281,
+    "z": -172.44349,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 70.166751,
+    "x": 193.114269,
+    "z": -172.465692,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 70.416751,
+    "x": 192.865257,
+    "z": -172.487895,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 70.666751,
+    "x": 192.616245,
+    "z": -172.510097,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 70.916751,
+    "x": 192.367233,
+    "z": -172.5323,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 71.166751,
+    "x": 192.118221,
+    "z": -172.554502,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 71.416751,
+    "x": 191.869209,
+    "z": -172.576705,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 71.666751,
+    "x": 191.620196,
+    "z": -172.598908,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 71.916751,
+    "x": 191.371184,
+    "z": -172.62111,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 72.124144,
+    "x": 191.16429,
+    "z": -172.635491,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 72.374144,
+    "x": 190.914811,
+    "z": -172.651626,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 72.624144,
+    "x": 190.665332,
+    "z": -172.667762,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 72.874144,
+    "x": 190.415854,
+    "z": -172.683898,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 73.227698,
+    "x": 190.150239,
+    "z": -172.450555,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 73.581251,
+    "x": 189.884625,
+    "z": -172.217212,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 73.934804,
+    "x": 189.61901,
+    "z": -171.983869,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 74.288358,
+    "x": 189.353396,
+    "z": -171.750526,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 74.641911,
+    "x": 189.087781,
+    "z": -171.517183,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 74.995465,
+    "x": 188.822167,
+    "z": -171.28384,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 75.349018,
+    "x": 188.556553,
+    "z": -171.050496,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 75.702571,
+    "x": 188.290938,
+    "z": -170.817153,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 76.056125,
+    "x": 188.025324,
+    "z": -170.58381,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 76.409678,
+    "x": 187.759709,
+    "z": -170.350467,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 76.763232,
+    "x": 187.494095,
+    "z": -170.117124,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 77.116785,
+    "x": 187.22848,
+    "z": -169.883781,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 77.404767,
+    "x": 187.07357,
+    "z": -169.641013,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 77.758321,
+    "x": 186.813203,
+    "z": -169.401829,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 78.111874,
+    "x": 186.552836,
+    "z": -169.162644,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 78.465427,
+    "x": 186.29247,
+    "z": -168.92346,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 78.818981,
+    "x": 186.032103,
+    "z": -168.684275,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 79.172534,
+    "x": 185.771736,
+    "z": -168.445091,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 79.526088,
+    "x": 185.511369,
+    "z": -168.205907,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 79.879641,
+    "x": 185.251003,
+    "z": -167.966722,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 80.233194,
+    "x": 184.990636,
+    "z": -167.727538,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 80.586748,
+    "x": 184.730269,
+    "z": -167.488354,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 80.940301,
+    "x": 184.469902,
+    "z": -167.249169,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 81.293854,
+    "x": 184.209536,
+    "z": -167.009985,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 81.647408,
+    "x": 183.949169,
+    "z": -166.7708,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 82.000961,
+    "x": 183.688802,
+    "z": -166.531616,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 82.354515,
+    "x": 183.428436,
+    "z": -166.292432,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 82.604515,
+    "x": 183.17866,
+    "z": -166.303023,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 82.892116,
+    "x": 183.027821,
+    "z": -166.058151,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 83.142116,
+    "x": 182.777933,
+    "z": -166.065611,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 83.495669,
+    "x": 182.520584,
+    "z": -165.823183,
+    "groundY": 0,
+    "covered": null
+   },
+   {
+    "arc": 83.849223,
+    "x": 182.263235,
+    "z": -165.580754,
+    "groundY": 0.0022,
+    "covered": null
+   },
+   {
+    "arc": 84.202776,
+    "x": 182.005887,
+    "z": -165.338325,
+    "groundY": 0.0023,
+    "covered": null
+   },
+   {
+    "arc": 84.452776,
+    "x": 181.755998,
+    "z": -165.345785,
+    "groundY": 0.0023,
+    "covered": null
+   },
+   {
+    "arc": 84.702776,
+    "x": 181.506109,
+    "z": -165.353245,
+    "groundY": 0.0025,
+    "covered": null
+   },
+   {
+    "arc": 84.952776,
+    "x": 181.256221,
+    "z": -165.360705,
+    "groundY": 0.0025,
+    "covered": null
+   },
+   {
+    "arc": 85.202776,
+    "x": 181.006332,
+    "z": -165.368165,
+    "groundY": 0.0026,
+    "covered": null
+   },
+   {
+    "arc": 85.452776,
+    "x": 180.756443,
+    "z": -165.375625,
+    "groundY": 0.0026,
+    "covered": null
+   },
+   {
+    "arc": 85.702776,
+    "x": 180.506555,
+    "z": -165.383085,
+    "groundY": 0.0028,
+    "covered": null
+   },
+   {
+    "arc": 85.952776,
+    "x": 180.256666,
+    "z": -165.390545,
+    "groundY": 0.0028,
+    "covered": null
+   },
+   {
+    "arc": 86.202776,
+    "x": 180.006777,
+    "z": -165.398005,
+    "groundY": 0.0029,
+    "covered": null
+   },
+   {
+    "arc": 86.452776,
+    "x": 179.756889,
+    "z": -165.405465,
+    "groundY": 0.0029,
+    "covered": null
+   }
+  ],
+  "gateRule": "arc-progression"
+ },
+ "gates": [
+  {
+   "id": "start",
+   "kind": "start",
+   "index": 0,
+   "sampleIndex": 0,
+   "arc": 0,
+   "x": 250.895368,
+   "z": -141.559127,
+   "groundY": 0,
+   "height": 0,
+   "headingRad": -2.745845997,
+   "tangent": {
+    "tx": -0.385497243,
+    "tz": -0.922708988,
+    "windowMetres": 4.999
+   },
+   "widthMetres": 8,
+   "requestedWidthMetres": 8,
+   "narrowed": false,
+   "a": [
+    254.586204,
+    -143.101116
+   ],
+   "b": [
+    247.204532,
+    -140.017138
+   ],
+   "coverage": {
+    "measured": false,
+    "source": "not measured",
+    "note": "the racing-line path has no draw-coverage measurement; the gate line is rules geometry only"
+   },
+   "groundCheck": {
+    "rasterCell": [
+     1092,
+     103
+    ],
+    "passable": true,
+    "rasterHeightM": 0,
+    "groundY": 0,
+    "groundDeltaM": 0,
+    "lineStations": 33,
+    "linePassableStations": 25,
+    "carHalfWidthStations": 9,
+    "carHalfWidthPassable": true,
+    "source": "P48 passable raster (grid.npz base) at 0.5 m; gate line stations at 0.25 m"
+   }
+  },
+  {
+   "id": "checkpoint-1",
+   "kind": "checkpoint",
+   "index": 1,
+   "sampleIndex": 108,
+   "arc": 27.10202,
+   "x": 233.915538,
+   "z": -161.83301,
+   "groundY": 0,
+   "height": 0,
+   "headingRad": -2.125524071,
+   "tangent": {
+    "tx": -0.850043872,
+    "tz": -0.526711891,
+    "windowMetres": 4.987
+   },
+   "widthMetres": 8,
+   "requestedWidthMetres": 8,
+   "narrowed": false,
+   "a": [
+    231.808691,
+    -158.432835
+   ],
+   "b": [
+    236.022386,
+    -165.233186
+   ],
+   "coverage": {
+    "measured": false,
+    "source": "not measured",
+    "note": "the racing-line path has no draw-coverage measurement; the gate line is rules geometry only"
+   },
+   "groundCheck": {
+    "rasterCell": [
+     1058,
+     62
+    ],
+    "passable": true,
+    "rasterHeightM": 0,
+    "groundY": 0,
+    "groundDeltaM": 0,
+    "lineStations": 33,
+    "linePassableStations": 23,
+    "carHalfWidthStations": 9,
+    "carHalfWidthPassable": true,
+    "source": "P48 passable raster (grid.npz base) at 0.5 m; gate line stations at 0.25 m"
+   }
+  },
+  {
+   "id": "checkpoint-2",
+   "kind": "checkpoint",
+   "index": 2,
+   "sampleIndex": 264,
+   "arc": 66.218505,
+   "x": 197.041577,
+   "z": -172.063808,
+   "groundY": 0,
+   "height": 0,
+   "headingRad": -1.686190989,
+   "tangent": {
+    "tx": -0.993349421,
+    "tz": -0.115138735,
+    "windowMetres": 4.892
+   },
+   "widthMetres": 8,
+   "requestedWidthMetres": 8,
+   "narrowed": false,
+   "a": [
+    196.581022,
+    -168.09041
+   ],
+   "b": [
+    197.502132,
+    -176.037206
+   ],
+   "coverage": {
+    "measured": false,
+    "source": "not measured",
+    "note": "the racing-line path has no draw-coverage measurement; the gate line is rules geometry only"
+   },
+   "groundCheck": {
+    "rasterCell": [
+     984,
+     42
+    ],
+    "passable": true,
+    "rasterHeightM": 0,
+    "groundY": 0,
+    "groundDeltaM": 0,
+    "lineStations": 33,
+    "linePassableStations": 23,
+    "carHalfWidthStations": 9,
+    "carHalfWidthPassable": true,
+    "source": "P48 passable raster (grid.npz base) at 0.5 m; gate line stations at 0.25 m"
+   }
+  },
+  {
+   "id": "finish",
+   "kind": "finish",
+   "index": 3,
+   "sampleIndex": 333,
+   "arc": 86.452776,
+   "x": 179.756889,
+   "z": -165.405465,
+   "groundY": 0.0029,
+   "height": 0.0029,
+   "headingRad": -1.174182612,
+   "tangent": {
+    "tx": -0.922374392,
+    "tz": 0.38629714,
+    "windowMetres": 5
+   },
+   "widthMetres": 8,
+   "requestedWidthMetres": 8,
+   "narrowed": false,
+   "a": [
+    181.302077,
+    -161.715968
+   ],
+   "b": [
+    178.2117,
+    -169.094963
+   ],
+   "coverage": {
+    "measured": false,
+    "source": "not measured",
+    "note": "the racing-line path has no draw-coverage measurement; the gate line is rules geometry only"
+   },
+   "groundCheck": {
+    "rasterCell": [
+     950,
+     55
+    ],
+    "passable": true,
+    "rasterHeightM": 0.002932,
+    "groundY": 0.0029,
+    "groundDeltaM": 0,
+    "lineStations": 33,
+    "linePassableStations": 28,
+    "carHalfWidthStations": 9,
+    "carHalfWidthPassable": true,
+    "source": "P48 passable raster (grid.npz base) at 0.5 m; gate line stations at 0.25 m"
+   }
+  }
+ ],
+ "countdown": {
+  "ticks": 90,
+  "stepTicks": 30,
+  "labels": [
+   "3",
+   "2",
+   "1"
+  ],
+  "goLabel": "GO",
+  "rule": "input is held at zero until the countdown reaches GO; the timer starts at GO and the car is on the start line"
+ },
+ "rules": {
+  "tickHz": 60,
+  "timer": "elapsed engine ticks from GO at 1/60 s; it keeps running across a respawn and freezes on the finish",
+  "gateOrder": "checkpoints count only in index order; a finish crossing is rejected until every checkpoint is passed",
+  "finishRequiresAllCheckpoints": true,
+  "progress": "progress is the arc length of the nearest point on the retail racing-line path, clamped to the finish arc",
+  "respawn": {
+   "fallBelowGroundMetres": 1,
+   "airborneTicks": 30,
+   "outsideBandMarginMetres": 1,
+   "overshootMarginMetres": 2,
+   "target": "the gate point of the last passed checkpoint (the start line before the first checkpoint)",
+   "rule": "respawn when the chassis falls more than 1 m below the measured ground at its arc, stays airborne for 30 ticks, or leaves the declared band; the attempt timer keeps running and the last checkpoint is kept"
+  },
+  "limits": [
+   "one point-to-point sprint on the retail AI racing-line segment, not a lap and not a retail start line",
+   "the path is the .aid Mainracing racing line (line index 5) between the point nearest the committed spawn and the point nearest the committed draw-path end",
+   "the path start is 1.189 m from the committed spawn and the path end is 9.598 m from the committed draw-path end (racing-line projections: 1.189 m and 0.098 m); the committed poses are recorded, not moved",
+   "the path is validated by the 1.138 m car half-width lateral band at every 0.25 m sample; there is no isotropic erosion margin",
+   "231 of 334 samples are detoured up to 9.500 m along the racing-line normal inside the declared +/-12 m respawn band; the detour is continuous (<= 0.5 m between consecutive samples) and returns to the racing line when the racing point becomes clear",
+   "the 6 m band is the page validator's declared controller/respawn band; the measured respawn corridor is 12.0 m",
+   "gates are rules geometry only; no gate mesh is added to the render packet",
+   "the 0 excluded collision shapes are not in the raster; no prop collider, opponent, AI or race audio is added"
+  ]
+ },
+ "integration": {
+  "integrated": false,
+  "needed": [
+   "map-registry.js needs the new layout file/content pins (sampleCount, lengthMetres, checkpointArcs) for ?map=downtown-mp&script=sprint",
+   "the E1 map-batch package builder copies this document verbatim as _work/e1-drive/downtown-mp/layout.json",
+   "the e1-drive downtown-mp geometry packet must be loaded before this layout; this document carries no draw geometry",
+   "gate lines are rules geometry only; no gate mesh, start banner or race director exists for this map",
+   "draw coverage of this racing-line path is not measured; the committed draw path's coverage does not apply"
+  ],
+  "missingData": [
+   "decoded InstancedTriangleMesh / FluidMesh collision shapes ()",
+   "draw coverage of the racing-line path at 0.25 m samples and across the 8 m gate lines",
+   "retail start-line / route record for the map (the .aid route is the AI racing line, not the start line)",
+   "a driven or AI-simulated check of the detour line; the detour is a geometric lateral shift inside the declared respawn band, not a driven racing line"
+  ]
+ },
+ "hash": "sha256:ca771a575293c68fed149373dced4d1148fb7bd1967b038d7b2fa7a823a4630e"
+}

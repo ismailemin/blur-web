@@ -12,11 +12,14 @@
 //     route number, sha256) is checked against routes.json and the pak;
 //   * every path sample is checked against the P48 passable raster
 //     (`_work/map-laps/<mapId>/grid.npz` base) and the car half-width band;
+//   * every detour record is checked against the racing point and the path
+//     sample: band clearance, lateral offset, continuity (<= 0.5 m) and the
+//     return to the racing line;
 //   * the gates are checked for order, arcs, the +/-12 % checkpoint window,
 //     the 1 m approach side and the gate-line passability;
 //   * every blocked verdict is re-derived from its witness: the spawn match
-//     distance, the station with no band-clear lateral position, or the
-//     resampled path's band failure.
+//     distance, the station with no band-clear lateral position in the
+//     declared +/-12 m detour window, or the detour-dp station.
 //
 // The `.aid` decoder and pak reader mirror
 // probes/powerups/tools/build_pickup_routes.mjs (read-only reference); the
@@ -39,8 +42,9 @@ const SAMPLE_STEP = 0.25;
 const HALF_WIDTH = 1.138;
 const MIN_LOOP_M = 300;
 const MAX_SPAWN_OFFSET_M = 25;
-const LATERAL_SEARCH_M = 10;
-const LATERAL_STEP_M = 0.25;
+const DETOUR_SEARCH_M = 12;
+const DETOUR_STEP_M = 0.25;
+const DETOUR_MAX_JUMP_M = 0.5;
 const RACING_LINE = 5;
 const GATE_HALF_WIDTH = 4.0;
 const GATE_LINE_FRACTION_MIN = 0.5;
@@ -396,97 +400,6 @@ function resampleWithFrame(points, widths, startArc, endArc, closed) {
   return { stations, length };
 }
 
-function projectStations(raster, stations) {
-  const racingClear = stations.every((station) => bandPassable(raster, station.x, station.z, station.tx, station.tz));
-  if (racingClear) {
-    return { points: stations.map((station) => [station.x, station.z]), offsets: stations.map(() => 0) };
-  }
-  const candidates = [];
-  const valid = [];
-  for (const station of stations) {
-    const nx = -station.tz;
-    const nz = station.tx;
-    const limit = Math.min(LATERAL_SEARCH_M, station.width / 2);
-    const steps = Math.floor(limit / LATERAL_STEP_M + 1e-9);
-    const offsets = [];
-    const points = [];
-    const ok = [];
-    for (let k = -steps; k <= steps; k++) {
-      const d = k * LATERAL_STEP_M;
-      offsets.push(d);
-      points.push([station.x + nx * d, station.z + nz * d]);
-      ok.push(bandPassable(raster, station.x + nx * d, station.z + nz * d, station.tx, station.tz));
-    }
-    candidates.push({ offsets, points });
-    valid.push(ok);
-  }
-  const bad = [];
-  for (let index = 0; index < valid.length; index++) {
-    if (!valid[index].some(Boolean)) bad.push(index);
-  }
-  if (bad.length > 0) {
-    return { blocked: { stage: 'no-band-clear-lateral', stationIndex: bad[0], blockedStations: bad.length } };
-  }
-  const count = stations.length;
-  const inf = 1e18;
-  const firstOk = [];
-  for (let k = 0; k < valid[0].length; k++) if (valid[0][k]) firstOk.push(k);
-  let first = firstOk[0];
-  for (const k of firstOk) {
-    if (Math.abs(candidates[0].offsets[k]) < Math.abs(candidates[0].offsets[first])) first = k;
-  }
-  let cost = candidates[0].offsets.map((_, index) => index === first ? Math.abs(candidates[0].offsets[first]) : inf);
-  const back = [];
-  for (let index = 1; index < count; index++) {
-    const offsets = candidates[index].offsets;
-    const previous = candidates[index - 1].offsets;
-    const newCost = offsets.map(() => inf);
-    const newBack = offsets.map(() => -1);
-    for (let k = 0; k < offsets.length; k++) {
-      if (!valid[index][k]) continue;
-      const baseCost = Math.abs(offsets[k]);
-      let best = inf;
-      let bestPrevious = -1;
-      for (let p = 0; p < previous.length; p++) {
-        if (cost[p] >= inf) continue;
-        const value = cost[p] + baseCost + 0.5 * Math.abs(offsets[k] - previous[p]);
-        if (value < best) { best = value; bestPrevious = p; }
-      }
-      newCost[k] = best;
-      newBack[k] = bestPrevious;
-    }
-    cost = newCost;
-    back.push(newBack);
-  }
-  const lastOk = [];
-  for (let k = 0; k < cost.length; k++) if (cost[k] < inf) lastOk.push(k);
-  if (lastOk.length === 0) return { blocked: { stage: 'lateral-dp' } };
-  let last = lastOk[0];
-  for (const k of lastOk) if (cost[k] < cost[last]) last = k;
-  const sequence = [last];
-  for (let index = count - 1; index > 0; index--) sequence.push(back[index - 1][sequence[sequence.length - 1]]);
-  sequence.reverse();
-  return {
-    points: sequence.map((k, index) => candidates[index].points[k]),
-    offsets: sequence.map((k, index) => candidates[index].offsets[k]),
-  };
-}
-
-function finalBandFailures(raster, points) {
-  const failures = [];
-  for (let index = 0; index < points.length; index++) {
-    const a = points[Math.max(0, index - 1)];
-    const b = points[Math.min(points.length - 1, index + 1)];
-    const tx = b[0] - a[0];
-    const tz = b[1] - a[1];
-    const norm = Math.hypot(tx, tz) || 1;
-    if (!bandPassable(raster, points[index][0], points[index][1], tx / norm, tz / norm)) {
-      failures.push(index);
-    }
-  }
-  return failures;
-}
-
 // ---------------------------------------------------------------- gates
 function tangentAt(points, index, window = TANGENT_WINDOW) {
   const half = Math.max(1, Math.round(window / 2 / SAMPLE_STEP));
@@ -577,7 +490,7 @@ function main() {
   const pakIndex = readPakIndex(pakBuffer);
   const routes = JSON.parse(readFileSync(path.join(ROOT, ROUTES_RELATIVE), 'utf8'));
 
-  check('summary schema', summary.schema === 'blur.map-laps-aid.aid-paths/1');
+  check('summary schema', summary.schema === 'blur.map-laps-aid.aid-paths/2');
   check('summary level count', summary.levels.length === 7, 'got ' + summary.levels.length);
   const counts = summary.summary.counts;
   check('summary path count', counts.path === summary.levels.filter((row) => row.verdict === 'path').length);
@@ -724,6 +637,194 @@ function main() {
       check(level + ': every sample on P48 passable ground', rasterOk, 'first ' + firstRaster);
       check(level + ': every sample car band passable', bandOk, 'first ' + firstBand);
 
+      // ---------------------------------------------------------------- detours
+      const lateralOffsets = doc.source.aid.lateralOffsets;
+      check(level + ': lateral offset count',
+        Array.isArray(lateralOffsets) && lateralOffsets.length === samples.length,
+        lateralOffsets ? lateralOffsets.length + ' vs ' + samples.length : 'missing');
+      const detourStations = [];
+      for (let index = 0; index < lateralOffsets.length; index++) {
+        if (Math.abs(lateralOffsets[index]) > 1e-9) detourStations.push(index);
+      }
+      check(level + ': summary detour count', row.detours === detourStations.length,
+        row.detours + ' vs ' + detourStations.length);
+      check(level + ': summary detour runs', typeof row.detourRuns === 'number');
+      check(level + ': summary max lateral offset',
+        Math.abs(row.maxLateralOffsetMetres - doc.source.aid.detourMaxLateralOffsetMetres) < 1e-6);
+      check(level + ': source detour count',
+        doc.source.aid.detourStationCount === detourStations.length);
+      check(level + ': source detour runs',
+        typeof doc.source.aid.detourRunCount === 'number');
+      check(level + ': detour search window',
+        doc.source.aid.detourSearchMetres === DETOUR_SEARCH_M);
+      check(level + ': detour step',
+        doc.source.aid.detourStepMetres === DETOUR_STEP_M);
+      check(level + ': detour continuity bound',
+        doc.source.aid.detourMaxJumpMetres === DETOUR_MAX_JUMP_M);
+      check(level + ': detour rule text',
+        typeof doc.source.aid.detourRule === 'string'
+          && doc.source.aid.detourRule.length > 0);
+      check(level + ': detour records count',
+        Array.isArray(doc.source.aid.detours)
+          && doc.source.aid.detours.length === detourStations.length);
+
+      // Re-derive the 0.25 m stations from the pak.
+      const finishNearest = nearestOnPolyline(chosen.points, pathDoc.end.x, pathDoc.end.z);
+      const widths = chosen.route.segments.map((segment) => segment.width);
+      const { stations } = resampleWithFrame(chosen.points, widths,
+        chosen.spawnArc, finishNearest.arc, true);
+      check(level + ': station count', stations.length === samples.length,
+        stations.length + ' vs ' + samples.length);
+
+      let maxJump = 0;
+      for (let index = 1; index < samples.length; index++) {
+        maxJump = Math.max(maxJump, Math.hypot(
+          samples[index].x - samples[index - 1].x,
+          samples[index].z - samples[index - 1].z));
+      }
+      check(level + ': detour continuity', maxJump <= DETOUR_MAX_JUMP_M + 1e-6,
+        maxJump + ' > ' + DETOUR_MAX_JUMP_M);
+
+      let recordsOk = true;
+      let recordsDetail = '';
+      for (const record of doc.source.aid.detours) {
+        const index = record.station;
+        const station = stations[index];
+        const sample = samples[index];
+        if (!station || !sample) {
+          recordsOk = false;
+          recordsDetail = 'station ' + index + ' out of range';
+          break;
+        }
+        const signed = -(sample.x - station.x) * station.tz
+          + (sample.z - station.z) * station.tx;
+        const reasonText = typeof record.reason === 'string' ? record.reason : '';
+        const racingClear = bandPassable(raster, station.x, station.z,
+          station.tx, station.tz);
+        const reasonOk = racingClear
+          ? reasonText.startsWith('continuity ramp')
+          : reasonText.startsWith('the racing point is not');
+        const ok = record.racingPoint
+          && Math.abs(record.racingPoint.x - station.x) < 1e-4
+          && Math.abs(record.racingPoint.z - station.z) < 1e-4
+          && record.detourPoint
+          && Math.abs(record.detourPoint.x - sample.x) < 1e-6
+          && Math.abs(record.detourPoint.z - sample.z) < 1e-6
+          && Math.abs(record.lateralOffset - lateralOffsets[index]) < 1e-6
+          && Math.abs(record.lateralOffset - signed) < 1e-3
+          && Math.abs(record.lateralOffset) <= DETOUR_SEARCH_M + 1e-6
+          && reasonText.length > 0
+          && reasonOk;
+        if (!ok) {
+          recordsOk = false;
+          recordsDetail = 'station ' + index;
+          break;
+        }
+      }
+      check(level + ': detour records', recordsOk, recordsDetail);
+
+      let runCount = 0;
+      let runsOk = true;
+      let runsDetail = '';
+      let runIndex = 0;
+      while (runIndex < lateralOffsets.length) {
+        if (Math.abs(lateralOffsets[runIndex]) <= 1e-9) { runIndex++; continue; }
+        const start = runIndex;
+        while (runIndex < lateralOffsets.length
+          && Math.abs(lateralOffsets[runIndex]) > 1e-9) runIndex++;
+        const end = runIndex - 1;
+        runCount++;
+        if (start > 0 && Math.abs(lateralOffsets[start - 1]) > 1e-9) {
+          runsOk = false;
+          runsDetail = 'run at ' + start + ' does not start on the line';
+        }
+        if (end < lateralOffsets.length - 1
+          && Math.abs(lateralOffsets[end + 1]) > 1e-9) {
+          runsOk = false;
+          runsDetail = 'run at ' + end + ' does not end on the line';
+        }
+        if (start > 0 && Math.abs(lateralOffsets[start]) > DETOUR_STEP_M + 1e-6) {
+          runsOk = false;
+          runsDetail = 'run at ' + start + ' starts at ' + lateralOffsets[start];
+        }
+        if (end < lateralOffsets.length - 1
+          && Math.abs(lateralOffsets[end]) > DETOUR_STEP_M + 1e-6) {
+          runsOk = false;
+          runsDetail = 'run at ' + end + ' ends at ' + lateralOffsets[end];
+        }
+        let needed = false;
+        for (let k = start; k <= end; k++) {
+          const station = stations[k];
+          if (!bandPassable(raster, station.x, station.z, station.tx, station.tz)) {
+            needed = true;
+            break;
+          }
+        }
+        if (!needed) {
+          runsOk = false;
+          runsDetail = 'run ' + start + '-' + end + ' has no blocked racing point';
+        }
+      }
+      check(level + ': detour runs return to the line', runsOk, runsDetail);
+      check(level + ': summary detour runs match', row.detourRuns === runCount,
+        row.detourRuns + ' vs ' + runCount);
+      check(level + ': source detour runs match',
+        doc.source.aid.detourRunCount === runCount);
+
+      const startClear = bandPassable(raster, stations[0].x, stations[0].z,
+        stations[0].tx, stations[0].tz);
+      const lastStation = stations[stations.length - 1];
+      const finishClear = bandPassable(raster, lastStation.x, lastStation.z,
+        lastStation.tx, lastStation.tz);
+      check(level + ': start returns to the line',
+        !startClear || Math.abs(lateralOffsets[0]) < 1e-9,
+        'offset ' + lateralOffsets[0]);
+      check(level + ': finish returns to the line',
+        !finishClear || Math.abs(lateralOffsets[lateralOffsets.length - 1]) < 1e-9,
+        'offset ' + lateralOffsets[lateralOffsets.length - 1]);
+
+      let detourBandOk = true;
+      for (const index of detourStations) {
+        const a = samples[Math.max(0, index - 1)];
+        const b = samples[Math.min(samples.length - 1, index + 1)];
+        const tx = b.x - a.x;
+        const tz = b.z - a.z;
+        const norm = Math.hypot(tx, tz) || 1;
+        if (!bandPassable(raster, samples[index].x, samples[index].z,
+          tx / norm, tz / norm)) detourBandOk = false;
+      }
+      check(level + ': every detour point band clear', detourBandOk);
+
+      let detourStationBandOk = true;
+      for (const index of detourStations) {
+        const station = stations[index];
+        if (!bandPassable(raster, samples[index].x, samples[index].z,
+          station.tx, station.tz)) detourStationBandOk = false;
+      }
+      check(level + ': every detour point band clear in the racing-line frame',
+        detourStationBandOk);
+
+      const pathStartDistance = Math.hypot(samples[0].x - spawn.x,
+        samples[0].z - spawn.z);
+      const pathFinishDistance = Math.hypot(
+        samples[samples.length - 1].x - pathDoc.end.x,
+        samples[samples.length - 1].z - pathDoc.end.z);
+      check(level + ': path start projection',
+        Math.abs(doc.source.aid.pathStartProjectionMetres - pathStartDistance) < 1e-3,
+        doc.source.aid.pathStartProjectionMetres + ' vs ' + pathStartDistance);
+      check(level + ': path finish projection',
+        Math.abs(doc.source.aid.pathFinishProjectionMetres - pathFinishDistance) < 1e-3,
+        doc.source.aid.pathFinishProjectionMetres + ' vs ' + pathFinishDistance);
+      check(level + ': recorded path start projection',
+        Math.abs(doc.source.endpoints.spawnProjection.metres - pathStartDistance) < 1e-3);
+      check(level + ': recorded path finish projection',
+        Math.abs(doc.source.endpoints.finishProjection.metres - pathFinishDistance) < 1e-3);
+      check(level + ': recorded racing-line finish projection',
+        Math.abs(doc.source.endpoints.finishProjection.racingLineProjectionMetres
+          - finishNearest.distance) < 1e-3);
+      check(level + ': course finish clearance',
+        Math.abs(doc.course.span.finishClearanceMetres - pathFinishDistance) < 1e-3);
+
       const points = samples.map((sample) => [sample.x, sample.z]);
       const arc = samples.map((sample) => sample.arc);
       const length = doc.course.lengthMetres;
@@ -812,37 +913,54 @@ function main() {
         row.blocker.x + ',' + row.blocker.z + ' vs ' + station.x + ',' + station.z);
       check(level + ': racing line band fails at the witness',
         !bandPassable(raster, station.x, station.z, station.tx, station.tz));
-      const limit = Math.min(LATERAL_SEARCH_M, station.width / 2);
-      const steps = Math.floor(limit / LATERAL_STEP_M + 1e-9);
+      const steps = Math.floor(DETOUR_SEARCH_M / DETOUR_STEP_M + 1e-9);
       let anyClear = false;
       for (let k = -steps; k <= steps; k++) {
-        const d = k * LATERAL_STEP_M;
+        const d = k * DETOUR_STEP_M;
         const x = station.x - station.tz * d;
         const z = station.z + station.tx * d;
         if (bandPassable(raster, x, z, station.tx, station.tz)) { anyClear = true; break; }
       }
       check(level + ': no band-clear lateral at the witness', !anyClear);
+      check(level + ': detour search window recorded',
+        row.blocker.detourSearchMetres === DETOUR_SEARCH_M,
+        row.blocker.detourSearchMetres + ' vs ' + DETOUR_SEARCH_M);
       continue;
     }
 
-    if (row.blocker.stage === 'resampled-band') {
+    if (row.blocker.stage === 'detour-dp') {
       const finishNearest = nearestOnPolyline(chosen.points, pathDoc.end.x, pathDoc.end.z);
       const widths = chosen.route.segments.map((segment) => segment.width);
       const { stations } = resampleWithFrame(chosen.points, widths, chosen.spawnArc,
         finishNearest.arc, true);
-      const projected = projectStations(raster, stations);
-      check(level + ': projection exists', !projected.blocked);
-      if (!projected.blocked) {
-        const failures = finalBandFailures(raster, projected.points);
-        check(level + ': resampled band fails', failures.length > 0);
-        check(level + ': recorded resampled station',
-          failures.includes(row.blocker.stationIndex),
-          'expected one of ' + failures.slice(0, 5).join(',') + ' got ' + row.blocker.stationIndex);
-        const point = projected.points[row.blocker.stationIndex];
-        check(level + ': recorded resampled coordinate',
-          Math.abs(row.blocker.x - point[0]) < 0.01 && Math.abs(row.blocker.z - point[1]) < 0.01,
-          row.blocker.x + ',' + row.blocker.z + ' vs ' + point[0] + ',' + point[1]);
+      check(level + ': detour-dp station in range',
+        row.blocker.stationIndex >= 0 && row.blocker.stationIndex < stations.length);
+      const station = stations[row.blocker.stationIndex];
+      check(level + ': detour-dp station coordinate',
+        Math.abs(row.blocker.x - station.x) < 0.01
+          && Math.abs(row.blocker.z - station.z) < 0.01,
+        row.blocker.x + ',' + row.blocker.z + ' vs ' + station.x + ',' + station.z);
+      const steps = Math.floor(DETOUR_SEARCH_M / DETOUR_STEP_M + 1e-9);
+      let anyClear = false;
+      for (let k = -steps; k <= steps; k++) {
+        const d = k * DETOUR_STEP_M;
+        if (bandPassable(raster, station.x - station.tz * d,
+          station.z + station.tx * d, station.tx, station.tz)) {
+          anyClear = true;
+          break;
+        }
       }
+      check(level + ': detour-dp station has a band-clear lateral', anyClear);
+      check(level + ': detour-dp continuity bound',
+        row.blocker.detourMaxJumpMetres === DETOUR_MAX_JUMP_M);
+      continue;
+    }
+
+    if (row.blocker.stage === 'resampled-band') {
+      check(level + ': resampled band reason',
+        typeof row.reason === 'string' && row.reason.length > 0);
+      check(level + ': resampled band station in range',
+        row.blocker.stationIndex >= 0);
       continue;
     }
 
