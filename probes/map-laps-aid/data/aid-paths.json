@@ -1,0 +1,266 @@
+{
+ "schema": "blur.map-laps-aid.aid-paths/1",
+ "source": {
+  "builder": "probes/map-laps-aid/tools/build_aid_paths.py",
+  "aidDecoder": "probes/course/tools/aid_decode.py",
+  "aidLoader": "upstream/BlurRebuilt/code/amax/game/AI/AI_Amax.cpp:1595-2163 (LoadVersionSix)",
+  "aidFilename": "upstream/BlurRebuilt/code/amax/game/GameLogic/Structures/LevelState.cpp:298",
+  "pak": "game-data/Blur/cache/gamedata.pak",
+  "routes": "_work/powerups/routes.json",
+  "note": "lengths are the committed path documents; blocked reasons are the builder's typed records, never paraphrased"
+ },
+ "scope": {
+  "collisionOnly": true,
+  "retailRacingLine": true,
+  "retailStartLine": false,
+  "rendererClaim": false,
+  "vehiclePhysics": false,
+  "gameRun": false,
+  "pathDriven": false,
+  "note": "a data summary only; a path is not a playable map and no lap was driven. The path is the retail AI racing line projected onto collision, not a retail start line."
+ },
+ "levels": [
+  {
+   "level": "spa_barcelona_bowl_multiplayer",
+   "mapId": "bowl",
+   "verdict": "blocked",
+   "lengthMetres": null,
+   "samples": 0,
+   "gateArcs": [],
+   "aid": null,
+   "blocker": {
+    "stage": "aid-missing",
+    "x": null,
+    "z": null,
+    "stationIndex": null,
+    "stationCount": null,
+    "spawnDistanceMetres": null,
+    "maxSpawnOffsetMetres": null,
+    "lateralSearchMetres": null,
+    "blockedStations": null,
+    "blockedSamples": null
+   },
+   "reason": "no .aid file with a closed non-logic racing line at least 300 m long exists under \\gamedata\\levels\\spa_barcelona_bowl_multiplayer\\",
+   "pathFile": null,
+   "pathFileSha256": null,
+   "pathContentHash": null
+  },
+  {
+   "level": "uk_brighton",
+   "mapId": "brighton",
+   "verdict": "blocked",
+   "lengthMetres": null,
+   "samples": 0,
+   "gateArcs": [],
+   "aid": {
+    "pakPath": "\\gamedata\\levels\\uk_brighton\\uk_brighton_2.aid",
+    "sha256": "sha256:2f6f7b136adf8e13c20461e9f6bdbc4624fda1dda30d6e57f9801b74d93ee0d0",
+    "routeName": "MainLoop",
+    "routeIndex": 3,
+    "routeRecordId": 2322912142,
+    "routeNumber": 2,
+    "flags": 1,
+    "segmentCount": 784,
+    "loopLengthMetres": 3080.569126,
+    "spawnProjectionMetres": 10.5291
+   },
+   "blocker": {
+    "stage": "no-band-clear-lateral",
+    "x": 73.591833,
+    "z": -174.809792,
+    "stationIndex": 609,
+    "stationCount": 8662,
+    "spawnDistanceMetres": null,
+    "maxSpawnOffsetMetres": null,
+    "lateralSearchMetres": 10,
+    "blockedStations": 952,
+    "blockedSamples": null
+   },
+   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position at station 609 of 8662 (73.592, -174.810); 10 m of the serialized 20.6 m width was searched and 952 stations have no band-clear position",
+   "pathFile": null,
+   "pathFileSha256": null,
+   "pathContentHash": null
+  },
+  {
+   "level": "usa_la_downtown_multiplayer",
+   "mapId": "downtown-mp",
+   "verdict": "blocked",
+   "lengthMetres": null,
+   "samples": 0,
+   "gateArcs": [],
+   "aid": {
+    "pakPath": "\\gamedata\\levels\\usa_la_downtown_multiplayer\\usa_la_downtown_multiplayer_figureof8.aid",
+    "sha256": "sha256:6e08d63fc9b9831162ef190d443e9aea404c15bfa8455c58ed17a1ccebe64e6a",
+    "routeName": "Mainracing",
+    "routeIndex": 0,
+    "routeRecordId": 4228808123,
+    "routeNumber": 1,
+    "flags": 1,
+    "segmentCount": 393,
+    "loopLengthMetres": 1566.233272,
+    "spawnProjectionMetres": 1.1894
+   },
+   "blocker": {
+    "stage": "resampled-band",
+    "x": 233.226968,
+    "z": -162.573127,
+    "stationIndex": 112,
+    "stationCount": 334,
+    "spawnDistanceMetres": null,
+    "maxSpawnOffsetMetres": null,
+    "lateralSearchMetres": null,
+    "blockedStations": null,
+    "blockedSamples": 20
+   },
+   "reason": "the projected racing-line path fails the car half-width (1.138 m) lateral band at 20 of 334 resampled samples; first at station 112 (233.227, -162.573)",
+   "pathFile": null,
+   "pathFileSha256": null,
+   "pathContentHash": null
+  },
+  {
+   "level": "usa_ny_dumbo",
+   "mapId": "dumbo",
+   "verdict": "path",
+   "lengthMetres": 361.999436,
+   "samples": 1449,
+   "gateArcs": [
+    0,
+    160.749632,
+    199.999614,
+    361.999436
+   ],
+   "aid": {
+    "pakPath": "\\gamedata\\levels\\usa_ny_dumbo\\usa_ny_dumbo_2.aid",
+    "sha256": "sha256:9e3d51a78d92503144044f1f5bd04489d609a3cd39e7862eec62d8689b2f8274",
+    "routeName": "MainLoop",
+    "routeIndex": 2,
+    "routeRecordId": 2270742337,
+    "routeNumber": 2,
+    "flags": 1,
+    "segmentCount": 1490,
+    "loopLengthMetres": 5857.476719,
+    "spawnProjectionMetres": 11.2225,
+    "finishProjectionMetres": 399.3514
+   },
+   "reason": "the retail racing line is car-half-width clear on this segment; the path starts at the point nearest the committed spawn and ends at the point nearest the committed draw-path end",
+   "pathFile": "probes/map-laps-aid/data/dumbo-aid-path.json",
+   "pathFileSha256": "sha256:14bee4c51e8f41f44c10d186a09fa0ac432e26453b81ed14bc31d4e5bf5ae79c",
+   "pathContentHash": "sha256:f2015e5b99af0be85bf6a1fae056e6fcf791bd186201c66107ceb0fc2ce42cbf"
+  },
+  {
+   "level": "uk_london_hackney",
+   "mapId": "hackney",
+   "verdict": "blocked",
+   "lengthMetres": null,
+   "samples": 0,
+   "gateArcs": [],
+   "aid": {
+    "pakPath": "\\gamedata\\levels\\uk_london_hackney\\uk_london_hackney_4.aid",
+    "sha256": "sha256:1e0abffd707d046d95c80eb2d72fdd382c7359e529e760e74896c1b593032132",
+    "routeName": "MainLoop",
+    "routeIndex": 1,
+    "routeRecordId": 1602485103,
+    "routeNumber": 4,
+    "flags": 1,
+    "segmentCount": 755,
+    "loopLengthMetres": 2949.954423,
+    "spawnProjectionMetres": 10.0334
+   },
+   "blocker": {
+    "stage": "no-band-clear-lateral",
+    "x": -227.278106,
+    "z": -133.764788,
+    "stationIndex": 2890,
+    "stationCount": 10012,
+    "spawnDistanceMetres": null,
+    "maxSpawnOffsetMetres": null,
+    "lateralSearchMetres": 8.711,
+    "blockedStations": 222,
+    "blockedSamples": null
+   },
+   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position at station 2890 of 10012 (-227.278, -133.765); 9 m of the serialized 17.4 m width was searched and 222 stations have no band-clear position",
+   "pathFile": null,
+   "pathFileSha256": null,
+   "pathContentHash": null
+  },
+  {
+   "level": "usa_sanfran_russianhill",
+   "mapId": "russianhill",
+   "verdict": "blocked",
+   "lengthMetres": null,
+   "samples": 0,
+   "gateArcs": [],
+   "aid": {
+    "pakPath": "\\gamedata\\levels\\usa_sanfran_russianhill\\usa_sanfran_russianhill_1.aid",
+    "sha256": "sha256:479a6462368ccc9650e803f16535ebe3f522b9b730bf2876e4f99f2d0d9c2684",
+    "routeName": "MainLoop",
+    "routeIndex": 0,
+    "routeRecordId": 2877899465,
+    "routeNumber": 1,
+    "flags": 1025,
+    "segmentCount": 691,
+    "loopLengthMetres": 2673.713624,
+    "spawnProjectionMetres": 175.1396
+   },
+   "blocker": {
+    "stage": "spawn-match",
+    "x": -48.467753,
+    "z": 322.743199,
+    "stationIndex": null,
+    "stationCount": null,
+    "spawnDistanceMetres": 175.1396,
+    "maxSpawnOffsetMetres": 25.0,
+    "lateralSearchMetres": null,
+    "blockedStations": null,
+    "blockedSamples": null
+   },
+   "reason": "no retail .aid racing line passes within 25 m of the committed spawn; the nearest is MainLoop route 0 at 175.140 m (nearest point -48.468, 322.743)",
+   "pathFile": null,
+   "pathFileSha256": null,
+   "pathContentHash": null
+  },
+  {
+   "level": "usa_sanfran_sausalito",
+   "mapId": "sausalito",
+   "verdict": "blocked",
+   "lengthMetres": null,
+   "samples": 0,
+   "gateArcs": [],
+   "aid": {
+    "pakPath": "\\gamedata\\levels\\usa_sanfran_sausalito\\usa_sanfran_sausalito_1.aid",
+    "sha256": "sha256:15afacb39bf5c8d0b97225ec97540d1be76fecfd23f15a48abbb0b17ace6886a",
+    "routeName": "MainLoop",
+    "routeIndex": 5,
+    "routeRecordId": 1501209191,
+    "routeNumber": 1,
+    "flags": 1,
+    "segmentCount": 1395,
+    "loopLengthMetres": 5460.802028,
+    "spawnProjectionMetres": 10.0695
+   },
+   "blocker": {
+    "stage": "no-band-clear-lateral",
+    "x": 709.521209,
+    "z": -1434.502293,
+    "stationIndex": 4,
+    "stationCount": 18196,
+    "spawnDistanceMetres": null,
+    "maxSpawnOffsetMetres": null,
+    "lateralSearchMetres": 7.152,
+    "blockedStations": 7909,
+    "blockedSamples": null
+   },
+   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position at station 4 of 18196 (709.521, -1434.502); 7 m of the serialized 14.3 m width was searched and 7909 stations have no band-clear position",
+   "pathFile": null,
+   "pathFileSha256": null,
+   "pathContentHash": null
+  }
+ ],
+ "summary": {
+  "counts": {
+   "path": 1,
+   "blocked": 6
+  },
+  "levelCount": 7
+ }
+}
