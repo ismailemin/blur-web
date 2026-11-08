@@ -25,7 +25,8 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
   **57.07 s, 0 respawn**; draw yolu 227 m'deki 10 cm kaldırıma takılıyordu,
   collision rasterından üretilen yol 6.836 m açıklıkla geçiyor.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
-- **Amboy/Gracia power-up:** oda bayrağıyla 6 pickup, misafir de alıyor.
+- **Amboy/Gracia power-up:** retail yerleşim bağlı — Amboy **82**, Gracia **59**
+  pickup, misafir hepsini alıyor; oda bayrağıyla `?powerups=1` gerekmiyor.
 - **2 oyunculu + AI:** `mp-two` 52/52, `mp-ai` 71/71.
 - **Taşınabilir kapı:** `verify_asset_probe --skip-build` **84/84**,
   `check_e1_poc` **23/23**.
