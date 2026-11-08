@@ -151,6 +151,10 @@ foreach ($lvl in @("usa_amboy","spa_barcelona_gracia")) {
 # committed Amboy 3-lap layout document (e1-drive.sprint v1, courseId "lap")
 & $py probes/map-laps/tools/build_amboy_lap.py
 & $node probes/map-laps/tools/verify_amboy_lap.mjs
+
+# committed Gracia no-closed-lap decision (map-laps.no-lap v1)
+& $py probes/map-laps/tools/build_gracia_no_lap.py
+& $node probes/map-laps/tools/verify_gracia_no_lap.mjs
 ```
 
 ## 7. Artifacts and hashes
