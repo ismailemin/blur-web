@@ -1,4 +1,4 @@
-"""Re-derive the five remaining builder refusals from the committed data.
+"""Re-derive the three remaining builder refusals from the committed data.
 
 This is a read-only diagnostic. It parses the decoded body model with the
 committed `build_manifest.parse_mdldat` and reads the scene with the committed

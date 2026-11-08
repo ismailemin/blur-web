@@ -197,6 +197,154 @@ def _mapping_text(record: dict) -> str:
         f"excluded by exact name")
 
 
+def _install_parent_envelope_axis(bm, evidence: dict) -> list[tuple[str, object]]:
+    """Let an inflated member union fall back to the e_wheel_* parent envelope.
+
+    The committed builder already does this when the member union is thin on X
+    and round on Y/Z. This helper makes the same measured fallback available to
+    a decision: the parent's own serialized bounds are the authority only when
+    the member union fails that test. Nothing is guessed; every fallback is
+    recorded.
+    """
+    member_parent: dict[tuple, dict] = {}
+    original_parse = bm.parse_mdldat
+    original_union = bm.union_bounds
+    fallbacks: list[dict] = []
+
+    def parse(data: bytes) -> dict:
+        mdl = original_parse(data)
+        elements = [element for element in mdl["elements"]
+                    if element["modelIndex"] == 0]
+        by_index = {element["index"]: element for element in elements}
+        for element in elements:
+            parent = by_index.get(element["parent"])
+            if parent and parent["name"].lower().startswith("e_wheel_"):
+                member_parent[(tuple(element["min"]),
+                               tuple(element["max"]))] = parent
+        return mdl
+
+    def union_bounds(bounds_list: list[dict]) -> tuple[list[float], list[float]]:
+        keys = [(tuple(item["min"]), tuple(item["max"]))
+                for item in bounds_list]
+        parents = {member_parent[key]["name"] for key in keys
+                   if key in member_parent}
+        if keys and len(parents) == 1 and all(k in member_parent for k in keys):
+            lo, hi = original_union(bounds_list)
+            extent = [hi[i] - lo[i] for i in range(3)]
+            delta = abs(extent[1] - extent[2]) / max(extent[1], extent[2])
+            thin = extent[0] < extent[1] and extent[0] < extent[2]
+            if not (thin and delta <= 0.10):
+                parent = member_parent[keys[0]]
+                parent_extent = [parent["max"][i] - parent["min"][i]
+                                 for i in range(3)]
+                fallbacks.append({
+                    "parent": parent["name"],
+                    "memberUnionExtent": extent,
+                    "memberUnionRoundRelativeDelta": delta,
+                    "parentExtent": parent_extent,
+                    "parentRoundRelativeDelta": abs(
+                        parent_extent[1] - parent_extent[2])
+                        / max(parent_extent[1], parent_extent[2]),
+                })
+                return list(parent["min"]), list(parent["max"])
+        return original_union(bounds_list)
+
+    bm.parse_mdldat = parse
+    bm.union_bounds = union_bounds
+    evidence["axisFallbacks"] = fallbacks
+    evidence["note"] = (
+        "the e_wheel_* parent's own serialized bounds are the wheel envelope; "
+        "the member union is still used whenever it already proves thin X / "
+        "round Y/Z")
+    return [("parse_mdldat", original_parse),
+            ("union_bounds", original_union)]
+
+
+def _install_orphan_corner_from_translation(
+        bm, evidence: dict) -> list[tuple[str, object]]:
+    """Assign a wheel element to the one e_wheel_* parent its matrix matches.
+
+    Some models serialize a wheel part as a child of DefaultElement instead of
+    the wheel parent. The serialized parent is never rewritten in the output:
+    the builder's `classify` is wrapped, the parent is changed only for the
+    duration of that call, and it is restored before `build` writes the
+    manifest. The corner proof is the element matrix translation against the
+    four e_wheel_* translations; the local bounds are recorded as-is.
+    """
+    original_classify = bm.classify
+    orphan_rows: list[dict] = []
+
+    def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
+        elements = [element for element in mdl["elements"]
+                    if element["modelIndex"] == 0]
+        by_index = {element["index"]: element for element in elements}
+        wheel_parents = [element for element in elements
+                         if element["name"].lower().startswith("e_wheel_")]
+        wheel_parent_indexes = {element["index"] for element in wheel_parents}
+        saved: list[tuple[dict, int]] = []
+        for element in elements:
+            if bm.wheel_kind(element["name"]) is None:
+                continue
+            if element["parent"] in wheel_parent_indexes:
+                continue
+            translation = element["matrix"][3][:3]
+            ranked = sorted(
+                ((sum((translation[i] - parent["matrix"][3][i]) ** 2
+                      for i in range(3)) ** 0.5, parent)
+                 for parent in wheel_parents),
+                key=lambda item: (item[0], item[1]["name"]))
+            if not ranked:
+                raise Unsupported(f"{element['name']}: no e_wheel_* parent exists")
+            nearest_distance, nearest = ranked[0]
+            second_distance = ranked[1][0] if len(ranked) > 1 else None
+            if nearest_distance > 0.05 or (second_distance is not None
+                                           and second_distance < 0.5):
+                raise Unsupported(
+                    f"{element['name']} (element {element['index']}) is parented to "
+                    f"{(by_index.get(element['parent']) or {}).get('name')!r} and "
+                    f"its translation {translation} does not match exactly one "
+                    f"e_wheel_* parent: nearest {nearest['name']} at "
+                    f"{nearest_distance:.6f} m, second "
+                    f"{second_distance if second_distance is None else round(second_distance, 6)} m")
+            shared = sorted(
+                other["name"] for other in elements
+                if other is not element and bm.wheel_kind(other["name"]) is not None
+                and all(abs(other["min"][i] - element["min"][i]) <= 1e-5
+                        and abs(other["max"][i] - element["max"][i]) <= 1e-5
+                        for i in range(3)))
+            orphan_rows.append({
+                "name": element["name"],
+                "index": element["index"],
+                "serializedParent": (by_index.get(element["parent"]) or {}).get("name"),
+                "serializedParentIndex": element["parent"],
+                "matchedWheelParent": nearest["name"],
+                "matchedWheelParentIndex": nearest["index"],
+                "elementTranslation": translation,
+                "wheelParentTranslation": nearest["matrix"][3][:3],
+                "distanceMeters": nearest_distance,
+                "secondNearestParent": (ranked[1][1]["name"]
+                                        if len(ranked) > 1 else None),
+                "secondNearestDistanceMeters": second_distance,
+                "localBounds": {"min": element["min"], "max": element["max"]},
+                "sharedLocalBoundsWith": shared,
+            })
+            saved.append((element, element["parent"]))
+            element["parent"] = nearest["index"]
+        try:
+            return original_classify(scene, mdl, model_bounds)
+        finally:
+            for element, original_parent in saved:
+                element["parent"] = original_parent
+
+    bm.classify = classify
+    evidence["orphanCorners"] = orphan_rows
+    evidence["orphanCornerNote"] = (
+        "the serialized parent stays DefaultElement; the corner is proven by the "
+        "element matrix translation matching exactly one e_wheel_* parent, and "
+        "the parent is restored before the manifest is written")
+    return [("classify", original_classify)]
+
+
 def build_manifest_with_decisions(record: dict, decision: dict, out_root: Path,
                                   scene_exe: Path, model_exe: Path) -> dict:
     """Run the committed part builder with one typed, evidence-based decision.
@@ -257,62 +405,44 @@ def build_manifest_with_decisions(record: dict, decision: dict, out_root: Path,
                         "builder is fed the filtered scene through --scene-json",
             })
         elif decision["kind"] == "wheel-axis-from-parent-envelope":
-            member_parent: dict[tuple, dict] = {}
-            original_parse = bm.parse_mdldat
-            original_union = bm.union_bounds
-            fallbacks: list[dict] = []
+            restore = _install_parent_envelope_axis(bm, evidence)
+        elif decision["kind"] == "wheel-orphan-corner-from-translation":
+            restore = _install_orphan_corner_from_translation(bm, evidence)
+        elif decision["kind"] == "wheel-member-name-variant-and-axis-fallback":
+            original_wheel_kind = bm.wheel_kind
 
-            def parse(data: bytes) -> dict:
-                mdl = original_parse(data)
-                elements = [element for element in mdl["elements"]
-                            if element["modelIndex"] == 0]
-                by_index = {element["index"]: element for element in elements}
-                for element in elements:
-                    parent = by_index.get(element["parent"])
-                    if parent and parent["name"].lower().startswith("e_wheel_"):
-                        member_parent[(tuple(element["min"]),
-                                       tuple(element["max"]))] = parent
-                return mdl
+            def wheel_kind(name: str) -> str | None:
+                if name.lower().startswith("e_brake_caliper_"):
+                    return "brakeCaliper"
+                return original_wheel_kind(name)
 
-            def union_bounds(bounds_list: list[dict]) -> tuple[list[float], list[float]]:
-                keys = [(tuple(item["min"]), tuple(item["max"]))
-                        for item in bounds_list]
-                parents = {member_parent[key]["name"] for key in keys
-                           if key in member_parent}
-                if keys and len(parents) == 1 and all(k in member_parent for k in keys):
-                    lo, hi = original_union(bounds_list)
-                    extent = [hi[i] - lo[i] for i in range(3)]
-                    delta = abs(extent[1] - extent[2]) / max(extent[1], extent[2])
-                    thin = extent[0] < extent[1] and extent[0] < extent[2]
-                    if not (thin and delta <= 0.10):
-                        parent = member_parent[keys[0]]
-                        parent_extent = [parent["max"][i] - parent["min"][i]
-                                         for i in range(3)]
-                        fallbacks.append({
-                            "parent": parent["name"],
-                            "memberUnionExtent": extent,
-                            "memberUnionRoundRelativeDelta": delta,
-                            "parentExtent": parent_extent,
-                            "parentRoundRelativeDelta": abs(
-                                parent_extent[1] - parent_extent[2])
-                                / max(parent_extent[1], parent_extent[2]),
-                        })
-                        return list(parent["min"]), list(parent["max"])
-                return original_union(bounds_list)
-
-            bm.parse_mdldat = parse
-            bm.union_bounds = union_bounds
-            restore = [("parse_mdldat", original_parse),
-                       ("union_bounds", original_union)]
-            evidence.update({
-                "axisFallbacks": fallbacks,
-                "note": "the e_wheel_* parent's own serialized bounds are the wheel "
-                        "envelope; the member union is still used whenever it already "
-                        "proves thin X / round Y/Z",
-            })
+            bm.wheel_kind = wheel_kind
+            model_path = ROOT / record["decodedModel"]
+            mdl = bm.parse_mdldat(model_path.read_bytes())
+            by_index = {element["index"]: element for element in mdl["elements"]}
+            evidence["nameVariants"] = [{
+                "index": element["index"],
+                "name": element["name"],
+                "parent": (by_index.get(element["parent"]) or {}).get("name"),
+                "parentIndex": element["parent"],
+                "matrixTranslation": element["matrix"][3][:3],
+                "localBounds": {"min": element["min"], "max": element["max"]},
+            } for element in mdl["elements"]
+                if element["modelIndex"] == 0
+                and element["name"].lower().startswith("e_brake_caliper_")]
+            evidence["nameVariantNote"] = (
+                "the committed prefix table has e_brakecaliper_; the two rear "
+                "calipers serialize as e_brake_caliper_ (an extra underscore). "
+                "The variant is matched by the same name rule and every matched "
+                "element is recorded; no element is renamed in the output")
+            restore = _install_parent_envelope_axis(bm, evidence)
+            restore.append(("wheel_kind", original_wheel_kind))
         else:
             raise Unsupported(f"{slug}: unknown builder decision {decision['kind']!r}")
-        summary = bm.build(args)
+        try:
+            summary = bm.build(args)
+        except bm.Unsupported as error:
+            raise Unsupported(f"{slug}: {error}") from error
     finally:
         for name, original in restore:
             setattr(bm, name, original)
@@ -321,6 +451,13 @@ def build_manifest_with_decisions(record: dict, decision: dict, out_root: Path,
     mesh_path = Path(summary["mesh"])
     scene_path = Path(summary["sceneReport"])
     built = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if decision["kind"] in ("wheel-orphan-corner-from-translation",
+                            "wheel-member-name-variant-and-axis-fallback"):
+        evidence["builtDiagnostics"] = {
+            "wheelElementCount": built["diagnostics"]["wheelElementCount"],
+            "brakeCaliperDrawCount": built["diagnostics"]["brakeCaliperDrawCount"],
+            "ambiguousWheelDrawCount": built["diagnostics"]["ambiguousWheelDrawCount"],
+        }
     record.update({
         "mapped": True,
         "manifest": str(manifest_path.relative_to(ROOT)).replace("\\", "/"),

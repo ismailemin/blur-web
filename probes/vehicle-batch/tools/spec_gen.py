@@ -75,27 +75,60 @@ BUILDER_DECISIONS = {
             "they contribute no geometry and are skipped; the other 82 draws are "
             "classified unchanged"),
     },
+    "hummer-h2-rat": {
+        "kind": "wheel-orphan-corner-from-translation",
+        "detail": (
+            "E_BrakeDisc_FrontRight1 (element 26, matrix translation "
+            "[-0.915054, 0.000000, 1.578988]) and E_BrakeCaliper_FrontRight1 "
+            "(element 27, [-0.926925, 0.000000, 1.577787]) are serialized as "
+            "children of DefaultElement (0). Their translations match exactly one "
+            "e_wheel_* parent, e_wheel_frontleft (index 1, [-0.914971, 0.000036, "
+            "1.579840]), at 0.000857 m and 0.012129 m; the second-nearest wheel "
+            "parent is 1.830054 m / 1.841926 m away. The corner is frontleft by "
+            "the element matrix, not by a rewritten chain: the serialized parent "
+            "stays DefaultElement and is restored before the manifest is written. "
+            "Element 26 local bounds equal E_BrakeDisc_BackLeft (element 43), so "
+            "the two brake-disc draws (29, 30) are tied between frontleft and "
+            "backleft and remain preview-paired; element 27 shares no local bounds "
+            "and its caliper draw (23) matches uniquely."),
+    },
+    "ford-supervan-stock": {
+        "kind": "wheel-member-name-variant-and-axis-fallback",
+        "detail": (
+            "The two rear calipers serialize as E_Brake_Caliper_BackLeft (element "
+            "50) and E_Brake_Caliper_BackRight (element 38), with an extra "
+            "underscore; both are direct children of e_wheel_backleft/backright. "
+            "The committed prefix table has e_brakecaliper_; matching the "
+            "e_brake_caliper_ variant gives four caliper elements and four caliper "
+            "draws: draw 12 matches element 50 and draw 17 matches element 38 at "
+            "0.00101 AABB difference, in addition to the front draws 24/25 at "
+            "0.00012. The rear caliper element bounds are model-space (matrix "
+            "translation 0, X -0.69414..-0.64127 / 0.64127..0.69414, Z "
+            "-1.33025..-1.25717), which inflates the rear member union; the "
+            "e_wheel_* parent envelope [0.33770, 0.69222, 0.69222] is thin on X "
+            "and round on Y/Z and proves the axle. No element is renamed and no "
+            "draw or caliper is invented."),
+    },
 }
 
-# The remaining refusals are genuine asset/structure cases. The diagnosis keeps
-# the exact element/draw evidence next to the typed reason; it is never used to
-# invent a parent chain, a wheel axis or an index range.
+# The remaining refusal is a genuine asset/structure case. The diagnosis keeps
+# the exact record evidence next to the typed reason; it is never used to
+# invent a body, a parent chain, a wheel axis or an index range.
 BUILDER_DIAGNOSES = {
-    "hummer-h2-rat": (
-        "E_BrakeDisc_FrontRight1 (element 26) and E_BrakeCaliper_FrontRight1 "
-        "(element 27) are parented to DefaultElement (0), not to an e_wheel_* "
-        "element: the parent chains are [26 -> 0] and [27 -> 0]. The front-left "
-        "wheel has only e_tyre_frontLeft and e_alloyRim_frontLeft; the two orphan "
-        "elements are its missing disc/caliper, but re-parenting them would invent "
-        "a parent chain, so the record stays unsupported."),
-    "ford-supervan-stock": (
-        "14 wheel elements are recognized because the two rear calipers are named "
-        "E_Brake_Caliper_BackLeft/BackRight (not E_BrakeCaliper_*); both are direct "
-        "children of e_wheel_backleft/backright and their element bounds are "
-        "model-space (matrix translation 0, X 0.6413..0.6941 / -0.6941..-0.6413, "
-        "Z -1.3302..-1.2572). Recognizing the name gives 4 members per corner, but "
-        "only 2 caliper draws exist (frontleft/frontright, draws 24/25); the "
-        "builder's caliper assignment requires 4, so the record stays unsupported."),
+    "defaultcar": (
+        "RP_CarDynamics record 8 / id 515172551 / name DefaultCar is class C with "
+        "classReason 'no exact normalised `\\models\\vehicles\\<name>.model` entry'. "
+        "cars.json records expectedPath '\\models\\vehicles\\defaultcar.model', "
+        "mapping 'none', missing ['exact model file: "
+        "\\models\\vehicles\\defaultcar.model'], logicalBytes null, pakPath null "
+        "and wheelResource null. c-aliases.json records status 'unsupported', "
+        "identity null, intendedModel null and wheelModel null: no "
+        "AmaxVehicle.dynamics or aiDynamics handle resolves to id 515172551. The "
+        "nearest pak model is the 78602-byte placeholder "
+        "'\\models\\vehicles\\default.model' (median real car body 4615848 bytes) "
+        "and is not referenced as a DefaultCar body. DefaultCar is the engine's "
+        "physics fallback (LevelState.cpp:407), not a car body; no model or wheel "
+        "is substituted."),
 }
 
 

@@ -265,7 +265,9 @@ def verify_document(gate: Gate, spec: dict, roster: dict, document: dict,
     gate.check("counts.coverage",
                counts.get("coverage") == counts.get("inRoster", 0) + staged,
                counts.get("coverage"))
-    gate.check("counts.coverage=59", counts.get("coverage") == 59,
+    # Full-run coverage pin: 59 committed roster cars + the 2 staged records
+    # (hummer-h2-rat, ford-supervan-stock). defaultcar stays unsupported.
+    gate.check("counts.coverage=61", counts.get("coverage") == 61,
                counts.get("coverage"))
     return staged, unsupported
 

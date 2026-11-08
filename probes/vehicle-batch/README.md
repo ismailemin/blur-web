@@ -34,7 +34,7 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 # plan only
 & $py probes/vehicle-batch/build.py --dry-run
 
-# stage every record not in the 57-car roster (default scope)
+# stage every record not in the 59-car roster (default scope)
 & $py probes/vehicle-batch/build.py
 
 # one car / several cars, by slug or record index
@@ -68,7 +68,7 @@ cars[]}` with 62 entries, one per `RP_CarDynamics` record. Each entry carries:
 | --- | --- |
 | `slug`, `recordIndex`, `recordId`, `recordName` | identity (from the audit) |
 | `class` (`A`/`B`/`C`), `classReason` | V1 classification |
-| `scope` (`roster`/`remaining`), `rosterPosition` | whether it is already in the 57-car roster |
+| `scope` (`roster`/`remaining`), `rosterPosition` | whether it is already in the 59-car roster |
 | `drivetrain`, `massKg`, `gears` | roster `layout` inputs |
 | `physics.fieldsPath/fieldsSha256/gatePass/driveType/wheelBase` | `car_xt` field list and gate |
 | `body` | `route` (`exact`/`alias`), `pakPath`, `logicalBytes`, `sha256`, `decodedPath`, `rule`, candidates |
@@ -121,11 +121,11 @@ hash, wheel path and the builder hashes match and every artifact hash still
 matches. `staged.json` carries `schema:2`; a schema change forces a rebuild.
 Nothing is written under another probe's tree.
 
-## Batch roster (remaining 5)
+## Batch roster (remaining 3)
 
 `build.py` writes `_work/vehicle-batch/batch-roster.json` with one entry per
-selected record, in record-index order. The committed roster now holds 57 cars,
-so the remaining scope is the five records that the part builder or the audit
+selected record, in record-index order. The committed roster now holds 59 cars,
+so the remaining scope is the three records that the part builder or the audit
 still refuses. An entry carries:
 
 | field | meaning |
@@ -151,37 +151,37 @@ Counts for the full run:
 | metric | value |
 | --- | ---: |
 | retail records | **62** |
-| already in the 57-car roster | **57** |
-| remaining selected | **5** |
+| already in the 59-car roster | **59** |
+| remaining selected | **3** |
 | **staged** | **2** |
-| **unsupported** | **3** |
-| coverage after staging | **59 / 62** |
+| **unsupported** | **1** |
+| coverage after staging | **61 / 62** |
 
-### Builder decisions (2 staged)
+### Builder decisions (4 staged)
 
-Two refusals are resolved by a typed decision that uses only committed data.
+Four refusals are resolved by a typed decision that uses only committed data.
 The decision is recorded in `spec/cars.json` (`builderDecision`) and in each
 `staged.json` record; `probes/vehicle-pipeline/tools/stage_batch3.py` applies it
-to the committed builder. **The main agent must port the same decision into
+to the committed builder. **The main agent must port the same decisions into
 `probes/car-parts/tools/build_manifest.py`** before the committed build can
-reproduce these two manifests.
+reproduce these four manifests.
 
 | # | slug | decision | evidence |
 |--:|---|---|---|
 | 38 | `ratrod-na-stock` | `wheel-axis-from-parent-envelope` | The rear brake-disc element local bounds are offset along X (`E_BrakeDisc_BackLeft` X `1.429031..1.498138`) while its matrix translation equals the `e_wheel_backleft` parent, so the member union is `[1.626399, 0.846300, 0.846300]`. The parent's own serialized bounds `[0.272146, 0.876655, 0.833748]` are thin on X and round on Y/Z (relative delta `0.0489`); the front wheels already pass on their member union. The axis is therefore X; no axis is invented. |
 | 79 | `toyota-supra-smooth` | `skip-empty-draws` | Scene draws 48 and 50 have `indexCount: 0` at `firstIndex` 57156 and 57192. They contribute no geometry; the other 82 draws are classified unchanged. The raw reader output is kept as `scene-report.raw.json` and the filtered scene is fed to the committed builder through `--scene-json`. |
+| 58 | `hummer-h2-rat` | `wheel-orphan-corner-from-translation` | `E_BrakeDisc_FrontRight1` (element 26) and `E_BrakeCaliper_FrontRight1` (element 27) are serialized as children of `DefaultElement` (0). Their matrix translations `[-0.915054, 0, 1.578988]` and `[-0.926925, 0, 1.577787]` match exactly one `e_wheel_*` parent, `e_wheel_frontleft` (index 1, `[-0.914971, 0.000036, 1.579840]`), at `0.000857 m` and `0.012129 m`; the second-nearest wheel parent is `1.830054 m` / `1.841926 m` away. The corner is frontleft by the element matrix, not by a rewritten chain: the serialized parent stays `DefaultElement` and is restored before the manifest is written. Element 26 local bounds equal `E_BrakeDisc_BackLeft` (element 43), so the two brake-disc draws (29, 30) are tied between frontleft and backleft and remain preview-paired; element 27 shares no local bounds and its caliper draw (23) matches uniquely. |
+| 67 | `ford-supervan-stock` | `wheel-member-name-variant-and-axis-fallback` | The two rear calipers serialize as `E_Brake_Caliper_BackLeft` (element 50) and `E_Brake_Caliper_BackRight` (element 38), with an extra underscore; both are direct children of `e_wheel_backleft/backright`. Matching the `e_brake_caliper_` variant gives four caliper elements and four caliper draws: draw 12 matches element 50 and draw 17 matches element 38 at `0.00101` AABB difference, in addition to the front draws 24/25 at `0.00012`. The rear caliper element bounds are model-space (matrix translation 0, X `-0.69414..-0.64127` / `0.64127..0.69414`, Z `-1.33025..-1.25717`), which inflates the rear member union; the `e_wheel_*` parent envelope `[0.33770, 0.69222, 0.69222]` is thin on X and round on Y/Z and proves the axle. No element is renamed and no draw or caliper is invented. |
 
-### Unsupported (3) — exact reason per car
+### Unsupported (1) — exact reason per car
 
 | # | slug | missing | exact builder/audit statement |
 |--:|---|---|---|
-| 8 | `defaultcar` | `body.model` | no vehicle record and no body model reference; `DefaultCar` is a physics fallback, not a car body |
-| 58 | `hummer-h2-rat` | `wheel.caliper.parent` | `E_BrakeDisc_FrontRight1` (element 26) and `E_BrakeCaliper_FrontRight1` (element 27) are parented to `DefaultElement` (0); the chains are `[26 -> 0]` and `[27 -> 0]`, not a wheel. The front-left wheel has only `e_tyre_frontLeft` + `e_alloyRim_frontLeft`; re-parenting the orphans would invent a parent chain. |
-| 67 | `ford-supervan-stock` | `wheel.elementCount` | 14 recognized wheel elements because the two rear calipers are named `E_Brake_Caliper_BackLeft/BackRight` (not `E_BrakeCaliper_*`); both are direct children of `e_wheel_backleft/backright` and their element bounds are model-space (matrix translation 0). Recognizing the name gives 4 members per corner, but only 2 caliper draws exist (frontleft/frontright, draws 24/25); the builder's caliper assignment requires 4. |
+| 8 | `defaultcar` | `body.model` | RP_CarDynamics record 8 / id 515172551 / `DefaultCar` is class C with classReason `no exact normalised \models\vehicles\<name>.model entry`. `cars.json` records `expectedPath` `\models\vehicles\defaultcar.model`, `mapping` `none`, `missing` `exact model file: \models\vehicles\defaultcar.model`, `logicalBytes` null, `pakPath` null and `wheelResource` null. `c-aliases.json` records `status` `unsupported`, `identity` null, `intendedModel` null and `wheelModel` null: no `AmaxVehicle.dynamics` or `aiDynamics` handle resolves to id 515172551. The nearest pak model is the 78602-byte placeholder `\models\vehicles\default.model` (median real car body 4615848 bytes) and is not referenced as a `DefaultCar` body. `DefaultCar` is the engine's physics fallback (`LevelState.cpp:407`), not a car body; no model or wheel is substituted. |
 
-These three are committed-builder/audit refusals, not compiler bugs. Nothing is
-guessed, borrowed or substituted. The 2 staged cars are data only — no car is
-claimed playable.
+The remaining record is a committed-builder/audit refusal, not a compiler bug.
+Nothing is guessed, borrowed or substituted. The 2 staged cars are data only — no
+car is claimed playable.
 
 ## Integration contract
 
@@ -223,9 +223,9 @@ car (artifact presence, hashes, cross-document draw counts, wheel and ghost
 inputs), determinism between two build roots, duplicates, aggregates, and one
 path-independence regression.
 
-`tools/inspect_builder_decisions.py` re-derives the five remaining refusals
-(wheel parents/members, orphan parent chains, empty draws) from the decoded
-models and the committed Scene reader; it writes
+`tools/inspect_builder_decisions.py` re-derives the three remaining records
+(wheel parents/members, orphan parent chains, empty draws, body absence) from
+the decoded models and the committed Scene reader; it writes
 `_work/vehicle-batch/builder-decisions.json` and edits nothing.
 
 `tools/verify_batch_roster.py` is the roster gate. It re-derives every entry from
@@ -233,14 +233,14 @@ the committed source (`.fields` bytes/hash/count, decoded body model, record
 identity, drivetrain, mass, wheelbase), checks the staged manifest/mesh/scene
 hashes and their internal arithmetic, checks the typed unsupported reason and
 `missing` field, checks record-index order and uniqueness, proves the batch
-roster plus the committed 57-car roster covers all 62 records exactly, and
+roster plus the committed 59-car roster covers all 62 records exactly, and
 compares the primary and repeat build roots byte-for-byte. It prints
 `N/M checks passed` and exits `1` on failure.
 
 ```powershell
 & $py probes/vehicle-batch/tools/verify_batch_roster.py
-# batch roster: 2 staged, 3 unsupported, coverage 59/62
-# PASS 261/261 checks passed
+# batch roster: 2 staged, 1 unsupported, coverage 61/62
+# PASS 189/189 checks passed
 ```
 
 See `docs/work/analysis/vehicle-batch-compiler.md` for the full-run history.

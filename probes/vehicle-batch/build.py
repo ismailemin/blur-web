@@ -109,12 +109,18 @@ def missing_for_reason(code: str, detail: str) -> str:
         return "materials"
     if code.startswith("wheel-"):
         return "wheel.model"
-    if code == "builder-unsupported":
+    if code in ("builder-unsupported", "stage-unsupported"):
         text = detail.lower()
         if "wheel backleft bounds" in text:
             return "wheel.backleft.bounds"
         if "not a direct child of an e_wheel_" in text:
             return "wheel.caliper.parent"
+        if "does not match exactly one e_wheel_" in text:
+            return "wheel.member.corner"
+        if "members are" in text and "expected" in text:
+            return "wheel.member.kinds"
+        if "draws cannot be distributed" in text:
+            return "wheel.caliper.draws"
         if "wheel element count" in text:
             return "wheel.elementCount"
         if "empty index range" in text or "keyerror: 'index'" in text:
