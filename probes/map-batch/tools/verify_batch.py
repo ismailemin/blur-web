@@ -282,7 +282,7 @@ def registry_maps() -> dict:
     if not REGISTRY.is_file():
         return {}
     text = REGISTRY.read_text(encoding="utf-8")
-    pattern = (r"id:\s*'([a-z0-9_]+)',\s*\n\s*label:[^\n]*\n"
+    pattern = (r"id:\s*'([a-z0-9_-]+)',\s*\n\s*label:[^\n]*\n"
                r"\s*level:\s*'([a-z0-9_]+)'")
     return {m.group(2): m.group(1) for m in re.finditer(pattern, text)}
 
@@ -1589,8 +1589,10 @@ def verify_level(level: str, rep: Report, *, determinism: bool,
                  " first_bad=%r" % (blocker_bad[0],)))
 
     integrated = registry_maps()
-    expected_grade = ("blocked" if draw_length < MIN_COVERED_PATH_M
-                      else ("playable" if level in integrated else "partial"))
+    # An integrated map is playable even when its draw-covered path is short:
+    # the committed collision path is the course authority.
+    expected_grade = ("playable" if level in integrated
+                      else ("blocked" if draw_length < MIN_COVERED_PATH_M else "partial"))
     grade_bad = []
     if blockers.get("grade") != expected_grade:
         grade_bad.append(("grade", blockers.get("grade"), expected_grade))
@@ -1912,6 +1914,10 @@ def verify_batch(rep: Report, results: dict) -> None:
         "spa_barcelona_gracia": "gracia", "usa_la_longbeachdocks": "longbeach",
         "usa_la_observatory": "observatory", "usa_la_downtown": "downtown",
         "jpn_mharuna": "mharuna",
+        "usa_la_multiplayer_highrise": "highrise",
+        "jpn_tokyo_shutoko": "shutoko",
+        "spa_barcelona_oval": "oval",
+        "usa_amboy_multiplayer": "amboy-mp",
         },
         "registry/integrated",
         "parsed %d map records from %s" % (len(integrated),

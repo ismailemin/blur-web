@@ -34,15 +34,15 @@
   },
   "render": {
    "path": "_work/map-batch/spa_barcelona_oval/draws.json",
-   "bytes": 905995,
-   "sha256": "sha256:754c8598fe7447910d96d66df01a8460431c60fefca0ba8fccc6a9c96f07ee7f",
-   "contentHash": "sha256:754c8598fe7447910d96d66df01a8460431c60fefca0ba8fccc6a9c96f07ee7f",
+   "bytes": 905997,
+   "sha256": "sha256:73b267f18e7159d944877ad4ecf9fab0136f3a0290f2fceb6e79c744352435e8",
+   "contentHash": "sha256:73b267f18e7159d944877ad4ecf9fab0136f3a0290f2fceb6e79c744352435e8",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
    "path": "_work/map-batch/spa_barcelona_oval/blockers.json",
-   "bytes": 8867,
-   "sha256": "sha256:cd1dfcaf1bc5137e0daac8abfafd80b5a4fb79e8314ff4d010fef94c418c7a0a"
+   "bytes": 8868,
+   "sha256": "sha256:45be35b2bfb913616e5b1a708989980e99aaf276fd8ec18a8dc111e2ab78b4cc"
   },
   "textures": {
    "path": "_work/map-batch/spa_barcelona_oval/textures/index.json",
@@ -21402,7 +21402,8 @@
     "groundY": 4.6056,
     "covered": null
    }
-  ]
+  ],
+  "gateRule": "arc-progression"
  },
  "gates": [
   {
@@ -21648,5 +21649,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:707bf52da0de153e973945a9e7184c3cd7e99b9301b43dc8d22a4f51b494baf4"
+ "hash": "sha256:9be12295925baa0b340a6e4235298923240e94905563c40c8c73cabc7571945d"
 }

@@ -34,15 +34,15 @@
   },
   "render": {
    "path": "_work/map-batch/usa_la_multiplayer_highrise/draws.json",
-   "bytes": 95816,
-   "sha256": "sha256:343b743a3ea260f380190461a47f51a493f824b62ce48a4b0d7a2051921e8178",
-   "contentHash": "sha256:343b743a3ea260f380190461a47f51a493f824b62ce48a4b0d7a2051921e8178",
+   "bytes": 95822,
+   "sha256": "sha256:66776fbac8758820d4f200448497aecee4df328e1753ff7df82ace64102ad63a",
+   "contentHash": "sha256:66776fbac8758820d4f200448497aecee4df328e1753ff7df82ace64102ad63a",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
    "path": "_work/map-batch/usa_la_multiplayer_highrise/blockers.json",
-   "bytes": 3638,
-   "sha256": "sha256:7a4b4ccbec3830bcbe30dfbe75d6195a179c36b306a28b6432ce267cb72aa980"
+   "bytes": 3639,
+   "sha256": "sha256:96eb479b8a88a05c719a033950f7e79df0ede60359fd6b408fbbb858a06ba56f"
   },
   "textures": {
    "path": "_work/map-batch/usa_la_multiplayer_highrise/textures/index.json",
@@ -689,7 +689,8 @@
     "groundY": 218.184,
     "covered": null
    }
-  ]
+  ],
+  "gateRule": "arc-progression"
  },
  "gates": [
   {
@@ -935,5 +936,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:d719377ca104bc24f13c864e7b24e0ec8e8478a0f863f7417273dd709a0f088c"
+ "hash": "sha256:4d0c292cec351d7bed92ed3f9a70ab8491024fa64e93885b54d311395c435be3"
 }

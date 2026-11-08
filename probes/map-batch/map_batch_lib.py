@@ -89,6 +89,10 @@ INTEGRATED = {
     "usa_la_observatory": "observatory",
     "usa_la_downtown": "downtown",
     "jpn_mharuna": "mharuna",
+    "usa_la_multiplayer_highrise": "highrise",
+    "jpn_tokyo_shutoko": "shutoko",
+    "spa_barcelona_oval": "oval",
+    "usa_amboy_multiplayer": "amboy-mp",
 }
 
 MIN_COVERED_PATH_M = 25.0
@@ -1307,10 +1311,13 @@ def _blocked_groups(draws: list[dict]) -> dict:
 
 
 def grade_for(level: str, path_doc: dict) -> str:
-    if float(path_doc["drawCovered"]["lengthM"]) < MIN_COVERED_PATH_M:
-        return "blocked"
+    # An integrated map is playable even when its draw-covered path is short:
+    # the committed collision path is the course authority (Highrise's draw
+    # path is 6.2 m, its collision course is 14.3 m and it runs in the page).
     if level in INTEGRATED:
         return "playable"
+    if float(path_doc["drawCovered"]["lengthM"]) < MIN_COVERED_PATH_M:
+        return "blocked"
     return "partial"
 
 

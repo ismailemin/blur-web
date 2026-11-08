@@ -139,6 +139,118 @@ MAP_BUILDS = {
             "spawn, checkpoints and finish are the committed map-batch pose and collision-clear path, not a retail start line",
         ],
     ),
+    "highrise": dict(
+        id="highrise",
+        level="usa_la_multiplayer_highrise",
+        batch="_work/map-batch/usa_la_multiplayer_highrise",
+        out_dir="_work/e1-drive/highrise",
+        layout="probes/map-laps/data/highrise-path.json",
+        physics="game-data/Blur/levels/usa_la_multiplayer_highrise/Level.levelphysics",
+        mesh_id="highrise.direct",
+        render_label="highrise-direct-draws",
+        package_label="usa_la_multiplayer_highrise",
+        course_name="usa_la_multiplayer_highrise collision-clear path",
+        decal_status="blocked-effect-not-static-albedo",
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-decoder-size-limit",
+                             "blocked-missing-texture-source"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=0,
+        instance_sections=0,
+        unsupported_sections=0,
+        map_limits=[
+            "direct LOD0 draws only; no unsupported sections in this package",
+            "31 effect draws and 13 diagnostic draws (1 alpha-rule, 6 decoder-size, 6 missing texture source) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "spawn, checkpoints and finish are the committed map-batch pose and collision-clear path, not a retail start line",
+        ],
+    ),
+    "shutoko": dict(
+        id="shutoko",
+        level="jpn_tokyo_shutoko",
+        batch="_work/map-batch/jpn_tokyo_shutoko",
+        out_dir="_work/e1-drive/shutoko",
+        layout="probes/map-laps/data/shutoko-path.json",
+        physics="game-data/Blur/levels/jpn_tokyo_shutoko/Level.levelphysics",
+        mesh_id="shutoko.direct",
+        render_label="shutoko-direct-draws",
+        package_label="jpn_tokyo_shutoko",
+        course_name="jpn_tokyo_shutoko collision-clear path",
+        decal_status="blocked-effect-not-static-albedo",
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-decoder-size-limit",
+                             "blocked-missing-texture-source", "blocked-no-static-albedo",
+                             "blocked-runtime-albedo-parameter"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=6762,
+        instance_sections=36,
+        unsupported_sections=4,
+        map_limits=[
+            "direct LOD0 draws only; 4 unsupported sections and 6,762 instance descriptions in 36 sections are not applied",
+            "190 effect draws and 199 diagnostic draws (189 alpha-rule, 2 decoder-size, 4 missing texture source, 2 no-static-albedo, 2 runtime-albedo) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "spawn, checkpoints and finish are the committed map-batch pose and collision-clear path, not a retail start line",
+        ],
+    ),
+    "oval": dict(
+        id="oval",
+        level="spa_barcelona_oval",
+        batch="_work/map-batch/spa_barcelona_oval",
+        out_dir="_work/e1-drive/oval",
+        layout="probes/map-laps/data/oval-path.json",
+        physics="game-data/Blur/levels/spa_barcelona_oval/Level.levelphysics",
+        mesh_id="oval.direct",
+        render_label="oval-direct-draws",
+        package_label="spa_barcelona_oval",
+        course_name="spa_barcelona_oval collision-clear path",
+        decal_status="blocked-effect-not-static-albedo",
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-missing-texture-source",
+                             "blocked-no-static-albedo", "blocked-runtime-albedo-parameter"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=756,
+        instance_sections=2,
+        unsupported_sections=25,
+        map_limits=[
+            "direct LOD0 draws only; 25 unsupported sections and 756 instance descriptions in 2 sections are not applied",
+            "123 effect draws and 87 diagnostic draws (73 alpha-rule, 1 missing texture source, 9 no-static-albedo, 4 runtime-albedo) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "spawn, checkpoints and finish are the committed map-batch pose and collision-clear path, not a retail start line",
+        ],
+    ),
+    "amboy-mp": dict(
+        id="amboy-mp",
+        level="usa_amboy_multiplayer",
+        batch="_work/map-batch/usa_amboy_multiplayer",
+        out_dir="_work/e1-drive/amboy-mp",
+        layout="probes/map-laps/data/amboy-mp-path.json",
+        physics="game-data/Blur/levels/usa_amboy_multiplayer/Level.levelphysics",
+        mesh_id="amboy-mp.direct",
+        render_label="amboy-mp-direct-draws",
+        package_label="usa_amboy_multiplayer",
+        course_name="usa_amboy_multiplayer collision-clear path",
+        decal_status=None,
+        diagnostic_statuses=("blocked-decoder-size-limit",),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=213,
+        instance_sections=1,
+        unsupported_sections=6,
+        map_limits=[
+            "direct LOD0 draws only; 6 unsupported sections and 213 instance descriptions in 1 section are not applied",
+            "8 diagnostic draws (decoder-size) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "spawn, checkpoints and finish are the committed map-batch pose and collision-clear path, not a retail start line",
+        ],
+    ),
 }
 
 
@@ -221,6 +333,7 @@ LABELS = {
     "blocked-decoder-size-limit": "decoderSizeLimit",
     "blocked-runtime-albedo-parameter": "runtimeAlbedoParameter",
     "blocked-no-static-albedo": "noStaticAlbedo",
+    "blocked-missing-texture-source": "missingTextureSource",
 }
 
 GROUP_NAMES = {
@@ -228,6 +341,7 @@ GROUP_NAMES = {
     "blocked-decoder-size-limit": "decoderSize",
     "blocked-runtime-albedo-parameter": "runtimeAlbedo",
     "blocked-no-static-albedo": "noStaticAlbedo",
+    "blocked-missing-texture-source": "missingTextureSource",
 }
 
 
@@ -509,7 +623,8 @@ def build_map(map_id: str, check: bool = False, log=print):
         # A map with no effect/decal draws records an explicit zero group.
         effect = {"draws": 0, "triangles": 0, "indexRanges": []}
     diagnostic_groups = {}
-    diagnostic_counts = {"alphaRule": 0, "decoderSize": 0, "runtimeAlbedo": 0, "noStaticAlbedo": 0}
+    diagnostic_counts = {"alphaRule": 0, "decoderSize": 0, "runtimeAlbedo": 0,
+                     "noStaticAlbedo": 0, "missingTextureSource": 0}
     diagnostic_draws = 0
     diagnostic_triangles = 0
     for status in cfg["diagnostic_statuses"]:

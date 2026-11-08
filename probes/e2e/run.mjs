@@ -46,7 +46,7 @@ import {
   soloLap,
   soloSprint
 } from './scenarios.mjs';
-import { soloDowntown, soloLongbeach, soloMharuna, soloObservatory } from './longbeach.mjs';
+import { soloDowntown, soloLongbeach, soloMapScenario, soloMharuna, soloObservatory } from './longbeach.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = path.join(ROOT, '_work/e2e');
@@ -85,7 +85,11 @@ const SCENARIOS = {
   'solo-longbeach': { group: 'slow', timeout: 300000, run: soloLongbeach },
   'solo-observatory': { group: 'slow', timeout: 300000, run: soloObservatory },
   'solo-downtown': { group: 'slow', timeout: 300000, run: soloDowntown },
-  'solo-mharuna': { group: 'slow', timeout: 300000, run: soloMharuna }
+  'solo-mharuna': { group: 'slow', timeout: 300000, run: soloMharuna },
+  'solo-highrise': { group: 'slow', timeout: 300000, run: soloMapScenario('highrise') },
+  'solo-shutoko': { group: 'slow', timeout: 300000, run: soloMapScenario('shutoko') },
+  'solo-oval': { group: 'slow', timeout: 300000, run: soloMapScenario('oval') },
+  'solo-amboy-mp': { group: 'slow', timeout: 300000, run: soloMapScenario('amboy-mp') }
 };
 const DEFAULT_SCENARIOS = ['solo-sprint', 'solo-lap', 'solo-free', 'mp-two'];
 const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix', 'mp-eight'];
@@ -235,6 +239,10 @@ function loadAnchors() {
     observatory: { ...expected.solo.observatory },
     downtown: { ...expected.solo.downtown },
     mharuna: { ...expected.solo.mharuna },
+    highrise: { ...expected.solo.highrise },
+    shutoko: { ...expected.solo.shutoko },
+    oval: { ...expected.solo.oval },
+    'amboy-mp': { ...expected.solo['amboy-mp'] },
     mp: expected.mp,
     mpAi: expected.mpAi
   };
@@ -674,5 +682,6 @@ main().catch((error) => {
   log('FATAL: ' + (error?.stack ?? error?.message ?? String(error)));
   process.exit(3);
 });
+
 
 

@@ -50,6 +50,30 @@ const MAPS = Object.freeze({
     level: 'jpn_mharuna',
     outDir: '_work/e1-drive/mharuna',
     layout: 'probes/map-laps/data/mharuna-path.json'
+  }),
+  highrise: Object.freeze({
+    id: 'highrise',
+    level: 'usa_la_multiplayer_highrise',
+    outDir: '_work/e1-drive/highrise',
+    layout: 'probes/map-laps/data/highrise-path.json'
+  }),
+  shutoko: Object.freeze({
+    id: 'shutoko',
+    level: 'jpn_tokyo_shutoko',
+    outDir: '_work/e1-drive/shutoko',
+    layout: 'probes/map-laps/data/shutoko-path.json'
+  }),
+  oval: Object.freeze({
+    id: 'oval',
+    level: 'spa_barcelona_oval',
+    outDir: '_work/e1-drive/oval',
+    layout: 'probes/map-laps/data/oval-path.json'
+  }),
+  'amboy-mp': Object.freeze({
+    id: 'amboy-mp',
+    level: 'usa_amboy_multiplayer',
+    outDir: '_work/e1-drive/amboy-mp',
+    layout: 'probes/map-laps/data/amboy-mp-path.json'
   })
 });
 

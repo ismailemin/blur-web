@@ -103,7 +103,11 @@ def main(argv=None):
                 "longbeach": "usa_la_longbeachdocks",
                 "observatory": "usa_la_observatory",
                 "downtown": "usa_la_downtown",
-                "mharuna": "jpn_mharuna"}
+                "mharuna": "jpn_mharuna",
+                "highrise": "usa_la_multiplayer_highrise",
+                "shutoko": "jpn_tokyo_shutoko",
+                "oval": "spa_barcelona_oval",
+                "amboy-mp": "usa_amboy_multiplayer"}
     playable_levels = {playable[mid] for mid in read_playable_ids() if mid in playable}
 
     probe_levels = {

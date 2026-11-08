@@ -34,15 +34,15 @@
   },
   "render": {
    "path": "_work/map-batch/usa_amboy_multiplayer/draws.json",
-   "bytes": 120550,
-   "sha256": "sha256:9249aee7162b978b44c26147e411fb3e3dad44d30d88b4174ee1105b12e47ebd",
-   "contentHash": "sha256:9249aee7162b978b44c26147e411fb3e3dad44d30d88b4174ee1105b12e47ebd",
+   "bytes": 120556,
+   "sha256": "sha256:62858335dd331a9152d6be40a3d0297211e598d6fcf1a246e45e7a9b2275b66d",
+   "contentHash": "sha256:62858335dd331a9152d6be40a3d0297211e598d6fcf1a246e45e7a9b2275b66d",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
    "path": "_work/map-batch/usa_amboy_multiplayer/blockers.json",
-   "bytes": 4451,
-   "sha256": "sha256:6a521b6ff2590d3c1487d91171bfb1b1f6d1f00dddb0244173a82fdda8e6355c"
+   "bytes": 4452,
+   "sha256": "sha256:294b256f324b6d56b847018e4c063d1f3f8e0b571dbf1559b0db0fb36c043376"
   },
   "textures": {
    "path": "_work/map-batch/usa_amboy_multiplayer/textures/index.json",
@@ -3989,5 +3989,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:89d1642385942fbbb223d8d8dcc1e7b038bfdd327c64209156c7f1083f47dfe1"
+ "hash": "sha256:af8abcecf68c2daf8a5c1548a382e100d787f717b75c908764d2c6296b2652ca"
 }

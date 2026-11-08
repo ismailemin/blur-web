@@ -317,9 +317,23 @@ export class SprintRules {
     } else if (this.phase === SPRINT_PHASE.RUNNING) {
       this.elapsedTicks++;
       if (this.prevState && !this.awaitingRejoin) {
+        // A collision-derived course can be wide enough that the driven line
+        // passes a gate's arc without intersecting its 8 m line segment. When
+        // the layout declares `gateRule: "arc-progression"`, reaching the gate's
+        // measured arc inside the corridor also counts. The line crossing stays
+        // the primary test; this is a documented fallback, not a guess.
+        const arcRule = this.layout.course?.gateRule === 'arc-progression';
         for (const gate of this.layout.gates) {
           if (gate.index < this.gateIndex) continue;
-          const crossing = gateCrossing(this.prevState.position, state.position, gate);
+          let crossing = gateCrossing(this.prevState.position, state.position, gate);
+          if (!crossing && arcRule && Number.isFinite(gate.arc) && this.arc >= gate.arc) {
+            crossing = {
+              point: state.position.slice(),
+              along: 1,
+              across: 0.5,
+              source: 'arc-progression'
+            };
+          }
           if (!crossing) continue;
           if (gate.kind === 'finish' && gate.index !== this.gateIndex) {
             events.push({

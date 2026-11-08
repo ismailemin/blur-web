@@ -161,3 +161,44 @@ export async function soloMharuna(ctx) {
     ctx.fmt(page.messages.slice(-4)));
   ctx.evidence.finish = done;
 }
+
+// A generic solo scenario for a collision-derived map: it asserts the map and
+// layout identity, the finish, the two checkpoints, zero respawns and a clean
+// console. The anchor lives in `expected.json` under `solo.<mapId>`.
+export function soloMapScenario(mapId) {
+  return async function soloMap(ctx) {
+    const anchor = ctx.anchors[mapId];
+    if (!anchor) throw new Error('soloMapScenario: no anchor for ' + mapId);
+    const url = ctx.base + '/?map=' + mapId + '&script=sprint&car=' +
+      encodeURIComponent(anchor.slug) + '&audio=0';
+    const page = await ctx.openPage(mapId);
+    await page.navigate(url);
+    const running = await waitProbe(ctx, page, (probe) => probe.consumer === 'running' && probe.engineTick >= 2,
+      { timeoutMs: 120000, label: mapId + ' running' });
+    await ctx.shot(page, 'start');
+
+    ctx.A.check(mapId + ': URL is the requested scripted sprint', running.url === url, running.url);
+    ctx.A.check(mapId + ': map is ' + mapId, running.map?.id === mapId, ctx.fmt(running.map));
+    ctx.A.check(mapId + ': course is ' + mapId, running.sprint?.courseId === anchor.courseId,
+      running.sprint?.courseId);
+    ctx.A.check(mapId + ': layout hash is the committed collision path',
+      running.sprintLayoutHash === anchor.layoutHash,
+      running.sprintLayoutHash + ' vs ' + anchor.layoutHash);
+
+    const done = await waitProbe(ctx, page, (probe) => probe.sprintResult !== null,
+      { timeoutMs: 240000, label: mapId + ' finish' });
+    await ctx.shot(page, 'finish');
+    const result = done.sprintResult;
+    ctx.A.check(mapId + ': finish time is ' + anchor.timeSeconds + ' s',
+      Math.abs(result.timeSeconds - anchor.timeSeconds) <= anchor.timeToleranceSeconds,
+      'expected ' + anchor.timeSeconds + ' ± ' + anchor.timeToleranceSeconds + ', got ' + result.timeSeconds);
+    ctx.A.check(mapId + ': two checkpoints were passed', result.checkpoints === anchor.checkpoints,
+      'got ' + result.checkpoints);
+    ctx.A.check(mapId + ': no respawn', result.respawns === 0, 'respawns ' + result.respawns);
+    ctx.A.check(mapId + ': results overlay is visible', done.overlays.resultsHidden === false,
+      ctx.fmt(done.overlays));
+    ctx.A.check(mapId + ': no console error', page.messages.filter((m) => m.type === 'error').length === 0,
+      ctx.fmt(page.messages.slice(-4)));
+    ctx.evidence.finish = done;
+  };
+}

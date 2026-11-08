@@ -124,6 +124,7 @@ LEVELS = {
         out="probes/map-laps/data/highrise-path.json",
         grid="_work/map-laps/highrise/grid.npz",
         course_name="usa_la_multiplayer_highrise collision-clear path",
+        gate_rule="arc-progression",
     ),
     "shutoko": dict(
         map_id="shutoko",
@@ -133,6 +134,7 @@ LEVELS = {
         out="probes/map-laps/data/shutoko-path.json",
         grid="_work/map-laps/shutoko/grid.npz",
         course_name="jpn_tokyo_shutoko collision-clear path",
+        gate_rule="arc-progression",
     ),
     "brighton": dict(
         map_id="brighton",
@@ -175,6 +177,7 @@ LEVELS = {
         out="probes/map-laps/data/oval-path.json",
         grid="_work/map-laps/oval/grid.npz",
         course_name="spa_barcelona_oval collision-clear path",
+        gate_rule="arc-progression",
     ),
     "amboy-mp": dict(
         map_id="amboy-mp",
@@ -1305,6 +1308,11 @@ def build_document(cfg, batch, grid_path, R, built, log=print):
         },
         "samples": samples,
     }
+    # A wide collision course can let the driven line pass a gate's arc without
+    # intersecting its line segment. Only the maps that need it declare the
+    # documented arc-progression gate rule.
+    if cfg.get("gate_rule"):
+        course["gateRule"] = cfg["gate_rule"]
 
     # ---------------------------------------------------------------- document
     doc = {
@@ -1547,6 +1555,7 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 

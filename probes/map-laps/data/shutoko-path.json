@@ -34,15 +34,15 @@
   },
   "render": {
    "path": "_work/map-batch/jpn_tokyo_shutoko/draws.json",
-   "bytes": 1948398,
-   "sha256": "sha256:1ccef6b89b88ecc05955c74796ed835202823f26336235d220850e32a3e74469",
-   "contentHash": "sha256:1ccef6b89b88ecc05955c74796ed835202823f26336235d220850e32a3e74469",
+   "bytes": 1948403,
+   "sha256": "sha256:cd1540c5c602bb3f1ad406e3742ee7b57c17d0723f679dd74086d0983ae915bb",
+   "contentHash": "sha256:cd1540c5c602bb3f1ad406e3742ee7b57c17d0723f679dd74086d0983ae915bb",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
    "path": "_work/map-batch/jpn_tokyo_shutoko/blockers.json",
-   "bytes": 5560,
-   "sha256": "sha256:a4cf8d3be2a62ed2621c2dc5f32a1b63a1b0dccb4d37bdadb854c2babb70f131"
+   "bytes": 5561,
+   "sha256": "sha256:f009eb695a9028e8dfa0c6d46ef9febd8e674c12606b03cbefd41279ab6db40a"
   },
   "textures": {
    "path": "_work/map-batch/jpn_tokyo_shutoko/textures/index.json",
@@ -8179,7 +8179,8 @@
     "groundY": -2.632,
     "covered": null
    }
-  ]
+  ],
+  "gateRule": "arc-progression"
  },
  "gates": [
   {
@@ -8426,5 +8427,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:da568ecdf076f2cf141f28879b6f4cde9ef1e469d47855bc4c11b75c1f0880ad"
+ "hash": "sha256:172dff3b328a22ae1fd9ba9038c87e7ccc0741699fc305166000cb0b5ceefafc"
 }

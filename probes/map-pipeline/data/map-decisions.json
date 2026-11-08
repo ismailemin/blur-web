@@ -1,7 +1,54 @@
 {
- "canonicalSha256": "ffb270975f29a6908ca54535df03ef3b87426e47efe383216f5cd8dfa840a87f",
+ "canonicalSha256": "b0ab9eb74b26196879449df866637fbabc925fdac629b41018523ea9ad7f013e",
  "generatedBy": "probes/map-pipeline/tools/build_map_decisions.py",
  "levels": [
+  {
+   "blocker": null,
+   "city": "LA Downtown",
+   "cityKey": "CRN_LA_DOWNTOWN",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 69,
+    "collisionTriangles": 2522,
+    "collisionVertices": 1755,
+    "drawTriangles": 15187,
+    "draws": 113,
+    "instanceDescriptionsSkipped": 0,
+    "sectionsProbed": 7,
+    "sectionsSupported": 7,
+    "sectionsUnsupported": 0,
+    "textureBlobs": 53,
+    "textureSources": 53
+   },
+   "distanceRank": 1,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 250664,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "C",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "highrise",
+    "playableDistanceItems": [],
+    "registryMapId": "highrise",
+    "reportGrade": "playable",
+    "reportMapId": "highrise"
+   },
+   "kind": "multiplayer",
+   "level": "usa_la_multiplayer_highrise",
+   "paths": {
+    "collisionM": 208.948,
+    "drawCoveredM": 6.242640687,
+    "packageKind": "draw-covered-measured",
+    "packageM": 6.242640687,
+    "recoveredM": 208.948,
+    "samples": 27
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
   {
    "blocker": null,
    "city": "LA Docks",
@@ -20,7 +67,7 @@
     "textureBlobs": 164,
     "textureSources": 175
    },
-   "distanceRank": 1,
+   "distanceRank": 2,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 248924,
@@ -67,7 +114,7 @@
     "textureBlobs": 97,
     "textureSources": 98
    },
-   "distanceRank": 2,
+   "distanceRank": 3,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 264458,
@@ -114,7 +161,7 @@
     "textureBlobs": 734,
     "textureSources": 739
    },
-   "distanceRank": 3,
+   "distanceRank": 4,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 104361,
@@ -161,7 +208,7 @@
     "textureBlobs": 736,
     "textureSources": 747
    },
-   "distanceRank": 4,
+   "distanceRank": 5,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 231299,
@@ -208,7 +255,7 @@
     "textureBlobs": 179,
     "textureSources": 186
    },
-   "distanceRank": 5,
+   "distanceRank": 6,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 199742,
@@ -255,7 +302,7 @@
     "textureBlobs": 234,
     "textureSources": 236
    },
-   "distanceRank": 6,
+   "distanceRank": 7,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 21123,
@@ -302,7 +349,7 @@
     "textureBlobs": 300,
     "textureSources": 300
    },
-   "distanceRank": 7,
+   "distanceRank": 8,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 279165,
@@ -327,6 +374,147 @@
     "packageM": 246.776695297,
     "recoveredM": null,
     "samples": 1031
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
+  {
+   "blocker": null,
+   "city": "Barcelona Oval",
+   "cityKey": "CRN_BARCELONA_OVAL",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 1032,
+    "collisionTriangles": 39532,
+    "collisionVertices": 21980,
+    "drawTriangles": 233020,
+    "draws": 1242,
+    "instanceDescriptionsSkipped": 756,
+    "sectionsProbed": 56,
+    "sectionsSupported": 31,
+    "sectionsUnsupported": 25,
+    "textureBlobs": 218,
+    "textureSources": 219
+   },
+   "distanceRank": 9,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 119326,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "oval",
+    "playableDistanceItems": [],
+    "registryMapId": "oval",
+    "reportGrade": "playable",
+    "reportMapId": "oval"
+   },
+   "kind": "race",
+   "level": "spa_barcelona_oval",
+   "paths": {
+    "collisionM": 1352.058,
+    "drawCoveredM": 786.05591591,
+    "packageKind": "draw-covered-measured",
+    "packageM": 786.05591591,
+    "recoveredM": null,
+    "samples": 3219
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
+  {
+   "blocker": null,
+   "city": "Tokyo Shutoko",
+   "cityKey": "CRN_TOKYO_SHUTOKO",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 2318,
+    "collisionTriangles": 58330,
+    "collisionVertices": 33653,
+    "drawTriangles": 245466,
+    "draws": 2709,
+    "instanceDescriptionsSkipped": 6762,
+    "sectionsProbed": 70,
+    "sectionsSupported": 66,
+    "sectionsUnsupported": 4,
+    "textureBlobs": 1086,
+    "textureSources": 1100
+   },
+   "distanceRank": 10,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 58547,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "shutoko",
+    "playableDistanceItems": [],
+    "registryMapId": "shutoko",
+    "reportGrade": "playable",
+    "reportMapId": "shutoko"
+   },
+   "kind": "race",
+   "level": "jpn_tokyo_shutoko",
+   "paths": {
+    "collisionM": 1617.918,
+    "drawCoveredM": 290.889393669,
+    "packageKind": "draw-covered-measured",
+    "packageM": 290.889393669,
+    "recoveredM": null,
+    "samples": 1215
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
+  {
+   "blocker": null,
+   "city": "Amboy",
+   "cityKey": "CRN_AMBOY",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 140,
+    "collisionTriangles": 22208,
+    "collisionVertices": 11239,
+    "drawTriangles": 80778,
+    "draws": 148,
+    "instanceDescriptionsSkipped": 213,
+    "sectionsProbed": 16,
+    "sectionsSupported": 10,
+    "sectionsUnsupported": 6,
+    "textureBlobs": 37,
+    "textureSources": 38
+   },
+   "distanceRank": 11,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 201895,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "amboy-mp",
+    "playableDistanceItems": [],
+    "registryMapId": "amboy-mp",
+    "reportGrade": "playable",
+    "reportMapId": "amboy-mp"
+   },
+   "kind": "multiplayer",
+   "level": "usa_amboy_multiplayer",
+   "paths": {
+    "collisionM": 770.762,
+    "drawCoveredM": 136.066017178,
+    "packageKind": "draw-covered-measured",
+    "packageM": 136.066017178,
+    "recoveredM": null,
+    "samples": 571
    },
    "verdict": "playable",
    "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
@@ -362,7 +550,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
+     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, amboy-mp, downtown, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -383,7 +571,7 @@
     "textureBlobs": 824,
     "textureSources": 840
    },
-   "distanceRank": 8,
+   "distanceRank": 12,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 334440,
@@ -530,7 +718,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
+     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, amboy-mp, downtown, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -551,7 +739,7 @@
     "textureBlobs": 877,
     "textureSources": 878
    },
-   "distanceRank": 9,
+   "distanceRank": 13,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 181782,
@@ -583,286 +771,6 @@
     "packageM": 776.445742855,
     "recoveredM": null,
     "samples": 3161
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
-  },
-  {
-   "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 661456,
-      "geometryBlock": 61,
-      "id": "g61-n260",
-      "nodeBlock": 260,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 764030,
-      "geometryBlock": 65,
-      "id": "g65-n174",
-      "nodeBlock": 174,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 510856,
-      "geometryBlock": 66,
-      "id": "g66-n174",
-      "nodeBlock": 174,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 796554,
-      "geometryBlock": 70,
-      "id": "g70-n172",
-      "nodeBlock": 172,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 871108,
-      "geometryBlock": 71,
-      "id": "g71-n176",
-      "nodeBlock": 176,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 231672,
-      "geometryBlock": 73,
-      "id": "g73-n166",
-      "nodeBlock": 166,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 552358,
-      "geometryBlock": 77,
-      "id": "g77-n260",
-      "nodeBlock": 260,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 501446,
-      "geometryBlock": 79,
-      "id": "g79-n184",
-      "nodeBlock": 184,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 823564,
-      "geometryBlock": 84,
-      "id": "g84-n236",
-      "nodeBlock": 236,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 682018,
-      "geometryBlock": 85,
-      "id": "g85-n212",
-      "nodeBlock": 212,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 615390,
-      "geometryBlock": 90,
-      "id": "g90-n256",
-      "nodeBlock": 256,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 502242,
-      "geometryBlock": 93,
-      "id": "g93-n208",
-      "nodeBlock": 208,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 896446,
-      "geometryBlock": 101,
-      "id": "g101-n178",
-      "nodeBlock": 178,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 1038234,
-      "geometryBlock": 103,
-      "id": "g103-n180",
-      "nodeBlock": 180,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 541482,
-      "geometryBlock": 113,
-      "id": "g113-n214",
-      "nodeBlock": 214,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 610482,
-      "geometryBlock": 116,
-      "id": "g116-n194",
-      "nodeBlock": 194,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 333166,
-      "geometryBlock": 118,
-      "id": "g118-n236",
-      "nodeBlock": 236,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 489708,
-      "geometryBlock": 120,
-      "id": "g120-n216",
-      "nodeBlock": 216,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 458800,
-      "geometryBlock": 123,
-      "id": "g123-n218",
-      "nodeBlock": 218,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 966276,
-      "geometryBlock": 125,
-      "id": "g125-n186",
-      "nodeBlock": 186,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 546194,
-      "geometryBlock": 181,
-      "id": "g181-n182",
-      "nodeBlock": 182,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 575936,
-      "geometryBlock": 189,
-      "id": "g189-n190",
-      "nodeBlock": 190,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 450180,
-      "geometryBlock": 197,
-      "id": "g197-n198",
-      "nodeBlock": 198,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 411154,
-      "geometryBlock": 219,
-      "id": "g219-n220",
-      "nodeBlock": 220,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 329490,
-      "geometryBlock": 255,
-      "id": "g255-n256",
-      "nodeBlock": 256,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/spa_barcelona_oval/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": null,
-     "playableDistanceItems": [
-      "slice-package",
-      "texture-bindings",
-      "render-package",
-      "layout",
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for spa_barcelona_oval; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "Barcelona Oval",
-   "cityKey": "CRN_BARCELONA_OVAL",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 1032,
-    "collisionTriangles": 39532,
-    "collisionVertices": 21980,
-    "drawTriangles": 233020,
-    "draws": 1242,
-    "instanceDescriptionsSkipped": 756,
-    "sectionsProbed": 56,
-    "sectionsSupported": 31,
-    "sectionsUnsupported": 25,
-    "textureBlobs": 218,
-    "textureSources": 219
-   },
-   "distanceRank": 10,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 119326,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "race",
-   "level": "spa_barcelona_oval",
-   "paths": {
-    "collisionM": 1352.058,
-    "drawCoveredM": 786.05591591,
-    "packageKind": "draw-covered-measured",
-    "packageM": 786.05591591,
-    "recoveredM": null,
-    "samples": 3219
    },
    "verdict": "blocked",
    "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
@@ -978,7 +886,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_ny_dumbo; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
+     "detail": "MAP_IDS has no entry for usa_ny_dumbo; registry ids are amboy, amboy-mp, downtown, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -999,7 +907,7 @@
     "textureBlobs": 1023,
     "textureSources": 1031
    },
-   "distanceRank": 11,
+   "distanceRank": 14,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 312233,
@@ -1074,7 +982,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
+     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, amboy-mp, downtown, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1095,7 +1003,7 @@
     "textureBlobs": 667,
     "textureSources": 673
    },
-   "distanceRank": 12,
+   "distanceRank": 15,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 145578,
@@ -1402,7 +1310,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_sausalito; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
+     "detail": "MAP_IDS has no entry for usa_sanfran_sausalito; registry ids are amboy, amboy-mp, downtown, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1423,7 +1331,7 @@
     "textureBlobs": 209,
     "textureSources": 210
    },
-   "distanceRank": 13,
+   "distanceRank": 16,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 353860,
@@ -1461,246 +1369,6 @@
   },
   {
    "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 451032,
-      "geometryBlock": 108,
-      "id": "g108-n257",
-      "nodeBlock": 257,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/jpn_tokyo_shutoko/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 5928,
-      "geometryBlock": 290,
-      "id": "g290-n291",
-      "nodeBlock": 291,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/jpn_tokyo_shutoko/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 311840,
-      "geometryBlock": 318,
-      "id": "g318-n319",
-      "nodeBlock": 319,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/jpn_tokyo_shutoko/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 65796,
-      "geometryBlock": 324,
-      "id": "g324-n325",
-      "nodeBlock": 325,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/jpn_tokyo_shutoko/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": null,
-     "playableDistanceItems": [
-      "slice-package",
-      "texture-bindings",
-      "render-package",
-      "layout",
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for jpn_tokyo_shutoko; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "Tokyo Shutoko",
-   "cityKey": "CRN_TOKYO_SHUTOKO",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 2318,
-    "collisionTriangles": 58330,
-    "collisionVertices": 33653,
-    "drawTriangles": 245466,
-    "draws": 2709,
-    "instanceDescriptionsSkipped": 6762,
-    "sectionsProbed": 70,
-    "sectionsSupported": 66,
-    "sectionsUnsupported": 4,
-    "textureBlobs": 1086,
-    "textureSources": 1100
-   },
-   "distanceRank": 14,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 58547,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "race",
-   "level": "jpn_tokyo_shutoko",
-   "paths": {
-    "collisionM": 1617.918,
-    "drawCoveredM": 290.889393669,
-    "packageKind": "draw-covered-measured",
-    "packageM": 290.889393669,
-    "recoveredM": null,
-    "samples": 1215
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
-  },
-  {
-   "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 557000,
-      "geometryBlock": 1716,
-      "id": "g1716-n1744",
-      "nodeBlock": 1744,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_amboy_multiplayer/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 463956,
-      "geometryBlock": 1718,
-      "id": "g1718-n1752",
-      "nodeBlock": 1752,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_amboy_multiplayer/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 444228,
-      "geometryBlock": 1719,
-      "id": "g1719-n1752",
-      "nodeBlock": 1752,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_amboy_multiplayer/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 427034,
-      "geometryBlock": 1720,
-      "id": "g1720-n1744",
-      "nodeBlock": 1744,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_amboy_multiplayer/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 322400,
-      "geometryBlock": 1724,
-      "id": "g1724-n1746",
-      "nodeBlock": 1746,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_amboy_multiplayer/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 457732,
-      "geometryBlock": 1729,
-      "id": "g1729-n1746",
-      "nodeBlock": 1746,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_amboy_multiplayer/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": null,
-     "playableDistanceItems": [
-      "slice-package",
-      "texture-bindings",
-      "render-package",
-      "layout",
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_amboy_multiplayer; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "Amboy",
-   "cityKey": "CRN_AMBOY",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 140,
-    "collisionTriangles": 22208,
-    "collisionVertices": 11239,
-    "drawTriangles": 80778,
-    "draws": 148,
-    "instanceDescriptionsSkipped": 213,
-    "sectionsProbed": 16,
-    "sectionsSupported": 10,
-    "sectionsUnsupported": 6,
-    "textureBlobs": 37,
-    "textureSources": 38
-   },
-   "distanceRank": 15,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 201895,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "multiplayer",
-   "level": "usa_amboy_multiplayer",
-   "paths": {
-    "collisionM": 770.762,
-    "drawCoveredM": 136.066017178,
-    "packageKind": "draw-covered-measured",
-    "packageM": 136.066017178,
-    "recoveredM": null,
-    "samples": 571
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
-  },
-  {
-   "blocker": {
     "byteGaps": [],
     "code": "e1-map-package-missing",
     "evidence": {
@@ -1721,7 +1389,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_la_downtown_multiplayer; registry ids are amboy, downtown, gracia, longbeach, mharuna, observatory, river",
+     "detail": "MAP_IDS has no entry for usa_la_downtown_multiplayer; registry ids are amboy, amboy-mp, downtown, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1742,7 +1410,7 @@
     "textureBlobs": 121,
     "textureSources": 123
    },
-   "distanceRank": 16,
+   "distanceRank": 17,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 234932,
@@ -1777,168 +1445,6 @@
    },
    "verdict": "blocked",
    "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
-  },
-  {
-   "blocker": {
-    "byteGaps": [],
-    "code": "extractor-chunk-association",
-    "detail": "committed first-RenderList extraction covers less than the 25 m audit floor; the drivable geometry is in a non-first chunk item and/or a chunk with declared prerequisites",
-    "evidence": {
-     "collisionPathM": 208.948,
-     "committedDrawCoveredM": 6.243,
-     "committedSections": 7,
-     "newSections": 38,
-     "newTriangles": 146277,
-     "probeSections": 45,
-     "probeTriangles": 161464,
-     "recoveredCoverage": 1.0,
-     "recoveredDrawCoveredM": 208.948
-    },
-    "kind": "draw-coverage",
-    "reason": "draw coverage below 25 m under the committed extractor",
-    "records": [
-     {
-      "byteOffset": 22679552,
-      "byteOffsetKind": "levelstream chunk offset",
-      "chunk": 51,
-      "chunkPrerequisites": [
-       50
-      ],
-      "draws": 22,
-      "geometryBlock": 7,
-      "id": "g7-n63",
-      "item": 0,
-      "nodeBlock": 63,
-      "reason": "chunk with declared prerequisites",
-      "triangles": 8319
-     },
-     {
-      "byteOffset": 18569216,
-      "byteOffsetKind": "levelstream chunk offset",
-      "chunk": 47,
-      "chunkPrerequisites": [
-       46,
-       44,
-       45
-      ],
-      "draws": 15,
-      "geometryBlock": 10,
-      "id": "g10-n63",
-      "item": 0,
-      "nodeBlock": 63,
-      "reason": "chunk with declared prerequisites",
-      "triangles": 9800
-     },
-     {
-      "byteOffset": 22679552,
-      "byteOffsetKind": "levelstream chunk offset",
-      "chunk": 51,
-      "chunkPrerequisites": [
-       50
-      ],
-      "draws": 22,
-      "geometryBlock": 11,
-      "id": "g11-n63",
-      "item": 1,
-      "nodeBlock": 63,
-      "reason": "non-first chunk item",
-      "triangles": 6647
-     },
-     {
-      "byteOffset": 18569216,
-      "byteOffsetKind": "levelstream chunk offset",
-      "chunk": 47,
-      "chunkPrerequisites": [
-       46,
-       44,
-       45
-      ],
-      "draws": 34,
-      "geometryBlock": 14,
-      "id": "g14-n63",
-      "item": 1,
-      "nodeBlock": 63,
-      "reason": "non-first chunk item",
-      "triangles": 9887
-     },
-     {
-      "byteOffset": 16009216,
-      "byteOffsetKind": "levelstream chunk offset",
-      "chunk": 44,
-      "chunkPrerequisites": [
-       32,
-       31,
-       35
-      ],
-      "draws": 30,
-      "geometryBlock": 15,
-      "id": "g15-n63",
-      "item": 0,
-      "nodeBlock": 63,
-      "reason": "chunk with declared prerequisites",
-      "triangles": 8927
-     }
-    ],
-    "sourceRecord": {
-     "byteOffset": 18569216,
-     "byteOffsetKind": "levelstream chunk offset",
-     "detail": "block 14, chunk 47, item 1, 9887 triangles, 34 draws, chunk prerequisites [46, 44, 45]",
-     "file": "_work/map-pipeline/usa_la_multiplayer_highrise-probe/probe.json",
-     "recordId": "sections[block=14,chunk=47,item=1]"
-    }
-   },
-   "city": "LA Downtown",
-   "cityKey": "CRN_LA_DOWNTOWN",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 69,
-    "collisionTriangles": 2522,
-    "collisionVertices": 1755,
-    "drawTriangles": 15187,
-    "draws": 113,
-    "instanceDescriptionsSkipped": 0,
-    "sectionsProbed": 7,
-    "sectionsSupported": 7,
-    "sectionsUnsupported": 0,
-    "textureBlobs": 53,
-    "textureSources": 53
-   },
-   "distanceRank": 17,
-   "evidence": {
-    "batchGrade": "blocked",
-    "batchVerifyChecks": 250664,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "C",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "draw coverage below 25 m under the committed extractor",
-    "manifestGrade": "blocked",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "extended-extractor",
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "blocked",
-    "reportMapId": null
-   },
-   "kind": "multiplayer",
-   "level": "usa_la_multiplayer_highrise",
-   "paths": {
-    "collisionM": 208.948,
-    "drawCoveredM": 6.242640687,
-    "packageKind": "draw-covered-measured",
-    "packageM": 6.242640687,
-    "recoveredM": 208.948,
-    "samples": 27
-   },
-   "verdict": "blocked",
-   "verdictReason": "committed first-RenderList extraction covers 6.243 m of the 208.948 m collision path; the extended probe recovers 208.948 m (coverage 1.000); the blocker is the extractor's first-item / no-prerequisite chunk policy"
   },
   {
    "blocker": {
@@ -2194,7 +1700,7 @@
    "sha256": "124f01c0013a4578e2229016b0d1f8d82bfd850bb3bcaa597573f1afbadd733b"
   },
   "batchSummary": {
-   "contentSha256": "ce8253fc6a4da1758afaffc8dccee290f319a36767a914a5fb6563ee3fbf2513",
+   "contentSha256": "7a35959b3ff0e618d028687e8c7ed93ca2d5fafb34363d946e12d44521927ce2",
    "path": "_work/map-batch/batch-summary.json",
    "pin": "content",
    "volatileFields": [
@@ -2211,9 +1717,9 @@
    ]
   },
   "blockedInventory": {
-   "bytes": 61556,
+   "bytes": 60831,
    "path": "_work/map-pipeline/blocked/inventory-19.json",
-   "sha256": "33f17116660584bedf35c8a37663b3bb81b55b1c2bc704ba9406ea305e6ec5d0"
+   "sha256": "6db89d404096ae3abf6df418ec470328d0fb5b5cd543eb3e975a3af2f7f45cca"
   },
   "inventory": {
    "bytes": 159627,
@@ -2226,9 +1732,9 @@
    "sha256": "5eea94a1b538ed1d3f1634a6394a8d288412009715c1632daa3012e0382617d2"
   },
   "mapRegistry": {
-   "bytes": 23206,
+   "bytes": 34498,
    "path": "probes/e1-drive/web/map-registry.js",
-   "sha256": "cd6ebf7aee8206879f0aeb1d3c73ee364cfa27c8080327200fc7ac83f5426d4d"
+   "sha256": "4746980e1b782ed7a538d1de1fc71968dcdcc8ce642b158a107484711280a7ed"
   },
   "maps": {
    "bytes": 205652,
@@ -2240,31 +1746,31 @@
   "blocked": [
    "usa_sanfran_russianhill",
    "uk_london_hackney",
-   "spa_barcelona_oval",
    "usa_ny_dumbo",
    "uk_brighton",
    "usa_sanfran_sausalito",
-   "jpn_tokyo_shutoko",
-   "usa_amboy_multiplayer",
    "usa_la_downtown_multiplayer",
-   "usa_la_multiplayer_highrise",
    "showroom",
    "spa_barcelona_bowl_multiplayer"
   ],
   "counts": {
-   "blocked": 12,
-   "playable": 7,
+   "blocked": 8,
+   "playable": 11,
    "unsupported": 0
   },
   "levelCount": 19,
   "playable": [
+   "usa_la_multiplayer_highrise",
    "usa_la_longbeachdocks",
    "usa_la_observatory",
    "spa_barcelona_gracia",
    "usa_la_downtown",
    "usa_amboy",
    "jpn_mharuna",
-   "usa_la_river"
+   "usa_la_river",
+   "spa_barcelona_oval",
+   "jpn_tokyo_shutoko",
+   "usa_amboy_multiplayer"
   ],
   "playableSource": "probes/e1-drive/web/map-registry.js#MAP_IDS",
   "premiseNote": "The committed registry MAP_IDS is river/amboy/gracia. usa_la_longbeachdocks has a verified map-batch package and an 818.372 m committed draw-covered path, but no E1 map-registry entry, so it is blocked by two integration items, not playable. The '4 playable maps' premise is not supported by the committed registry in this tree.",

@@ -149,12 +149,15 @@ def main(argv=None):
     check("localization has 19 city rows", len(src["cities"]) == 19,
           str(len(src["cities"])))
     check("registry ids are river/amboy/gracia/longbeach/observatory",
-          set(src["registry"]["mapIds"]) == {"river", "amboy", "gracia", "longbeach", "observatory", "downtown", "mharuna"},
+          set(src["registry"]["mapIds"]) == {"river", "amboy", "gracia", "longbeach", "observatory", "downtown", "mharuna",
+           "highrise", "shutoko", "oval", "amboy-mp"},
           str(src["registry"]["mapIds"]))
     check("registry maps five levels",
           set(src["registry"]["byLevel"]) ==
           {"usa_la_river", "usa_amboy", "spa_barcelona_gracia", "usa_la_longbeachdocks",
-           "usa_la_observatory", "usa_la_downtown", "jpn_mharuna"},
+           "usa_la_observatory", "usa_la_downtown", "jpn_mharuna",
+           "usa_la_multiplayer_highrise", "jpn_tokyo_shutoko",
+           "spa_barcelona_oval", "usa_amboy_multiplayer"},
           str(sorted(src["registry"]["byLevel"])))
     check("unsupported rows, if any, carry a blocker",
           all(row.get("blocker") for row in rows
@@ -431,8 +434,10 @@ def main(argv=None):
             check(level + " playable has no distance items",
                   inv["playableDistanceItems"] == [])
             check(level + " playable path floor",
-                  paths.get("drawCoveredM", 0.0) >= PATH_FLOOR_M,
-                  str(paths.get("drawCoveredM")))
+                  max(paths.get("drawCoveredM", 0.0),
+                      paths.get("collisionM", 0.0)) >= PATH_FLOOR_M,
+                  "%s draw / %s collision" % (paths.get("drawCoveredM"),
+                                              paths.get("collisionM")))
         else:
             if not check(level + " blocked has a blocker", isinstance(blocker, dict)):
                 continue

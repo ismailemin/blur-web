@@ -86,6 +86,42 @@
       "checkpoints": 2,
       "layoutHash": "sha256:21a2a30c94d46ad1905bd379138dcdce60ba550b25542201da58f5024e13b70e",
       "docRef": "docs/work/analysis/mharuna-package.md (309.170196 m collision path, Y 1064)"
+    },
+    "highrise": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "highrise",
+      "timeSeconds": 3.45,
+      "timeToleranceSeconds": 1.0,
+      "checkpoints": 2,
+      "layoutHash": "sha256:4d0c292cec351d7bed92ed3f9a70ab8491024fa64e93885b54d311395c435be3",
+      "docRef": "docs/work/analysis/remaining-maps.md (14.268660 m collision path)"
+    },
+    "shutoko": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "shutoko",
+      "timeSeconds": 21.833333,
+      "timeToleranceSeconds": 1.5,
+      "checkpoints": 2,
+      "layoutHash": "sha256:172dff3b328a22ae1fd9ba9038c87e7ccc0741699fc305166000cb0b5ceefafc",
+      "docRef": "docs/work/analysis/remaining-maps.md (279.005135 m collision path)"
+    },
+    "oval": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "oval",
+      "timeSeconds": 39.516667,
+      "timeToleranceSeconds": 2.0,
+      "checkpoints": 2,
+      "layoutHash": "sha256:9be12295925baa0b340a6e4235298923240e94905563c40c8c73cabc7571945d",
+      "docRef": "docs/work/analysis/remaining-maps.md (753.021127 m collision path)"
+    },
+    "amboy-mp": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "amboy-mp",
+      "timeSeconds": 13.533333,
+      "timeToleranceSeconds": 1.5,
+      "checkpoints": 2,
+      "layoutHash": "sha256:af8abcecf68c2daf8a5c1548a382e100d787f717b75c908764d2c6296b2652ca",
+      "docRef": "docs/work/analysis/remaining-maps.md (122.293808 m collision path)"
     }
   },
   "mp": {
