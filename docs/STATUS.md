@@ -961,6 +961,12 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 188/200 wheel draw preview-only, UV placeholder/partial scene/icon vector tipli blocker.
 - Doğrulama **912/912**, iki build identical. Kanıt: `docs/work/analysis/vehicle-batch3-prep.md`.
 
+## 8 Kasım 2026 — SuperShield verisi
+
+- `PickupType` 619 / level 523: **10 s**, ram hasarı 100, `IncreasedMass` 10.000 kg, 50 mph boost; HUD icon 104.
+- Retail MP'de yolu yok (`E_Pickup` 8, MP flag 8, random seçim hard-exclude); proje uzantısı olarak entegre edilebilir.
+- Kural **17/17**, verifier **571/571**. Kanıt: `docs/work/analysis/supershield.md`.
+
 ## 7 Kasım 2026 — AI rakip sürücüsü
 
 - Deterministik Stanley/pure-pursuit sürücü; 3 temiz skill profili + agresif (1/10 fail).

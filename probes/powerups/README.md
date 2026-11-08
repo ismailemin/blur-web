@@ -17,6 +17,33 @@ Data-only power-up recovery for the Blur Web project. Nothing here changes
 | `tools/build_projectiles.py` | PWR4 | projectile/impulse manifest from XT + source |
 | `tools/verify_projectiles.py` | PWR4 | independent direct-offset verifier for `projectiles.json` |
 | `rules/projectiles.js`, `rules/projectiles.test.mjs` | PWR4 | typed projectile/impulse model + 19 tests |
+| `tools/build_supershield.py` | SS1 | SuperShield data/provenance manifest |
+| `tools/verify_supershield.py` | SS1 | independent direct-offset verifier for `supershield.json` |
+| `rules/supershield.js`, `rules/supershield.test.mjs` | SS1 | typed SuperShield model + 17 tests |
+
+## SuperShield (SS1)
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/powerups/tools/build_supershield.py
+& $py probes/powerups/tools/verify_supershield.py
+node probes/powerups/rules/supershield.test.mjs
+```
+
+Outputs (not committed):
+
+- `_work/powerups/supershield.json` — `PickupType` 619, `PickupLevel` 523,
+  `SuperShieldBalancingData` absolute offset 96048, HUD entry at 400664, MP/SP
+  selection evidence, runtime rules, event contract, source citations.
+- `_work/powerups/supershield.verify.json` — 571 independent checks.
+- `_work/logs/powerups/ss1-*.log` — build, verify, test and suite logs.
+
+The shipped data has no multiplayer SuperShield bit and hard-excludes it from
+random pickup selection; single-player also has no recovered grant path. The
+entity, wire path (type nibble 10), FX and HUD exist, so the document classifies
+it as **integrable as a project extension**, with the MP enable/spawn rule
+labelled `provisional`. Full analysis: `docs/work/analysis/supershield.md`.
 
 ## Projectile / impulse recovery (PWR4)
 

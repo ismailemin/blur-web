@@ -50,6 +50,8 @@ def main():
         ('pickup-gracia',[sys.executable,'probes/powerups/tools/verify_pickup_placement_levels.py','--level','spa_barcelona_gracia']),
         ('powerups-model',['node','probes/e1-drive/tools/powerups_model_tests.mjs']),
         ('projectiles',[sys.executable,'probes/powerups/tools/verify_projectiles.py']),
+        ('supershield',[sys.executable,'probes/powerups/tools/verify_supershield.py']),
+        ('supershield-rules',['node','probes/powerups/rules/supershield.test.mjs']),
         ('projectile-rules',['node','probes/powerups/rules/projectiles.test.mjs']),
         ('boost-model',['node','probes/e1-drive/tools/boost_model_tests.mjs']),
         ('amboy-map',['node','probes/e1-drive/tools/verify_e1_map.mjs']),

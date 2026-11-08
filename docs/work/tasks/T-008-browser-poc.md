@@ -99,6 +99,7 @@ sürüşü deneyebileceği PoC.
 | Asset chunking | CHUNK1 | ✅ 109,2→20,47 MB, araç geçişi 535 ms |
 | Solo host + AI | FIX1 | ✅ READY/START, 3 satır sonuç |
 | Batch 3 verisi | V6 | ✅ 10 aday, 912/912 |
+| SuperShield verisi | SS1 | ✅ 17/17, 571/571 |
 | PoC hazırlık kontrolü | P57 | ✅ 19/19 |
 | Engine track sections | P44 | ✅ (299 draw / 47.790 tri) |
 | UV0 + doku binding | P45 | ✅ (299/299) |

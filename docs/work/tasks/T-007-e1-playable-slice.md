@@ -617,6 +617,15 @@ tüketir. Görsel sadakat E1 seviyesinde; E2 kapısı ayrı.
 - Doğrulama **912/912**, iki build identical. Kanıt:
   `docs/work/analysis/vehicle-batch3-prep.md`.
 
+### E1ay — SuperShield verisi (SS1)  ✅
+- `PickupType` 619 / level 523: **Lifetime 10 s**, kontakt hasarı **100**,
+  `IncreasedMass 10.000 kg`, başlangıç **50 mph (22,352 m/s)**; HUD icon 104.
+- Retail MP'de **yolu yok**: `E_Pickup` 8 değer, MP `powerups` 8 flag, random
+  seçim SuperShield'i hard-exclude ediyor; SP'de de grant yok.
+- Proje uzantısı olarak entegre edilebilir (host otoriteli olaylar); retail
+  feature değil. Kural prototipi **17/17**, verifier **571/571**.
+- Kanıt: `docs/work/analysis/supershield.md`, `_work/powerups/supershield.json`.
+
 ## Pipeline (bağımlılık sırası)
 
 ```

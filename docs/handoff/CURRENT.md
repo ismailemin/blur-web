@@ -272,6 +272,11 @@ staged: 1.076 body draw, 200 wheel draw, 213.062 UV vertex, 83 doku; 912/912,
 iki build identical. HUD adları/ikon anahtarları hazır. Kanıt:
 `docs/work/analysis/vehicle-batch3-prep.md`.
 
+**SS1 — SuperShield:** PickupType 619/level 523; 10 s, 100 ram, 10.000 kg,
+50 mph boost; retail MP yolu yok (8 flag). Proje uzantısı olarak entegre
+edilebilir; kural **17/17**, verifier **571/571**. Kanıt:
+`docs/work/analysis/supershield.md`.
+
 **P74b — V2 collision entegre:** 310 V2 roadside 553, lap V2 all-visible 651,
 free R04-V2 all-visible 447; pin uyuşmazlığında hata. Free beton boru 31 m/s'de
 0,001 m'de duruyor (53 temas). `verify_e1_drive` **856/856**; collision 30/30,
