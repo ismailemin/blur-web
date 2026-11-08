@@ -5966,15 +5966,18 @@ function mpPowerupHostStart() {
       const doc = powerupRetailPlacement.retailPlacementsFor(MAP.id, sprintRules.layout);
       for (const pickup of doc.pickups) {
         const item = powerupModel.spawnPickup(pickup.type, { x: pickup.x, y: pickup.y, z: pickup.z }, {
-          source: 'retail-placement',
-          placement: 'retail-route-arc',
+          source: 'retail-arc-fraction-remap',
+          placement: 'retail-arc-fraction-remap',
           arc: pickup.arc,
           note: pickup.source
         });
         spawned.push({ id: item.id, ...pickup });
       }
       state.powerups.retailUnsupported = doc.unsupported ?? [];
-      placementSource = 'retail-route-arc';
+      // The rule is a normalized retail-arc fraction remap, not a physical
+      // projection: the measured course is a sub-course of the retail route.
+      state.powerups.retailSoundness = doc.soundness ?? null;
+      placementSource = 'retail-arc-fraction-remap';
     } catch (error) {
       state.powerups.retailPlacementError = error.message;
     }
@@ -6298,6 +6301,7 @@ function mpPowerupCapture() {
     placement: hud?.placement ?? state.powerups.placement,
     placementSource: state.powerups.placementSource ?? null,
     retailUnsupported: state.powerups.retailUnsupported ?? null,
+    retailSoundness: state.powerups.retailSoundness ?? null,
     retailPlacementError: state.powerups.retailPlacementError ?? null,
     courseLengthMetres: COURSE_LENGTH_METRES,
     boostModel: powerupModel?.boost ?? null,
