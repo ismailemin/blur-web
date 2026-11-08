@@ -242,7 +242,9 @@
         "rpType": "RP_CarDynamics",
         "handleResolvesToExactRecordId": true,
         "nameSimilarityUsed": false,
-        "sharedRecordVariants": ["Foose_Stallion_Stock_Khan"],
+        "sharedRecordVariants": [
+          "Foose_Stallion_Stock_Khan"
+        ],
         "reason": "base AmaxVehicle selected because it is the parent; the Khan variant is a shipped body of the same physics and is recorded in c-aliases.json"
       }
     },
@@ -326,6 +328,353 @@
       "recordIndex": 30,
       "layout": "RWD, 1565 kg, 6-speed",
       "why": "batch 2 high-confidence B car: exact \\models\\vehicles\\toyota_supratrd_stock.model (V1 class B, 88 draws / 53 static, 7 textures)"
+    },
+    {
+      "slug": "opel-astraextreme-shannon",
+      "name": "Opel_AstraExtreme_shannon",
+      "recordId": 158205018,
+      "recordIndex": 1,
+      "layout": "RWD, 1100 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded",
+      "model": "\\models\\vehicles\\opel_astraextreme_stock_shannon.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 1,
+        "recordId": 158205018,
+        "amaxTag": "Opel_AstraExtreme_Stock_Shannon",
+        "amaxRecordId": 3538517977,
+        "amaxRefIndex": 201,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "provable: AmaxVehicle 'Opel_AstraExtreme_Stock_Shannon' (record 3538517977) carries this exact RP_CarDynamics id via its dynamics handle; the engine builds \\models\\vehicles\\opel_astraextreme_stock_shannon.model from the tag"
+      }
+    },
+    {
+      "slug": "bmw-1seriestii-race",
+      "name": "BMW_1SeriesTii_Race",
+      "recordId": 424487466,
+      "recordIndex": 5,
+      "layout": "RWD, 900 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "ford-focusrs-race",
+      "name": "Ford_FocusRS_Race",
+      "recordId": 435729180,
+      "recordIndex": 6,
+      "layout": "FWD, 1100 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "renault-meganesportr26-stockgrpc",
+      "name": "Renault_MeganeSportR26_Stockgrpc",
+      "recordId": 449674719,
+      "recordIndex": 7,
+      "layout": "FWD, 1300 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded",
+      "model": "\\models\\vehicles\\renault_meganesportr26_stock.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 7,
+        "recordId": 449674719,
+        "amaxTag": "Renault_MeganeSportR26_Stock",
+        "amaxRecordId": 221067626,
+        "amaxRefIndex": 552,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "provable: AmaxVehicle 'Renault_MeganeSportR26_Stock' (record 221067626) carries this exact RP_CarDynamics id via its dynamics handle; the engine builds \\models\\vehicles\\renault_meganesportr26_stock.model from the tag"
+      }
+    },
+    {
+      "slug": "renault-meganetrophy-stock",
+      "name": "Renault_MeganeTrophy_Stock",
+      "recordId": 1036981365,
+      "recordIndex": 21,
+      "layout": "RWD, 900 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "bmw-135-stock",
+      "name": "BMW_135_Stock",
+      "recordId": 1100768679,
+      "recordIndex": 23,
+      "layout": "RWD, 1480 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded",
+      "model": "\\models\\vehicles\\bmw_1seriestii_stock.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 23,
+        "recordId": 1100768679,
+        "amaxTag": "BMW_1SeriesTii_Stock",
+        "amaxRecordId": 2710145314,
+        "amaxRefIndex": 1358,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "provable: AmaxVehicle 'BMW_1SeriesTii_Stock' (record 2710145314) carries this exact RP_CarDynamics id via its dynamics handle; the engine builds \\models\\vehicles\\bmw_1seriestii_stock.model from the tag"
+      }
+    },
+    {
+      "slug": "landrover-lrx-stock",
+      "name": "LandRover_LRX_Stock",
+      "recordId": 1205168483,
+      "recordIndex": 24,
+      "layout": "AWD, 1750 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "nissan-350z-drift",
+      "name": "Nissan_350Z_Drift",
+      "recordId": 1289841624,
+      "recordIndex": 26,
+      "layout": "RWD, 1462 kg, 7-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "bmw-x548msport-stock",
+      "name": "BMW_X548MSport_Stock",
+      "recordId": 1332670016,
+      "recordIndex": 27,
+      "layout": "AWD, 2200 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "chevrolet-camaross-stock",
+      "name": "Chevrolet_CamaroSS_Stock",
+      "recordId": 1348179870,
+      "recordIndex": 28,
+      "layout": "RWD, 1700 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "nissan-navara-rat",
+      "name": "Nissan_Navara_Rat",
+      "recordId": 1348279799,
+      "recordIndex": 29,
+      "layout": "AWD, 1850 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "landrover-defendersvxgrpc",
+      "name": "LandRover_DefenderSVXgrpc",
+      "recordId": 1396764797,
+      "recordIndex": 31,
+      "layout": "AWD, 1750 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded",
+      "model": "\\models\\vehicles\\landrover_defendersvx_stock.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 31,
+        "recordId": 1396764797,
+        "amaxTag": "LandRover_DefenderSVX_Stock",
+        "amaxRecordId": 2486349509,
+        "amaxRefIndex": 1732,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "provable: AmaxVehicle 'LandRover_DefenderSVX_Stock' (record 2486349509) carries this exact RP_CarDynamics id via its dynamics handle; the engine builds \\models\\vehicles\\landrover_defendersvx_stock.model from the tag"
+      }
+    },
+    {
+      "slug": "bowler-nemesis-stock",
+      "name": "Bowler_Nemesis_Stock",
+      "recordId": 1420969672,
+      "recordIndex": 35,
+      "layout": "AWD, 1300 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "vauxhall-monarovxr-drift",
+      "name": "Vauxhall_MonaroVXR_Drift",
+      "recordId": 1485099691,
+      "recordIndex": 36,
+      "layout": "RWD, 1600 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "ford-mustang-gt500-stock1stplay",
+      "name": "Ford_Mustang_GT500_Stock1stplay",
+      "recordId": 1882476745,
+      "recordIndex": 39,
+      "layout": "RWD, 1495 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded",
+      "model": "\\models\\vehicles\\shelby_mustanggt500_stock.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 39,
+        "recordId": 1882476745,
+        "amaxTag": "Shelby_MustangGT500_Stock",
+        "amaxRecordId": 3934674837,
+        "amaxRefIndex": 2333,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "provable: AmaxVehicle 'Shelby_MustangGT500_Stock' (record 3934674837) carries this exact RP_CarDynamics id via its dynamics handle; the engine builds \\models\\vehicles\\shelby_mustanggt500_stock.model from the tag"
+      }
+    },
+    {
+      "slug": "foose-69-stock",
+      "name": "Foose_69_Stock",
+      "recordId": 2015365266,
+      "recordIndex": 40,
+      "layout": "RWD, 1395 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "corvette-c3-drag",
+      "name": "Corvette_C3_Drag",
+      "recordId": 2070271235,
+      "recordIndex": 41,
+      "layout": "RWD, 1300 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "ford-f100-rat",
+      "name": "Ford_F100_Rat",
+      "recordId": 2181023901,
+      "recordIndex": 42,
+      "layout": "RWD, 1650 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "chevrolet-camaross-drag",
+      "name": "Chevrolet_CamaroSS_Drag",
+      "recordId": 2212420608,
+      "recordIndex": 43,
+      "layout": "RWD, 1300 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "ford-f150-offroadheh",
+      "name": "Ford_F150_OffRoadheh",
+      "recordId": 2456008726,
+      "recordIndex": 48,
+      "layout": "AWD, 1900 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded",
+      "model": "\\models\\vehicles\\ford_f150_offroad.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 48,
+        "recordId": 2456008726,
+        "amaxTag": "Ford_F150_OffRoad",
+        "amaxRecordId": 709242964,
+        "amaxRefIndex": 3042,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "provable: AmaxVehicle 'Ford_F150_OffRoad' (record 709242964) carries this exact RP_CarDynamics id via its dynamics handle; the engine builds \\models\\vehicles\\ford_f150_offroad.model from the tag"
+      }
+    },
+    {
+      "slug": "volkswagen-scirocco-24",
+      "name": "Volkswagen_Scirocco_24",
+      "recordId": 2596441540,
+      "recordIndex": 51,
+      "layout": "FWD, 1100 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "nissan-navara-offroad",
+      "name": "Nissan_Navara_OffRoad",
+      "recordId": 2654387811,
+      "recordIndex": 52,
+      "layout": "AWD, 1750 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "volkswagen-beetle-rat",
+      "name": "Volkswagen_Beetle_Rat",
+      "recordId": 3213014570,
+      "recordIndex": 57,
+      "layout": "RWD, 700 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "bmw-m3e92-drift",
+      "name": "BMW_M3E92_Drift",
+      "recordId": 3261607451,
+      "recordIndex": 59,
+      "layout": "RWD, 1462 kg, 7-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "hummer-h2-offroad",
+      "name": "Hummer_H2_OffRoad",
+      "recordId": 3340562994,
+      "recordIndex": 60,
+      "layout": "AWD, 2500 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "dodge-challenger-race",
+      "name": "Dodge_Challenger_Race",
+      "recordId": 3448707998,
+      "recordIndex": 61,
+      "layout": "RWD, 1450 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "acschnitzer-acs1coupe-stock",
+      "name": "ACSchnitzer_ACS1Coupe_Stock",
+      "recordId": 3481230129,
+      "recordIndex": 62,
+      "layout": "RWD, 1480 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "corvette-c3-race",
+      "name": "Corvette_C3_Race",
+      "recordId": 3753347739,
+      "recordIndex": 68,
+      "layout": "RWD, 1400 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "hennessey-vipervenom1000coupe-stock",
+      "name": "Hennessey_ViperVenom1000Coupe_Stock",
+      "recordId": 3753608326,
+      "recordIndex": 69,
+      "layout": "RWD, 1500 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "opel-astraextreme-stockgrippy",
+      "name": "Opel_AstraExtreme_Stockgrippy",
+      "recordId": 3819658074,
+      "recordIndex": 71,
+      "layout": "RWD, 1100 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded",
+      "model": "\\models\\vehicles\\opel_astraextreme_stock.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 71,
+        "recordId": 3819658074,
+        "amaxTag": "Opel_AstraExtreme_Stock",
+        "amaxRecordId": 5392512,
+        "amaxRefIndex": 4716,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "provable: AmaxVehicle 'Opel_AstraExtreme_Stock' (record 5392512) carries this exact RP_CarDynamics id via its dynamics handle; the engine builds \\models\\vehicles\\opel_astraextreme_stock.model from the tag"
+      }
+    },
+    {
+      "slug": "ford-gt-stock",
+      "name": "Ford_GT_Stock",
+      "recordId": 3857619320,
+      "recordIndex": 73,
+      "layout": "RWD, 1573 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "dodge-vipergtsr-stock",
+      "name": "Dodge_ViperGTSR_Stock",
+      "recordId": 4166363433,
+      "recordIndex": 78,
+      "layout": "RWD, 1400 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
     }
   ]
 }

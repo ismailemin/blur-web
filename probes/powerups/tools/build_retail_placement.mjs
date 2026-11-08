@@ -311,7 +311,9 @@ function renderModule(document) {
   if (!template.includes(PLACEHOLDER)) {
     throw new Error('module template is missing the ' + PLACEHOLDER + ' placeholder');
   }
-  return template.replace(PLACEHOLDER, JSON.stringify(document, null, 2));
+  // A function replacer keeps `$&`, `$'` and similar sequences inside the JSON
+  // literal from being interpreted as replacement patterns.
+  return template.replace(PLACEHOLDER, () => JSON.stringify(document, null, 2));
 }
 
 function main() {

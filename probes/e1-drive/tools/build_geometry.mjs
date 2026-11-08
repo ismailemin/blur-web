@@ -103,10 +103,42 @@ const COMMITTED_MANIFESTS = {
   'corvette-c3-rat': 'sha256:ab49b97970f43f6d11ff820df5c0f4a4af43f79b59144a025bc818266b5f2691',
   'bmw-m3e92-tuner': 'sha256:405b58af11b87670135ae13f381b42fe164c731f6fd0b705a64b3c36122dc6f9',
   'koenigsegg-ccxr-stock': 'sha256:5513ae8cd72288664a54318b5ff4de7a87ce34e7f6fdf3da878cd530a351ea63',
-  'toyota-supratrd-stock': 'sha256:3ec8411f751013be12e63d8500644bb7bc7f459daa540ecccad99f9c6dd2e46b'
+  'toyota-supratrd-stock': 'sha256:3ec8411f751013be12e63d8500644bb7bc7f459daa540ecccad99f9c6dd2e46b',
+  'opel-astraextreme-shannon': 'sha256:7880e58d68736e9e03875015e12f3c24b0ac16eb7ed02abe51bac78d007da66f',
+  'bmw-1seriestii-race': 'sha256:97b4b0d8680374de3b2d9d04285f93e8c43b5d3b6c6fedae7b8cef82acf5db6d',
+  'ford-focusrs-race': 'sha256:5f3389008e38285f4d42ae26e03ce65c759a4e389b355c13d682bc4f6087794c',
+  'renault-meganesportr26-stockgrpc': 'sha256:6cdfeb5bc5509c67a7343042bccf08664668c3d6fe4365bd10858f7018caec66',
+  'renault-meganetrophy-stock': 'sha256:9b88325cbd929a5451be2697efff5aa2144db9813650ae5ed345fe5df76b3b25',
+  'bmw-135-stock': 'sha256:66b8b17c80f2bcda5c4914e1d70a99515a6cb79256e732a99422f6416bfb4749',
+  'landrover-lrx-stock': 'sha256:77c033723160ebd16238ef24f762fca5feb7b59a4b1ec64854a36e71eb6d406e',
+  'nissan-350z-drift': 'sha256:757f68dde5d55872ad8d92574185bf7b7eb027247991cd31349f387b36250062',
+  'bmw-x548msport-stock': 'sha256:09a6f26f5c97fd866b20c85e06627efc47acc6036c007778ae7fc5b4bce3f282',
+  'chevrolet-camaross-stock': 'sha256:8420726885680c683e6ff8004fbdf19f6aab6fa4005a55490f95a3a8434e24e0',
+  'nissan-navara-rat': 'sha256:db8ceb56831cd2dc2dce0b97520372efc9d61374819bcf31afb93c7e264a06f2',
+  'landrover-defendersvxgrpc': 'sha256:7248406816a806f98d99d1e919346ef665afc4e7d85405cc7544b392e024f3ab',
+  'bowler-nemesis-stock': 'sha256:e939156c1f0fec2686612259a43b9b292743676befd01b04ae230703a5dab9e5',
+  'vauxhall-monarovxr-drift': 'sha256:bb0a9fdc3007dce72b4851a34dc233ddd0c64867f5921bd3f71860c0bda50fd6',
+  'ford-mustang-gt500-stock1stplay': 'sha256:daee62b9841b62b68af9523d2d3b28c21ad85e97a02358faddae34a5fef0172c',
+  'foose-69-stock': 'sha256:574a9536f6883e62dedf6bbefc2bba1a3d942790684a8dec3c1abd6908c0a744',
+  'corvette-c3-drag': 'sha256:f967ebb18d2ce35bbe530a35a954cec3c23ac10719a7cd4aeb7f8661042c59c6',
+  'ford-f100-rat': 'sha256:8791779e24f0a9ce2cd575ea1190663d6a43d341713217580e65ec708134e427',
+  'chevrolet-camaross-drag': 'sha256:38b1a2848e7a9d828ef440b67c0d0fa2c569cf3a8387b1fdc1fbce2fe2377867',
+  'ford-f150-offroadheh': 'sha256:a0531f301a347fa00168596b875d4f2d8545ea3ddefa571ac101295b89e6c97f',
+  'volkswagen-scirocco-24': 'sha256:708457f68d4e85e9cd64aa5a5df0f7abe9673b131bcc6baf04d0633dc3473b0a',
+  'nissan-navara-offroad': 'sha256:8178bb345215025ebb5001f0a0f413cb999a844bb00c3c66b848cdf90316b332',
+  'volkswagen-beetle-rat': 'sha256:85a8b34ba839830ab47647e98724335ab710586b40045dda8cd55cb1296fddaf',
+  'bmw-m3e92-drift': 'sha256:42b174b36a07e92e4b35f6b0a76c8ab8447b40dc8bad7cf3072aa8097a48db85',
+  'hummer-h2-offroad': 'sha256:33e03e77117da3af1afb3b1a2f38a4b176c0dd4fd782140f7a5e1dcd7c0670a3',
+  'dodge-challenger-race': 'sha256:0698f5e260d5e9d8626ade79b2e0e235b93cb1bbfe06c3b37cb3cce86cf232a1',
+  'acschnitzer-acs1coupe-stock': 'sha256:6820e7db0aff40b182cd11f004b4b3e82291b3e24721dc04af77917024717d07',
+  'corvette-c3-race': 'sha256:3d200059e3f6782104d4262142122c9cdbd1e99f280f236c46b95c978433aba8',
+  'hennessey-vipervenom1000coupe-stock': 'sha256:5856a01079dda8da7d4112389d55778ae78fa7acd29c0315d3f0ea63e47ddb55',
+  'opel-astraextreme-stockgrippy': 'sha256:eb7f8dab45821c423c617002c4f61403740759b31ff140512b4d52ab99895c6b',
+  'ford-gt-stock': 'sha256:4cc36c7239f04093590f7b54abf306f382cbfa091f343e6e26f6bd1da3cb0e08',
+  'dodge-vipergtsr-stock': 'sha256:67ae8648e202bc21685e7c95865d5719088afa81ef62d2f7403c4fd98e0c7eef',
 };
 const COMMITTED_CAR_INDEX =
-  'sha256:94b31721a34cfa4a2af1c90c1893af2fd2a28c567d80cf14f42a47569fd15315';
+  'sha256:1fcee94ad9fe5f2b8073c2374d48605e29713e9f15216bcf8a1973afcea12bae';
 
 // P52's per-car material/texture record plus its UV0 export. Committed output of
 // `build_car_textures.py`; a different file is a hard failure, because the car
@@ -114,7 +146,7 @@ const COMMITTED_CAR_INDEX =
 // consumer document is updated with it.
 const CAR_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/car-textures.json');
 const COMMITTED_CAR_TEXTURES =
-  'sha256:468e883192a60a6485a65f532fd9e0e0ab4edb47e9749f966ae76ce373a15f61';
+  'sha256:e0d540a1d842478ccf86e38377b5d0d22850b27c3e17203f54b202dc713804b7';
 
 // P73b level-instance prop pack: the P73a UV0 export plus the four decoded BC1
 // sources, emitted by `build_level_instance_textures.py`. Committed output of
@@ -181,7 +213,7 @@ if (carTextureDoc.kind !== 'e1-drive.car-textures' || carTextureDoc.version !== 
   throw new Error('car texture manifest kind/version is not e1-drive.car-textures v1');
 }
 if (carTextureDoc.pins?.p52RosterIndex !==
-    'sha256:0cce07379af01cf0f21829285cec41b01cf4cd6e0ceae72249dafb13db379455' ||
+    'sha256:9e63f81794c2d6dd682cf2c6d481ad8d39e4b88566c8591c911c2d3aa6bf4ea3' ||
     carTextureDoc.pins?.carPartsIndex !== COMMITTED_CAR_INDEX) {
   throw new Error('car texture manifest does not carry the committed P52 roster and car-parts indexes');
 }
@@ -867,7 +899,39 @@ const COMMITTED_CAR_COVERAGE = {
   'corvette-c3-rat': { draws: 83, textured: 35, paint: 0, light: 10, noAlbedo: 38, textures: 8, rgbaBytes: 2768896 },
   'bmw-m3e92-tuner': { draws: 94, textured: 54, paint: 7, light: 10, noAlbedo: 23, textures: 8, rgbaBytes: 3432448 },
   'koenigsegg-ccxr-stock': { draws: 97, textured: 63, paint: 9, light: 17, noAlbedo: 8, textures: 9, rgbaBytes: 3563520 },
-  'toyota-supratrd-stock': { draws: 88, textured: 53, paint: 11, light: 9, noAlbedo: 15, textures: 7, rgbaBytes: 3424256 }
+  'toyota-supratrd-stock': { draws: 88, textured: 53, paint: 11, light: 9, noAlbedo: 15, textures: 7, rgbaBytes: 3424256 },
+  'opel-astraextreme-shannon': { draws: 86, textured: 72, paint: 0, light: 9, noAlbedo: 5, textures: 11, rgbaBytes: 4939776 },
+  'bmw-1seriestii-race': { draws: 116, textured: 43, paint: 11, light: 9, noAlbedo: 53, textures: 7, rgbaBytes: 3358720 },
+  'ford-focusrs-race': { draws: 110, textured: 36, paint: 12, light: 10, noAlbedo: 52, textures: 7, rgbaBytes: 2572288 },
+  'renault-meganesportr26-stockgrpc': { draws: 125, textured: 47, paint: 0, light: 19, noAlbedo: 59, textures: 7, rgbaBytes: 4407296 },
+  'renault-meganetrophy-stock': { draws: 93, textured: 47, paint: 8, light: 11, noAlbedo: 27, textures: 8, rgbaBytes: 3571712 },
+  'bmw-135-stock': { draws: 111, textured: 49, paint: 1, light: 9, noAlbedo: 52, textures: 9, rgbaBytes: 4669440 },
+  'landrover-lrx-stock': { draws: 135, textured: 40, paint: 8, light: 11, noAlbedo: 76, textures: 7, rgbaBytes: 3424256 },
+  'nissan-350z-drift': { draws: 125, textured: 37, paint: 13, light: 13, noAlbedo: 62, textures: 10, rgbaBytes: 3449856 },
+  'bmw-x548msport-stock': { draws: 91, textured: 46, paint: 11, light: 11, noAlbedo: 23, textures: 8, rgbaBytes: 2445312 },
+  'chevrolet-camaross-stock': { draws: 122, textured: 35, paint: 14, light: 14, noAlbedo: 59, textures: 8, rgbaBytes: 3359744 },
+  'nissan-navara-rat': { draws: 75, textured: 44, paint: 8, light: 10, noAlbedo: 13, textures: 8, rgbaBytes: 2646016 },
+  'landrover-defendersvxgrpc': { draws: 85, textured: 30, paint: 7, light: 12, noAlbedo: 36, textures: 7, rgbaBytes: 2637824 },
+  'bowler-nemesis-stock': { draws: 84, textured: 45, paint: 0, light: 11, noAlbedo: 28, textures: 9, rgbaBytes: 4481024 },
+  'vauxhall-monarovxr-drift': { draws: 104, textured: 35, paint: 11, light: 6, noAlbedo: 52, textures: 7, rgbaBytes: 2318336 },
+  'ford-mustang-gt500-stock1stplay': { draws: 110, textured: 52, paint: 10, light: 14, noAlbedo: 34, textures: 7, rgbaBytes: 3424256 },
+  'foose-69-stock': { draws: 98, textured: 37, paint: 0, light: 14, noAlbedo: 47, textures: 8, rgbaBytes: 3686400 },
+  'corvette-c3-drag': { draws: 65, textured: 24, paint: 6, light: 8, noAlbedo: 27, textures: 5, rgbaBytes: 2244608 },
+  'ford-f100-rat': { draws: 74, textured: 44, paint: 0, light: 7, noAlbedo: 23, textures: 8, rgbaBytes: 3686400 },
+  'chevrolet-camaross-drag': { draws: 107, textured: 36, paint: 13, light: 10, noAlbedo: 48, textures: 7, rgbaBytes: 3358720 },
+  'ford-f150-offroadheh': { draws: 120, textured: 39, paint: 12, light: 14, noAlbedo: 55, textures: 7, rgbaBytes: 3440640 },
+  'volkswagen-scirocco-24': { draws: 85, textured: 54, paint: 11, light: 8, noAlbedo: 12, textures: 9, rgbaBytes: 3436544 },
+  'nissan-navara-offroad': { draws: 73, textured: 47, paint: 5, light: 13, noAlbedo: 8, textures: 8, rgbaBytes: 3686400 },
+  'volkswagen-beetle-rat': { draws: 94, textured: 42, paint: 1, light: 5, noAlbedo: 46, textures: 6, rgbaBytes: 3358720 },
+  'bmw-m3e92-drift': { draws: 101, textured: 48, paint: 11, light: 10, noAlbedo: 32, textures: 9, rgbaBytes: 3379200 },
+  'hummer-h2-offroad': { draws: 98, textured: 23, paint: 5, light: 20, noAlbedo: 50, textures: 6, rgbaBytes: 2392064 },
+  'dodge-challenger-race': { draws: 99, textured: 32, paint: 9, light: 12, noAlbedo: 46, textures: 7, rgbaBytes: 3358720 },
+  'acschnitzer-acs1coupe-stock': { draws: 108, textured: 36, paint: 11, light: 11, noAlbedo: 50, textures: 7, rgbaBytes: 3424256 },
+  'corvette-c3-race': { draws: 80, textured: 26, paint: 6, light: 10, noAlbedo: 38, textures: 6, rgbaBytes: 1327104 },
+  'hennessey-vipervenom1000coupe-stock': { draws: 86, textured: 45, paint: 12, light: 14, noAlbedo: 15, textures: 9, rgbaBytes: 4538368 },
+  'opel-astraextreme-stockgrippy': { draws: 86, textured: 63, paint: 9, light: 9, noAlbedo: 5, textures: 10, rgbaBytes: 3891200 },
+  'ford-gt-stock': { draws: 114, textured: 95, paint: 0, light: 16, noAlbedo: 3, textures: 9, rgbaBytes: 3162112 },
+  'dodge-vipergtsr-stock': { draws: 91, textured: 51, paint: 10, light: 13, noAlbedo: 17, textures: 8, rgbaBytes: 4472832 },
 };
 {
   const bodyList = Object.values(bodies);
@@ -2317,3 +2381,5 @@ console.log(JSON.stringify({
   fallbackBodies,
   source: geometry.source
 }, null, 2));
+
+

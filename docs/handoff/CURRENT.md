@@ -17,9 +17,11 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
   sonuç tablosu** üretiliyor. `mp-eight` E2E **95/95 PASS**; oda istatistiği
   `connections:8, roomsCreated:1, roomsFinished:1, maxPlayersSeen:8,
   protocolErrors:0`.
-- **Menü kabuğu:** boş URL menüyü açar (25 araç, 3 harita, mod/araç/harita
+- **Menü kabuğu:** boş URL menüyü açar (57 araç, 3 harita, mod/araç/harita
   seçimi, lobi); her yarış parametresi menüyü atlar. `?join=1` misafir akışı.
   Başsız Edge: 0 konsol hatası.
+- **Araçlar:** sürüş diliminde **57 araç** (25 → 57); yeni araçlarla sprint
+  çalışıyor (14.45–15.4 s, 0 hata). 5 araç tipli gerekçeyle desteklenmiyor.
 - **Amboy 3 tur:** `?map=amboy&course=lap` → 3 tur, 0 respawn, ~112 s.
 - **Long Beach 4. harita:** `?map=longbeach&script=sprint` → 785.82 m,
   **57.07 s, 0 respawn**; draw yolu 227 m'deki 10 cm kaldırıma takılıyordu,

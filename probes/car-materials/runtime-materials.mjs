@@ -77,8 +77,8 @@ const DATA = deepFreeze({
   "manifest": {
     "path": "probes/car-materials/data/runtime-materials.json",
     "schema": "blur.car-materials-runtime-manifest/1",
-    "cars": 25,
-    "sha256": "2006905ec6c84ac22afdc0046dfd01dad5f602ce1377de2100c140b4151c05e5"
+    "cars": 57,
+    "sha256": "6391a04670f318e907466185ec9c00c5184aa55d62315a5ed5a4264f37ded110"
   },
   "scope": "Retail paint, glass, light and alloy material values for the 25-car roster, decoded from the shipped XT packs. Values are copied verbatim or derived by the documented rule in `baseColour.sample`; fields the format does not serialize are absent and listed in `missing`.",
   "colourSpace": {
@@ -124,7 +124,39 @@ const DATA = deepFreeze({
     "corvette-c3-rat",
     "bmw-m3e92-tuner",
     "koenigsegg-ccxr-stock",
-    "toyota-supratrd-stock"
+    "toyota-supratrd-stock",
+    "opel-astraextreme-shannon",
+    "bmw-1seriestii-race",
+    "ford-focusrs-race",
+    "renault-meganesportr26-stockgrpc",
+    "renault-meganetrophy-stock",
+    "bmw-135-stock",
+    "landrover-lrx-stock",
+    "nissan-350z-drift",
+    "bmw-x548msport-stock",
+    "chevrolet-camaross-stock",
+    "nissan-navara-rat",
+    "landrover-defendersvxgrpc",
+    "bowler-nemesis-stock",
+    "vauxhall-monarovxr-drift",
+    "ford-mustang-gt500-stock1stplay",
+    "foose-69-stock",
+    "corvette-c3-drag",
+    "ford-f100-rat",
+    "chevrolet-camaross-drag",
+    "ford-f150-offroadheh",
+    "volkswagen-scirocco-24",
+    "nissan-navara-offroad",
+    "volkswagen-beetle-rat",
+    "bmw-m3e92-drift",
+    "hummer-h2-offroad",
+    "dodge-challenger-race",
+    "acschnitzer-acs1coupe-stock",
+    "corvette-c3-race",
+    "hennessey-vipervenom1000coupe-stock",
+    "opel-astraextreme-stockgrippy",
+    "ford-gt-stock",
+    "dodge-vipergtsr-stock"
   ],
   "cars": {
     "corvette-zr1-stock": {
@@ -2598,6 +2630,3174 @@ const DATA = deepFreeze({
           "pack": "\\gamedata\\xt\\vehicles.bin",
           "recordId": 3020494715,
           "recordIndex": 265,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "opel-astraextreme-shannon": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "opel-astraextreme-shannon",
+      "baseColour": [
+        0.9911020971138298,
+        0.9911020971138298,
+        0.9911020971138298,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 3538517977,
+        "amaxTag": "Opel_AstraExtreme_Stock_Shannon",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 3046,
+          "name": "Metallic Silver",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 2459621038,
+          "recordIndex": 205,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "bmw-1seriestii-race": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "bmw-1seriestii-race",
+      "baseColour": [
+        0.1946178304415758,
+        0.1946178304415758,
+        0.1946178304415758,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2898947402,
+        "amaxTag": "BMW_1SeriesTii_Race",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 2050,
+          "name": "Chrome",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1648078178,
+          "recordIndex": 135,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "ford-focusrs-race": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "ford-focusrs-race",
+      "baseColour": [
+        0.03433980680868217,
+        0.14995978981060856,
+        0.467783796112159,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2204763113,
+        "amaxTag": "Ford_FocusRS_Race",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 743,
+          "name": "Ford_FocusRS_Race",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 591342049,
+          "recordIndex": 50,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "renault-meganesportr26-stockgrpc": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "renault-meganesportr26-stockgrpc",
+      "baseColour": [
+        0.9911020971138298,
+        0.7379104087727308,
+        0.00972121732023785,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 221067626,
+        "amaxTag": "Renault_MeganeSportR26_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 3245,
+          "name": "Yellow",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 2649041895,
+          "recordIndex": 230,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "renault-meganetrophy-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "renault-meganetrophy-stock",
+      "baseColour": [
+        0.9911020971138298,
+        0.7379104087727308,
+        0.00972121732023785,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 4085969354,
+        "amaxTag": "Renault_MeganeTrophy_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 3245,
+          "name": "Yellow",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 2649041895,
+          "recordIndex": 230,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "bmw-135-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "bmw-135-stock",
+      "baseColour": [
+        0.8879231178819663,
+        0.8879231178819663,
+        0.8879231178819663,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2710145314,
+        "amaxTag": "BMW_1SeriesTii_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 2818,
+          "name": "White",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 2273500494,
+          "recordIndex": 191,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "landrover-lrx-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "landrover-lrx-stock",
+      "baseColour": [
+        0.7835377915261935,
+        0.7835377915261935,
+        0.7835377915261935,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 1103470083,
+        "amaxTag": "LandRover_LRX_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 2506,
+          "name": "LandRover_LRX_Stock",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 2032554606,
+          "recordIndex": 170,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "nissan-350z-drift": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "nissan-350z-drift",
+      "baseColour": [
+        0.9734452903984125,
+        0.2874408377269175,
+        0.014443843596092545,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 4294849046,
+        "amaxTag": "Nissan_350Z_Drift",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 1238,
+          "name": "Nissan_350Z_Drift",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1004541584,
+          "recordIndex": 85,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "bmw-x548msport-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "bmw-x548msport-stock",
+      "baseColour": [
+        0.6104955708078648,
+        0.7529422167760779,
+        0.8307698767746546,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2427702340,
+        "amaxTag": "BMW_X548MSport_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 812,
+          "name": "BMW_X548MSport_Stock",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 646286529,
+          "recordIndex": 58,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "chevrolet-camaross-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "chevrolet-camaross-stock",
+      "baseColour": [
+        0.7454042095403874,
+        0.7454042095403874,
+        0.7454042095403874,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 1906444698,
+        "amaxTag": "Chevrolet_CamaroSS_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 416,
+          "name": "Chevrolet_CamaroSS_Stock",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 354272535,
+          "recordIndex": 36,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "nissan-navara-rat": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "nissan-navara-rat",
+      "baseColour": [
+        0.8227857543962835,
+        0.6866853124353135,
+        0.01599629336550963,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 1557127104,
+        "amaxTag": "Nissan_Navara_Rat",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 419,
+          "name": "Nissan_Navara_Rat",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 356031361,
+          "recordIndex": 37,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "landrover-defendersvxgrpc": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "landrover-defendersvxgrpc",
+      "baseColour": [
+        0.016807375752887384,
+        0.016807375752887384,
+        0.016807375752887384,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2486349509,
+        "amaxTag": "LandRover_DefenderSVX_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 933,
+          "name": "Gloss Black",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 744194655,
+          "recordIndex": 66,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "bowler-nemesis-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "bowler-nemesis-stock",
+      "baseColour": [
+        0.017641954488384078,
+        0.017641954488384078,
+        0.017641954488384078,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 3005987313,
+        "amaxTag": "Bowler_Nemesis_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 3737,
+          "name": "Nemesis_Black",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 3034087107,
+          "recordIndex": 269,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "vauxhall-monarovxr-drift": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "vauxhall-monarovxr-drift",
+      "baseColour": [
+        0.15292615199615017,
+        0.23074004852434915,
+        0.43415363617474895,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 3339438731,
+        "amaxTag": "Vauxhall_MonaroVXR_Drift",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 3359,
+          "name": "Vauxhall_MonaroVXR_Drift",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 2733276158,
+          "recordIndex": 237,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "ford-mustang-gt500-stock1stplay": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "ford-mustang-gt500-stock1stplay",
+      "baseColour": [
+        0.9911020971138298,
+        0.02217388479338738,
+        0,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "vehicle.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 3934674837,
+        "amaxTag": "Shelby_MustangGT500_Stock",
+        "glass": {
+          "lookupPath": "vehicle.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "vehicle.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 4021,
+          "name": "Metallic Red",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 3264945747,
+          "recordIndex": 296,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "foose-69-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "foose-69-stock",
+      "baseColour": [
+        0.01599629336550963,
+        0.01599629336550963,
+        0.01599629336550963,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2435991834,
+        "amaxTag": "Foose_69_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 4531,
+          "name": "Foose_69_Stock",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 3683649735,
+          "recordIndex": 331,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "corvette-c3-drag": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "corvette-c3-drag",
+      "baseColour": [
+        0.9911020971138298,
+        0.7454042095403874,
+        0,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 809907145,
+        "amaxTag": "Corvette_C3_Drag",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 273,
+          "name": "Corvette_C3_Drag",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 233421997,
+          "recordIndex": 21,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "ford-f100-rat": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "ford-f100-rat",
+      "baseColour": [
+        0.9911020971138298,
+        0.9911020971138298,
+        0.9911020971138298,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 3479338768,
+        "amaxTag": "Ford_F100_Rat",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 1849,
+          "name": "Matte Rat",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1492180403,
+          "recordIndex": 125,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "chevrolet-camaross-drag": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "chevrolet-camaross-drag",
+      "baseColour": [
+        0.3564001441459435,
+        0.3564001441459435,
+        0.3564001441459435,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 3728936298,
+        "amaxTag": "Chevrolet_CamaroSS_Drag",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 1626,
+          "name": "Chevrolet_CamaroSS_Drag",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1311076593,
+          "recordIndex": 110,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "ford-f150-offroadheh": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "ford-f150-offroadheh",
+      "baseColour": [
+        0.4793201831008268,
+        0.07618538148130785,
+        0.07618538148130785,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 709242964,
+        "amaxTag": "Ford_F150_OffRoad",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 663,
+          "name": "Ford_F150_OffRoad",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 532848985,
+          "recordIndex": 45,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "volkswagen-scirocco-24": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "volkswagen-scirocco-24",
+      "baseColour": [
+        0.6724431569576875,
+        0.6514056374198242,
+        0.5271151257058131,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 754706886,
+        "amaxTag": "Volkswagen_Scirocco_24",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 1782,
+          "name": "Volkswagen_Scirocco_24",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1428404237,
+          "recordIndex": 118,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "nissan-navara-offroad": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "nissan-navara-offroad",
+      "baseColour": [
+        0.06847816984440017,
+        0.5520114015120001,
+        0.7758222183174236,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2558874871,
+        "amaxTag": "Nissan_Navara_OffRoad",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 746,
+          "name": "Nissan_Navara_OffRoad",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 593704400,
+          "recordIndex": 51,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "volkswagen-beetle-rat": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "volkswagen-beetle-rat",
+      "baseColour": [
+        0.9911020971138298,
+        0.9911020971138298,
+        0.9911020971138298,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 4138424305,
+        "amaxTag": "Volkswagen_Beetle_Rat",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 1849,
+          "name": "Matte Rat",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1492180403,
+          "recordIndex": 125,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "bmw-m3e92-drift": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "bmw-m3e92-drift",
+      "baseColour": [
+        0.5332764040105052,
+        0.7605245046752924,
+        0.8879231178819663,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 1473652972,
+        "amaxTag": "BMW_M3E92_Drift",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 5224,
+          "name": "M3_Drift",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 4229207958,
+          "recordIndex": 374,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "hummer-h2-offroad": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "hummer-h2-offroad",
+      "baseColour": [
+        0.9911020971138298,
+        0.08865558628577294,
+        0,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2122717045,
+        "amaxTag": "Hummer_H2_OffRoad",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 2366,
+          "name": "Ford_MustangGTR_Stock",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1904320417,
+          "recordIndex": 164,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "dodge-challenger-race": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "dodge-challenger-race",
+      "baseColour": [
+        0.2232279573168085,
+        0.1651321945016676,
+        0.29177064981753587,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 919649509,
+        "amaxTag": "Dodge_Challenger_Race",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 774,
+          "name": "Dodge_Challenger_Race",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 617802386,
+          "recordIndex": 55,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "acschnitzer-acs1coupe-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "acschnitzer-acs1coupe-stock",
+      "baseColour": [
+        0.7835377915261935,
+        0.7835377915261935,
+        0.7835377915261935,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 1265819839,
+        "amaxTag": "ACSchnitzer_ACS1Coupe_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 404,
+          "name": "ACSchnitzer_ACS1Coupe_Stock",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 349371621,
+          "recordIndex": 35,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "corvette-c3-race": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "corvette-c3-race",
+      "baseColour": [
+        0.7758222183174236,
+        0.004391442037410293,
+        0.003676507324047436,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 155584394,
+        "amaxTag": "Corvette_C3_Race",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 3480,
+          "name": "Corvette_C3_Race",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 2827559290,
+          "recordIndex": 245,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "hennessey-vipervenom1000coupe-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "hennessey-vipervenom1000coupe-stock",
+      "baseColour": [
+        0.6514056374198242,
+        0.9911020971138298,
+        0.11443537382697373,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2820180456,
+        "amaxTag": "Hennessey_ViperVenom1000Coupe_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 1817,
+          "name": "Very Green",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 1467708706,
+          "recordIndex": 122,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "opel-astraextreme-stockgrippy": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "opel-astraextreme-stockgrippy",
+      "baseColour": [
+        0.9911020971138298,
+        0.08437621154414882,
+        0.03560131487502034,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 5392512,
+        "amaxTag": "Opel_AstraExtreme_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 3889,
+          "name": "Red",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 3160773224,
+          "recordIndex": 282,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "ford-gt-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "ford-gt-stock",
+      "baseColour": [
+        0.9911020971138298,
+        0.7379104087727308,
+        0.00972121732023785,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 2145822036,
+        "amaxTag": "Ford_GT_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 3245,
+          "name": "Yellow",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 2649041895,
+          "recordIndex": 230,
+          "selection": "first-paint-job"
+        }
+      }
+    },
+    "dodge-vipergtsr-stock": {
+      "schema": "blur.car-materials-runtime/1",
+      "slug": "dodge-vipergtsr-stock",
+      "baseColour": [
+        0.26635560480286247,
+        0.26635560480286247,
+        0.26635560480286247,
+        1
+      ],
+      "glass": {
+        "tint": [
+          0,
+          0.04513699933886528,
+          0.04493099823594093
+        ],
+        "minAlpha": 0.30000001192092896,
+        "maxAlpha": 0.800000011920929,
+        "minReflectivity": 0.3499999940395355,
+        "maxReflectivity": 0.8500000238418579,
+        "blend": {
+          "src": "One",
+          "dest": "InvSrcAlpha",
+          "alphaTest": true
+        }
+      },
+      "emissive": [
+        1,
+        1,
+        1
+      ],
+      "emissiveStrength": 1,
+      "alloy": {
+        "colour": [
+          0.18947899341583252,
+          0.18947899341583252,
+          0.18947899341583252
+        ],
+        "specPow": 5,
+        "specInt": 1
+      },
+      "missing": [
+        {
+          "field": "metallic",
+          "sourceField": "VEH_PaintJob.metallic",
+          "present": false,
+          "searchedFields": [
+            "undercoatColour",
+            "scuffColour",
+            "colours",
+            "colourCurve",
+            "reflectivityCurve"
+          ],
+          "reason": "VEH_PaintJob serializes undercoatColour, scuffColour, colours, colourCurve and reflectivityCurve only; there is no metallic/F0 scalar. reflectivityCurve is a Fresnel reflectivity, not a metallic workflow input."
+        },
+        {
+          "field": "roughness",
+          "sourceField": "VEH_PaintJob.roughness",
+          "present": false,
+          "searchedFields": [
+            "reflectivityCurve"
+          ],
+          "reason": "No roughness/microfacet scalar is serialized. reflectivityCurve is a Fresnel reflectivity term; converting it to a roughness would be a guess, so the field is omitted."
+        }
+      ],
+      "source": {
+        "alloy": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 6,
+          "recordId": 1369583467,
+          "recordIndex": 113
+        },
+        "amaxRecordId": 337126629,
+        "amaxTag": "Dodge_ViperGTSR_Stock",
+        "glass": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 23,
+          "recordId": 871304661,
+          "recordIndex": 76
+        },
+        "light": {
+          "lookupPath": "global.part",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "partCode": 27,
+          "recordId": 801785371,
+          "recordIndex": 73
+        },
+        "paintJob": {
+          "fallbackUsed": false,
+          "handle": 815,
+          "name": "Dodge_ViperGTSR_Stock",
+          "pack": "\\gamedata\\xt\\vehicles.bin",
+          "recordId": 647342990,
+          "recordIndex": 59,
           "selection": "first-paint-job"
         }
       }
