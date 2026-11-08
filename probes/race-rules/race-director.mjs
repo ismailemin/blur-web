@@ -185,6 +185,9 @@ export class RaceDirector {
       case 'disconnect':
         return this.disconnect(message.from ?? message.id, message.reason ?? 'disconnected');
       case 'dnf':
+        if (this.config.hostAuthority && !this.isHost(message.from)) {
+          return this.reject({ type: 'dnf', from: message.from }, 'not-host');
+        }
         return this.dnf(message.id ?? message.from, message.reason ?? 'dnf', message.tick);
       case 'finish':
         return this.finishCommand(message);

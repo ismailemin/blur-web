@@ -153,6 +153,11 @@ const COURSE_KINDS = new Set([
   MODE_KIND.CHECKPOINT, MODE_KIND.BOSS_BATTLE
 ]);
 
+// Points can finish on laps as well as on time or a score target. When the
+// caller supplies a course, track ordered checkpoints/laps exactly like a race;
+// a points session without a course keeps the time/score-only behaviour.
+const PROGRESS_KINDS = new Set([...COURSE_KINDS, MODE_KIND.POINTS]);
+
 const IMPACT_ORDER = { LightImpact: 1, MediumImpact: 2, HeavyImpact: 3, light: 1, medium: 2, high: 3, heavy: 3 };
 
 const TERMINAL = new Set([
@@ -244,7 +249,7 @@ export class ModeSession {
     };
     this.director = new RaceDirector({ participants, config: directorConfig });
     this.hostId = this.director.hostId;
-    this.progress = COURSE_KINDS.has(mode)
+    this.progress = (PROGRESS_KINDS.has(mode) && course)
       ? new ProgressTracker(course, participants, {
         tickHz: this.config.tickHz,
         respawn: config.respawnPolicy ?? { enabled: true }
@@ -373,6 +378,10 @@ export class ModeSession {
         row.dnfReason = message.reason ?? 'disconnected';
       }
     }
+    // Host-authoritative commands (dnf/disconnect) change the director row
+    // first; mirror them into the mode rows immediately so results() and the
+    // next snapshot agree with the director without waiting for a step().
+    if (result.accepted) this.syncDirector();
     return { ...result, events };
   }
 

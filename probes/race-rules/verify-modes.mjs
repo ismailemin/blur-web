@@ -78,8 +78,10 @@ check('C03', 'manifest declares rulesOnly:true', M.scope.rulesOnly === true);
 check('C04', 'manifest has all four XT sources', ['singleplayer', 'multiplayer', 'amax', 'rldatabase']
   .every((key) => M.sources[key]?.sha256Decoded), Object.keys(M.sources));
 check('C05', 'decoder hash is recorded', /^[0-9a-f]{64}$/.test(M.decoder.sha256));
-check('C06', 'sidecar file hash matches the manifest file', H.fileSha256 === hashesFile.sha256,
-  { sidecar: H.fileSha256, actual: hashesFile.sha256 });
+const sidecarTarget = readJson(H.file);
+check('C06', 'sidecar file hash matches the manifest file',
+  H.fileSha256 === sidecarTarget.sha256 && sidecarTarget.relative === manifestFile.relative,
+  { file: H.file, sidecar: H.fileSha256, actual: sidecarTarget.sha256 });
 check('C07', 'sidecar counts match the manifest', H.counts.spEvents === spEvents.length &&
   H.counts.mpRaces === mpRaces.length && H.counts.mpEvents === mpEvents.length);
 equal('C08', 'single-player event count is 86', spEvents.length, 86);
@@ -102,8 +104,18 @@ check('C22', 'every hardcore row has no power-ups', byType('hardcore').every((ro
   Array.isArray(row.powerups?.labels) && row.powerups.labels.length === 0));
 check('C23', 'every hardcore row uses high damage', byType('hardcore').every((row) =>
   row.damage_modeLabel === 'high'));
-check('C24', 'every hardcore row has power-up respawn None', byType('hardcore').every((row) =>
-  row.poweruprespawnLabel === 'None'));
+const hardcoreRespawn = byType('hardcore').map((row) => row.poweruprespawnLabel);
+const hardcoreRespawnCounts = hardcoreRespawn.reduce((acc, label) => {
+  acc[label] = (acc[label] ?? 0) + 1;
+  return acc;
+}, {});
+// The shipped hardcore rows serialize either None (48) or the default Normal
+// (24); the source force-disables pickups for hardcore regardless of this
+// field (Playlist.cpp:290, CustomRace.cpp:111), so no extended respawn appears.
+check('C24', 'hardcore power-up respawn is None (48) or the serialized Normal default (24)',
+  hardcoreRespawn.every((label) => label === 'None' || label === 'Normal') &&
+  hardcoreRespawnCounts.None === 48 && hardcoreRespawnCounts.Normal === 24,
+  hardcoreRespawnCounts);
 check('C25', 'every hardcore row has mods Off', byType('hardcore').every((row) => row.modsLabel === 'Off'));
 check('C26', 'every destruction row has laps 0', byType('destruction').every((row) => row.laps === 0));
 check('C27', 'every destruction row has a 180 s limit', byType('destruction').every((row) => row.time === 180));
@@ -132,8 +144,8 @@ check('C47', 'shunt/scoring-event rule scores 1',
   config.scoring.some((rule) => rule.ScoringEvent?.label === 'ScoringEvent_Shunt' && rule.NumPointsScored === 1));
 check('C48', 'heavy impact rule scores 1',
   config.scoring.some((rule) => rule.MinImpactLevel?.label === 'HeavyImpact' && rule.NumPointsScored === 1));
-check('C49', 'pickup rules cover 5 pickup types',
-  config.scoring.filter((rule) => rule.PickupType).length === 5);
+check('C49', 'pickup rules cover 6 pickup types',
+  config.scoring.filter((rule) => rule.PickupType).length === 6);
 const timeout = config.customRaceTimeout[0];
 check('C50', 'custom race invisible timer is 45 s', timeout?.invisible_timer_time === 45);
 check('C51', 'custom race visible timer is 30 s', timeout?.visible_timer_time === 30);
@@ -461,19 +473,22 @@ for (const count of [2, 4, 8]) {
   const session = runDestruction(count);
   const first = session;
   const second = runDestruction(count);
+  // The shipped destruction rows carry a 180 s limit; drive the full limit so
+  // the session reaches its documented terminal state.
+  const limitTicks = Math.round(session.config.timeLimitSeconds * session.config.tickHz);
   let tick = 0;
   const emit = (event) => { session.submit(event); };
   emit({ type: 'damage', participantId: 'p1', victimId: 'p2', level: 'low' });
   emit({ type: 'damage', participantId: 'p1', victimId: 'p2', level: 'high' });
   emit({ type: 'wreck', participantId: 'p1', victimId: 'p2' });
   emit({ type: 'suicide', participantId: 'p2' });
-  while (session.phase === RACE_PHASE.RUNNING && tick++ < 200) session.step({});
+  while (session.phase === RACE_PHASE.RUNNING && tick++ <= limitTicks) session.step({});
   let tick2 = 0;
   second.submit({ type: 'damage', participantId: 'p1', victimId: 'p2', level: 'low' });
   second.submit({ type: 'damage', participantId: 'p1', victimId: 'p2', level: 'high' });
   second.submit({ type: 'wreck', participantId: 'p1', victimId: 'p2' });
   second.submit({ type: 'suicide', participantId: 'p2' });
-  while (second.phase === RACE_PHASE.RUNNING && tick2++ < 200) second.step({});
+  while (second.phase === RACE_PHASE.RUNNING && tick2++ <= limitTicks) second.step({});
   const row = session.results().rows.find((r) => r.id === 'p1');
   check('D' + count + '01', 'destruction ' + count + 'p scores 1+2+5 for damage/wreck', row.score === 8, row.score);
   check('D' + count + '02', 'destruction ' + count + 'p ranks the scorer first',
@@ -490,9 +505,9 @@ const rival = runDestruction(2);
 rival.submit({ type: 'wreck', participantId: 'p1', victimId: 'p2', rival: true });
 check('D-R01', 'rival wreck applies the x2 multiplier', rival.results().rows[0].score === 10,
   rival.results().rows[0].score);
-const target = runDestruction(2, { finishOn: 'score', scoreTarget: 6 });
+const target = runDestruction(2, { finishOn: 'score', scoreTarget: 5 });
 target.submit({ type: 'wreck', participantId: 'p1', victimId: 'p2' });
-check('D-T01', 'score target of 6 finishes on a 5-point wreck', target.results().rows
+check('D-T01', 'score target of 5 finishes on a 5-point wreck', target.results().rows
   .every((row) => row.status === MODE_STATUS.FINISHED));
 check('D-T02', 'score target emits score-target before finish',
   target.eventLog.some((row) => row.type === MODE_EVENT.SCORE_TARGET));

@@ -347,7 +347,10 @@ for tier in TIER_TREE["tierRoot"]["tiers"]["items"]:
             "fanPar": item.get("fanPar"),
         })
     boss = tier.get("boss")
-    boss_value = boss.get("value") if isinstance(boss, dict) else None
+    # SP_TierData.boss is serialized as the SP_Boss struct itself in the shipped
+    # pack; older/other schema revisions wrap it in a `value` envelope. Accept
+    # both without guessing: a direct struct is used as-is.
+    boss_value = boss.get("value") if isinstance(boss, dict) and boss.get("value") is not None else boss
     demand_rows = []
     if boss_value:
         for demand in boss_value["demands"]["items"]:
