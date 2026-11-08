@@ -598,7 +598,7 @@ function assertMpResult(ctx, { hostView, guestView, hostStarted, expected, expec
   void hostStarted;
 }
 
-function assertRoomStats(ctx, room) {
+function assertRoomStats(ctx, room, baseline = null) {
   const stats = ctx.roomServer?.stats?.() ?? null;
   if (!stats) {
     // `--base` attach mode with an external room service: the harness did not
@@ -606,14 +606,20 @@ function assertRoomStats(ctx, room) {
     ctx.evidence.roomStatsUnavailable = 'attached room service; --base/--room-url has no stats()';
     return;
   }
-  ctx.A.check('mp: room service created exactly one room', stats.roomsCreated === 1, ctx.fmt(stats));
-  ctx.A.check('mp: room service finished exactly one room', stats.roomsFinished === 1, ctx.fmt(stats));
-  ctx.A.check('mp: room service recorded no protocol errors', stats.protocolErrors === 0, ctx.fmt(stats));
+  // A retry reuses the same room service, so counters are compared as deltas.
+  const delta = (key) => (baseline ? (stats[key] ?? 0) - (baseline[key] ?? 0) : stats[key] ?? 0);
+  ctx.A.check('mp: this attempt created exactly one room', delta('roomsCreated') === 1,
+    ctx.fmt({ roomsCreated: delta('roomsCreated'), total: stats.roomsCreated }));
+  ctx.A.check('mp: this attempt finished exactly one room', delta('roomsFinished') === 1,
+    ctx.fmt({ roomsFinished: delta('roomsFinished'), total: stats.roomsFinished }));
+  ctx.A.check('mp: room service recorded no protocol errors', delta('protocolErrors') === 0,
+    ctx.fmt({ protocolErrors: delta('protocolErrors') }));
   ctx.evidence.roomStats = stats;
 }
 
 async function mpRace(ctx, { mapId, expected, guestCar, guestPace, hostExtra = '', guestExtra = '', expectAi = 0 }) {
   ctx.evidence.mapId = mapId;
+  const roomBaseline = ctx.roomServer?.stats?.() ?? null;
   const room = await openRoom(ctx, {
     mapId,
     hostCar: expected.hostCar ?? ctx.anchors.cars.default,
@@ -658,7 +664,7 @@ async function mpRace(ctx, { mapId, expected, guestCar, guestPace, hostExtra = '
         /no collision/.test(hostView.overlays.remotesText ?? ''),
       hostView.overlays.remotesText);
   }
-  assertRoomStats(ctx, room);
+  assertRoomStats(ctx, room, roomBaseline);
 
   assertSilent(ctx, room.host, 0, 'host');
   assertSilent(ctx, room.guest, 0, 'guest');
@@ -727,6 +733,7 @@ export async function mpGracia(ctx) {
 export async function reconnect(ctx) {
   const expected = { ...ctx.anchors.mp.river, hostCar: ctx.anchors.cars.default };
   ctx.evidence.mapId = 'river';
+  const roomBaseline = ctx.roomServer?.stats?.() ?? null;
   const room = await openRoom(ctx, {
     mapId: 'river',
     hostCar: expected.hostCar,
@@ -780,7 +787,7 @@ export async function reconnect(ctx) {
   ctx.A.check('reconnect: both cars still finish after the guest resume',
     hostView.mp.result.rows.every((row) => row.status === 'finished'),
     ctx.fmt(hostView.mp.result.rows.map((row) => [row.playerId, row.status])));
-  assertRoomStats(ctx, room);
+  assertRoomStats(ctx, room, roomBaseline);
   assertSilent(ctx, room.host, 0, 'host');
   assertSilent(ctx, room.guest, 0, 'guest');
   ctx.evidence.guest = guestView;
