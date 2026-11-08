@@ -1044,8 +1044,8 @@ export class NetClient {
   }
 
   // -------------------------------------------------------------- public API
-  async createRoom({ name = this.name, maxPlayers, map, car } = {}) {
-    const message = await this._request('room.create', { name, maxPlayers, map, car }, 'room.created');
+  async createRoom({ name = this.name, maxPlayers, map, car, powerups } = {}) {
+    const message = await this._request('room.create', { name, maxPlayers, map, car, powerups }, 'room.created');
     return { room: message.room, you: message.you };
   }
 
@@ -1063,8 +1063,8 @@ export class NetClient {
     return this._request('player.ready', { ready: Boolean(ready) }, 'ok');
   }
 
-  async select({ car, map } = {}) {
-    return this._request('player.select', { car, map }, 'ok');
+  async select({ car, map, powerups } = {}) {
+    return this._request('player.select', { car, map, powerups }, 'ok');
   }
 
   async start({ seed, solo } = {}) {

@@ -339,6 +339,7 @@ export class MpSession {
     car = null,
     map = MP_MAP,
     maxPlayers = MP_MAX_PLAYERS,
+    powerups = false,
     autoReconnect = true,
     onEvent = () => {}
   } = {}) {
@@ -350,6 +351,7 @@ export class MpSession {
     this.car = car;
     this.map = normalizeMpMapId(map) ?? MP_MAP;
     this.maxPlayers = maxPlayers;
+    this.powerups = powerups === true;
     this.onEvent = onEvent;
     this.net = new NetClient({
       url,
@@ -447,7 +449,8 @@ export class MpSession {
         name: this.name,
         maxPlayers: this.maxPlayers,
         map: this.map,
-        car: this.car ?? 'corvette-zr1-stock'
+        car: this.car ?? 'corvette-zr1-stock',
+        powerups: this.powerups
       });
     } else {
       if (!this.requestedCode) throw new Error('a guest needs a 5-character room code (?room=CODE)');

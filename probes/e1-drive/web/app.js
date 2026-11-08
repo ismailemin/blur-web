@@ -79,7 +79,7 @@ import {
 } from './mp-ai.js';
 import { createAiDriver, SKILL_PROFILES as AI_SKILL_PROFILES } from './ai-driver-browser.js';
 import {
-  POWERUP_DEFERRED, POWERUP_PROJECTILE_TYPES, POWERUP_SCHEMA, POWERUP_SLICE_LABELS, POWERUP_SLICE_TYPES,
+  POWERUP_DEFERRED, POWERUP_PLACEMENT_ARCS, POWERUP_PROJECTILE_TYPES, POWERUP_SCHEMA, POWERUP_SLICE_LABELS, POWERUP_SLICE_TYPES,
   applyPowerupBatch, createPowerupModel, createPowerupView, forwardFromQuaternion, powerupEventText,
   powerupViewSummary, shieldFor
 } from './powerups.js';
@@ -279,7 +279,9 @@ if (MP && MP_AI_REQUEST.profiles) {
 }
 // M2/PWR2 power-up slice. Default off; it is a multiplayer-only mode and the
 // first slice integrates Mine/Shield/Repair only (see POWERUP_DEFERRED).
-const POWERUPS = MP && params.get('powerups') === '1';
+// `?powerups=1` enables the slice locally; a guest may also enable it when the
+// room carries the host's flag, so this is mutable.
+let POWERUPS = MP && params.get('powerups') === '1';
 if (MP && params.has('powerups') && params.get('powerups') !== '0' && params.get('powerups') !== '1') {
   throw new Error('powerups must be 0 or 1');
 }
@@ -296,8 +298,8 @@ if (MAP_IS_PACKAGE) {
       (MAP_IS_AMBOY ? '2,060.595' : MAP_IS_GRACIA ? '624.914' : '') +
       ' m course; drop ?course=' + COURSE_PARAM);
   }
-  if (POWERUPS && MAP.id !== 'river') {
-    throw new Error('power-ups are River-only in this gate; ?map=' + MAP.id + ' has no placed pickups');
+  if (POWERUPS && MAP.id !== 'river' && COURSE_PARAM !== '310') {
+    throw new Error('power-ups on ?map=' + MAP.id + ' run the measured 310 m point-to-point course; drop ?course=' + COURSE_PARAM);
   }
   if (SCRIPT_PARAM === 'drive') throw new Error('?map=' + MAP.id + ' runs the sprint; drop ?script=drive');
   if (TELEMETRY || SOAK || SURVEY || COLLISION_PROBE) {
@@ -580,8 +582,14 @@ const state = {
     sameCar: true,
     schema: MP_SCHEMA
   } : null,
-  // M2/PWR2 power-up slice (`?mp=1&powerups=1`). Null unless explicitly enabled.
-  powerups: POWERUPS ? {
+  // M2/PWR2 power-up slice (`?mp=1&powerups=1`). Null unless explicitly
+  // enabled; a guest enables it when the room carries the host's flag.
+  powerups: POWERUPS ? powerupsInitialState() : null
+};
+
+/** The power-up HUD/model state, created at load or when the room enables it. */
+function powerupsInitialState() {
+  return {
     enabled: true,
     phase: 'loading',
     status: 'loading the PWR1 manifest…',
@@ -603,8 +611,8 @@ const state = {
     relay: null,
     relayError: null,
     host: MP_HOST
-  } : null
-};
+  };
+}
 
 /**
  * Live ghost state for the HUD and the capture probe. The delta is "what the
@@ -1397,6 +1405,9 @@ let powerupRelayTimer = null;
 // wreck rebuilds the car (e1_create/e1_reset) and resets the engine tick; the
 // offset keeps the 20 Hz snapshot and the M1 finish report monotonic.
 let mpEngineTickOffset = 0;
+// Measured length of the loaded course, captured when the layout is created.
+// Used only to scale the provisional power-up arcs on package maps.
+let COURSE_LENGTH_METRES = null;
 
 // ------------------------------------------------------------------ engine audio
 // The verified module plays six decoded retail `Race_V8_Engine_*` loops and
@@ -1519,10 +1530,6 @@ async function mpDoLoadRoomMap(id, { carSlug = null } = {}) {
   const startedAt = performance.now();
   try {
     applyActiveMap(id);
-    if (POWERUPS && id !== 'river') {
-      throw new MpMapError(MP_MAP_MISMATCH,
-        'power-ups are River-only in this gate; ' + expected.label + ' has no placed pickups');
-    }
     const tick0 = await loadEngine(carSlug ?? state.mp.sessionCar ?? REQUESTED_CAR ?? null);
     if (mpRequestedMapId !== id) return null;
     mpSettledTick0 = tick0;
@@ -2541,6 +2548,9 @@ async function loadEngine(carOverride = null) {
     if (!COLLISION_PROBE) sprintRules = createSprintRules(layout, {
       shortCourseController: car?.shortCourseController ?? null
     });
+    COURSE_LENGTH_METRES = layout?.course?.span?.lengthMetres ??
+      layout?.course?.lap?.lengthMetres ??
+      layout?.course?.samples?.[layout.course.samples.length - 1]?.arc ?? null;
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
     state.sprintCourseId = layout.courseId ?? null;
@@ -5874,7 +5884,15 @@ function mpPowerupHostStart() {
       massKg: sessionMassKg
     });
   }
-  const spawned = powerupModel.spawnProvisionalPickups(sprintRules.layout);
+  // Pickup arcs: the 310 m course keeps its fixed provisional arcs. A package
+  // map scales the same arc fractions to its measured length, so the six
+  // pickups spread over the whole course instead of clustering at the start.
+  // This stays a labelled project rule, not retail placement.
+  const courseLength = Number.isFinite(COURSE_LENGTH_METRES) ? COURSE_LENGTH_METRES : null;
+  const placementOptions = (MAP_IS_PACKAGE && courseLength && courseLength > 0)
+    ? { arcs: POWERUP_PLACEMENT_ARCS.map((arc) => Math.round((arc / 310) * courseLength * 1e6) / 1e6) }
+    : {};
+  const spawned = powerupModel.spawnProvisionalPickups(sprintRules.layout, placementOptions);
   state.powerups.placement = powerupModel.placement;
   state.powerups.phase = 'running';
   state.powerups.status = 'host power-up world running';
@@ -6181,6 +6199,7 @@ function mpPowerupCapture() {
     types: state.powerups.types,
     deferred: state.powerups.deferred,
     placement: hud?.placement ?? state.powerups.placement,
+    courseLengthMetres: COURSE_LENGTH_METRES,
     boostModel: powerupModel?.boost ?? null,
     labels: hud?.labels ?? state.powerups.snapshot?.labels ?? null,
     eventCount: powerupModel ? powerupModel.events.length : (powerupView?.lastEventSeq ?? 0),
@@ -6338,6 +6357,7 @@ function mpCaptureSnapshot() {
   return {
     schema: mp.schema,
     constants: { maxPlayers: MP_MAX_PLAYERS, aiMax: MP_AI_MAX },
+    roomPowerups: mp.room?.powerups === true,
     phase: mp.phase,
     status: mp.status,
     error: mp.error,
@@ -6634,12 +6654,19 @@ async function startMultiplayer() {
       // for both pages after the join.
       map: MP_HOST ? MAP.id : null,
       maxPlayers: MP_MAX_PLAYERS,
+      powerups: POWERUPS,
       onEvent: handleMpEvent
     });
     state.mp.phase = 'loading';
     state.mp.status = 'joining the room; the map package loads next…';
     publish();
     const joined = await mpNet.open();
+    // The room carries the host's power-up flag: a guest enables the same slice
+    // without having to add ?powerups=1 to the shared URL.
+    if (!POWERUPS && joined.room?.powerups === true) {
+      POWERUPS = true;
+      state.powerups = powerupsInitialState();
+    }
     const roomMapId = normalizeMpMapId(joined.room.map);
     if (!roomMapId) throw new Error('the room did not publish a map id');
     const roomCar = sessionCarForRoom(joined.room, requestedCar.slug);

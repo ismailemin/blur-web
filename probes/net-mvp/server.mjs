@@ -697,6 +697,7 @@ export async function startRoomServer({
         phase: room.phase,
         hostId: room.hostId,
         map: room.map,
+        powerups: room.powerups === true,
         maxPlayers: room.maxPlayers,
         seed: room.seed,
         startTick: room.startTick,
@@ -875,6 +876,7 @@ export async function startRoomServer({
       phase: room.phase,
       hostId: room.hostId,
       map: room.map,
+      powerups: room.powerups === true,
       maxPlayers: room.maxPlayers,
       seed: room.seed,
       startTick: room.startTick,
@@ -1043,6 +1045,9 @@ export async function startRoomServer({
             hostId: null,
             map,
             maxPlayers,
+            // Room-level power-up flag (M2): the host sets it and every client
+            // enables the same slice, so a guest never has to add ?powerups=1.
+            powerups: message.powerups === true,
             seed: null,
             startTick: null,
             players: new Map(),
@@ -1208,7 +1213,11 @@ export async function startRoomServer({
             if (!validSelector(message.map)) throw new NetError(ERROR_CODES.NET_PROTOCOL, 'invalid map selector');
             room.map = message.map;
           }
-          send(session, { type: 'ok', requestId, action: 'player.select', car: player.car, map: room.map });
+          if (message.powerups !== undefined) {
+            if (room.hostId !== player.id) throw new NetError(ERROR_CODES.NET_NOT_HOST, 'only the host sets power-ups');
+            room.powerups = message.powerups === true;
+          }
+          send(session, { type: 'ok', requestId, action: 'player.select', car: player.car, map: room.map, powerups: room.powerups === true });
           broadcastRoom(room);
           return;
         }
@@ -1798,3 +1807,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exit(1);
   }
 }
+

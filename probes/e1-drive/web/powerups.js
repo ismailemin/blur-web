@@ -172,6 +172,8 @@ export function createPowerupModel({
     : null;
   const projectileRuntime = projectileManifest?.runtimeValues ?? null;
   const projectileDirections = new Map();
+  // Pickup id -> the measured arc it was placed at (provisional placement only).
+  const pickupArcs = new Map();
   // PWR4 owns hit judgement; the PWR1 world owns the health/shield/wreck model.
   // The internal damage call is replaced so a hit is applied exactly once,
   // through world.damage() (shield absorb included).
@@ -681,8 +683,8 @@ export function createPowerupModel({
       return item;
     },
 
-    spawnProvisionalPickups(layout) {
-      const plan = provisionalPickupPlan(layout);
+    spawnProvisionalPickups(layout, options = {}) {
+      const plan = provisionalPickupPlan(layout, options);
       const spawned = [];
       for (const entry of plan) {
         const item = model.spawnPickup(entry.pickupType, entry.position, {
@@ -692,8 +694,19 @@ export function createPowerupModel({
           sampleIndex: entry.sampleIndex,
           note: entry.note
         });
+        pickupArcs.set(item.id, entry.arc);
         spawned.push({ id: item.id, ...entry });
       }
+      // The snapshot's placement metadata must describe the arcs actually
+      // spawned, not the default table (package maps scale them).
+      model.placement = {
+        ...model.placement,
+        mode: plan[0]?.placement ?? model.placement.mode,
+        arcs: plan.map((entry) => entry.arc),
+        types: plan.map((entry) => entry.pickupType),
+        count: plan.length,
+        note: plan[0]?.note ?? model.placement.note
+      };
       return spawned;
     },
 
@@ -1043,6 +1056,7 @@ export function createPowerupModel({
             type: item.type,
             state: item.state,
             position: { ...item.position },
+            arc: pickupArcs.get(item.id) ?? null,
             respawnAt: item.respawnAt,
             sourceRecord: item.sourceRecord
           }))
