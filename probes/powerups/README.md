@@ -36,6 +36,13 @@ Data-only power-up recovery for the Blur Web project. Nothing here changes
 | `tools/retail_placement_module.template.mjs` | PWR9 | template for the generated browser module |
 | `data/retail-placement.json` | PWR9 | committed retail pickup source rows + measured layout identity |
 | `retail-placement.mjs` | PWR9 | browser-importable `retailPlacementsFor(mapId, layout)` |
+| `tools/build_arc_correspondence.mjs` | PWR10 | measured-arc ↔ retail-arc monotone correspondence table builder |
+| `data/arc-correspondence.json` | PWR10 | committed correspondence segments, residuals and rejected runs |
+| `tools/build_physical_placement.mjs` | PWR10 | physically-corresponded placement source + module builder |
+| `tools/retail_physical_module.template.mjs` | PWR10 | template for the generated physical-placement module |
+| `data/retail-placement-physical.json` | PWR10 | committed physical placement source rows + unsupported list |
+| `retail-placement-physical.mjs` | PWR10 | browser-importable `physicalPlacementsFor(mapId, layout)` |
+| `tools/verify_physical_placement.mjs` | PWR10 | independent correspondence/placement/band/count/determinism verifier |
 
 ## SuperShield (SS1)
 
@@ -434,6 +441,135 @@ Scope labels:
   guessed.
 - **Not a renderer claim:** this is placement data only. No draw, GPU, physics
   or gameplay claim.
+
+## Physical retail placement (PWR10)
+
+PWR9's rule is a global arc-fraction remap: it is applicable to every pickup but
+a pickup's position is not its retail world position. PWR10 replaces the global
+fraction with a committed **measured-arc ↔ retail-arc correspondence table** and
+keeps every pickup whose retail arc has no measured correspondence in
+`unsupported`.
+
+```powershell
+node probes/powerups/tools/build_arc_correspondence.mjs
+node probes/powerups/tools/build_physical_placement.mjs
+node probes/powerups/tools/verify_physical_placement.mjs
+```
+
+`retail-placement-physical.mjs` is the committed, browser-importable ES module.
+It embeds `data/arc-correspondence.json` (107 KB) and
+`data/retail-placement-physical.json` (126 KB) and exports
+`PHYSICAL_PLACEMENT_SCHEMA`, `ARC_CORRESPONDENCE`, `PHYSICAL_PLACEMENT_DATA` and
+`physicalPlacementsFor(mapId, layout)`.
+
+### Correspondence table
+
+`data/arc-correspondence.json` projects every measured sample onto every retail
+racing line (clamped segment projection, closed routes wrap), keeps the residual
+distance and retail arc, splits each route into contiguous runs inside
+`gateMetres = 6.0 m` (the measured band half-width), unwraps the retail arc
+across a closure and takes the longest non-decreasing subsequence (monotone
+chain). A run is kept only when it has at least 8 samples, 2 m of measured arc
+and 1 m of retail arc. A run that travels backwards along the retail route
+collapses to one point and is dropped; the dropped runs are recorded under
+`rejectedRuns` with the reason.
+
+| map | measured | samples inside 6 m | segments | measured m | residual median / max | nearest network min / median / max | nearest MainLoop median |
+| --- | ---: | ---: | ---: | ---: | --- | --- | ---: |
+| amboy | 2,060.595 m | 888 / 8,673 | 0 | 0 | n/a | 0.004 / 22.979 / 196.744 m | 71.226 m |
+| gracia | 624.914 m | 876 / 2,571 | 5 | 221.361 m | 3.538 / 5.990 m | 0.029 / 9.635 / 151.987 m | 10.027 m |
+| river | 310.395 m | 0 / 1,245 | 0 | 0 | n/a | 34.869 / 66.822 / 81.758 m | 70.790 m |
+
+The measured draw paths are not the retail racing line. Amboy's in-gate runs are
+either reverse (the measured course travels backwards along the retail route, so
+the monotone chain collapses to one point) or a crossing with a monotone chain
+that is too short or too narrow in retail arc; the largest is `Logic` measured
+991.3–1,060.3 m (293 samples, chain 7, retail span 0.21 m). River's whole course
+runs 34.9–81.8 m from the retail network, so no sample is inside the gate. Only
+Gracia has a usable correspondence: measured 300.9–571.4 m maps to retail
+`MainLoop` 2,143.9–2,391.6 m (four segments) plus a 13.4 m `Logic` segment.
+
+### Result
+
+| map | placeable / retail | unsupported | clamped | mapping residual median / max | retail world error median / max |
+| --- | ---: | ---: | ---: | --- | --- |
+| amboy | 0 / 82 | 82 | 0 | n/a | n/a |
+| gracia | 5 / 59 | 54 | 4 | 4.689 / 5.091 m | 10.337 / 19.396 m |
+| river | 0 / 54 | 54 | 0 | n/a | n/a |
+
+The five Gracia pickups (uids `2234632569`, `3669525037`, `5715789`,
+`2287257657`, `2161991382`) sit on `MainLoop` retail arcs 2,217.2–2,221.6 m and
+map to measured arcs 382.0–388.0 m. Every other retail pickup is `unsupported`
+with a `no-measured-correspondence` reason naming the route, the retail arc and
+the correspondence ranges. No pickup is dropped silently, and no map with no
+usable match is filled with a synthetic correspondence.
+
+Import contract:
+
+```js
+import {
+  PHYSICAL_PLACEMENT_SCHEMA, ARC_CORRESPONDENCE, PHYSICAL_PLACEMENT_DATA,
+  physicalPlacementsFor
+} from '../../powerups/retail-placement-physical.mjs';
+const set = physicalPlacementsFor('gracia', layout);
+// layout = the measured layout the page drives:
+//   { course: { lengthMetres, band|corridor, samples: [{ arc, x, z, groundY }, ...] } }
+// set = { schema, mapId, physicalProjection: true, source, pickups, unsupported }
+// pickups[]: { id, uid, type, x, y, z, arc, measuredArc, retailArc, routeLengthM,
+//              lateral, retailLateral, clamped, clampedBy, route, routeIndex,
+//              segmentId, mappingResidualM, sampleIndex, physicalProjection: true, source }
+// unsupported[]: { id, uid, type, reason }
+```
+
+Rule (recorded in every `source` string):
+
+```text
+segment       = the correspondence segment of the pickup route whose retail-arc
+                interval contains the pickup retail arc
+measuredArc   = interpolate(segment.points, retail.arc)
+sample        = nearest measured sample to measuredArc (ties to the earlier)
+appliedLateral= clamp(retail.lateral, -band, +band)
+x/z           = sample.x/z + leftNormal(sample) * appliedLateral
+y             = sample.groundY
+```
+
+Scope labels:
+
+- **Physical along-track correspondence:** `measuredArc` is interpolated from the
+  committed correspondence segment that contains the pickup's retail arc. There
+  is no global fraction. The module rejects a layout whose length, sample count
+  or first/last sample differ (`layout-mismatch`) and an empty layout
+  (`no-measured-sample`), returning every retail uid as unsupported instead of
+  placing on the wrong course.
+- **Gate is the measured band:** `gateMetres = 6.0` is the measured band
+  half-width. It is a placement-consistency gate, not a road-width claim: a
+  residual larger than the band would move a pickup further than the band the
+  placement itself declares.
+- **Lateral is the PWR9 convention:** every retail pickup sits on the retail
+  racing line (`lateral = width * offset` to within 1e-4 m). The applied lateral
+  is still the origin-relative `pickup-routes.json` lateral, clamped to ±band. It
+  is a corridor coordinate, not an offset from the racing line, so it is a
+  project placement choice. The world-position error (median 10.337 m, max
+  19.396 m on the five Gracia pickups) is dominated by that clamp; the
+  along-track arc is the physical claim.
+- **No invented correspondence:** Amboy and River have no usable monotone
+  segment. Their numbers are recorded in the table above and every pickup stays
+  unsupported. A world-position projection would place 2 Amboy pickups
+  (`505192272`, `4245419773`) within 6 m of the measured polyline, but that is a
+  different rule and is not applied here.
+- **Counts:** every retail uid appears exactly once in `pickups` or
+  `unsupported`; the count per map is checked against `pickup-routes.json`
+  (82 / 59 / 54).
+- **Not a renderer claim:** this is placement data only. No draw, GPU, physics
+  or gameplay claim.
+
+Verifier: **2,621/2,621** checks, two builds byte-identical. The verifier
+re-reads `pickup-routes.json`, the measured layouts and the committed
+correspondence, re-implements the monotone-chain match and the placement rule,
+checks every segment is monotone in measured and retail arc, every residual is
+inside the gate, every placed pickup is inside the measured band, every retail
+uid appears once, and compares two fresh builder runs with the committed JSON
+and module.
 
 ## PWR1 definitions
 
