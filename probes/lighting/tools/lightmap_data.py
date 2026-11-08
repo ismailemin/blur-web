@@ -262,7 +262,10 @@ def scan_level(level: str) -> dict:
             shared = scene["sharedTextures"]
             if not 0 <= index < len(shared):
                 unresolved.append({"key": list(key), "count": count,
-                                   "reason": "shared texture index out of range"})
+                                   "reason": "shared texture index out of range",
+                                   "records": sorted(reference_records[key]),
+                                   "recordOffsets": [records[i]["offset"]
+                                                     for i in sorted(reference_records[key])]})
                 continue
             name = shared[index]["name"]
             resolved[name] = {
@@ -274,11 +277,17 @@ def scan_level(level: str) -> dict:
         row = textures.get(key)
         if row is None:
             unresolved.append({"key": list(key), "count": count,
-                               "reason": "texture block/index not found in the LOD0 scan"})
+                               "reason": "texture block/index not found in the LOD0 scan",
+                               "records": sorted(reference_records[key]),
+                               "recordOffsets": [records[i]["offset"]
+                                                 for i in sorted(reference_records[key])]})
             continue
         if row["name"] is None:
             unresolved.append({"key": list(key), "count": count,
-                               "reason": "texture has no LOD0 name"})
+                               "reason": "texture has no LOD0 name",
+                               "records": sorted(reference_records[key]),
+                               "recordOffsets": [records[i]["offset"]
+                                                 for i in sorted(reference_records[key])]})
             continue
         resolved[row["name"]] = {
             "name": row["name"], "kind": "resource-block", "block": block, "index": index,
@@ -376,6 +385,41 @@ def build_lightmap_block(level: str, temp_dir: Path | None = None) -> dict:
     layout = car.render_layout(render, "level")
     records = layout["scene"]["stream"]["chunks"]
     chunk_cache = {}
+
+    # Every g_tLightmap reference must resolve to a decoded lightmap_* texture.
+    # An unresolved key or a non-lightmap target is a typed unsupported entry,
+    # never a dropped reference or a placeholder texture.
+    for unresolved in scan["unresolvedReferences"]:
+        offsets = unresolved.get("recordOffsets") or []
+        record_index = (unresolved.get("records") or [None])[0]
+        unsupported.append({
+            "name": None,
+            "key": unresolved["key"],
+            "count": unresolved["count"],
+            "reason": unresolved["reason"],
+            "records": unresolved.get("records", []),
+            "bytePosition": {
+                "recordIndex": record_index,
+                "streamRecordOffset": offsets[0] if offsets else None,
+            },
+        })
+    for name in scan["referencedNonLightmaps"]:
+        reference = scan["references"][name]
+        record_index = reference["records"][0] if reference["records"] else None
+        unsupported.append({
+            "name": name,
+            "key": [reference["block"], reference["index"]],
+            "count": reference["count"],
+            "reason": "g_tLightmap resolves to a non-lightmap texture",
+            "source": reference,
+            "bytePosition": {
+                "recordIndex": record_index,
+                "streamRecordOffset": (records[record_index]["offset"]
+                                       if record_index is not None else None),
+                "block": reference["block"],
+                "index": reference["index"],
+            },
+        })
 
     for name in scan["referencedLightmaps"]:
         reference = scan["references"][name]
@@ -576,9 +620,13 @@ def build_lightmap_block(level: str, temp_dir: Path | None = None) -> dict:
                 scan["referencedLightmapsMissingFromNamePrefix"],
             "referencedNonLightmaps": scan["referencedNonLightmaps"],
         },
-        "source": "manifest lightmap set for %s: %d DXT5/BC3 textures, %d bytes, "
-                  "decoded mip 0 from %s" % (level, len(entries), total_bytes,
-                                             scan["streamPath"]),
+        "source": ("manifest lightmap set for %s: %d DXT5/BC3 textures, %d bytes, "
+                   "decoded mip 0 from %s" % (level, len(entries), total_bytes,
+                                              scan["streamPath"]))
+                  if decoded else
+                  ("manifest lightmap set for %s: %d decoded DXT5/BC3 textures, %d bytes; "
+                   "the full g_tLightmap set is unsupported (%d typed entries), see "
+                   "unsupported" % (level, len(entries), total_bytes, len(unsupported))),
     }
     return block
 

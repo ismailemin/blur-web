@@ -3,12 +3,12 @@
 // probes/lighting/tools/runtime_lighting_module.template.mjs and
 // probes/lighting/data/runtime-lighting.json. Do not edit by hand.
 //
-// Browser-importable runtime lighting for the four built maps.
+// Browser-importable runtime lighting for the 11 playable maps.
 //
 // Contract:
 //   import { LIGHTING_SCHEMA, LIGHTING_MAPS, lightingFor, lightmapTexture }
 //     from './runtime-lighting.mjs';
-//   const lighting = lightingFor('river');   // 'river' | 'amboy' | 'gracia' | 'longbeach'
+//   const lighting = lightingFor('river');   // see LIGHTING_MAPS
 //   const lightmap = lighting.lightmap;      // decoded g_tLightmap texture set, or null
 //   const texture = lightmapTexture('river', 'lightmap_main_000-a');
 //
@@ -75,10 +75,10 @@ export const LIGHTING_MAPS = Object.freeze(Object.keys(DATA.maps));
 /**
  * Return the committed runtime lighting for one map.
  *
- * @param {'river'|'amboy'|'gracia'|'longbeach'} mapId
+ * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'} mapId
  * @returns {{schema:string, mapId:string, level:string, city:string,
  *   manifest:{path:string, schema:string, bytes:number, sha256:string},
- *   sun:{direction:number[], colour:number[], intensity:number,
+ *   sun:null|{direction:number[], colour:number[], intensity:number,
  *     lightObjectColour:number[], elevationDeg:number, azimuthDeg:number},
  *   sky:{colour:number[], upAxis:number[], lightObjectColour:number[],
  *     dome:{texture:string, rotation:number, intensity:number,
@@ -120,7 +120,7 @@ export function lightingFor(mapId) {
 /**
  * Return one decoded lightmap texture entry for a map.
  *
- * @param {'river'|'amboy'|'gracia'|'longbeach'} mapId
+ * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'} mapId
  * @param {string} textureName retail `g_tLightmap` texture name, e.g.
  *   `'lightmap_main_000-a'`
  * @returns {{name:string, width:number, height:number, format:number,

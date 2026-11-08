@@ -53,8 +53,16 @@ LEVEL_IDS = {
     "amboy": "usa_amboy",
     "gracia": "spa_barcelona_gracia",
     "longbeach": "usa_la_longbeachdocks",
+    "observatory": "usa_la_observatory",
+    "downtown": "usa_la_downtown",
+    "mharuna": "jpn_mharuna",
+    "highrise": "usa_la_multiplayer_highrise",
+    "shutoko": "jpn_tokyo_shutoko",
+    "oval": "spa_barcelona_oval",
+    "amboy-mp": "usa_amboy_multiplayer",
 }
-MAP_ORDER = ["river", "amboy", "gracia", "longbeach"]
+MAP_ORDER = ["river", "amboy", "gracia", "longbeach", "observatory", "downtown",
+             "mharuna", "highrise", "shutoko", "oval", "amboy-mp"]
 
 SET_HASH_RULE = ("sha256 over canonical JSON of the per-texture (name, decodedRgbaSha256) "
                  "pairs sorted by name; canonical JSON is sort_keys=True, "
@@ -79,11 +87,14 @@ def set_hash(entries: list[dict], field: str) -> str:
     return sha256_bytes(payload)
 
 
-def load_runtime_lightmap(map_id: str) -> dict:
+def load_runtime_lightmap(map_id: str) -> dict | None:
     """Load the committed runtime table's lightmap block for one map.
 
     The table is the committed contract the renderer already consumes; the
-    export must agree with it or fail, never diverge silently.
+    export must agree with it or fail, never diverge silently.  A map whose
+    manifest records a typed ``unsupported`` lightmap set has ``lightmap: null``
+    in the table; this function returns ``None`` for it and the caller skips the
+    export instead of writing a placeholder.
     """
     if not RUNTIME_TABLE.exists():
         raise FileNotFoundError(
@@ -95,7 +106,7 @@ def load_runtime_lightmap(map_id: str) -> dict:
         raise ValueError("runtime table has no map %r" % map_id)
     lightmap = entry.get("lightmap")
     if not lightmap or lightmap.get("decoded") is not True:
-        raise ValueError("runtime table map %r has no decoded lightmap set" % map_id)
+        return None
     return lightmap
 
 
@@ -235,8 +246,10 @@ def check_runtime(map_id: str, entries: list[dict], lightmap: dict) -> None:
                          "manifests and the runtime table" % map_id)
 
 
-def export_map(map_id: str, out_root: Path) -> dict:
+def export_map(map_id: str, out_root: Path) -> dict | None:
     lightmap = load_runtime_lightmap(map_id)
+    if lightmap is None:
+        return None
     with tempfile.TemporaryDirectory(prefix="lightmap-export-") as temp:
         entries, pixels = decode_map(map_id, Path(temp))
     check_runtime(map_id, entries, lightmap)
@@ -290,7 +303,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--out-root", type=Path, default=DEFAULT_OUT_ROOT,
                         help="export root (default: _work/lighting)")
     parser.add_argument("--maps", default=",".join(MAP_ORDER),
-                        help="comma-separated map ids (default: all four)")
+                        help="comma-separated map ids (default: all 11)")
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_args(argv)
 
@@ -305,6 +318,22 @@ def main(argv: list[str] | None = None) -> int:
     out_root = args.out_root.resolve()
     for map_id in maps:
         index = export_map(map_id, out_root)
+        if index is None:
+            stale = out_root / map_id / "lightmap"
+            if stale.exists():
+                for path in stale.glob("*.rgba"):
+                    path.unlink()
+                stale_index = stale / "index.json"
+                if stale_index.exists():
+                    stale_index.unlink()
+                try:
+                    stale.rmdir()
+                except OSError:
+                    pass
+            if not args.quiet:
+                print("%-10s unsupported: runtime table has no decoded lightmap set"
+                      % map_id)
+            continue
         if not args.quiet:
             print("%-10s %3d textures %10d B  sha256 %s"
                   % (map_id, index["count"], index["bytes"], index["sha256"]))

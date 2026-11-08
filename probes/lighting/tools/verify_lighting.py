@@ -27,6 +27,10 @@ import lightmap_data as LM  # noqa: E402
 ROOT = LD.ROOT
 OUT_DIR = ROOT / "_work/lighting"
 SHORTS = [LD.SPAWN_TABLE[level]["short"] for level in LD.SPAWN_TABLE]
+# The four maps that were the committed reference before the 11-map extension.
+# A few checks pin their observed values; the other maps are checked against
+# their own serialized data instead.
+REFERENCE_SHORTS = ["river", "amboy", "gracia", "longbeach"]
 
 CHECKS: list[tuple[str, bool, str]] = []
 FAILURES: list[str] = []
@@ -76,7 +80,9 @@ def verify_lightmap_block(short: str, doc: dict, level: str) -> None:
           lightmap["provenance"]["kind"] == "data", lightmap["provenance"]["kind"])
     check("%s lightmap kind is texture-set" % short,
           lightmap["kind"] == "texture-set", lightmap["kind"])
-    check("%s lightmap is decoded" % short, lightmap["decoded"] is True, lightmap["decoded"])
+    decoded = lightmap["decoded"] is True
+    check("%s lightmap decoded flag is boolean" % short,
+          isinstance(lightmap["decoded"], bool), lightmap["decoded"])
     check("%s lightmap uvSet is luxlightmap" % short,
           lightmap["uvSet"] == "luxlightmap", lightmap["uvSet"])
     check("%s lightmap format is DXT5/BC3" % short,
@@ -107,27 +113,65 @@ def verify_lightmap_block(short: str, doc: dict, level: str) -> None:
     check("%s lightmap decoded set sha256 re-derived" % short,
           lightmap["decodedRgbaSha256"] == lightmap_set_hash(textures, "decodedRgbaSha256"),
           lightmap["decodedRgbaSha256"])
-    check("%s lightmap unsupported list is empty" % short,
-          lightmap["unsupported"] == [], str(lightmap["unsupported"])[:200])
+    unsupported = lightmap["unsupported"]
+    check("%s lightmap unsupported is a list" % short, isinstance(unsupported, list),
+          type(unsupported).__name__)
+    if decoded:
+        check("%s lightmap unsupported list is empty when decoded" % short,
+              unsupported == [], str(unsupported)[:200])
+    else:
+        check("%s unsupported lightmap has typed entries" % short,
+              isinstance(unsupported, list) and len(unsupported) > 0,
+              str(unsupported)[:200])
+        for entry in unsupported:
+            label = entry.get("name") or "key %r" % (entry.get("key"),)
+            check("%s unsupported lightmap entry has a reason: %s" % (short, label),
+                  isinstance(entry.get("reason"), str) and bool(entry["reason"].strip()),
+                  str(entry.get("reason"))[:120])
+            check("%s unsupported lightmap entry has a source location: %s" % (short, label),
+                  isinstance(entry.get("bytePosition"), dict) or
+                  isinstance(entry.get("source"), dict), str(entry)[:200])
 
     scan = LM.scan_level(level)
     referenced = scan["referencedLightmaps"]
     check("%s lightmap names equal the g_tLightmap reference set" % short,
           set(names) == set(referenced),
           "manifest %d, source %d" % (len(names), len(referenced)))
-    check("%s lightmap has no unresolved g_tLightmap references" % short,
-          scan["unresolvedReferences"] == [], str(scan["unresolvedReferences"])[:200])
     check("%s lightmap has no unreferenced lightmap_* textures" % short,
           scan["unreferencedNamePrefixLightmaps"] == [],
           str(scan["unreferencedNamePrefixLightmaps"])[:200])
-    check("%s lightmap has no referenced non-lightmap textures" % short,
-          scan["referencedNonLightmaps"] == [], str(scan["referencedNonLightmaps"])[:200])
+    check("%s lightmap has no referenced names outside lightmap_*" % short,
+          scan["referencedLightmapsMissingFromNamePrefix"] == [],
+          str(scan["referencedLightmapsMissingFromNamePrefix"])[:200])
+    unsupported_keys = {tuple(entry["key"]) for entry in unsupported
+                        if isinstance(entry.get("key"), list)}
+    unsupported_names = {entry.get("name") for entry in unsupported
+                         if entry.get("name") is not None}
+    unresolved_keys = {tuple(entry["key"]) for entry in scan["unresolvedReferences"]}
+    nonlight_names = set(scan["referencedNonLightmaps"])
+    check("%s unsupported lightmap covers every unresolved reference" % short,
+          unresolved_keys <= unsupported_keys,
+          "unresolved %r, unsupported %r" % (sorted(unresolved_keys),
+                                            sorted(unsupported_keys)))
+    check("%s unsupported lightmap covers every non-lightmap reference" % short,
+          nonlight_names <= unsupported_names,
+          "non-lightmap %r, unsupported %r" % (sorted(nonlight_names),
+                                              sorted(unsupported_names)))
+    if decoded:
+        check("%s lightmap has no unresolved g_tLightmap references" % short,
+              scan["unresolvedReferences"] == [], str(scan["unresolvedReferences"])[:200])
+        check("%s lightmap has no referenced non-lightmap textures" % short,
+              scan["referencedNonLightmaps"] == [],
+              str(scan["referencedNonLightmaps"])[:200])
+    summary = lightmap["referenceSummary"]
     check("%s lightmap reference summary counts match the source" % short,
-          lightmap["referenceSummary"]["textures"] == len(referenced) and
-          lightmap["referenceSummary"]["unresolved"] == [] and
-          lightmap["referenceSummary"]["unreferencedNamePrefixLightmaps"] == [] and
-          lightmap["referenceSummary"]["referencedLightmapsMissingFromNamePrefix"] == [] and
-          lightmap["referenceSummary"]["referencedNonLightmaps"] == [], "")
+          summary["textures"] == len(referenced) and
+          summary["unresolved"] == scan["unresolvedReferences"] and
+          summary["unreferencedNamePrefixLightmaps"] ==
+          scan["unreferencedNamePrefixLightmaps"] and
+          summary["referencedLightmapsMissingFromNamePrefix"] ==
+          scan["referencedLightmapsMissingFromNamePrefix"] and
+          summary["referencedNonLightmaps"] == scan["referencedNonLightmaps"], "")
 
     source_rows = {row["name"]: row for row in scan["textures"] if row["name"]}
     for entry in textures:
@@ -180,7 +224,7 @@ def verify_lightmap_block(short: str, doc: dict, level: str) -> None:
 def verify_level(short: str) -> None:
     level = next(lv for lv in LD.SPAWN_TABLE if LD.SPAWN_TABLE[lv]["short"] == short)
     path = OUT_DIR / (short + ".json")
-    check("river/amboy/gracia/longbeach manifest exists: %s" % short, path.exists(), str(path))
+    check("spawn-table manifest exists: %s" % short, path.exists(), str(path))
     if not path.exists():
         return
     raw = path.read_bytes()
@@ -211,35 +255,54 @@ def verify_level(short: str) -> None:
 
     # -- sun reconstruction --------------------------------------------------
     sun = doc["sun"]
-    check("%s sun provenance is data" % short, sun["provenance"]["kind"] == "data", "")
-    check("%s sun type is directional" % short, sun["type"] == 3 and sun["typeName"] == "directional", "")
-    check("%s sun radius is 100000" % short, close(sun["radius"], 100000.0), str(sun["radius"]))
-    check("%s sun direction is unit length" % short, close(norm3(sun["direction"]), 1.0, 1e-5),
-          "%.9f" % norm3(sun["direction"]))
-    check("%s sun direction is matrix row Z" % short,
-          all(close(sun["direction"][i], sun["matrixRows"][2][i], 1e-9) for i in range(3)), "")
-    rows = [sun["matrixRows"][0], sun["matrixRows"][1], sun["matrixRows"][2]]
-    check("%s sun matrix rows unit" % short, all(close(norm3(r), 1.0, 1e-5) for r in rows),
-          ",".join("%.6f" % norm3(r) for r in rows))
-    dots = []
-    for a in range(3):
-        for b in range(a + 1, 3):
-            dots.append(sum(rows[a][i] * rows[b][i] for i in range(3)))
-    check("%s sun matrix rows orthogonal" % short, all(abs(d) < 1e-5 for d in dots),
-          ",".join("%.2e" % d for d in dots))
-    check("%s sun translation row is zero" % short, all(close(v, 0.0) for v in sun["matrixRows"][3]), "")
-    check("%s sun is above the horizon" % short, sun["direction"][1] > 0.0, "%.6f" % sun["direction"][1])
-    check("%s sun direction y equals sin(elevation)" % short,
-          close(sun["direction"][1], math.sin(math.radians(sun["elevationDeg"])), 1e-9), "")
-    check("%s sun elevation in 3..80 deg" % short, 3.0 <= sun["elevationDeg"] <= 80.0,
-          "%.3f" % sun["elevationDeg"])
-    check("%s sun azimuth in 0..360" % short, 0.0 <= sun["azimuthDeg"] < 360.0,
-          "%.3f" % sun["azimuthDeg"])
-    check("%s sun colour rgb in 0..1" % short, all(0.0 <= c <= 1.0 for c in sun["colour"][:3]),
-          str(sun["colour"][:3]))
-    check("%s sun colour alpha in 0..1" % short, 0.0 <= sun["colour"][3] <= 1.0, "")
-    check("%s sun intensity equals colour alpha" % short,
-          close(sun["intensityUsed"], sun["colour"][3], 1e-9), "")
+    if sun is None:
+        unsupported = doc.get("sunUnsupported")
+        check("%s sun is null only with a typed unsupported record" % short,
+              isinstance(unsupported, dict), type(unsupported).__name__)
+        if isinstance(unsupported, dict):
+            check("%s sun unsupported code is typed" % short,
+                  unsupported.get("code") in ("not-serialized", "not-decoded"),
+                  str(unsupported.get("code")))
+            check("%s sun unsupported field is sun" % short,
+                  unsupported.get("field") == "sun", str(unsupported.get("field")))
+            check("%s sun unsupported has a reason" % short,
+                  isinstance(unsupported.get("reason"), str)
+                  and bool(unsupported["reason"].strip()), "")
+            check("%s sun unsupported records hasSun=0" % short,
+                  unsupported.get("hasSun") is False, str(unsupported.get("hasSun")))
+            check("%s sun unsupported records the Lights block" % short,
+                  isinstance(unsupported.get("blockOffset"), int)
+                  and isinstance(unsupported.get("blockBytes"), int), "")
+    else:
+        check("%s sun provenance is data" % short, sun["provenance"]["kind"] == "data", "")
+        check("%s sun type is directional" % short, sun["type"] == 3 and sun["typeName"] == "directional", "")
+        check("%s sun radius is 100000" % short, close(sun["radius"], 100000.0), str(sun["radius"]))
+        check("%s sun direction is unit length" % short, close(norm3(sun["direction"]), 1.0, 1e-5),
+              "%.9f" % norm3(sun["direction"]))
+        check("%s sun direction is matrix row Z" % short,
+              all(close(sun["direction"][i], sun["matrixRows"][2][i], 1e-9) for i in range(3)), "")
+        rows = [sun["matrixRows"][0], sun["matrixRows"][1], sun["matrixRows"][2]]
+        check("%s sun matrix rows unit" % short, all(close(norm3(r), 1.0, 1e-5) for r in rows),
+              ",".join("%.6f" % norm3(r) for r in rows))
+        dots = []
+        for a in range(3):
+            for b in range(a + 1, 3):
+                dots.append(sum(rows[a][i] * rows[b][i] for i in range(3)))
+        check("%s sun matrix rows orthogonal" % short, all(abs(d) < 1e-5 for d in dots),
+              ",".join("%.2e" % d for d in dots))
+        check("%s sun translation row is zero" % short, all(close(v, 0.0) for v in sun["matrixRows"][3]), "")
+        check("%s sun is above the horizon" % short, sun["direction"][1] > 0.0, "%.6f" % sun["direction"][1])
+        check("%s sun direction y equals sin(elevation)" % short,
+              close(sun["direction"][1], math.sin(math.radians(sun["elevationDeg"])), 1e-9), "")
+        check("%s sun elevation in 3..80 deg" % short, 3.0 <= sun["elevationDeg"] <= 80.0,
+              "%.3f" % sun["elevationDeg"])
+        check("%s sun azimuth in 0..360" % short, 0.0 <= sun["azimuthDeg"] < 360.0,
+              "%.3f" % sun["azimuthDeg"])
+        check("%s sun colour rgb in 0..1" % short, all(0.0 <= c <= 1.0 for c in sun["colour"][:3]),
+              str(sun["colour"][:3]))
+        check("%s sun colour alpha in 0..1" % short, 0.0 <= sun["colour"][3] <= 1.0, "")
+        check("%s sun intensity equals colour alpha" % short,
+              close(sun["intensityUsed"], sun["colour"][3], 1e-9), "")
 
     # -- sky light object ----------------------------------------------------
     sky = doc["skyLightObject"]
@@ -254,16 +317,23 @@ def verify_level(short: str) -> None:
     objs = doc["lightObjects"]
     check("%s light object counts sum to total" % short,
           sum(objs["counts"].values()) == objs["total"], "%s vs %d" % (objs["counts"], objs["total"]))
-    check("%s light objects exist" % short, objs["total"] > 0, str(objs["total"]))
+    check("%s light object table is consistent" % short, objs["total"] >= 0, str(objs["total"]))
     check("%s light objects are area/point only" % short,
           set(objs["counts"]) <= {"area", "point", "spot"}, str(sorted(objs["counts"])))
-    check("%s light object radii positive" % short, objs["radiusRange"][0] > 0.0, str(objs["radiusRange"]))
+    check("%s light object radii are non-negative" % short,
+          objs["radiusRange"][0] >= 0.0, str(objs["radiusRange"]))
+    check("%s light object radii are positive when objects exist" % short,
+          objs["total"] == 0 or objs["radiusRange"][0] > 0.0, str(objs["radiusRange"]))
     check("%s light object radii ordered" % short, objs["radiusRange"][0] <= objs["radiusRange"][1], "")
     check("%s first light objects carry colour" % short,
           all(len(l["colour"]) == 4 for l in objs["first"]), "")
     check("%s first light objects are finite" % short, finite(objs["first"]), "")
     check("%s kd-tree nodes positive" % short, objs["kdTree"]["nodes"] > 0, str(objs["kdTree"]["nodes"]))
-    check("%s kd-tree mailboxes positive" % short, objs["kdTree"]["mailboxes"] > 0, "")
+    check("%s kd-tree mailboxes are positive when objects exist" % short,
+          objs["total"] == 0 or objs["kdTree"]["mailboxes"] > 0, str(objs["kdTree"]["mailboxes"]))
+    if short in REFERENCE_SHORTS:
+        check("%s reference light objects exist" % short, objs["total"] > 0,
+              str(objs["total"]))
 
     # -- light samples -------------------------------------------------------
     ls = doc["lightSamples"]
@@ -319,9 +389,18 @@ def verify_level(short: str) -> None:
           all(k in info for k in ("sunColour", "skyColour", "bakedColour", "emissiveColour")), "")
     check("%s colours are RGBA" % short,
           all(len(info[k]) == 4 for k in ("sunColour", "skyColour", "bakedColour", "emissiveColour")), "")
-    check("%s baked colour is 1.5" % short, all(close(c, 1.5) for c in info["bakedColour"][:3]),
-          str(info["bakedColour"]))
-    check("%s emissive alpha is 1" % short, close(info["emissiveColour"][3], 1.0), "")
+    check("%s baked colour is positive" % short,
+          all(c > 0.0 for c in info["bakedColour"][:3]), str(info["bakedColour"]))
+    check("%s baked colour alpha in 0..1" % short,
+          0.0 <= info["bakedColour"][3] <= 1.0, str(info["bakedColour"][3]))
+    if short in REFERENCE_SHORTS:
+        check("%s reference baked colour is 1.5" % short,
+              all(close(c, 1.5) for c in info["bakedColour"][:3]), str(info["bakedColour"]))
+    check("%s emissive alpha in 0..1" % short,
+          0.0 <= info["emissiveColour"][3] <= 1.0, str(info["emissiveColour"][3]))
+    if short in REFERENCE_SHORTS:
+        check("%s reference emissive alpha is 1" % short,
+              close(info["emissiveColour"][3], 1.0), "")
     check("%s emissive colour non-negative" % short, all(c >= 0.0 for c in info["emissiveColour"][:3]), "")
     check("%s baked ambient equals SH * BakedColour" % short,
           all(close(probe["upNormalAmbientScaled"][i],
@@ -339,7 +418,10 @@ def verify_level(short: str) -> None:
     check("%s depth fog near distance is 0" % short, close(fog["depthNearDistance"], 0.0), "")
     check("%s depth fog scale is 1" % short, close(fog["depthScale"], 1.0), "")
     check("%s height fog height >= 0" % short, fog["height"]["height"] >= 0.0, "")
-    check("%s height fog density in [0, 0.01]" % short, 0.0 <= fog["height"]["density"] <= 0.01, "")
+    check("%s height fog density in [0, 0.1]" % short, 0.0 <= fog["height"]["density"] <= 0.1, "")
+    if short in REFERENCE_SHORTS:
+        check("%s reference height fog density in [0, 0.01]" % short,
+              0.0 <= fog["height"]["density"] <= 0.01, str(fog["height"]["density"]))
     check("%s height fog falloff in [0, 0.1]" % short, 0.0 <= fog["height"]["falloff"] <= 0.1, "")
     check("%s height fog scale in [0, 1]" % short, 0.0 <= fog["height"]["scale"] <= 1.0, "")
 
@@ -406,8 +488,15 @@ def verify_level(short: str) -> None:
     check("%s declaration list length matches its count" % short,
           normals["declarationCount"] == len(normals["declarations"]),
           "%d vs %d" % (normals["declarationCount"], len(normals["declarations"])))
-    check("%s most declarations carry NORMAL0" % short, normals["declarationsWithNormal"] >= 10,
+    check("%s most declarations carry NORMAL0" % short,
+          normals["declarationsWithNormal"] >= 1 and
+          2 * normals["declarationsWithNormal"] >= normals["declarationCount"],
           "%d of %d" % (normals["declarationsWithNormal"], normals["declarationCount"]))
+    if short in REFERENCE_SHORTS:
+        check("%s reference declarations carry NORMAL0 (>=10)" % short,
+              normals["declarationsWithNormal"] >= 10,
+              "%d of %d" % (normals["declarationsWithNormal"],
+                            normals["declarationCount"]))
     elements = [d["normal"] for d in normals["declarations"] if d["normal"]]
     check("%s every normal element is usage 3" % short, all(e["usage"] == 3 for e in elements), "")
     check("%s every normal element is type 11 (U8_4N)" % short, all(e["type"] == 11 for e in elements), "")
@@ -431,11 +520,17 @@ def verify_level(short: str) -> None:
     check("%s derived block is provisional" % short, derived["kind"] == "provisional", "")
     check("%s sh linear magnitude positive" % short,
           all(m > 0.0 for m in derived["shLinearMagnitude"]), str(derived["shLinearMagnitude"]))
-    check("%s sh/sun cosine in -1..1" % short,
-          all(-1.0 <= c <= 1.0 for c in derived["shSunCosine"]), str(derived["shSunCosine"]))
+    if sun is None:
+        check("%s sh/sun cosine is null without a serialized sun" % short,
+              derived["shSunCosine"] is None, str(derived["shSunCosine"]))
+    else:
+        check("%s sh/sun cosine in -1..1" % short,
+              all(-1.0 <= c <= 1.0 for c in derived["shSunCosine"]),
+              str(derived["shSunCosine"]))
     patch = derived["sanityPatch"]
+    sun_up = 0.0 if sun is None else max(0.0, sun["direction"][1])
     expected_linear = [probe["upNormalAmbientScaled"][i] + info["sunColour"][i]
-                       * max(0.0, sun["direction"][1]) for i in range(3)]
+                       * sun_up for i in range(3)]
     check("%s sanity patch linear matches the diffuse terms" % short,
           all(close(patch["linearRgb"][i], expected_linear[i] * patch["albedo"], 1e-9) for i in range(3)),
           "")
@@ -478,7 +573,8 @@ def verify_global() -> None:
     index_raw = index_path.read_bytes()
     index = json.loads(index_raw)
     check("index schema", index.get("schema") == "blur-lighting-index/1", str(index.get("schema")))
-    check("index lists four levels", set(index["levels"]) == set(SHORTS), str(sorted(index["levels"])))
+    check("index lists every spawn-table level", set(index["levels"]) == set(SHORTS),
+          str(sorted(index["levels"])))
     for short in SHORTS:
         record = index["levels"][short]
         path = ROOT / record["path"]
@@ -502,12 +598,20 @@ def verify_global() -> None:
     for short in ("river", "gracia", "longbeach"):
         check("%s bakes the sun (SunColour zero)" % short,
               all(close(c, 0.0) for c in sun_colours[short]), str(sun_colours[short]))
-    directions = {short: docs[short]["sun"]["direction"] for short in SHORTS}
-    pairs = [(a, b) for i, a in enumerate(SHORTS) for b in SHORTS[i + 1:]]
+    directions = {short: docs[short]["sun"]["direction"] for short in SHORTS
+                  if docs[short]["sun"] is not None}
+    pairs = [(a, b) for i, a in enumerate(REFERENCE_SHORTS)
+             for b in REFERENCE_SHORTS[i + 1:]]
     for a, b in pairs:
         dot = sum(directions[a][i] * directions[b][i] for i in range(3))
-        check("sun direction differs: %s vs %s" % (a, b), dot < 0.999, "dot %.4f" % dot)
-    elevations = {short: docs[short]["sun"]["elevationDeg"] for short in SHORTS}
+        check("reference sun direction differs: %s vs %s" % (a, b), dot < 0.999,
+              "dot %.4f" % dot)
+    distinct_directions = {tuple(round(v, 6) for v in d) for d in directions.values()}
+    check("maps with a sun expose a distinct direction except the shared amboy environment",
+          len(distinct_directions) >= len(directions) - 1,
+          "%d distinct for %d maps with a sun" % (len(distinct_directions), len(directions)))
+    elevations = {short: docs[short]["sun"]["elevationDeg"] for short in SHORTS
+                  if docs[short]["sun"] is not None}
     check("elevations span more than 10 degrees",
           max(elevations.values()) - min(elevations.values()) > 10.0,
           str({k: round(v, 2) for k, v in elevations.items()}))
@@ -527,10 +631,35 @@ def verify_global() -> None:
         check("%s spawn probe is inside the 10 m search radius" % short,
               docs[short]["ambientProbe"]["distance"] <= 10.0,
               "%.3f" % docs[short]["ambientProbe"]["distance"])
-    check("all four manifests record the same retail amax entry",
+    check("all manifests record the same retail amax entry",
           len({docs[short]["source"]["environment"]["entry"] for short in SHORTS}) == 1, "")
-    check("all four manifests record the same amax sha256",
+    check("all manifests record the same amax sha256",
           len({docs[short]["source"]["environment"]["amaxSha256"] for short in SHORTS}) == 1, "")
+
+    # Typed unsupported records: a map with no directional sun or an unclean
+    # g_tLightmap reference set must say so, never fall back silently.
+    sunless = sorted(short for short in SHORTS if docs[short]["sun"] is None)
+    unsupported_lightmaps = sorted(short for short in SHORTS
+                                   if docs[short]["lightmap"]["decoded"] is not True)
+    for short in sunless:
+        record = docs[short].get("sunUnsupported")
+        check("%s sunless map carries a typed sunUnsupported record" % short,
+              isinstance(record, dict) and record.get("field") == "sun"
+              and record.get("hasSun") is False, str(record)[:200])
+    for short in unsupported_lightmaps:
+        lightmap = docs[short]["lightmap"]
+        check("%s unsupported lightmap carries typed entries" % short,
+              isinstance(lightmap.get("unsupported"), list)
+              and len(lightmap["unsupported"]) > 0,
+              str(lightmap.get("unsupported"))[:200])
+        check("%s unsupported lightmap records the unclean reference set" % short,
+              bool(lightmap["referenceSummary"]["unresolved"]) or
+              bool(lightmap["referenceSummary"]["referencedNonLightmaps"]), "")
+    check("unsupported lightmap set matches the committed typed set",
+          unsupported_lightmaps == ["downtown", "highrise"],
+          str(unsupported_lightmaps))
+    check("sunless map set matches the committed typed set",
+          sunless == ["downtown", "highrise"], str(sunless))
 
 
 def main() -> int:

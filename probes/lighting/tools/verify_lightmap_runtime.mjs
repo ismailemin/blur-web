@@ -35,7 +35,10 @@ const EXPORT_ROOT = path.join(ROOT, '_work/lighting');
 const RUNTIME_JSON = path.join(ROOT, 'probes/lighting/data/runtime-lighting.json');
 const MODULE_PATH = path.join(ROOT, 'probes/lighting/lightmap-runtime.mjs');
 
-const MAP_ORDER = ['river', 'amboy', 'gracia', 'longbeach'];
+const MAP_ORDER = [
+  'river', 'amboy', 'gracia', 'longbeach',
+  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp'
+];
 const EXPORT_SCHEMA = 'blur.lightmap-rgba/1';
 const RUNTIME_SCHEMA = 'blur.lightmap-runtime/1';
 const LIGHTING_SCHEMA = 'blur.lighting-runtime/1';
@@ -121,19 +124,31 @@ check('module rejects the retail package id',
 
 for (const mapId of maps) {
   const prefix = mapId + ' ';
+  const runtimeMap = runtime.maps[mapId];
+  check(prefix + 'runtime map present', Boolean(runtimeMap), null);
+  if (!runtimeMap) continue;
+  const runtimeLightmap = runtimeMap.lightmap;
   const indexFile = path.join(EXPORT_ROOT, mapId, 'lightmap', 'index.json');
+  if (runtimeLightmap === null) {
+    check(prefix + 'unsupported map has no export index', !existsSync(indexFile), indexFile);
+    check(prefix + 'unsupported map lists ambient.lightmap in missing',
+      runtimeMap.missing.some((row) => row.field === 'ambient.lightmap'),
+      runtimeMap.missing.map((row) => row.field));
+    check(prefix + 'module reports lightmap-unavailable',
+      throwsCode(() => module.lightmapSetFor(mapId), 'lightmap-unavailable'));
+    check(prefix + 'module texture lookup reports lightmap-unavailable',
+      throwsCode(() => module.lightmapTextureFor(mapId, 'lightmap_main_000-a'),
+        'lightmap-unavailable'));
+    continue;
+  }
+  check(prefix + 'runtime lightmap is decoded', runtimeLightmap?.decoded === true, null);
+  if (!runtimeLightmap) continue;
   const present = check(prefix + 'export index exists', existsSync(indexFile), indexFile);
   if (!present) {
     check(prefix + 'export index present (run export_lightmap_rgba.py)', false, indexFile);
     continue;
   }
   const index = readJson(indexFile);
-  const runtimeMap = runtime.maps[mapId];
-  check(prefix + 'runtime map present', Boolean(runtimeMap), null);
-  if (!runtimeMap) continue;
-  const runtimeLightmap = runtimeMap.lightmap;
-  check(prefix + 'runtime lightmap is decoded', runtimeLightmap?.decoded === true, null);
-  if (!runtimeLightmap) continue;
 
   // -- index shape -------------------------------------------------------
   equal(prefix + 'index schema', index.schema, EXPORT_SCHEMA);
@@ -260,6 +275,15 @@ try {
   for (const mapId of maps) {
     const relative = path.join(mapId, 'lightmap', 'index.json');
     const committed = path.join(EXPORT_ROOT, relative);
+    const runtimeMap = runtime.maps[mapId];
+    if (runtimeMap && runtimeMap.lightmap === null) {
+      check(mapId + ' unsupported map has no committed export index',
+        !existsSync(committed), committed);
+      check(mapId + ' unsupported map has no re-derived export index',
+        !existsSync(path.join(tempA, relative)) &&
+        !existsSync(path.join(tempB, relative)), null);
+      continue;
+    }
     if (!existsSync(committed)) {
       check(mapId + ' committed export index exists for comparison', false, committed);
       continue;

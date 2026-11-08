@@ -33,7 +33,10 @@ const DATA_PLACEHOLDER = '/*__RUNTIME_LIGHTING_DATA__*/';
 const SCHEMA = 'blur.lighting-runtime/1';
 const MANIFEST_SCHEMA = 'blur-lighting/1';
 const INDEX_SCHEMA = 'blur-lighting-index/1';
-const MAP_ORDER = ['river', 'amboy', 'gracia', 'longbeach'];
+const MAP_ORDER = [
+  'river', 'amboy', 'gracia', 'longbeach',
+  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp'
+];
 const MISSING_CODES = new Set(['not-serialized', 'not-decoded']);
 const MISSING_FIELDS = [
   'sun.occlusion',
@@ -41,7 +44,8 @@ const MISSING_FIELDS = [
   'sky.occlusion',
   'ambient.perInstanceInterpolation',
   'ambient.lightmap',
-  'sky.domePixels'
+  'sky.domePixels',
+  'sun'
 ];
 
 // Runtime lightmap paths that are not a direct copy of the manifest lightmap
@@ -323,6 +327,7 @@ for (const short of MAP_ORDER) {
   let unmapped = 0;
   for (const runtimePath of numbers) {
     if (runtimePath.startsWith('manifest.')) continue;
+    if (runtimePath.startsWith('sun.') && entry.sun === null) continue;
     if (runtimePath.startsWith('lightmap.')) {
       sameNumber(prefix + 'copied verbatim: ' + runtimePath + ' <- manifest lightmap',
         getPath(entry, runtimePath), lightmapManifestValue(manifest, runtimePath));
@@ -347,6 +352,7 @@ for (const short of MAP_ORDER) {
   // Reverse direction: every declared field must be present.
   for (const runtimePath of expectedMappedPaths()) {
     if (runtimePath.startsWith('fog.') && entry.fog === null) continue;
+    if (runtimePath.startsWith('sun.') && entry.sun === null) continue;
     check(prefix + 'field present: ' + runtimePath,
       getPath(entry, runtimePath) !== undefined);
   }
@@ -354,8 +360,11 @@ for (const short of MAP_ORDER) {
 
   // -- sun ---------------------------------------------------------------
   const sun = entry.sun;
-  check(prefix + 'sun present', Boolean(sun));
-  if (sun) {
+  check(prefix + 'sun is present or typed unsupported', sun === null || Boolean(sun));
+  if (sun === null) {
+    check(prefix + 'sun is null only when the manifest has no sun', manifest.sun === null);
+    check(prefix + 'missing lists sun', entry.missing.some((row) => row.field === 'sun'));
+  } else if (sun) {
     check(prefix + 'sun direction is unit length', Math.abs(norm3(sun.direction) - 1) <= 1e-6,
       norm3(sun.direction));
     equal(prefix + 'sun direction is matrix row Z', sun.direction, manifest.sun.matrixRows[2]);
@@ -540,7 +549,9 @@ for (const short of MAP_ORDER) {
     missingFields.push(row.field);
   }
   const expectedMissing = MISSING_FIELDS.filter((field) =>
-    !(field === 'ambient.lightmap' && entry.lightmap));
+    !(field === 'ambient.lightmap' && entry.lightmap) &&
+    !(field === 'sun' && entry.sun !== null));
+  if (entry.fog === null) expectedMissing.push('fog');
   equal(prefix + 'missing field list', missingFields, expectedMissing);
   check(prefix + 'ambient.lightmap is absent when the lightmap is decoded',
     !entry.lightmap || !missingFields.includes('ambient.lightmap'));
@@ -557,9 +568,9 @@ for (const short of MAP_ORDER) {
     typeof entry.source === 'string' && entry.source.includes('matrix row Z'));
 
   perMap[short] = {
-    direction: entry.sun.direction,
-    colour: entry.sun.colour,
-    intensity: entry.sun.intensity,
+    direction: entry.sun ? entry.sun.direction : null,
+    colour: entry.sun ? entry.sun.colour : null,
+    intensity: entry.sun ? entry.sun.intensity : null,
     ambient: entry.ambient.upNormalAmbientScaled,
     fog: entry.fog !== null,
     missing: entry.missing.length
@@ -577,27 +588,39 @@ for (const short of MAP_ORDER) {
     check(short + ' lightingFor has ' + key, key in returned);
   }
   for (const key of ['direction', 'colour', 'intensity']) {
+    if (returned.sun === null) {
+      check(short + ' sun is null (no directional sun serialized)', true);
+      break;
+    }
     check(short + ' sun has ' + key, key in returned.sun);
   }
   for (const key of ['upNormalAmbient', 'sh', 'bakedColour']) {
     check(short + ' ambient has ' + key, key in returned.ambient);
   }
   check(short + ' lightingFor is deep-frozen',
-    Object.isFrozen(returned) && Object.isFrozen(returned.sun) &&
-    Object.isFrozen(returned.sun.direction) && Object.isFrozen(returned.ambient.sh));
+    Object.isFrozen(returned) &&
+    (returned.sun === null || Object.isFrozen(returned.sun.direction)) &&
+    Object.isFrozen(returned.ambient.sh));
   check(short + ' lightingFor lightmap is deep-frozen',
     !returned.lightmap || (Object.isFrozen(returned.lightmap) &&
       Object.isFrozen(returned.lightmap.textures) &&
       Object.isFrozen(returned.lightmap.textures[0]) &&
       Object.isFrozen(returned.lightmap.textures[0].source)));
-  throws(short + ' lightingFor result rejects mutation',
-    () => { returned.sun.direction[0] = 0; }, null);
+  if (returned.sun !== null) {
+    throws(short + ' lightingFor result rejects mutation',
+      () => { returned.sun.direction[0] = 0; }, null);
+  }
 }
 
 check('module exports lightmapTexture', typeof module.lightmapTexture === 'function');
 for (const short of MAP_ORDER) {
   const entry = document.maps[short];
-  if (!entry.lightmap) continue;
+  if (!entry.lightmap) {
+    throws(short + ' lightmapTexture rejects an unsupported lightmap set',
+      () => module.lightmapTexture(short, 'lightmap_main_000-a'),
+      { name: 'LightingError', code: 'lightmap-unavailable' });
+    continue;
+  }
   const first = entry.lightmap.textures[0];
   equal(short + ' lightmapTexture returns the first texture',
     module.lightmapTexture(short, first.name), first);
@@ -653,9 +676,13 @@ check('committed module equals template + JSON',
 for (const short of MAP_ORDER) {
   const row = perMap[short];
   if (!row) continue;
-  console.log('  ' + short + ': sun dir [' + row.direction.map((v) => v.toFixed(6)).join(', ') +
-    '] colour [' + row.colour.map((v) => v.toFixed(3)).join(', ') + '] intensity ' +
-    row.intensity + '; ambient [' + row.ambient.map((v) => v.toFixed(6)).join(', ') +
+  const sunText = row.direction === null
+    ? 'sun none (hasSun=0)'
+    : 'sun dir [' + row.direction.map((v) => v.toFixed(6)).join(', ') +
+      '] colour [' + row.colour.map((v) => v.toFixed(3)).join(', ') +
+      '] intensity ' + row.intensity;
+  console.log('  ' + short + ': ' + sunText + '; ambient [' +
+    row.ambient.map((v) => v.toFixed(6)).join(', ') +
     ']; fog ' + (row.fog ? 'yes' : 'null') + '; missing ' + row.missing);
 }
 for (const failure of failures) {

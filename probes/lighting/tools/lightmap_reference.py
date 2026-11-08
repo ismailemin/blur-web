@@ -36,6 +36,13 @@ LEVEL_IDS = {
     "amboy": "usa_amboy",
     "gracia": "spa_barcelona_gracia",
     "longbeach": "usa_la_longbeachdocks",
+    "observatory": "usa_la_observatory",
+    "downtown": "usa_la_downtown",
+    "mharuna": "jpn_mharuna",
+    "highrise": "usa_la_multiplayer_highrise",
+    "shutoko": "jpn_tokyo_shutoko",
+    "oval": "spa_barcelona_oval",
+    "amboy-mp": "usa_amboy_multiplayer",
 }
 FORMAT_NAMES = {
     0x31545844: "DXT1/BC1",
@@ -63,7 +70,9 @@ def sha256_file(path: Path) -> str:
 
 
 def rel(path: Path) -> str:
-    return path.resolve().relative_to(ROOT).as_posix()
+    # Keep the requested case (the manifests use ``Level.levelrender`` even on
+    # case-insensitive Windows volumes where the on-disk name may be lower-case).
+    return path.relative_to(ROOT).as_posix()
 
 
 def parse_item(data: bytes, cursor: int, lod: int):
@@ -200,10 +209,17 @@ def scan_level(short: str) -> dict:
                     raise ValueError("record %d trailing bytes" % record_index)
 
     names = {}
+    unresolved = []
     for key, count in counts.items():
         row = textures.get(key)
         if row is None or row["name"] is None:
-            raise ValueError("g_tLightmap reference %r has no LOD0 texture" % (key,))
+            unresolved.append({
+                "key": list(key),
+                "count": count,
+                "records": sorted(records_by_key[key]),
+                "reason": "texture block/index not found in the LOD0 scan",
+            })
+            continue
         names[row["name"]] = {
             "count": count,
             "materials": sorted(materials[key]),
@@ -212,8 +228,6 @@ def scan_level(short: str) -> dict:
         }
     lightmap_names = sorted(name for name in names if name.lower().startswith("lightmap_"))
     other_names = sorted(name for name in names if not name.lower().startswith("lightmap_"))
-    if other_names:
-        raise ValueError("g_tLightmap references non-lightmap textures: %r" % other_names)
     prefix_names = sorted({row["name"] for row in rows
                            if row["name"] and row["name"].lower().startswith("lightmap_")})
     if set(prefix_names) != set(lightmap_names):
@@ -230,6 +244,8 @@ def scan_level(short: str) -> dict:
         "rows": rows,
         "names": names,
         "lightmapNames": lightmap_names,
+        "unresolved": unresolved,
+        "otherNames": other_names,
     }
 
 
@@ -331,6 +347,26 @@ def build_reference(short: str) -> dict:
             },
         })
     entries.sort(key=lambda entry: entry["name"])
+    unsupported = [
+        {
+            "name": None,
+            "key": entry["key"],
+            "reason": entry["reason"],
+        }
+        for entry in scan["unresolved"]
+    ] + [
+        {
+            "name": name,
+            "reason": "g_tLightmap resolves to a non-lightmap texture",
+        }
+        for name in scan["otherNames"]
+    ]
+    unsupported.sort(key=lambda entry: (
+        entry["name"] is not None,
+        entry["name"] or "",
+        entry.get("key") or [],
+    ))
+    decoded = bool(entries) and not unsupported
     dimensions = Counter("%dx%d" % (entry["width"], entry["height"]) for entry in entries)
     formats = Counter(entry["format"] for entry in entries)
     return {
@@ -345,7 +381,7 @@ def build_reference(short: str) -> dict:
         },
         "lightmap": {
             "kind": "texture-set",
-            "decoded": True,
+            "decoded": decoded,
             "uvSet": "luxlightmap",
             "format": next(iter(formats)) if len(formats) == 1 else None,
             "formatName": (FORMAT_NAMES[next(iter(formats))]
@@ -358,13 +394,16 @@ def build_reference(short: str) -> dict:
             "sha256": set_hash(entries, "sha256"),
             "decodedRgbaSha256": set_hash(entries, "decodedRgbaSha256"),
             "textures": entries,
+            "unsupported": unsupported,
         },
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--levels", default="river,amboy,gracia,longbeach")
+    parser.add_argument("--levels",
+                        default="river,amboy,gracia,longbeach,observatory,downtown,"
+                                "mharuna,highrise,shutoko,oval,amboy-mp")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
     shorts = [name.strip() for name in args.levels.split(",") if name.strip()]

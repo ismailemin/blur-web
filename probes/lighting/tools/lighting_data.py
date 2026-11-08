@@ -76,6 +76,74 @@ SPAWN_TABLE = {
         "spawn": (-519.0, -0.098, 111.0),
         "spawnSource": "_work/map-slice/longbeach-render/render.json layout.spawn",
     },
+    # The seven remaining playable maps. ``layout.json`` stores the horizontal
+    # spawn as ``course.spawn.x`` / ``course.spawn.z`` and the ground height as
+    # ``course.spawnGroundY`` (also ``course.start.groundY``); the tuple below is
+    # (x, spawnGroundY, z). The committed source of the _work copy is the
+    # map-laps path file named in each spawnSource.
+    "usa_la_observatory": {
+        "short": "observatory",
+        "city": "USA_LA_Observatory",
+        "spawn": (226.0, 21.2531, 373.0),
+        "spawnSource": "_work/e1-drive/observatory/layout.json course.spawn.x=226, "
+                       "course.spawn.z=373, course.spawnGroundY=21.2531 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps/data/observatory-path.json",
+    },
+    "usa_la_downtown": {
+        "short": "downtown",
+        "city": "USA_LA_Downtown",
+        "spawn": (715.0, 111.8145, 145.0),
+        "spawnSource": "_work/e1-drive/downtown/layout.json course.spawn.x=715, "
+                       "course.spawn.z=145, course.spawnGroundY=111.8145 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps/data/downtown-path.json",
+    },
+    "jpn_mharuna": {
+        "short": "mharuna",
+        "city": "JPN_MHaruna",
+        "spawn": (-2693.0, 1064.4312, -838.0),
+        "spawnSource": "_work/e1-drive/mharuna/layout.json course.spawn.x=-2693, "
+                       "course.spawn.z=-838, course.spawnGroundY=1064.4312 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps/data/mharuna-path.json",
+    },
+    "usa_la_multiplayer_highrise": {
+        "short": "highrise",
+        "city": "USA_LA_Multiplayer_Highrise",
+        "spawn": (202.0, 218.184, -267.0),
+        "spawnSource": "_work/e1-drive/highrise/layout.json course.spawn.x=202, "
+                       "course.spawn.z=-267, course.spawnGroundY=218.184 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps/data/highrise-path.json",
+    },
+    "jpn_tokyo_shutoko": {
+        "short": "shutoko",
+        "city": "JPN_Tokyo_Shutoko",
+        "spawn": (1168.0, -2.632, -134.0),
+        "spawnSource": "_work/e1-drive/shutoko/layout.json course.spawn.x=1168, "
+                       "course.spawn.z=-134, course.spawnGroundY=-2.632 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps/data/shutoko-path.json",
+    },
+    "spa_barcelona_oval": {
+        "short": "oval",
+        "city": "SPA_Barcelona_Oval",
+        "spawn": (-567.0, 0.1439, -522.0),
+        "spawnSource": "_work/e1-drive/oval/layout.json course.spawn.x=-567, "
+                       "course.spawn.z=-522, course.spawnGroundY=0.1439 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps/data/oval-path.json",
+    },
+    "usa_amboy_multiplayer": {
+        "short": "amboy-mp",
+        "city": "USA_Amboy_Multiplayer",
+        "spawn": (55.0, 1.7573, -5.0),
+        "spawnSource": "_work/e1-drive/amboy-mp/layout.json course.spawn.x=55, "
+                       "course.spawn.z=-5, course.spawnGroundY=1.7573 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps/data/amboy-mp-path.json",
+    },
 }
 
 LIGHT_TYPE_NAMES = {

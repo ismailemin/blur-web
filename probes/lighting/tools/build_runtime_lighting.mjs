@@ -37,7 +37,10 @@ const INDEX_SCHEMA = 'blur-lighting-index/1';
 
 // Manifest build order (lighting_data.py SPAWN_TABLE). The index is sorted by
 // key, so the order is pinned here and checked against the index key set.
-const MAP_ORDER = ['river', 'amboy', 'gracia', 'longbeach'];
+const MAP_ORDER = [
+  'river', 'amboy', 'gracia', 'longbeach',
+  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp'
+];
 
 // Fields the retail data does not serialize. `field` must be absent from the
 // emitted map entry; verify_runtime_lighting.mjs enforces that.
@@ -145,12 +148,23 @@ function text(value, label) {
   return value;
 }
 
-function buildSun(manifest, short) {
+function buildSun(manifest, short, missing) {
   const sun = manifest.sun;
   const info = manifest.lightingInfo;
-  if (!sun || sun.type !== 3) {
-    throw new Error(short + ': manifest has no directional sun light; refusing to substitute ' +
-      'the code-only fallback direction (LightList.cpp:97)');
+  if (sun === null || sun === undefined) {
+    const unsupported = manifest.sunUnsupported ?? {};
+    missing.push({
+      code: 'not-serialized',
+      field: 'sun',
+      reason: unsupported.reason ??
+        'C_LightList hasSun=0: the level serializes no directional sun light; the code-only ' +
+        'fallback direction (LightList.cpp:97) is not substituted'
+    });
+    return null;
+  }
+  if (sun.type !== 3) {
+    throw new Error(short + ': manifest has a non-directional sun light; refusing to ' +
+      'substitute the code-only fallback direction (LightList.cpp:97)');
   }
   const intensity = number(sun.intensityUsed, 'sun.intensityUsed');
   if (intensity !== sun.colour[3]) {
@@ -358,7 +372,7 @@ function buildMap(short, record) {
   const missing = NOT_SERIALIZED
     .filter((entry) => !(entry.field === 'ambient.lightmap' && lightmap !== null))
     .map((entry) => ({ ...entry }));
-  const sun = buildSun(manifest, short);
+  const sun = buildSun(manifest, short, missing);
   const sky = buildSky(manifest, short);
   const ambient = buildAmbient(manifest);
   const fog = buildFog(manifest, missing);
@@ -406,7 +420,7 @@ function buildDocument() {
   const expected = [...MAP_ORDER].sort();
   if (JSON.stringify(indexed) !== JSON.stringify(expected)) {
     throw new Error('lighting index maps ' + JSON.stringify(indexed) +
-      ' do not match the four expected maps ' + JSON.stringify(expected));
+      ' do not match the expected maps ' + JSON.stringify(expected));
   }
 
   const maps = {};
@@ -428,11 +442,13 @@ function buildDocument() {
     kind: 'blur.lighting-runtime',
     version: 1,
     generatedBy: 'probes/lighting/tools/build_runtime_lighting.mjs',
-    scope: 'Retail per-level lighting for the four built maps, copied verbatim from the ' +
+    scope: 'Retail per-level lighting for the 11 playable maps, copied verbatim from the ' +
       'committed lighting manifests. Nothing is scaled, rounded or interpolated; values the ' +
-      'retail data does not serialize are absent and listed in `missing`. The `lightmap` ' +
-      'block is the decoded g_tLightmap DXT5/BC3 texture set (mip 0) with per-texture identity ' +
-      'and hashes; it is not a pixel payload.',
+      'retail data does not serialize are absent and listed in `missing`. A map whose ' +
+      'C_LightList hasSun=0 has `sun: null` (the code-only fallback is not substituted). The ' +
+      '`lightmap` block is the decoded g_tLightmap DXT5/BC3 texture set (mip 0) with ' +
+      'per-texture identity and hashes; it is not a pixel payload, and it is null when the ' +
+      'full g_tLightmap set is unsupported (see the manifest `lightmap.unsupported`).',
     retailRule: 'diffuse = ((baked * BakedColour) + SkyColour*skyOcc*saturate(n.y*0.5+0.5) + ' +
       'SunColour*saturate(dot(n,sunDir))*sunOcc) * albedo * diffuseIntensity ' +
       '(shader/common/Lighting.h:153-165)',
@@ -463,9 +479,11 @@ function main() {
   if (!options.quiet) {
     for (const short of MAP_ORDER) {
       const map = document.maps[short];
-      console.log('runtime-lighting: ' + short + ' sun dir [' +
-        map.sun.direction.map((v) => v.toFixed(6)).join(', ') + '] colour [' +
-        map.sun.colour.map((v) => v.toFixed(3)).join(', ') + '] ambient [' +
+      const sunText = map.sun === null
+        ? 'sun none (hasSun=0)'
+        : 'sun dir [' + map.sun.direction.map((v) => v.toFixed(6)).join(', ') +
+          '] colour [' + map.sun.colour.map((v) => v.toFixed(3)).join(', ') + ']';
+      console.log('runtime-lighting: ' + short + ' ' + sunText + ' ambient [' +
         map.ambient.upNormalAmbientScaled.map((v) => v.toFixed(6)).join(', ') + ']');
     }
     console.log('wrote ' + path.relative(ROOT, options.json) + ' sha256 ' +

@@ -28,7 +28,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../../..');
 const PYTHON = process.env.PYTHON || 'python';
 const REFERENCE = path.join(HERE, 'lightmap_reference.py');
-const MAP_ORDER = ['river', 'amboy', 'gracia', 'longbeach'];
+const MAP_ORDER = [
+  'river', 'amboy', 'gracia', 'longbeach',
+  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp'
+];
 const SCHEMA = 'blur-lighting-lightmap-reference/1';
 const FORMAT = 894720068;
 const FORMAT_NAME = 'DXT5/BC3';
@@ -176,20 +179,40 @@ for (const short of options.levels) {
   equal(prefix + 'lightmap sha256', lightmap.sha256, referenceLightmap.sha256);
   equal(prefix + 'lightmap decodedRgbaSha256', lightmap.decodedRgbaSha256,
     referenceLightmap.decodedRgbaSha256);
-  check(prefix + 'lightmap count is positive', lightmap.count > 0, lightmap.count);
-  check(prefix + 'lightmap decoded is true', lightmap.decoded === true, lightmap.decoded);
-  check(prefix + 'lightmap unsupported list is empty',
-    Array.isArray(lightmap.unsupported) && lightmap.unsupported.length === 0,
+  check(prefix + 'lightmap count is non-negative', lightmap.count >= 0, lightmap.count);
+  check(prefix + 'lightmap decoded matches the reference',
+    lightmap.decoded === referenceLightmap.decoded, lightmap.decoded);
+  check(prefix + 'lightmap unsupported is a list', Array.isArray(lightmap.unsupported),
     lightmap.unsupported);
+  if (lightmap.decoded) {
+    check(prefix + 'decoded lightmap has no unsupported entries',
+      lightmap.unsupported.length === 0, lightmap.unsupported);
+  } else {
+    check(prefix + 'unsupported lightmap has typed entries',
+      lightmap.unsupported.length > 0, lightmap.unsupported);
+  }
+  equal(prefix + 'lightmap unsupported names',
+    lightmap.unsupported.map((entry) => entry.name ?? null),
+    referenceLightmap.unsupported.map((entry) => entry.name ?? null));
+  equal(prefix + 'lightmap unsupported reasons',
+    lightmap.unsupported.map((entry) => entry.reason),
+    referenceLightmap.unsupported.map((entry) => entry.reason));
   check(prefix + 'lightmap byte total equals the texture sum',
     lightmap.bytes === lightmap.textures.reduce((sum, texture) => sum + texture.bytes, 0),
     lightmap.bytes);
-  check(prefix + 'lightmap reference set is clean',
-    lightmap.referenceSummary.unresolved.length === 0 &&
-    lightmap.referenceSummary.unreferencedNamePrefixLightmaps.length === 0 &&
-    lightmap.referenceSummary.referencedLightmapsMissingFromNamePrefix.length === 0 &&
-    lightmap.referenceSummary.referencedNonLightmaps.length === 0,
-    lightmap.referenceSummary);
+  if (lightmap.decoded) {
+    check(prefix + 'lightmap reference set is clean',
+      lightmap.referenceSummary.unresolved.length === 0 &&
+      lightmap.referenceSummary.unreferencedNamePrefixLightmaps.length === 0 &&
+      lightmap.referenceSummary.referencedLightmapsMissingFromNamePrefix.length === 0 &&
+      lightmap.referenceSummary.referencedNonLightmaps.length === 0,
+      lightmap.referenceSummary);
+  } else {
+    check(prefix + 'unsupported lightmap records the unclean reference set',
+      lightmap.referenceSummary.unresolved.length > 0 ||
+      lightmap.referenceSummary.referencedNonLightmaps.length > 0,
+      lightmap.referenceSummary);
+  }
 
   // -- per texture -------------------------------------------------------
   const manifestNames = lightmap.textures.map((texture) => texture.name);
@@ -240,6 +263,14 @@ for (const short of options.levels) {
   check(prefix + 'runtime map present', Boolean(runtimeEntry), null);
   if (!runtimeEntry) continue;
   const runtimeLightmap = runtimeEntry.lightmap;
+  if (lightmap.decoded !== true) {
+    check(prefix + 'runtime lightmap is null for an unsupported set',
+      runtimeLightmap === null, runtimeLightmap);
+    check(prefix + 'runtime missing lists ambient.lightmap for an unsupported set',
+      runtimeEntry.missing.some((row) => row.field === 'ambient.lightmap'),
+      runtimeEntry.missing.map((row) => row.field));
+    continue;
+  }
   check(prefix + 'runtime lightmap present', Boolean(runtimeLightmap), null);
   if (!runtimeLightmap) continue;
   equal(prefix + 'runtime lightmap kind', runtimeLightmap.kind, lightmap.kind);

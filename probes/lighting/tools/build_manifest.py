@@ -169,28 +169,76 @@ def build_level(level: str) -> dict:
     sun = raw["lights"]["sun"]
     sky = raw["lights"]["sky"]
     probe = raw["ambientProbe"]
-    elevation, azimuth = sun_angles(sun["direction"])
+    if sun is None:
+        elevation = azimuth = None
+    else:
+        elevation, azimuth = sun_angles(sun["direction"])
 
     baked = env["fields"]["bakedColour"]
     ambient_scaled = [probe["upNormalAmbient"][i] * baked[i] for i in range(3)]
     sh_linear = []
-    sh_cosine = []
+    sh_cosine = [] if sun is not None else None
     for channel in range(3):
         xyz = probe["sh"][channel * 4:channel * 4 + 3]
         magnitude = math.sqrt(sum(component * component for component in xyz))
         sh_linear.append(magnitude)
+        if sun is None:
+            continue
         if magnitude > 0.0:
             cosine = sum(xyz[i] * sun["direction"][i] for i in range(3)) / magnitude
         else:
             cosine = 0.0
         sh_cosine.append(cosine)
 
-    sun_up = max(0.0, sun["direction"][1])
-    diffuse_up = [ambient_scaled[i] + env["fields"]["sunColour"][i] * sun_up for i in range(3)]
+    if sun is None:
+        # No directional sun is serialized (C_LightList hasSun=0). The code-only
+        # fallback direction (LightList.cpp:97) is not substituted, so the sun
+        # term is absent and the up-facing diffuse is the baked ambient only.
+        sun_up = 0.0
+        diffuse_up = list(ambient_scaled)
+    else:
+        sun_up = max(0.0, sun["direction"][1])
+        diffuse_up = [ambient_scaled[i] + env["fields"]["sunColour"][i] * sun_up
+                      for i in range(3)]
     # Net retail pipeline: value * exposure -> gamma 1/2.2 (Hdr.h:92-121 squares
     # after the shader already wrote sqrt(value*exposure); psToneMap.psh:22-34).
     patch_albedo = 0.5
     patch = [max(0.0, min(1.0, (diffuse_up[i] * patch_albedo * 1.0) ** (1.0 / 2.2))) for i in range(3)]
+
+    if sun is None:
+        sun_block = None
+        sun_unsupported = {
+            "code": "not-serialized",
+            "field": "sun",
+            "reason": "C_LightList hasSun=0: the level serializes no directional sun light; "
+                      "the code-only fallback direction (LightList.cpp:97) is not substituted",
+            "blockOffset": raw["lights"]["blockOffset"],
+            "blockBytes": raw["lights"]["blockBytes"],
+            "hasSun": raw["lights"]["hasSun"],
+            "hasSky": raw["lights"]["hasSky"],
+            "source": "Level.levelrender Lights block, C_LightList::Read "
+                      "(LightList.cpp:38-72); hasSun flag at payload start",
+        }
+    else:
+        sun_block = {
+            "provenance": {
+                "kind": "data",
+                "source": "Level.levelrender Lights block, C_LightList::Read (LightList.cpp:38-72)",
+                "blockOffset": raw["lights"]["blockOffset"],
+                "offset": sun["offset"],
+                "offsetInPayload": sun["offsetInPayload"],
+            },
+            "type": sun["type"],
+            "typeName": sun["typeName"],
+            "direction": sun["direction"],
+            "matrixRows": sun["matrixRows"],
+            "colour": sun["colour"],
+            "radius": sun["radius"],
+            "elevationDeg": elevation,
+            "azimuthDeg": azimuth,
+            "intensityUsed": sun["colour"][3],
+        }
+        sun_unsupported = None
 
     return {
         "schema": "blur-lighting/1",
@@ -226,24 +274,8 @@ def build_level(level: str) -> dict:
             },
         },
         "blocks": raw["blocks"],
-        "sun": {
-            "provenance": {
-                "kind": "data",
-                "source": "Level.levelrender Lights block, C_LightList::Read (LightList.cpp:38-72)",
-                "blockOffset": raw["lights"]["blockOffset"],
-                "offset": sun["offset"],
-                "offsetInPayload": sun["offsetInPayload"],
-            },
-            "type": sun["type"],
-            "typeName": sun["typeName"],
-            "direction": sun["direction"],
-            "matrixRows": sun["matrixRows"],
-            "colour": sun["colour"],
-            "radius": sun["radius"],
-            "elevationDeg": elevation,
-            "azimuthDeg": azimuth,
-            "intensityUsed": sun["colour"][3],
-        },
+        "sun": sun_block,
+        **({"sunUnsupported": sun_unsupported} if sun_unsupported is not None else {}),
         "skyLightObject": {
             "provenance": {
                 "kind": "data",
@@ -404,7 +436,7 @@ def build_level(level: str) -> dict:
         "derived": {
             "kind": "provisional",
             "sunToAmbientRatio": (
-                None if not any(ambient_scaled) else
+                None if sun is None or not any(ambient_scaled) else
                 [env["fields"]["sunColour"][i] / ambient_scaled[i] if ambient_scaled[i] else None
                  for i in range(3)]),
             "expectedDiffuseUpFacingAlbedo1": diffuse_up,
@@ -426,7 +458,9 @@ def build_level(level: str) -> dict:
                 "sunToAmbientRatio is provisional and only meaningful when the level authors a non-zero SunColour",
                 "shSunCosine compares the SH linear term with the serialized sun direction; a high value proves the light-sample probe bakes the same sun (River: >0.85 on red/green)",
                 "levels that author SunColour=0 bake all direct sun into lightmaps/light samples, so a single directional light alone cannot match them",
-            ],
+            ] + ([
+                "this level serializes no directional sun light (C_LightList hasSun=0); shSunCosine is null and the up-facing expected diffuse is the baked ambient only, not a substituted fallback sun",
+            ] if sun is None else []),
         },
         "limits": [
             "One ambient probe at the measured spawn; the real engine interpolates the nearest light sample per model instance (0.2 lerp per frame).",
