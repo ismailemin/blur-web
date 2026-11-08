@@ -14,7 +14,7 @@
 export const MAP_DEFAULT = 'river';
 
 /** Map ids accepted by `?map=`. */
-export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia']);
+export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach']);
 
 export const MAPS = Object.freeze({
   river: Object.freeze({
@@ -208,6 +208,66 @@ export const MAPS = Object.freeze({
       layoutBytes: 312569,
       physicsBytes: 5569121
     })
+  }),
+  longbeach: Object.freeze({
+    id: 'longbeach',
+    label: 'Long Beach',
+    level: 'usa_la_longbeachdocks',
+    kind: 'map-package',
+    // Built by `probes/e1-drive/tools/build_map_longbeach.mjs`. The layout is
+    // the committed collision-derived path (`probes/map-laps/data/longbeach-path.json`):
+    // the draw-covered path crosses a 10 cm curb at arc 226.8 m.
+    geometryUrl: '/_work/e1-drive/longbeach/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/usa_la_longbeachdocks/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/longbeach/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.longbeach',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:3c1a47f5a368c1992a49196b72b69c4790cbbd4a9ad3222f26f93ea292dc0062',
+      mapContentHash: 'sha256:a3bd36858ba6a58ac5d607a0a51ced4053294eaf6d94b871f8272dda373312e5',
+      layoutFileSha256: 'sha256:3474fd006d35a96a4810f2c6235fbacaee5ace9b18671e0528169983c70889e6',
+      layoutContentHash: 'sha256:4449ed75b1344e29a3d5b8c920a412d54a57eb14bfabdc9bca6ab66ce2fc8366',
+      renderFileSha256: 'sha256:c79d5ea8653aa8c88fa115d7a048b91b308d85ca6502582f0605a7220086ec3a',
+      renderContentHash: 'sha256:c8bfff56018c059efdf31ae749c353435aab25d8359577b307606d378c032199',
+      sliceFileSha256: 'sha256:7525436d662d230cd4244dfb7821b1f41ed586ce0bb950b2ae3478199cf084b7',
+      sliceContentHash: 'sha256:c800503f986e94bd84fc16295f424a779e965cd9c499affdeb65edcf0d008f39',
+      physicsFileSha256: 'sha256:ce22c1cadbcff96074ff4d84741137162d2fe0697a5c354053e181944d6cca0d',
+      physicsBytes: 2214990,
+      draws: 1039,
+      drawTriangles: 511782,
+      textures: 164,
+      textureBytes: 1239168,
+      vertices: 864473,
+      indices: 1611882,
+      decalDraws: 0,
+      diagnosticDraws: 101,
+      blockedDraws: 102,
+      unsupportedSections: 2,
+      instanceDescriptions: 7476,
+      collisionTriangles: 25183,
+      pathLengthMetres: 785.82323,
+      checkpointArcs: Object.freeze([262.055868, 523.76805]),
+      sampleCount: 3159,
+      renderLabel: 'longbeach-direct-draws',
+      courseId: 'longbeach'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:a3bd36858ba6a58ac5d607a0a51ced4053294eaf6d94b871f8272dda373312e5',
+      layoutHash: 'sha256:4449ed75b1344e29a3d5b8c920a412d54a57eb14bfabdc9bca6ab66ce2fc8366',
+      physicsHash: 'sha256:ce22c1cadbcff96074ff4d84741137162d2fe0697a5c354053e181944d6cca0d',
+      packageFileSha256: 'sha256:3c1a47f5a368c1992a49196b72b69c4790cbbd4a9ad3222f26f93ea292dc0062',
+      layoutFileSha256: 'sha256:3474fd006d35a96a4810f2c6235fbacaee5ace9b18671e0528169983c70889e6',
+      physicsFileSha256: 'sha256:ce22c1cadbcff96074ff4d84741137162d2fe0697a5c354053e181944d6cca0d',
+      packageBytes: 72494393,
+      layoutBytes: 388000,
+      physicsBytes: 2214990
+    })
   })
 });
 
@@ -229,3 +289,4 @@ export function mpPinsForMap(value) {
   if (!MAP_IDS.includes(value)) return null;
   return MAPS[value].mpPins ?? null;
 }
+

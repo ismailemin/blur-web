@@ -56,6 +56,8 @@ def main():
         ('boost-model',['node','probes/e1-drive/tools/boost_model_tests.mjs']),
         ('amboy-map',['node','probes/e1-drive/tools/verify_e1_map.mjs']),
         ('gracia-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','gracia']),
+        ('longbeach-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','longbeach']),
+        ('longbeach-path',['node','probes/map-laps/tools/verify_longbeach_path.mjs']),
         ('vehicle-pipeline',[sys.executable,'probes/vehicle-pipeline/tools/verify_vehicle_pipeline.py']),
         ('vehicle-c-aliases',[sys.executable,'probes/vehicle-pipeline/tools/verify_c_aliases.py']),
         ('vehicle-batch3',[sys.executable,'probes/vehicle-pipeline/tools/verify_batch3.py']),

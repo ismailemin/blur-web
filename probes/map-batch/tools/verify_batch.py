@@ -1909,7 +1909,7 @@ def verify_batch(rep: Report, results: dict) -> None:
     # level -> id set, not a count, so adding a map is a deliberate edit here.
     rep.check(integrated == {
         "usa_la_river": "river", "usa_amboy": "amboy",
-        "spa_barcelona_gracia": "gracia"},
+        "spa_barcelona_gracia": "gracia", "usa_la_longbeachdocks": "longbeach"},
         "registry/integrated",
         "parsed %d map records from %s" % (len(integrated),
                                            REGISTRY.name))

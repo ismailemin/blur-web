@@ -1,10 +1,12 @@
-# Map laps probe - closed collision-only loops on `usa_amboy` and `spa_barcelona_gracia`
+# Map laps probe - closed collision-only loops and a collision-clear Long Beach path
 
 Generalises the P61 lap search (`probes/lap-search`) to the two point-to-point
-maps: it builds the collision passability raster, labels every component, finds
-enclosed islands, measures clearance-erosion survival, extracts closed loop lines
-and validates them with exact triangles, the engine's own trace and draw
-coverage.
+maps, and adds a point-to-point collision-clear path for
+`usa_la_longbeachdocks`: it builds the collision passability raster, labels every
+component, finds enclosed islands, measures clearance-erosion survival, extracts
+closed loop lines and validates them with exact triangles, the engine's own trace
+and draw coverage. Section 12 is the Long Beach path: the same raster, an A* line
+at a 6.0 m clearance inside a corridor around the committed draw path.
 
 ```json
 "scope": {
@@ -64,6 +66,7 @@ change.
 | --- | ---: | --- |
 | `game-data/Blur/levels/usa_amboy/Level.levelphysics` | 4,442,528 | `18c73e1cca6f13c5bbd4937454f25ec3163a67553fea6842a7797400af2175f2` |
 | `game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics` | 5,569,121 | `acfb58a20ff7adced0b2424dc39474509e6b4c4c805729fd9463bdd310a173c0` |
+| `game-data/Blur/levels/usa_la_longbeachdocks/Level.levelphysics` (section 12) | 2,214,990 | `ce22c1cadbcff96074ff4d84741137162d2fe0697a5c354053e181944d6cca0d` |
 | `probes/map-pipeline/tools/physics_scan.py` (imported) | 18,100 | `a98e699ad43d4cf6b44064870973c3921847cfa2f7e091cefd36a00586776b72` |
 | `probes/lap-search/tools/raster.py` (imported) | 10,806 | `a99e88838afe32742a093122c565ccf08204505c4373730626e0f3ad56e215dd` |
 | `_work/e1-drive/cars.json` (roster) | 82,344 | `0d59aa0a409c67cff5271a1944c551f8ee4a1c2c47da9300485856d37a15a768` |
@@ -378,3 +381,133 @@ failure. A tampered `verdict` drops it to 78/83 and exit 1.
 
 Scope labels are the same as the rest of the probe: collision only, no draw
 geometry read, no renderer, vehicle-physics or game claim, no lap driven.
+
+## 12. Long Beach collision-clear point-to-point path
+
+`probes/map-laps/data/longbeach-path.json` is the committed `e1-drive.sprint` v1
+document (`courseId: "longbeach"`) that replaces the draw-covered path blocked at
+226.8 m. The path is an A* line on the P48 passability raster eroded by 12 cells
+(**>= 6.0 m** clearance) inside a 14-cell (7.0 m) corridor around the committed
+draw path, simplified with a 0.25 m line-of-sight check and resampled at 0.25 m.
+Every sample, gate and ground value comes from the collision raster; the draw
+path is only the corridor centre line and no sample is copied from it.
+
+| field | value |
+| --- | --- |
+| output | `probes/map-laps/data/longbeach-path.json` |
+| bytes / file SHA-256 | 387,919 / `sha256:fd068e17e8feb1cdfc3c1e0d243ce49415bd22edcb792fd181257687c7a00b12` |
+| canonical `hash` | `sha256:2a53532c2b0bd5086f0aed3e53fed83a5f7fcdcf3095c891d3804721618ea356` |
+| length | **785.823230 m**, 3,159 samples at 0.25 m |
+| gates | start 0 m / -0.0980 m; checkpoint-1 **262.055868 m** / -0.2063 m; checkpoint-2 **523.768050 m** / -0.0980 m; finish **785.823230 m** / -0.0980 m |
+| start / finish | `(-519, 111)` heading **-2.35619449 rad**; `(-432, -86)` heading **0.785399 rad** |
+| clearance | 12 cells = 6.0 m lower bound; measured **6.836 m** to the nearest blocked cell |
+| obstruction | draw path **2.336 m** from the curb; collision path **6.836 m**; stated margin **6.0 m**; improvement **4.5 m** |
+| verifier | **57/57 checks passed** |
+| driven | **finished at tick 3422** (57.0 s), max 24.75 m/s, max lateral 5.743 m, curb corner clearance **2.383 m** |
+
+Evidence artifacts:
+
+| file | bytes / SHA-256 |
+| --- | --- |
+| `_work/map-laps/longbeach/grid.npz` | 4,066,048 / `sha256:e532642b5e83d9a14dce6fc71d216f4af3fca37e53d123ba86ed5aae451faea3` |
+| `_work/map-laps/longbeach/drive.json` | 7,155 / `sha256:034ce776238f05b7f4c761f938f48cb5bd7501fd0e42292d85021442a371e3d7` |
+
+### Why the draw path was blocked
+
+The 226.8 m stop is a **10 cm curb**, not a missing triangle. The committed
+static collision has two vertical faces there:
+
+| triangles | face | height |
+| --- | --- | --- |
+| 7617, 7618, 10292, 10293 | `z = 47.664`, `x = -718.404 .. -688.458` | -0.098 .. 0.002 m |
+| 10297, 10300 | `x = -718.404`, `z = 28.864 .. 47.664` | -0.098 .. 0.008 m |
+
+The draw path at `z = 50` passes **2.336 m** from the curb. The car's box proxy
+(2.652 x 1.656 m, underside on the wheel-contact plane) cuts the corner and its
+2.12 m diagonal reaches the curb; the thin engine ray at +0.20 m passes over the
+10 cm face, so the engine trace alone does not see it. The P48 wall mask does
+include it (steep face in the ground+0.05..2.0 m band, dilated 0.5 m), so the
+raster is the right oracle for this obstruction.
+
+The collision path shifts north to `z = 54.5` along the curb and clears it by
+**6.836 m**. The driven run's box-proxy corner stays **2.383 m** clear.
+
+### Commands
+
+```powershell
+$py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+$node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
+
+& $py probes/map-laps/tools/build_longbeach_path.py          # raster + A* + document
+& $py probes/map-laps/tools/build_longbeach_path.py --check  # stale check
+& $node probes/map-laps/tools/verify_longbeach_path.mjs      # 57/57, exits 1 on failure
+& $node probes/map-laps/tools/drive_longbeach_path.mjs       # real physics drive, writes drive.json
+```
+
+`build_longbeach_path.py` writes `_work/map-laps/longbeach/grid.npz` (the P48
+raster) and the committed document. `verify_longbeach_path.mjs` re-derives every
+sample from that raster, checks the four gates, the 6.0 m obstruction margin, the
+226.8 m stop, the source hashes and determinism (the builder twice,
+byte-identical, plus `--check`). `drive_longbeach_path.mjs` loads the complete
+`Level.levelphysics` in the e1_drive wasm and follows the committed samples with
+the page's sprint controller; it writes `_work/map-laps/longbeach/drive.json`.
+
+### Schema and scope
+
+The document carries the fields the driving slice consumes: `kind`, `version`,
+`courseId: "longbeach"`, `source`, `course` (`samples`, `span`, `band`,
+`corridor`, `coverage`, `spawn`, `start`, `finish`, `measuredEnd`), four `gates`
+(start, checkpoint-1, checkpoint-2, finish), `countdown`, `rules`, `integration`
+and `hash`. The page validator's 6 m `course.band` is kept; the declared
+`course.corridor` is also 6.0 m and is **below** the measured 6.836 m clearance.
+The gate lines are **8 m** (`widthMetres: 8`): the 6 m committed width missed the
+driven checkpoint-1 crossing by 0.39 m, and the 8 m line is fully passable on the
+raster at all four gates.
+
+```json
+"scope": {
+  "collisionOnly": true,
+  "drawGeometryRead": false,
+  "drawPathReadForCorridor": true,
+  "drawCoverageSource": "not measured for this collision path",
+  "rendererClaim": false,
+  "vehiclePhysics": false,
+  "gameRun": false,
+  "pathDriven": false,
+  "engineTrace": "not run by this builder; the path is a geometric raster result, not a driven lap"
+}
+```
+
+The samples carry `covered: null`, not a draw-coverage claim. The driven run is
+recorded separately in `_work/map-laps/longbeach/drive.json`; it is a scripted
+drive of the same physics file, not a retail game run and not a renderer claim.
+
+### Rebuild the E1 package from this path
+
+The path document is the new layout authority. The package builder and the page
+registry still pin the old 818.371718 m draw path, so the main agent must:
+
+1. Copy `probes/map-laps/data/longbeach-path.json` to
+   `_work/e1-drive/longbeach/layout.json` (or teach
+   `probes/e1-drive/tools/map_package_builder.mjs` to emit this document instead
+   of deriving the layout from the draw path).
+2. Update the `longbeach` config in `map_package_builder.mjs`:
+   `courseName`, `courseRule`, `spanNote`, `bandSource`, `coveragePath` /
+   `coverageNote`, `gateCoverageNote`, `progressText`, `layoutLimits` and
+   `mapLimits` to the collision-path values. The new pins are
+   `pathLengthMetres: 785.82323`, `checkpointArcs: [262.055868, 523.76805]`,
+   `sampleCount: 3159`, `courseId: "longbeach"`,
+   `layoutFileSha256: sha256:fd068e17...`,
+   `layoutContentHash: sha256:2a53532c...`.
+3. Add the `longbeach` entry to `probes/e1-drive/web/map-registry.js` with those
+   pins, `physicsFileSha256: sha256:ce22c1ca...`, `physicsBytes: 2214990`, and
+   the existing `map.json` pins (`mapFileSha256` / `mapContentHash` are unchanged
+   because the render packet is unchanged).
+4. Re-run `node probes/e1-drive/tools/build_map_longbeach.mjs --check` and the
+   E1 verifier; then load `?map=longbeach&script=sprint` and confirm the sprint
+   reaches the finish (the drive tool above already finishes at tick 3422).
+
+The map package's collision buffer still excludes the ten
+`InstancedTriangleMesh` records and the FluidMesh; the engine loads the complete
+`Level.levelphysics`, so the driven run covers them even though the raster does
+not.

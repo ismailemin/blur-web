@@ -132,6 +132,9 @@ export const MAP_BUILDS = Object.freeze({
     physics: 'game-data/Blur/levels/usa_la_longbeachdocks/Level.levelphysics',
     sliceContent: 'c800503f986e94bd84fc16295f424a779e965cd9c499affdeb65edcf0d008f39',
     renderContent: 'c8bfff56018c059efdf31ae749c353435aab25d8359577b307606d378c032199',
+    // The draw-covered path crosses a 10 cm curb at arc 226.8 m and the car
+    // cannot pass; the committed collision-derived path clears it by 6.836 m.
+    layoutSource: 'probes/map-laps/data/longbeach-path.json',
     meshId: 'longbeach.direct',
     renderLabel: 'longbeach-direct-draws',
     packageLabel: 'longbeach-render',
@@ -678,7 +681,18 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
       limits: config.layoutLimits
     }
   };
-  const layout = { ...layoutBody, hash: hashOf(layoutBody) };
+  let layout = { ...layoutBody, hash: hashOf(layoutBody) };
+  // A map may ship a committed collision-derived layout instead of the layout
+  // derived from the draw path. The document is used verbatim (its own `hash`
+  // is the content pin), so the page and the verifiers see the same bytes.
+  if (config.layoutSource) {
+    const sourcePath = path.join(ROOT, config.layoutSource);
+    const sourceDoc = JSON.parse(readFileSync(sourcePath, 'utf8'));
+    if (sourceDoc.kind !== 'e1-drive.sprint' || sourceDoc.courseId !== config.id) {
+      throw new Error(config.layoutSource + ' is not an e1-drive.sprint ' + config.id + ' layout');
+    }
+    layout = sourceDoc;
+  }
 
   // ------------------------------------------------------------------ document
   const mapBody = {
@@ -795,3 +809,5 @@ export function buildMapPackage(mapId, { check = false, root = ROOT } = {}) {
     gates: layout.gates.map((gate) => ({ id: gate.id, arc: gate.arc, x: gate.x, z: gate.z, headingRad: gate.headingRad }))
   };
 }
+
+

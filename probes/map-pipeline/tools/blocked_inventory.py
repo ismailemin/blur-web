@@ -99,7 +99,8 @@ def main(argv=None):
                 "bundlePrerequisiteErrors": summary["bundlePrerequisiteErrors"],
             }
 
-    playable = {"river": "usa_la_river", "amboy": "usa_amboy", "gracia": "spa_barcelona_gracia"}
+    playable = {"river": "usa_la_river", "amboy": "usa_amboy", "gracia": "spa_barcelona_gracia",
+                "longbeach": "usa_la_longbeachdocks"}
     playable_levels = {playable[mid] for mid in read_playable_ids() if mid in playable}
 
     probe_levels = {

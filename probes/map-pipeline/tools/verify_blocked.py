@@ -44,7 +44,7 @@ PROBE_DIRS = {
     "spa_barcelona_bowl_multiplayer": "spa_barcelona_bowl_multiplayer-probe",
     "usa_la_multiplayer_highrise": "usa_la_multiplayer_highrise-probe",
 }
-PLAYABLE = {"usa_la_river", "usa_amboy", "spa_barcelona_gracia"}
+PLAYABLE = {"usa_la_river", "usa_amboy", "spa_barcelona_gracia", "usa_la_longbeachdocks"}
 
 
 def sha256(path: Path) -> str:
@@ -98,8 +98,12 @@ def main(argv=None):
           set(doc["summary"]["playableToday"]) == PLAYABLE,
           str(doc["summary"]["playableToday"]))
     check("nextThree has three entries", len(doc["nextThree"]) == 3)
-    check("nextThree first is longbeach", doc["nextThree"][0] == "usa_la_longbeachdocks",
-          doc["nextThree"][0] if doc["nextThree"] else "")
+    # The next three are the highest-ranked rows that are not playable today.
+    blocked_ranked = [row["level"] for row in sorted(rows, key=lambda row: row["distanceRank"])
+                      if row["level"] not in PLAYABLE]
+    check("nextThree is the top three non-playable rows",
+          doc["nextThree"] == blocked_ranked[:3],
+          str(doc["nextThree"]))
     ranks = sorted(row["distanceRank"] for row in rows)
     check("distance ranks are 1..19", ranks == list(range(1, 20)), str(ranks[:5]))
     check("ranking rule text present", "distinct engineering items" in doc["rankingRule"])

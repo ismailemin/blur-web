@@ -85,6 +85,7 @@ INTEGRATED = {
     "usa_la_river": "river",
     "usa_amboy": "amboy",
     "spa_barcelona_gracia": "gracia",
+    "usa_la_longbeachdocks": "longbeach",
 }
 
 MIN_COVERED_PATH_M = 25.0

@@ -148,12 +148,12 @@ def main(argv=None):
     check("inventory.json has 19 levels", len(src["inventory"]["levels"]) == 19)
     check("localization has 19 city rows", len(src["cities"]) == 19,
           str(len(src["cities"])))
-    check("registry ids are river/amboy/gracia",
-          set(src["registry"]["mapIds"]) == {"river", "amboy", "gracia"},
+    check("registry ids are river/amboy/gracia/longbeach",
+          set(src["registry"]["mapIds"]) == {"river", "amboy", "gracia", "longbeach"},
           str(src["registry"]["mapIds"]))
-    check("registry maps three levels",
+    check("registry maps four levels",
           set(src["registry"]["byLevel"]) ==
-          {"usa_la_river", "usa_amboy", "spa_barcelona_gracia"},
+          {"usa_la_river", "usa_amboy", "spa_barcelona_gracia", "usa_la_longbeachdocks"},
           str(sorted(src["registry"]["byLevel"])))
     check("unsupported rows, if any, carry a blocker",
           all(row.get("blocker") for row in rows

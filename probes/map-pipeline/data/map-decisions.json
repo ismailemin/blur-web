@@ -1,7 +1,54 @@
 {
- "canonicalSha256": "f1ce2757d3d2b31e4913de80e931ae5b825e8eb7dd5c6cdb700db1753cdd84cc",
+ "canonicalSha256": "4f9786117f1d04f5a49296615c5e752c722aee217271fed092c7cc1aff483650",
  "generatedBy": "probes/map-pipeline/tools/build_map_decisions.py",
  "levels": [
+  {
+   "blocker": null,
+   "city": "LA Docks",
+   "cityKey": "CRN_LA_DOCKS",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 1039,
+    "collisionTriangles": 25183,
+    "collisionVertices": 14483,
+    "drawTriangles": 537294,
+    "draws": 1141,
+    "instanceDescriptionsSkipped": 7476,
+    "sectionsProbed": 76,
+    "sectionsSupported": 74,
+    "sectionsUnsupported": 2,
+    "textureBlobs": 164,
+    "textureSources": 175
+   },
+   "distanceRank": 1,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 248924,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "longbeach",
+    "playableDistanceItems": [],
+    "registryMapId": "longbeach",
+    "reportGrade": "playable",
+    "reportMapId": "longbeach"
+   },
+   "kind": "race",
+   "level": "usa_la_longbeachdocks",
+   "paths": {
+    "collisionM": 1730.511,
+    "drawCoveredM": 818.37171645,
+    "packageKind": "draw-covered-measured",
+    "packageM": 818.37171645,
+    "recoveredM": 1730.511,
+    "samples": 3409
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
   {
    "blocker": null,
    "city": "Barcelona Gracia",
@@ -20,7 +67,7 @@
     "textureBlobs": 734,
     "textureSources": 739
    },
-   "distanceRank": 1,
+   "distanceRank": 2,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 104361,
@@ -67,7 +114,7 @@
     "textureBlobs": 179,
     "textureSources": 186
    },
-   "distanceRank": 2,
+   "distanceRank": 3,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 199742,
@@ -114,7 +161,7 @@
     "textureBlobs": 300,
     "textureSources": 300
    },
-   "distanceRank": 3,
+   "distanceRank": 4,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 279165,
@@ -142,101 +189,6 @@
    },
    "verdict": "playable",
    "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
-  },
-  {
-   "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 362668,
-      "geometryBlock": 199,
-      "id": "g199-n346",
-      "nodeBlock": 346,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_longbeachdocks/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 241712,
-      "geometryBlock": 204,
-      "id": "g204-n418",
-      "nodeBlock": 418,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_longbeachdocks/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": {
-      "coverageFraction": 1.0,
-      "newSections": 149,
-      "newTriangles": 606213,
-      "recoveredPathM": 1730.511,
-      "sections": 223,
-      "triangles": 1143507
-     },
-     "playableDistanceItems": [
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_la_longbeachdocks; registry ids are amboy, gracia, river",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "LA Docks",
-   "cityKey": "CRN_LA_DOCKS",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 1039,
-    "collisionTriangles": 25183,
-    "collisionVertices": 14483,
-    "drawTriangles": 537294,
-    "draws": 1141,
-    "instanceDescriptionsSkipped": 7476,
-    "sectionsProbed": 76,
-    "sectionsSupported": 74,
-    "sectionsUnsupported": 2,
-    "textureBlobs": 164,
-    "textureSources": 175
-   },
-   "distanceRank": 4,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 248924,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "race",
-   "level": "usa_la_longbeachdocks",
-   "paths": {
-    "collisionM": 1730.511,
-    "drawCoveredM": 818.37171645,
-    "packageKind": "draw-covered-measured",
-    "packageM": 818.37171645,
-    "recoveredM": 1730.511,
-    "samples": 3409
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
   },
   {
    "blocker": {
@@ -501,7 +453,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_la_observatory; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for usa_la_observatory; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -613,7 +565,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_la_downtown; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for usa_la_downtown; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -965,7 +917,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for jpn_mharuna; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for jpn_mharuna; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1053,7 +1005,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1221,7 +1173,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1501,7 +1453,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for spa_barcelona_oval; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for spa_barcelona_oval; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1669,7 +1621,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_ny_dumbo; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for usa_ny_dumbo; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1765,7 +1717,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2093,7 +2045,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_sausalito; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for usa_sanfran_sausalito; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2205,7 +2157,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for jpn_tokyo_shutoko; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for jpn_tokyo_shutoko; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2333,7 +2285,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_amboy_multiplayer; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for usa_amboy_multiplayer; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2412,7 +2364,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_la_downtown_multiplayer; registry ids are amboy, gracia, river",
+     "detail": "MAP_IDS has no entry for usa_la_downtown_multiplayer; registry ids are amboy, gracia, longbeach, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2885,7 +2837,7 @@
    "sha256": "124f01c0013a4578e2229016b0d1f8d82bfd850bb3bcaa597573f1afbadd733b"
   },
   "batchSummary": {
-   "contentSha256": "67d5d841d5e2a1b014c0358942a1fd694b5441a72e0105403176f4e71d16b821",
+   "contentSha256": "559878ba52db76b46f1b3bf653baa700ab04d8abf3dfffbebcfd70c5a432f424",
    "path": "_work/map-batch/batch-summary.json",
    "pin": "content",
    "volatileFields": [
@@ -2902,9 +2854,9 @@
    ]
   },
   "blockedInventory": {
-   "bytes": 62184,
+   "bytes": 62095,
    "path": "_work/map-pipeline/blocked/inventory-19.json",
-   "sha256": "d4eefd07fd8319de837b99e391d0ceb0135e7be50c4938756ba0fd5f816baa9c"
+   "sha256": "00f04937fddb8130618a61428ccd8a2f15334923cb20059b8f57a747f013ed72"
   },
   "inventory": {
    "bytes": 159627,
@@ -2917,9 +2869,9 @@
    "sha256": "5eea94a1b538ed1d3f1634a6394a8d288412009715c1632daa3012e0382617d2"
   },
   "mapRegistry": {
-   "bytes": 11610,
+   "bytes": 14693,
    "path": "probes/e1-drive/web/map-registry.js",
-   "sha256": "2e131d6c90352c5df46514bfb96e3d4af86c9a983bfd022e3036e47f772b2225"
+   "sha256": "b8691b5aa71c0918f6079c825c809e0cbbe297eb06bed58e5ff7112982e52835"
   },
   "maps": {
    "bytes": 205652,
@@ -2929,7 +2881,6 @@
  },
  "summary": {
   "blocked": [
-   "usa_la_longbeachdocks",
    "usa_la_observatory",
    "usa_la_downtown",
    "jpn_mharuna",
@@ -2947,12 +2898,13 @@
    "spa_barcelona_bowl_multiplayer"
   ],
   "counts": {
-   "blocked": 16,
-   "playable": 3,
+   "blocked": 15,
+   "playable": 4,
    "unsupported": 0
   },
   "levelCount": 19,
   "playable": [
+   "usa_la_longbeachdocks",
    "spa_barcelona_gracia",
    "usa_amboy",
    "usa_la_river"

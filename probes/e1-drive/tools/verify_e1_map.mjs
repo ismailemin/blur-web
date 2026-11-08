@@ -119,7 +119,8 @@ const tick0 = createWorld(spawn.x, spawn.z, spawn.headingRad);
 const info = JSON.parse(module.UTF8ToString(module._e1_info()));
 check('engine decoded the expected car', info.car === 'Corvette_ZR1_Stock', info.car);
 check('engine ground probe matches the measured spawn',
-  Math.abs(info.groundY - layout.course.spawn.ground) < 1e-3, String(info.groundY));
+  Math.abs(info.groundY - (layout.course.spawn.ground ?? layout.course.spawnGroundY)) < 1e-3,
+  String(info.groundY));
 
 // ---------------------------------------------------------------- 4. settle
 const sliceSettle = readJson('_work/map-slice/' + MAP_ID + '/physics-settle.json');
