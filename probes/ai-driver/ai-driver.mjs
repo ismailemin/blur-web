@@ -18,11 +18,12 @@
 //     speed-scaled lookahead (the loop's ~10 m hairpins saturate the Stanley
 //     lateral term at low speed), three forward crossings of the start/finish
 //     line, then the post-finish brake.
-//   * measured point-to-point map paths (`courseId: "amboy"` / `"gracia"`):
-//     the committed M3 `AMBOY_CONTROL` policy (12 m/s cruise, short pure
-//     pursuit, 2.5 m/s^2 lateral acceleration, 10 m/s finish cap). The maps'
-//     declared 6 m band is a rule/respawn band, not a road width, so it is not
-//     used as a narrower speed cap.
+//   * measured point-to-point map paths (`courseId` in `MEASURED_MAP_IDS`:
+//     amboy, gracia, longbeach, observatory, downtown, mharuna): the committed
+//     M3 `AMBOY_CONTROL` policy (12 m/s cruise, short pure pursuit, 2.5 m/s^2
+//     lateral acceleration, 10 m/s finish cap). The maps' declared 6 m band is
+//     a rule/respawn band, not a road width, so it is not used as a narrower
+//     speed cap.
 //
 // The controller constants are the committed e1-drive follower constants
 // (`probes/e1-drive/web/sprint-script.js`, read-only reference). The skill
@@ -38,6 +39,16 @@ import { createHash } from 'node:crypto';
 
 export const DRIVER_KIND = 'blur.ai-driver';
 export const DRIVER_VERSION = 1;
+
+/**
+ * Course ids that are measured point-to-point map paths and therefore use the
+ * committed `MAP_CONTROL` policy. The set is explicit: a map must be listed
+ * here together with its committed layout, it is never inferred from a string
+ * prefix or a missing control table.
+ */
+export const MEASURED_MAP_IDS = Object.freeze([
+  'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna'
+]);
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
@@ -233,7 +244,7 @@ class TrackModel {
     this.layout = layout;
     this.samples = samples;
     this.lap = layout.courseId === 'lap';
-    this.measuredPath = layout.courseId === 'amboy' || layout.courseId === 'gracia';
+    this.measuredPath = MEASURED_MAP_IDS.includes(layout.courseId);
     this.laps = layout.course?.span?.laps ?? layout.course?.laps ?? 1;
     this.length = layout.course?.span?.finishArc ?? layout.course?.finishArc ??
       samples[samples.length - 1].arc;
@@ -363,12 +374,17 @@ class TrackModel {
 // ---------------------------------------------------------------------------
 
 export class AiDriver {
-  constructor({ layout, profile = 'reference', finishLaps = null, controlOverrides = null } = {}) {
+  constructor({ layout, profile = 'reference', finishLaps = null, controlOverrides = null,
+    controlTable = null } = {}) {
     this.layout = layout;
     this.track = new TrackModel(layout);
     this.profile = skillProfile(profile);
-    const baseControl = this.track.lap ? LAP_CONTROL
+    const defaultControl = this.track.lap ? LAP_CONTROL
       : this.track.measuredPath ? MAP_CONTROL : SPRINT_CONTROL;
+    // `controlTable` selects another committed control table for a diagnostic
+    // anchor (for example the sprint follower that produced a committed map
+    // run). It replaces the default table; it never changes physics.
+    const baseControl = controlTable ?? defaultControl;
     // `controlOverrides` exists for tuning diagnostics only. With no override the
     // driver uses the committed control table unchanged.
     this.control = controlOverrides
@@ -795,6 +811,7 @@ export function layoutSummary(layout) {
     finishArc: layout.course?.finishArc ?? null,
     laps: layout.course?.span?.laps ?? layout.course?.laps ?? 1,
     corridorHalfWidthMetres: layout.course?.corridor?.halfWidthMetres ?? null,
+    spawnGroundY: layout.course?.spawnGroundY ?? null,
     countdownTicks: layout.countdown?.ticks ?? 0,
     gates: (layout.gates ?? []).map((gate) => ({ id: gate.id, kind: gate.kind, arc: gate.arc }))
   };

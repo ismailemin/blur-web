@@ -1,19 +1,32 @@
-// AI driver evidence run for the measured M3 maps (usa_amboy, spa_barcelona_gracia).
+// AI driver evidence run for the measured point-to-point maps.
+//
+//   amboy        usa_amboy            2,060.595 m
+//   gracia       spa_barcelona_gracia   624.914 m
+//   longbeach    usa_la_longbeachdocks  785.823 m
+//   observatory  usa_la_observatory     536.622 m
+//   downtown     usa_la_downtown        153.861 m
+//   mharuna      jpn_mharuna            309.170 m
 //
 // Reads read-only:
 //
 //   _work/e1-drive/module/e1_drive.mjs + .wasm + build.json
-//   _work/e1-drive/cars.json and every roster car's .fields   (15 cars)
-//   _work/e1-drive/amboy/layout.json, _work/e1-drive/gracia/layout.json
-//   game-data/Blur/levels/usa_amboy/Level.levelphysics
-//   game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics
-//   _work/e1-drive/map-amboy-run.json, map-gracia-run.json    (committed follower)
+//   _work/e1-drive/cars.json and every roster car's .fields   (57 cars)
+//   _work/e1-drive/<map>/layout.json                          (E1 layout)
+//   probes/map-laps/data/<map>-path.json                      (committed path)
+//   game-data/Blur/levels/<level>/Level.levelphysics
+//   _work/e1-drive/map-<map>-run.json                         (committed follower)
 //
-// Drives every roster car on both measured paths with the reference and
+// Drives every roster car on every measured path with the reference and
 // standard skill profiles on the real wasm, replays every recorded input
 // sequence into a fresh wasm instance comparing every per-tick state hash,
-// runs 4-AI races on both maps twice in fresh instance sets, and writes
+// runs 4-AI races on every map twice in fresh instance sets, and writes
 // `_work/ai-driver/results-maps.json`.
+//
+// The ground probe column is centred on the layout's measured
+// `course.spawnGroundY` through `_e1_set_ground_hint` before `_e1_create` when
+// the spawn is outside the fixed Y -170..130 column. Mount Haruna spawns at
+// Y 1064; without the hint `e1_create` reports "no ground". A spawn inside the
+// column keeps the committed fixed-column result bit for bit.
 //
 // Determinism: no Date, no performance.now, no Math.random and no wall clock in
 // any recorded value. Two process-separated runs produce byte-identical JSON
@@ -35,22 +48,53 @@ const OUT = path.join(ROOT, '_work/ai-driver');
 const E1 = path.join(ROOT, '_work/e1-drive');
 const MODULE = path.join(E1, 'module/e1_drive.mjs');
 const BUILD = path.join(E1, 'module/build.json');
-const CARS = path.join(E1, 'cars.json');
-const MAP_IDS = ['amboy', 'gracia'];
+const MAP_IDS = ['amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna'];
 const POST_FINISH_TICKS = 120;
 
+// `maxRaceTicks` is a DNF bound, not a speed target: it is roughly twice the
+// committed follower's finish tick so a slow-but-driving car is not cut off.
 const MAPS = {
   amboy: {
     layoutPath: path.join(E1, 'amboy/layout.json'),
+    committedPathPath: null,
     levelPath: path.join(ROOT, 'game-data/Blur/levels/usa_amboy/Level.levelphysics'),
     maxRaceTicks: 20000,
     committedRunPath: path.join(E1, 'map-amboy-run.json')
   },
   gracia: {
     layoutPath: path.join(E1, 'gracia/layout.json'),
+    committedPathPath: null,
     levelPath: path.join(ROOT, 'game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics'),
     maxRaceTicks: 6000,
     committedRunPath: path.join(E1, 'map-gracia-run.json')
+  },
+  longbeach: {
+    layoutPath: path.join(E1, 'longbeach/layout.json'),
+    committedPathPath: path.join(ROOT, 'probes/map-laps/data/longbeach-path.json'),
+    levelPath: path.join(ROOT, 'game-data/Blur/levels/usa_la_longbeachdocks/Level.levelphysics'),
+    maxRaceTicks: 12000,
+    committedRunPath: path.join(E1, 'map-longbeach-run.json')
+  },
+  observatory: {
+    layoutPath: path.join(E1, 'observatory/layout.json'),
+    committedPathPath: path.join(ROOT, 'probes/map-laps/data/observatory-path.json'),
+    levelPath: path.join(ROOT, 'game-data/Blur/levels/usa_la_observatory/Level.levelphysics'),
+    maxRaceTicks: 8000,
+    committedRunPath: path.join(E1, 'map-observatory-run.json')
+  },
+  downtown: {
+    layoutPath: path.join(E1, 'downtown/layout.json'),
+    committedPathPath: path.join(ROOT, 'probes/map-laps/data/downtown-path.json'),
+    levelPath: path.join(ROOT, 'game-data/Blur/levels/usa_la_downtown/Level.levelphysics'),
+    maxRaceTicks: 4000,
+    committedRunPath: path.join(E1, 'map-downtown-run.json')
+  },
+  mharuna: {
+    layoutPath: path.join(E1, 'mharuna/layout.json'),
+    committedPathPath: path.join(ROOT, 'probes/map-laps/data/mharuna-path.json'),
+    levelPath: path.join(ROOT, 'game-data/Blur/levels/jpn_mharuna/Level.levelphysics'),
+    maxRaceTicks: 6000,
+    committedRunPath: path.join(E1, 'map-mharuna-run.json')
   }
 };
 
@@ -63,6 +107,10 @@ const option = (name, fallback = null) => {
 };
 const hasFlag = (name) => args.includes(name);
 const list = (value) => (value ? value.split(',').map((item) => item.trim()).filter(Boolean) : null);
+// `--roster` pins the car roster document (default `_work/e1-drive/cars.json`).
+// A pinned snapshot keeps two process-separated runs comparable while another
+// task edits the shared roster.
+const ROSTER = path.resolve(ROOT, option('--roster', path.join(E1, 'cars.json')));
 const ONLY_CARS = list(option('--cars'));
 const ONLY_PROFILES = list(option('--profiles'));
 const ONLY_MAPS = list(option('--maps'));
@@ -83,12 +131,42 @@ const controlOverridesFor = (mapId) =>
 
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
 
-function createWorld(module, levelBytes, fieldBytes, x, z, heading) {
+// The engine's ground probe column is fixed at Y -170..130 unless the page
+// supplies the measured spawn ground. `e1_set_ground_hint` must run before
+// `e1_create`; a layout without `spawnGroundY` is a hard error, never a guess.
+//
+// The hint is applied only when the spawn ground is outside that fixed column
+// (Mount Haruna at Y 1064). For a spawn inside the column the committed
+// fixed-column result is preserved bit for bit, which is what the committed
+// Amboy/Gracia follower runs were recorded with. The decision and its reason
+// are recorded per map; nothing is inferred at run time.
+const FIXED_PROBE_MIN_Y = -170;
+const FIXED_PROBE_MAX_Y = 130;
+function groundHintFor(layout) {
+  const value = layout.course?.spawnGroundY;
+  if (!Number.isFinite(value)) {
+    throw new Error(`layout ${layout.courseId} has no finite course.spawnGroundY`);
+  }
+  const applied = value < FIXED_PROBE_MIN_Y || value > FIXED_PROBE_MAX_Y;
+  return {
+    value,
+    applied,
+    reason: applied
+      ? 'spawn-ground-outside-fixed-probe-column'
+      : 'spawn-ground-inside-fixed-probe-column'
+  };
+}
+
+function createWorld(module, levelBytes, fieldBytes, x, z, heading, groundHint) {
+  if (!groundHint || !Number.isFinite(groundHint.value)) {
+    throw new Error('createWorld needs a ground hint with a finite value');
+  }
   const levelPtr = module._malloc(levelBytes.length);
   const fieldsPtr = module._malloc(fieldBytes.length + 1);
   if (!levelPtr || !fieldsPtr) throw new Error('wasm malloc failed');
   module.HEAPU8.set(levelBytes, levelPtr);
   module.HEAPU8.set(fieldBytes, fieldsPtr);
+  module._e1_set_ground_hint(groundHint.applied ? groundHint.value : -1.0e30);
   if (!module._e1_create(levelPtr, levelBytes.length, fieldsPtr, fieldBytes.length, x, z, heading)) {
     throw new Error('e1_create failed: ' + module.UTF8ToString(module._e1_last_error()));
   }
@@ -107,21 +185,33 @@ function newMetrics() {
     airborneTicks: 0,
     nanTicks: 0,
     maxLateralMetres: 0,
+    maxArcMetres: 0,
+    finalArcMetres: 0,
     maxSpeed: 0,
     minSpeed: Infinity,
     respawns: 0
   };
 }
 
-function mergeMetrics(metrics, state, projection, countLateral = true) {
-  metrics.runningTicks += 1;
+// `countContacts` is false after the finish: the 120 post-finish brake ticks
+// are not part of the driven run. A finish-line crest can keep the car
+// airborne while it brakes, and that must not be reported as a driving contact
+// gap. NaN ticks are counted in every phase.
+function mergeMetrics(metrics, state, projection, countLateral = true, countContacts = true) {
   const contacts = Array.isArray(state.contacts) ? state.contacts : [0, 0, 0, 0];
-  if (contacts.some((contact) => contact)) metrics.ticksWithAnyContact += 1;
-  if (contacts.every((contact) => contact)) metrics.ticksWithAllFourContacts += 1;
-  if (contacts.every((contact) => !contact)) metrics.airborneTicks += 1;
+  if (countContacts) {
+    metrics.runningTicks += 1;
+    if (contacts.some((contact) => contact)) metrics.ticksWithAnyContact += 1;
+    if (contacts.every((contact) => contact)) metrics.ticksWithAllFourContacts += 1;
+    if (contacts.every((contact) => !contact)) metrics.airborneTicks += 1;
+  }
   if (!stateIsFinite(state)) metrics.nanTicks += 1;
-  if (countLateral && projection) {
-    metrics.maxLateralMetres = Math.max(metrics.maxLateralMetres, projection.distance);
+  if (projection) {
+    metrics.maxArcMetres = Math.max(metrics.maxArcMetres, projection.arc);
+    metrics.finalArcMetres = projection.arc;
+    if (countLateral) {
+      metrics.maxLateralMetres = Math.max(metrics.maxLateralMetres, projection.distance);
+    }
   }
   if (Number.isFinite(state.speed)) {
     metrics.maxSpeed = Math.max(metrics.maxSpeed, state.speed);
@@ -140,7 +230,8 @@ function mapStart(layout) {
 async function createSim({ factory, levelBytes, fieldBytes, layout, profile, controlOverrides = null }) {
   const module = await factory();
   const start = mapStart(layout);
-  let state = createWorld(module, levelBytes, fieldBytes, start.x, start.z, start.heading);
+  const groundHint = groundHintFor(layout);
+  let state = createWorld(module, levelBytes, fieldBytes, start.x, start.z, start.heading, groundHint);
   const driver = createAiDriver({ layout, profile, controlOverrides });
   driver.prime(state);
   return {
@@ -148,6 +239,7 @@ async function createSim({ factory, levelBytes, fieldBytes, layout, profile, con
     state,
     driver,
     start,
+    groundHint,
     hashes: [hashOf(state)],
     inputs: [],
     rebuilds: [],
@@ -179,7 +271,7 @@ function stepSim(sim, raceTick, input, observe = true) {
   sim.hashes.push(hashOf(sim.state));
   const events = observe ? sim.driver.observe(sim.state, raceTick) : [];
   if (observe) {
-    mergeMetrics(sim.metrics, sim.state, sim.driver.projection, !wasFinished);
+    mergeMetrics(sim.metrics, sim.state, sim.driver.projection, !wasFinished, !wasFinished);
     sim.events.push(...events);
     if (sim.driver.finished && sim.finishHashIndex === null) sim.finishHashIndex = sim.hashes.length - 1;
   }
@@ -189,13 +281,15 @@ function stepSim(sim, raceTick, input, observe = true) {
     const target = respawn.target;
     const levelBytes = sim.levelBytes;
     const fieldBytes = sim.fieldBytes;
-    sim.state = createWorld(sim.module, levelBytes, fieldBytes, target.x, target.z, target.headingRad);
+    sim.state = createWorld(sim.module, levelBytes, fieldBytes, target.x, target.z,
+      target.headingRad, sim.groundHint);
     sim.hashes[sim.hashes.length - 1] = hashOf(sim.state);
     sim.driver.reprime(sim.state);
     sim.rebuilds.push({
       afterStep: sim.steps,
       tick: raceTick,
       reason: respawn.reasons,
+      observed: respawn.observed ?? null,
       target
     });
   }
@@ -235,6 +329,8 @@ async function runSolo({ factory, levelBytes, fieldBytes, car, layout, profile, 
     mapId,
     layoutHash: layout.hash,
     start: sim.start,
+    groundHint: sim.groundHint,
+    finishArc: layout.course?.span?.finishArc ?? layout.course?.finishArc ?? null,
     status,
     countdownTicks,
     steps: sim.steps,
@@ -255,10 +351,10 @@ async function runSolo({ factory, levelBytes, fieldBytes, car, layout, profile, 
   };
 }
 
-async function replaySolo({ factory, levelBytes, fieldBytes, layout, start, inputs, rebuilds,
+async function replaySolo({ factory, levelBytes, fieldBytes, layout, start, groundHint, inputs, rebuilds,
   expectedHashes, expectedFinishHashCount, expectedFinishSequenceHash }) {
   const module = await factory();
-  let state = createWorld(module, levelBytes, fieldBytes, start.x, start.z, start.heading);
+  let state = createWorld(module, levelBytes, fieldBytes, start.x, start.z, start.heading, groundHint);
   const hashes = [hashOf(state)];
   let matched = hashes[0] === expectedHashes[0];
   let firstMismatch = matched ? null : 0;
@@ -268,7 +364,7 @@ async function replaySolo({ factory, levelBytes, fieldBytes, layout, start, inpu
     const rebuild = rebuildByStep.get(index);
     if (rebuild) {
       state = createWorld(module, levelBytes, fieldBytes,
-        rebuild.target.x, rebuild.target.z, rebuild.target.headingRad);
+        rebuild.target.x, rebuild.target.z, rebuild.target.headingRad, groundHint);
       const rebuiltHash = hashOf(state);
       hashes[hashes.length - 1] = rebuiltHash;
       if (matched && rebuiltHash !== expectedHashes[hashes.length - 1]) {
@@ -306,6 +402,7 @@ async function replaySolo({ factory, levelBytes, fieldBytes, layout, start, inpu
 function summarizeRun(run, replay) {
   const metrics = run.metrics;
   return {
+    mapId: run.mapId,
     courseId: run.courseId,
     profile: run.profile.id,
     speedScale: run.profile.speedScale,
@@ -319,7 +416,7 @@ function summarizeRun(run, replay) {
     respawns: metrics.respawns,
     respawnEvents: run.rebuilds.map((rebuild) => ({
       afterStep: rebuild.afterStep, tick: rebuild.tick, reason: rebuild.reason,
-      target: rebuild.target
+      observed: rebuild.observed ?? null, target: rebuild.target
     })),
     contacts: {
       ticksWithAnyContact: metrics.ticksWithAnyContact,
@@ -327,8 +424,12 @@ function summarizeRun(run, replay) {
       airborneTicks: metrics.airborneTicks,
       runningTicks: metrics.runningTicks
     },
+    contactTicks: metrics.ticksWithAnyContact,
     nanTicks: metrics.nanTicks,
     maxLateralMetres: round6(metrics.maxLateralMetres),
+    maxArcMetres: round6(metrics.maxArcMetres),
+    finalArcMetres: round6(metrics.finalArcMetres),
+    finishArcMetres: run.finishArc,
     maxSpeed: round6(metrics.maxSpeed),
     minSpeed: round6(metrics.minSpeed === Infinity ? 0 : metrics.minSpeed),
     stateSequenceHash: run.stateSequenceHash,
@@ -421,10 +522,13 @@ async function runRace({ factory, levelBytes, fieldsBySlug, carBySlug, layout, e
     rebuilds: row.rebuilds,
     tickHashes: sims.find((slot) => slot.car.slug === row.car).sim.hashes.slice()
   }));
-  return { name, raceHash, rows, replayInputs, raceTicks: raceTick, start: mapStart(layout) };
+  return {
+    name, raceHash, rows, replayInputs, raceTicks: raceTick,
+    start: mapStart(layout), groundHint: sims[0].sim.groundHint
+  };
 }
 
-async function replayRace({ factory, levelBytes, fieldsBySlug, start, replayInputs, expectedRows }) {
+async function replayRace({ factory, levelBytes, fieldsBySlug, start, groundHint, replayInputs, expectedRows }) {
   const checks = [];
   for (const entry of replayInputs) {
     const expected = expectedRows.find((row) => row.car === entry.car);
@@ -434,7 +538,7 @@ async function replayRace({ factory, levelBytes, fieldsBySlug, start, replayInpu
     }
     const module = await factory();
     let state = createWorld(module, levelBytes, fieldsBySlug.get(entry.car),
-      start.x, start.z, start.heading);
+      start.x, start.z, start.heading, groundHint);
     const hashes = [hashOf(state)];
     const expectedHashes = entry.tickHashes;
     let matched = hashes[0] === expectedHashes[0];
@@ -445,7 +549,7 @@ async function replayRace({ factory, levelBytes, fieldsBySlug, start, replayInpu
       const rebuild = rebuildByStep.get(step);
       if (rebuild) {
         state = createWorld(module, levelBytes, fieldsBySlug.get(entry.car),
-          rebuild.target.x, rebuild.target.z, rebuild.target.headingRad);
+          rebuild.target.x, rebuild.target.z, rebuild.target.headingRad, groundHint);
         const rebuiltHash = hashOf(state);
         hashes[hashes.length - 1] = rebuiltHash;
         if (matched && rebuiltHash !== expectedHashes[hashes.length - 1]) {
@@ -487,7 +591,7 @@ async function replayRace({ factory, levelBytes, fieldsBySlug, start, replayInpu
 mkdirSync(OUT, { recursive: true });
 
 const build = readJson(BUILD);
-const roster = readJson(CARS).roster;
+const roster = readJson(ROSTER).roster;
 const mapIds = ONLY_MAPS ? MAP_IDS.filter((id) => ONLY_MAPS.includes(id)) : MAP_IDS;
 const allCars = roster.cars;
 const cars = ONLY_CARS ? allCars.filter((car) => ONLY_CARS.includes(car.slug)) : allCars;
@@ -519,16 +623,41 @@ for (const mapId of mapIds) {
   const spec = MAPS[mapId];
   const layoutBytes = readFileSync(spec.layoutPath);
   const levelBytes = readFileSync(spec.levelPath);
-  mapDocuments[mapId] = {
-    layout: JSON.parse(layoutBytes.toString('utf8')),
+  const layout = JSON.parse(layoutBytes.toString('utf8'));
+  const doc = {
+    layout,
     layoutFileSha256: sha256Hex(layoutBytes),
     layoutBytes: layoutBytes.length,
     level: levelBytes,
     levelSha256: sha256Hex(levelBytes),
-    levelBytes: levelBytes.length
+    levelBytes: levelBytes.length,
+    groundHint: groundHintFor(layout),
+    committedPath: null
   };
-  process.stdout.write(`[ai-driver-maps] ${mapId}: layout ${mapDocuments[mapId].layoutFileSha256.slice(0, 16)} ` +
-    `level ${mapDocuments[mapId].levelSha256.slice(0, 16)}\n`);
+  // The E1 layout is the run authority, but it must still describe the same
+  // committed collision path: same canonical hash and the same sample polyline.
+  // A stale layout is a hard error, never a silent substitution.
+  if (spec.committedPathPath) {
+    const pathBytes = readFileSync(spec.committedPathPath);
+    const committedPath = JSON.parse(pathBytes.toString('utf8'));
+    if (committedPath.hash !== layout.hash) {
+      throw new Error(`${mapId}: E1 layout hash ${layout.hash} != committed path hash ${committedPath.hash}`);
+    }
+    if (JSON.stringify(committedPath.course.samples) !== JSON.stringify(layout.course.samples) ||
+        JSON.stringify(committedPath.gates) !== JSON.stringify(layout.gates)) {
+      throw new Error(`${mapId}: E1 layout samples/gates differ from the committed path`);
+    }
+    doc.committedPath = {
+      path: path.relative(ROOT, spec.committedPathPath).split(path.sep).join('/'),
+      fileSha256: sha256Hex(pathBytes),
+      bytes: pathBytes.length,
+      hash: committedPath.hash
+    };
+  }
+  mapDocuments[mapId] = doc;
+  process.stdout.write(`[ai-driver-maps] ${mapId}: layout ${doc.layoutFileSha256.slice(0, 16)} ` +
+    `level ${doc.levelSha256.slice(0, 16)} groundHint ${doc.groundHint.value} ` +
+    `applied=${doc.groundHint.applied} (${doc.groundHint.reason})\n`);
 }
 
 const factory = await loadFactory();
@@ -549,6 +678,7 @@ for (const mapId of mapIds) {
       if (!SKIP_REPLAY) {
         replay = await replaySolo({
           factory, levelBytes: doc.level, fieldBytes, layout, start: run.start,
+          groundHint: run.groundHint,
           inputs: run.inputs, rebuilds: run.rebuilds, expectedHashes: run.tickHashes,
           expectedFinishHashCount: run.finishHashCount,
           expectedFinishSequenceHash: run.finishStateSequenceHash
@@ -577,6 +707,7 @@ for (const mapId of mapIds) {
       timeSeconds: source.sprint?.finish?.timeSeconds ?? null,
       tick: source.sprint?.finish?.tick ?? null,
       checkpoints: source.sprint?.finish?.checkpoints ?? null,
+      maxSpeedMps: source.sprint?.maxSpeedMps ?? null,
       maxLateralMetres: source.sprint?.maxLateralMetres ?? null,
       stateSequenceHash: source.sprint?.stateSequenceHash ?? null,
       source: path.relative(ROOT, spec.committedRunPath).split(path.sep).join('/')
@@ -585,18 +716,29 @@ for (const mapId of mapIds) {
   if (!committed || committed.timeSeconds === null) continue;
   const ours = runSummaries.find((run) =>
     run.courseId === mapId && run.profile === 'reference' && run.car === committed.car);
+  // The committed new-map runs were produced by the sprint follower (its
+  // recorded top speed is ~24.7 m/s); the AI matrix uses the measured-path
+  // MAP_CONTROL (12 m/s cruise). The two are recorded side by side but the
+  // times are only directly comparable when the committed run stayed inside
+  // the measured controller's speed class. The threshold is derived from the
+  // recorded top speed, not assumed.
+  const comparable = Number.isFinite(committed.maxSpeedMps) &&
+    committed.maxSpeedMps <= MAP_CONTROL.cruiseSpeed * 1.2;
   committedComparison.push({
     mapId,
     car: committed.car,
     committed,
+    comparable,
+    committedControlClass: comparable ? 'measured' : 'sprint',
     ai: ours ? {
       status: ours.status,
       timeSeconds: ours.timeSeconds,
       finishStateSequenceHash: ours.finishStateSequenceHash,
+      maxSpeed: ours.maxSpeed,
       maxLateralMetres: ours.maxLateralMetres,
       respawns: ours.respawns
     } : null,
-    differenceSeconds: ours?.timeSeconds !== null && ours?.timeSeconds !== undefined
+    differenceSeconds: comparable && ours?.timeSeconds !== null && ours?.timeSeconds !== undefined
       ? round6(ours.timeSeconds - committed.timeSeconds) : null,
     timeMatchesExactly: ours ? ours.timeSeconds === committed.timeSeconds : false,
     stateSequenceMatchesExactly: ours
@@ -606,7 +748,7 @@ for (const mapId of mapIds) {
 
 // ---------------------------------------------------------------------------
 // Committed-control anchor: the reference Corvette is re-run with the committed
-// MAP_CONTROL (no tuning override) on both maps. This proves the driver's
+// MAP_CONTROL (no tuning override) on every map. This proves the driver's
 // fidelity to the committed scripted follower independently of the matrix's
 // tuning choice.
 // ---------------------------------------------------------------------------
@@ -629,6 +771,7 @@ const anchorRuns = [];
       if (!SKIP_REPLAY) {
         replay = await replaySolo({
           factory, levelBytes: doc.level, fieldBytes, layout: doc.layout, start: run.start,
+          groundHint: run.groundHint,
           inputs: run.inputs, rebuilds: run.rebuilds, expectedHashes: run.tickHashes,
           expectedFinishHashCount: run.finishHashCount,
           expectedFinishSequenceHash: run.finishStateSequenceHash
@@ -641,14 +784,20 @@ const anchorRuns = [];
         committed = {
           timeSeconds: source.sprint?.finish?.timeSeconds ?? null,
           stateSequenceHash: source.sprint?.stateSequenceHash ?? null,
+          maxSpeedMps: source.sprint?.maxSpeedMps ?? null,
           maxLateralMetres: source.sprint?.maxLateralMetres ?? null
         };
       } catch { /* reported by verify */ }
+      const comparable = Boolean(committed) && Number.isFinite(committed.maxSpeedMps) &&
+        committed.maxSpeedMps <= MAP_CONTROL.cruiseSpeed * 1.2;
       anchorRuns.push({
         mapId,
         car: anchorCar.slug,
         profile: 'reference',
         control: 'committed',
+        controlTable: 'MAP_CONTROL',
+        comparable,
+        committedControlClass: comparable ? 'measured' : 'sprint',
         status: summary.status,
         timeSeconds: summary.timeSeconds,
         finishStateSequenceHash: summary.finishStateSequenceHash,
@@ -657,89 +806,143 @@ const anchorRuns = [];
         nanTicks: summary.nanTicks,
         replayMatchedEveryTick: summary.replay?.matchedEveryTick ?? null,
         committed,
+        differenceSeconds: comparable ? round6(summary.timeSeconds - committed.timeSeconds) : null,
         timeMatchesExactly: committed ? summary.timeSeconds === committed.timeSeconds : false,
         stateSequenceMatchesExactly: committed
           ? summary.finishStateSequenceHash === committed.stateSequenceHash : false
       });
       process.stdout.write(
         `[ai-driver-maps]   anchor ${mapId} ${summary.status} time=${summary.timeSeconds} ` +
+        `comparable=${comparable} ` +
         `exactTime=${anchorRuns[anchorRuns.length - 1].timeMatchesExactly} ` +
         `exactHash=${anchorRuns[anchorRuns.length - 1].stateSequenceMatchesExactly}\n`);
     }
   }
 }
 
-// Classify failures. The only accepted map/car limit is the Gracia Dodge
-// spawn-pose contact loss; every other failure is unexpected and fails verify.
-const knownLimitMatchers = [{
-  courseId: 'gracia',
-  car: 'dodge-challenger-stock',
-  cause: 'spawn-front-contact-loss',
-  detail: 'after the mandatory 90-tick countdown the front wheels are unloaded ' +
-    '(contacts 0110); no tested launch input restores front contact, so the car ' +
-    'cannot steer onto the measured path and is respawned repeatedly.',
-  matches: (run) => run.status !== 'finished'
-}, {
-  courseId: 'gracia',
-  car: 'ford-f100-offroad',
-  cause: 'spawn-front-contact-loss-recovered',
-  detail: 'the first launch loses front contact during the countdown and the ' +
-    'observer respawns once at race tick ~402; the rebuilt car then drives the ' +
-    'path and finishes, so the run is reported as a one-respawn finish.',
-  matches: (run) => run.respawns > 0
-}, {
-  // Heavy offroad cars cannot finish the tight Gracia course at the reference
-  // pace: the measured path's hairpins are narrower than their turning circle.
-  // Named per car so the exception cannot hide another failure.
-  courseId: 'gracia',
-  car: 'ford-f150-offroadheh',
-  cause: 'turning-circle-exceeds-gracia-hairpins',
-  detail: 'the heavy F150 cannot follow the measured Gracia path through its hairpins at the reference pace; the run is reported as a DNF, not hidden.',
-  matches: (run) => run.status !== 'finished'
-}, {
-  courseId: 'gracia',
-  car: 'nissan-navara-offroad',
-  cause: 'turning-circle-exceeds-gracia-hairpins',
-  detail: 'the heavy Navara cannot follow the measured Gracia path through its hairpins at the reference pace; the run is reported as a DNF, not hidden.',
-  matches: (run) => run.status !== 'finished'
-}, {
-  courseId: 'gracia',
-  car: 'hummer-h2-offroad',
-  cause: 'turning-circle-exceeds-gracia-hairpins',
-  detail: 'the heavy H2 cannot follow the measured Gracia path through its hairpins at the reference pace; the run is reported as a DNF, not hidden.',
-  matches: (run) => run.status !== 'finished'
-}, {
-  // A tight map can exceed a specific car's envelope (turning circle, spawn
-  // contact, respawn). Any remaining non-clean run is declared with the car,
-  // the course and the measured numbers, never silently dropped.
-  courseId: '*',
-  car: '*',
-  cause: 'declared-map-car-limit',
-  detail: 'the run is not clean on this map; the car, course, status, respawns and lateral values are recorded in knownLimits.',
-  matches: () => true
-}];
+// Classify non-clean runs.
+//
+// A run is only acceptable as a *declared limit* when the physics replay
+// reproduced every tick and there was no NaN: the car drove, it simply could
+// not finish (or needed a respawn). A replay mismatch or a NaN is a
+// determinism/physics failure and is always unexpected.
+//
+// Every limit is classified from its own recorded evidence (status, respawn
+// reason codes, observed lateral distance, arc reached) and keeps the car, the
+// course and the cause. A car that never gets off the start line is a spawn
+// failure, not a hairpin/turning-circle claim: the arc it reached is recorded
+// and the cause names the observed mode. Nothing is dropped.
+function classifyLimit(run) {
+  const reasons = run.respawnEvents.flatMap((event) => event.reason ?? []);
+  const codes = [...new Set(reasons.map((item) => item.code))];
+  const outside = reasons.filter((item) => item.code === 'outside-corridor');
+  const worstOutside = outside.length
+    ? outside.reduce((max, item) => (item.distance > max.distance ? item : max), outside[0])
+    : null;
+  const lastEvent = run.respawnEvents[run.respawnEvents.length - 1] ?? null;
+  const lastArc = lastEvent?.observed?.arc ?? run.finalArcMetres;
+  const common = `course ${run.courseId} (${run.finishArcMetres} m), car ${run.car}, ` +
+    `profile ${run.profile}, status ${run.status}, respawns ${run.respawns}, ` +
+    `max lateral ${run.maxLateralMetres} m, arc reached ${run.maxArcMetres}/${run.finishArcMetres} m`;
+  const spawnFailure = run.maxArcMetres < 2;
+  if (run.status !== 'finished') {
+    if (spawnFailure && run.respawns === 0) {
+      return {
+        cause: 'spawn-no-launch',
+        detail: `${common}; the car moved only ${run.maxArcMetres} m from the start ` +
+          `line in ${run.raceTicks} race ticks and never reached the first corner.`
+      };
+    }
+    if (spawnFailure && codes.includes('airborne')) {
+      return {
+        cause: 'spawn-airborne-respawn-loop',
+        detail: `${common}; every respawn was airborne at the start line ` +
+          `(max arc ${run.maxArcMetres} m), so the car never launched.`
+      };
+    }
+    if (spawnFailure) {
+      return {
+        cause: 'spawn-respawn-loop',
+        detail: `${common}; respawn reasons ${codes.join(',') || 'none'} repeated at ` +
+          `the start line (max arc ${run.maxArcMetres} m).`
+      };
+    }
+    if (worstOutside) {
+      return {
+        cause: 'outside-corridor-dnf',
+        detail: `${common}; the car left the declared corridor ` +
+          `(${round6(worstOutside.distance)} m > ${worstOutside.allowed} m) at arc ` +
+          `${lastArc} and did not reach the finish inside ${run.raceTicks} race ticks.`
+      };
+    }
+    if (codes.includes('below-ground')) {
+      return {
+        cause: 'below-ground-dnf',
+        detail: `${common}; the chassis fell below the measured ground and did not reach the finish.`
+      };
+    }
+    if (codes.includes('airborne')) {
+      return {
+        cause: 'airborne-dnf',
+        detail: `${common}; the car stayed airborne past the respawn limit and did not reach the finish.`
+      };
+    }
+    if (run.respawns > 0) {
+      return {
+        cause: 'respawn-loop-dnf',
+        detail: `${common}; respawn reasons ${codes.join(',') || 'none'} repeated without a finish.`
+      };
+    }
+    return {
+      cause: 'no-finish-within-tick-budget',
+      detail: `${common}; the car never left the corridor and never crossed the finish ` +
+        `inside ${run.raceTicks} race ticks.`
+    };
+  }
+  const firstEvent = run.respawnEvents[0] ?? null;
+  const firstArc = firstEvent?.observed?.arc ?? null;
+  if (firstArc !== null && firstArc < 2 && codes.includes('airborne')) {
+    return {
+      cause: 'spawn-airborne-recovered',
+      detail: `${common}; the first launch was airborne at the start line ` +
+        `(arc ${firstArc} m) and the observer respawned; the rebuilt car then finished.`
+    };
+  }
+  return {
+    cause: 'recovered-with-respawns',
+    detail: `${common}; the car finished after ${run.respawns} respawn(s) ` +
+      `(reasons ${codes.join(',') || 'none'}).`
+  };
+}
+
 const knownLimits = [];
 const unexpectedFailures = [];
 for (const run of runSummaries.filter((item) => !item.clean)) {
-  const matcher = knownLimitMatchers.find((item) =>
-    (item.courseId === '*' || item.courseId === run.courseId) &&
-    (item.car === '*' || item.car === run.car) && item.matches(run));
-  if (matcher) {
-    knownLimits.push({
-      courseId: run.courseId, car: run.car, profile: run.profile,
-      cause: matcher.cause, detail: matcher.detail,
-      status: run.status, respawns: run.respawns, nanTicks: run.nanTicks,
-      maxSpeed: run.maxSpeed, maxLateralMetres: run.maxLateralMetres,
-      stateSequenceHash: run.stateSequenceHash,
-      replayMatchedEveryTick: run.replay?.matchedEveryTick ?? null
-    });
-  } else {
+  const replayMatched = run.replay?.matchedEveryTick ?? null;
+  // A replay mismatch or a NaN is never a map/car limit.
+  if (run.nanTicks !== 0 || replayMatched === false) {
     unexpectedFailures.push({
-      courseId: run.courseId, car: run.car, profile: run.profile,
+      mapId: run.mapId, courseId: run.courseId, car: run.car, profile: run.profile,
       status: run.status, respawns: run.respawns, nanTicks: run.nanTicks,
-      replayMatchedEveryTick: run.replay?.matchedEveryTick ?? null
+      replayMatchedEveryTick: replayMatched,
+      reason: run.nanTicks !== 0 ? 'nan-ticks' : 'replay-mismatch'
     });
+    continue;
   }
+  const classified = classifyLimit(run);
+  knownLimits.push({
+    mapId: run.mapId, courseId: run.courseId, car: run.car, profile: run.profile,
+    cause: classified.cause, detail: classified.detail,
+    status: run.status, respawns: run.respawns, nanTicks: run.nanTicks,
+    raceTicks: run.raceTicks, finishArcMetres: run.finishArcMetres,
+    maxArcMetres: run.maxArcMetres, maxSpeed: run.maxSpeed,
+    maxLateralMetres: run.maxLateralMetres,
+    respawnReasons: [...new Set(run.respawnEvents.flatMap((event) =>
+      (event.reason ?? []).map((item) => item.code)))],
+    respawnEvents: run.respawnEvents,
+    stateSequenceHash: run.stateSequenceHash,
+    replayMatchedEveryTick: replayMatched
+  });
 }
 
 const profileSummary = profiles.map((profile) => {
@@ -811,6 +1014,7 @@ if (!SKIP_RACES) {
     });
     const replayChecks = await replayRace({
       factory, levelBytes: doc.level, fieldsBySlug, start: first.start,
+      groundHint: first.groundHint,
       replayInputs: first.replayInputs, expectedRows: first.rows
     });
     const orderA = first.rows.map((row) => `${row.position}:${row.car}:${row.finishTick}`);
@@ -852,7 +1056,11 @@ const results = {
     kind: DRIVER_KIND,
     version: DRIVER_VERSION,
     mapControl: MAP_CONTROL,
-    mapTunedOverrides: { amboy: { minSpeed: AMBOY_TUNED_MIN_SPEED }, gracia: null },
+    measuredMapIds: MAP_IDS,
+    mapTunedOverrides: Object.fromEntries(mapIds.map((mapId) => [
+      mapId, CONTROL_MODE === 'tuned' && mapId === 'amboy'
+        ? { minSpeed: AMBOY_TUNED_MIN_SPEED } : null
+    ])),
     controlMode: CONTROL_MODE,
     profiles: SKILL_PROFILES.filter((profile) => PROFILE_IDS.includes(profile.id))
   },
@@ -866,7 +1074,7 @@ const results = {
       objects: build.objects
     },
     roster: {
-      path: path.relative(ROOT, CARS).split(path.sep).join('/'),
+      path: path.relative(ROOT, ROSTER).split(path.sep).join('/'),
       selected: allCars.length,
       cars: allCars.map((car) => ({
         slug: car.slug, name: car.name, drivetrain: car.drivetrain,
@@ -880,7 +1088,9 @@ const results = {
       layoutBytes: mapDocuments[mapId].layoutBytes,
       levelPath: path.relative(ROOT, MAPS[mapId].levelPath).split(path.sep).join('/'),
       levelSha256: mapDocuments[mapId].levelSha256,
-      levelBytes: mapDocuments[mapId].levelBytes
+      levelBytes: mapDocuments[mapId].levelBytes,
+      groundHint: mapDocuments[mapId].groundHint,
+      committedPath: mapDocuments[mapId].committedPath
     }]))
   },
   config: {
@@ -889,12 +1099,11 @@ const results = {
     replayPerTick: !SKIP_REPLAY,
     races: !SKIP_RACES,
     controlMode: CONTROL_MODE,
-    controlPolicy: {
-      amboy: CONTROL_MODE === 'tuned'
+    controlPolicy: Object.fromEntries(mapIds.map((mapId) => [mapId,
+      CONTROL_MODE === 'tuned' && mapId === 'amboy'
         ? { table: 'MAP_CONTROL', overrides: { minSpeed: AMBOY_TUNED_MIN_SPEED } }
-        : { table: 'MAP_CONTROL', overrides: null },
-      gracia: { table: 'MAP_CONTROL', overrides: null }
-    },
+        : { table: 'MAP_CONTROL', overrides: null }
+    ])),
     selection: {
       cars: cars.map((car) => car.slug),
       profiles: profiles.map((profile) => profile.id),

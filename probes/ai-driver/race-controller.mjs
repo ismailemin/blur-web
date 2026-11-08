@@ -19,7 +19,9 @@
 //
 // No clock, no `Math.random`, no `Date`, no `performance.now`.
 
-import { createAiDriver, skillProfile, SKILL_PROFILES, hashOf } from './ai-driver.mjs';
+import {
+  createAiDriver, skillProfile, SKILL_PROFILES, MEASURED_MAP_IDS, hashOf
+} from './ai-driver.mjs';
 
 export const RACER_KIND = 'blur.ai-racer';
 export const RACER_VERSION = 1;
@@ -135,7 +137,7 @@ export const RACER_CONTROL = Object.freeze({
 
 export function controlTableFor(courseId) {
   if (courseId === 'lap') return RACER_CONTROL.lap;
-  if (courseId === 'amboy' || courseId === 'gracia') return RACER_CONTROL.measured;
+  if (MEASURED_MAP_IDS.includes(courseId)) return RACER_CONTROL.measured;
   return RACER_CONTROL.default;
 }
 

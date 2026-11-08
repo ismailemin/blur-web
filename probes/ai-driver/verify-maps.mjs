@@ -59,7 +59,8 @@ const mapInputs = results.inputs?.maps ?? {};
 
 check('M01', 'results kind/version', results.kind === 'blur.ai-driver-map-results' &&
   results.version === 1, `${results.kind} v${results.version}`);
-check('M02', 'driver kind/version and measured-path control table',
+const EXPECTED_MAPS = ['amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna'];
+check('M02', 'driver kind/version, measured-path control table and the six measured maps',
   results.driver?.kind === 'blur.ai-driver' && results.driver?.version === 1 &&
   results.driver?.mapControl?.cruiseSpeed === 12 &&
   results.driver?.mapControl?.purePursuit === true &&
@@ -67,11 +68,15 @@ check('M02', 'driver kind/version and measured-path control table',
   results.driver?.mapControl?.minSpeed === 5 &&
   results.driver?.controlMode === 'tuned' &&
   results.driver?.mapTunedOverrides?.amboy?.minSpeed === 3.5 &&
-  results.driver?.mapTunedOverrides?.gracia === null,
+  results.driver?.mapTunedOverrides?.gracia === null &&
+  EXPECTED_MAPS.every((mapId) => (results.driver?.measuredMapIds ?? []).includes(mapId)) &&
+  selectedMaps.length === EXPECTED_MAPS.length &&
+  EXPECTED_MAPS.every((mapId) => selectedMaps.includes(mapId)),
   JSON.stringify({
     kind: results.driver?.kind, mode: results.driver?.controlMode,
-    cruiseSpeed: results.driver?.mapControl?.cruiseSpeed,    committedMin: results.driver?.mapControl?.minSpeed,
-    amboyTunedMin: results.driver?.mapTunedOverrides?.amboy?.minSpeed
+    cruiseSpeed: results.driver?.mapControl?.cruiseSpeed, committedMin: results.driver?.mapControl?.minSpeed,
+    amboyTunedMin: results.driver?.mapTunedOverrides?.amboy?.minSpeed,
+    measuredMapIds: results.driver?.measuredMapIds, selectedMaps
   }));
 check('M03', 'selected profiles are reference and standard',
   selectedProfiles.length === 2 && selectedProfiles.includes('reference') &&
@@ -88,18 +93,32 @@ check('M04', 'wasm artifact still matches the recorded SHA-256',
 
 let badLayout = 0;
 let badLevel = 0;
-for (const mapId of ['amboy', 'gracia']) {
+let badCommittedPath = 0;
+for (const mapId of selectedMaps) {
   const info = mapInputs[mapId];
   if (!info) { badLayout += 1; badLevel += 1; continue; }
   const layoutPath = path.join(ROOT, info.layoutPath);
   const levelPath = path.join(ROOT, info.levelPath);
   if (!exists(layoutPath) || sha256Hex(readFileSync(layoutPath)) !== info.layoutFileSha256) badLayout += 1;
   if (!exists(levelPath) || sha256Hex(readFileSync(levelPath)) !== info.levelSha256) badLevel += 1;
+  if (info.committedPath) {
+    const committedPath = path.join(ROOT, info.committedPath.path);
+    if (!exists(committedPath) ||
+        sha256Hex(readFileSync(committedPath)) !== info.committedPath.fileSha256 ||
+        info.committedPath.hash !== info.summary?.hash) {
+      badCommittedPath += 1;
+    }
+  }
 }
-check('M05', 'both map layout files still match the recorded SHA-256',
-  badLayout === 0, `${badLayout} mismatched layouts`);
-check('M06', 'both map Level.levelphysics files still match the recorded SHA-256',
-  badLevel === 0, `${badLevel} mismatched levels`);
+check('M05', 'every map layout file still matches the recorded SHA-256',
+  badLayout === 0, `${badLayout}/${selectedMaps.length} mismatched layouts`);
+check('M06', 'every map Level.levelphysics file still matches the recorded SHA-256',
+  badLevel === 0, `${badLevel}/${selectedMaps.length} mismatched levels`);
+check('M06b', 'every new map E1 layout still matches its committed collision path hash',
+  badCommittedPath === 0,
+  `${badCommittedPath} mismatched committed paths; ` +
+  selectedMaps.filter((mapId) => mapInputs[mapId]?.committedPath)
+    .map((mapId) => `${mapId}:${mapInputs[mapId].committedPath.hash?.slice(7, 19)}`).join(', '));
 
 // ---------------------------------------------------------------------------
 // Per-run checks.
@@ -166,8 +185,8 @@ check('M11', 'every non-clean run is a declared, named limit',
 check('M12', 'clean runs keep wheel contact (at most 2 % may lose a wheel for a few ticks)',
   badContacts <= Math.ceil(runs.length * 0.02),
   `${badContacts} runs with contact gaps of ${runs.length}`);
-check('M13', 'clean runs stay inside the declared 6 m band', badLateral === 0,
-  `${badLateral} runs outside the declared band`);
+check('M13', 'clean runs stay inside their map\'s declared corridor', badLateral === 0,
+  `${badLateral} runs outside the declared corridor`);
 check('M14', 'all state-sequence hashes are canonical sha256 values', badHash === 0,
   `${badHash} bad hashes`);
 
@@ -178,44 +197,74 @@ check('M14', 'all state-sequence hashes are canonical sha256 values', badHash ==
 const committed = Array.isArray(results.committedComparison) ? results.committedComparison : [];
 const anchorRuns = Array.isArray(results.anchorRuns) ? results.anchorRuns : [];
 const expectedCommitted = { amboy: 222.05, gracia: 66.266667 };
-const committedRows = committed.filter((row) => row.mapId === 'amboy' || row.mapId === 'gracia');
-const committedPresent = committedRows.length === 2 &&
-  committedRows.every((row) => row.committed && row.ai?.timeSeconds !== null);
-check('M15', 'committed map follower runs were read for both maps', committedPresent,
-  `${committedRows.length}/2 present`);
-const maxDifference = committedRows.reduce((max, row) =>
+// The committed follower runs for amboy/gracia were produced by the measured
+// AMBOY_CONTROL (top speed ~13 m/s). The four new-map runs were produced by the
+// sprint follower (top speed ~24.7 m/s), so their times are not directly
+// comparable with the AI's 12 m/s measured-path matrix. `comparable` is derived
+// from the committed run's own recorded top speed, not assumed.
+const committedRows = committed.filter((row) => selectedMaps.includes(row.mapId));
+const committedPresent = committedRows.length === selectedMaps.length &&
+  committedRows.every((row) => row.committed &&
+    Number.isFinite(row.committed.timeSeconds) &&
+    /^sha256:[0-9a-f]{64}$/.test(row.committed.stateSequenceHash ?? '') &&
+    row.ai && Number.isFinite(row.ai.timeSeconds));
+check('M15', 'committed map follower runs were read for every selected map', committedPresent,
+  `${committedRows.length}/${selectedMaps.length} present`);
+const measuredControlRows = committedRows.filter((row) =>
+  row.mapId === 'amboy' || row.mapId === 'gracia');
+const sprintControlRows = committedRows.filter((row) =>
+  row.mapId !== 'amboy' && row.mapId !== 'gracia');
+const maxDifference = measuredControlRows.reduce((max, row) =>
   row.differenceSeconds === null ? max : Math.max(max, Math.abs(row.differenceSeconds)), 0);
-check('M16', 'tuned matrix differs from the committed follower only on Amboy by the documented 3.466667 s',
-  committedPresent && committedRows.every((row) =>
+check('M16', 'measured-control maps reproduce the documented committed difference; sprint-control maps are marked non-comparable',
+  committedPresent && measuredControlRows.length === 2 &&
+  measuredControlRows.every((row) =>
     row.committed.timeSeconds === expectedCommitted[row.mapId] &&
+    row.comparable === true &&
     (row.mapId === 'amboy'
       ? Math.abs(row.differenceSeconds - 3.466667) <= 1e-6
-      : row.differenceSeconds === 0)),
-  committedRows.map((row) =>
+      : row.differenceSeconds === 0)) &&
+  sprintControlRows.length === selectedMaps.length - 2 &&
+  sprintControlRows.every((row) => row.comparable === false &&
+    row.committedControlClass === 'sprint' &&
+    row.committed.maxSpeedMps > results.driver.mapControl.cruiseSpeed * 1.2 &&
+    row.committed.maxSpeedMps > 20),
+  measuredControlRows.map((row) =>
     `${row.mapId}: ${row.ai?.timeSeconds} vs ${row.committed?.timeSeconds} (${row.differenceSeconds})`).join('; ') +
-  `; max |difference| = ${maxDifference.toFixed(6)} s`);
-check('M17', 'committed-control anchor reproduces both committed times and state hashes exactly',
-  anchorRuns.length === 2 &&
-  anchorRuns.every((run) => run.status === 'finished' && run.respawns === 0 &&
+  `; sprint-control: ` + sprintControlRows.map((row) =>
+    `${row.mapId}: ${row.ai?.timeSeconds} vs ${row.committed?.timeSeconds} ` +
+    `(committed top ${row.committed?.maxSpeedMps} m/s, comparable ${row.comparable})`).join('; ') +
+  `; max measured |difference| = ${maxDifference.toFixed(6)} s`);
+const exactAnchorRows = anchorRuns.filter((run) =>
+  run.mapId === 'amboy' || run.mapId === 'gracia');
+const sprintAnchorRows = anchorRuns.filter((run) =>
+  run.mapId !== 'amboy' && run.mapId !== 'gracia');
+check('M17', 'committed-control anchor reproduces the measured-control maps exactly and the sprint-control maps are clean',
+  anchorRuns.length === selectedMaps.length &&
+  exactAnchorRows.length === 2 &&
+  exactAnchorRows.every((run) => run.status === 'finished' && run.respawns === 0 &&
+    run.comparable === true &&
     run.timeMatchesExactly === true && run.stateSequenceMatchesExactly === true &&
     run.replayMatchedEveryTick === true &&
     run.committed && run.committed.timeSeconds === expectedCommitted[run.mapId] &&
-    /^sha256:[0-9a-f]{64}$/.test(run.committed.stateSequenceHash ?? '')),
+    /^sha256:[0-9a-f]{64}$/.test(run.committed.stateSequenceHash ?? '')) &&
+  sprintAnchorRows.length === selectedMaps.length - 2 &&
+  sprintAnchorRows.every((run) => run.status === 'finished' && run.respawns === 0 &&
+    run.nanTicks === 0 && run.replayMatchedEveryTick === true &&
+    run.comparable === false && run.committedControlClass === 'sprint' &&
+    run.committed && Number.isFinite(run.committed.maxSpeedMps)),
   anchorRuns.map((run) => `${run.mapId}:${run.timeMatchesExactly}/${run.stateSequenceMatchesExactly}/` +
-    `${run.timeSeconds}`).join(', '));
-// Declared limits on the tight Gracia course: the Dodge and F100 lose front
-// contact at the spawn, and three heavy offroad cars cannot finish it at the
-// reference pace. Every one is named, on Gracia only, and listed here.
-const GRACIA_HEAVY = new Set(['ford-f150-offroadheh', 'nissan-navara-offroad', 'hummer-h2-offroad']);
-const declaredHeavy = knownLimits.filter((item) => GRACIA_HEAVY.has(item.car) &&
-  item.courseId === 'gracia' && item.status === 'dnf');
+    `${run.timeSeconds}/comparable=${run.comparable}`).join(', '));
+// Every declared limit must name a car, a course and a cause, carry the
+// observed detail, and stay bounded relative to the run count.
 check('M17b', 'every declared limit names a car, a course and a cause, and the set is bounded',
-  knownLimits.length > 0 && knownLimits.length <= Math.ceil(runs.length * 0.15) &&
+  knownLimits.length <= Math.ceil(runs.length * 0.15) &&
   knownLimits.every((item) => typeof item.car === 'string' && typeof item.courseId === 'string' &&
-    typeof item.cause === 'string' && typeof item.profile === 'string') &&
+    typeof item.cause === 'string' && typeof item.profile === 'string' &&
+    typeof item.detail === 'string' && item.detail.length > 0) &&
   unexpectedFailures.length === 0,
   `${knownLimits.length} declared of ${runs.length}: ` +
-  [...new Set(knownLimits.map((item) => `${item.car}:${item.cause}`))].join(', '));
+  [...new Set(knownLimits.map((item) => `${item.courseId}/${item.car}:${item.cause}`))].join(', '));
 
 // ---------------------------------------------------------------------------
 // Multi-AI race.
@@ -224,14 +273,13 @@ check('M17b', 'every declared limit names a car, a course and a cause, and the s
 const raceSummaries = races.filter((race) => Array.isArray(race.entries));
 const raceByMap = Object.fromEntries(raceSummaries.map((race) => [race.courseId, race]));
 check('M18', 'each map has a 2-4 AI race and every entrant finished',
-  ['amboy', 'gracia'].every((mapId) => {
+  selectedMaps.every((mapId) => {
     const race = raceByMap[mapId];
     return race && race.entries.length >= 2 && race.entries.length <= 4 &&
       race.entries.every((entry) => entry.status === 'finished' &&
         Number.isFinite(entry.finishTick) && Number.isFinite(entry.timeSeconds));
   }),
-  Object.entries(raceByMap).map(([mapId, race]) =>
-    `${mapId}:${race.entries.length} entrants`).join(', '));
+  selectedMaps.map((mapId) => `${mapId}:${raceByMap[mapId]?.entries.length ?? 0} entrants`).join(', '));
 
 const raceOrderOk = raceSummaries.every((race) => {
   const positions = race.entries.map((entry) => entry.position);
@@ -242,10 +290,12 @@ const raceOrderOk = raceSummaries.every((race) => {
 check('M19', 'race positions are ordered by finish tick without gaps', raceOrderOk,
   raceSummaries.map((race) => `${race.name}:${race.entries.map((entry) => entry.finishTick).join(',')}`).join(' | '));
 check('M20', 'every race is deterministic across two fresh instance sets',
-  raceSummaries.length === 2 && raceSummaries.every((race) => race.deterministic === true),
+  raceSummaries.length === selectedMaps.length &&
+  raceSummaries.every((race) => race.deterministic === true),
   raceSummaries.map((race) => `${race.name}:${race.deterministic}`).join(', '));
 check('M21', 'every race replay reproduces every car hash',
-  raceSummaries.length === 2 && raceSummaries.every((race) => race.replayMatchedEveryTick === true) &&
+  raceSummaries.length === selectedMaps.length &&
+  raceSummaries.every((race) => race.replayMatchedEveryTick === true) &&
   (results.determinism?.raceReplayStatesCompared ?? 0) > 0,
   raceSummaries.map((race) => `${race.name}:${race.replayMatchedEveryTick}`).join(', ') +
   `; ${results.determinism?.raceReplayStatesCompared ?? 0} states compared`);
@@ -269,6 +319,98 @@ check('M24', 'driver source contains no random or wall-clock call',
   !/performance\.now\s*\(/.test(source) && !/new\s+Date\s*\(/.test(source) &&
   !/setTimeout\s*\(/.test(source) && !/setInterval\s*\(/.test(source),
   'no Math.random/Date.now/performance.now/new Date/timer calls');
+
+// ---------------------------------------------------------------------------
+// New-map evidence: required per-run fields, ground hint, determinism.
+// ---------------------------------------------------------------------------
+
+let missingFields = 0;
+for (const run of runs) {
+  const ok = typeof run.mapId === 'string' &&
+    run.mapId === run.courseId &&
+    typeof run.profile === 'string' &&
+    typeof run.car === 'string' &&
+    typeof run.status === 'string' &&
+    (run.status === 'finished'
+      ? Number.isFinite(run.timeSeconds) && Number.isFinite(run.finish?.tick)
+      : knownKey.has(`${run.courseId}|${run.profile}|${run.car}`)) &&
+    Number.isInteger(run.respawns) &&
+    Number.isFinite(run.maxLateralMetres) &&
+    Number.isFinite(run.contactTicks) &&
+    Number.isFinite(run.contacts?.runningTicks) &&
+    typeof run.replay?.matchedEveryTick === 'boolean' &&
+    /^sha256:[0-9a-f]{64}$/.test(run.stateSequenceHash ?? '');
+  if (!ok) missingFields += 1;
+}
+check('M25', 'every run records mapId, profile, car, status, time, respawns, lateral, contact ticks, replay and state hash',
+  missingFields === 0, `${missingFields}/${runs.length} runs missing a required field`);
+
+let badGroundHint = 0;
+for (const mapId of selectedMaps) {
+  const info = mapInputs[mapId];
+  if (!info) { badGroundHint += 1; continue; }
+  const layout = readJson(path.join(ROOT, info.layoutPath));
+  const value = layout.course?.spawnGroundY;
+  const expectedApplied = Number.isFinite(value) && (value < -170 || value > 130);
+  const hint = info.groundHint;
+  if (!Number.isFinite(value) ||
+      !hint || hint.value !== value ||
+      hint.applied !== expectedApplied ||
+      hint.reason !== (expectedApplied
+        ? 'spawn-ground-outside-fixed-probe-column'
+        : 'spawn-ground-inside-fixed-probe-column') ||
+      info.summary?.spawnGroundY !== value) {
+    badGroundHint += 1;
+  }
+}
+check('M26', 'every map records its layout spawnGroundY and applies the ground hint when it is outside the fixed column',
+  badGroundHint === 0 &&
+  mapInputs.mharuna?.groundHint?.value === 1064.4312 &&
+  mapInputs.mharuna?.groundHint?.applied === true,
+  `${badGroundHint}/${selectedMaps.length} bad hints; ` +
+  selectedMaps.map((mapId) => `${mapId}:${mapInputs[mapId]?.groundHint?.value}` +
+    `/${mapInputs[mapId]?.groundHint?.applied}`).join(', '));
+
+// Finish-time determinism across two process-separated runs. This is stronger
+// than the byte-identical file check because it names the run that drifted.
+const previousResults = previousExists ? JSON.parse(previousBytes.toString('utf8')) : null;
+const runKey = (run) => `${run.mapId}|${run.profile}|${run.car}`;
+const previousByKey = new Map((previousResults?.runs ?? []).map((run) => [runKey(run), run]));
+let driftedRuns = 0;
+let missingPreviousRuns = 0;
+for (const run of runs) {
+  const previous = previousByKey.get(runKey(run));
+  if (!previous) { missingPreviousRuns += 1; continue; }
+  if (previous.status !== run.status ||
+      previous.timeSeconds !== run.timeSeconds ||
+      previous.respawns !== run.respawns ||
+      previous.stateSequenceHash !== run.stateSequenceHash ||
+      previous.finishStateSequenceHash !== run.finishStateSequenceHash) {
+    driftedRuns += 1;
+  }
+}
+check('M27', 'finish times and state hashes are identical across two process-separated runs',
+  previousExists && missingPreviousRuns === 0 && driftedRuns === 0 &&
+  runs.length === (previousResults?.runs ?? []).length,
+  previousExists
+    ? `${driftedRuns} drifted, ${missingPreviousRuns} missing of ${runs.length}`
+    : 'results-maps.previous.json not present');
+
+// Per-map split: every selected car × profile has exactly one run, and every
+// run is either clean or a declared limit.
+const perMap = selectedMaps.map((mapId) => {
+  const mapRuns = runs.filter((run) => run.mapId === mapId);
+  const mapClean = mapRuns.filter((run) => run.clean === true).length;
+  const mapDeclared = mapRuns.filter((run) =>
+    !run.clean && knownKey.has(`${run.courseId}|${run.profile}|${run.car}`)).length;
+  return {
+    mapId, runs: mapRuns.length, clean: mapClean, declared: mapDeclared,
+    expected: selectedCars.length * selectedProfiles.length
+  };
+});
+check('M28', 'every map has one run per car/profile and every run is clean or declared',
+  perMap.every((row) => row.runs === row.expected && row.clean + row.declared === row.runs),
+  perMap.map((row) => `${row.mapId}:${row.clean} clean + ${row.declared} declared / ${row.runs}`).join('; '));
 
 const failed = checks.filter((item) => !item.ok);
 const report = {
@@ -300,25 +442,34 @@ const report = {
     clean: runs.filter((run) => run.clean).length,
     totalRespawns: runs.reduce((sum, run) => sum + run.respawns, 0),
     knownLimits: knownLimits.map((item) => ({
-      courseId: item.courseId, car: item.car, profile: item.profile,
-      status: item.status, respawns: item.respawns, cause: item.cause
+      mapId: item.mapId, courseId: item.courseId, car: item.car, profile: item.profile,
+      status: item.status, respawns: item.respawns, cause: item.cause,
+      detail: item.detail, maxLateralMetres: item.maxLateralMetres,
+      maxArcMetres: item.maxArcMetres, finishArcMetres: item.finishArcMetres
     })),
     unexpectedFailures: unexpectedFailures.length,
     statesCompared: results.determinism?.perRunReplayStatesCompared ?? 0,
+    perMap,
     profiles: profiles.map((profile) => ({
       id: profile.id, speedScale: profile.speedScale,
-      clean: profile.clean, runs: profile.runs, failed: profile.failed.length
+      clean: profile.clean, runs: profile.runs, failed: profile.failed.length,
+      byMap: profile.byMap
     })),
     committed: committedRows.map((row) => ({
       mapId: row.mapId,
       timeSeconds: row.ai?.timeSeconds,
       committedTimeSeconds: row.committed?.timeSeconds,
+      committedMaxSpeedMps: row.committed?.maxSpeedMps,
+      comparable: row.comparable,
+      committedControlClass: row.committedControlClass,
       differenceSeconds: row.differenceSeconds
     })),
     anchor: anchorRuns.map((run) => ({
       mapId: run.mapId,
       timeSeconds: run.timeSeconds,
       committedTimeSeconds: run.committed?.timeSeconds,
+      committedMaxSpeedMps: run.committed?.maxSpeedMps,
+      comparable: run.comparable,
       timeMatchesExactly: run.timeMatchesExactly,
       stateSequenceMatchesExactly: run.stateSequenceMatchesExactly,
       finishStateSequenceHash: run.finishStateSequenceHash
