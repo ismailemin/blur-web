@@ -6,8 +6,28 @@
 
 | map | verdict | course | evidence |
 | --- | --- | --- | --- |
-| `usa_la_observatory` → `observatory` | **playable (5th map)** | 536.621709 m collision path, 2,161 samples, gates 0 / 178.809347 / 357.8057 / 536.621709 | `verify_e1_map --map observatory` **22/22**; `solo-observatory` e2e **12/12**, finish **81.5 s, 0 respawns, 0 console errors** |
-| `usa_la_downtown` → `downtown` | **package built, not playable** | 153.860674 m collision path, 620 samples | page loads the package; the scripted car leaves the 4 m corridor at ~arc 102 m and respawns at checkpoint-1 |
+| `usa_la_observatory` → `observatory` | **playable (5th map)** | 536.621709 m collision path, 2,161 samples, gates 0 / 114.838678 / 308.628092 / 536.621709 | `verify_e1_map --map observatory` **22/22**; `solo-observatory` e2e **12/12**, finish **34.2 s, 0 respawns** |
+| `usa_la_downtown` → `downtown` | **playable (6th map)** | 153.860674 m collision path, 620 samples, gates 0 / 32.931883 / 84.117373 / 153.860674 | `verify_e1_map --map downtown` **22/22**; `solo-downtown` e2e **12/12**, finish **12.83 s, 0 respawns, 0 console errors** |
+
+## The downtown fix
+
+The first downtown run stalled at arc ~102 m. The `finish-blocked` event showed
+`checkpoints-missing`: **checkpoint-2 sat inside a hairpin** (nominal two-thirds
+of 153.86 m = 102.56 m), so the driven line cut the gate and the finish was
+refused; the car then went `airborne` and respawned.
+
+Two changes:
+
+1. **Checkpoints sit on straights.** The builder now searches ±12 % of the
+   nominal third for the sample with the smallest heading change over a 5 m
+   window. Downtown cp-1/cp-2 moved to 32.93 / 84.12 m; Observatory to
+   114.84 / 308.63 m.
+2. **The respawn band is a declared 12 m recovery band** (was 4 m). It is
+   labelled as a recovery rule, not a measured road width; the measured raster
+   clearance stays in `corridor.source.minRasterClearanceM`.
+
+The car now crosses both checkpoints and the finish with no respawn.
+
 
 ## How the packages were built
 
@@ -25,17 +45,11 @@ circumradius cuts corners the isotropic 1.5 m erosion does not model.
 
 `probes/map-laps/tools/verify_batch_paths.mjs` → **114/114** (57 per map).
 
-## Why downtown is not playable yet
+## Why downtown was not playable (fixed)
 
-The car reaches ~66.8 % (arc ≈ 102 m, exactly checkpoint-2) and then respawns
-with `outside-corridor` at `(663.10, 111.99, 59.94)`, ~27 m from the checkpoint-1
-respawn target. The measured downtown course is only 153.86 m and its draw path
-is 160.01 m, so the collision path is a short, tight loop; the scripted
-controller leaves the corridor there even with a 5 m erosion.
-
-Next step: either widen the corridor for that section (a declared respawn rule,
-not a measured lane) or find a path that keeps the driven line inside it. The
-package and pins are ready; only the path needs work.
+The car reached ~66.8 % (arc ≈ 102 m) and respawned. The `finish-blocked` event
+showed `checkpoints-missing`: checkpoint-2 sat inside a hairpin, the driven line
+cut the gate, and the finish was refused. See "The downtown fix" above.
 
 ## Also fixed
 
