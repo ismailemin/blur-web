@@ -28,12 +28,13 @@ dalgaları). Sıra bağlayıcıdır: bir dalga yeşil olmadan sonraki başlamaz.
 
 | # | Ajan | Dizin | İş | Kapı |
 |---|---|---|---|---|
-| 1 | PWR8 | `probes/powerups` | `pickup-routes.json`'ı oyuna bağla: pickup'ları rota yayına göre yerleştir | E2E + `verify_pickup_routes` |
-| 2 | LIGHT2 | `probes/lighting` | `runtime-lighting.mjs`'i render'a bağla | görsel + hash |
-| 3 | MAT2 | `probes/car-materials` | `runtime-materials.mjs`'i render'a bağla | görsel + hash |
-| 4 | MAPBATCH2 | `probes/map-batch` | `map-decisions.json`'daki oynanabilir haritaları `e1-drive`'a ekle | E2E |
-| 5 | HUD2 | `probes/hud-ui` | HUD'ı varsayılan yap (debug HUD yerine) | E2E + ekran |
-| 6 | VBATCH2 | `probes/vehicle-batch` | 25 → 61/62 araç | `verify_batch3` |
+| 1 | PATH1 | `probes/map-laps` | Long Beach sürülebilir polyline (arc 226.8 m duvarı) | E2E finish |
+| 2 | PWR8 | `probes/powerups` | `pickup-routes.json`'ı oyuna bağla: pickup'ları rota yayına göre yerleştir | E2E + `verify_pickup_routes` |
+| 3 | LIGHT2 | `probes/lighting` | `runtime-lighting.mjs`'i render'a bağla | görsel + hash |
+| 4 | MAT2 | `probes/car-materials` | `runtime-materials.mjs`'i render'a bağla | görsel + hash |
+| 5 | MAPBATCH2 | `probes/map-batch` | `map-decisions.json`'daki oynanabilir haritaları `e1-drive`'a ekle | E2E |
+| 6 | HUD2 | `probes/hud-ui` | HUD'ı varsayılan yap (debug HUD yerine) | E2E + ekran |
+| 7 | VBATCH2 | `probes/vehicle-batch` | 25 → 61/62 araç | `verify_batch3` |
 
 ## 2. Ana ajan — entegrasyon sırası
 

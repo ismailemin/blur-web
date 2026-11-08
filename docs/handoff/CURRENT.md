@@ -36,13 +36,16 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
 
 **Sıradaki (öncelik sırası):**
 
-1. Retail pickup rotasını oyuna bağla: pickup'ları kendi rotalarının yay
+1. Long Beach sürülebilir yol: paket hazır (818.37 m, 1.039 draw), ama ölçülen
+   yol arc 226.8 m'de motor çarpışmasına takılıyor; polyline düzeltmesi
+   gerekiyor (`docs/work/analysis/longbeach-path-blocked.md`).
+2. Retail pickup rotasını oyuna bağla: pickup'ları kendi rotalarının yay
    konumuna göre yerleştir (veri hazır, `pickup-routes.json`).
-2. Işık ve araç materyalini render'a bağla (veri hazır; görsel doğrulama
+3. Işık ve araç materyalini render'a bağla (veri hazır; görsel doğrulama
    gerekiyor).
-3. Gracia noktadan noktaya kalıyor (karar `gracia-no-lap.json`).
-4. Kalan 13 harita için `map-decisions.json` kararlarını uygula.
-5. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
+4. Gracia noktadan noktaya kalıyor (karar `gracia-no-lap.json`).
+5. Kalan 13 harita için `map-decisions.json` kararlarını uygula.
+6. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
    (kullanıcıdan VPS/domain/TLS bekliyor).
 
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)
