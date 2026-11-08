@@ -147,6 +147,10 @@ foreach ($lvl in @("usa_amboy","spa_barcelona_gracia")) {
 
 # P61 regression (redirected output, nothing under _work/lap-search is written)
 & $py probes/map-laps/tools/run_p61_regression.py
+
+# committed Amboy 3-lap layout document (e1-drive.sprint v1, courseId "lap")
+& $py probes/map-laps/tools/build_amboy_lap.py
+& $node probes/map-laps/tools/verify_amboy_lap.mjs
 ```
 
 ## 7. Artifacts and hashes
@@ -219,3 +223,95 @@ _work/logs/map-laps/*.log         every build, verify, engine, coverage, map, re
 ```
 
 Analysis document: [`docs/work/analysis/map-laps.md`](../../docs/work/analysis/map-laps.md).
+
+## 10. Amboy 3-lap layout document
+
+`probes/map-laps/data/amboy-loop01-lap.json` is the committed, game-ready
+three-lap layout for `usa_amboy` loop-01. It is an `e1-drive.sprint` v1
+document with `courseId: "lap"` - the schema
+`probes/e1-drive/web/sprint-layout.js` derives for River's loop-01 - plus two
+checkpoint gates distributed along the loop.
+
+| field | value |
+| --- | --- |
+| output | `probes/map-laps/data/amboy-loop01-lap.json` |
+| bytes / file SHA-256 | 290,543 / `sha256:61cac054420f01520636ea3b48ba9d025dfce120471ee2a7d7a41d3f2f5f1c28` |
+| canonical `hash` | `sha256:7b39c8c20700ae4f3b3698e9d128d7686aec1f583e52f4238b13d87fc42817e1` |
+| loop | `loop-01`, component **510**, 284.4524 m, 1,152 samples at 0.25 m |
+| laps | **3** |
+| gates | start 0 m / 1.8430 m; checkpoint-1 94.7107 m / 0.2569 m; checkpoint-2 189.5103 m / 0.9473 m; finish 284.452387 m / 1.8430 m |
+| start / finish | `(179.5, 889.5)`, heading 1.712699381 rad, 4 m line |
+| total race distance | 853.3572 m (3 x 284.4524) |
+| draw coverage | 1.000, 0 gaps, max delta 4.42 cm |
+| verifier | **53/53 checks passed** |
+
+Schema (the driving-slice fields the page reads):
+
+- `kind: "e1-drive.sprint"`, `version: 1`, `courseId: "lap"`;
+- `source`: the collision-only probe, `loopId: "loop-01"`, component 510, the
+  loops/coverage/layout/verify/engine-trace/physics file hashes and the
+  `groundSource` / `gateLineSource` / `checkpointStationSource` notes;
+- `course`: `samples` (1,152 x `{arc,x,z,groundY,covered}`), `lap.line`
+  (`a`, `b`, `x`, `z`, `groundY`, `headingRad`, `tangent`), `corridor`
+  (1.25 m declared respawn band), `coverage`, `reference` and `span`;
+- `gates`: `start`, `checkpoint-1`, `checkpoint-2`, `finish`, each with
+  `sampleIndex`, `arc`, `x`, `z`, `groundY`, `height`, `headingRad`,
+  `tangent`, `a`, `b`, `widthMetres` and `groundCheck`;
+- `countdown` (90 ticks), `rules` (3 forward crossings of the start/finish
+  line, respawn rule) and `hash`.
+
+Derived fields (the probe's `layout.json` does not carry them):
+
+- per-sample `groundY` is `loops.json` loop-01 `ground`, the P48 collision
+  raster H at each 0.25 m sample's 0.5 m cell (4 decimals);
+- gate lines are the 5 m tangent window, a 4 m line, oriented so the approach
+  side is positive (the `sprint-layout.js` rule);
+- `groundCheck` is the P48 passable raster (`grid.npz` `base` / `height`) at
+  the gate cell and at 0.25 m stations across the line. The probe did not
+  measure the 4 m gate lines for draw coverage, so `coverage.measured` is
+  `false`;
+- the checkpoints are the samples closest to one-third / two-thirds of the
+  measured arc (indices 385 / 770). The probe's `layout.json` used nominal
+  0.25 m sample thirds (379 / 759, 32.77 % / 65.66 %); the measured arc is the
+  authority here.
+
+Scope labels carried by the document:
+
+```json
+"scope": {
+  "collisionOnly": true,
+  "drawGeometryRead": false,
+  "drawCoverageSource": "_work/map-laps/usa_amboy/coverage.json (0.5 m height test, not a render)",
+  "rendererClaim": false,
+  "vehiclePhysics": false,
+  "gameRun": false,
+  "lapDriven": false,
+  "engineTrace": "recorded in _work/map-laps/usa_amboy/engine-trace.json; not re-run by this builder",
+  "note": "a data layout, not an e1-drive integration: no gate mesh, no race director, no lap timing, no car simulated"
+}
+```
+
+Integration caveats:
+
+- `courseId: "lap"` is what `LapRules` (`sprint-rules.js`) accepts; the page
+  must fetch this document for the Amboy lap course and pass it to
+  `createSprintRules`.
+- `map-package.js` `validateMapPackage` is the point-to-point 4-gate /
+  2,060 m validator; it must not be applied to this lap document.
+- the checkpoint gates are data only: `LapRules` counts three forward
+  crossings of the start/finish line and does not require them.
+- no lap has been driven on this map; the 1.25 m respawn band is a declared
+  rule, not a measured driven lateral bound. No gate mesh, race director,
+  lap timing, props or AI are added by this document.
+
+Verifier coverage (`verify_amboy_lap.mjs`, 53 checks): gate count / order /
+arcs, the 284.4524 m length within 1e-3 m, the closed seam and the
+last-gate-to-start connection, the 5 m seam tangent, per-gate ground and P48
+passable raster (centre, car-width line, 4 m line), per-sample coverage, the
+3-lap counter (same forward-crossing rule as `LapRules`), the countdown /
+respawn rules, the canonical hash, and determinism (the builder twice,
+byte-identical, and equal to the committed file).
+
+`build_amboy_lap.py --check` compares the generated document with the
+committed file and exits 1 if it is stale; the verifier already runs the
+builder twice, so a hand-edited document fails both gates.
