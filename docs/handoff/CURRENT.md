@@ -1,11 +1,11 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 8 Kasım 2026 (akşam)
+**Güncelleme:** 8 Kasım 2026 (gece)
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
-tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita.
+tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **57 araç, 7 harita**.
 **Son commit'ler:** `13cf0b1` 8 oyunculu oda, `70374f6` oyun kabuğu,
-`fadabdd` wave-1 probe verisi, `2aa9de1` 8 oyunculu oda servisi + WSS deploy,
-`50afc31` wave-1 analiz dokümanları.
+`2a8c714` 57 araç, `d8101c2` Long Beach, `302e5d8` Hollywood Hills,
+`5cf4da5` Downtown, `8f3a1c0` Mount Haruna (yedinci harita).
 **Bu oturumun kaydı:** [`docs/work/logs/2026-11-08-mp-eight.md`](../work/logs/2026-11-08-mp-eight.md)
 
 ## Şu an neredeyiz? (kısa özet)
@@ -17,7 +17,7 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
   sonuç tablosu** üretiliyor. `mp-eight` E2E **95/95 PASS**; oda istatistiği
   `connections:8, roomsCreated:1, roomsFinished:1, maxPlayersSeen:8,
   protocolErrors:0`.
-- **Menü kabuğu:** boş URL menüyü açar (57 araç, 3 harita, mod/araç/harita
+- **Menü kabuğu:** boş URL menüyü açar (57 araç, 7 harita, mod/araç/harita
   seçimi, lobi); her yarış parametresi menüyü atlar. `?join=1` misafir akışı.
   Başsız Edge: 0 konsol hatası.
 - **Araçlar:** sürüş diliminde **57 araç** (25 → 57); yeni araçlarla sprint
@@ -31,6 +31,9 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
 - **LA Downtown 6. harita:** `?map=downtown&script=sprint` → 153.86 m,
   **12.83 s, 0 respawn**; e2e `solo-downtown` 12/12. Checkpoint'ler artık
   viraj yerine düz kesimlerde (nominal 1/3 ve 2/3'ün ±%12'sinde en düz örnek).
+- **Mount Haruna 7. harita:** `?map=mharuna&script=sprint` → 309.17 m,
+  **18.83 s, 0 respawn**; e2e `solo-mharuna` 12/12. Spawn Y 1064'te olduğu için
+  motora `e1_set_ground_hint` eklendi (sabit sonda sütunu Y -170..130).
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Amboy/Gracia power-up:** retail yerleşim bağlı — Amboy **82**, Gracia **59**
   pickup, misafir hepsini alıyor; oda bayrağıyla `?powerups=1` gerekmiyor.
@@ -38,22 +41,28 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
 - **Taşınabilir kapı:** `verify_asset_probe --skip-build` **84/84**,
   `check_e1_poc` **23/23**.
 - **Tüm probe doğrulayıcıları yeşil:** race-rules 249/249, map-pipeline 930/930
-  + kararlar 2466/2466, map-batch 1450/1450, instances 510/510,
-  net-prediction 357/357, robustness 171/171, map-laps 53/53 + Gracia 83/83,
+  + kararlar 2062/2062, map-batch 1450/1450, instances 510/510,
+  net-prediction 357/357, robustness 171/171, map-laps 114/114 + Gracia 83/83,
   map-props 259/259, powerups 7828/7828 + rotalar 1610/1610, lighting 973/973,
   car-materials 3505/3505, HUD 12 test.
 - **Runtime modülleri hazır:** ışık, araç materyali, HUD (`?hud=retail` ile
   bağlı), pickup rotası, 19 harita kararı.
 
+**Paralel dalga (bu gece, 7 ajan):** kalan harita yolları (`map-laps`),
+lightmap decode (`lighting`), fiziksel pickup iz düşümü (`powerups`),
+5 desteklenmeyen araç (`vehicle-batch`), HUD (`hud-ui`), ses kataloğu
+(`audio`), yeni haritalarda AI (`ai-driver`), menü 57 araç/7 harita
+(`game-shell`).
+
 **Sıradaki (öncelik sırası):**
 
-1. Retail pickup rotasını oyuna bağla: pickup'ları kendi rotalarının yay
-   konumuna göre yerleştir (veri hazır, `pickup-routes.json`).
-2. Işık ve araç materyalini render'a bağla (veri hazır; görsel doğrulama
-   gerekiyor).
-3. Gracia noktadan noktaya kalıyor (karar `gracia-no-lap.json`).
-4. Kalan 15 harita için `map-decisions.json` kararlarını uygula.
-5. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
+1. Kalan 12 haritanın collision yollarını `e1-drive`'a al (ajan çıktısı hazır
+   olunca registry + pin + e2e).
+2. Lightmap decode → gerçek ışık paritesi; araç materyalini render'a bağla.
+3. Fiziksel pickup iz düşümü (arc-korrespondans tablosu).
+4. 5 desteklenmeyen aracı çöz (ajan çıktısı).
+5. HUD/ses/AI/menü bağlantıları.
+6. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
    (kullanıcıdan VPS/domain/TLS bekliyor).
 
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)

@@ -1,3 +1,12 @@
+## 8 Kasım 2026 — yedinci harita (Mount Haruna) + paralel dalga
+
+- **Mount Haruna oynanabilir:** `?map=mharuna&script=sprint` → **309.17 m, 18.83 s, 2 checkpoint, 0 respawn, 0 konsol hatası**. `verify_e1_map --map mharuna` 22/22; e2e `solo-mharuna` 12/12.
+- **Motor düzeltmesi:** `e1_create` zemini sabit Y -170..130 sütununda arıyordu; Haruna (Y 1064), Highrise (218) ve Hackney (-294) dışındaydı. Yeni `e1_set_ground_hint` + sayfadan geçirilen `spawnGroundY` sütunu ortalar; ipucu yalnız aralık dışındaysa uygulanır, mevcut haritaların settle hash'leri değişmez.
+- **Kapı sırası düzeltmesi:** mharuna'nın son iki örneği aynıydı, kapı ters çevrildi ve finish tetiklenmedi. Yeniden örnekleme tekilleştirildi + kapı yaklaşma noktası en az 1 m uzağa alındı.
+- **Kapılar:** `map-batch` 1450/1450 (7 playable), `verify_blocked` PASS, `verify_map_decisions` 2062/2062, `verify_batch_paths` 114/114, `check_e1_poc` 23/23, `solo-sprint` 39/39, `mp-two` 52/52.
+- **Paralel dalga başlatıldı (7 ajan, ayrık dizinler):** kalan harita yolları (`map-laps`), lightmap decode (`lighting`), fiziksel pickup iz düşümü (`powerups`), 5 desteklenmeyen araç (`vehicle-batch`), HUD (`hud-ui`), ses kataloğu (`audio`), yeni haritalarda AI (`ai-driver`), menü 57 araç/7 harita (`game-shell`).
+- Ayrıntı: `docs/work/analysis/mharuna-package.md`; oturum kaydı §25.
+
 ## 8 Kasım 2026 — Long Beach dördüncü harita olarak entegre edildi
 
 - **Long Beach artık oynanabilir:** `?map=longbeach&script=sprint` → **785.82 m**, **57.07 s, 2 checkpoint, 0 respawn, 0 konsol hatası**.
@@ -1060,6 +1069,7 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sunucu doğrulandı: `/` HTTP 200, `e1_drive.wasm` 1.003.249 B HTTP 200.
 - 5 araç seçici ve `?car=` URL'i; scripted mod `?script=drive&car=...`.
 - Kullanıcı testi için hazır; görsel sadakat/teker/engine draw-list işleri devam ediyor.
+
 
 
 
