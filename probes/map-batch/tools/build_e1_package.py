@@ -55,6 +55,12 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]
 
+# The decoded retail lightmap textures are exported per map by
+# `probes/lighting/tools/export_lightmap_rgba.py`; the driving page fetches them
+# by URL. Only the four maps the lighting probe decoded have a set.
+LIGHTMAP_MAPS = {"river", "amboy", "gracia", "longbeach"}
+LIGHTMAP_URL = "/_work/lighting/%s/lightmap/%s.rgba"
+
 MAP_BUILDS = {
     "observatory": dict(
         id="observatory",
@@ -393,6 +399,7 @@ def build_map(map_id: str, check: bool = False, log=print):
                         batch / "collision.indices.u32.bin"),
                        ("draws.positions.f32.bin", batch / "draws.positions.f32.bin"),
                        ("draws.uv0.f32.bin", batch / "draws.uv0.f32.bin"),
+                       ("draws.lightmapUv.f32.bin", batch / "draws.lightmapUv.f32.bin"),
                        ("draws.indices.u32.bin", batch / "draws.indices.u32.bin")):
         record = files.get(name)
         if not record:
@@ -405,9 +412,11 @@ def build_map(map_id: str, check: bool = False, log=print):
     # ------------------------------------------------------------ geometry
     positions_bytes = (batch / "draws.positions.f32.bin").read_bytes()
     uv0_bytes = (batch / "draws.uv0.f32.bin").read_bytes()
+    lightmap_uv_bytes = (batch / "draws.lightmapUv.f32.bin").read_bytes()
     index_bytes = (batch / "draws.indices.u32.bin").read_bytes()
     positions = np.frombuffer(positions_bytes, dtype="<f4")
     uv0 = np.frombuffer(uv0_bytes, dtype="<f4")
+    lightmap_uv = np.frombuffer(lightmap_uv_bytes, dtype="<f4")
     indices = np.frombuffer(index_bytes, dtype="<u4")
     vertex_count = len(positions) // 3
     index_count = len(indices)
@@ -419,6 +428,9 @@ def build_map(map_id: str, check: bool = False, log=print):
                          % (index_count, draws["counts"]["indexCount"]))
     if len(uv0) != vertex_count * 2:
         raise SystemExit("UV0 count %d != vertex count %d * 2" % (len(uv0), vertex_count))
+    if len(lightmap_uv) != vertex_count * 2:
+        raise SystemExit("lightmap UV count %d != vertex count %d * 2"
+                         % (len(lightmap_uv), vertex_count))
 
     mesh = {
         "id": cfg["mesh_id"],
@@ -443,13 +455,27 @@ def build_map(map_id: str, check: bool = False, log=print):
                                % draws["counts"]["uv0PlaceholderVertices"]),
             },
         },
+        "lightmapUv": {
+            "storage": "base64-float32le",
+            "components": 2,
+            "vertexCount": vertex_count,
+            "values": vertex_count * 2,
+            "bytes": len(lightmap_uv_bytes),
+            "data": base64.b64encode(lightmap_uv_bytes).decode("ascii"),
+            "sha256": file_sha256(batch / "draws.lightmapUv.f32.bin"),
+            "source": {
+                "provenance": ("committed map-batch draws.lightmapUv.f32.bin; "
+                               "the F16_4 UV0 .zw stream (retail g_tLightmap UV); "
+                               "zero where the UV0 type is not F16_4"),
+            },
+        },
         "coordinateSpace": "world",
         "source": {
             "package": cfg["batch"],
             "buffers": ["draws.positions.f32.bin", "draws.uv0.f32.bin",
-                        "draws.indices.u32.bin"],
-            "note": ("positions and UV0 are separate per-vertex streams, indices are "
-                     "global; copied byte-for-byte from the committed package"),
+                        "draws.lightmapUv.f32.bin", "draws.indices.u32.bin"],
+            "note": ("positions, UV0 and lightmap UV are separate per-vertex streams, "
+                     "indices are global; copied byte-for-byte from the committed package"),
         },
     }
 
@@ -490,6 +516,10 @@ def build_map(map_id: str, check: bool = False, log=print):
             "textureId": draw["textureId"],
             "textureSlot": draw["textureSlot"],
             "textureName": draw["textureName"],
+            "lightmapName": draw.get("lightmapName"),
+            "lightmapUrl": (LIGHTMAP_URL % (cfg["id"], draw["lightmapName"])
+                            if draw.get("lightmapName") and cfg["id"] in LIGHTMAP_MAPS
+                            else None),
             "uvHash": draw["uvHash"],
             "section": draw["sectionId"],
             "sectionDrawIndex": draw["sectionDrawIndex"],
@@ -709,6 +739,37 @@ def build_map(map_id: str, check: bool = False, log=print):
                 for axis in range(3)],
     }
 
+    # ------------------------------------------------------------ lightmaps
+    # The decoded retail lightmap textures the opaque draws reference. The pixels
+    # are exported by probes/lighting; this package records the identity, the
+    # dimensions and the URL the consumer fetches.
+    lightmap_records = []
+    if cfg["id"] in LIGHTMAP_MAPS:
+        lighting_path = ROOT / "probes/lighting/data/runtime-lighting.json"
+        lighting = json.loads(lighting_path.read_text(encoding="utf-8"))
+        table = lighting["maps"][cfg["id"]]["lightmap"]
+        by_name = {texture["name"]: texture for texture in table["textures"]}
+        used = sorted({draw["lightmapName"] for draw in draw_records
+                       if draw.get("lightmapName")})
+        for name in used:
+            texture = by_name.get(name)
+            if texture is None:
+                raise SystemExit("lightmap %s is not in the committed lighting table" % name)
+            lightmap_records.append({
+                "name": name,
+                "width": texture["width"],
+                "height": texture["height"],
+                "format": texture["format"],
+                "formatName": texture["formatName"],
+                "sha256": texture["sha256"],
+                "decodedRgbaSha256": texture["decodedRgbaSha256"],
+                "bytes": texture["decodedRgbaBytes"],
+                "url": LIGHTMAP_URL % (cfg["id"], name),
+                "source": "probes/lighting/data/runtime-lighting.json",
+            })
+        if not lightmap_records:
+            raise SystemExit("%s has a lightmap set but no draw references it" % cfg["id"])
+
     map_body = {
         "kind": "e1-drive.map-package",
         "version": 1,
@@ -776,6 +837,7 @@ def build_map(map_id: str, check: bool = False, log=print):
             "triangleTotal": index_count // 3,
             "draws": draw_records,
             "textures": texture_records,
+            "lightmaps": lightmap_records,
             "sections": [],
             "texturePack": {
                 "format": "rgba8unorm",

@@ -34,9 +34,9 @@
   },
   "render": {
    "path": "_work/map-batch/jpn_tokyo_shutoko/draws.json",
-   "bytes": 1948403,
-   "sha256": "sha256:cd1540c5c602bb3f1ad406e3742ee7b57c17d0723f679dd74086d0983ae915bb",
-   "contentHash": "sha256:cd1540c5c602bb3f1ad406e3742ee7b57c17d0723f679dd74086d0983ae915bb",
+   "bytes": 2120522,
+   "sha256": "sha256:9ad4d0841e72177dcc209b2a65e6974b6d9f3f967b9aae7a344fb54e0a4e5e48",
+   "contentHash": "sha256:9ad4d0841e72177dcc209b2a65e6974b6d9f3f967b9aae7a344fb54e0a4e5e48",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
@@ -47,7 +47,7 @@
   "textures": {
    "path": "_work/map-batch/jpn_tokyo_shutoko/textures/index.json",
    "bytes": 1336482,
-   "sha256": "sha256:e7a2378d3bdee6e03cf0bdbe61088d5d4956bbb7423685453d9df4fa99f8a733"
+   "sha256": "sha256:d1e61c2906668655b62ec223aef7c0673ad5d2e70148581d076c6145f8c3fc43"
   },
   "spawnDocument": {
    "path": "_work/map-batch/jpn_tokyo_shutoko/spawn.json",
@@ -8427,5 +8427,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:172dff3b328a22ae1fd9ba9038c87e7ccc0741699fc305166000cb0b5ceefafc"
+ "hash": "sha256:32429da2f0a105ff1aabd3dceea7d6598b44108b3dad0b670ab5b770a6736fe4"
 }

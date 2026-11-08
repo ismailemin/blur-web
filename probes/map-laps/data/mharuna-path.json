@@ -34,9 +34,9 @@
   },
   "render": {
    "path": "_work/map-batch/jpn_mharuna/draws.json",
-   "bytes": 1270702,
-   "sha256": "sha256:862f7c991a44db5888e468894fcfa0b364e889b0eb3d1016fed792fafd60765d",
-   "contentHash": "sha256:862f7c991a44db5888e468894fcfa0b364e889b0eb3d1016fed792fafd60765d",
+   "bytes": 1391019,
+   "sha256": "sha256:c68e0af739e84cb455a88eb4531024307ec6e7b7583c7bfcbd0afa618e0d15ce",
+   "contentHash": "sha256:c68e0af739e84cb455a88eb4531024307ec6e7b7583c7bfcbd0afa618e0d15ce",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
@@ -47,7 +47,7 @@
   "textures": {
    "path": "_work/map-batch/jpn_mharuna/textures/index.json",
    "bytes": 286249,
-   "sha256": "sha256:715ad12cdf439c10996431647b8cda024c486efe26745630902eb59f1fca561b"
+   "sha256": "sha256:15e0f8a3f0bd03e0cd849b30c4d6c76e01f9bb6eb60da0b190c60b9db270be25"
   },
   "spawnDocument": {
    "path": "_work/map-batch/jpn_mharuna/spawn.json",
@@ -9258,5 +9258,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:21a2a30c94d46ad1905bd379138dcdce60ba550b25542201da58f5024e13b70e"
+ "hash": "sha256:91b6db19d7e42247dc79fac770c6c367f54577fcd9c73597ca915b39d7107f07"
 }

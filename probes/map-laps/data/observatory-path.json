@@ -34,9 +34,9 @@
   },
   "render": {
    "path": "_work/map-batch/usa_la_observatory/draws.json",
-   "bytes": 865408,
-   "sha256": "sha256:2bb867bfd74b2a8bb8d9f1e2d2b83c7cac28eef5987a75edde5908eb265b9564",
-   "contentHash": "sha256:2bb867bfd74b2a8bb8d9f1e2d2b83c7cac28eef5987a75edde5908eb265b9564",
+   "bytes": 942671,
+   "sha256": "sha256:6ba97664c9d9edda3e914a88d7d92546ed00aa966a9ebd0c82c8e26ec405a787",
+   "contentHash": "sha256:6ba97664c9d9edda3e914a88d7d92546ed00aa966a9ebd0c82c8e26ec405a787",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
@@ -47,7 +47,7 @@
   "textures": {
    "path": "_work/map-batch/usa_la_observatory/textures/index.json",
    "bytes": 121441,
-   "sha256": "sha256:898a069508a7030b074b2048859abbcb2d09b35d7babb78c1770df3e033a2662"
+   "sha256": "sha256:187f9165df2e79a87a33b0bc932630d89bcc8b7622a6e42dece421f27f066f10"
   },
   "spawnDocument": {
    "path": "_work/map-batch/usa_la_observatory/spawn.json",
@@ -15649,5 +15649,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:3eeaf7a1ca488d4475d52bc3aa6cce4eb01a3acc18d4b96d5710e04690d1973b"
+ "hash": "sha256:30b3867cd9367a50b4209841e9fcfa4f33bed757695b15bc8b1e3b1df6c94b61"
 }

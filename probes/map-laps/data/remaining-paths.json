@@ -4,7 +4,7 @@
   "mapDecisions": {
    "path": "probes/map-pipeline/data/map-decisions.json",
    "bytes": 54134,
-   "sha256": "sha256:47abf0e8f82606ecb42eca95b0342370e2845b70a4ac761a6380e0f5f2d01c28"
+   "sha256": "sha256:4e63bc72222c36b3aedbb60ee4997a923c298916a26cee4b795a84e45e9d6b3c"
   },
   "builder": "probes/map-laps/tools/build_batch_paths.py",
   "note": "lengths are the committed documents; blocked reasons are copied from _work/map-laps/<mapId>/blocked.json, never paraphrased"
@@ -84,8 +84,8 @@
    "corridorCells": 14,
    "reason": "committed collision-clear path; the committed draw path is the corridor centre line only",
    "pathFile": "probes/map-laps/data/highrise-path.json",
-   "pathFileSha256": "sha256:fe5c4e035fd3f26ed9095e69137154e14b76ded90e9a37253fb9716012d38b48",
-   "pathContentHash": "sha256:4d0c292cec351d7bed92ed3f9a70ab8491024fa64e93885b54d311395c435be3"
+   "pathFileSha256": "sha256:5fadef90714ab31be04f6f1a802829e294b0eb691b6bb15cbc829808ac02111c",
+   "pathContentHash": "sha256:bc0c69187d2c4048d1e8dc65bdfbe4dd822b7cbe49ce28dbb167cdc115746a5a"
   },
   {
    "level": "jpn_tokyo_shutoko",
@@ -108,8 +108,8 @@
    "corridorCells": 14,
    "reason": "committed collision-clear path; the committed draw path is the corridor centre line only",
    "pathFile": "probes/map-laps/data/shutoko-path.json",
-   "pathFileSha256": "sha256:b020121777e93b764288a68f4c6af52b641f0a52ecbf037c9d3e427735a2f622",
-   "pathContentHash": "sha256:172dff3b328a22ae1fd9ba9038c87e7ccc0741699fc305166000cb0b5ceefafc"
+   "pathFileSha256": "sha256:33356b85572b2347464fc37e833c507cca931913d48bb396d30acf3e01676f4f",
+   "pathContentHash": "sha256:32429da2f0a105ff1aabd3dceea7d6598b44108b3dad0b670ab5b770a6736fe4"
   },
   {
    "level": "uk_brighton",
@@ -198,8 +198,8 @@
    "corridorCells": 14,
    "reason": "committed collision-clear path; the committed draw path is the corridor centre line only",
    "pathFile": "probes/map-laps/data/oval-path.json",
-   "pathFileSha256": "sha256:8d65b6b09d910b7c1cc8d3d773481af6fb5566c05a1e83497b202ab08a0f7c45",
-   "pathContentHash": "sha256:9be12295925baa0b340a6e4235298923240e94905563c40c8c73cabc7571945d"
+   "pathFileSha256": "sha256:86e3389d2e1a773a7893992f7edeae93ee4fa7b954ec5bc17929406aeb38ce37",
+   "pathContentHash": "sha256:051109571da870b75bbaac5648c789a45060c129f6e33f9233b598a7e02060a3"
   },
   {
    "level": "usa_amboy_multiplayer",
@@ -222,8 +222,8 @@
    "corridorCells": 14,
    "reason": "committed collision-clear path; the committed draw path is the corridor centre line only",
    "pathFile": "probes/map-laps/data/amboy-mp-path.json",
-   "pathFileSha256": "sha256:26a95d7bf33406ce2c9f8c476fa31bacbe8b5d1933fd8c7e88a84f3d9f96a294",
-   "pathContentHash": "sha256:af8abcecf68c2daf8a5c1548a382e100d787f717b75c908764d2c6296b2652ca"
+   "pathFileSha256": "sha256:52f49453bae55abb00658a128d48cb24d71b69b7540fee7e4c2230b9fba88ca5",
+   "pathContentHash": "sha256:372a222388f1e5e60a11fdf66d0742f4dadde0daf4597b5f12adbd12b077fef5"
   },
   {
    "level": "usa_la_downtown_multiplayer",
@@ -298,5 +298,5 @@
   },
   "levelCount": 12
  },
- "hash": "sha256:9092caf6385ad1e463f9d206e5a15fdff4a0be3314c8832cdfe4400471fe0d9a"
+ "hash": "sha256:6ecab4d5a79ccc8fe7933664981c58819ce8887f7fb151cb889907ea36f67340"
 }

@@ -105,6 +105,7 @@ ARTIFACTS = (
     "draws.json",
     "draws.positions.f32.bin",
     "draws.uv0.f32.bin",
+    "draws.lightmapUv.f32.bin",
     "draws.indices.u32.bin",
     "textures/index.json",
     "collision.json",
@@ -288,7 +289,7 @@ def draws_stage(level: str, out: Path, probes: list[dict]) -> dict:
     unsupported = sorted([p for p in probes if p.get("status") != "ok"],
                          key=lambda p: (p["geometryBlock"], p["nodeBlock"]))
 
-    pos_chunks, uv_chunks, idx_chunks = [], [], []
+    pos_chunks, uv_chunks, lightmap_uv_chunks, idx_chunks = [], [], [], []
     sections, draws = [], []
     vertex_offset = index_offset = 0
     instance_descriptions = 0
@@ -319,9 +320,20 @@ def draws_stage(level: str, out: Path, probes: list[dict]) -> dict:
         section_id = "g%d-n%d" % (probe["geometryBlock"], probe["nodeBlock"])
         pos = f32_array(native["positions"])
         uv = f32_array(native["uv0"])
+        # F16_4 UV0 carries the retail lightmap UV in .zw. The reader exports it
+        # as a parallel pair stream; a 2-component UV0 has no lightmap UV and
+        # contributes explicit zeros (recorded, never a guess).
+        lightmap_uv = native.get("lightmapUv") or []
+        if lightmap_uv:
+            if len(lightmap_uv) != vertex_count * 2:
+                raise ValueError("lightmap UV count mismatch at " + str(native_path))
+            lm = f32_array(lightmap_uv)
+        else:
+            lm = f32_array([0.0] * (vertex_count * 2))
         idx = np.asarray(native["indices"], dtype=np.int64) + vertex_offset
         pos_chunks.append(pos)
         uv_chunks.append(uv)
+        lightmap_uv_chunks.append(lm)
         idx_chunks.append(idx)
 
         skipped = int(meta.get("instanceDescriptionsSkipped", 0) or 0) + \
@@ -396,13 +408,17 @@ def draws_stage(level: str, out: Path, probes: list[dict]) -> dict:
 
     positions = np.concatenate(pos_chunks) if pos_chunks else np.zeros(0, dtype="<f4")
     uv0 = np.concatenate(uv_chunks) if uv_chunks else np.zeros(0, dtype="<f4")
+    lightmap_uv = (np.concatenate(lightmap_uv_chunks) if lightmap_uv_chunks
+                   else np.zeros(0, dtype="<f4"))
     indices = np.concatenate(idx_chunks) if idx_chunks else np.zeros(0, dtype="<i8")
     positions = f32_array(positions)
     uv0 = f32_array(uv0)
+    lightmap_uv = f32_array(lightmap_uv)
     indices = u32_array(indices)
 
     pos_rec = write_bin(out / "draws.positions.f32.bin", positions)
     uv_rec = write_bin(out / "draws.uv0.f32.bin", uv0)
+    lightmap_uv_rec = write_bin(out / "draws.lightmapUv.f32.bin", lightmap_uv)
     idx_rec = write_bin(out / "draws.indices.u32.bin", indices)
 
     unsupported_records = []
@@ -425,11 +441,13 @@ def draws_stage(level: str, out: Path, probes: list[dict]) -> dict:
     return {
         "positions": positions,
         "uv0": uv0,
+        "lightmapUv": lightmap_uv,
         "indices": indices,
         "sections": sections,
         "draws": draws,
         "unsupportedSections": unsupported_records,
-        "buffers": {"positions": pos_rec, "uv0": uv_rec, "indices": idx_rec},
+        "buffers": {"positions": pos_rec, "uv0": uv_rec,
+                    "lightmapUv": lightmap_uv_rec, "indices": idx_rec},
         "counts": {
             "sectionsProbed": len(probes),
             "sectionsSupported": len(supported),
@@ -603,6 +621,20 @@ def textures_stage(level: str, out: Path, draw_doc: dict, temp: Path) -> dict:
                         aux = {"parameter": first["parameter"], **tb.texture_identity(
                             aux_source, archive, scene)}
 
+                # The retail lightmap is bound through the material's g_tLightmap
+                # field. Record the exact texture name per draw so the renderer can
+                # bind the decoded texture; a material without the field gets null.
+                lightmap_name = None
+                lightmap_slot = None
+                lightmap = material.get("lightmap")
+                if lightmap:
+                    slot = lightmap.get("slot")
+                    if isinstance(slot, int) and 0 <= slot < len(render_list["sources"]["texture"]):
+                        lm_source = dict(render_list["sources"]["texture"][slot])
+                        lightmap_name = tb.texture_identity(lm_source, archive,
+                                                            scene).get("name")
+                        lightmap_slot = slot
+
                 resolved = {
                     "section": section_id,
                     "drawIndex": draw_index,
@@ -621,6 +653,8 @@ def textures_stage(level: str, out: Path, draw_doc: dict, temp: Path) -> dict:
                     "textureRgbaFnv1a64": texture.get("textureRgbaFnv1a64")
                     if texture else None,
                     "auxTexture": aux,
+                    "lightmapName": lightmap_name,
+                    "lightmapSlot": lightmap_slot,
                     "uv0Available": bool(native_draw.get("uv0Available")),
                     "uvHash": uv_hash,
                 }
@@ -639,6 +673,7 @@ def textures_stage(level: str, out: Path, draw_doc: dict, temp: Path) -> dict:
                     "blocker": reason,
                     "textureId": resolved["textureId"],
                     "textureName": resolved["textureName"],
+                    "lightmapName": resolved["lightmapName"],
                     "uvHash": uv_hash,
                     "effect": resolved["effect"],
                     "parameter": parameter,

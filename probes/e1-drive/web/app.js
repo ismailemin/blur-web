@@ -383,6 +383,29 @@ async function lightingAgreement(packetLight, mapId) {
       ? { value, status: 'rejected' }
       : { value, status: 'applied', source: 'retail-upNormalAmbientScaled-luminance' };
   }
+  // Apply the committed retail lighting model. A map with a live sun colour uses
+  // SunSkyLightmap (sun/sky occlusion from the lightmap); a map whose sun colour
+  // is [0,0,0] bakes the sun into the lightmap and uses
+  // RGBLightmapNormalisedGamma. This is the committed rule, not a choice.
+  const sky = table.sky?.colour ?? [0, 0, 0];
+  const mode = baked ? 2 : 1;
+  let lightingApplied = null;
+  if (consumer && typeof consumer.setLighting === 'function') {
+    lightingApplied = consumer.setLighting({
+      sunDirection: sun.direction,
+      sunColour: sun.colour,
+      skyColour: sky,
+      ambient: ambientApplied ?? 0.16,
+      mode
+    });
+  }
+  state.lightingApplied = {
+    mode: mode === 2 ? 'rgb-normalised-gamma' : 'sun-sky',
+    sunDirection: sun.direction,
+    sunColour: sun.colour,
+    skyColour: sky,
+    status: lightingApplied === false ? 'pending-scene' : 'applied'
+  };
   return {
     mapId,
     source: 'packet',
@@ -392,10 +415,15 @@ async function lightingAgreement(packetLight, mapId) {
     maxColourDelta,
     agree,
     ambient: ambient ? { committed: ambient, appliedLuminance: ambientApplied } : null,
+    applied: {
+      mode: mode === 2 ? 'rgb-normalised-gamma' : 'sun-sky',
+      skyColour: sky
+    },
     note: baked
-      ? 'the retail sun colour is [0,0,0] because this map bakes the sun into lightmaps; '
-        + 'the ambient term now comes from the committed table, the directional light stays diagnostic'
-      : 'the retail sun is a live directional colour; a mismatch means the packet light is diagnostic'
+      ? 'the retail sun colour is [0,0,0] because this map bakes the sun into the lightmap; '
+        + 'the renderer applies RGBLightmapNormalisedGamma through the decoded g_tLightmap'
+      : 'the retail sun is a live directional colour; the renderer applies SunSkyLightmap '
+        + 'through the decoded g_tLightmap'
   };
 }
 

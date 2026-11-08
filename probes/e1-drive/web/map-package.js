@@ -181,6 +181,7 @@ export function mergeMapGeometry(base, map, meta) {
     levelPropTexturePack: null,
     levelInstances: { emitted: 0, omitted: 0, culled: 0 },
     textures: render.textures,
+    lightmaps: Array.isArray(render.lightmaps) ? render.lightmaps : [],
     texturePack: render.texturePack,
     trackVisual: render,
     collisionSurface: render.collisionSurface

@@ -60,25 +60,31 @@ struct DrawUniforms {
   world: mat4x4f,
   albedo: vec4f,
   texParams: vec4f,
+  lightmapParams: vec4f,
 };
 struct Scene {
   lightDirection: vec4f,
   lightColour: vec4f,
   ambient: vec4f,
+  lighting: vec4f,
 };
 @group(0) @binding(0) var<uniform> draw: DrawUniforms;
 @group(1) @binding(0) var<uniform> scene: Scene;
 @group(2) @binding(0) var albedoSampler: sampler;
 @group(2) @binding(1) var albedoTexture: texture_2d<f32>;
+@group(3) @binding(0) var lightmapSampler: sampler;
+@group(3) @binding(1) var lightmapTexture: texture_2d<f32>;
 
 struct VertexOut {
   @builtin(position) position: vec4f,
   @location(0) world: vec3f,
   @location(1) local: vec3f,
   @location(2) uv: vec2f,
+  @location(3) lightmapUv: vec2f,
 };
 
-@vertex fn vertexMain(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut {
+@vertex fn vertexMain(@location(0) position: vec3f, @location(1) uv: vec2f,
+                      @location(2) lightmapUv: vec2f) -> VertexOut {
   var result: VertexOut;
   let worldPosition = draw.world * vec4f(position, 1.0);
   result.world = worldPosition.xyz;
@@ -91,6 +97,10 @@ struct VertexOut {
   result.uv = vec2f(
     select(uv.x, 1.0 - uv.x, draw.texParams.y > 0.5),
     select(uv.y, 1.0 - uv.y, draw.texParams.z > 0.5));
+  // The retail lightmap UV is TEXCOORD0.zw (see
+  // shader/common/Parameters.h and shader/lighting/Lightmap.h). It is never
+  // flipped: the committed UV stream is used as-is.
+  result.lightmapUv = lightmapUv;
   result.position = draw.viewProjection * worldPosition;
   return result;
 }
@@ -108,8 +118,8 @@ fn linearToSrgb(value: vec3f) -> vec3f {
   let raw = cross(dpdx(input.world), dpdy(input.world));
   let length = length(raw);
   let face = select(vec3f(0.0, 1.0, 0.0), raw / max(length, 1e-20), length > 0.0);
-  let lambert = abs(dot(face, normalize(scene.lightDirection.xyz)));
-  let brightness = scene.ambient.x + (1.0 - scene.ambient.x) * lambert;
+  let sunDir = normalize(scene.lightDirection.xyz);
+  let lambert = max(dot(face, sunDir), 0.0);
   // texParams.x is 1 for a draw with a bound static g_tAlbedo texture and 0
   // otherwise. The sample is unconditional (a white 1x1 placeholder is bound for
   // untextured draws), so there is no non-uniform control flow around
@@ -120,7 +130,26 @@ fn linearToSrgb(value: vec3f) -> vec3f {
   // because none is recovered.
   let sampled = textureSample(albedoTexture, albedoSampler, input.uv).rgb;
   let base = mix(draw.albedo.rgb, sampled, draw.texParams.x);
-  let radiance = scene.lightColour.rgb * scene.lightColour.a * base * brightness;
+  var radiance: vec3f;
+  if (draw.lightmapParams.x > 0.5) {
+    // The decoded retail lightmap (material g_tLightmap), sampled at
+    // TEXCOORD0.zw. The rule is the committed shader rule:
+    //   SunSkyLightmap:              sky *= sample.g; sun *= sample.b
+    //   RGBLightmapNormalisedGamma:  colour *= (sample.rgb * sample.a)^2
+    let lm = textureSample(lightmapTexture, lightmapSampler, input.lightmapUv);
+    if (draw.lightmapParams.y < 1.5) {
+      let sunTerm = scene.lightColour.rgb * scene.lightColour.a * lambert * lm.b;
+      let skyTerm = scene.ambient.rgb * lm.g;
+      radiance = (sunTerm + skyTerm) * base;
+    } else {
+      let c = lm.rgb * lm.a;
+      radiance = c * c * base;
+    }
+  } else {
+    // Diagnostic lambert + ambient term for a draw with no decoded lightmap.
+    let brightness = scene.lighting.y + (1.0 - scene.lighting.y) * lambert;
+    radiance = scene.lightColour.rgb * scene.lightColour.a * base * brightness;
+  }
   // Diagnostic spin marker: a band fixed in element-local space. It is not a
   // material; it makes the wheel rotation visible on rotationally symmetric
   // geometry. draw.albedo.a is 0 for every non-spinning draw.
@@ -135,7 +164,7 @@ fn linearToSrgb(value: vec3f) -> vec3f {
 
 const NEUTRAL_ALBEDO = 0.8;
 const DRAW_UNIFORM_STRIDE = 256; // minUniformBufferOffsetAlignment default
-const DRAW_UNIFORM_BYTES = 160; // mat4 + mat4 + albedo vec4 + texParams vec4
+const DRAW_UNIFORM_BYTES = 176; // mat4 + mat4 + albedo vec4 + texParams vec4 + lightmapParams vec4
 const SUPPORTED_VERSIONS = [1, 1.1];
 
 // Ghost replay (P63): the same car mesh, per-tick ghost node matrices and a
@@ -596,7 +625,7 @@ export class PacketConsumer {
       }]
     });
     const sceneLayout = this.device.createBindGroupLayout({
-      entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 48 } }]
+      entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 64 } }]
     });
     const textureLayout = this.device.createBindGroupLayout({
       entries: [
@@ -604,8 +633,16 @@ export class PacketConsumer {
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
       ]
     });
+    // The decoded retail lightmap (material g_tLightmap). It is sampled with the
+    // committed TEXCOORD0.zw stream and the committed shader rule.
+    const lightmapLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
     const pipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [drawLayout, sceneLayout, textureLayout]
+      bindGroupLayouts: [drawLayout, sceneLayout, textureLayout, lightmapLayout]
     });
     this.pipeline = await this.device.createRenderPipelineAsync({
       layout: pipelineLayout,
@@ -614,7 +651,8 @@ export class PacketConsumer {
         entryPoint: 'vertexMain',
         buffers: [
           { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
-          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] }
+          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
+          { arrayStride: 8, attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }] }
         ]
       },
       fragment: { module, entryPoint: 'fragmentMain', targets: [{ format: this.format }] },
@@ -656,6 +694,7 @@ export class PacketConsumer {
     this.drawLayout = drawLayout;
     this.sceneLayout = sceneLayout;
     this.textureLayout = textureLayout;
+    this.lightmapLayout = lightmapLayout;
 
     // The sampler is the consumer policy documented on TEXTURE_SAMPLER:
     // repeat/linear/trilinear with anisotropy 8 where the adapter allows it. The
@@ -689,6 +728,37 @@ export class PacketConsumer {
         { binding: 1, resource: this.placeholderTexture.createView() }
       ]
     });
+    // Lightmap placeholder: a 1x1 white texture bound for every draw without a
+    // decoded g_tLightmap, so the shader can sample unconditionally and select
+    // with draw.lightmapParams.x. It is rgba8unorm (not sRGB) because the
+    // committed rule applies its own gamma term.
+    this.lightmapSampler = this.device.createSampler({
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+      magFilter: 'linear',
+      minFilter: 'linear',
+      mipmapFilter: 'linear'
+    });
+    this.lightmapPlaceholder = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
+    this.device.queue.writeTexture(
+      { texture: this.lightmapPlaceholder },
+      new Uint8Array([255, 255, 255, 255]),
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+    this.lightmapPlaceholderGroup = this.device.createBindGroup({
+      layout: this.lightmapLayout,
+      entries: [
+        { binding: 0, resource: this.lightmapSampler },
+        { binding: 1, resource: this.lightmapPlaceholder.createView() }
+      ]
+    });
+    this.lightmapGroups = new Map();
+    this.lightmapTextures = new Map();
   }
 
   /**
@@ -800,13 +870,41 @@ export class PacketConsumer {
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
       });
       this.device.queue.writeBuffer(uvBuffer, 0, uvs);
-      this.buffers.push(vertexBuffer, indexBuffer, uvBuffer);
-      this.stats.buffersCreated += 3;
+      // Lightmap UV (retail TEXCOORD0.zw). A mesh without the stream gets an
+      // explicit zero buffer so vertex buffer 2 is always valid; the draw's
+      // lightmapParams.x then selects the diagnostic lighting term.
+      let lightmapUvs;
+      if (mesh.lightmapUv) {
+        if (mesh.lightmapUv.storage !== 'base64-float32le' ||
+            mesh.lightmapUv.components !== 2 || typeof mesh.lightmapUv.data !== 'string') {
+          throw new Error('mesh ' + mesh.id + ' has an unsupported lightmap uv stream');
+        }
+        const binary = atob(mesh.lightmapUv.data);
+        if (binary.length !== mesh.lightmapUv.bytes ||
+            binary.length !== mesh.vertexCount * 8) {
+          throw new Error('mesh ' + mesh.id + ' lightmap uv byte length does not match its vertex count');
+        }
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+        lightmapUvs = new Float32Array(bytes.buffer);
+      } else {
+        lightmapUvs = new Float32Array(mesh.vertexCount * 2);
+      }
+      const lightmapUvBuffer = this.device.createBuffer({
+        size: Math.max(16, Math.ceil(lightmapUvs.byteLength / 4) * 4),
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+      });
+      this.device.queue.writeBuffer(lightmapUvBuffer, 0, lightmapUvs);
+      this.buffers.push(vertexBuffer, indexBuffer, uvBuffer, lightmapUvBuffer);
+      this.stats.buffersCreated += 4;
       this.stats.uvUploadBytes += uvs.byteLength;
+      this.stats.lightmapUvUploadBytes = (this.stats.lightmapUvUploadBytes ?? 0) +
+        lightmapUvs.byteLength;
       this.meshes.set(mesh.id, {
         vertexBuffer,
         indexBuffer,
         uvBuffer,
+        lightmapUvBuffer,
         vertexCount: mesh.vertexCount,
         indexCount: mesh.indexCount
       });
@@ -962,17 +1060,23 @@ export class PacketConsumer {
 
     const light = packet.lights[0];
     const direction = light.direction;
-    const sceneBytes = new Float32Array(12);
-    sceneBytes.set([direction[0], direction[1], direction[2], 0], 0);
-    sceneBytes.set([light.colour[0], light.colour[1], light.colour[2], light.colour[3] * light.intensity], 4);
-    sceneBytes.set([0.16, 0, 0, 0], 8);
-    this.sceneBuffer = this.device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    // Scene uniform: sun direction, sun colour, sky colour, lighting params
+    // (x = mode: 0 diagnostic, 1 sun-sky lightmap, 2 rgb-normalised-gamma;
+    //  y = diagnostic ambient scalar). The page replaces these with the committed
+    // retail table through `setLighting`; the packet values are the fallback.
+    const sceneBytes = new Float32Array(16);
+    const sunDir = this.pendingSunDirection ?? direction;
+    const sunColour = this.pendingSunColour ??
+      [light.colour[0], light.colour[1], light.colour[2]];
+    const sunIntensity = this.pendingSunColour ? 1 : light.colour[3] * light.intensity;
+    const skyColour = this.pendingSkyColour ?? [0, 0, 0];
+    sceneBytes.set([sunDir[0], sunDir[1], sunDir[2], 0], 0);
+    sceneBytes.set([sunColour[0], sunColour[1], sunColour[2], sunIntensity], 4);
+    sceneBytes.set([skyColour[0], skyColour[1], skyColour[2], 0], 8);
+    sceneBytes.set([0, Number.isFinite(this.pendingAmbient) ? this.pendingAmbient : 0.16, 0, 0], 12);
+    this.sceneBuffer = this.device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(this.sceneBuffer, 0, sceneBytes);
-    // A map may have supplied its committed retail ambient before the scene
-    // buffer existed; apply it now.
     if (Number.isFinite(this.pendingAmbient)) {
-      this.device.queue.writeBuffer(this.sceneBuffer, 32,
-        new Float32Array([this.pendingAmbient, 0, 0, 0]));
       this.stats.ambient = this.pendingAmbient;
       this.stats.ambientSource = 'retail-upNormalAmbientScaled-luminance';
     }
@@ -980,7 +1084,7 @@ export class PacketConsumer {
     this.stats.buffersCreated++;
     this.sceneBindGroup = this.device.createBindGroup({
       layout: this.sceneLayout,
-      entries: [{ binding: 0, resource: { buffer: this.sceneBuffer, offset: 0, size: 48 } }]
+      entries: [{ binding: 0, resource: { buffer: this.sceneBuffer, offset: 0, size: 64 } }]
     });
 
     this.draws = packet.draws.map((draw) => ({ ...draw, mesh: this.meshes.get(draw.meshId) }));
@@ -994,6 +1098,63 @@ export class PacketConsumer {
       }
     }
     this.stats.texturedDraws = this.draws.filter((draw) => draw.textureId != null).length;
+    // Decoded retail lightmaps (material g_tLightmap). The packet lists each
+    // texture once with its dimensions; the consumer fetches the raw RGBA and
+    // uploads it as rgba8unorm (the committed rule applies its own gamma term,
+    // so the texture is not sRGB). A failed fetch leaves the draw on the
+    // diagnostic term and is counted, never silently replaced.
+    const lightmapRecords = Array.isArray(packet.lightmaps) ? packet.lightmaps : [];
+    for (const record of lightmapRecords) {
+      if (!record?.url || !Number.isInteger(record.width) || !Number.isInteger(record.height)) {
+        throw new Error('packet lightmap record is missing url or dimensions');
+      }
+      if (this.lightmapGroups.has(record.url)) continue;
+      let bytes = null;
+      try {
+        const response = await fetch(record.url);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        bytes = new Uint8Array(await response.arrayBuffer());
+      } catch (error) {
+        this.stats.lightmapFetchFailures = (this.stats.lightmapFetchFailures ?? 0) + 1;
+        this.stats.lightmapFetchError = String(error.message ?? error);
+        continue;
+      }
+      if (bytes.length !== record.width * record.height * 4) {
+        this.stats.lightmapFetchFailures = (this.stats.lightmapFetchFailures ?? 0) + 1;
+        this.stats.lightmapFetchError = 'byte length mismatch for ' + record.name;
+        continue;
+      }
+      const texture = this.device.createTexture({
+        size: [record.width, record.height, 1],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+      });
+      this.device.queue.writeTexture(
+        { texture },
+        bytes,
+        { bytesPerRow: record.width * 4, rowsPerImage: record.height },
+        [record.width, record.height, 1]
+      );
+      this.textures.push(texture);
+      this.lightmapTextures.set(record.url, texture);
+      this.lightmapGroups.set(record.url, this.device.createBindGroup({
+        layout: this.lightmapLayout,
+        entries: [
+          { binding: 0, resource: this.lightmapSampler },
+          { binding: 1, resource: texture.createView() }
+        ]
+      }));
+      this.stats.lightmapTextures = (this.stats.lightmapTextures ?? 0) + 1;
+      this.stats.lightmapBytes = (this.stats.lightmapBytes ?? 0) + bytes.length;
+    }
+    for (const draw of this.draws) {
+      draw.hasLightmap = Boolean(draw.lightmapUrl && this.lightmapGroups.has(draw.lightmapUrl));
+      draw.lightmapGroup = draw.hasLightmap
+        ? this.lightmapGroups.get(draw.lightmapUrl)
+        : this.lightmapPlaceholderGroup;
+    }
+    this.stats.lightmapDraws = this.draws.filter((draw) => draw.hasLightmap).length;
+    this.stats.lightmapDrawsTotal = this.draws.length;
     // Power-up marker draw slots (PWR2): one synthetic draw over the injected
     // octahedron mesh. Nothing is in packet.draws, so the packet's own draw
     // count/hash/camera framing are unchanged.
@@ -1340,9 +1501,50 @@ export class PacketConsumer {
     // Keep it as the pending value so a later scene creation applies it too.
     this.pendingAmbient = value;
     if (this.sceneBuffer) {
-      this.device.queue.writeBuffer(this.sceneBuffer, 32, new Float32Array([value, 0, 0, 0]));
+      this.device.queue.writeBuffer(this.sceneBuffer, 52, new Float32Array([value, 0, 0, 0]));
       this.stats.ambient = value;
       this.stats.ambientSource = 'retail-upNormalAmbientScaled-luminance';
+    }
+    return true;
+  }
+
+  /**
+   * Apply the committed retail lighting table. `mode` is the lightmap shader
+   * rule: 1 = SunSkyLightmap (live sun + sky occlusion), 2 =
+   * RGBLightmapNormalisedGamma (baked colour), 0 = diagnostic lambert+ambient.
+   * Colours are linear RGB; the sun direction is the committed unit vector.
+   */
+  setLighting({ sunDirection, sunColour, skyColour, ambient, mode } = {}) {
+    if (Array.isArray(sunDirection) && sunDirection.length >= 3) {
+      this.pendingSunDirection = sunDirection.slice(0, 3);
+    }
+    if (Array.isArray(sunColour) && sunColour.length >= 3) {
+      this.pendingSunColour = sunColour.slice(0, 3);
+    }
+    if (Array.isArray(skyColour) && skyColour.length >= 3) {
+      this.pendingSkyColour = skyColour.slice(0, 3);
+    }
+    if (Number.isFinite(ambient)) this.pendingAmbient = Math.max(0, Math.min(1, ambient));
+    if (Number.isInteger(mode) && mode >= 0 && mode <= 2) this.lightmapMode = mode;
+    this.stats.lightmapMode = this.lightmapMode ?? 0;
+    this.stats.lightingSource = 'retail-runtime-lighting';
+    if (!this.sceneBuffer) return false;
+    if (this.pendingSunDirection) {
+      this.device.queue.writeBuffer(this.sceneBuffer, 0,
+        new Float32Array([...this.pendingSunDirection, 0]));
+    }
+    if (this.pendingSunColour) {
+      this.device.queue.writeBuffer(this.sceneBuffer, 16,
+        new Float32Array([...this.pendingSunColour, 1]));
+    }
+    if (this.pendingSkyColour) {
+      this.device.queue.writeBuffer(this.sceneBuffer, 32,
+        new Float32Array([...this.pendingSkyColour, 0]));
+    }
+    if (Number.isFinite(this.pendingAmbient)) {
+      this.device.queue.writeBuffer(this.sceneBuffer, 52,
+        new Float32Array([this.pendingAmbient, 0, 0, 0]));
+      this.stats.ambient = this.pendingAmbient;
     }
     return true;
   }
@@ -1545,6 +1747,14 @@ export class PacketConsumer {
         draw.uvFlipV === true ? 1 : 0,
         0
       ], base + 36);
+      // lightmapParams.x = 1 when a decoded g_tLightmap is bound; .y selects the
+      // committed shader rule (1 sun-sky, 2 rgb-normalised-gamma).
+      bytes.set([
+        draw.hasLightmap ? 1 : 0,
+        this.lightmapMode ?? 1,
+        0,
+        0
+      ], base + 40);
     }
     if (ghostActive) {
       // Ghost slots follow the packet's own draw uniforms in the same buffer.
@@ -1605,14 +1815,19 @@ export class PacketConsumer {
     });
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(1, this.sceneBindGroup);
+    // Group 3 is part of the pipeline layout even for a draw without a lightmap,
+    // so bind the placeholder before the loop and track changes with a sentinel.
+    pass.setBindGroup(3, this.lightmapPlaceholderGroup);
     let activeMesh = null;
     let activeTexture = null;
+    let activeLightmap = undefined;
     for (let index = 0; index < this.draws.length; index++) {
       const draw = this.draws[index];
       if (draw.visible === false) continue;
       if (activeMesh !== draw.meshId) {
         pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
         pass.setVertexBuffer(1, draw.mesh.uvBuffer);
+        pass.setVertexBuffer(2, draw.mesh.lightmapUvBuffer);
         pass.setIndexBuffer(draw.mesh.indexBuffer, 'uint32');
         activeMesh = draw.meshId;
       }
@@ -1620,6 +1835,11 @@ export class PacketConsumer {
       if (activeTexture !== textureKey) {
         pass.setBindGroup(2, draw.textureId != null ? this.textureGroups.get(draw.textureId) : this.placeholderGroup);
         activeTexture = textureKey;
+      }
+      const lightmapKey = draw.hasLightmap ? draw.lightmapUrl : null;
+      if (activeLightmap !== lightmapKey) {
+        pass.setBindGroup(3, draw.lightmapGroup ?? this.lightmapPlaceholderGroup);
+        activeLightmap = lightmapKey;
       }
       pass.setBindGroup(0, this.drawBindGroup, [index * DRAW_UNIFORM_STRIDE]);
       pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
@@ -1630,6 +1850,7 @@ export class PacketConsumer {
       // shader samples no texture, so the placeholder bind group is enough.
       pass.setPipeline(this.ghostPipeline);
       pass.setBindGroup(2, this.placeholderGroup);
+      pass.setBindGroup(3, this.lightmapPlaceholderGroup);
       let ghostMesh = null;
       for (let slot = 0; slot < ghostFrames.length; slot++) {
         if (!ghostFrames[slot]) continue;
@@ -1657,6 +1878,7 @@ export class PacketConsumer {
       // pipeline. Draw slots are capped at load; no buffer or texture is created.
       pass.setPipeline(this.ghostPipeline);
       pass.setBindGroup(2, this.placeholderGroup);
+      pass.setBindGroup(3, this.lightmapPlaceholderGroup);
       const markerBase = this.draws.length + ghostSlotStride;
       let activeMarkers = 0;
       if (powerupMarkerActive) {

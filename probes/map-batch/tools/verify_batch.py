@@ -87,6 +87,7 @@ ARTIFACTS = (
     "draws.json",
     "draws.positions.f32.bin",
     "draws.uv0.f32.bin",
+    "draws.lightmapUv.f32.bin",
     "draws.indices.u32.bin",
     "textures/index.json",
     "collision.json",
