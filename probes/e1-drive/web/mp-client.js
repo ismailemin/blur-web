@@ -1,4 +1,5 @@
-// Multiplayer session wrapper for the E1 drive slice (M1, two browsers).
+// Multiplayer session wrapper for the E1 drive slice (M1, two browsers; M4, up
+// to eight humans in one room).
 //
 // This module is deliberately DOM-free and dependency-injected: the page passes
 // the committed `NetClient` class from `/net-mvp/client.mjs`, and the Node
@@ -6,13 +7,13 @@
 // the room/lobby/result logic identical in both environments and testable
 // without a browser.
 //
-// M1 scope:
-//   * two players, one measured 310 m River course, one car for both bodies
-//     (car picks are lobby metadata; the host's car is the session car);
+// M1/M4 scope:
+//   * up to eight players, one measured 310 m River course, one car for every
+//     body (car picks are lobby metadata; the host's car is the session car);
 //   * the room service carries the lobby, 60 Hz inputs and 20 Hz per-player
 //     state snapshots; the host runs the authoritative rules/result;
 //   * the result table is a pure function of the room's finish broadcast, so
-//     both clients render the same positions/times from the same bytes.
+//     every client renders the same positions/times from the same bytes.
 
 import { hashOf } from './packet-hash.js';
 import { MP_MAP_IDS, resolveMap } from './map-registry.js';
@@ -21,7 +22,7 @@ export const MP_KIND = 'e1-drive.mp/1';
 export const MP_SCHEMA = 'e1-drive.mp/1';
 export const MP_MAP = 'river';
 export const MP_LEGACY_MAP = 'usa_la_river';
-export const MP_MAX_PLAYERS = 2;
+export const MP_MAX_PLAYERS = 8;
 export const MP_DEFAULT_ROOM_PORT = 8811;
 export const MP_TICK_HZ = 60;
 export const MP_INPUT_HZ = 60;

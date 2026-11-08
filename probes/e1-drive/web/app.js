@@ -516,6 +516,10 @@ const state = {
       distance: null, authority: false,
       corrections: 0, hardSets: 0, blends: 0, tick: null
     },
+    // Every human peer (M4): one row per room player other than this page.
+    remotes: [],
+    // Host-side spawn pose per guest, keyed by player id (M4).
+    guestSpawnStates: {},
     result: null,
     resultSource: null,
     validation: null,
@@ -1128,9 +1132,11 @@ function publishMpOverlays() {
   const tag = document.getElementById('remote-tag');
   if (tag) {
     const visible = mp.remote.latest !== null && mp.phase !== 'connecting' && mp.phase !== 'lobby' && mp.phase !== 'error';
-    // With AI in the room the multi-line `#mp-remotes` list labels every remote
-    // car, including the human peer; the single M1 tag would overlap it.
-    tag.hidden = !visible || (ai?.count ?? 0) > 0;
+    // With more than one human peer or any AI in the room the multi-line
+    // `#mp-remotes` list labels every remote car; the single M1 tag would
+    // overlap it.
+    const humanCount = (mp.remotes ?? []).length;
+    tag.hidden = !visible || humanCount > 1 || (ai?.count ?? 0) > 0;
     tag.dataset.state = mp.remote.connected === false ? 'reconnecting' : 'connected';
     tag.textContent = visible
       ? 'REMOTE · ' + (mp.remote.name ?? 'other player') +
@@ -1142,11 +1148,20 @@ function publishMpOverlays() {
   if (remotes) {
     const show = mp.phase === 'running' || mp.phase === 'finished' || mp.phase === 'finished-local';
     const lines = [];
-    if (show && mp.remote.latest && (ai?.count ?? 0) > 0) {
-      lines.push('REMOTE · ' + (mp.remote.name ?? 'other player') +
-        (mp.remote.connected === false ? ' · RECONNECTING' : '') + ' · 20 Hz snapshot · no collision');
+    if (show) {
+      const humans = mp.remotes ?? [];
+      if (humans.length) {
+        for (const row of humans) {
+          lines.push('REMOTE · ' + (row.name ?? row.id) +
+            (row.connected === false ? ' · RECONNECTING' : '') +
+            (row.latestTick === null ? ' · waiting for the 20 Hz snapshot' : ' · 20 Hz snapshot · no collision'));
+        }
+      } else if (mp.remote.latest) {
+        lines.push('REMOTE · ' + (mp.remote.name ?? 'other player') +
+          (mp.remote.connected === false ? ' · RECONNECTING' : '') + ' · 20 Hz snapshot · no collision');
+      }
     }
-    if (show && ai?.count > 0) {
+    if (show && (ai?.count ?? 0) > 0) {
       const entries = ai.remotes ?? [];
       if (entries.length) {
         for (const entry of entries) {
@@ -1404,9 +1419,15 @@ let mpStarted = false;
 let mpFrameStarted = false;
 let mpLastState = null;
 let mpLocalHistory = new Map();
+// Remote display state is per peer (M4): a corrector and a remote body cache
+// keyed by player id / car slug. `mpRemoteDisplay` and `mpRemoteCar` stay as the
+// primary peer's view for the existing captures and the first-peer HUD.
+let mpRemoteDisplays = new Map();
 let mpRemoteDisplay = null;
 let mpRemotePlayerId = null;
+let mpRemoteCars = new Map();
 let mpRemoteCar = null;
+let mpRemoteCarPromises = new Map();
 let mpRemoteCarPromise = null;
 let mpRemoteCarSlug = null;
 let mpResult = null;
@@ -2015,14 +2036,19 @@ function mpGridTangent(layout) {
 /**
  * Longitudinal grid derived from the map's measured spawn and path tangent.
  * Slot 1 is one row ahead of the measured spawn; slot 2 is the spawn itself.
- * The measured start line and solo spawn are not moved. Offsets are candidate
- * rows; the real-engine probe below picks the first pair whose ground is valid.
+ * The measured start line and solo spawn are not moved. Slots 3..N use the same
+ * measured spawn row with the lateral offsets the AI grid already probes, so a
+ * full eight-car field stays on the start line instead of stacking behind the
+ * spawn (Gracia has no ground behind it). Offsets are candidates; the
+ * real-engine probe below picks the first grid whose every slot is grounded.
  */
-function mpAlongPathGrid(layout, offsetMetres) {
+function mpAlongPathGrid(layout, offsetMetres, count = 2) {
   const spawn = layout.course.spawn;
   const tangent = mpGridTangent(layout);
+  const nx = tangent.tz;
+  const nz = -tangent.tx;
   const slot1Arc = offsetMetres;
-  return [
+  const slots = [
     {
       slot: 1,
       x: Math.round((spawn.x + tangent.tx * offsetMetres) * 1e6) / 1e6,
@@ -2042,6 +2068,25 @@ function mpAlongPathGrid(layout, offsetMetres) {
       source: 'measured spawn (longitudinal grid)'
     }
   ];
+  // Proven-grounded lateral offsets on the spawn row, then one more row forward.
+  const extra = [[0, 2.8], [0, -2.8], [2.2, 2.8], [2.2, -2.8],
+    [0, 2.0], [0, -2.0], [2.2, 2.0], [2.2, -2.0]];
+  for (let index = 2; index < Math.max(2, count); index++) {
+    const [forward, lateral] = extra[(index - 2) % extra.length];
+    const row = Math.floor((index - 2) / extra.length);
+    const offset = offsetMetres + forward + row * 2.2;
+    slots.push({
+      slot: index + 1,
+      x: Math.round((spawn.x + tangent.tx * offset + nx * lateral) * 1e6) / 1e6,
+      z: Math.round((spawn.z + tangent.tz * offset + nz * lateral) * 1e6) / 1e6,
+      y: courseGroundAt(layout, Math.max(0, offset)),
+      headingRad: spawn.headingRad,
+      offsetMetres: offset,
+      lateralMetres: lateral,
+      source: 'measured spawn row lateral (longitudinal grid)'
+    });
+  }
+  return slots;
 }
 
 /**
@@ -2082,14 +2127,19 @@ function mpProbeGridSlot(layout, slot) {
 }
 
 /**
- * Choose a grounded two-car grid. River/Amboy keep the released lateral grid
- * when both slots probe clean; a package map whose lateral slot is airborne
- * (Gracia slot 1) falls back to measured-spawn longitudinal slots. The choice
- * is deterministic on both pages and fails explicitly if no pair is grounded.
+ * Choose a grounded start grid sized to the actual field. River/Amboy keep the
+ * released lateral grid when every slot probes clean; a package map whose
+ * lateral slot is airborne (Gracia slot 1) falls back to measured-spawn
+ * longitudinal slots. The choice is deterministic on both pages and fails
+ * explicitly if no full grid is grounded.
+ *
+ * `count` is the number of participants (humans + AI), not the room capacity:
+ * a two-player room must keep the exact two-slot grid it had before M4.
  */
-function mpChooseMpGrid(layout) {
+function mpChooseMpGrid(layout, count = 2) {
+  const slots = Math.max(2, Math.min(MP_MAX_PLAYERS + MP_AI_MAX, Math.trunc(count) || 2));
   const model = new mpRaceRules.CourseModel(mpRulesLayout(layout), { verifyLayoutHash: false });
-  const lateral = model.startGrid(MP_MAX_PLAYERS, MP_GRID_OPTIONS);
+  const lateral = model.startGrid(slots, MP_GRID_OPTIONS);
   const candidates = [
     { source: 'race-rules provisional lateral grid', options: { ...MP_GRID_OPTIONS }, slots: lateral }
   ];
@@ -2097,7 +2147,7 @@ function mpChooseMpGrid(layout) {
     candidates.push({
       source: 'measured spawn + path tangent (longitudinal)',
       options: { longitudinalOffsetMetres: offset },
-      slots: mpAlongPathGrid(layout, offset)
+      slots: mpAlongPathGrid(layout, offset, slots)
     });
   }
   const cache = new Map();
@@ -2115,7 +2165,7 @@ function mpChooseMpGrid(layout) {
       probes });
     if (ok) return { ...candidate, probes, tried };
   }
-  throw new Error('multiplayer start grid has no grounded slot pair: ' +
+  throw new Error('multiplayer start grid has no grounded slot set for ' + slots + ' cars: ' +
     tried.map((row) => row.source + ' ' + row.probes.map((p) => p.reason ?? 'ok').join('/')).join('; '));
 }
 
@@ -2575,12 +2625,16 @@ async function loadEngine(carOverride = null) {
     // at the legacy spawn heading, so its shared world keeps that heading.
     let start = layoutStartPosition(layout, spawn);
     if (MP && mpRaceRules) {
-      // Provisional race-rules grid. River/Amboy keep the released lateral grid
-      // when both slots probe clean; Gracia slot 1 is airborne on that lateral
-      // pose, so the measured spawn/tangent longitudinal grid is used instead.
-      // Each slot is probed with the real engine before the final race world is
-      // created; the measured start line and solo spawn are not moved.
-      const chosen = mpChooseMpGrid(layout);
+      // Provisional race-rules grid sized to the actual field. River/Amboy keep
+      // the released lateral grid when every slot probes clean; Gracia slot 1 is
+      // airborne on that lateral pose, so the measured spawn/tangent
+      // longitudinal grid is used instead. Each slot is probed with the real
+      // engine before the final race world is created; the measured start line
+      // and solo spawn are not moved.
+      // The human grid is sized to the human field only; AI slots are chosen
+      // separately after every human slot (mpAiGridCandidates).
+      const fieldSize = Math.max(2, state.mp?.room?.players?.length ?? 2);
+      const chosen = mpChooseMpGrid(layout, fieldSize);
       const grid = chosen.slots;
       const index = Math.max(0, Math.min(grid.length - 1, (mpSlot ?? 1) - 1));
       const slot = grid[index];
@@ -4117,11 +4171,13 @@ function mpAiGridCandidates(layout, aiIndex, count, occupied = []) {
   const nearOccupied = (slot) => occupied.some((row) =>
     Math.hypot((row.x ?? 0) - slot.x, (row.z ?? 0) - slot.z) < 2.0);
   const base = state.mp?.grid;
+  // AI slots come after every human slot, whatever the room size.
+  const humanCount = Math.max(2, state.mp?.room?.players?.length ?? 2);
   if (base?.source && !base.source.includes('longitudinal')) {
     try {
       const model = new mpRaceRules.CourseModel(mpRulesLayout(layout), { verifyLayoutHash: false });
-      const slots = model.startGrid(Math.max(2, 2 + count), MP_GRID_OPTIONS);
-      const slot = slots[2 + aiIndex];
+      const slots = model.startGrid(Math.max(2, humanCount + count), MP_GRID_OPTIONS);
+      const slot = slots[humanCount + aiIndex];
       if (slot && !nearOccupied(slot)) candidates.push({ ...slot, source: 'race-rules provisional lateral grid' });
     } catch { /* fall through to the measured path offsets */ }
   }
@@ -4503,19 +4559,21 @@ function mpRulesState(id, snapshotOrState) {
 /** Host: advance the authoritative RaceSession by one engine tick. */
 function mpHostRulesStep(snapshot) {
   if (!MP_HOST || !mpRace || !mpNet) return;
-  const guestId = mpRemotePlayerId ?? null;
-  const guestLatest = guestId ? state.mp.remote.latest : null;
-  const guestState = guestId
-    ? mpRulesState(guestId, guestLatest?.state ?? state.mp.guestSpawnState ?? null)
-    : null;
-  const hostState = mpRulesState(mpNet.playerId, snapshot);
-  const progressRow = guestId ? mpRace.progress.byId.get(guestId) : null;
-  if (guestId && guestLatest && progressRow?.awaitingRejoin) {
-    mpRace.progress.rejoin(guestId, guestState, mpRace.raceTick);
-  }
   const states = {};
-  states[mpNet.playerId] = hostState;
-  if (guestId) states[guestId] = guestState;
+  states[mpNet.playerId] = mpRulesState(mpNet.playerId, snapshot);
+  // Every human peer (M4). Before a peer's first snapshot arrives the host
+  // feeds its grid spawn so the rules row starts on the same pose the peer
+  // computes locally; the pose is never guessed from another player.
+  for (const peer of mpHumanRemotes()) {
+    const latest = mpNet.latestRemote(peer.id);
+    const spawn = state.mp.guestSpawnStates?.[peer.id] ?? null;
+    const peerState = mpRulesState(peer.id, latest?.state ?? spawn ?? null);
+    const progressRow = mpRace.progress.byId.get(peer.id);
+    if (latest && progressRow?.awaitingRejoin) {
+      mpRace.progress.rejoin(peer.id, peerState, mpRace.raceTick);
+    }
+    states[peer.id] = peerState;
+  }
   if (mpAiSim) {
     for (const sim of mpAiSim.sims) states[sim.player.id] = mpRulesState(sim.player.id, sim.state);
   }
@@ -4549,28 +4607,27 @@ function mpHostRulesStep(snapshot) {
 }
 
 /**
- * Load the peer's car chunk once. A failure is recorded as a typed error and the
- * remote car is not drawn: never a silent different body.
+ * Load one peer car chunk once, keyed by slug (M4: several peers may pick
+ * different cars). A failure is recorded as a typed error and that remote car
+ * is not drawn: never a silent different body.
  */
 function mpRequestRemoteCar(slug) {
   if (!slug || slug === car?.slug) {
     mpRemoteCarSlug = slug ?? null;
     return null;
   }
-  if (mpRemoteCar?.slug === slug && mpRemoteCar.status === 'ready') {
+  const cached = mpRemoteCars.get(slug);
+  if (cached?.status === 'ready') {
     mpRemoteCarSlug = slug;
-    return mpRemoteCar;
+    return cached;
   }
-  if (mpRemoteCarPromise) return null;
+  if (mpRemoteCarPromises.has(slug)) return null;
   const startedAt = performance.now();
   mpRemoteCarSlug = slug;
-  mpRemoteCar = { slug, status: 'loading', error: null, code: null, bytes: 0, sha256: null, loadMs: null };
-  if (state.mp?.remote) {
-    state.mp.remote.car = slug;
-    state.mp.remote.carChunk = { slug, status: 'loading', error: null, code: null, bytes: 0,
-      sha256: null, loadMs: null, source: 'remote snapshot car field' };
-  }
-  mpRemoteCarPromise = (async () => {
+  const pending = { slug, status: 'loading', error: null, code: null, bytes: 0, sha256: null, loadMs: null };
+  mpRemoteCars.set(slug, pending);
+  if (state.mp?.remote && mpRemoteCar === null) mpRemoteCar = pending;
+  const promise = (async () => {
     try {
       const index = await loadChunkIndexDocument();
       const record = await loadCarChunkDocument(index, slug);
@@ -4581,7 +4638,7 @@ function mpRequestRemoteCar(slug) {
       const handle = consumer.ensureRemoteCar(slug, body);
       const wheelRest = Object.fromEntries(body.wheelGroups.map((group) =>
         [group.corner, group.matrixColumnMajor]));
-      mpRemoteCar = {
+      const entry = {
         slug,
         status: 'ready',
         body,
@@ -4594,14 +4651,19 @@ function mpRequestRemoteCar(slug) {
         file: record.file,
         loadMs: +(performance.now() - startedAt).toFixed(1)
       };
-      if (state.mp?.remote) state.mp.remote.carChunk = {
-        slug, status: 'ready', error: null, code: null, file: record.file,
-        bytes: record.bytes, sha256: record.sha256, loadMs: mpRemoteCar.loadMs,
-        draws: handle.drawCount      };
-      mpRemoteDisplay = null;
-      return mpRemoteCar;
+      mpRemoteCars.set(slug, entry);
+      if (mpRemoteCar === null || mpRemoteCar.slug === slug) mpRemoteCar = entry;
+      if (state.mp?.remote) {
+        state.mp.remote.car = slug;
+        state.mp.remote.carChunk = {
+          slug, status: 'ready', error: null, code: null, file: record.file,
+          bytes: record.bytes, sha256: record.sha256, loadMs: entry.loadMs,
+          draws: handle.drawCount
+        };
+      }
+      return entry;
     } catch (error) {
-      mpRemoteCar = {
+      const entry = {
         slug,
         status: 'error',
         body: null,
@@ -4613,56 +4675,91 @@ function mpRequestRemoteCar(slug) {
         sha256: null,
         loadMs: +(performance.now() - startedAt).toFixed(1)
       };
+      mpRemoteCars.set(slug, entry);
+      if (mpRemoteCar === null || mpRemoteCar.slug === slug) mpRemoteCar = entry;
       if (state.mp?.remote) state.mp.remote.carChunk = {
         slug, status: 'error', error: error.message, code: error.code ?? 'CHUNK_LOAD_FAILED',
-        file: null, bytes: 0, sha256: null, loadMs: mpRemoteCar.loadMs, draws: null
+        file: null, bytes: 0, sha256: null, loadMs: entry.loadMs, draws: null
       };
       if (state.mp) state.mp.status = 'remote car chunk failed: ' + error.message;
-      return mpRemoteCar;
+      return entry;
     } finally {
-      mpRemoteCarPromise = null;
+      mpRemoteCarPromises.delete(slug);
+      if (mpRemoteCarPromises.size === 0) mpRemoteCarPromise = null;
     }
   })();
+  mpRemoteCarPromises.set(slug, promise);
+  mpRemoteCarPromise = promise;
   return null;
+}
+
+/** Every human peer in the room except this page, ordered by slot. */
+function mpHumanRemotes() {
+  if (!mpNet) return [];
+  const self = mpNet.playerId;
+  return [...(mpNet.players ?? [])]
+    .filter((player) => player && player.id !== self)
+    .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0));
 }
 
 /** Compose/refresh the remote display from the interpolation buffer(s). */
 function mpUpdateRemoteFrame(renderTick) {
   if (!mpNet || !state.mp) { consumer.setGhostFrames([]); return; }
   const frames = [];
-  // 1. The human peer (M1/M1.1): the net-mvp interpolation buffer + bounded
-  //    corrector. The peer's own car chunk is loaded once when the snapshot's car
-  //    differs from this page's car; until it is ready the remote car is not
-  //    drawn (a missing/failed chunk is a typed error, never another body).
-  if (mpRemotePlayerId && ghostWheelRest) {
-    const latest = mpNet.latestRemote(mpRemotePlayerId);
-    if (latest) {
+  const remotes = [];
+  // 1. Human peers (M1/M4): every other room player has its own net-mvp
+  //    interpolation buffer and bounded corrector. Each peer's own car chunk is
+  //    loaded once per slug; until it is ready that peer is not drawn (a
+  //    missing/failed chunk is a typed error, never a different body).
+  for (const peer of mpHumanRemotes()) {
+    const latest = mpNet.latestRemote(peer.id);
+    const row = {
+      id: peer.id, name: peer.name, slot: peer.slot, car: peer.car ?? null,
+      connected: peer.connected !== false, latestTick: null, position: null
+    };
+    if (!latest) { remotes.push(row); continue; }
+    if (mpRemotePlayerId === null) mpRemotePlayerId = peer.id;
+    if (peer.id === mpRemotePlayerId) {
       state.mp.remote.latest = latest;
       state.mp.remote.tick = latest.tick;
       state.mp.remote.authority = latest.authority === true;
-      const remoteSlug = state.mp.remote.car ?? latest.car ?? latest.state?.car ?? car.slug;
-      let remoteRest = ghostWheelRest;
-      let remoteHandle = null;
-      if (remoteSlug !== car.slug) {
-        if (mpRemoteCarSlug !== remoteSlug) {
-          mpRemoteDisplay = null;
-          mpRequestRemoteCar(remoteSlug);
-        }
-        const entry = mpRemoteCar;
-        if (entry?.slug === remoteSlug && entry.status === 'ready') {
-          remoteRest = entry.wheelRest;
-          remoteHandle = entry.handle;
-        } else {
-          remoteRest = null;
-        }
+      state.mp.remote.id = peer.id;
+      state.mp.remote.name = peer.name;
+      state.mp.remote.slot = peer.slot;
+      state.mp.remote.car = peer.car ?? latest.car ?? latest.state?.car ?? car.slug;
+    }
+    const remoteSlug = peer.car ?? latest.car ?? latest.state?.car ?? car.slug;
+    row.car = remoteSlug;
+    row.latestTick = latest.tick;
+    let remoteRest = ghostWheelRest ?? null;
+    let remoteHandle = null;
+    if (remoteSlug !== car.slug) {
+      const entry = mpRemoteCars.get(remoteSlug);
+      if (entry?.status === 'ready') {
+        remoteRest = entry.wheelRest;
+        remoteHandle = entry.handle;
+      } else {
+        mpRequestRemoteCar(remoteSlug);
+        remoteRest = null;
       }
-      if (remoteRest) {
-        const sampleTick = Math.max(0, renderTick + mpEngineTickOffset - MP_REMOTE_DELAY_TICKS);
-        const target = mpNet.sampleRemote(mpRemotePlayerId, sampleTick);
-        if (target) {
-          if (!mpRemoteDisplay) mpRemoteDisplay = new RemoteDisplay();
-          const display = mpRemoteDisplay.update(target);
-          if (display) {
+    }
+    if (remoteRest) {
+      const sampleTick = Math.max(0, renderTick + mpEngineTickOffset - MP_REMOTE_DELAY_TICKS);
+      const target = mpNet.sampleRemote(peer.id, sampleTick);
+      if (target) {
+        let display = mpRemoteDisplays.get(peer.id);
+        if (!display) { display = new RemoteDisplay(); mpRemoteDisplays.set(peer.id, display); }
+        const pose = display.update(target);
+        if (pose) {
+          row.position = pose.position.slice();
+          row.sample = {
+            tick: target.tick, interpolated: target.interpolated === true,
+            clamped: target.clamped === true
+          };
+          row.distance = pose.errorMetres;
+          row.corrections = pose.corrections;
+          if (peer.id === mpRemotePlayerId) {
+            mpRemoteDisplay = display;
             state.mp.remote.sample = {
               tick: target.tick,
               position: [target.position[0], target.position[1], target.position[2]],
@@ -4672,18 +4769,20 @@ function mpUpdateRemoteFrame(renderTick) {
               from: target.from ?? null,
               to: target.to ?? null
             };
-            state.mp.remote.display = { position: display.position.slice(), quaternion: display.quaternion.slice() };
-            state.mp.remote.distance = display.errorMetres;
-            state.mp.remote.corrections = display.corrections;
-            state.mp.remote.hardSets = display.hardSets;
-            state.mp.remote.blends = display.blends;
-            const { map } = remoteNodeMatrixMap({ position: display.position, quaternion: display.quaternion }, remoteRest);
-            frames.push({ nodeMatrices: map, tint: null, car: remoteHandle });
+            state.mp.remote.display = { position: pose.position.slice(), quaternion: pose.quaternion.slice() };
+            state.mp.remote.distance = pose.errorMetres;
+            state.mp.remote.corrections = pose.corrections;
+            state.mp.remote.hardSets = pose.hardSets;
+            state.mp.remote.blends = pose.blends;
           }
+          const { map } = remoteNodeMatrixMap({ position: pose.position, quaternion: pose.quaternion }, remoteRest);
+          frames.push({ nodeMatrices: map, tint: null, car: remoteHandle });
         }
       }
     }
+    remotes.push(row);
   }
+  state.mp.remotes = remotes;
   // 2. The host's AI cars (0-3): the guest samples only host-relayed poses; the
   //    host samples its own simulation through the same interpolation path.
   if (state.mp.ai?.count > 0) {
@@ -5247,7 +5346,7 @@ async function beginMultiplayerRace() {
       mpRace = new mpRaceRules.RaceSession({
         layout: mpRulesLayout(sprintRules.layout),
         participants,
-        config: { hostId: mpNet.playerId, minParticipants: 2, maxParticipants: 2 + MP_AI_MAX, verifyLayoutHash: false }
+        config: { hostId: mpNet.playerId, minParticipants: 2, maxParticipants: MP_MAX_PLAYERS + MP_AI_MAX, verifyLayoutHash: false }
       });
       state.mp.hostRuleCourseId = sprintRules.layout?.courseId ?? null;
       state.mp.hostRuleMode = 'sprint (package layout projected to the released 310m allow-list)';
@@ -5256,19 +5355,22 @@ async function beginMultiplayerRace() {
       // Consume the zero-tick loading phase so the session countdown starts on
       // the same engine tick as the local SprintRules countdown.
       mpRace.step(null);
-      const guest = players.find((player) => player.id !== mpNet.playerId);
-      if (guest) {
-        const grid = state.mp.grid?.slots ?? [];
+      const grid = state.mp.grid?.slots ?? [];
+      const guests = players.filter((player) => player.id !== mpNet.playerId);
+      state.mp.guestSpawnStates = {};
+      for (const guest of guests) {
         const slot = grid[Math.max(0, Math.min(grid.length - 1, guest.slot - 1))];
         if (!slot) throw new Error('multiplayer start grid has no slot for guest P' + guest.slot);
-        state.mp.guestSpawnState = { position: [slot.x, slot.y ?? 0, slot.z], contact: null };
+        state.mp.guestSpawnStates[guest.id] = { position: [slot.x, slot.y ?? 0, slot.z], contact: null };
       }
+      const primary = guests[0] ?? null;
+      state.mp.guestSpawnState = primary ? state.mp.guestSpawnStates[primary.id] : null;
       state.mp.hostSession = {
         created: true,
         participants: participants.map((row) => row.id),
         aiParticipants: aiPlayers.map((player) => player.id),
         config: { hostId: mpNet.playerId, countdownTicks: sprintRules.layout.countdown?.ticks ?? 0,
-          maxParticipants: 2 + MP_AI_MAX }
+          maxParticipants: MP_MAX_PLAYERS + MP_AI_MAX }
       };
     }
     const tick1 = await startTimeline(mpSettledTick0, { reload: true });
@@ -5490,6 +5592,7 @@ function mpPowerupRespawnTarget(playerId) {
 function mpPowerupClearRemote(playerId) {
   if (!playerId || playerId !== mpRemotePlayerId) return;
   try { mpNet?.net?._interp?.delete(playerId); } catch { /* the buffer is optional */ }
+  mpRemoteDisplays.delete(playerId);
   mpRemoteDisplay = null;
   if (state.mp) {
     state.mp.remote.latest = null;
@@ -6181,6 +6284,7 @@ function mpCaptureSnapshot() {
   const sprint = state.sprint;
   return {
     schema: mp.schema,
+    constants: { maxPlayers: MP_MAX_PLAYERS, aiMax: MP_AI_MAX },
     phase: mp.phase,
     status: mp.status,
     error: mp.error,
@@ -6306,6 +6410,13 @@ function mpCaptureSnapshot() {
       displayQuaternion: mp.remote.display?.quaternion ?? null,
       finish: mp.remote.finish ?? null
     },
+    // Every human peer (M4): id, slot, car, latest snapshot tick and display pose.
+    remotes: (mp.remotes ?? []).map((row) => ({
+      id: row.id, name: row.name, slot: row.slot, car: row.car ?? null,
+      connected: row.connected !== false, latestTick: row.latestTick ?? null,
+      position: row.position ?? null, distance: row.distance ?? null,
+      corrections: row.corrections ?? 0
+    })),
     sent: mp.sent,
     received: mp.received,
     applied: mp.applied,
@@ -6371,6 +6482,7 @@ function mpInstallDebugApi() {
       inputHz: MP_INPUT_HZ,
       stateHz: MP_TICK_HZ / MP_STATE_EVERY_TICKS,
       remoteDelayTicks: MP_REMOTE_DELAY_TICKS,
+      maxPlayers: MP_MAX_PLAYERS,
       positionThresholdMetres: MP_POSITION_THRESHOLD_METRES,
       angleThresholdRad: MP_ANGLE_THRESHOLD_RAD,
       blendTicks: MP_BLEND_TICKS,
@@ -6429,7 +6541,7 @@ async function startMultiplayer() {
   try {
     const raceRules = await import('/race-rules/index.mjs');
     mpRaceRules = raceRules;
-    mpSlot = MP_HOST ? 1 : 2;
+    mpSlot = MP_HOST ? 1 : null;
     // Resolve the requested car from the roster without creating a world yet,
     // so the room is created with the exact session car slug.
     const roster = await loadRoster();
@@ -6464,10 +6576,16 @@ async function startMultiplayer() {
     state.mp.remoteCar = roomCar && roomCar !== requestedCar.slug
       ? { hostCar: roomCar, localCar: requestedCar.slug, note: 'per-player car chunks (M1.1)' }
       : null;
-    if (joined.you.slot !== mpSlot) {
-      throw new Error('the online room expects the host in slot 1 and the guest in slot 2; this page joined slot ' +
-        joined.you.slot + (MP_HOST ? ' as host' : ' as guest'));
+    // The room service assigns the slot. A host is always slot 1; a guest takes
+    // the next free slot (2-8), and the grid/world use that slot's pose.
+    if (MP_HOST && joined.you.slot !== 1) {
+      throw new Error('the online room must place the host in slot 1; this page joined slot ' +
+        joined.you.slot + ' as host');
     }
+    if (!MP_HOST && !(Number.isInteger(joined.you.slot) && joined.you.slot >= 2)) {
+      throw new Error('the online room gave this guest an invalid slot ' + joined.you.slot);
+    }
+    mpSlot = joined.you.slot;
     state.mp.room = joined.room;
     state.mp.you = joined.you;
     state.mp.players = [...joined.room.players];
@@ -6496,6 +6614,13 @@ async function startMultiplayer() {
       ? 'engine loaded; map verified; press READY'
       : 'map not verified; READY is disabled';
     mpRemoteDisplay = null;
+    mpRemoteDisplays = new Map();
+    mpRemoteCars = new Map();
+    mpRemoteCar = null;
+    mpRemoteCarPromises = new Map();
+    mpRemoteCarPromise = null;
+    mpRemotePlayerId = null;
+    if (state.mp) state.mp.remotes = [];
     mpLocalHistory = new Map();
     if (POWERUPS) {
       powerupRelay = {

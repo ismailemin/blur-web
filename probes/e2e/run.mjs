@@ -38,6 +38,7 @@ import {
   modeMatrix,
   mpAi,
   mpAmboy,
+  mpEight,
   mpGracia,
   mpTwo,
   reconnect,
@@ -78,11 +79,12 @@ const SCENARIOS = {
   reconnect: { group: 'fast', timeout: 300000, run: reconnect },
   'mode-matrix': { group: 'fast', timeout: 360000, run: modeMatrix },
   'mp-gracia': { group: 'slow', timeout: 300000, run: mpGracia },
-  'mp-amboy': { group: 'slow', timeout: 600000, run: mpAmboy }
+  'mp-amboy': { group: 'slow', timeout: 600000, run: mpAmboy },
+  'mp-eight': { group: 'slow', timeout: 600000, run: mpEight }
 };
 const DEFAULT_SCENARIOS = ['solo-sprint', 'solo-lap', 'solo-free', 'mp-two'];
 const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix'];
-const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy']);
+const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy', 'mp-eight']);
 const MAP_SCENARIOS = new Set(['mp-amboy', 'mp-gracia', 'mode-matrix']);
 
 const runId = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
@@ -371,11 +373,11 @@ async function runAttempt(id, attempt, definition, shared) {
     fmt: summarize
   };
 
-  ctx.shot = async (page, name) => {
+  ctx.shot = async (page, name, options = {}) => {
     if (!page) throw new Error(id + ': screenshot ' + name + ' has no page');
     const safe = name.replace(/[^A-Za-z0-9._-]+/g, '-');
     const file = path.join(dir, safe + '.png');
-    const info = await page.screenshot(file);
+    const info = await page.screenshot(file, options);
     const rel = path.relative(ROOT, file).split(path.sep).join('/');
     const record = { path: rel, name, bytes: info.bytes, width: info.width, height: info.height,
       sha256: sha256File(file) };
@@ -385,8 +387,8 @@ async function runAttempt(id, attempt, definition, shared) {
     if (VERBOSE) log('  shot ' + rel + ' (' + info.width + 'x' + info.height + ', ' + info.bytes + ' B)');
     return record;
   };
-  ctx.openPage = async (label) => {
-    const page = await ctx.browser.newPage({ label });
+  ctx.openPage = async (label, options = {}) => {
+    const page = await ctx.browser.newPage({ label, ...options });
     ctx.pages.push(page);
     return page;
   };

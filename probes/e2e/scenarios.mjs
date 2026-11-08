@@ -911,3 +911,138 @@ export async function modeMatrix(ctx) {
   ctx.evidence.starts = cases.filter((entry) => entry.verdict === 'started').length;
   ctx.evidence.rejections = cases.filter((entry) => entry.verdict === 'rejected').length;
 }
+
+// ------------------------------------------------------------------ eight players
+
+/**
+ * `mp-eight`: eight human browser pages in one room. The room service caps a
+ * room at eight players, so this is the whole-field case: every page must join,
+ * verify the map, ready, start and then receive the other seven 20 Hz
+ * snapshots. Nothing here is AI; every car is a real page.
+ */
+export async function mpEight(ctx) {
+  const car = ctx.anchors.cars.default;
+  const roomQuery = '&mpServer=' + encodeURIComponent(ctx.roomUrl) + '&audio=0';
+  const host = await ctx.openPage('host');
+  const hostUrl = ctx.base + '/?mp=1&host=1&script=sprint&car=' + encodeURIComponent(car) +
+    '&map=river&name=Host' + roomQuery;
+  await host.navigate(hostUrl);
+  const hostLobby = await waitMp(ctx, host, (probe) =>
+    probe.mp.phase === 'lobby' && probe.mp.engineReady === true,
+  { timeoutMs: 180000, label: 'host lobby' });
+  const code = hostLobby.mp.roomCode;
+  ctx.A.check('mp8: host allocated a 5-character room code', /^[A-Z0-9]{5}$/.test(code ?? ''), code);
+  ctx.A.check('mp8: the room advertises eight slots', hostLobby.mp.constants?.maxPlayers === 8,
+    ctx.fmt(hostLobby.mp.constants));
+
+  const guests = [];
+  for (let index = 1; index <= 7; index++) {
+    // Seven extra WebGPU contexts starve the shared GPU process at full size;
+    // the guests render at a quarter of the pixels. Their assertions read the
+    // page state, not the framebuffer, so this does not weaken the check.
+    const guest = await ctx.openPage('guest-' + index, { viewport: { width: 640, height: 360 } });
+    const url = ctx.base + '/?mp=1&room=' + encodeURIComponent(code ?? '') + '&script=sprint&car=' +
+      encodeURIComponent(car) + '&name=Guest' + index + roomQuery;
+    await guest.navigate(url);
+    const lobby = await waitMp(ctx, guest, (probe) =>
+      probe.mp.phase === 'lobby' && probe.mp.engineReady === true,
+    { timeoutMs: 180000, label: 'guest ' + index + ' lobby' });
+    ctx.A.check('mp8: guest ' + index + ' joined room ' + code, lobby.mp.roomCode === code,
+      lobby.mp.roomCode);
+    guests.push(guest);
+  }
+  const pages = [host, ...guests];
+
+  const full = await waitMp(ctx, host, (probe) => probe.mp.players?.length === 8,
+    { timeoutMs: 60000, label: 'host roster of eight' });
+  const slots = full.mp.players.map((player) => player.slot).sort((a, b) => a - b);
+  ctx.A.check('mp8: the room roster has eight players on slots 1-8',
+    JSON.stringify(slots) === JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8]), ctx.fmt(slots));
+  ctx.A.check('mp8: exactly one host flag',
+    full.mp.players.filter((player) => player.host).length === 1,
+    ctx.fmt(full.mp.players.map((player) => [player.slot, player.host])));
+
+  for (const page of guests) {
+    const probe = await readProbe(page);
+    ctx.A.check('mp8: every guest sees the same eight-player roster',
+      probe?.mp?.players?.length === 8, ctx.fmt(probe?.mp?.players?.length));
+  }
+
+  for (const page of pages) await page.evaluate('window.__mp.setReady(true)');
+  const ready = await waitMp(ctx, host, (probe) =>
+    probe.mp.players?.length === 8 && probe.mp.players.every((player) => player.ready),
+  { timeoutMs: 60000, label: 'all eight ready' });
+  ctx.A.check('mp8: READY propagates to all eight players',
+    ready.mp.players.every((player) => player.ready), ctx.fmt(ready.mp.players));
+  ctx.A.check('mp8: host START is enabled', ready.mp.overlays.startDisabled === false,
+    ctx.fmt(ready.mp.overlays));
+
+  await host.evaluate('window.__mp.start()');
+  const started = [];
+  for (const [index, page] of pages.entries()) {
+    const probe = await waitMp(ctx, page, (value) => value.mp.started === true && value.engineTick >= 2,
+      { timeoutMs: 90000, label: 'page ' + index + ' race start' });
+    ctx.A.check('mp8: page ' + index + ' started the race', probe.mp.started === true,
+      ctx.fmt(probe.mp.started));
+    started.push(probe);
+  }
+  ctx.A.check('mp8: every page agrees on the room map',
+    started.every((probe) => probe.mp.mapId === 'river'),
+    ctx.fmt(started.map((probe) => probe.mp.mapId)));
+
+  // Each page must see the other seven humans with live snapshot ticks.
+  const remotes = [];
+  for (const [index, page] of pages.entries()) {
+    const probe = await waitMp(ctx, page, (value) =>
+      (value.mp.remotes?.length ?? 0) === 7 &&
+      value.mp.remotes.every((row) => row.latestTick !== null),
+    { timeoutMs: 90000, label: 'page ' + index + ' seven remotes' });
+    ctx.A.check('mp8: page ' + index + ' receives seven peer snapshots',
+      probe.mp.remotes.length === 7, ctx.fmt(probe.mp.remotes.map((row) => [row.slot, row.latestTick])));
+    ctx.A.check('mp8: page ' + index + ' has no self row in its remote list',
+      probe.mp.remotes.every((row) => row.id !== probe.mp.you?.id), ctx.fmt(probe.mp.you));
+    remotes.push(probe.mp.remotes);
+  }
+  const ticks = remotes.map((rows) => rows.map((row) => row.latestTick));
+  ctx.A.check('mp8: every snapshot tick is a positive integer',
+    ticks.every((row) => row.every((tick) => Number.isInteger(tick) && tick >= 0)), ctx.fmt(ticks));
+
+  // Evidence frames. Eight WebGPU contexts share one GPU process, so a full-size
+  // capture can starve; the guests are closed first and the host is captured
+  // last. The functional assertions above are already complete.
+  const shots = [];
+  try {
+    shots.push(await ctx.shot(guests[0], 'race-eight-guest', { timeoutMs: 120000 }));
+  } catch (error) {
+    ctx.evidence.guestShotError = error.message;
+  }
+  for (const guest of guests) { try { guest.close(); } catch { /* already closed */ } }
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  try {
+    shots.push(await ctx.shot(host, 'race-eight', { timeoutMs: 180000 }));
+  } catch (error) {
+    ctx.evidence.hostShotError = error.message;
+    ctx.A.check('mp8: host screenshot captured', false, error.message);
+  }
+  ctx.evidence.shots = shots;
+
+  const stats = ctx.roomServer?.stats?.() ?? null;
+  if (stats) {
+    ctx.A.check('mp8: the room service saw eight players in one room', stats.maxPlayersSeen === 8,
+      ctx.fmt({ maxPlayersSeen: stats.maxPlayersSeen }));
+    ctx.A.check('mp8: the room service created exactly one room', stats.roomsCreated === 1,
+      ctx.fmt({ roomsCreated: stats.roomsCreated }));
+    ctx.A.check('mp8: the room service recorded no protocol errors', stats.protocolErrors === 0,
+      ctx.fmt({ protocolErrors: stats.protocolErrors }));
+    ctx.evidence.roomStats = stats;
+  } else {
+    ctx.evidence.roomStatsUnavailable = 'attached room service; --base/--room-url has no stats()';
+  }
+
+  ctx.evidence.eight = {
+    code,
+    players: full.mp.players.map((player) => ({ slot: player.slot, host: player.host })),
+    remoteTicks: ticks
+  };
+}
+

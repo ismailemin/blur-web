@@ -160,14 +160,14 @@ export class CdpPage {
     }
   }
 
-  async send(method, params = {}) {
+  async send(method, params = {}, timeoutMs = 30000) {
     if (this.closed) throw new Error(this.label + ': CDP socket is closed');
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(this.label + ': CDP ' + method + ' timed out'));
-      }, 30000);
+      }, timeoutMs);
       this.pending.set(id, {
         resolve: (value) => { clearTimeout(timer); resolve(value); },
         reject: (error) => { clearTimeout(timer); reject(error); }
@@ -213,11 +213,11 @@ export class CdpPage {
   }
 
   /** Capture a PNG and write it; returns the verified image record. */
-  async screenshot(file) {
+  async screenshot(file, { timeoutMs = 30000 } = {}) {
     const shot = await this.send('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: false
-    });
+    }, timeoutMs);
     const buffer = Buffer.from(shot.data, 'base64');
     writeFileSync(file, buffer);
     const info = pngInfo(buffer);
@@ -309,7 +309,7 @@ export class CdpBrowser {
     return browser;
   }
 
-  async newPage({ label = 'page', url = 'about:blank' } = {}) {
+  async newPage({ label = 'page', url = 'about:blank', viewport = null } = {}) {
     let response = await fetch(
       `http://127.0.0.1:${this.httpPort}/json/new?${encodeURIComponent(url)}`,
       { method: 'PUT' }
@@ -323,7 +323,7 @@ export class CdpBrowser {
       target,
       httpPort: this.httpPort,
       label,
-      viewport: this.viewport
+      viewport: viewport ?? this.viewport
     });
     this.pages.push(page);
     return page;
