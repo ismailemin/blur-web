@@ -12,6 +12,11 @@
 import { createHud, HUD_DOCUMENT, HUD_SCHEMA } from '/hud-ui/runtime-hud.mjs';
 
 const MPS_TO_MPH = 2.2369362920544;
+// Speed-gauge denominator. This is a project gauge scale (216 km/h), not a
+// retail top speed: the engine does not expose a per-car maximum and inventing
+// one from the gear ratios would be a guess.
+const HUD_SPEED_GAUGE_MPS = 60;
+const TICK_HZ = 60;
 
 function host() {
   let element = document.getElementById('retail-hud');
@@ -48,15 +53,24 @@ export function hudState(state) {
   const players = mp?.players ?? mp?.room?.players ?? [];
   const selfId = mp?.you?.id ?? null;
   const selfRow = result?.rows?.find((row) => row.playerId === selfId) ?? null;
+  const countdownActive = sprint?.phase === 'countdown';
   return {
     speedMps: finite(state.speed),
+    maxSpeedMps: HUD_SPEED_GAUGE_MPS,
+    // The engine exposes RPM but no gear index, so the gear stays missing
+    // rather than being derived from speed (which would be a guess).
     gear: finite(state.gear),
     position: Number.isInteger(selfRow?.positionNumber) ? selfRow.positionNumber : null,
     fieldSize: players.length || null,
-    lap: Number.isInteger(sprint?.laps) ? sprint.laps : null,
-    laps: Number.isInteger(sprint?.lapsTotal) ? sprint.lapsTotal : null,
+    // LapRules exposes `lap` (current) and `laps` (total); SprintRules has none.
+    lap: Number.isInteger(sprint?.lap) ? sprint.lap : null,
+    laps: Number.isInteger(sprint?.laps) ? sprint.laps : null,
     timeSeconds: finite(sprint?.elapsedSeconds),
     bestLapSeconds: finite(sprint?.bestLapSeconds),
+    countdown: countdownActive && Number.isFinite(sprint?.countdownTicks)
+      ? { label: sprint.countdownLabel ?? null, secondsLeft: sprint.countdownTicks / TICK_HZ }
+      : null,
+    wrongWay: false,
     powerup: local?.item ? {
       type: local.item.type,
       charges: Number.isFinite(local.item.charges) ? local.item.charges : null,
