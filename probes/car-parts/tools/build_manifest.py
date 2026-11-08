@@ -708,7 +708,19 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
     positions = scene["positions"]
     indices = scene["indices"]
     draws = []
+    skipped_empty_draws = []
     for index, draw in enumerate(scene["draws"]):
+        # A draw with indexCount 0 has no geometry; it cannot be classified and
+        # it cannot be drawn. Skipping it is not a guess: the serialized range is
+        # empty. Every skip is recorded.
+        if int(draw.get("indexCount", 0)) == 0:
+            skipped_empty_draws.append({
+                "drawIndex": index,
+                "firstIndex": draw.get("firstIndex"),
+                "indexCount": 0,
+                "reason": "empty-index-range",
+            })
+            continue
         bounds = draw_bounds(positions, indices, draw)
         entry = dict(draw)
         entry["index"] = index
@@ -720,6 +732,10 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
         entry["vertexRange"] = {"min": bounds["minIndex"], "max": bounds["maxIndex"],
                                 "unique": bounds["vertexCount"]}
         draws.append(entry)
+
+    # A skipped empty draw has no entry, so every later lookup by the original
+    # scene index goes through this map instead of indexing the compacted list.
+    draw_by_scene_index = {entry["index"]: entry for entry in draws}
 
     elements = [element for element in mdl["elements"] if element["modelIndex"] == 0]
     elements_by_index = {element["index"]: element for element in elements}
@@ -772,17 +788,42 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
         lo, hi = union_bounds([{"min": member["min"], "max": member["max"]} for member in members])
         extent = [hi[i] - lo[i] for i in range(3)]
         round_delta = abs(extent[1] - extent[2]) / max(extent[1], extent[2])
-        element["axisProof"] = {
+        proof = {
             "unionLocalBounds": {"min": lo, "max": hi},
             "localExtent": extent,
             "thinAxis": "x" if extent[0] < extent[1] and extent[0] < extent[2] else None,
             "roundRelativeDelta": round_delta,
             "roundAxes": "y/z" if round_delta <= 0.10 else None,
         }
-        if element["axisProof"]["thinAxis"] != "x" or element["axisProof"]["roundAxes"] != "y/z":
-            raise Unsupported(
-                f"wheel {element['corner']} bounds are not thin on X and round on Y/Z: {extent} "
-                f"(round relative delta {round_delta:.4f})")
+        if proof["thinAxis"] != "x" or proof["roundAxes"] != "y/z":
+            # A brake-disc element can be offset along the axle, which inflates
+            # the member union on X. The wheel parent's own serialized bounds are
+            # then the authority for the axle: if they are thin on X and round on
+            # Y/Z, the axis is X. Measured, not assumed.
+            parent_lo = element["min"]
+            parent_hi = element["max"]
+            parent_extent = [parent_hi[i] - parent_lo[i] for i in range(3)]
+            parent_round = abs(parent_extent[1] - parent_extent[2]) / max(parent_extent[1], parent_extent[2])
+            if (parent_extent[0] < parent_extent[1] and parent_extent[0] < parent_extent[2]
+                    and parent_round <= 0.10):
+                proof = {
+                    "source": "parent-envelope",
+                    "unionLocalBounds": {"min": lo, "max": hi},
+                    "localExtent": extent,
+                    "parentLocalBounds": {"min": parent_lo, "max": parent_hi},
+                    "parentLocalExtent": parent_extent,
+                    "thinAxis": "x",
+                    "roundRelativeDelta": parent_round,
+                    "roundAxes": "y/z",
+                    "note": ("the member union is inflated along X by an offset brake-disc "
+                             "element; the wheel parent's own bounds prove the axle"),
+                }
+            else:
+                raise Unsupported(
+                    f"wheel {element['corner']} bounds are not thin on X and round on Y/Z: {extent} "
+                    f"(round relative delta {round_delta:.4f}); parent {parent_extent} "
+                    f"delta {parent_round:.4f}")
+        element["axisProof"] = proof
 
     # --- wheel kinds ------------------------------------------------------
     tyre_elements = sorted([element for element in wheel_elements if wheel_kind(element["name"]) == "tyre"],
@@ -914,7 +955,7 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
             corners_for_draw = candidate_corners[kind][draw_index]
             proven = len(corners_for_draw) == 1
             element = entry["element"]
-            draw = draws[draw_index]
+            draw = draw_by_scene_index[draw_index]
             difference = aabb_diff(draw["bounds"]["min"], draw["bounds"]["max"],
                                    element["min"], element["max"])
             candidates = sorted((candidate["name"] for candidate in kind_elements
@@ -1115,7 +1156,7 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
     def vertex_span(draw_indices: list[int]) -> dict:
         vertices = set()
         for draw_index in draw_indices:
-            draw = draws[draw_index]
+            draw = draw_by_scene_index[draw_index]
             for offset in range(draw["firstIndex"], draw["firstIndex"] + draw["indexCount"]):
                 vertices.add(indices[offset])
         return {"min": min(vertices), "max": max(vertices), "unique": len(vertices)}
@@ -1141,7 +1182,7 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
             bounds_lo = [math.inf] * 3
             bounds_hi = [-math.inf] * 3
             for draw_index in part["draws"]:
-                draw = draws[draw_index]
+                draw = draw_by_scene_index[draw_index]
                 for axis in range(3):
                     bounds_lo[axis] = min(bounds_lo[axis], draw["bounds"]["min"][axis])
                     bounds_hi[axis] = max(bounds_hi[axis], draw["bounds"]["max"][axis])
@@ -1151,12 +1192,12 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
             part["worldTransform"] = {"coordinateSpace": "model", "translation": [0.0, 0.0, 0.0],
                                       "matrixColumnMajor": column_major_from_rows(identity_rows())}
         part["drawIndexRanges"] = [
-            {"firstIndex": draws[index]["firstIndex"], "indexCount": draws[index]["indexCount"]}
+            {"firstIndex": draw_by_scene_index[index]["firstIndex"], "indexCount": draw_by_scene_index[index]["indexCount"]}
             for index in part["draws"]
         ]
         part["vertexRange"] = vertex_span(part["draws"])
         part["provenDraws"] = list(part["draws"])
-        part["triangleCount"] = sum(draws[index]["indexCount"] for index in part["draws"]) // 3
+        part["triangleCount"] = sum(draw_by_scene_index[index]["indexCount"] for index in part["draws"]) // 3
         final_parts.append(part)
 
     for group in wheel_groups:
@@ -1177,11 +1218,11 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
             "spin": group["spin"],
             "memberParts": group["memberParts"],
             "drawIndexRanges": [
-                {"firstIndex": draws[index]["firstIndex"], "indexCount": draws[index]["indexCount"]}
+                {"firstIndex": draw_by_scene_index[index]["firstIndex"], "indexCount": draw_by_scene_index[index]["indexCount"]}
                 for index in group["previewDraws"]
             ],
             "vertexRange": vertex_span(group["previewDraws"]),
-            "triangleCount": sum(draws[index]["indexCount"] for index in group["previewDraws"]) // 3,
+            "triangleCount": sum(draw_by_scene_index[index]["indexCount"] for index in group["previewDraws"]) // 3,
             "proof": {
                 "tier": "element-name+matrix+bounds",
                 "reason": "e_wheel_* element name, MdlDat matrix translation and draw-local bounds",
@@ -1252,6 +1293,7 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
         "tyres": tyre_rows,
         "tyreProofTier": tyre_tier,
         "wheelKindCounts": other_rows,
+        "skippedEmptyDraws": skipped_empty_draws,
     }
 
 
@@ -1531,6 +1573,8 @@ def build(args: argparse.Namespace) -> dict:
         "diagnostics": diagnostics,
         "limits": limits,
     }
+    if classified["skippedEmptyDraws"]:
+        manifest["skippedEmptyDraws"] = classified["skippedEmptyDraws"]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     mesh_file = mesh_path_for(out_dir, args)

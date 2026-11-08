@@ -42,13 +42,13 @@ export const MAPS = Object.freeze({
     // 310 m layout and the Level.levelphysics file. The combined debug geometry
     // is not part of the wire identity.
     mpPins: Object.freeze({
-      packageHash: 'sha256:a168b85dcd4a1ca6dbf2d62ea8ac15c8712e49804e075dc00a88556da8fcc6c4',
+      packageHash: 'sha256:7522a7bdc1b7464a39f07021e807b90909b82b53bd76b88dd8d9e9b86bbec3ea',
       layoutHash: 'sha256:9240e9c136059ccd209992999b8570860f99f1bedd4b4ec9ff0a56d5cf8cad53',
       physicsHash: 'sha256:1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28',
-      packageFileSha256: 'sha256:a168b85dcd4a1ca6dbf2d62ea8ac15c8712e49804e075dc00a88556da8fcc6c4',
+      packageFileSha256: 'sha256:7522a7bdc1b7464a39f07021e807b90909b82b53bd76b88dd8d9e9b86bbec3ea',
       layoutFileSha256: 'sha256:516647664f7ff3590db457f8685a3d4308b030b86fbf962f0e9bfa708da89e49',
       physicsFileSha256: 'sha256:1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28',
-      packageBytes: 9665667,
+      packageBytes: 9665779,
       layoutBytes: 386521,
       physicsBytes: 1945409
     })
@@ -463,6 +463,7 @@ export function mpPinsForMap(value) {
   if (!MAP_IDS.includes(value)) return null;
   return MAPS[value].mpPins ?? null;
 }
+
 
 
 

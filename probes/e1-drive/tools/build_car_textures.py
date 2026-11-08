@@ -56,8 +56,8 @@ MANIFEST_OUT = OUT_DIR / "car-textures.json"
 # Committed identities. The P52 roster index is the per-car record; the
 # car-parts index is the model/manifest/mesh map `build_geometry.mjs` already
 # pins. A regenerated or hand-edited input is a hard failure.
-COMMITTED_ROSTER_INDEX = "9e63f81794c2d6dd682cf2c6d481ad8d39e4b88566c8591c911c2d3aa6bf4ea3"
-COMMITTED_CAR_INDEX = "1fcee94ad9fe5f2b8073c2374d48605e29713e9f15216bcf8a1973afcea12bae"
+COMMITTED_ROSTER_INDEX = "fc144a1c23d332abafbab92c0c15ff3f273f4a6562262dcb3b431bc7e778bf19"
+COMMITTED_CAR_INDEX = "555acb110c35374a91acecfac58098b55376c93fd35e52537d2df8715c3ae340"
 
 # The committed `scene_inspect.exe` output per car, which carries the merged
 # `uv0` array parallel to `positions`. The car-parts index does not record this
@@ -121,6 +121,8 @@ COMMITTED_SCENE_REPORTS = {
     "opel-astraextreme-stockgrippy": "f5ae7944efb1d5a4d6ee7334e5c506d94e5bb0bd438e78c2a64c4ba111001d9b",
     "ford-gt-stock": "24a8a7be3d2ae2de5f4c380e1b3566658b97e8c4955e1e42dc871842df135ba5",
     "dodge-vipergtsr-stock": "e46c313d2bec2ef8c63eb600078644ee5953b16c5be067cd52f9b5de6f0ce341",
+    "ratrod-na-stock": "18f39a36d8ffe89a9e999ab27ea9e7ef3821ae76cdc11c60293000f0c2ec8194",
+    "toyota-supra-smooth": "3f0943d31b38caa4efbeebd659d653571cfa6becc3cdf88d38ba1ccbe7771e48",
 }
 
 # P52 per-car totals (docs/work/analysis/car-materials.md §2, extended by the
@@ -300,6 +302,12 @@ EXPECTED_BY_CAR = {
     "dodge-vipergtsr-stock": {"draws": 91, "staticAlbedoDraws": 51, "paintDraws": 10,
                            "lightDraws": 13, "noAlbedoDraws": 17, "textures": 8,
                            "rgbaBytes": 4472832, "uvValues": 62554},
+    "ratrod-na-stock": {"draws": 51, "staticAlbedoDraws": 23, "paintDraws": 0,
+                           "lightDraws": 6, "noAlbedoDraws": 22, "textures": 6,
+                           "rgbaBytes": 2408448, "uvValues": 59202},
+    "toyota-supra-smooth": {"draws": 82, "staticAlbedoDraws": 49, "paintDraws": 9,
+                           "lightDraws": 11, "noAlbedoDraws": 13, "textures": 7,
+                           "rgbaBytes": 3424256, "uvValues": 63658},
 }
 EXPECTED = {
     key: sum(car[key] for car in EXPECTED_BY_CAR.values())
@@ -451,10 +459,16 @@ def build_car(entry: dict, car_index_entry: dict) -> dict:
     for component in uv:
         if not (component == component and abs(component) != float("inf")):
             raise SystemExit(f"FAILED: {slug} uv0 has a non-finite component")
-    if len(scene["draws"]) != len(parts["draws"]) or len(materials["draws"]) != len(parts["draws"]):
-        raise SystemExit(f"FAILED: {slug} draw counts disagree between the three readers")
-    for index, (part_draw, scene_draw) in enumerate(zip(parts["draws"], scene["draws"])):
-        if part_draw["index"] != index or scene_draw.get("firstIndex") is None:
+    skipped_empty = len(parts.get("skippedEmptyDraws", []))
+    if (len(scene["draws"]) != len(parts["draws"]) + skipped_empty
+            or len(materials["draws"]) != len(parts["draws"])):
+        raise SystemExit(f"FAILED: {slug} draw counts disagree between the three readers "
+                         f"(scene {len(scene['draws'])}, parts {len(parts['draws'])}, "
+                         f"materials {len(materials['draws'])}, skipped {skipped_empty})")
+    for part_draw in parts["draws"]:
+        index = part_draw["index"]
+        scene_draw = scene["draws"][index]
+        if scene_draw.get("firstIndex") is None:
             raise SystemExit(f"FAILED: {slug} draw {index} is not in serialized order")
         if part_draw["firstIndex"] != scene_draw["firstIndex"] or \
                 part_draw["indexCount"] != scene_draw["indexCount"]:
@@ -507,7 +521,8 @@ def build_car(entry: dict, car_index_entry: dict) -> dict:
     draws = []
     per_texture_draws: dict[str, int] = {}
 
-    for index, (material_draw, part_draw) in enumerate(zip(materials["draws"], parts["draws"])):
+    for material_draw, part_draw in zip(materials["draws"], parts["draws"]):
+        index = part_draw["index"]
         if material_draw["index"] != index:
             raise SystemExit(f"FAILED: {slug} materials draw order differs at {index}")
         if (material_draw.get("partId") or None) != (part_draw.get("partId") or None) or \
@@ -891,5 +906,6 @@ def main(argv):
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
 
 

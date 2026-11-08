@@ -675,6 +675,22 @@
       "recordIndex": 78,
       "layout": "RWD, 1400 kg, 6-speed",
       "why": "staged by probes/vehicle-batch (batch-roster.json); fields, model and drivetrain decoded"
+    },
+    {
+      "slug": "ratrod-na-stock",
+      "name": "RatRod_NA_Stock",
+      "recordId": 1806083404,
+      "recordIndex": 38,
+      "layout": "RWD, 1462 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch; the wheel axle is proven from the wheel parent's own serialized bounds (the member union is inflated on X by an offset brake-disc element)"
+    },
+    {
+      "slug": "toyota-supra-smooth",
+      "name": "Toyota_Supra_Smooth",
+      "recordId": 4203637251,
+      "recordIndex": 79,
+      "layout": "RWD, 1400 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch; draws 48 and 50 have an empty index range (indexCount 0) and are skipped with the skip recorded in the manifest"
     }
   ]
 }

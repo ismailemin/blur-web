@@ -417,10 +417,12 @@ def main() -> int:
         )
         python_draws = resolved["draws"]
         cpp_draws = scene["draws"]
-        if not (len(python_draws) == len(cpp_draws) == len(manifest["draws"])):
+        skipped = len(manifest.get("skippedEmptyDraws", []))
+        if not (len(python_draws) == len(cpp_draws) == len(manifest["draws"]) + skipped):
             raise RuntimeError(
                 f"{slug}: draw counts differ: python={len(python_draws)} "
-                f"cpp={len(cpp_draws)} manifest={len(manifest['draws'])}"
+                f"cpp={len(cpp_draws)} manifest={len(manifest['draws'])} "
+                f"skippedEmpty={skipped}"
             )
 
         # C++ resource metadata lookup for cross-checking every LOD we assemble.
@@ -431,11 +433,12 @@ def main() -> int:
 
         texture_targets: dict[str, dict] = {}
         draw_records = []
-        for draw_index, (py, cpp, part) in enumerate(
-            zip(python_draws, cpp_draws, manifest["draws"])
-        ):
-            if part["index"] != draw_index:
-                raise RuntimeError(f"{slug}: part manifest draw order differs at {draw_index}")
+        # The manifest may skip empty draws, so its draw entries are matched to
+        # the scene by the recorded original index rather than by position.
+        for part in manifest["draws"]:
+            draw_index = part["index"]
+            py = python_draws[draw_index]
+            cpp = cpp_draws[draw_index]
             cpp_kind = cpp_classification(cpp, scene)
             py_kind = python_classification(py)
             static_cpp = cpp_kind.startswith("static_albedo")

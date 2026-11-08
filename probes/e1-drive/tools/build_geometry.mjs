@@ -136,9 +136,11 @@ const COMMITTED_MANIFESTS = {
   'opel-astraextreme-stockgrippy': 'sha256:eb7f8dab45821c423c617002c4f61403740759b31ff140512b4d52ab99895c6b',
   'ford-gt-stock': 'sha256:4cc36c7239f04093590f7b54abf306f382cbfa091f343e6e26f6bd1da3cb0e08',
   'dodge-vipergtsr-stock': 'sha256:67ae8648e202bc21685e7c95865d5719088afa81ef62d2f7403c4fd98e0c7eef',
+  'ratrod-na-stock': 'sha256:7afc50e723216839e47b219cf6d649b214fba0db15e457d682ffbc1d1cafbeef',
+  'toyota-supra-smooth': 'sha256:fe6aaeb1f0d7d59cd93f94f7be6b2323e8d64235f96d5802556b0cfede88d63e',
 };
 const COMMITTED_CAR_INDEX =
-  'sha256:1fcee94ad9fe5f2b8073c2374d48605e29713e9f15216bcf8a1973afcea12bae';
+  'sha256:555acb110c35374a91acecfac58098b55376c93fd35e52537d2df8715c3ae340';
 
 // P52's per-car material/texture record plus its UV0 export. Committed output of
 // `build_car_textures.py`; a different file is a hard failure, because the car
@@ -146,7 +148,7 @@ const COMMITTED_CAR_INDEX =
 // consumer document is updated with it.
 const CAR_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/car-textures.json');
 const COMMITTED_CAR_TEXTURES =
-  'sha256:e0d540a1d842478ccf86e38377b5d0d22850b27c3e17203f54b202dc713804b7';
+  'sha256:715d45bc5d034ccb67541bd5cb28e265efe39e0ff0cd4906210278e2cc82e541';
 
 // P73b level-instance prop pack: the P73a UV0 export plus the four decoded BC1
 // sources, emitted by `build_level_instance_textures.py`. Committed output of
@@ -213,7 +215,7 @@ if (carTextureDoc.kind !== 'e1-drive.car-textures' || carTextureDoc.version !== 
   throw new Error('car texture manifest kind/version is not e1-drive.car-textures v1');
 }
 if (carTextureDoc.pins?.p52RosterIndex !==
-    'sha256:9e63f81794c2d6dd682cf2c6d481ad8d39e4b88566c8591c911c2d3aa6bf4ea3' ||
+    'sha256:fc144a1c23d332abafbab92c0c15ff3f273f4a6562262dcb3b431bc7e778bf19' ||
     carTextureDoc.pins?.carPartsIndex !== COMMITTED_CAR_INDEX) {
   throw new Error('car texture manifest does not carry the committed P52 roster and car-parts indexes');
 }
@@ -477,6 +479,11 @@ function drawUvHash(uvValues, indices, firstIndex, indexCount) {
 function buildBody(entry, options = {}) {
   const fallback = options.fallback === true;
   const carTexturePack = options.carTextures ?? null;
+  // The P52 pack also skips empty draws, so its entries are matched by the
+  // recorded original index rather than by position.
+  const carTextureDrawByIndex = carTexturePack
+    ? new Map(carTexturePack.draws.map((draw) => [draw.index, draw]))
+    : null;
   const manifestPath = fallback ? C3_MANIFEST : path.join(ROOT, entry.manifest);
   const manifestBytes = readFileSync(manifestPath);
   const manifestSha = sha256(manifestBytes);
@@ -536,12 +543,15 @@ function buildBody(entry, options = {}) {
   }
 
   const meshId = 'car.' + entry.slug + '.body';
+  // A manifest may skip empty draws, so its draw entries are matched by the
+  // recorded original index rather than by position.
+  const drawByIndex = new Map(manifest.draws.map((draw) => [draw.index, draw]));
   const wheelGroups = manifest.wheelGroups.map((group) => {
     const groupDraws = group.previewDraws ?? group.provenDraws;
     const spinDraws = [];
     const staticDraws = [];
     for (const drawIndex of groupDraws) {
-      const draw = manifest.draws[drawIndex];
+      const draw = drawByIndex.get(drawIndex);
       const wheelPart = draw?.evidence?.wheelPart ?? null;
       if (!wheelPart) throw new Error('wheel group ' + group.id + ' draw ' + drawIndex + ' has no wheel member');
       if (group.spin.spinMembers.includes(wheelPart)) spinDraws.push(draw.index);
@@ -606,7 +616,7 @@ function buildBody(entry, options = {}) {
     // comparing the index range and part identity of every draw, and the per-draw
     // UV0 value hash is recomputed from the mesh stream, so a texture can only be
     // bound to the draw whose UVs produced it.
-    const materialDraw = carTexturePack ? carTexturePack.draws[manifestDraw.index] : null;
+    const materialDraw = carTexturePack ? carTextureDrawByIndex.get(manifestDraw.index) : null;
     if (carTexturePack) {
       if (!materialDraw) throw new Error(entry.slug + ': draw ' + manifestDraw.index +
         ' is missing from the P52 car texture manifest');
@@ -932,6 +942,8 @@ const COMMITTED_CAR_COVERAGE = {
   'opel-astraextreme-stockgrippy': { draws: 86, textured: 63, paint: 9, light: 9, noAlbedo: 5, textures: 10, rgbaBytes: 3891200 },
   'ford-gt-stock': { draws: 114, textured: 95, paint: 0, light: 16, noAlbedo: 3, textures: 9, rgbaBytes: 3162112 },
   'dodge-vipergtsr-stock': { draws: 91, textured: 51, paint: 10, light: 13, noAlbedo: 17, textures: 8, rgbaBytes: 4472832 },
+  'ratrod-na-stock': { draws: 51, textured: 23, paint: 0, light: 6, noAlbedo: 22, textures: 6, rgbaBytes: 2408448 },
+  'toyota-supra-smooth': { draws: 82, textured: 49, paint: 9, light: 11, noAlbedo: 13, textures: 7, rgbaBytes: 3424256 },
 };
 {
   const bodyList = Object.values(bodies);
@@ -2381,5 +2393,6 @@ console.log(JSON.stringify({
   fallbackBodies,
   source: geometry.source
 }, null, 2));
+
 
 

@@ -31,7 +31,7 @@ const DATA_PLACEHOLDER = '/*__RUNTIME_MATERIALS_DATA__*/';
 
 const MANIFEST_SCHEMA = 'blur.car-materials-runtime-manifest/1';
 const RUNTIME_SCHEMA = 'blur.car-materials-runtime/1';
-const CAR_COUNT = 57;
+const CAR_COUNT = 59;
 
 function parseArgs(argv) {
   const options = { manifest: DEFAULT_MANIFEST, module: DEFAULT_MODULE, quiet: false };
@@ -217,4 +217,5 @@ function main() {
 }
 
 main();
+
 
