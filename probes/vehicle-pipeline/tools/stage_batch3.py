@@ -175,6 +175,183 @@ def material_pass(body: Path, out_dir: Path) -> dict:
     }
 
 
+def _mapping_text(record: dict) -> str:
+    """The same mapping evidence string `build_all_manifests.build_manifest` uses."""
+    mapping = record.get("modelMapping")
+    if mapping:
+        return (
+            f"roster name {record['name']} (record {record['record']['index']}/"
+            f"{record['record']['id']}) -> explicit record-level model "
+            f"{record['pakPath']} ({record['logicalBytes']} logical bytes, SHA-256 "
+            f"{record['modelSha256']}); AmaxVehicle {mapping['amaxTag']} "
+            f"({mapping['amaxRecordId']}, dynamics ref {mapping['amaxRefIndex']}) "
+            f"carries this exact RP_CarDynamics id and the engine derives "
+            f"models/vehicles/%s.model from the tag; nameSimilarityUsed=false; "
+            f"{len(record['prefixCandidates'])} prefix candidate(s) recorded")
+    return (
+        f"roster name {record['name']} (record {record['record']['index']}/"
+        f"{record['record']['id']}) -> normalised '{record['normalisedName']}' -> "
+        f"exact pak entry {record['pakPath']} ({record['logicalBytes']} logical "
+        f"bytes, SHA-256 {record['modelSha256']}); "
+        f"{len(record['prefixCandidates'])} prefix candidate(s) recorded and "
+        f"excluded by exact name")
+
+
+def build_manifest_with_decisions(record: dict, decision: dict, out_root: Path,
+                                  scene_exe: Path, model_exe: Path) -> dict:
+    """Run the committed part builder with one typed, evidence-based decision.
+
+    The decision is data, not a guess: every substituted value comes from the
+    same decoded model or the committed Scene reader. The decision is recorded
+    in the returned record (`builderDecision`) and must be ported into
+    `probes/car-parts/tools/build_manifest.py` before the committed build can
+    reproduce the artifacts; this wrapper only stages them.
+    """
+    import argparse
+    import build_manifest as bm
+
+    slug = record["slug"]
+    out_dir = Path(out_root) / slug
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model_path = ROOT / record["decodedModel"]
+    args = argparse.Namespace(
+        model=model_path,
+        scene_exe=Path(scene_exe),
+        model_exe=Path(model_exe),
+        scene_json=None,
+        out_dir=out_dir,
+        mesh_out=None,
+        car_slug=slug,
+        car_name=record["name"],
+        car_mapping=_mapping_text(record),
+        model_pak_path=record["pakPath"],
+    )
+    evidence = {"kind": decision["kind"], "detail": decision["detail"]}
+    restore: list[tuple[str, object]] = []
+    try:
+        if decision["kind"] == "skip-empty-draws":
+            raw = run([str(scene_exe), str(model_path)], timeout=300)
+            if raw.returncode != 0:
+                raise Unsupported(
+                    f"scene_inspect failed: {(raw.stderr or raw.stdout)[:300]}")
+            raw_text = raw.stdout
+            scene = json.loads(raw_text)
+            removed = [index for index, draw in enumerate(scene["draws"])
+                       if int(draw.get("indexCount") or 0) == 0]
+            scene["draws"] = [draw for draw in scene["draws"]
+                              if int(draw.get("indexCount") or 0) > 0]
+            filtered_path = out_dir / "scene-filtered.json"
+            filtered_path.write_text(
+                json.dumps(scene, indent=1, sort_keys=True) + "\n",
+                encoding="utf-8", newline="\n")
+            (out_dir / "scene-report.raw.json").write_text(
+                raw_text, encoding="utf-8", newline="\n")
+            args.scene_json = filtered_path
+            evidence.update({
+                "removedDraws": removed,
+                "rawDrawCount": len(scene["draws"]) + len(removed),
+                "keptDrawCount": len(scene["draws"]),
+                "rawSceneSha256": sha256_bytes(raw_text.encode("utf-8")),
+                "filteredSceneSha256": sha256_file(filtered_path),
+                "note": "indexCount 0 draws contribute no geometry; the committed "
+                        "builder is fed the filtered scene through --scene-json",
+            })
+        elif decision["kind"] == "wheel-axis-from-parent-envelope":
+            member_parent: dict[tuple, dict] = {}
+            original_parse = bm.parse_mdldat
+            original_union = bm.union_bounds
+            fallbacks: list[dict] = []
+
+            def parse(data: bytes) -> dict:
+                mdl = original_parse(data)
+                elements = [element for element in mdl["elements"]
+                            if element["modelIndex"] == 0]
+                by_index = {element["index"]: element for element in elements}
+                for element in elements:
+                    parent = by_index.get(element["parent"])
+                    if parent and parent["name"].lower().startswith("e_wheel_"):
+                        member_parent[(tuple(element["min"]),
+                                       tuple(element["max"]))] = parent
+                return mdl
+
+            def union_bounds(bounds_list: list[dict]) -> tuple[list[float], list[float]]:
+                keys = [(tuple(item["min"]), tuple(item["max"]))
+                        for item in bounds_list]
+                parents = {member_parent[key]["name"] for key in keys
+                           if key in member_parent}
+                if keys and len(parents) == 1 and all(k in member_parent for k in keys):
+                    lo, hi = original_union(bounds_list)
+                    extent = [hi[i] - lo[i] for i in range(3)]
+                    delta = abs(extent[1] - extent[2]) / max(extent[1], extent[2])
+                    thin = extent[0] < extent[1] and extent[0] < extent[2]
+                    if not (thin and delta <= 0.10):
+                        parent = member_parent[keys[0]]
+                        parent_extent = [parent["max"][i] - parent["min"][i]
+                                         for i in range(3)]
+                        fallbacks.append({
+                            "parent": parent["name"],
+                            "memberUnionExtent": extent,
+                            "memberUnionRoundRelativeDelta": delta,
+                            "parentExtent": parent_extent,
+                            "parentRoundRelativeDelta": abs(
+                                parent_extent[1] - parent_extent[2])
+                                / max(parent_extent[1], parent_extent[2]),
+                        })
+                        return list(parent["min"]), list(parent["max"])
+                return original_union(bounds_list)
+
+            bm.parse_mdldat = parse
+            bm.union_bounds = union_bounds
+            restore = [("parse_mdldat", original_parse),
+                       ("union_bounds", original_union)]
+            evidence.update({
+                "axisFallbacks": fallbacks,
+                "note": "the e_wheel_* parent's own serialized bounds are the wheel "
+                        "envelope; the member union is still used whenever it already "
+                        "proves thin X / round Y/Z",
+            })
+        else:
+            raise Unsupported(f"{slug}: unknown builder decision {decision['kind']!r}")
+        summary = bm.build(args)
+    finally:
+        for name, original in restore:
+            setattr(bm, name, original)
+
+    manifest_path = Path(summary["manifest"])
+    mesh_path = Path(summary["mesh"])
+    scene_path = Path(summary["sceneReport"])
+    built = json.loads(manifest_path.read_text(encoding="utf-8"))
+    record.update({
+        "mapped": True,
+        "manifest": str(manifest_path.relative_to(ROOT)).replace("\\", "/"),
+        "manifestSha256": "sha256:" + summary["manifestSha256"],
+        "manifestBytes": summary["manifestBytes"],
+        "mesh": str(mesh_path.relative_to(ROOT)).replace("\\", "/"),
+        "meshSha256": "sha256:" + summary["meshSha256"],
+        "meshPositionsSha256": "sha256:" + summary["meshPositionsSha256"],
+        "meshIndicesSha256": "sha256:" + summary["meshIndicesSha256"],
+        "sceneReport": str(scene_path.relative_to(ROOT)).replace("\\", "/"),
+        "vertexCount": built["mesh"]["vertexCount"],
+        "indexCount": built["mesh"]["indexCount"],
+        "draws": summary["diagnostics"]["drawCount"],
+        "parts": summary["diagnostics"]["partCount"],
+        "namedParts": summary["diagnostics"]["namedPartCount"],
+        "wheelDraws": summary["diagnostics"]["wheelDrawCount"],
+        "provenWheelDraws": summary["diagnostics"]["provenWheelDrawCount"],
+        "ambiguousWheelDraws": summary["diagnostics"]["ambiguousWheelDrawCount"],
+        "tyreDraws": summary["diagnostics"]["tyreDrawCount"],
+        "rimDraws": summary["diagnostics"]["rimDrawCount"],
+        "brakeDiscDraws": summary["diagnostics"]["brakeDiscDrawCount"],
+        "brakeCaliperDraws": summary["diagnostics"]["brakeCaliperDrawCount"],
+        "diagnostics": summary["diagnostics"],
+        "tyres": summary["tyres"],
+        "wheelKindCounts": summary["wheelKindCounts"],
+        "wheelGroups": summary["wheelGroups"],
+        "builderDecision": evidence,
+    })
+    return record
+
+
 def resolve_sources(cars_doc: dict, alias_doc: dict, amax_vehicles: dict,
                     hud_doc: dict) -> list[dict]:
     cars = {row["index"]: row for row in cars_doc["records"]}

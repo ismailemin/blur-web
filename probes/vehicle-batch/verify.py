@@ -251,11 +251,15 @@ def verify_car(gate: Gate, car: dict, primary: Path, summary_row: dict) -> dict:
     if (out_dir / "materials" / "corvette-materials.json").is_file():
         materials = json.loads(
             (out_dir / "materials" / "corvette-materials.json").read_text(encoding="utf-8"))
+        manifest_draws = (json.loads(
+            (out_dir / "manifest.json").read_text(encoding="utf-8"))
+            .get("diagnostics") or {}).get("drawCount")
+        decision = (staged.get("record") or {}).get("builderDecision") or {}
+        skipped = (len(decision.get("removedDraws") or [])
+                   if decision.get("kind") == "skip-empty-draws" else 0)
         gate.check(f"{label}.materialsDraws",
-                   materials.get("drawCount") == (json.loads(
-                       (out_dir / "manifest.json").read_text(encoding="utf-8"))
-                       .get("diagnostics") or {}).get("drawCount"),
-                   materials.get("drawCount"))
+                   materials.get("drawCount") == manifest_draws + skipped,
+                   f"{materials.get('drawCount')} vs {manifest_draws}+{skipped}")
         gate.check(f"{label}.materialsTextures",
                    int((materials.get("statusCounts") or {})
                        .get("static_albedo_image_resolved", 0)) > 0, "")

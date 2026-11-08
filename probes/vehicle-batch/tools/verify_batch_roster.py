@@ -9,7 +9,7 @@ staging output:
   * the staged manifest/mesh/scene-report hashes and their internal arithmetic;
   * the typed unsupported reason and the exact missing field/byte;
   * record-index order, uniqueness and full 62-record coverage with the
-    committed 25-car roster;
+    committed 57-car roster;
   * determinism: the primary and repeat build roots must produce identical
     batch-roster bytes and identical per-car staged identities.
 
@@ -123,7 +123,7 @@ def verify_document(gate: Gate, spec: dict, roster: dict, document: dict,
                (document.get("spec") or {}).get("sha256") == sha256_file(
                    ROOT / document["spec"]["path"]),
                (document.get("spec") or {}).get("sha256"))
-    gate.check("roster.entries=37", len(entries) == 37, len(entries))
+    gate.check("roster.entries=5", len(entries) == 5, len(entries))
     gate.check("roster.order", entry_indexes == expected_indexes,
                f"{len(entry_indexes)} entries")
     gate.check("roster.uniqueSlugs",
@@ -139,7 +139,7 @@ def verify_document(gate: Gate, spec: dict, roster: dict, document: dict,
 
     roster_indexes = {car["recordIndex"] for car in roster["cars"]}
     all_indexes = set(spec_by_index)
-    gate.check("roster.committedCount", len(roster["cars"]) == 25,
+    gate.check("roster.committedCount", len(roster["cars"]) == 57,
                len(roster["cars"]))
     gate.check("roster.noOverlap",
                not (set(entry_indexes) & roster_indexes),
@@ -243,9 +243,9 @@ def verify_document(gate: Gate, spec: dict, roster: dict, document: dict,
 
     counts = document.get("counts") or {}
     gate.check("counts.records", counts.get("records") == 62, counts.get("records"))
-    gate.check("counts.inRoster", counts.get("inRoster") == 25,
+    gate.check("counts.inRoster", counts.get("inRoster") == 57,
                counts.get("inRoster"))
-    gate.check("counts.remaining", counts.get("remaining") == 37,
+    gate.check("counts.remaining", counts.get("remaining") == 5,
                counts.get("remaining"))
     gate.check("counts.selected", counts.get("selected") == len(entries),
                counts.get("selected"))
@@ -258,7 +258,7 @@ def verify_document(gate: Gate, spec: dict, roster: dict, document: dict,
     gate.check("counts.coverage",
                counts.get("coverage") == counts.get("inRoster", 0) + staged,
                counts.get("coverage"))
-    gate.check("counts.coverage=57", counts.get("coverage") == 57,
+    gate.check("counts.coverage=59", counts.get("coverage") == 59,
                counts.get("coverage"))
     return staged, unsupported
 

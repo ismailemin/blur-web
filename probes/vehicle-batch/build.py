@@ -239,12 +239,18 @@ def roster_entry(car: dict) -> dict:
 def why_text(car: dict) -> str:
     body = car["body"]
     if body["route"] == "alias":
-        return (f"batch compiler (class C): record {car['recordIndex']}/"
+        text = (f"batch compiler (class C): record {car['recordIndex']}/"
                 f"{car['recordId']} resolves through AmaxVehicle "
                 f"{car['alias']['amaxTag']} to {body['pakPath']}; record-level "
                 f"identity, no name similarity used.")
-    return (f"batch compiler (class {car['class']}): exact {body['pakPath']}, "
-            f"{car['drivetrain']}, {int(round(car['massKg']))} kg, {car['gears']}-speed.")
+    else:
+        text = (f"batch compiler (class {car['class']}): exact {body['pakPath']}, "
+                f"{car['drivetrain']}, {int(round(car['massKg']))} kg, "
+                f"{car['gears']}-speed.")
+    decision = car.get("builderDecision")
+    if decision:
+        text += f" Builder decision: {decision['kind']}."
+    return text
 
 
 def car_dict(car: dict) -> dict:
@@ -307,7 +313,8 @@ def artifact_hashes(out_dir: Path) -> dict:
 def clear_stage_markers(out_dir: Path) -> None:
     """Drop staged claims when a car is blocked (never keep a stale success)."""
     for name in ("staged.json", "integration.json", "ghost-inputs.json",
-                 "manifest.json", "mesh.json", "scene-report.json"):
+                 "manifest.json", "mesh.json", "scene-report.json",
+                 "scene-filtered.json", "scene-report.raw.json"):
         path = out_dir / name
         if path.is_file():
             path.unlink()
@@ -335,6 +342,7 @@ def blocked_payload(car: dict, fields: dict | None = None) -> dict:
         "gears": car["gears"],
         "wheelBase": car["physics"]["wheelBase"],
         "fields": fields if fields is not None else safe_fields(car),
+        "builderDiagnosis": car.get("builderDiagnosis"),
         "reasons": reasons,
     }
     if reasons:
@@ -360,6 +368,7 @@ def stage_blocked_payload(car: dict, code: str, detail: str) -> dict:
         "gears": car["gears"],
         "wheelBase": car["physics"]["wheelBase"],
         "fields": safe_fields(car),
+        "builderDiagnosis": car.get("builderDiagnosis"),
         "reasons": [reason(code, detail,
                            source="probes/vehicle-batch/build.py",
                            missing=missing)],
@@ -417,7 +426,12 @@ def stage_car(car: dict, out_root: Path, cache: Path, tool_id: dict,
             "body-hash-drift",
             f"{slug}: decoded body hash {mapped.get('modelSha256')} differs from the "
             f"spec ({car['body']['sha256']}); the spec is stale")
-    mapped = bam.build_manifest(mapped, force=True)
+    decision = car.get("builderDecision")
+    if decision:
+        mapped = stage_batch3.build_manifest_with_decisions(
+            mapped, decision, out_root, SCENE_EXE, MODEL_EXE)
+    else:
+        mapped = bam.build_manifest(mapped, force=True)
     if not mapped.get("mapped"):
         raise StageBlocked("builder-unsupported",
                            f"{slug}: build_manifest rejected the asset: "
@@ -644,6 +658,7 @@ def stage_car(car: dict, out_root: Path, cache: Path, tool_id: dict,
         "blockers": blockers,
         "measured": measured,
         "checks": checks,
+        "builderDecision": mapped.get("builderDecision"),
         "status": status,
     }
 
@@ -673,6 +688,9 @@ def stage_car(car: dict, out_root: Path, cache: Path, tool_id: dict,
         "record": record,
     }
     write_json(out_dir / "staged.json", staged)
+    blocked_path = out_dir / "blocked.json"
+    if blocked_path.is_file():
+        blocked_path.unlink()
     return {"slug": slug, "status": status, "reason": None, "car": record,
             "staged": staged, "fields": fields}
 
@@ -902,6 +920,7 @@ def unsupported_reference(row: dict) -> dict | None:
             "source": primary.get("source"),
             "missing": primary.get("missing")
                        or missing_for_reason(code, detail),
+            "diagnosis": payload.get("builderDiagnosis"),
             "reasons": reasons,
         }
     primary = row.get("reason")
@@ -964,6 +983,8 @@ def batch_roster_payload(results: list[dict], spec: dict,
             "model": model_reference(car),
             "artifacts": (artifacts_reference(row.get("car"))
                           if status == "staged" else None),
+            "builderDecision": ((row.get("car") or {}).get("builderDecision")
+                                if status == "staged" else None),
             "unsupported": (None if status == "staged"
                             else unsupported_reference(row)),
         }
@@ -1118,6 +1139,9 @@ def roster_entry_from_record(record: dict) -> dict:
         why = (f"batch compiler (class {record['class']}): exact "
                f"{record['identity']['pakPath']}, {record['drivetrain']}, "
                f"{int(round(record['massKg']))} kg, {record['gears']}-speed.")
+    decision = record.get("builderDecision")
+    if decision:
+        why += f" Builder decision: {decision['kind']}."
     entry = {
         "slug": record["slug"],
         "name": record["recordName"],

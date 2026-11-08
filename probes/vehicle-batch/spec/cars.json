@@ -55,12 +55,14 @@
     "sha256": "07970898aa5135b48d1b21fbb140f610a92c52df4d231f433b83f2c1c354d024"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": false
    },
    "gears": 6,
@@ -102,8 +104,8 @@
    "recordId": 158205018,
    "recordIndex": 1,
    "recordName": "Opel_AstraExtreme_shannon",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 26,
+   "scope": "roster",
    "slug": "opel-astraextreme-shannon",
    "wheel": {
     "decodedPath": "_work/vehicle-pipeline/c-models/wheels/opel_astraextreme_stock.decoded",
@@ -158,6 +160,8 @@
     "sha256": "ecd921ef2281b64c2974948a155c80ba780ddba14360a2d38def767e2fe7b521"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
@@ -262,12 +266,14 @@
     "sha256": "a47ad745d4ff8f30e8d71454a556637b7eaae78641ee519b81cfdd8149eff906"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -309,8 +315,8 @@
    "recordId": 424487466,
    "recordIndex": 5,
    "recordName": "BMW_1SeriesTii_Race",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 27,
+   "scope": "roster",
    "slug": "bmw-1seriestii-race",
    "wheel": {
     "decodedPath": null,
@@ -368,12 +374,14 @@
     "sha256": "b55fa4bb3e74ff2511e13809f907d45a43ee6ff653fe33dde8602268471dd4a6"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "FWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -415,8 +423,8 @@
    "recordId": 435729180,
    "recordIndex": 6,
    "recordName": "Ford_FocusRS_Race",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 28,
+   "scope": "roster",
    "slug": "ford-focusrs-race",
    "wheel": {
     "decodedPath": null,
@@ -492,12 +500,14 @@
     "sha256": "e2e990da3c5fb0eb842c2a48c86220b452ea0d1666c8b5c8c619c8553f6d419c"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "FWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": false
    },
    "gears": 6,
@@ -539,8 +549,8 @@
    "recordId": 449674719,
    "recordIndex": 7,
    "recordName": "Renault_MeganeSportR26_Stockgrpc",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 29,
+   "scope": "roster",
    "slug": "renault-meganesportr26-stockgrpc",
    "wheel": {
     "decodedPath": "_work/vehicle-pipeline/c-models/wheels/renault_meganesportr26.decoded",
@@ -592,6 +602,8 @@
     "code": "no-body-model",
     "detail": "unsupported: no vehicle record and no body model reference; DefaultCar is a physics fallback, not a car body"
    },
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
@@ -676,6 +688,8 @@
     "sha256": "6195243f73fe76a7e7efd1430cf1b93a86ab7259d337fb74e6eb77661dc487c5"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "A",
    "classReason": "all data present and proven by the current E1 drive pipeline",
    "drivetrain": "RWD",
@@ -782,6 +796,8 @@
     "sha256": "329fc89bb8c84cac31d667c8512928aef6582c51f38e197d13a906c67746040b"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
@@ -885,6 +901,8 @@
     "sha256": "717193462359404670fd386a3c8dae3ac05413a8487209a29ab29e53a77c101f"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
@@ -988,6 +1006,8 @@
     "sha256": "1b6af9781c56fa7acf9d754c1ea46e854328ea528a9bae741f04778a2e0ab786"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "A",
    "classReason": "all data present and proven by the current E1 drive pipeline",
    "drivetrain": "RWD",
@@ -1094,6 +1114,8 @@
     "sha256": "5b05346bc1dfaec88328786fa107111c00891b20aa9757452c919742513d797c"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -1200,6 +1222,8 @@
     "sha256": "cfd51231e3436df0de162bc5bd1f012ccb8e1edf0c3e8086856cd86a5c42aa03"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -1321,6 +1345,8 @@
     "sha256": "7042ff517957a17d9555d2490512971e67703ab8fa6501c1f7647b8a011947fb"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
@@ -1427,6 +1453,8 @@
     "sha256": "62968220cb1c1a0a606cdcba05d179d0f96d6468b4f85d4e64ab718e304ee8ca"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
@@ -1530,6 +1558,8 @@
     "sha256": "981087ba698ac70246f7d2d2d38f417a4ce992ad8a6d9d4febb513ce339044b9"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -1636,12 +1666,14 @@
     "sha256": "b66a93629c30ff76c2418a23850fc957d498e73f8bb9c15430314c4fca1fbfd5"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -1683,8 +1715,8 @@
    "recordId": 1036981365,
    "recordIndex": 21,
    "recordName": "Renault_MeganeTrophy_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 30,
+   "scope": "roster",
    "slug": "renault-meganetrophy-stock",
    "wheel": {
     "decodedPath": null,
@@ -1757,6 +1789,8 @@
     "sha256": "dcb49dce101ea768eaadd334c910a4b7520ef48004c4ac6d5e998f5330041da8"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
@@ -1881,12 +1915,14 @@
     "sha256": "ccaf31c4d80749d0f5c4dde65c7beaf3243503d82f8b3e7201e17938a432c94d"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": false
    },
    "gears": 6,
@@ -1928,8 +1964,8 @@
    "recordId": 1100768679,
    "recordIndex": 23,
    "recordName": "BMW_135_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 31,
+   "scope": "roster",
    "slug": "bmw-135-stock",
    "wheel": {
     "decodedPath": "_work/vehicle-pipeline/c-models/wheels/bmw_1seriestii.decoded",
@@ -1984,12 +2020,14 @@
     "sha256": "148c5698e79c31260d5d0c9fe3c9033aa065e99ed7e559f2c0704d8bfd95f5b1"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -2031,8 +2069,8 @@
    "recordId": 1205168483,
    "recordIndex": 24,
    "recordName": "LandRover_LRX_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 32,
+   "scope": "roster",
    "slug": "landrover-lrx-stock",
    "wheel": {
     "decodedPath": null,
@@ -2105,6 +2143,8 @@
     "sha256": "c74b06ce38028fa9f272d0eab347405d47218b25c8641bfb62d07da50129b42d"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
@@ -2211,12 +2251,14 @@
     "sha256": "5c3ad51d0a8a8c6763f167eb757714f0d6f69c2744f7d4ff9aeebe31b551b992"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 7,
@@ -2258,8 +2300,8 @@
    "recordId": 1289841624,
    "recordIndex": 26,
    "recordName": "Nissan_350Z_Drift",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 33,
+   "scope": "roster",
    "slug": "nissan-350z-drift",
    "wheel": {
     "decodedPath": null,
@@ -2314,12 +2356,14 @@
     "sha256": "1e699274a5c6cd7db43d690c10224c499483bafb0b78c77b1beed242f4e658fe"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -2361,8 +2405,8 @@
    "recordId": 1332670016,
    "recordIndex": 27,
    "recordName": "BMW_X548MSport_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 34,
+   "scope": "roster",
    "slug": "bmw-x548msport-stock",
    "wheel": {
     "decodedPath": null,
@@ -2421,12 +2465,14 @@
     "sha256": "0f44e75dd7a8cc3de0885ee80d6ffa880dd1d6a1fb0c5fbe236b07e337d502d0"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -2468,8 +2514,8 @@
    "recordId": 1348179870,
    "recordIndex": 28,
    "recordName": "Chevrolet_CamaroSS_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 35,
+   "scope": "roster",
    "slug": "chevrolet-camaross-stock",
    "wheel": {
     "decodedPath": null,
@@ -2527,12 +2573,14 @@
     "sha256": "4d089a58f044ce6e53261a3268a28722b0979590d09e3a5bfaf95237f4d017f3"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -2574,8 +2622,8 @@
    "recordId": 1348279799,
    "recordIndex": 29,
    "recordName": "Nissan_Navara_Rat",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 36,
+   "scope": "roster",
    "slug": "nissan-navara-rat",
    "wheel": {
     "decodedPath": null,
@@ -2633,6 +2681,8 @@
     "sha256": "d593ef474dd108132226a06355ac177d428902cb9b4d0c3f8e4191c9b615b17d"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -2757,12 +2807,14 @@
     "sha256": "780e8ce1b5a5cbe770790aabf7c3b00d544992607438f9a1799807cf04664830"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": false
    },
    "gears": 6,
@@ -2804,8 +2856,8 @@
    "recordId": 1396764797,
    "recordIndex": 31,
    "recordName": "LandRover_DefenderSVXgrpc",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 37,
+   "scope": "roster",
    "slug": "landrover-defendersvxgrpc",
    "wheel": {
     "decodedPath": "_work/vehicle-pipeline/c-models/wheels/landrover_defendersvx_stock.decoded",
@@ -2860,6 +2912,8 @@
     "sha256": "34e0cfc4acc1c1e7809e2970ae9b86ba2bbd3774acfa99c6e67bf0b6cde7ad6a"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -2963,12 +3017,14 @@
     "sha256": "7254466bb0b3015fb29f87cb341b1ee70dc15eaca943230439f6497030f7a143"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -3010,8 +3066,8 @@
    "recordId": 1420969672,
    "recordIndex": 35,
    "recordName": "Bowler_Nemesis_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 38,
+   "scope": "roster",
    "slug": "bowler-nemesis-stock",
    "wheel": {
     "decodedPath": null,
@@ -3069,12 +3125,14 @@
     "sha256": "7acfcdf6514a1b5c9aebb5f6b9989be35ec7768f43e274bacf1c91ddb1b010ab"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -3116,8 +3174,8 @@
    "recordId": 1485099691,
    "recordIndex": 36,
    "recordName": "Vauxhall_MonaroVXR_Drift",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 39,
+   "scope": "roster",
    "slug": "vauxhall-monarovxr-drift",
    "wheel": {
     "decodedPath": null,
@@ -3176,6 +3234,8 @@
     "sha256": "c55cdc1e04f6a8b463f140f4c4b697e49904930aea4ba1a1e2492fc8e2313453"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "A",
    "classReason": "all data present and proven by the current E1 drive pipeline",
    "drivetrain": "RWD",
@@ -3282,6 +3342,11 @@
     "sha256": "2a7d7b4e5c364628491cd5d189d39b9f02e9d8251f2ba05d49f9aa3b4e38eb39"
    },
    "bodyReason": null,
+   "builderDecision": {
+    "detail": "wheel.backleft member union X extent 1.626399 m is the rear brake-disc element local bounds offset (E_BrakeDisc_BackLeft X 1.429031..1.498138) while its matrix translation equals the e_wheel_backleft parent; the parent's own serialized bounds [0.272146, 0.876655, 0.833748] are thin on X and round on Y/Z (relative delta 0.0489), so the wheel axis is X",
+    "kind": "wheel-axis-from-parent-envelope"
+   },
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -3406,12 +3471,14 @@
     "sha256": "f452c7714261db78cc84c87e97ede76d09cd21cd5685495057cbb1f59fd9fdb8"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": false
    },
    "gears": 6,
@@ -3453,8 +3520,8 @@
    "recordId": 1882476745,
    "recordIndex": 39,
    "recordName": "Ford_Mustang_GT500_Stock1stplay",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 40,
+   "scope": "roster",
    "slug": "ford-mustang-gt500-stock1stplay",
    "wheel": {
     "decodedPath": "_work/vehicle-pipeline/c-models/wheels/shelby_mustanggt500.decoded",
@@ -3509,12 +3576,14 @@
     "sha256": "a6e2f0159561df2d166fd186d15d493262887b08fa396cf194d73810fb68ecca"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -3556,8 +3625,8 @@
    "recordId": 2015365266,
    "recordIndex": 40,
    "recordName": "Foose_69_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 41,
+   "scope": "roster",
    "slug": "foose-69-stock",
    "wheel": {
     "decodedPath": null,
@@ -3615,12 +3684,14 @@
     "sha256": "6b251300370dec37a5e35990b3c4deeb7723db6d6584b10ec806cccbe2b22d25"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -3662,8 +3733,8 @@
    "recordId": 2070271235,
    "recordIndex": 41,
    "recordName": "Corvette_C3_Drag",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 42,
+   "scope": "roster",
    "slug": "corvette-c3-drag",
    "wheel": {
     "decodedPath": null,
@@ -3721,12 +3792,14 @@
     "sha256": "89ba7a2a7ebfe67c672f5028ca5b1d705514b1dc03e80b4f553b926493a4684c"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -3768,8 +3841,8 @@
    "recordId": 2181023901,
    "recordIndex": 42,
    "recordName": "Ford_F100_Rat",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 43,
+   "scope": "roster",
    "slug": "ford-f100-rat",
    "wheel": {
     "decodedPath": null,
@@ -3827,12 +3900,14 @@
     "sha256": "1151150b7c79bb2f08bf62e7e9756590510c5bbd410a3e09432f167c373a74cc"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -3874,8 +3949,8 @@
    "recordId": 2212420608,
    "recordIndex": 43,
    "recordName": "Chevrolet_CamaroSS_Drag",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 44,
+   "scope": "roster",
    "slug": "chevrolet-camaross-drag",
    "wheel": {
     "decodedPath": null,
@@ -3935,6 +4010,8 @@
     "sha256": "5bc30369ced00e5f276f33dc2d7831ff530302bcf8cf8dd9a5f720ef714b54e6"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
@@ -4056,6 +4133,8 @@
     "sha256": "2d5062c147d2711467c2d604e917ea0cdbba02fd918e0349ef9ed7bbebf3330f"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
@@ -4180,12 +4259,14 @@
     "sha256": "8dd7f8a7ca0b17d532c98a22da008e99142c5745d25a66f06f0cad790461cfb0"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": false
    },
    "gears": 6,
@@ -4227,8 +4308,8 @@
    "recordId": 2456008726,
    "recordIndex": 48,
    "recordName": "Ford_F150_OffRoadheh",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 45,
+   "scope": "roster",
    "slug": "ford-f150-offroadheh",
    "wheel": {
     "decodedPath": "_work/vehicle-pipeline/c-models/wheels/ford_f150_offroad.decoded",
@@ -4283,6 +4364,8 @@
     "sha256": "0668854b859880ac844c2fab4ebc829adb7b3cb2905fda35929a6e71a1c9fbe4"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "A",
    "classReason": "all data present and proven by the current E1 drive pipeline",
    "drivetrain": "FWD",
@@ -4389,12 +4472,14 @@
     "sha256": "98480a95d56d8d654cc1af5ca3557f99e62d3bc688ba907149f0cf471253f38a"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "FWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -4436,8 +4521,8 @@
    "recordId": 2596441540,
    "recordIndex": 51,
    "recordName": "Volkswagen_Scirocco_24",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 46,
+   "scope": "roster",
    "slug": "volkswagen-scirocco-24",
    "wheel": {
     "decodedPath": null,
@@ -4495,12 +4580,14 @@
     "sha256": "e1ae87268f1fa3e407fa86bcdb234068eb2690274b9bba922e1780d96130aa49"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -4542,8 +4629,8 @@
    "recordId": 2654387811,
    "recordIndex": 52,
    "recordName": "Nissan_Navara_OffRoad",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 47,
+   "scope": "roster",
    "slug": "nissan-navara-offroad",
    "wheel": {
     "decodedPath": null,
@@ -4601,6 +4688,8 @@
     "sha256": "2e71aaa70f95380ca86440dbbdcfc30201f511845862da596421b08b6a426120"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "A",
    "classReason": "all data present and proven by the current E1 drive pipeline",
    "drivetrain": "AWD",
@@ -4707,12 +4796,14 @@
     "sha256": "ce1ac371bdf1bd4a96922eee414b2c03ce826eaed44a7be41bb27923082fc5fe"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -4754,8 +4845,8 @@
    "recordId": 3213014570,
    "recordIndex": 57,
    "recordName": "Volkswagen_Beetle_Rat",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 48,
+   "scope": "roster",
    "slug": "volkswagen-beetle-rat",
    "wheel": {
     "decodedPath": null,
@@ -4813,6 +4904,8 @@
     "sha256": "b12739764d20c79e81ce84088f9c4293b7731c4648c39a1ef610a9be2527f8f9"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": "E_BrakeDisc_FrontRight1 (element 26) and E_BrakeCaliper_FrontRight1 (element 27) are parented to DefaultElement (0), not to an e_wheel_* element: the parent chains are [26 -> 0] and [27 -> 0]. The front-left wheel has only e_tyre_frontLeft and e_alloyRim_frontLeft; the two orphan elements are its missing disc/caliper, but re-parenting them would invent a parent chain, so the record stays unsupported.",
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "AWD",
@@ -4919,12 +5012,14 @@
     "sha256": "fb12e8d3c7d24d5728c3a0accd93ba0f71f367295ac28c249ad32bd5b869a193"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 7,
@@ -4966,8 +5061,8 @@
    "recordId": 3261607451,
    "recordIndex": 59,
    "recordName": "BMW_M3E92_Drift",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 49,
+   "scope": "roster",
    "slug": "bmw-m3e92-drift",
    "wheel": {
     "decodedPath": null,
@@ -5026,12 +5121,14 @@
     "sha256": "0e7f968b4df63a1df51d0f6a7a79f22e1f7565545756123d1d57d46d22d29869"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step; part manifest builder rejected the asset",
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -5073,8 +5170,8 @@
    "recordId": 3340562994,
    "recordIndex": 60,
    "recordName": "Hummer_H2_OffRoad",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 50,
+   "scope": "roster",
    "slug": "hummer-h2-offroad",
    "wheel": {
     "decodedPath": null,
@@ -5129,12 +5226,14 @@
     "sha256": "37d3c8f339b0be6afc1f7c2c62b8e013dfc9f7a78fdf42c66f31a47916f6cbb4"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -5176,8 +5275,8 @@
    "recordId": 3448707998,
    "recordIndex": 61,
    "recordName": "Dodge_Challenger_Race",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 51,
+   "scope": "roster",
    "slug": "dodge-challenger-race",
    "wheel": {
     "decodedPath": null,
@@ -5235,12 +5334,14 @@
     "sha256": "9b9a08398820faacdaaed3670af33f23efdae1813223fb511c282d118426c298"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -5282,8 +5383,8 @@
    "recordId": 3481230129,
    "recordIndex": 62,
    "recordName": "ACSchnitzer_ACS1Coupe_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 52,
+   "scope": "roster",
    "slug": "acschnitzer-acs1coupe-stock",
    "wheel": {
     "decodedPath": null,
@@ -5359,6 +5460,8 @@
     "sha256": "07f101c1de858a959e4ccf62eb4f92e81ca657105ef2a2c25ee5f322a6f1429f"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
@@ -5483,6 +5586,8 @@
     "sha256": "785857f076b7010579624f327cbade78972442e2037d1f18160a568179117aff"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
@@ -5589,6 +5694,8 @@
     "sha256": "4dc524fa64f4fe2b89e7f4b4e5ed60295e44373ae28064b2cd94fee65210d1d2"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": "14 wheel elements are recognized because the two rear calipers are named E_Brake_Caliper_BackLeft/BackRight (not E_BrakeCaliper_*); both are direct children of e_wheel_backleft/backright and their element bounds are model-space (matrix translation 0, X 0.6413..0.6941 / -0.6941..-0.6413, Z -1.3302..-1.2572). Recognizing the name gives 4 members per corner, but only 2 caliper draws exist (frontleft/frontright, draws 24/25); the builder's caliper assignment requires 4, so the record stays unsupported.",
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -5695,12 +5802,14 @@
     "sha256": "77840511e5ca416ff9e7cbdc9ee9fc960fce0205f83c9be77e0803607c32cb9d"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -5742,8 +5851,8 @@
    "recordId": 3753347739,
    "recordIndex": 68,
    "recordName": "Corvette_C3_Race",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 53,
+   "scope": "roster",
    "slug": "corvette-c3-race",
    "wheel": {
     "decodedPath": null,
@@ -5801,12 +5910,14 @@
     "sha256": "66392d353a078e3e5d9ab6cadfac8fdcdb1bac5ddf7f85114874299cd31eea99"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -5848,8 +5959,8 @@
    "recordId": 3753608326,
    "recordIndex": 69,
    "recordName": "Hennessey_ViperVenom1000Coupe_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 54,
+   "scope": "roster",
    "slug": "hennessey-vipervenom1000coupe-stock",
    "wheel": {
     "decodedPath": null,
@@ -5925,12 +6036,14 @@
     "sha256": "18b6d475806675e9cc45e32fba904abd6d77d8181ec6334793a6440b4d0535cd"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": true,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": false
    },
    "gears": 6,
@@ -5972,8 +6085,8 @@
    "recordId": 3819658074,
    "recordIndex": 71,
    "recordName": "Opel_AstraExtreme_Stockgrippy",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 55,
+   "scope": "roster",
    "slug": "opel-astraextreme-stockgrippy",
    "wheel": {
     "decodedPath": "_work/vehicle-pipeline/c-models/wheels/opel_astraextreme_stock.decoded",
@@ -6028,12 +6141,14 @@
     "sha256": "decaadafed10b2b79060f603421b1bb7de2bad3241535a1a2c280b963c0e938d"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -6075,8 +6190,8 @@
    "recordId": 3857619320,
    "recordIndex": 73,
    "recordName": "Ford_GT_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 56,
+   "scope": "roster",
    "slug": "ford-gt-stock",
    "wheel": {
     "decodedPath": null,
@@ -6134,6 +6249,8 @@
     "sha256": "8ebbd737b14895fc4f0abcd9d0dfc6e67d283c4942841f4ef736caacfa5359fb"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -6255,6 +6372,8 @@
     "sha256": "deb19c66b73682fb36a4e9d3663fee3790548b8df32841c0f21a32c93f60b1d1"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "C",
    "classReason": "no exact normalised `\\models\\vehicles\\<name>.model` entry",
    "drivetrain": "RWD",
@@ -6361,6 +6480,8 @@
     "sha256": "3b36e016998252ca2041db7f0de02e835c917802498852dd392d78caa515614d"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -6465,12 +6586,14 @@
     "sha256": "f087e8ae1a6f58ea2791d81a933ff49c057d45dd370e0f793bbf3842823362b1"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -6512,8 +6635,8 @@
    "recordId": 4166363433,
    "recordIndex": 78,
    "recordName": "Dodge_ViperGTSR_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 57,
+   "scope": "roster",
    "slug": "dodge-vipergtsr-stock",
    "wheel": {
     "decodedPath": null,
@@ -6571,6 +6694,11 @@
     "sha256": "2d7dbe638718831888c95fc57f2ed2a953d242d8251402b8a24d56a4cb102c26"
    },
    "bodyReason": null,
+   "builderDecision": {
+    "detail": "scene draws 48 and 50 have indexCount 0 at firstIndex 57156 and 57192; they contribute no geometry and are skipped; the other 82 draws are classified unchanged",
+    "kind": "skip-empty-draws"
+   },
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -6677,6 +6805,8 @@
     "sha256": "138b789dfead44ce4e4dd1426eb3122c7e2982f293c50350006617beda6244f0"
    },
    "bodyReason": null,
+   "builderDecision": null,
+   "builderDiagnosis": null,
    "class": "B",
    "classReason": "model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
    "drivetrain": "RWD",
@@ -6748,9 +6878,9 @@
   "classA": 5,
   "classB": 42,
   "classC": 15,
-  "inRoster": 25,
+  "inRoster": 57,
   "records": 62,
-  "remaining": 37,
+  "remaining": 5,
   "wheelProofKnown": 21,
   "withBody": 61,
   "withHud": 61
@@ -6813,7 +6943,7 @@
   },
   "roster": {
    "path": "probes/e1-drive/cars/roster.json",
-   "sha256": "1cb4485314c27ee276b98b67863e032bc920a0f0994c959965632c5b08051e6e"
+   "sha256": "6c9acfa0618e5e3b7d89ac10535bb62a457faa218e88933b85c4b8e70c125aaa"
   }
  },
  "version": 1

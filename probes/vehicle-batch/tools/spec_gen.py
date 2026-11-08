@@ -52,6 +52,52 @@ ROOT_PAK = ROOT / "game-data/Blur/cache/root.pak"
 OUT_DEFAULT = ROOT / "probes/vehicle-batch/spec/cars.json"
 VEHICLE_PREFIX = "\\models\\vehicles\\"
 
+# Typed, evidence-based builder decisions. Each one is re-derived from the
+# decoded model or the committed Scene reader; nothing is guessed. The staging
+# wrapper in `probes/vehicle-pipeline/tools/stage_batch3.py` applies the decision
+# to the committed builder, and the decision must be ported into
+# `probes/car-parts/tools/build_manifest.py` for the committed build to
+# reproduce the artifacts.
+BUILDER_DECISIONS = {
+    "ratrod-na-stock": {
+        "kind": "wheel-axis-from-parent-envelope",
+        "detail": (
+            "wheel.backleft member union X extent 1.626399 m is the rear brake-disc "
+            "element local bounds offset (E_BrakeDisc_BackLeft X 1.429031..1.498138) "
+            "while its matrix translation equals the e_wheel_backleft parent; the "
+            "parent's own serialized bounds [0.272146, 0.876655, 0.833748] are thin "
+            "on X and round on Y/Z (relative delta 0.0489), so the wheel axis is X"),
+    },
+    "toyota-supra-smooth": {
+        "kind": "skip-empty-draws",
+        "detail": (
+            "scene draws 48 and 50 have indexCount 0 at firstIndex 57156 and 57192; "
+            "they contribute no geometry and are skipped; the other 82 draws are "
+            "classified unchanged"),
+    },
+}
+
+# The remaining refusals are genuine asset/structure cases. The diagnosis keeps
+# the exact element/draw evidence next to the typed reason; it is never used to
+# invent a parent chain, a wheel axis or an index range.
+BUILDER_DIAGNOSES = {
+    "hummer-h2-rat": (
+        "E_BrakeDisc_FrontRight1 (element 26) and E_BrakeCaliper_FrontRight1 "
+        "(element 27) are parented to DefaultElement (0), not to an e_wheel_* "
+        "element: the parent chains are [26 -> 0] and [27 -> 0]. The front-left "
+        "wheel has only e_tyre_frontLeft and e_alloyRim_frontLeft; the two orphan "
+        "elements are its missing disc/caliper, but re-parenting them would invent "
+        "a parent chain, so the record stays unsupported."),
+    "ford-supervan-stock": (
+        "14 wheel elements are recognized because the two rear calipers are named "
+        "E_Brake_Caliper_BackLeft/BackRight (not E_BrakeCaliper_*); both are direct "
+        "children of e_wheel_backleft/backright and their element bounds are "
+        "model-space (matrix translation 0, X 0.6413..0.6941 / -0.6941..-0.6413, "
+        "Z -1.3302..-1.2572). Recognizing the name gives 4 members per corner, but "
+        "only 2 caliper draws exist (frontleft/frontright, draws 24/25); the "
+        "builder's caliper assignment requires 4, so the record stays unsupported."),
+}
+
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -437,6 +483,8 @@ def build(verbose: bool = False) -> dict:
             "wheel": wheel,
             "hud": hud_entry,
             "blockers": blockers,
+            "builderDecision": BUILDER_DECISIONS.get(car["slug"]),
+            "builderDiagnosis": BUILDER_DIAGNOSES.get(car["slug"]),
             "evidence": {
                 "inCommittedRoster": in_roster,
                 "batch3Staged": bool(

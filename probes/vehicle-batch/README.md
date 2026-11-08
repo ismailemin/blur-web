@@ -34,7 +34,7 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 # plan only
 & $py probes/vehicle-batch/build.py --dry-run
 
-# stage every record not in the 25-car roster (default scope)
+# stage every record not in the 57-car roster (default scope)
 & $py probes/vehicle-batch/build.py
 
 # one car / several cars, by slug or record index
@@ -68,7 +68,7 @@ cars[]}` with 62 entries, one per `RP_CarDynamics` record. Each entry carries:
 | --- | --- |
 | `slug`, `recordIndex`, `recordId`, `recordName` | identity (from the audit) |
 | `class` (`A`/`B`/`C`), `classReason` | V1 classification |
-| `scope` (`roster`/`remaining`), `rosterPosition` | whether it is already in the 25-car roster |
+| `scope` (`roster`/`remaining`), `rosterPosition` | whether it is already in the 57-car roster |
 | `drivetrain`, `massKg`, `gears` | roster `layout` inputs |
 | `physics.fieldsPath/fieldsSha256/gatePass/driveType/wheelBase` | `car_xt` field list and gate |
 | `body` | `route` (`exact`/`alias`), `pakPath`, `logicalBytes`, `sha256`, `decodedPath`, `rule`, candidates |
@@ -102,7 +102,10 @@ _work/vehicle-batch/
   <slug>/
     manifest.json          car-part manifest (committed builder)
     mesh.json              LOD0 positions/indices/UV0
-    scene-report.json      committed Scene reader output
+    scene-report.json      committed Scene reader output (filtered when a
+                           skip-empty-draws decision applies)
+    scene-filtered.json    filtered scene fed to the builder (skip-empty-draws only)
+    scene-report.raw.json  raw Scene reader output (skip-empty-draws only)
     materials/             independent material traversal (3 files)
     wheels/wheel.json      wheel model identity/hashes + scene/model summary
     wheels/scene.json      full wheel scene_inspect output
@@ -118,10 +121,12 @@ hash, wheel path and the builder hashes match and every artifact hash still
 matches. `staged.json` carries `schema:2`; a schema change forces a rebuild.
 Nothing is written under another probe's tree.
 
-## Batch roster (remaining 37)
+## Batch roster (remaining 5)
 
 `build.py` writes `_work/vehicle-batch/batch-roster.json` with one entry per
-selected record, in record-index order. An entry carries:
+selected record, in record-index order. The committed roster now holds 57 cars,
+so the remaining scope is the five records that the part builder or the audit
+still refuses. An entry carries:
 
 | field | meaning |
 | --- | --- |
@@ -130,14 +135,15 @@ selected record, in record-index order. An entry carries:
 | `fields` | `path`, `bytes`, `sha256`, `fieldCount` re-derived from the committed `.fields` file |
 | `model` | `route` (`exact`/`alias`), `pakPath`, `sha256`, `decodedPath`; `null` only for `DefaultCar` |
 | `artifacts` | staged `manifest`/`mesh`/`sceneReport` bytes + SHA-256; `null` when unsupported |
+| `builderDecision` | the typed decision that let the committed builder stage this car (`null` otherwise) |
 | `status` | `staged` or `unsupported` |
-| `unsupported` | `code`, `detail`, `summary`, `source`, `missing` and the full `reasons[]`; `null` when staged |
+| `unsupported` | `code`, `detail`, `summary`, `source`, `missing`, `diagnosis` and the full `reasons[]`; `null` when staged |
 
 `status:"staged"` means the committed `.fields` bytes/hash/count, the decoded
 body model, the part manifest, the LOD0 mesh and the scene report were
 re-derived and agree. `status:"unsupported"` means the committed chain refused
 the record; `missing` names the exact field/byte (for example `body.model`,
-`wheel.backleft.bounds`, `draw.index`). No value is invented and no model
+`wheel.caliper.parent`, `wheel.elementCount`). No value is invented and no model
 mapping is fabricated.
 
 Counts for the full run:
@@ -145,25 +151,37 @@ Counts for the full run:
 | metric | value |
 | --- | ---: |
 | retail records | **62** |
-| already in the 25-car roster | **25** |
-| remaining selected | **37** |
-| **staged** | **32** |
-| **unsupported** | **5** |
-| coverage after staging | **57 / 62** |
+| already in the 57-car roster | **57** |
+| remaining selected | **5** |
+| **staged** | **2** |
+| **unsupported** | **3** |
+| coverage after staging | **59 / 62** |
 
-### Unsupported (5) — exact reason per car
+### Builder decisions (2 staged)
+
+Two refusals are resolved by a typed decision that uses only committed data.
+The decision is recorded in `spec/cars.json` (`builderDecision`) and in each
+`staged.json` record; `probes/vehicle-pipeline/tools/stage_batch3.py` applies it
+to the committed builder. **The main agent must port the same decision into
+`probes/car-parts/tools/build_manifest.py`** before the committed build can
+reproduce these two manifests.
+
+| # | slug | decision | evidence |
+|--:|---|---|---|
+| 38 | `ratrod-na-stock` | `wheel-axis-from-parent-envelope` | The rear brake-disc element local bounds are offset along X (`E_BrakeDisc_BackLeft` X `1.429031..1.498138`) while its matrix translation equals the `e_wheel_backleft` parent, so the member union is `[1.626399, 0.846300, 0.846300]`. The parent's own serialized bounds `[0.272146, 0.876655, 0.833748]` are thin on X and round on Y/Z (relative delta `0.0489`); the front wheels already pass on their member union. The axis is therefore X; no axis is invented. |
+| 79 | `toyota-supra-smooth` | `skip-empty-draws` | Scene draws 48 and 50 have `indexCount: 0` at `firstIndex` 57156 and 57192. They contribute no geometry; the other 82 draws are classified unchanged. The raw reader output is kept as `scene-report.raw.json` and the filtered scene is fed to the committed builder through `--scene-json`. |
+
+### Unsupported (3) — exact reason per car
 
 | # | slug | missing | exact builder/audit statement |
 |--:|---|---|---|
 | 8 | `defaultcar` | `body.model` | no vehicle record and no body model reference; `DefaultCar` is a physics fallback, not a car body |
-| 38 | `ratrod-na-stock` | `wheel.backleft.bounds` | wheel backleft bounds are not thin on X and round on Y/Z: `[1.6263989210128784, 0.846299558877945, 0.8462995886802673]` (round relative delta 0.0000) |
-| 58 | `hummer-h2-rat` | `wheel.caliper.parent` | wheel part `E_BrakeDisc_FrontRight1` is not a direct child of an `e_wheel_*` element |
-| 67 | `ford-supervan-stock` | `wheel.elementCount` | wheel element count 14 is not four per corner |
-| 79 | `toyota-supra-smooth` | `draw.index` | `build_manifest.draw_bounds` raises `KeyError: 'index'` (the draw row has no `index` field; empty index range) |
+| 58 | `hummer-h2-rat` | `wheel.caliper.parent` | `E_BrakeDisc_FrontRight1` (element 26) and `E_BrakeCaliper_FrontRight1` (element 27) are parented to `DefaultElement` (0); the chains are `[26 -> 0]` and `[27 -> 0]`, not a wheel. The front-left wheel has only `e_tyre_frontLeft` + `e_alloyRim_frontLeft`; re-parenting the orphans would invent a parent chain. |
+| 67 | `ford-supervan-stock` | `wheel.elementCount` | 14 recognized wheel elements because the two rear calipers are named `E_Brake_Caliper_BackLeft/BackRight` (not `E_BrakeCaliper_*`); both are direct children of `e_wheel_backleft/backright` and their element bounds are model-space (matrix translation 0). Recognizing the name gives 4 members per corner, but only 2 caliper draws exist (frontleft/frontright, draws 24/25); the builder's caliper assignment requires 4. |
 
-These are committed-builder refusals, not compiler bugs. They stay unsupported
-until a documented builder decision exists; nothing is guessed, borrowed or
-substituted. The 32 staged cars are data only — no car is claimed playable.
+These three are committed-builder/audit refusals, not compiler bugs. Nothing is
+guessed, borrowed or substituted. The 2 staged cars are data only — no car is
+claimed playable.
 
 ## Integration contract
 
@@ -205,19 +223,24 @@ car (artifact presence, hashes, cross-document draw counts, wheel and ghost
 inputs), determinism between two build roots, duplicates, aggregates, and one
 path-independence regression.
 
+`tools/inspect_builder_decisions.py` re-derives the five remaining refusals
+(wheel parents/members, orphan parent chains, empty draws) from the decoded
+models and the committed Scene reader; it writes
+`_work/vehicle-batch/builder-decisions.json` and edits nothing.
+
 `tools/verify_batch_roster.py` is the roster gate. It re-derives every entry from
 the committed source (`.fields` bytes/hash/count, decoded body model, record
 identity, drivetrain, mass, wheelbase), checks the staged manifest/mesh/scene
 hashes and their internal arithmetic, checks the typed unsupported reason and
 `missing` field, checks record-index order and uniqueness, proves the batch
-roster plus the committed 25-car roster covers all 62 records exactly, and
+roster plus the committed 57-car roster covers all 62 records exactly, and
 compares the primary and repeat build roots byte-for-byte. It prints
 `N/M checks passed` and exits `1` on failure.
 
 ```powershell
 & $py probes/vehicle-batch/tools/verify_batch_roster.py
-# batch roster: 32 staged, 5 unsupported, coverage 57/62
-# PASS 2253/2253 checks passed
+# batch roster: 2 staged, 3 unsupported, coverage 59/62
+# PASS 261/261 checks passed
 ```
 
 See `docs/work/analysis/vehicle-batch-compiler.md` for the full-run history.
