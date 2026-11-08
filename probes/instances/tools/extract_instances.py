@@ -44,6 +44,7 @@ from instances_common import (  # noqa: E402
     matrix_scale,
     output_dir,
     rel,
+    reset_texture_dir,
     sha256_bytes,
     sha256_file,
     transform_points,
@@ -160,6 +161,7 @@ def main():
         level = LevelData(short)
         out = output_dir(short)
         out.mkdir(parents=True, exist_ok=True)
+        reset_texture_dir(short)
         registry = TextureRegistry(level)
         pkg_keys, pkg_info = package_keys(level)
         sections = instance_sections(level)

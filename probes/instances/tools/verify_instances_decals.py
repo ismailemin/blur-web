@@ -319,6 +319,7 @@ def main():
 
         # ------------------------------------------------ source re-derivation
         bad_source = bad_bounds_source = bad_matrix = 0
+        source_rejected = 0
         section_cache = {}
         for record in instances:
             key = (record["recordIndex"], record["itemIndex"])
@@ -342,15 +343,28 @@ def main():
             archived = node["bounds"]["instance"][record["instanceIndex"]]
             if not near_list(archived, record["archivedBounds"]["raw"], 0):
                 bad_bounds_source += 1
+            base = node["basePrimitives"][instance["primitiveIndex"]]
+            # Independent expectation for the resolved/rejected split: the
+            # committed reader decodes POSITION0 type 6 (F32_3) and 9 (F16_4)
+            # with method 0 only. Every other instance is a typed rejection.
+            try:
+                element = level.position_uv_binding(node, base)["position"]
+                supported = element["method"] == 0 and element["type"] in (6, 9)
+            except TypedError:
+                supported = False
+            if not supported:
+                source_rejected += 1
             if record["transform"] is not None:
                 from inspect_level_instances import constant_world
-                base = node["basePrimitives"][instance["primitiveIndex"]]
                 matrix, _trace = constant_world(node, instance, base)
                 if not near_list(matrix, record["transform"]["matrix"], 1e-6):
                     bad_matrix += 1
         check(f"{short}: instance source re-derived", bad_source == 0, bad_source)
         check(f"{short}: archived bounds re-read", bad_bounds_source == 0, bad_bounds_source)
         check(f"{short}: transforms re-derived", bad_matrix == 0, bad_matrix)
+        check(f"{short}: rejection split matches source position types",
+              counts["rejected"] == source_rejected,
+              [counts["rejected"], source_rejected])
 
         # -------------------------------------------------------------- textures
         texture_rows = doc["textures"]
@@ -378,9 +392,26 @@ def main():
                 if entry is None or entry.get("rgbaSha256") != texture["rgbaSha256"]:
                     bad_texture += 1
         check(f"{short}: texture bytes/hashes match source", bad_texture == 0, bad_texture)
-        check(f"{short}: instance textures resolve",
-              all(r["material"] is None or r["material"].get("texture") is not None
-                  or r["status"] != "resolved" for r in instances))
+        # A resolved instance must bind a texture whenever its material chain
+        # declares a static albedo. A material with no g_tAlbedo/g_MeshTexture
+        # (typed `noStaticAlbedoParameter`) or a typed material rejection is a
+        # documented absence, not a silent fallback.
+        bad_texture_link = 0
+        for record in resolved:
+            material = record["material"]
+            if material is None:
+                bad_texture_link += 1
+                continue
+            if material.get("texture") is not None:
+                continue
+            albedo = material.get("albedo") or {}
+            if albedo.get("known") is True:
+                bad_texture_link += 1
+            elif albedo.get("reason") != "noStaticAlbedoParameter" \
+                    and not material.get("rejection"):
+                bad_texture_link += 1
+        check(f"{short}: instance textures resolve", bad_texture_link == 0,
+              bad_texture_link)
 
         # -------------------------------------------------------------- decals
         decal_rows = decals["decals"]
@@ -429,7 +460,10 @@ def main():
         check(f"{short}: decal positions finite",
               dpos is not None and bool(np.isfinite(dpos).all()))
 
-        # recompute every decal UV FNV hash from the emitted buffers
+        # recompute every decal UV FNV hash from the emitted buffers. Each decal
+        # owns a contiguous vertex slice of the concatenated UV buffer, and its
+        # indices are local to that slice, so the hash must be recomputed over
+        # `uv[vertexOffset:vertexOffset+vertexCount]`.
         bad_uv = bad_decal_geom = 0
         decal_uv = duv.reshape(-1, 2) if duv is not None else None
         for decal in dresolved:
@@ -438,7 +472,9 @@ def main():
             if local.max() >= decal["vertexCount"]:
                 bad_decal_geom += 1
                 continue
-            if fnv_decal(decal_uv, local) != decal["uv"]["hash"]:
+            base = decal["vertexOffset"]
+            slice_uv = decal_uv[base:base + decal["vertexCount"]]
+            if fnv_decal(slice_uv, local) != decal["uv"]["hash"]:
                 bad_uv += 1
         check(f"{short}: decal UV hashes recomputed", bad_uv == 0, bad_uv)
         check(f"{short}: decal indices inside vertex range",
@@ -481,11 +517,23 @@ def main():
             check(f"{short}: blocker instance total",
                   sum(s["instanceCount"] for s in blockers) ==
                   sum(first_by_node.get(s["nodeBlock"], 0) for s in blockers))
+            # The blocker report enumerates (geometryBlock, nodeBlock) probes;
+            # one node can be probed through several geometry blocks (Longbeach:
+            # 33 probes over 10 nodes). The census enumerates
+            # (nodeBlock, renderListIndex), so the sound comparison is: every
+            # distinct blocked node has exactly one first-RenderList section.
+            blocker_nodes = {b["nodeBlock"] for b in blockers}
+            census_first = [s for s in doc["sections"]
+                            if s["renderListIndex"] == 0
+                            and s["nodeBlock"] in blocker_nodes]
+            check(f"{short}: blocker probes unique",
+                  len(blockers) == len({(b["geometryBlock"], b["nodeBlock"])
+                                        for b in blockers}),
+                  len(blockers))
             check(f"{short}: blocker section count",
-                  len(blockers) == sum(1 for s in doc["sections"]
-                                       if s["renderListIndex"] == 0
-                                       and s["nodeBlock"] in
-                                       {b["nodeBlock"] for b in blockers}))
+                  len(blocker_nodes) == len(census_first) ==
+                  len({s["nodeBlock"] for s in census_first}),
+                  [len(blockers), len(blocker_nodes), len(census_first)])
             diagnostics = load_json(ROOT / config["package"] / "diagnostics.json")
             group = diagnostics["groups"]["effectDecal"]
             check(f"{short}: package decal subset",
@@ -520,6 +568,7 @@ def main():
         totals["instances"] += counts["instances"]
         totals["resolved"] += counts["resolved"]
         totals["rejected"] += counts["rejected"]
+        totals["expectedRejected"] += source_rejected
         totals["instanceTriangles"] += counts["instanceTrianglesRendered"]
         totals["meshTriangles"] += counts["meshTrianglesUnique"]
         totals["decals"] += dcounts["draws"]
@@ -536,8 +585,20 @@ def main():
                                  + decals["buffers"]["indices"]["bytes"])
 
     check("total instances 37,867", totals["instances"] == 37867, totals["instances"])
-    check("total resolved 35,085", totals["resolved"] == 35085, totals["resolved"])
-    check("total rejected 2,782", totals["rejected"] == 2782, totals["rejected"])
+    # The census reads every LOD0 RenderList of every Scene record, so the total
+    # is fixed by the source tables. The resolved/rejected split is fixed by the
+    # committed reader: POSITION0 type 6 (F32_3) and 9 (F16_4) with method 0
+    # decode; the remaining 2,882 instances declare POSITION0 type 7 (F32_4),
+    # which FORMAT-scene.md and the map-slice blocker report document as
+    # unsupported. They stay typed `positionTypeUnsupported` (no guessed F32_4
+    # path), which is why the earlier 35,085 / 2,782 pin was stale.
+    check("total resolved 34,985", totals["resolved"] == 34985, totals["resolved"])
+    check("total rejected 2,882", totals["rejected"] == 2882, totals["rejected"])
+    check("total rejection split matches source position types",
+          totals["rejected"] == totals["expectedRejected"] == 2882,
+          [totals["rejected"], totals["expectedRejected"]])
+    check("total resolved = instances - rejected",
+          totals["resolved"] == totals["instances"] - totals["rejected"])
     check("total decals 1,533", totals["decals"] == 1533, totals["decals"])
     check("total instance mesh triangles > 1.3M",
           totals["meshTriangles"] > 1_300_000, totals["meshTriangles"])

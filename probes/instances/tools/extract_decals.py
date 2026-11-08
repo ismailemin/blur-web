@@ -9,6 +9,9 @@ counts. Geometry is emitted in world space (identity transform).
 
 Outputs ``_work/instances/<map>/decals.json`` and
 ``decal.positions.f32.bin`` / ``decal.uv0.f32.bin`` / ``decal.indices.u32.bin``.
+
+Run after ``extract_instances.py``: the instance extractor owns and clears the
+per-level ``textures`` directory, and this tool appends the decal textures to it.
 """
 from __future__ import annotations
 

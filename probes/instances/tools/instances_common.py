@@ -159,6 +159,24 @@ def layout_dir(short: str) -> Path:
     return ROOT / "_work/logs/instances"
 
 
+def reset_texture_dir(short: str) -> None:
+    """Delete producer-owned texture files from a previous run.
+
+    ``extract_instances.py`` owns the per-level texture directory: it runs first
+    and clears ``textures/*.rgba`` and ``textures/raw/*.raw`` so that a rerun
+    into an existing output root is byte-identical to a rebuild into an empty
+    one. ``extract_decals.py`` then appends its own decal textures to the same
+    directory and must therefore run after the instance extractor.
+    """
+    out = output_dir(short)
+    for pattern, folder in (("*.rgba", out / "textures"),
+                            ("*.raw", out / "textures" / "raw")):
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob(pattern)):
+            path.unlink()
+
+
 def float_list(values) -> list[float]:
     return [float(v) for v in values]
 
@@ -668,6 +686,11 @@ class LevelData:
         for stream in primitive.get("streams", []):
             if stream["streamIndex"] != -1:
                 walk(stream["material"], "stream", [])
+        if not albedo["seen"]:
+            # The material chain never declares g_tAlbedo / g_MeshTexture (for
+            # example ``MeshEffect_LN`` exposes only g_tTexture). Record the
+            # absence as a typed reason instead of leaving a silent null.
+            albedo["reason"] = "noStaticAlbedoParameter"
         return {"albedo": albedo, "textures": textures, "fields": fields,
                 "runtime": runtime}
 
