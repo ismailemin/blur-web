@@ -83,7 +83,7 @@ const SCENARIOS = {
   'mp-eight': { group: 'slow', timeout: 600000, run: mpEight }
 };
 const DEFAULT_SCENARIOS = ['solo-sprint', 'solo-lap', 'solo-free', 'mp-two'];
-const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix'];
+const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix', 'mp-eight'];
 const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy', 'mp-eight']);
 const MAP_SCENARIOS = new Set(['mp-amboy', 'mp-gracia', 'mode-matrix']);
 

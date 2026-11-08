@@ -11,6 +11,10 @@
 import { MAPS } from './map-registry.js';
 import { mount } from '/game-shell/shell.js';
 
+// Read the entry query before the shell mounts: `syncUrl` rewrites the address
+// bar, so a later read would no longer see `?join=1`.
+const JOIN_MODE = new URLSearchParams(location.search).get('join') === '1';
+
 const ROSTER_URL = '/_work/e1-drive/cars.json';
 const CLASSES_URL = '/game-shell/data/car-classes.json';
 const MEASUREMENTS_URL = '/game-shell/data/course-measurements.json';
@@ -89,6 +93,11 @@ shell.on('start', startRace);
 // The shell lobby is a metadata editor; the driving page owns the real room
 // connection and ready/start handshake. Once a host has a map (or a guest has a
 // valid room code) hand over immediately so the in-game lobby keeps working.
+//
+// `?join=1` is the guest entry: the menu opens straight into the multiplayer
+// lobby with the guest role, so the player can type the 5-character code the
+// host shared. Without it the default role is host and the handover is
+// immediate, which is what a host wants.
 let handedOver = false;
 function handOverLobby() {
   if (handedOver) return;
@@ -102,6 +111,7 @@ function handOverLobby() {
     mp: {
       role: state.mp?.role ?? 'host',
       roomCode: state.mp?.roomCode ?? '',
+      powerups: state.mp?.powerups === true,
       aiCount: state.mp?.ai?.count ?? 0,
       aiCars: (state.mp?.ai?.rows ?? []).map((row) => row.car),
       aiProfiles: (state.mp?.ai?.rows ?? []).map((row) => row.profile)
@@ -135,6 +145,23 @@ Promise.all([
     measurements: measurements.maps
   });
   shell.bootReady();
+  if (JOIN_MODE) openGuestLobby();
 }).catch((error) => {
   shell.bootFail({ code: 'SHELL_BOOT_FAILED', message: error.message });
 });
+
+/**
+ * `?join=1`: walk the shell to the multiplayer lobby with the guest role so the
+ * player can type the room code. Every step is a normal shell action; no URL is
+ * edited and the handover still happens through `handOverLobby`.
+ */
+function openGuestLobby() {
+  const state = shell.getState();
+  shell.dispatch({ type: 'menu/play' });
+  shell.selectMode('multiplayer');
+  if (state.carSlug) shell.selectCar(state.carSlug);
+  shell.confirmCar();
+  shell.selectMap('river');
+  shell.openLobby();
+  shell.dispatch({ type: 'mp/set-role', role: 'guest' });
+}

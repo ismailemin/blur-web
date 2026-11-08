@@ -80,6 +80,19 @@ def main():
         ('longbeach-slice',[sys.executable,'probes/map-slice/tools/verify_slice.py','--package','_work/map-slice/longbeach']),
         ('longbeach-textures',[sys.executable,'probes/map-slice/tools/verify_amboy_texture_bindings.py','--level','usa_la_longbeachdocks']),
         ('longbeach-render',[sys.executable,'probes/map-slice/tools/verify_amboy_render.py','--package','_work/map-slice/longbeach-render','--level','usa_la_longbeachdocks']),
+        # Wave-2 verifiers: the mode catalog, the blocked-map inventory, the
+        # nineteen-level batch, the instance/decal census, the net prediction
+        # bound, the malformed-input inventory, the measured Amboy lap, the
+        # Amboy/Gracia prop colliders and the projected pickup placement.
+        ('race-rules-modes',['node','probes/race-rules/verify-modes.mjs']),
+        ('map-pipeline-blocked',[sys.executable,'probes/map-pipeline/tools/verify_blocked.py']),
+        ('map-batch',[sys.executable,'probes/map-batch/tools/verify_batch.py']),
+        ('instances',[sys.executable,'probes/instances/tools/verify_instances_decals.py','--skip-rebuild']),
+        ('net-prediction',['node','probes/net-prediction/verify.mjs']),
+        ('robustness',['node','probes/robustness/verify.mjs']),
+        ('map-laps-amboy-lap',['node','probes/map-laps/tools/verify_amboy_lap.mjs']),
+        ('map-props',['node','probes/map-props/tools/verify.mjs']),
+        ('powerups-runtime-placement',['node','probes/powerups/tools/verify_runtime_placement.mjs']),
     ])
     results=[]
     for name,command in steps:
