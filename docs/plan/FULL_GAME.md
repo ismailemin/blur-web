@@ -1,66 +1,83 @@
 # Full game roadmap — from the E1 PoC to a multiplayer-testable build
 
-Status: active plan, 7 November 2026. This is a plan, not a claim. Every milestone
+Status: active plan, 8 November 2026. This is a plan, not a claim. Every milestone
 below requires recorded evidence before it is marked done.
 
 ## 1. Baseline (what actually works today)
 
-- **Engine:** wasm RacingPhysics on `usa_la_river/Level.levelphysics`, 5 roster
-  cars, 60 Hz fixed step, deterministic state hashes.
-- **Renderer:** WebGPU consumer of render packet v1.1; real track draws, car
-  meshes and UV0/albedo, 18 textured level props (trucks/wrecks), camera
+- **Engine:** wasm RacingPhysics on `usa_la_river/Level.levelphysics`, 15 roster
+  cars integrated (25 in flight), 60 Hz fixed step, deterministic state hashes.
+- **Renderer:** WebGPU consumer of render packet v1.1; real track draws, per-car
+  meshes and UV0/albedo, sRGB + mip chain, 18 textured level props, camera
   occlusion, ghost replay.
 - **Modes:** 310 m sprint (default), 29 m regression, 3-lap loop-01, free-roam
-  (7,702 m²) with 431/447 solid props.
-- **Audio:** six retail V8 engine loops driven by `Engine().RPM()`.
-- **Gates:** `verify_e1_drive` 838/838, asset probe 31/31, CTest 15/15,
-  `check_e1_poc.py` 23/23, captures console 0.
-- **Missing for a game:** multiplayer transport/rooms, power-ups (weapons,
-  mines, shields, nitro…), AI/opponents, other maps, the other 57 vehicles,
-  menus/lobby/results, damage/respawn rules, full audio mix.
+  with solid props; Amboy (2,060.6 m) and Gracia (624.9 m) point-to-point; MP map
+  selection (River/Amboy/Gracia).
+- **Audio:** six retail V8 engine loops plus 53 tyre/collision waves.
+- **Multiplayer:** 2 humans + 0–3 host-simulated AI, room codes, 20 Hz snapshots,
+  shared results, reconnect. Local/LAN only.
+- **Power-ups:** 8 of 9 types host-authoritative on River (Bomb, Shield, Repair,
+  Nitrous, Shock, Blindfire, Shunt, Barge); SuperShield recovered as a project
+  extension.
+- **Missing for a game:** game shell (menu/car/map select), 47 of 62 cars, 16 of
+  19 maps, map prop collision outside River, real laps outside River, power-up
+  placement outside River, retail paint/light materials, normals/shadows,
+  instances/decals, retail HUD, damage model, full audio mix, internet transport.
 
 ## 2. Definition of "multiplayer-testable"
 
-A build where two browsers on different machines (or different tabs for the
-local gate) can:
+A build where two or more browsers on **different machines** can:
 
-1. open the page, create/join a room with a short code;
-2. pick a car and a map from the content that is actually available;
-3. start together after a ready countdown;
-4. see each other's cars moving with bounded correction;
-5. finish the race with a shared result (positions, times, laps);
-6. survive disconnect/reconnect and late join without a crash.
+1. open one URL and reach a main menu — no hand-written query strings;
+2. create/join a room with a short code;
+3. pick a car and a map from the content that is actually available;
+4. start together after a ready countdown;
+5. see each other's cars moving with bounded correction;
+6. use the power-ups placed on that map, with a correct health/damage state;
+7. finish with a shared, host-authoritative result (positions, times, laps);
+8. survive disconnect/reconnect and late join without a crash;
+9. see a consistent HUD (speed, lap/position, power-up slot, damage).
 
-The first shipping target is **one map, all five current cars, two players**.
-Content expands after that gate, not before.
+The gate is **one map + all integrated cars + 2–8 players + power-ups + a real
+lap**, then content expands. No milestone is claimed without a reproducible
+command, a recorded result and a clean console.
 
 ## 3. Milestones
 
 | Milestone | Scope | Acceptance evidence |
 |---|---|---|
 | **M0 Inventory** | All levels, all 62 vehicle records, all power-up entities audited | Content manifests + coverage matrices + verifier |
-| **M0 Net** | Room server + two-client transport harness | 2 headless clients, join/ready/state/ack/reconnect, loss/latency test |
-| **M1 Online race** | `?mp=1` in e1-drive: room, car select, start countdown, remote car state, finish | **DONE** — 874/874, two-browser capture, console 0, shared result |
-| **M2 Power-ups** | Pickups, weapons, mines, shield, nitro, damage/respawn online | Rules prototype + 2-client event sync tests |
-| **M3 Maps** | At least 3 additional maps with collision/road/draws | Per-map layout + capture + finish |
-| **M4 Vehicles** | All 62 records: model/fields/textures or an explicit unsupported reason | Coverage matrix 62/62 classified |
-| **M5 Game shell** | Lobby, car/map select, results, restart, reconnect, 4–8 players | Reproducible group session |
-
-M1 is the critical path. M2/M3/M4 run in parallel only where file sets are
-disjoint.
+| **M0 Net** | Room server + multi-client transport harness | 4–8 headless clients, join/ready/state/ack/reconnect, loss/latency test |
+| **M1 Online race** | Room, car select, start countdown, remote car state, finish | **DONE** — 874/874, two-browser capture, console 0, shared result |
+| **M2 Power-ups** | Pickups, weapons, mines, shield, nitro, damage/respawn online | **PARTIAL** — 8 types on River; all-map placement + damage model in flight |
+| **M3 Maps** | Every map that the proven readers can decode, with props and a lap | Per-map layout + collision + capture + finish |
+| **M4 Vehicles** | All 62 records: model/fields/textures or an explicit unsupported reason | Coverage matrix 62/62 classified, all drivable |
+| **M5 Game shell** | Menu, lobby, car/map select, results, restart, reconnect, 4–8 players | Reproducible group session, no URL editing |
+| **M6 Parity slice** | Corvette ZR1 + River 0–100 m, 4 fixed cameras, retail comparison | Per-feature match/partial/missing table |
 
 ## 4. Workstreams and ownership
 
 | Stream | Owns | Output |
 |---|---|---|
-| Net core | `probes/net-mvp/**`, `_work/net-mvp/**` | room server, client transport, tests |
-| Net integration | `probes/e1-drive/**` (later) | `?mp=1`, remote cars, results |
-| Content audit | `probes/full-content/**` | levels/cars/power-ups manifests |
-| Maps | `probes/map-pipeline/**` | per-level physics/draw/road coverage |
-| Vehicles | `probes/vehicle-pipeline/**` | 62-record coverage, missing data reasons |
-| Power-ups | `probes/powerups/**` | definitions + rules prototype |
-| Renderer/quality | `probes/e1-drive/web/**` | textures, effects, HUD |
-| Audio | `probes/audio/**` | engine + tyre/collision mix |
+| Net core | `probes/net-mvp/**` | room server, WSS/TLS, 8-player transport, deploy bundle |
+| Net integration | `probes/e1-drive/**` (one owner) | `?mp=1`, remote cars, results, lobby wiring |
+| Content audit | `probes/map-pipeline/**` | level/car/power-up coverage, blocked-map proof |
+| Maps | `probes/map-slice/**` | per-level physics/draw/road/textures |
+| Map props | `probes/map-props/**` | per-map static colliders + path clearance |
+| Map laps | `probes/map-laps/**` | closed-loop search per map |
+| Map streaming | `probes/map-stream/**` | sector chunks, load order |
+| Vehicles | `probes/vehicle-pipeline/**` | 62-record coverage, batch staging |
+| Vehicle materials | `probes/car-materials/**` | paint/light recipes, runtime material data |
+| Power-ups | `probes/powerups/**` | definitions, rules, placement on all maps |
+| Damage | `probes/damage/**` | health/wreck/respawn model |
+| Game modes | `probes/race-rules/**` | mode catalogue + rules layer |
+| AI | `probes/ai-driver/**` | drivers, profiles, power-up policy |
+| Camera | `probes/camera/**` | retail camera parameters |
+| Renderer/quality | `probes/e1-drive/web/**` | textures, materials, HUD, shell |
+| HUD | `probes/hud/**` | HUD art/layout/state bindings |
+| Game shell | `probes/game-shell/**` | menu/lobby/select module |
+| Audio | `probes/audio/**` | full event catalogue and mix |
+| Parity | `probes/retail-parity/**` | audit, camera poses, retail protocol |
 
 Rules:
 
@@ -75,58 +92,72 @@ Rules:
 - Every agent records commands, counts, hashes, screenshots and limits in a doc
   under `docs/work/analysis/` or `docs/work/verification/`.
 
-## 5. Network architecture (first gate)
+## 5. Network architecture
 
 - **Room service:** small Node HTTPS/WebSocket service; room code, join/leave,
-  ready, car/map selection, host assignment, signaling. No game assets.
-- **Transport:** WebSocket for the first local gate (reliable, ordered). Add a
-  second unordered/unreliable channel (WebRTC DataChannel) only after the
-  packet budget is measured. Do not stack two reliability layers blindly.
-- **Authority:** host-authoritative simulation first. The host runs the wasm
-  step, broadcasts the authoritative input/state summary; clients run the same
-  deterministic step and reconcile. This matches the existing deterministic
-  state hashes; it is not a retail-protocol claim.
-- **Sync:** 60 Hz input, 20–30 Hz state snapshots with sequence numbers,
-  interpolation buffer, bounded correction; heartbeat and reconnect window.
-- **Security:** room code + ephemeral token; no accounts, no database in M1.
-- **Test:** two headless browser clients in one process on the same machine
-  first, then two tabs, then two machines. Cross-network NAT testing needs the
-  user's network; that is the only expected manual step and it comes after the
-  local gate.
+  ready, car/map selection, host assignment. No game assets.
+- **Transport:** WebSocket for the local/LAN gate; WSS for internet. Add an
+  unordered/unreliable channel (WebRTC DataChannel) only after the packet budget
+  is measured. Do not stack two reliability layers blindly.
+- **Authority:** host-authoritative simulation. The host runs the wasm step and
+  broadcasts snapshots; clients interpolate and reconcile. This matches the
+  existing deterministic state hashes; it is not a retail-protocol claim.
+- **Sync:** 60 Hz input, 20–30 Hz snapshots with sequence numbers, interpolation
+  buffer, bounded correction, heartbeat and reconnect window.
+- **Scale:** room capacity 2–20 (default 8); measure bandwidth per peer before
+  promising a number.
+- **Security:** room code + ephemeral token; TLS only; no accounts, no database.
+- **Deploy:** Docker/systemd/Caddy or Cloudflare Tunnel; the user supplies the
+  host and domain. Everything else must be automated.
 
 ## 6. Content plan
 
-- **Levels:** 19 directories are present (including `showroom` and multiplayer
-  variants). The audit must classify each: physics file, collision mesh, road
-  path, draw blocks, spawn, coverage. Do not promise all 19 until measured.
-- **Vehicles:** 62 records in `cars.json`; only 5 have full fields/mesh/UV and
-  proof. The audit classifies all 62 and lists missing data per car.
-- **Power-ups:** Blur has weapons, mines, shields, nitro, repair, shock and
-  boost variants. The definitions live in XT/gamedata; extract the entity
-  schema and the state machine before simulating. Unknown behavior stays
-  labelled, never guessed.
-- **Maps/cars are local game data:** not committed. Builders must read
-  `game-data/` and fail explicitly when a file is missing.
+- **Levels:** 19 directories exist (including `showroom` and multiplayer
+  variants). Classify each: physics file, collision mesh, road path, draw blocks,
+  props, spawn, coverage. Do not promise all 19 until measured; a blocked map
+  ships with the exact missing stream.
+- **Vehicles:** 62 records in `cars.json`. A batch compiler turns a roster list
+  into chunk + ghost + capture + verify, so adding a car is a config line, not
+  an agent. 61/62 are proven reachable; the remaining one is typed unsupported.
+- **Power-ups:** 8 MP types plus the SuperShield extension. Placement is retail
+  data projected onto the measured path; provisional values are labelled.
+- **Maps/cars are local game data:** not committed. Builders read `game-data/`
+  and fail explicitly when a file is missing.
 
 ## 7. Risks and limits
 
-- The retail C++ game logic (power-ups, AI, race director) is not ported; this
-  plan builds an original rules layer from recovered definitions, not a retail
-  binary claim.
+- The retail C++ game logic is not ported; this plan builds an original rules
+  layer from recovered definitions, not a retail binary claim.
 - Full-engine WASM still has platform gaps recorded in T-005; the PoC uses the
   proven vehicle physics subset.
-- Real cross-network multiplayer needs a reachable host/TURN and the user's
-  network; local two-client play does not.
-- "All maps/cars" may include assets that the proven readers cannot decode;
-  those are reported as unsupported with the exact reason, not faked.
+- Real cross-network multiplayer needs a reachable host/TLS; local two-client
+  play does not.
+- "All maps/cars" may include assets the proven readers cannot decode; those are
+  reported as unsupported with the exact reason, not faked.
+- Retail parity is a vertical slice, not a whole-game claim; it is measured only
+  against user-captured retail frames.
 
-## 8. Immediate queue (this wave)
+## 8. Current wave (8 November 2026)
 
-1. Content inventory (levels, 62 vehicles, power-ups).
-2. Map pipeline audit (19 levels).
-3. Vehicle pipeline audit (62 records).
-4. Power-up extraction + rules prototype.
-5. Net MVP: room server + two-client transport harness.
+| Agent | Area | Scope |
+|---|---|---|
+| V5 | `probes/e1-drive` | batch 2 → 25 cars, ghosts, pins |
+| PM1 | `probes/map-props` | Amboy/Gracia prop colliders |
+| LM1 | `probes/map-laps` | Amboy/Gracia closed-loop search |
+| PARITY1 | `probes/retail-parity` | 1:1 audit + retail capture protocol |
+| NET1 | `probes/net-mvp` | WSS/TLS, 8 players, deploy bundle |
+| PWR6 | `probes/powerups` | pickup placement on Amboy/Gracia |
+| MAPC1 | `probes/map-pipeline` | blocked-map proof, 19-map ranking |
+| MAT1 | `probes/car-materials` | paint/light recipes |
+| AUDIO1 | `probes/audio` | full event/audio catalogue |
+| HUD1 | `probes/hud` | retail HUD art/layout |
+| SHELL1 | `probes/game-shell` | menu/lobby/select module |
+| AI4 | `probes/ai-driver` | AI power-up policy |
+| MODE1 | `probes/race-rules` | retail mode catalogue |
+| CAM1 | `probes/camera` | retail camera parameters |
+| DMG1 | `probes/damage` | health/wreck/respawn model |
+| STREAM1 | `probes/map-stream` | sector chunking |
 
-After the wave: integrate V2 prop colliders, finish texture quality, then M1
-online race integration.
+After this wave the main agent integrates in this order: 25-car roster → shell →
+net 8-player → prop colliders → power-up placement → material/HUD/camera →
+damage/modes/AI policy → map streaming → parity slice.

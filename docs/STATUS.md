@@ -961,6 +961,15 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - 188/200 wheel draw preview-only, UV placeholder/partial scene/icon vector tipli blocker.
 - Doğrulama **912/912**, iki build identical. Kanıt: `docs/work/analysis/vehicle-batch3-prep.md`.
 
+## 8 Kasım 2026 — tam oyun dalgası 1
+
+- `docs/plan/FULL_GAME.md` yenilendi (M0–M6, 19 akış, "multiplayer-testable" 9 madde).
+- `docs/plan/INTEGRATION_WAVES.md`: paylaşılan `e1-drive` için 10 sıralı dalga.
+- `docs/work/verification/mp-release-checklist.md`: A–G kabul listesi (kanıtsız madde yok).
+- 40 paralel ajan başlatıldı: araç/harita/prop/tur, boya-ışık-materyal, HUD/ses/VFX/UI art,
+  ağ (WSS/8 oyuncu/deploy), oyun kabuğu, mod/hasar/kamera/AI, streaming/paket/performans.
+- Kullanıcıdan beklenen yalnız: retail referans kareleri + internet host/TLS.
+
 ## 8 Kasım 2026 — SuperShield verisi
 
 - `PickupType` 619 / level 523: **10 s**, ram hasarı 100, `IncreasedMass` 10.000 kg, 50 mph boost; HUD icon 104.

@@ -603,21 +603,40 @@ def check_textures(report):
         except Exception as exc:  # noqa: BLE001
             car_doc = None
             problems.append("unreadable JSON: " + str(exc))
+        car_totals = {}
         if car_doc is not None:
             totals = car_doc.get("totals") or {}
+            car_totals = totals
+            entries = car_doc.get("cars") or []
             if car_doc.get("kind") != "e1-drive.car-textures":
                 problems.append("kind is not e1-drive.car-textures")
-            if totals.get("cars") != 15 or totals.get("draws") != 1378:
-                problems.append("totals are not 15 cars / 1378 draws")
-            if totals.get("staticAlbedoDraws") != 673 or totals.get("textures") != 112:
-                problems.append("totals are not 673 textured draws / 112 textures")
-            if len(car_doc.get("cars") or []) != 15:
-                problems.append("per-car list != 15")
+            if len(entries) == 0:
+                problems.append("per-car list is empty")
+            if totals.get("cars") != len(entries):
+                problems.append("totals.cars != per-car list length")
+            draw_sum = sum(int((entry.get("coverage") or {}).get("drawCount") or 0) for entry in entries)
+            if totals.get("draws") != draw_sum:
+                problems.append("totals.draws != sum of per-car draw counts")
+            static_sum = sum(int((entry.get("coverage") or {}).get("staticAlbedoDraws") or 0) for entry in entries)
+            if totals.get("staticAlbedoDraws") != static_sum:
+                problems.append("totals.staticAlbedoDraws != sum of per-car values")
+            uv_sum = sum(int((entry.get("coverage") or {}).get("rgbaBytes") or 0) for entry in entries)
+            if totals.get("rgbaBytes") not in (None, uv_sum):
+                problems.append("totals.rgbaBytes != sum of per-car RGBA bytes")
+            if int(totals.get("staticAlbedoDraws") or 0) > int(totals.get("draws") or 0):
+                problems.append("textured draws exceed total draws")
+            if int(totals.get("textures") or 0) <= 0:
+                problems.append("textures total is not positive")
+            slugs = [entry.get("slug") for entry in entries]
+            if len(set(slugs)) != len(slugs):
+                problems.append("duplicate car slugs")
         if problems:
             report.fail("car-manifest", "car texture manifest", "; ".join(problems), [rel(car_manifest)])
         else:
             report.ok("car-manifest", "car texture manifest",
-                      "15 cars / 1378 draws / 673 textured / 112 textures, pin matches geometry",
+                      "{} cars / {} draws / {} textured / {} textures, pin matches geometry".format(
+                          car_totals.get("cars"), car_totals.get("draws"),
+                          car_totals.get("staticAlbedoDraws"), car_totals.get("textures")),
                       [rel(car_manifest)])
 
     # 3. track UV stream
@@ -682,7 +701,9 @@ def check_textures(report):
     car_textures = []
     for entry in car_doc.get("cars") or []:
         car_textures.extend(entry.get("textures") or [])
-    _check_texture_files(report, "car-textures", "car RGBA bitmaps", car_textures, 46505984)
+    car_rgba_total = sum(int(record.get("rgbaBytes") or 0) for record in car_textures)
+    _check_texture_files(report, "car-textures", "car RGBA bitmaps", car_textures,
+                         car_rgba_total if car_textures else None)
 
 
 def check_levelphysics(report):
@@ -914,7 +935,7 @@ def check_sprint_short(report):
 
 def check_roster(report):
     item = "roster"
-    label = "cars.json roster (62 records, 15 selected)"
+    label = "cars.json roster (62 records, integrated selection)"
     path = WORK / "cars.json"
     if not path.is_file():
         return report.fail(item, label, "missing " + rel(path), [rel(path)], True), None
@@ -933,9 +954,11 @@ def check_roster(report):
     counts = doc.get("counts") or {}
     if counts.get("records") != 62 or counts.get("gatePass") != 62 or counts.get("gateFail") != 0:
         problems.append("counts are not 62 records / 62 pass / 0 fail")
-    if counts.get("selected") != 15:
-        problems.append("selected count != 15")
     roster = doc.get("roster") or {}
+    if counts.get("selected") != len(roster.get("cars") or []):
+        problems.append("selected count != roster entry count")
+    if int(counts.get("selected") or 0) < len(CARS):
+        problems.append("selected count below the " + str(len(CARS)) + " anchor cars")
     if roster.get("default") != "corvette-zr1-stock":
         problems.append("roster default is not corvette-zr1-stock")
     entries = {entry.get("slug"): entry for entry in roster.get("cars") or []}
