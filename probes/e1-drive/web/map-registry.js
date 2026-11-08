@@ -345,12 +345,12 @@ export const MAPS = Object.freeze({
     propLayer: false,
     ghost: false,
     pins: Object.freeze({
-      mapFileSha256: 'sha256:b031df8f8a61ef9a4235ec71b919f61e9a351643645bbd99009ab7a4048067fd',
-      mapContentHash: 'sha256:a2bd4b74341647d29a66269313410ba80d77d6fea95ec98ff77abfcdff564b4a',
-      layoutFileSha256: 'sha256:0245455952dc73469187777a5883cf261d996acc59bbd5984d10f3ac41f9da76',
-      layoutContentHash: 'sha256:6cef8983c1eee7f5b0d06f991f78e0cb2176280831caa0af26364a9b0dc69d9e',
-      renderFileSha256: 'sha256:97e52ed190b4dc4389063412f111361cc5dfc6911bb5ee245d3f10c0c6ecc80e',
-      renderContentHash: 'sha256:97e52ed190b4dc4389063412f111361cc5dfc6911bb5ee245d3f10c0c6ecc80e',
+      mapFileSha256: 'sha256:b9b86459a761eae56d5db6bff4bca276f90e5c9f7264ab4013208d6b02913282',
+      mapContentHash: 'sha256:674626dc8724eba329a608bba834bae5e3a45a344bb26d8d46d5190348be35d1',
+      layoutFileSha256: 'sha256:bf1046d400b8de67adbd9326073706c6a84e5ff6680353a6fc76c4772bb31872',
+      layoutContentHash: 'sha256:24b398a0b20e9f442f02b916332a04b340ec758c30684eebdbdc5ad6c8ed25b6',
+      renderFileSha256: 'sha256:1a25ebec01303c93d51ebaeaea9632f5f0483ac1d39c4acf141601942f92cdd8',
+      renderContentHash: 'sha256:1a25ebec01303c93d51ebaeaea9632f5f0483ac1d39c4acf141601942f92cdd8',
       sliceFileSha256: 'sha256:51613cd7395abc2072091079af8a0e2738b400e6edc30d8ee5e4383b44adf17b',
       sliceContentHash: 'sha256:51613cd7395abc2072091079af8a0e2738b400e6edc30d8ee5e4383b44adf17b',
       physicsFileSha256: 'sha256:06f2e5222dbb8cfcc8fe4493f62161fb11d64310a09603502484dee8040c9fd1',
@@ -374,10 +374,10 @@ export const MAPS = Object.freeze({
       courseId: 'downtown'
     }),
     mpPins: Object.freeze({
-      packageHash: 'sha256:a2bd4b74341647d29a66269313410ba80d77d6fea95ec98ff77abfcdff564b4a',
-      layoutHash: 'sha256:6cef8983c1eee7f5b0d06f991f78e0cb2176280831caa0af26364a9b0dc69d9e',
+      packageHash: 'sha256:674626dc8724eba329a608bba834bae5e3a45a344bb26d8d46d5190348be35d1',
+      layoutHash: 'sha256:24b398a0b20e9f442f02b916332a04b340ec758c30684eebdbdc5ad6c8ed25b6',
       physicsHash: 'sha256:06f2e5222dbb8cfcc8fe4493f62161fb11d64310a09603502484dee8040c9fd1',
-      packageFileSha256: 'sha256:b031df8f8a61ef9a4235ec71b919f61e9a351643645bbd99009ab7a4048067fd',
+      packageFileSha256: 'sha256:b9b86459a761eae56d5db6bff4bca276f90e5c9f7264ab4013208d6b02913282',
       layoutFileSha256: 'sha256:2b3d11f4a2334182fa44a539aef4fc2a4405f3cb2a0a62672647fe67f4689da6',
       physicsFileSha256: 'sha256:06f2e5222dbb8cfcc8fe4493f62161fb11d64310a09603502484dee8040c9fd1',
       packageBytes: 53389346,
@@ -405,6 +405,7 @@ export function mpPinsForMap(value) {
   if (!MAP_IDS.includes(value)) return null;
   return MAPS[value].mpPins ?? null;
 }
+
 
 
 

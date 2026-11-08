@@ -34,15 +34,15 @@
   },
   "render": {
    "path": "_work/map-batch/usa_la_downtown/draws.json",
-   "bytes": 1781663,
-   "sha256": "sha256:97e52ed190b4dc4389063412f111361cc5dfc6911bb5ee245d3f10c0c6ecc80e",
-   "contentHash": "sha256:97e52ed190b4dc4389063412f111361cc5dfc6911bb5ee245d3f10c0c6ecc80e",
+   "bytes": 1781669,
+   "sha256": "sha256:1a25ebec01303c93d51ebaeaea9632f5f0483ac1d39c4acf141601942f92cdd8",
+   "contentHash": "sha256:1a25ebec01303c93d51ebaeaea9632f5f0483ac1d39c4acf141601942f92cdd8",
    "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
   },
   "blockers": {
    "path": "_work/map-batch/usa_la_downtown/blockers.json",
-   "bytes": 4294,
-   "sha256": "sha256:9093f07dc0e84a577987266a8c554b178a4491d511054b37f7a4757ebf3381ce"
+   "bytes": 4295,
+   "sha256": "sha256:070399b3bbb740d15961ac0cbb1b90709006dd831013488c506414b5707b54e4"
   },
   "textures": {
    "path": "_work/map-batch/usa_la_downtown/textures/index.json",
@@ -4862,5 +4862,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:6cef8983c1eee7f5b0d06f991f78e0cb2176280831caa0af26364a9b0dc69d9e"
+ "hash": "sha256:24b398a0b20e9f442f02b916332a04b340ec758c30684eebdbdc5ad6c8ed25b6"
 }
