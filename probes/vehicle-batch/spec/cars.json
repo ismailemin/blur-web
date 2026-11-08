@@ -4914,7 +4914,7 @@
    "drivetrain": "AWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -4956,8 +4956,8 @@
    "recordId": 3248311663,
    "recordIndex": 58,
    "recordName": "Hummer_H2_Rat",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 60,
+   "scope": "roster",
    "slug": "hummer-h2-rat",
    "wheel": {
     "decodedPath": null,
@@ -5707,7 +5707,7 @@
    "drivetrain": "RWD",
    "evidence": {
     "batch3Staged": false,
-    "inCommittedRoster": false,
+    "inCommittedRoster": true,
     "v1Mapped": true
    },
    "gears": 6,
@@ -5749,8 +5749,8 @@
    "recordId": 3716417016,
    "recordIndex": 67,
    "recordName": "Ford_Supervan_Stock",
-   "rosterPosition": null,
-   "scope": "remaining",
+   "rosterPosition": 61,
+   "scope": "roster",
    "slug": "ford-supervan-stock",
    "wheel": {
     "decodedPath": null,
@@ -6884,9 +6884,9 @@
   "classA": 5,
   "classB": 42,
   "classC": 15,
-  "inRoster": 59,
+  "inRoster": 61,
   "records": 62,
-  "remaining": 3,
+  "remaining": 1,
   "wheelProofKnown": 21,
   "withBody": 61,
   "withHud": 61
@@ -6949,7 +6949,7 @@
   },
   "roster": {
    "path": "probes/e1-drive/cars/roster.json",
-   "sha256": "ed999dc526e2f5d20ffa82bc956cc2e501565a5514dc4535a0b10f26765ef845"
+   "sha256": "691c1ce9dd2b2cdcd550ffe391160772b618d7c2e5927e5b3acf9c25c7ecc39c"
   }
  },
  "version": 1
