@@ -26,6 +26,75 @@ under `_work/map-pipeline/`, `_work/logs/map-pipeline/` and one analysis documen
 4. **Ranking** — A/B/C matrix and top-3 candidates (`rank_maps.py`), with exact
    missing data and a candidate layout hand-off (`export_candidate.py`).
 
+## Map decisions (19 levels)
+
+`data/map-decisions.json` is the byte-backed decision document for every level
+directory. It is derived from the committed probe/batch documents; it is not a
+renderer, GPU, browser or playable-game claim.
+
+**Verdicts:** `playable` = integrated in `probes/e1-drive/web/map-registry.js`
+`MAP_IDS` and the map-batch package verifies; `blocked` = a named committed
+record prevents playable today; `unsupported` = no buildable package or no
+measured path exists, so the level cannot be decided from committed data.
+
+The committed registry has **3 playable maps** (`river`, `amboy`, `gracia`).
+`usa_la_longbeachdocks` has a verified map-batch package and an 818.372 m
+committed draw-covered path, but no E1 registry entry, so it is **blocked** by
+two integration items (`e1-map-package`, `e1-verify-browser`). The "4 playable
+maps" premise is not supported by the committed registry in this tree.
+
+`draw m` is the committed draw-covered path; `collision m` is the collision-only
+geodesic diameter. For the three extended-probe levels the recovered path is in
+`paths.recoveredM`: Longbeach 1,730.511 m, highrise 208.948 m, bowl 406.889 m.
+
+| # | level | city | verdict | draw m | collision m | col tris | draws | textures | blocker |
+|---:|---|---|---|---:|---:|---:|---:|---:|---|
+| 1 | `spa_barcelona_gracia` | Barcelona Gracia | **playable** | 624.9 | 627.4 | 113,270 | 3,580 | 734 | - |
+| 2 | `usa_amboy` | Amboy | **playable** | 2,060.6 | 2,110.8 | 63,708 | 1,606 | 179 | - |
+| 3 | `usa_la_river` | LA River | **playable** | 246.8 | 365.3 | 44,244 | 1,117 | 300 | - |
+| 4 | `usa_la_longbeachdocks` | LA Docks | **blocked** | 818.4 | 1,730.5 | 25,183 | 1,141 | 164 | integration: no E1 map package |
+| 5 | `usa_la_observatory` | Hollywood Hills | **blocked** | 562.4 | 562.3 | 111,496 | 1,201 | 97 | integration: no E1 map package |
+| 6 | `usa_la_downtown` | LA Downtown | **blocked** | 160.0 | 161.7 | 118,351 | 2,312 | 736 | integration: no E1 map package |
+| 7 | `jpn_mharuna` | Mount Haruna | **blocked** | 345.8 | 417.2 | 42,038 | 1,783 | 234 | integration: no E1 map package |
+| 8 | `usa_sanfran_russianhill` | SanFran Russian Hill | **blocked** | 186.8 | 275.2 | 32,709 | 1,488 | 824 | integration: no E1 map package |
+| 9 | `uk_london_hackney` | Hackney | **blocked** | 776.4 | 1,185.7 | 76,820 | 2,659 | 877 | integration: no E1 map package |
+| 10 | `spa_barcelona_oval` | Barcelona Oval | **blocked** | 786.1 | 1,352.1 | 39,532 | 1,242 | 218 | integration: no E1 map package |
+| 11 | `usa_ny_dumbo` | NY Dumbo | **blocked** | 1,292.4 | 2,373.5 | 46,243 | 2,443 | 1,023 | integration: no E1 map package |
+| 12 | `uk_brighton` | Brighton | **blocked** | 975.0 | 2,007.9 | 86,528 | 2,045 | 667 | integration: no E1 map package |
+| 13 | `usa_sanfran_sausalito` | SanFran Sausalito | **blocked** | 1,046.8 | 3,985.6 | 93,591 | 1,683 | 209 | integration: no E1 map package |
+| 14 | `jpn_tokyo_shutoko` | Tokyo Shutoko | **blocked** | 290.9 | 1,617.9 | 58,330 | 2,709 | 1,086 | integration: no E1 map package |
+| 15 | `usa_amboy_multiplayer` | Amboy | **blocked** | 136.1 | 770.8 | 22,208 | 148 | 37 | integration: no E1 map package |
+| 16 | `usa_la_downtown_multiplayer` | LA Downtown | **blocked** | 154.9 | 982.1 | 12,706 | 230 | 121 | integration: no E1 map package |
+| 17 | `usa_la_multiplayer_highrise` | LA Downtown | **blocked** | 6.2 | 208.9 | 2,522 | 113 | 53 | draw coverage < 25 m; extractor chunk policy |
+| 18 | `showroom` | Show Room | **blocked** | 116.5 | 116.5 | 3,358 | 95 | 67 | showroom: needs showroom mode |
+| 19 | `spa_barcelona_bowl_multiplayer` | Barcelona | **blocked** | 0.0 | 406.9 | 4,352 | 128 | 49 | draw coverage < 25 m; extractor chunk policy |
+
+Every blocked row names a source record in `blocker.sourceRecord`. Integration
+blockers name `probes/e1-drive/web/map-registry.js#MAP_IDS` and carry every
+committed unsupported draw section with its byte offset in `blocker.byteGaps`.
+The two draw-coverage blockers name the exact probe chunk item and its
+levelstream chunk offset (re-derived from the levelrender Scene ChunkInfo):
+`spa_barcelona_bowl_multiplayer` block 18 / chunk 12 / item 1 at byte 8,818,688;
+`usa_la_multiplayer_highrise` block 14 / chunk 47 / item 1 at byte 18,569,216.
+Showroom names `blocked/inventory-19.json#levels[showroom].singleBlocker`.
+
+`unsupported` is **0**: all 19 levels build, all have a measured collision path,
+and all have a committed draw-covered path or a 100 % recovered path. The two
+draw-coverage blockers are `blocked` (extractor-limited), not `unsupported`,
+because the extended probe recovers 100 % of the measured collision path.
+
+```powershell
+$py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+
+& $py probes/map-pipeline/tools/build_map_decisions.py
+& $py probes/map-pipeline/tools/verify_map_decisions.py
+```
+
+The verifier re-derives every verdict and every measured field, re-reads the
+levelrender chunk offsets, rebuilds the document twice and compares it
+byte-for-byte. It prints `N/M checks passed` and exits 1 on failure; the current
+run is **2463/2463 checks passed**.
+
 ## Tools
 
 | tool | purpose |
@@ -42,6 +111,9 @@ under `_work/map-pipeline/`, `_work/logs/map-pipeline/` and one analysis documen
 | `tools/verify_maps.py` | deterministic re-measure and classification check |
 | `tools/blocked_inventory.py` | merge the 19-map evidence into `_work/map-pipeline/blocked/inventory-19.json` |
 | `tools/verify_blocked.py` | deterministic re-measure of the blocked inventory and the three extended probes |
+| `tools/map_decisions_lib.py` | shared read-only derivation of the 19-level decision document |
+| `tools/build_map_decisions.py` | write `data/map-decisions.json` |
+| `tools/verify_map_decisions.py` | re-derive every verdict, re-read chunk offsets, rebuild and compare |
 
 ### Blocked-inventory coverage schema
 
@@ -77,6 +149,8 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py probes/map-pipeline/tools/verify_maps.py
 & $py probes/map-pipeline/tools/blocked_inventory.py
 & $py probes/map-pipeline/tools/verify_blocked.py
+& $py probes/map-pipeline/tools/build_map_decisions.py
+& $py probes/map-pipeline/tools/verify_map_decisions.py
 ```
 
 The full 19-level extraction is recorded in
