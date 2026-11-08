@@ -70,8 +70,8 @@ const NOT_SERIALIZED = [
   {
     code: 'not-decoded',
     field: 'ambient.lightmap',
-    reason: 'static world lighting is baked into SunSkyLightmap/RGBLightmap textures, which ' +
-      'are not decoded by this probe'
+    reason: 'static world lighting is baked into SunSkyLightmap/RGBLightmap textures; the ' +
+      'g_tLightmap texture set was not decoded for this level, so no lightmap term is exposed'
   },
   {
     code: 'not-decoded',
@@ -210,6 +210,106 @@ function buildAmbient(manifest) {
   };
 }
 
+function optionalNumber(value, label) {
+  if (value === null) return null;
+  return number(value, label);
+}
+
+function buildLightmap(manifest, short) {
+  const lightmap = manifest.lightmap;
+  if (!lightmap) {
+    return null;
+  }
+  if (lightmap.decoded !== true) {
+    return null;
+  }
+  if (lightmap.kind !== 'texture-set') {
+    throw new Error(short + ': lightmap kind is ' + JSON.stringify(lightmap.kind) +
+      ', expected "texture-set"');
+  }
+  const provenance = lightmap.provenance ?? {};
+  const shaderTerms = provenance.shaderTerms ?? {};
+  const textures = lightmap.textures;
+  if (!Array.isArray(textures) || textures.length === 0) {
+    throw new Error(short + ': lightmap has no textures');
+  }
+  if (number(lightmap.count, 'lightmap.count') !== textures.length) {
+    throw new Error(short + ': lightmap.count does not equal the texture list length');
+  }
+  const seen = new Set();
+  const projected = textures.map((texture) => {
+    const name = text(texture.name, 'lightmap.texture.name');
+    if (seen.has(name)) {
+      throw new Error(short + ': duplicate lightmap texture ' + name);
+    }
+    seen.add(name);
+    if (texture.formatName !== lightmap.formatName) {
+      throw new Error(short + ': lightmap texture ' + name + ' formatName differs from the set');
+    }
+    if (texture.format !== lightmap.format) {
+      throw new Error(short + ': lightmap texture ' + name + ' format differs from the set');
+    }
+    const source = texture.source ?? {};
+    return {
+      name,
+      width: number(texture.width, 'lightmap.texture.width'),
+      height: number(texture.height, 'lightmap.texture.height'),
+      format: number(texture.format, 'lightmap.texture.format'),
+      formatName: text(texture.formatName, 'lightmap.texture.formatName'),
+      levels: number(texture.levels, 'lightmap.texture.levels'),
+      bytes: number(texture.bytes, 'lightmap.texture.bytes'),
+      payloadBytes: number(texture.payloadBytes, 'lightmap.texture.payloadBytes'),
+      sha256: text(texture.sha256, 'lightmap.texture.sha256'),
+      decodedRgbaBytes: number(texture.decodedRgbaBytes, 'lightmap.texture.decodedRgbaBytes'),
+      decodedRgbaSha256: text(texture.decodedRgbaSha256, 'lightmap.texture.decodedRgbaSha256'),
+      referenceCount: number(texture.referenceCount, 'lightmap.texture.referenceCount'),
+      source: {
+        kind: text(source.kind, 'lightmap.texture.source.kind'),
+        block: number(source.block, 'lightmap.texture.source.block'),
+        index: number(source.index, 'lightmap.texture.source.index'),
+        streamRecordIndex: number(source.streamRecordIndex,
+          'lightmap.texture.source.streamRecordIndex'),
+        streamRecordOffset: number(source.streamRecordOffset,
+          'lightmap.texture.source.streamRecordOffset'),
+        streamRecordBytes: number(source.streamRecordBytes,
+          'lightmap.texture.source.streamRecordBytes'),
+        headerOffsetInChunk: number(source.headerOffsetInChunk,
+          'lightmap.texture.source.headerOffsetInChunk'),
+        headerBytes: number(source.headerBytes, 'lightmap.texture.source.headerBytes'),
+        dataOffsetInChunk: number(source.dataOffsetInChunk,
+          'lightmap.texture.source.dataOffsetInChunk'),
+        dataBytes: number(source.dataBytes, 'lightmap.texture.source.dataBytes')
+      }
+    };
+  });
+  const totalBytes = projected.reduce((sum, texture) => sum + texture.bytes, 0);
+  if (number(lightmap.bytes, 'lightmap.bytes') !== totalBytes) {
+    throw new Error(short + ': lightmap.bytes does not equal the texture byte sum');
+  }
+  return {
+    kind: 'texture-set',
+    decoded: true,
+    uvSet: text(lightmap.uvSet, 'lightmap.uvSet'),
+    format: number(lightmap.format, 'lightmap.format'),
+    formatName: text(lightmap.formatName, 'lightmap.formatName'),
+    count: number(lightmap.count, 'lightmap.count'),
+    width: optionalNumber(lightmap.width, 'lightmap.width'),
+    height: optionalNumber(lightmap.height, 'lightmap.height'),
+    dimensions: { ...lightmap.dimensions },
+    bytes: number(lightmap.bytes, 'lightmap.bytes'),
+    sha256: text(lightmap.sha256, 'lightmap.sha256'),
+    decodedRgbaSha256: text(lightmap.decodedRgbaSha256, 'lightmap.decodedRgbaSha256'),
+    shader: {
+      uvSource: text(provenance.uvSource, 'lightmap.provenance.uvSource'),
+      sunSky: text(shaderTerms.sunSky, 'lightmap.provenance.shaderTerms.sunSky'),
+      rgbNormalisedGamma: text(shaderTerms.rgbNormalisedGamma,
+        'lightmap.provenance.shaderTerms.rgbNormalisedGamma')
+    },
+    textures: projected,
+    source: text(lightmap.source, 'lightmap.source')
+  };
+}
+
 function buildFog(manifest, missing) {
   const fog = manifest.fog;
   if (!fog) {
@@ -254,7 +354,10 @@ function buildMap(short, record) {
     throw new Error(short + ': manifest short name is ' + JSON.stringify(manifest.short));
   }
 
-  const missing = NOT_SERIALIZED.map((entry) => ({ ...entry }));
+  const lightmap = buildLightmap(manifest, short);
+  const missing = NOT_SERIALIZED
+    .filter((entry) => !(entry.field === 'ambient.lightmap' && lightmap !== null))
+    .map((entry) => ({ ...entry }));
   const sun = buildSun(manifest, short);
   const sky = buildSky(manifest, short);
   const ambient = buildAmbient(manifest);
@@ -268,7 +371,9 @@ function buildMap(short, record) {
     ' LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ' +
     'ambient.sh = RGBSH sample ' + manifest.ambientProbe.sampleIndex + ' of LS point ' +
     manifest.ambientProbe.pointIndex + ' (LightSamplePoints.cpp:139-258); ' +
-    'fog = amax.bin fogSettings; sky.dome = amax.bin skySettings';
+    'fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; ' +
+    'lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with ' +
+    'probes/asset-reader texture_inspect';
 
   return {
     schema: SCHEMA,
@@ -285,6 +390,7 @@ function buildMap(short, record) {
     sky,
     ambient,
     fog,
+    lightmap,
     missing,
     source
   };
@@ -324,7 +430,9 @@ function buildDocument() {
     generatedBy: 'probes/lighting/tools/build_runtime_lighting.mjs',
     scope: 'Retail per-level lighting for the four built maps, copied verbatim from the ' +
       'committed lighting manifests. Nothing is scaled, rounded or interpolated; values the ' +
-      'retail data does not serialize are absent and listed in `missing`.',
+      'retail data does not serialize are absent and listed in `missing`. The `lightmap` ' +
+      'block is the decoded g_tLightmap DXT5/BC3 texture set (mip 0) with per-texture identity ' +
+      'and hashes; it is not a pixel payload.',
     retailRule: 'diffuse = ((baked * BakedColour) + SkyColour*skyOcc*saturate(n.y*0.5+0.5) + ' +
       'SunColour*saturate(dot(n,sunDir))*sunOcc) * albedo * diffuseIntensity ' +
       '(shader/common/Lighting.h:153-165)',

@@ -15,12 +15,14 @@ import hashlib
 import json
 import math
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build_manifest as BM  # noqa: E402
 import lighting_data as LD  # noqa: E402
+import lightmap_data as LM  # noqa: E402
 
 ROOT = LD.ROOT
 OUT_DIR = ROOT / "_work/lighting"
@@ -55,6 +57,124 @@ def finite(value) -> bool:
 
 def norm3(v) -> float:
     return math.sqrt(sum(c * c for c in v[:3]))
+
+
+def lightmap_set_hash(entries: list[dict], field: str) -> str:
+    payload = json.dumps(
+        [{"name": entry["name"], field: entry[field]} for entry in
+         sorted(entries, key=lambda entry: entry["name"])],
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def verify_lightmap_block(short: str, doc: dict, level: str) -> None:
+    lightmap = doc.get("lightmap")
+    check("%s lightmap block present" % short, isinstance(lightmap, dict), type(lightmap).__name__)
+    if not isinstance(lightmap, dict):
+        return
+    check("%s lightmap provenance is data" % short,
+          lightmap["provenance"]["kind"] == "data", lightmap["provenance"]["kind"])
+    check("%s lightmap kind is texture-set" % short,
+          lightmap["kind"] == "texture-set", lightmap["kind"])
+    check("%s lightmap is decoded" % short, lightmap["decoded"] is True, lightmap["decoded"])
+    check("%s lightmap uvSet is luxlightmap" % short,
+          lightmap["uvSet"] == "luxlightmap", lightmap["uvSet"])
+    check("%s lightmap format is DXT5/BC3" % short,
+          lightmap["format"] == 0x35545844 and lightmap["formatName"] == "DXT5/BC3",
+          "%r/%r" % (lightmap["format"], lightmap["formatName"]))
+    textures = lightmap["textures"]
+    check("%s lightmap has textures" % short, isinstance(textures, list) and len(textures) > 0,
+          str(len(textures) if isinstance(textures, list) else textures))
+    check("%s lightmap count equals the texture list" % short,
+          lightmap["count"] == len(textures), "%d vs %d" % (lightmap["count"], len(textures)))
+    names = [entry["name"] for entry in textures]
+    check("%s lightmap names are sorted" % short, names == sorted(names), "")
+    check("%s lightmap names are unique" % short, len(names) == len(set(names)), "")
+    check("%s lightmap byte total equals the texture sum" % short,
+          lightmap["bytes"] == sum(entry["bytes"] for entry in textures),
+          "%d vs %d" % (lightmap["bytes"], sum(entry["bytes"] for entry in textures)))
+    census = Counter("%dx%d" % (entry["width"], entry["height"]) for entry in textures)
+    check("%s lightmap dimensions census" % short,
+          lightmap["dimensions"] == dict(sorted(census.items())),
+          str(lightmap["dimensions"]))
+    check("%s lightmap width/height are null or the common dimension" % short,
+          (lightmap["width"] is None and lightmap["height"] is None) or
+          (len(census) == 1 and lightmap["width"] == textures[0]["width"]
+           and lightmap["height"] == textures[0]["height"]), "")
+    check("%s lightmap set sha256 re-derived" % short,
+          lightmap["sha256"] == lightmap_set_hash(textures, "sha256"),
+          lightmap["sha256"])
+    check("%s lightmap decoded set sha256 re-derived" % short,
+          lightmap["decodedRgbaSha256"] == lightmap_set_hash(textures, "decodedRgbaSha256"),
+          lightmap["decodedRgbaSha256"])
+    check("%s lightmap unsupported list is empty" % short,
+          lightmap["unsupported"] == [], str(lightmap["unsupported"])[:200])
+
+    scan = LM.scan_level(level)
+    referenced = scan["referencedLightmaps"]
+    check("%s lightmap names equal the g_tLightmap reference set" % short,
+          set(names) == set(referenced),
+          "manifest %d, source %d" % (len(names), len(referenced)))
+    check("%s lightmap has no unresolved g_tLightmap references" % short,
+          scan["unresolvedReferences"] == [], str(scan["unresolvedReferences"])[:200])
+    check("%s lightmap has no unreferenced lightmap_* textures" % short,
+          scan["unreferencedNamePrefixLightmaps"] == [],
+          str(scan["unreferencedNamePrefixLightmaps"])[:200])
+    check("%s lightmap has no referenced non-lightmap textures" % short,
+          scan["referencedNonLightmaps"] == [], str(scan["referencedNonLightmaps"])[:200])
+    check("%s lightmap reference summary counts match the source" % short,
+          lightmap["referenceSummary"]["textures"] == len(referenced) and
+          lightmap["referenceSummary"]["unresolved"] == [] and
+          lightmap["referenceSummary"]["unreferencedNamePrefixLightmaps"] == [] and
+          lightmap["referenceSummary"]["referencedLightmapsMissingFromNamePrefix"] == [] and
+          lightmap["referenceSummary"]["referencedNonLightmaps"] == [], "")
+
+    source_rows = {row["name"]: row for row in scan["textures"] if row["name"]}
+    for entry in textures:
+        name = entry["name"]
+        check("%s lightmap texture name is a retail lightmap: %s" % (short, name),
+              name.lower().startswith("lightmap_"), name)
+        check("%s lightmap texture sha256 length: %s" % (short, name),
+              len(entry["sha256"]) == 64, entry["sha256"])
+        check("%s lightmap texture decoded sha256 length: %s" % (short, name),
+              len(entry["decodedRgbaSha256"]) == 64, entry["decodedRgbaSha256"])
+        check("%s lightmap texture decoded bytes equal w*h*4: %s" % (short, name),
+              entry["decodedRgbaBytes"] == entry["width"] * entry["height"] * 4,
+              "%d vs %d" % (entry["decodedRgbaBytes"], entry["width"] * entry["height"] * 4))
+        check("%s lightmap texture bytes equal header+payload: %s" % (short, name),
+              entry["bytes"] == entry["source"]["headerBytes"] + entry["payloadBytes"],
+              "%d vs %d" % (entry["bytes"],
+                            entry["source"]["headerBytes"] + entry["payloadBytes"]))
+        check("%s lightmap texture payload equals the descriptor data: %s" % (short, name),
+              entry["payloadBytes"] == entry["source"]["dataBytes"], "")
+        row = source_rows.get(name)
+        check("%s lightmap texture is in the source scan: %s" % (short, name), row is not None, "")
+        if row is None:
+            continue
+        check("%s lightmap texture width matches the source: %s" % (short, name),
+              entry["width"] == row["width"], "%r vs %r" % (entry["width"], row["width"]))
+        check("%s lightmap texture height matches the source: %s" % (short, name),
+              entry["height"] == row["height"], "%r vs %r" % (entry["height"], row["height"]))
+        check("%s lightmap texture format matches the source: %s" % (short, name),
+              entry["format"] == row["format"], "%r vs %r" % (entry["format"], row["format"]))
+        check("%s lightmap texture levels match the source: %s" % (short, name),
+              entry["levels"] == row["levels"], "%r vs %r" % (entry["levels"], row["levels"]))
+        check("%s lightmap texture block/index match the source: %s" % (short, name),
+              entry["source"]["block"] == row["block"] and
+              entry["source"]["index"] == row["index"], "")
+        check("%s lightmap texture record/offsets match the source: %s" % (short, name),
+              entry["source"]["streamRecordIndex"] == row["recordIndex"] and
+              entry["source"]["headerOffsetInChunk"] == row["headerOffset"] and
+              entry["source"]["dataOffsetInChunk"] == row["dataOffset"] and
+              entry["source"]["dataBytes"] == row["dataBytes"], "")
+        check("%s lightmap texture reference count matches the source: %s" % (short, name),
+              entry["referenceCount"] == scan["references"][name]["count"],
+              "%r vs %r" % (entry["referenceCount"], scan["references"][name]["count"]))
+        check("%s lightmap texture source fits its stream record: %s" % (short, name),
+              entry["source"]["headerOffsetInChunk"] + entry["source"]["headerBytes"]
+              <= entry["source"]["streamRecordBytes"] and
+              entry["source"]["dataOffsetInChunk"] + entry["source"]["dataBytes"]
+              <= entry["source"]["streamRecordBytes"], "")
 
 
 def verify_level(short: str) -> None:
@@ -302,6 +422,9 @@ def verify_level(short: str) -> None:
     check("%s sampled buffers declare the normal element" % short,
           all(s["element"]["offset"] == 12 and s["element"]["type"] == 11
               for s in normals["sampledBuffers"]), "")
+
+    # -- lightmap ----------------------------------------------------------
+    verify_lightmap_block(short, doc, level)
 
     # -- derived / sanity patch --------------------------------------------
     derived = doc["derived"]

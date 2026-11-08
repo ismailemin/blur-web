@@ -6,8 +6,11 @@
 // Browser-importable runtime lighting for the four built maps.
 //
 // Contract:
-//   import { LIGHTING_SCHEMA, LIGHTING_MAPS, lightingFor } from './runtime-lighting.mjs';
+//   import { LIGHTING_SCHEMA, LIGHTING_MAPS, lightingFor, lightmapTexture }
+//     from './runtime-lighting.mjs';
 //   const lighting = lightingFor('river');   // 'river' | 'amboy' | 'gracia' | 'longbeach'
+//   const lightmap = lighting.lightmap;      // decoded g_tLightmap texture set, or null
+//   const texture = lightmapTexture('river', 'lightmap_main_000-a');
 //
 // Every number is copied verbatim from the committed manifest
 // `_work/lighting/<map>.json` (schema `blur-lighting/1`) produced by
@@ -27,9 +30,19 @@
 // that light object's colour alpha (1.0 on all four maps) and is reported, not
 // applied: the retail shader does not scale `SunColour` by it.
 //
+// The `lightmap` block is the decoded static-world lightmap set: every
+// `g_tLightmap` texture of the level, mip 0 decoded from its DXT5/BC3 blob,
+// with dimensions, byte counts, source offsets and sha256 hashes. It is
+// metadata plus hashes, not a pixel payload. `lightmap.uvSet` is
+// `'luxlightmap'` (TEXCOORD0.zw) and `lightmap.shader` records the two retail
+// decode terms (`SunSkyLightmap` and `RGBLightmapNormalisedGamma`). A renderer
+// binds `lightmap.textures[name]` for the material's `g_tLightmap` name.
+//
 // Returned objects are deep-frozen. `lightingFor` throws a `LightingError`
 // with `code === 'unknown-map'` for an unknown id and `code ===
-// 'invalid-map-id'` for a non-string id.
+// 'invalid-map-id'` for a non-string id. `lightmapTexture` additionally throws
+// `'invalid-texture-name'`, `'lightmap-unavailable'` and
+// `'unknown-lightmap-texture'`.
 
 export const LIGHTING_SCHEMA = 'blur.lighting-runtime/1';
 
@@ -76,6 +89,15 @@ export const LIGHTING_MAPS = Object.freeze(Object.keys(DATA.maps));
  *       pointPosition:number[], spawn:number[], distance:number, searchRadius:number}},
  *   fog:null|{colour:number[], depth:{density:number, nearDistance:number, scale:number},
  *     height:{height:number, density:number, falloff:number, scale:number}},
+ *   lightmap:null|{kind:'texture-set', decoded:true, uvSet:string,
+ *     format:number, formatName:string, count:number, width:number|null,
+ *     height:number|null, dimensions:Object<string, number>, bytes:number,
+ *     sha256:string, decodedRgbaSha256:string,
+ *     shader:{uvSource:string, sunSky:string, rgbNormalisedGamma:string},
+ *     textures:Array<{name:string, width:number, height:number, format:number,
+ *       formatName:string, levels:number, bytes:number, payloadBytes:number,
+ *       sha256:string, decodedRgbaBytes:number, decodedRgbaSha256:string,
+ *       referenceCount:number, source:Object}>},
  *   missing:Array<{code:string, field:string, reason:string}>,
  *   source:string}}
  * @throws {LightingError} `invalid-map-id` for a non-string id, `unknown-map`
@@ -93,4 +115,37 @@ export function lightingFor(mapId) {
       ' (use ' + LIGHTING_MAPS.join(', ') + ')');
   }
   return map;
+}
+
+/**
+ * Return one decoded lightmap texture entry for a map.
+ *
+ * @param {'river'|'amboy'|'gracia'|'longbeach'} mapId
+ * @param {string} textureName retail `g_tLightmap` texture name, e.g.
+ *   `'lightmap_main_000-a'`
+ * @returns {{name:string, width:number, height:number, format:number,
+ *   formatName:string, levels:number, bytes:number, payloadBytes:number,
+ *   sha256:string, decodedRgbaBytes:number, decodedRgbaSha256:string,
+ *   referenceCount:number, source:Object}}
+ * @throws {LightingError} `invalid-texture-name` for a non-string name,
+ *   `lightmap-unavailable` when the map has no decoded lightmap set,
+ *   `unknown-lightmap-texture` when the name is not in the set.
+ */
+export function lightmapTexture(mapId, textureName) {
+  const map = lightingFor(mapId);
+  if (typeof textureName !== 'string') {
+    throw new LightingError('invalid-texture-name',
+      'lightmapTexture: texture name must be a string, got ' + typeof textureName);
+  }
+  if (!map.lightmap) {
+    throw new LightingError('lightmap-unavailable',
+      'lightmapTexture: map ' + JSON.stringify(mapId) + ' has no decoded lightmap set');
+  }
+  const texture = map.lightmap.textures.find((entry) => entry.name === textureName);
+  if (!texture) {
+    throw new LightingError('unknown-lightmap-texture',
+      'lightmapTexture: unknown texture ' + JSON.stringify(textureName) +
+      ' for map ' + JSON.stringify(mapId));
+  }
+  return texture;
 }

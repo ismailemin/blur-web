@@ -44,6 +44,23 @@ const MISSING_FIELDS = [
   'sky.domePixels'
 ];
 
+// Runtime lightmap paths that are not a direct copy of the manifest lightmap
+// block. Everything else under `lightmap.` is copied verbatim by name.
+function lightmapManifestValue(manifest, runtimePath) {
+  const lightmap = manifest.lightmap;
+  if (!lightmap) return undefined;
+  if (runtimePath.startsWith('lightmap.shader.')) {
+    const key = runtimePath.slice('lightmap.shader.'.length);
+    if (key === 'uvSource') return lightmap.provenance?.uvSource;
+    if (key === 'sunSky') return lightmap.provenance?.shaderTerms?.sunSky;
+    if (key === 'rgbNormalisedGamma') {
+      return lightmap.provenance?.shaderTerms?.rgbNormalisedGamma;
+    }
+    return undefined;
+  }
+  return getPath(lightmap, runtimePath.slice('lightmap.'.length));
+}
+
 // Runtime numeric path -> manifest path. The verifier refuses a numeric field
 // that has no entry here, so a value cannot be invented or scaled.
 const VEC3_MAP = {
@@ -98,8 +115,19 @@ function check(name, ok, detail = null) {
   return row.ok;
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) {
+    return '[' + value.map((entry) => canonicalJson(entry)).join(',') + ']';
+  }
+  if (value && typeof value === 'object') {
+    return '{' + Object.keys(value).sort().map((key) =>
+      JSON.stringify(key) + ':' + canonicalJson(value[key])).join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+
 function equal(name, actual, expected) {
-  return check(name, JSON.stringify(actual) === JSON.stringify(expected), { actual, expected });
+  return check(name, canonicalJson(actual) === canonicalJson(expected), { actual, expected });
 }
 
 function sameNumber(name, actual, expected) {
@@ -295,6 +323,11 @@ for (const short of MAP_ORDER) {
   let unmapped = 0;
   for (const runtimePath of numbers) {
     if (runtimePath.startsWith('manifest.')) continue;
+    if (runtimePath.startsWith('lightmap.')) {
+      sameNumber(prefix + 'copied verbatim: ' + runtimePath + ' <- manifest lightmap',
+        getPath(entry, runtimePath), lightmapManifestValue(manifest, runtimePath));
+      continue;
+    }
     const mapping = resolveMapping(runtimePath);
     if (!mapping) {
       unmapped++;
@@ -404,6 +437,93 @@ for (const short of MAP_ORDER) {
       entry.fog.height.falloff);
   }
 
+  // -- lightmap ----------------------------------------------------------
+  const manifestLightmap = manifest.lightmap;
+  if (entry.lightmap === null) {
+    check(prefix + 'lightmap is null only when the manifest did not decode it',
+      !manifestLightmap || manifestLightmap.decoded !== true);
+    check(prefix + 'lightmap null keeps the ambient.lightmap missing entry',
+      entry.missing.some((row) => row.field === 'ambient.lightmap'));
+  } else {
+    const lightmap = entry.lightmap;
+    check(prefix + 'lightmap is present because the manifest decoded it',
+      Boolean(manifestLightmap) && manifestLightmap.decoded === true);
+    equal(prefix + 'lightmap kind', lightmap.kind, 'texture-set');
+    equal(prefix + 'lightmap decoded', lightmap.decoded, true);
+    equal(prefix + 'lightmap uvSet', lightmap.uvSet, 'luxlightmap');
+    equal(prefix + 'lightmap format', lightmap.format, manifestLightmap.format);
+    equal(prefix + 'lightmap formatName', lightmap.formatName, manifestLightmap.formatName);
+    equal(prefix + 'lightmap format is DXT5/BC3', lightmap.formatName, 'DXT5/BC3');
+    equal(prefix + 'lightmap count', lightmap.count, manifestLightmap.count);
+    equal(prefix + 'lightmap count equals the texture list length',
+      lightmap.count, lightmap.textures.length);
+    equal(prefix + 'lightmap dimensions', lightmap.dimensions, manifestLightmap.dimensions);
+    equal(prefix + 'lightmap bytes', lightmap.bytes, manifestLightmap.bytes);
+    equal(prefix + 'lightmap sha256', lightmap.sha256, manifestLightmap.sha256);
+    equal(prefix + 'lightmap decodedRgbaSha256', lightmap.decodedRgbaSha256,
+      manifestLightmap.decodedRgbaSha256);
+    equal(prefix + 'lightmap shader', lightmap.shader, {
+      uvSource: manifestLightmap.provenance.uvSource,
+      sunSky: manifestLightmap.provenance.shaderTerms.sunSky,
+      rgbNormalisedGamma: manifestLightmap.provenance.shaderTerms.rgbNormalisedGamma
+    });
+    equal(prefix + 'lightmap source', lightmap.source, manifestLightmap.source);
+    check(prefix + 'lightmap width is null or the common width',
+      lightmap.width === null || lightmap.width === manifestLightmap.width);
+    check(prefix + 'lightmap height is null or the common height',
+      lightmap.height === null || lightmap.height === manifestLightmap.height);
+    check(prefix + 'lightmap textures are sorted by name',
+      JSON.stringify(lightmap.textures.map((texture) => texture.name)) ===
+      JSON.stringify([...lightmap.textures.map((texture) => texture.name)].sort()));
+    const manifestTextures = new Map(manifestLightmap.textures.map((texture) =>
+      [texture.name, texture]));
+    equal(prefix + 'lightmap texture name set',
+      [...lightmap.textures.map((texture) => texture.name)].sort(),
+      [...manifestTextures.keys()].sort());
+    let lightmapBytes = 0;
+    for (const texture of lightmap.textures) {
+      const source = manifestTextures.get(texture.name);
+      check(prefix + 'lightmap texture exists in the manifest: ' + texture.name,
+        Boolean(source));
+      if (!source) continue;
+      lightmapBytes += texture.bytes;
+      equal(prefix + 'lightmap texture width: ' + texture.name, texture.width, source.width);
+      equal(prefix + 'lightmap texture height: ' + texture.name, texture.height, source.height);
+      equal(prefix + 'lightmap texture format: ' + texture.name, texture.format, source.format);
+      equal(prefix + 'lightmap texture formatName: ' + texture.name,
+        texture.formatName, source.formatName);
+      equal(prefix + 'lightmap texture levels: ' + texture.name, texture.levels, source.levels);
+      equal(prefix + 'lightmap texture bytes: ' + texture.name, texture.bytes, source.bytes);
+      equal(prefix + 'lightmap texture payloadBytes: ' + texture.name,
+        texture.payloadBytes, source.payloadBytes);
+      equal(prefix + 'lightmap texture sha256: ' + texture.name, texture.sha256, source.sha256);
+      equal(prefix + 'lightmap texture decodedRgbaBytes: ' + texture.name,
+        texture.decodedRgbaBytes, source.decodedRgbaBytes);
+      equal(prefix + 'lightmap texture decodedRgbaSha256: ' + texture.name,
+        texture.decodedRgbaSha256, source.decodedRgbaSha256);
+      equal(prefix + 'lightmap texture referenceCount: ' + texture.name,
+        texture.referenceCount, source.referenceCount);
+      equal(prefix + 'lightmap texture source: ' + texture.name, texture.source, source.source);
+      check(prefix + 'lightmap texture source fits its stream record: ' + texture.name,
+        texture.source.headerOffsetInChunk + texture.source.headerBytes <=
+          texture.source.streamRecordBytes &&
+        texture.source.dataOffsetInChunk + texture.source.dataBytes <=
+          texture.source.streamRecordBytes);
+      check(prefix + 'lightmap texture decoded bytes equal w*h*4: ' + texture.name,
+        texture.decodedRgbaBytes === texture.width * texture.height * 4);
+      check(prefix + 'lightmap texture source block/index are non-negative: ' + texture.name,
+        texture.source.block >= 0 && texture.source.index >= 0);
+    }
+    equal(prefix + 'lightmap bytes equal the texture byte sum', lightmap.bytes, lightmapBytes);
+    check(prefix + 'manifest lightmap has no unsupported textures',
+      Array.isArray(manifestLightmap.unsupported) && manifestLightmap.unsupported.length === 0);
+    check(prefix + 'manifest lightmap reference set is clean',
+      manifestLightmap.referenceSummary.unresolved.length === 0 &&
+      manifestLightmap.referenceSummary.unreferencedNamePrefixLightmaps.length === 0 &&
+      manifestLightmap.referenceSummary.referencedLightmapsMissingFromNamePrefix.length === 0 &&
+      manifestLightmap.referenceSummary.referencedNonLightmaps.length === 0);
+  }
+
   // -- missing -----------------------------------------------------------
   check(prefix + 'missing is an array', Array.isArray(entry.missing));
   const missingFields = [];
@@ -419,7 +539,13 @@ for (const short of MAP_ORDER) {
       typeof row.reason === 'string' && row.reason.trim().length > 0);
     missingFields.push(row.field);
   }
-  equal(prefix + 'missing field list', missingFields, MISSING_FIELDS);
+  const expectedMissing = MISSING_FIELDS.filter((field) =>
+    !(field === 'ambient.lightmap' && entry.lightmap));
+  equal(prefix + 'missing field list', missingFields, expectedMissing);
+  check(prefix + 'ambient.lightmap is absent when the lightmap is decoded',
+    !entry.lightmap || !missingFields.includes('ambient.lightmap'));
+  check(prefix + 'ambient.lightmap is present when the lightmap is null',
+    entry.lightmap !== null || missingFields.includes('ambient.lightmap'));
 
   // -- source ------------------------------------------------------------
   check(prefix + 'source names the manifest path',
@@ -447,7 +573,7 @@ for (const short of MAP_ORDER) {
     JSON.stringify(document.maps[short]));
   equal(short + ' lightingFor schema', returned.schema, SCHEMA);
   equal(short + ' lightingFor mapId', returned.mapId, short);
-  for (const key of ['schema', 'mapId', 'sun', 'sky', 'ambient', 'fog', 'source']) {
+  for (const key of ['schema', 'mapId', 'sun', 'sky', 'ambient', 'fog', 'lightmap', 'source']) {
     check(short + ' lightingFor has ' + key, key in returned);
   }
   for (const key of ['direction', 'colour', 'intensity']) {
@@ -459,9 +585,31 @@ for (const short of MAP_ORDER) {
   check(short + ' lightingFor is deep-frozen',
     Object.isFrozen(returned) && Object.isFrozen(returned.sun) &&
     Object.isFrozen(returned.sun.direction) && Object.isFrozen(returned.ambient.sh));
+  check(short + ' lightingFor lightmap is deep-frozen',
+    !returned.lightmap || (Object.isFrozen(returned.lightmap) &&
+      Object.isFrozen(returned.lightmap.textures) &&
+      Object.isFrozen(returned.lightmap.textures[0]) &&
+      Object.isFrozen(returned.lightmap.textures[0].source)));
   throws(short + ' lightingFor result rejects mutation',
     () => { returned.sun.direction[0] = 0; }, null);
 }
+
+check('module exports lightmapTexture', typeof module.lightmapTexture === 'function');
+for (const short of MAP_ORDER) {
+  const entry = document.maps[short];
+  if (!entry.lightmap) continue;
+  const first = entry.lightmap.textures[0];
+  equal(short + ' lightmapTexture returns the first texture',
+    module.lightmapTexture(short, first.name), first);
+  check(short + ' lightmapTexture result is frozen',
+    Object.isFrozen(module.lightmapTexture(short, first.name)));
+}
+throws('lightmapTexture rejects a non-string name',
+  () => module.lightmapTexture('river', 7),
+  { name: 'LightingError', code: 'invalid-texture-name' });
+throws('lightmapTexture rejects an unknown texture',
+  () => module.lightmapTexture('river', 'nope'),
+  { name: 'LightingError', code: 'unknown-lightmap-texture' });
 
 throws('unknown map throws a typed error', () => module.lightingFor('nope'),
   { name: 'LightingError', code: 'unknown-map' });

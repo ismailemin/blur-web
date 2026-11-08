@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import lighting_data as LD  # noqa: E402
+import lightmap_data as LM  # noqa: E402
 
 ROOT = LD.ROOT
 OUT_DIR = ROOT / "_work/lighting"
@@ -127,6 +128,26 @@ CODE_REFERENCES = {
         "value": "static world: baked lightmaps (SunSkyLightmap/RGBLightmap) + light sample SH for props/cars; no analytic ambient term exists in the shader",
         "source": "shader/scene/SunSkyLighting.h:16-22; world_render/source/EnvironmentSampler.cpp:90-94",
     },
+    "lightmapUV": {
+        "kind": "code",
+        "value": "lightmap UV is TEXCOORD0.zw; the shader annotation names the set 'luxlightmap'",
+        "source": "shader/common/Parameters.h:11; shader/common/Lighting.h:82 (g_tLightmap UVSet)",
+    },
+    "lightmapFormat": {
+        "kind": "code",
+        "value": "g_tLightmap is COMPRESSED_RGBA_S3TC_DXT5 on PC",
+        "source": "shader/common/Lighting.h:109 (pragma texformat g_tLightmap)",
+    },
+    "lightmapDecode": {
+        "kind": "code",
+        "value": "SunSkyLightmap: fSkyOcclusion *= sample.g, fSunOcclusion *= sample.b; RGBLightmapNormalisedGamma: colour *= (sample.rgb * sample.a)^2",
+        "source": "shader/lighting/Lightmap.h:16-38",
+    },
+    "lightmapBinding": {
+        "kind": "code",
+        "value": "g_tLightmap Source='<Lightmap>' resolves through the material texture slot to a levelstream LOD0 resource-block texture",
+        "source": "shader/common/Lighting.h:82; renderingdata RenderList texture-source list (tools/inspect_car_materials.py)",
+    },
 }
 
 
@@ -144,6 +165,7 @@ def sun_angles(direction):
 def build_level(level: str) -> dict:
     raw = LD.read_level(level)
     env = LD.load_city_environment(level)
+    lightmap = LM.build_lightmap_block(level)
     sun = raw["lights"]["sun"]
     sky = raw["lights"]["sky"]
     probe = raw["ambientProbe"]
@@ -184,6 +206,7 @@ def build_level(level: str) -> dict:
             "angle": "degrees in this manifest (serialized values are radians)",
             "intensity": "dimensionless multiplier",
             "sh": "linear radiance coefficients, coefficient order (x, y, z, constant)",
+            "lightmap": "DXT5/BC3 texels 0..255 at mip 0; the shader decodes .g/.b (SunSkyLightmap) or (.rgb*.a)^2 (RGBLightmapNormalisedGamma) per material effect",
         },
         "source": {
             "render": {
@@ -376,6 +399,7 @@ def build_level(level: str) -> dict:
             "sampledBuffers": raw["normals"]["sampledBuffers"],
             "noNormalCase": "declarations without NORMAL0 (F32_4 position streams) must keep the derivative fallback and say so",
         },
+        "lightmap": lightmap,
         "code": CODE_REFERENCES,
         "derived": {
             "kind": "provisional",
@@ -406,7 +430,8 @@ def build_level(level: str) -> dict:
         },
         "limits": [
             "One ambient probe at the measured spawn; the real engine interpolates the nearest light sample per model instance (0.2 lerp per frame).",
-            "Static world lighting is baked into lightmaps; the lightmap textures are not decoded here.",
+            "The lightmap block decodes every g_tLightmap texture to mip-0 RGBA and records its identity, dimensions, format and hashes. It does not apply the sampler, mip chain, sRGB/colour transform or the per-material lightmap shader term; the renderer must do that from the recorded uvSet and shaderTerms.",
+            "The lightmap set is the full level, not just the measured map-slice; a renderer that draws a subset still needs the per-material g_tLightmap name from the material binding.",
             "The per-vertex vehicle ambient (COLOR stream, U8_4N) is recorded as a stream, not evaluated; its exact bake basis is not recovered.",
             "No shadow-map, cascade, bias or PCF parameter exists in the data: retail cars use a projected drop shadow.",
             "Emissive and light-blend material states are per-material; only the per-level EmissiveColour scale is recovered here.",
