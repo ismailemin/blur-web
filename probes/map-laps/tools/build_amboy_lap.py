@@ -56,10 +56,14 @@ SAMPLE_STEP_M = 0.25
 GATE_HALF_WIDTH_M = 2.0
 TANGENT_WINDOW_M = 5.0
 CLOSURE_LIMIT_M = 1.0
-BAND_HALF_WIDTH_M = 1.25
 CAR_HALF_WIDTH_M = 1.138
 CAR_HALF_LENGTH_M = 1.7905
 CAR_CIRCUMRADIUS_M = math.hypot(CAR_HALF_LENGTH_M, CAR_HALF_WIDTH_M)
+# The River loop uses 1.25 m. The measured Amboy driven run left that band by
+# 0.01 m at arc 182.5 (car centre 1.26 m off the line), so the declared respawn
+# band is the car half-width plus a 0.36 m margin. It stays below the measured
+# 2.0 m raster clearance to the nearest steep face.
+BAND_HALF_WIDTH_M = round(CAR_HALF_WIDTH_M + 0.36, 3)
 
 
 def load_json(path: Path):
@@ -421,9 +425,10 @@ def main(argv=None):
                 "minRasterClearanceM": num(loop["minClearance"], 3),
                 "carHalfWidthM": num(CAR_HALF_WIDTH_M, 3),
                 "carCircumradiusM": num(CAR_CIRCUMRADIUS_M, 6),
-                "note": ("1.25 m is the River P67 measured driven lateral bound and "
-                         "is only a declared respawn rule here: no lap has been "
-                         "driven on this map"),
+                "note": ("declared respawn rule = car half-width 1.138 m + 0.36 m margin; "
+                         "the River 1.25 m bound was 0.01 m too tight on the measured "
+                         "Amboy driven run at arc 182.5, and the value stays below the "
+                         "2.0 m raster clearance to the nearest steep face"),
             },
         },
         "lap": {

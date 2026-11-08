@@ -337,7 +337,11 @@ let CAR_INDEX_URL = MAP.carIndexUrl ?? null;
 let BASE_GEOMETRY_URL = MAP.baseGeometryUrl ?? null;
 let LEVEL_URL = MAP.physicsUrl;
 let SPAWN_URL = MAP.spawnUrl;
-let SPRINT_URL = MAP.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
+// A map may carry a separate measured lap document (Amboy loop-01). It is a
+// `courseId: "lap"` sprint layout, so it replaces the point-to-point layout for
+// `?course=lap` and keeps its own pin.
+let LAP_LAYOUT_URL = COURSE_IS_LAP ? (MAP.lapLayoutUrl ?? null) : null;
+let SPRINT_URL = LAP_LAYOUT_URL ?? MAP.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
   : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json'
     : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json');
 const PROP_RESOLVER_URL = '/prop-collision/lib/resolver.mjs';
@@ -367,7 +371,8 @@ function applyActiveMap(value) {
   BASE_GEOMETRY_URL = map.baseGeometryUrl ?? null;
   LEVEL_URL = map.physicsUrl;
   SPAWN_URL = map.spawnUrl;
-  SPRINT_URL = map.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
+  LAP_LAYOUT_URL = COURSE_IS_LAP ? (map.lapLayoutUrl ?? null) : null;
+  SPRINT_URL = LAP_LAYOUT_URL ?? map.layoutUrl ?? (COURSE_IS_SHORT ? '/_work/e1-drive/sprint-short.json'
     : COURSE_IS_LAP ? '/_work/e1-drive/sprint-lap.json'
       : COURSE_IS_FREE ? '/_work/e1-drive/sprint-free.json' : '/_work/e1-drive/sprint.json');
   SPRINT_BEST_KEY = map.bestKey ?? ('e1-drive.sprint.best.v2.' + COURSE_KEY);
@@ -2381,10 +2386,25 @@ async function loadEngine(carOverride = null) {
     }
     layoutText = sprintTextValue;
     const mapLayout = JSON.parse(layoutText);
-    const packageCheck = validateMapPackage(mapDocument, mapLayout, MAP.pins);
-    if (!packageCheck.ok) throw new Error(MAP.label + ' map package rejected: ' + packageCheck.errors.join('; '));
-    if (textSha256(layoutText) !== MAP.pins.layoutFileSha256) {
-      throw new Error(MAP.label + ' layout file does not match its pinned SHA-256');
+    if (LAP_LAYOUT_URL) {
+      // The measured lap is its own document: it is a `courseId: "lap"` sprint
+      // layout, not the point-to-point package layout, so the package layout
+      // validator does not apply. Its own file and content hashes are pinned.
+      if (mapLayout.kind !== 'e1-drive.sprint' || mapLayout.courseId !== 'lap') {
+        throw new Error(MAP.label + ' lap layout is not an e1-drive.sprint lap document');
+      }
+      if (textSha256(layoutText) !== MAP.lapLayoutFileSha256) {
+        throw new Error(MAP.label + ' lap layout file does not match its pinned SHA-256');
+      }
+      if (mapLayout.hash !== MAP.lapLayoutContentHash) {
+        throw new Error(MAP.label + ' lap layout content hash does not match its pin');
+      }
+    } else {
+      const packageCheck = validateMapPackage(mapDocument, mapLayout, MAP.pins);
+      if (!packageCheck.ok) throw new Error(MAP.label + ' map package rejected: ' + packageCheck.errors.join('; '));
+      if (textSha256(layoutText) !== MAP.pins.layoutFileSha256) {
+        throw new Error(MAP.label + ' layout file does not match its pinned SHA-256');
+      }
     }
     if (physicsSha !== MAP.pins.physicsFileSha256) {
       throw new Error(MAP.level + ' Level.levelphysics does not match its pinned SHA-256 (' + physicsSha + ')');

@@ -513,10 +513,12 @@ check('a seam crossing at zero progress is rejected by the half-lap rule',
 check('countdown is 90 ticks in 30-tick steps',
   doc.countdown?.ticks === 90 && doc.countdown?.stepTicks === 30,
   `${doc.countdown?.ticks}/${doc.countdown?.stepTicks}`);
-check('respawn rule carries the declared 1.25 m band',
-  doc.rules?.respawn && doc.course.lap?.bandHalfWidthMetres === 1.25 &&
-  doc.course.corridor?.halfWidthMetres === 1.25,
-  `${doc.course.lap?.bandHalfWidthMetres}/${doc.course.corridor?.halfWidthMetres}`);
+check('respawn band is the declared car-width rule, below the raster clearance',
+  doc.rules?.respawn &&
+  doc.course.lap?.bandHalfWidthMetres === doc.course.corridor?.halfWidthMetres &&
+  doc.course.corridor.halfWidthMetres >= doc.course.corridor.source.carHalfWidthM &&
+  doc.course.corridor.halfWidthMetres < doc.course.corridor.source.minRasterClearanceM,
+  `${doc.course.lap?.bandHalfWidthMetres}/${doc.course.corridor?.halfWidthMetres} car ${doc.course.corridor?.source?.carHalfWidthM} raster ${doc.course.corridor?.source?.minRasterClearanceM}`);
 check('courseId "lap" is what LapRules accepts',
   doc.courseId === 'lap', doc.courseId);
 

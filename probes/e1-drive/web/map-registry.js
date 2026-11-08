@@ -68,8 +68,14 @@ export const MAPS = Object.freeze({
     physicsUrl: '/map-data/usa_amboy/Level.levelphysics',
     spawnUrl: null,
     layoutUrl: '/_work/e1-drive/amboy/layout.json',
+    // The measured closed lap (probes/map-laps loop-01, 284.4524 m, three laps).
+    // It is a different document from the point-to-point layout, so it carries
+    // its own pin and skips the package layout validator.
+    lapLayoutUrl: '/map-laps/data/amboy-loop01-lap.json',
+    lapLayoutFileSha256: 'sha256:06e4cc1fad32c0450a3c1eaefbf66dc02bb45d8f7e4a9c89bde5b577de834519',
+    lapLayoutContentHash: 'sha256:c878ba69f959ca7b4bdbd14faf4904b896ec8ea082b261eb2627068a7f9018a4',
     bestKey: 'e1-drive.sprint.best.v3.amboy',
-    courses: Object.freeze(['310']),
+    courses: Object.freeze(['310', 'lap']),
     multiplayer: true,
     propLayer: false,
     ghost: false,
