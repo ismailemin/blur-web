@@ -1,0 +1,23 @@
+# ~/.cloudflared/config.yml (or /etc/cloudflared/config.yml)
+#
+# Cloudflare Tunnel needs no inbound port and no certificate on the VPS. The
+# room service stays on 127.0.0.1:8810 with NET_MVP_TRUST_PROXY=1; Cloudflare
+# sets CF-Connecting-IP and X-Forwarded-For, which the server reads when
+# trustProxy is enabled.
+#
+#   cloudflared tunnel create blur-net-mvp
+#   cloudflared tunnel route dns blur-net-mvp play.example.com
+#   cloudflared tunnel run blur-net-mvp
+#
+# Replace the UUID and hostname. WebSockets are proxied by default.
+
+tunnel: REPLACE_TUNNEL_UUID
+credentials-file: /etc/cloudflared/REPLACE_TUNNEL_UUID.json
+
+ingress:
+  - hostname: play.example.com
+    service: http://127.0.0.1:8810
+    originRequest:
+      connectTimeout: 10s
+      tcpKeepAlive: 30s
+  - service: http_status:404

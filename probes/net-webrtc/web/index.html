@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>net-webrtc — two-browser loopback</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+  <header>
+    <h1>net-webrtc · two-iframe loopback</h1>
+    <div id="summary" class="summary">booting</div>
+  </header>
+  <main>
+    <section class="pane">
+      <h2>Host</h2>
+      <iframe id="host" title="host client" src="/web/solo.html?role=host"></iframe>
+    </section>
+    <section class="pane">
+      <h2>Guest</h2>
+      <iframe id="guest" title="guest client"></iframe>
+    </section>
+  </main>
+  <pre id="log"></pre>
+  <script type="module" src="/web/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# Run from the repository root:
+#   docker compose -f probes/net-mvp/deploy/docker-compose.yml up -d --build
+#
+# The published port is bound to 127.0.0.1 on purpose: Caddy/nginx on the host
+# terminates TLS and proxies to it. Do not publish 8810 on the public interface;
+# plain ws:// is not an internet transport.
+services:
+  room:
+    build:
+      context: ../..
+      dockerfile: probes/net-mvp/deploy/Dockerfile
+    image: blur-net-mvp:local
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NET_MVP_HOST: 0.0.0.0
+      NET_MVP_PORT: "8810"
+      NET_MVP_TRUST_PROXY: "1"
+      NET_MVP_STATE_FILE: /data/rooms.json
+      NET_MVP_DEFAULT_MAX_PLAYERS: "8"
+      NET_MVP_HARD_MAX_PLAYERS: "20"
+    ports:
+      - "127.0.0.1:8810:8810"
+    volumes:
+      - room-state:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8810/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    stop_grace_period: 15s
+
+volumes:
+  room-state:

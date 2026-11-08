@@ -1,0 +1,43 @@
+# /etc/systemd/system/blur-net-mvp.service
+#
+# Assumes the repository is checked out at /opt/blur-web and Node 22+ is at
+# /usr/bin/node. Caddy/nginx terminates TLS on 443 and proxies to 127.0.0.1:8810.
+# Create the user and environment file first:
+#   sudo useradd --system --home /opt/blur-web --shell /usr/sbin/nologin blur
+#   sudo install -d -o blur -g blur /var/lib/blur-net-mvp
+#   sudo cp deploy/.env.example /etc/blur-net-mvp.env
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now blur-net-mvp
+
+[Unit]
+Description=Blur Web net-mvp room service
+Documentation=file:///opt/blur-web/probes/net-mvp/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=blur
+Group=blur
+WorkingDirectory=/opt/blur-web
+Environment=NODE_ENV=production
+EnvironmentFile=-/etc/blur-net-mvp.env
+ExecStart=/usr/bin/node /opt/blur-web/probes/net-mvp/server.mjs
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=15
+StateDirectory=blur-net-mvp
+ReadWritePaths=/var/lib/blur-net-mvp
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

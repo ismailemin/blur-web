@@ -363,15 +363,26 @@ export class NetClient {
       build = null,
       dataHash = null,
       autoReconnect = true,
-      maxReconnectAttempts = 8,
+      // The resume window is 30 s. A 250 ms base with a 1.5 s ceiling and 14
+      // attempts covers ~18 s of failed connects, leaving time for the final
+      // successful resume. A `NET_RESUME_IN_USE` reply is retried quickly and
+      // separately: it means the server has not reaped the old half-open socket
+      // yet, not that the token is invalid.
+      maxReconnectAttempts = 14,
       reconnectDelayMs = 250,
+      reconnectMaxDelayMs = 1500,
+      resumeInUseRetryMs = 200,
+      maxResumeInUseRetries = 30,
       requestTimeoutMs = 6000,
       heartbeatIntervalMs = HEARTBEAT_INTERVAL_MS,
       heartbeatTimeoutMs = HEARTBEAT_TIMEOUT_MS,
       impairment = null,
       maxPending = 128,
-      cacheMs = 5000,
-      cacheMax = 600
+      // 20 s of replay covers the 15 s mobile-stall gate plus margin. At 60 Hz
+      // input and 20 Hz state this is ~1,600 messages, below the 2,000 cap.
+      // The resume window remains 30 s; the cache is per sender, bounded.
+      cacheMs = 20_000,
+      cacheMax = 2000
     } = options;
 
     if (typeof url !== 'string' || !/^wss?:\/\//.test(url)) throw new NetError(ERROR_CODES.NET_CONFIG, 'url must be ws:// or wss://');
@@ -383,6 +394,9 @@ export class NetClient {
     this.autoReconnect = autoReconnect;
     this.maxReconnectAttempts = maxReconnectAttempts;
     this.reconnectDelayMs = reconnectDelayMs;
+    this.reconnectMaxDelayMs = Math.max(reconnectDelayMs, reconnectMaxDelayMs);
+    this.resumeInUseRetryMs = Math.max(25, resumeInUseRetryMs);
+    this.maxResumeInUseRetries = Math.max(1, maxResumeInUseRetries);
     this.requestTimeoutMs = requestTimeoutMs;
     this.heartbeatIntervalMs = heartbeatIntervalMs;
     this.heartbeatTimeoutMs = heartbeatTimeoutMs;
@@ -414,6 +428,8 @@ export class NetClient {
     this._heartbeatTimer = null;
     this._reconnectTimer = null;
     this._reconnectAttempts = 0;
+    this._resumeInUseRetries = 0;
+    this._serverShutdown = null;
     this._forcedDrop = null;
     this._listeners = new Map();
     this._listenerErrors = [];
@@ -426,7 +442,10 @@ export class NetClient {
       selfEcho: 0,
       streamErrors: 0,
       unexpectedMessages: 0,
-      retransmits: 0
+      retransmits: 0,
+      resumeInUseRetries: 0,
+      serverShutdowns: 0,
+      heartbeatTimeouts: 0
     };
     this._impairment = impairment
       ? (impairment instanceof LossLatencyImpairment ? impairment : new LossLatencyImpairment(impairment))
@@ -620,6 +639,7 @@ export class NetClient {
     this._heartbeatTimer = setInterval(() => {
       if (!this._connected) return;
       if (nowMs() - this._lastMessageAt > this.heartbeatTimeoutMs) {
+        this._stats.heartbeatTimeouts++;
         try { this._socket?.close(4001, 'heartbeat timeout'); } catch {}
         return;
       }
@@ -646,54 +666,95 @@ export class NetClient {
       return;
     }
     if (wasConnected) this._stats.disconnected++;
+    const serverRestart = event?.code === 1012 || /server shutdown|service restart/i.test(event?.reason ?? '');
+    if (serverRestart) {
+      this._stats.serverShutdowns++;
+      this._emit('serverShutdown', {
+        code: event?.code ?? 1012,
+        reason: event?.reason ?? 'server shutdown',
+        message: this._serverShutdown
+      });
+    }
     this._emit('disconnected', { code: event?.code ?? null, reason: event?.reason ?? '' });
     if (this.autoReconnect && this._room && this._self?.resumeToken) {
-      this._scheduleReconnect();
+      this._scheduleReconnect(serverRestart ? Math.max(500, this.reconnectDelayMs) : null);
     } else if (this._forcedDrop) {
       this._failForcedDrop(new NetError(ERROR_CODES.NET_NOT_CONNECTED, 'disconnected and reconnect is disabled'));
     }
   }
 
-  _scheduleReconnect() {
+  _scheduleReconnect(delayOverride = null) {
     if (this._reconnectTimer) return;
     if (this._reconnectAttempts >= this.maxReconnectAttempts) {
-      this._failForcedDrop(new NetError(ERROR_CODES.NET_TIMEOUT, 'reconnect attempts exhausted'));
-      this._emit('reconnectFailed', new NetError(ERROR_CODES.NET_TIMEOUT, 'reconnect attempts exhausted'));
+      const error = new NetError(ERROR_CODES.NET_TIMEOUT, 'reconnect attempts exhausted');
+      this._failForcedDrop(error);
+      this._emit('reconnectFailed', error);
       return;
     }
-    const delay = Math.min(5000, this.reconnectDelayMs * 2 ** this._reconnectAttempts);
-    this._reconnectTimer = setTimeout(async () => {
+    const delay = delayOverride ?? Math.min(
+      this.reconnectMaxDelayMs,
+      this.reconnectDelayMs * 2 ** this._reconnectAttempts
+    );
+    this._reconnectTimer = setTimeout(() => {
       this._reconnectTimer = null;
       this._reconnectAttempts++;
-      try {
-        await this._openSocket();
-        const joined = await this._request('room.join', {
-          code: this._room.code,
-          resumeToken: this._self.resumeToken,
-          name: this.name
-        }, 'room.joined');
-        if (!joined.resumed) throw new NetError(ERROR_CODES.NET_RESUME_UNKNOWN, 'server did not resume the player');
-        this._reconnectAttempts = 0;
-        this._stats.reconnects++;
-        this._resyncAll();
-        this._emit('resumed', { room: this._room, you: this._self, attempts: this._stats.reconnects });
-        if (this._forcedDrop) {
-          clearTimeout(this._forcedDrop.timer);
-          this._forcedDrop.resolve({ resumed: true, room: this._room, you: this._self });
-          this._forcedDrop = null;
-        }
-      } catch (error) {
-        const netError = error instanceof NetError ? error : new NetError(ERROR_CODES.NET_REJECTED, String(error?.message || error));
-        if (netError.code === ERROR_CODES.NET_RESUME_UNKNOWN || netError.code === ERROR_CODES.NET_ROOM_NOT_FOUND) {
+      this._tryReconnect();
+    }, Math.max(0, delay));
+  }
+
+  async _tryReconnect() {
+    try {
+      await this._openSocket();
+      const joined = await this._request('room.join', {
+        code: this._room.code,
+        resumeToken: this._self.resumeToken,
+        name: this.name
+      }, 'room.joined');
+      if (!joined.resumed) throw new NetError(ERROR_CODES.NET_RESUME_UNKNOWN, 'server did not resume the player');
+      this._reconnectAttempts = 0;
+      this._resumeInUseRetries = 0;
+      this._stats.reconnects++;
+      this._resyncAll();
+      this._emit('resumed', { room: this._room, you: this._self, attempts: this._stats.reconnects });
+      if (this._forcedDrop) {
+        clearTimeout(this._forcedDrop.timer);
+        this._forcedDrop.resolve({ resumed: true, room: this._room, you: this._self });
+        this._forcedDrop = null;
+      }
+    } catch (error) {
+      const netError = error instanceof NetError ? error : new NetError(ERROR_CODES.NET_REJECTED, String(error?.message || error));
+      if (netError.code === ERROR_CODES.NET_RESUME_UNKNOWN ||
+          netError.code === ERROR_CODES.NET_ROOM_NOT_FOUND ||
+          netError.code === ERROR_CODES.NET_VERSION) {
+        this._failForcedDrop(netError);
+        this._emit('error', netError);
+        this._emit('reconnectFailed', netError);
+        return;
+      }
+      this._emit('reconnectAttempt', { attempt: this._reconnectAttempts, error: netError });
+      if (netError.code === ERROR_CODES.NET_RESUME_IN_USE) {
+        // The server still has the old half-open socket. It will reap it at its
+        // heartbeat timeout; retry quickly without consuming the normal budget.
+        this._resumeInUseRetries++;
+        this._stats.resumeInUseRetries++;
+        if (this._resumeInUseRetries > this.maxResumeInUseRetries) {
           this._failForcedDrop(netError);
           this._emit('error', netError);
           this._emit('reconnectFailed', netError);
           return;
         }
-        this._emit('reconnectAttempt', { attempt: this._reconnectAttempts, error: netError });
-        this._scheduleReconnect();
+        this._reconnectAttempts = Math.max(0, this._reconnectAttempts - 1);
+        this._scheduleReconnect(this.resumeInUseRetryMs);
+        return;
       }
-    }, delay);
+      if (netError.code === ERROR_CODES.NET_JOIN_RATE_LIMIT) {
+        const retry = Number(netError.detail?.retryAfterMs);
+        this._reconnectAttempts = Math.max(0, this._reconnectAttempts - 1);
+        this._scheduleReconnect(Number.isFinite(retry) ? Math.min(5000, Math.max(100, retry)) : 1000);
+        return;
+      }
+      this._scheduleReconnect();
+    }
   }
 
   _resyncAll() {
@@ -758,6 +819,10 @@ export class NetClient {
     switch (message.type) {
       case 'heartbeat':
         return this._emit('heartbeat', message);
+      case 'server.shutdown':
+        this._serverShutdown = message;
+        this._emit('serverShutdown', message);
+        return;
       case 'pong':
         if (Number.isFinite(message.t)) this._rtt.control.push(nowMs() - message.t);
         this._emit('pong', message);
@@ -985,7 +1050,8 @@ export class NetClient {
   }
 
   async joinRoom({ code, car, resumeToken = null, name = this.name } = {}) {
-    const message = await this._request('room.join', { code, car, resumeToken, name }, 'room.joined');
+    const normalized = typeof code === 'string' ? code.trim().toUpperCase() : code;
+    const message = await this._request('room.join', { code: normalized, car, resumeToken, name }, 'room.joined');
     return { room: message.room, you: message.you, resumed: message.resumed === true };
   }
 

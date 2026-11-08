@@ -1,0 +1,25 @@
+# /etc/caddy/Caddyfile
+#
+# Caddy obtains and renews the certificate for play.example.com automatically.
+# Replace the hostname and email. Caddy preserves WebSocket upgrades and adds
+# X-Forwarded-For / X-Forwarded-Proto; start the room service with
+# NET_MVP_TRUST_PROXY=1 (the systemd env file does this).
+{
+	email admin@example.com
+}
+
+play.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8810
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+
+	log {
+		output file /var/log/caddy/blur-net-mvp.log
+		format json
+	}
+}

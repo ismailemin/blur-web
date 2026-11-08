@@ -20,18 +20,45 @@ export const MAX_MESSAGE_BYTES = 64 * 1024;
 export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const ROOM_CODE_LENGTH = 5;
 
-export const DEFAULT_MAX_PLAYERS = 4;
-export const HARD_MAX_PLAYERS = 8;
+// A room defaults to 8 seats and accepts an explicit 2..20. The upper bound is
+// a transport policy: every snapshot is relayed to every peer, so server egress
+// grows quadratically. A request above 20 is rejected with NET_CAPACITY instead
+// of being silently clamped.
+export const MIN_ROOM_CAPACITY = 2;
+export const DEFAULT_MAX_PLAYERS = 8;
+export const HARD_MAX_PLAYERS = 20;
 export const MIN_PLAYERS_TO_START = 2;
 
 export const RESUME_WINDOW_MS = 30_000;
 export const HEARTBEAT_INTERVAL_MS = 1_000;
-export const HEARTBEAT_TIMEOUT_MS = 5_000;
+// Server and client use the same ceiling. A socket that has produced no inbound
+// traffic for 4.5 s is treated as half-open; the client reconnects with its
+// resume token. The shorter detection leaves more of the 30 s grace window for
+// retries on a mobile link.
+export const HEARTBEAT_TIMEOUT_MS = 4_500;
 export const ROOM_TTL_MS = 2 * 60 * 60 * 1_000;
-// The gate acks each applied message to measure per-message RTT, so a 4-client
-// room legitimately reaches ~330 messages/s per client plus resync bursts.
-// 2000 is a bounded local-gate policy, not a production limit.
-export const RATE_LIMIT_PER_SECOND = 2000;
+export const IDLE_ROOM_MS = 5 * 60 * 1_000;
+export const EMPTY_ROOM_MS = 60 * 1_000;
+
+export const DEFAULT_MAX_ROOMS = 64;
+export const DEFAULT_MAX_CONNECTIONS = 512;
+export const DEFAULT_MAX_CONNECTIONS_PER_IP = 16;
+
+// Per-IP token buckets. A join burst of 30 and a sustained 60/min is generous
+// for a lobby behind NAT while keeping code enumeration impractical
+// (32^5 = 33,554,432 codes). Creates are tighter because a room is a new server
+// object.
+export const JOIN_RATE_CAPACITY = 30;
+export const JOIN_RATE_REFILL_PER_SECOND = 1;
+export const CREATE_RATE_CAPACITY = 10;
+export const CREATE_RATE_REFILL_PER_SECOND = 0.2;
+
+// The gate acks each applied message to measure per-message RTT, so an 8-client
+// room legitimately reaches ~1,120 messages/s per client. A 15 s stall replay
+// from the 20 s sender cache can additionally burst ~2,400 relayed messages and
+// their acks into one second, so the socket ceiling is 12,000 messages/s. That
+// is still a bounded policy (a flood is rejected), not a production limit.
+export const RATE_LIMIT_PER_SECOND = 12_000;
 
 export const TICK_HZ = 60;
 export const INPUT_HZ = 60;
@@ -68,7 +95,19 @@ export const ERROR_CODES = Object.freeze({
   NET_CLOSED: 'NET_CLOSED',
   NET_REJECTED: 'NET_REJECTED',
   NET_CONFIG: 'NET_CONFIG',
-  NET_UNEXPECTED_MESSAGE: 'NET_UNEXPECTED_MESSAGE'
+  NET_UNEXPECTED_MESSAGE: 'NET_UNEXPECTED_MESSAGE',
+  // Capacity and policy rejections. Every one is returned as an `error`
+  // message before a close (or as the HTTP x-net-error header when the upgrade
+  // itself is refused).
+  NET_CAPACITY: 'NET_CAPACITY',
+  NET_JOIN_RATE_LIMIT: 'NET_JOIN_RATE_LIMIT',
+  NET_CREATE_RATE_LIMIT: 'NET_CREATE_RATE_LIMIT',
+  NET_ROOM_IDLE: 'NET_ROOM_IDLE',
+  NET_ROOM_EXPIRED: 'NET_ROOM_EXPIRED',
+  NET_MESSAGE_TOO_LARGE: 'NET_MESSAGE_TOO_LARGE',
+  NET_BINARY_UNSUPPORTED: 'NET_BINARY_UNSUPPORTED',
+  NET_ORIGIN_REJECTED: 'NET_ORIGIN_REJECTED',
+  NET_SHUTDOWN: 'NET_SHUTDOWN'
 });
 
 export class NetError extends Error {
@@ -108,6 +147,19 @@ export function validRoomCode(code) {
   if (typeof code !== 'string' || code.length !== ROOM_CODE_LENGTH) return false;
   for (const character of code) if (!ROOM_CODE_ALPHABET.includes(character)) return false;
   return true;
+}
+
+/**
+ * Room codes are case-insensitive at the API boundary: the alphabet is upper
+ * case and the unambiguous characters exclude I/O/0/1. This only changes case
+ * and surrounding whitespace; it never substitutes a look-alike character.
+ */
+export function normalizeRoomCode(code) {
+  return typeof code === 'string' ? code.trim().toUpperCase() : '';
+}
+
+export function validCapacity(maxPlayers) {
+  return isInteger(maxPlayers) && maxPlayers >= MIN_ROOM_CAPACITY && maxPlayers <= HARD_MAX_PLAYERS;
 }
 
 export function validChannel(channel) {
