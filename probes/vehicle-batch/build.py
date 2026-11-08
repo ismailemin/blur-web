@@ -51,6 +51,7 @@ SCENE_EXE = ROOT / "_work/build/asset-reader-native/Release/scene_inspect.exe"
 MODEL_EXE = ROOT / "_work/build/asset-reader-native/Release/model_inspect.exe"
 VEHICLE_PREFIX = "\\models\\vehicles\\"
 KIND = "blur.vehicle-batch.car-staging"
+STAGE_SCHEMA = 2
 COURSES = ("310m", "short")
 _PAK_CACHE: dict = {}
 
@@ -80,8 +81,83 @@ def rel(path: Path) -> str:
         return resolved.as_posix()
 
 
-def reason(code: str, detail: str) -> dict:
-    return {"code": code, "detail": detail}
+def reason(code: str, detail: str, source: str | None = None,
+           missing: str | None = None) -> dict:
+    out = {"code": code, "detail": detail}
+    if source is not None:
+        out["source"] = source
+    if missing is not None:
+        out["missing"] = missing
+    return out
+
+
+def missing_for_reason(code: str, detail: str) -> str:
+    """The exact field/byte the committed data does not provide.
+
+    The mapping is derived from the typed blocker code and the builder's own
+    message; it is never a guess about the asset.
+    """
+    if code in ("no-body-model", "mapping-failed"):
+        return "body.model"
+    if code == "body-hash-drift":
+        return "body.model.sha256"
+    if code == "fields-missing":
+        return "physics.fields"
+    if code == "fields-hash-drift":
+        return "physics.fields.sha256"
+    if code == "material-traversal-failed":
+        return "materials"
+    if code.startswith("wheel-"):
+        return "wheel.model"
+    if code == "builder-unsupported":
+        text = detail.lower()
+        if "wheel backleft bounds" in text:
+            return "wheel.backleft.bounds"
+        if "not a direct child of an e_wheel_" in text:
+            return "wheel.caliper.parent"
+        if "wheel element count" in text:
+            return "wheel.elementCount"
+        if "empty index range" in text or "keyerror: 'index'" in text:
+            return "draw.index"
+        return "manifest"
+    return "stage"
+
+
+def fields_identity(car: dict) -> dict:
+    """Re-derive the committed `.fields` bytes, hash and field count."""
+    path = ROOT / car["physics"]["fieldsPath"]
+    if not path.is_file():
+        raise StageBlocked(
+            "fields-missing",
+            f"{car['slug']}: committed fields file missing {path}")
+    data = path.read_bytes()
+    digest = sha256_bytes(data)
+    if digest != car["physics"]["fieldsSha256"]:
+        raise StageBlocked(
+            "fields-hash-drift",
+            f"{car['slug']}: fields hash {digest} differs from the spec "
+            f"({car['physics']['fieldsSha256']}); the spec is stale")
+    lines = [line for line in data.decode("utf-8").splitlines() if line.strip()]
+    return {
+        "path": car["physics"]["fieldsPath"],
+        "bytes": len(data),
+        "sha256": digest,
+        "fieldCount": len(lines),
+    }
+
+
+def safe_fields(car: dict) -> dict:
+    try:
+        return fields_identity(car)
+    except StageBlocked as error:
+        return {
+            "path": car["physics"]["fieldsPath"],
+            "bytes": None,
+            "sha256": None,
+            "fieldCount": None,
+            "reason": reason(error.code, error.detail,
+                             missing=missing_for_reason(error.code, error.detail)),
+        }
 
 
 class StageBlocked(Exception):
@@ -237,20 +313,57 @@ def clear_stage_markers(out_dir: Path) -> None:
             path.unlink()
 
 
-def blocked_payload(car: dict) -> dict:
+def blocked_payload(car: dict, fields: dict | None = None) -> dict:
+    reasons = [
+        {"code": blocker["kind"], "detail": blocker["detail"],
+         "source": blocker.get("source", "spec"),
+         "missing": missing_for_reason(blocker["kind"], blocker["detail"])}
+        for blocker in car["blockers"]
+    ]
+    payload = {
+        "kind": KIND,
+        "version": 1,
+        "status": "blocked",
+        "rosterStatus": "unsupported",
+        "slug": car["slug"],
+        "recordIndex": car["recordIndex"],
+        "recordId": car["recordId"],
+        "recordName": car["recordName"],
+        "class": car["class"],
+        "drivetrain": car["drivetrain"],
+        "massKg": car["massKg"],
+        "gears": car["gears"],
+        "wheelBase": car["physics"]["wheelBase"],
+        "fields": fields if fields is not None else safe_fields(car),
+        "reasons": reasons,
+    }
+    if reasons:
+        payload["missing"] = reasons[0]["missing"]
+    return payload
+
+
+def stage_blocked_payload(car: dict, code: str, detail: str) -> dict:
+    """A typed unsupported record for a car the committed chain refused."""
+    missing = missing_for_reason(code, detail)
     return {
         "kind": KIND,
         "version": 1,
         "status": "blocked",
+        "rosterStatus": "unsupported",
         "slug": car["slug"],
         "recordIndex": car["recordIndex"],
         "recordId": car["recordId"],
+        "recordName": car["recordName"],
         "class": car["class"],
-        "reasons": [
-            {"code": blocker["kind"], "detail": blocker["detail"],
-             "source": blocker.get("source", "spec")}
-            for blocker in car["blockers"]
-        ],
+        "drivetrain": car["drivetrain"],
+        "massKg": car["massKg"],
+        "gears": car["gears"],
+        "wheelBase": car["physics"]["wheelBase"],
+        "fields": safe_fields(car),
+        "reasons": [reason(code, detail,
+                           source="probes/vehicle-batch/build.py",
+                           missing=missing)],
+        "missing": missing,
     }
 
 
@@ -258,19 +371,22 @@ def stage_car(car: dict, out_root: Path, cache: Path, tool_id: dict,
               resume: bool) -> dict:
     slug = car["slug"]
     out_dir = out_root / slug
+    fields = fields_identity(car)
     if car["body"] is None:
         out_dir.mkdir(parents=True, exist_ok=True)
         clear_stage_markers(out_dir)
-        write_json(out_dir / "blocked.json", blocked_payload(car))
+        payload = blocked_payload(car, fields)
+        write_json(out_dir / "blocked.json", payload)
         return {"slug": slug, "status": "blocked", "reason": car["bodyReason"],
-                "car": blocked_payload(car)}
+                "car": payload, "fields": fields}
     identity = input_identity(car, tool_id)
 
     if resume:
         staged_path = out_dir / "staged.json"
         if staged_path.is_file():
             stored = json.loads(staged_path.read_text(encoding="utf-8"))
-            if (stored.get("input") == identity and stored.get("record")
+            if (stored.get("schema") == STAGE_SCHEMA
+                    and stored.get("input") == identity and stored.get("record")
                     and (out_dir / "integration.json").is_file()
                     and (out_dir / "ghost-inputs.json").is_file()):
                 current = artifact_hashes(out_dir)
@@ -281,7 +397,7 @@ def stage_car(car: dict, out_root: Path, cache: Path, tool_id: dict,
                                 "resume-match",
                                 "staged.json input and artifact hashes match; "
                                 "nothing rebuilt"),
-                            "car": stored["record"]}
+                            "car": stored["record"], "fields": fields}
 
     # 1. Body: re-decode from the pak through the committed model mapper and
     #    build the manifest/mesh/scene report through the committed builder.
@@ -518,7 +634,11 @@ def stage_car(car: dict, out_root: Path, cache: Path, tool_id: dict,
         },
         "wheel": wheel_record,
         "wheelGroups": wheel_group_rows,
-        "physics": car["physics"],
+        "physics": {
+            **car["physics"],
+            "fieldsBytes": fields["bytes"],
+            "fieldCount": fields["fieldCount"],
+        },
         "hud": car["hud"],
         "artifacts": artifacts,
         "blockers": blockers,
@@ -537,6 +657,7 @@ def stage_car(car: dict, out_root: Path, cache: Path, tool_id: dict,
     staged = {
         "kind": KIND,
         "version": 1,
+        "schema": STAGE_SCHEMA,
         "slug": slug,
         "recordIndex": car["recordIndex"],
         "status": status,
@@ -553,7 +674,7 @@ def stage_car(car: dict, out_root: Path, cache: Path, tool_id: dict,
     }
     write_json(out_dir / "staged.json", staged)
     return {"slug": slug, "status": status, "reason": None, "car": record,
-            "staged": staged}
+            "staged": staged, "fields": fields}
 
 
 def integration_payload(car: dict, record: dict, out_root: Path) -> dict:
@@ -727,6 +848,149 @@ def ghost_payload(car: dict, record: dict, out_root: Path) -> dict:
             "the ghost bytes and their hashes come from the e1 drive verifier's "
             "deterministic sprint runs; this compiler stages inputs only and does "
             "not run e1 tools"),
+    }
+
+
+def detail_summary(detail: str) -> str:
+    """The builder's own final statement, not a Python traceback."""
+    lines = [line.strip() for line in detail.splitlines() if line.strip()]
+    for line in reversed(lines):
+        if line.startswith(("Unsupported:", "KeyError:", "ValueError:",
+                            "RuntimeError:")):
+            return line
+    text = lines[-1] if lines else detail
+    if "unsupported: " in text:
+        return text.split("unsupported: ", 1)[1]
+    return text
+
+
+def model_reference(car: dict) -> dict | None:
+    body = car["body"]
+    if body is None:
+        return None
+    return {
+        "route": body["route"],
+        "pakPath": body["pakPath"],
+        "sha256": body["sha256"],
+        "decodedPath": body["decodedPath"],
+    }
+
+
+def artifacts_reference(record: dict) -> dict | None:
+    artifacts = (record or {}).get("artifacts")
+    if not artifacts:
+        return None
+    return {
+        name: {"bytes": artifacts[name]["bytes"],
+               "sha256": artifacts[name]["sha256"]}
+        for name in ("manifest", "mesh", "sceneReport")
+        if name in artifacts
+    }
+
+
+def unsupported_reference(row: dict) -> dict | None:
+    payload = row.get("car") or {}
+    reasons = payload.get("reasons")
+    if reasons:
+        primary = reasons[0]
+        code = primary.get("code")
+        detail = primary.get("detail")
+        return {
+            "code": code,
+            "detail": detail,
+            "summary": detail_summary(detail),
+            "source": primary.get("source"),
+            "missing": primary.get("missing")
+                       or missing_for_reason(code, detail),
+            "reasons": reasons,
+        }
+    primary = row.get("reason")
+    if primary:
+        code = primary.get("code")
+        detail = primary.get("detail")
+        return {
+            "code": code,
+            "detail": detail,
+            "summary": detail_summary(detail),
+            "source": primary.get("source"),
+            "missing": primary.get("missing")
+                       or missing_for_reason(code, detail),
+            "reasons": [primary],
+        }
+    return None
+
+
+def batch_roster_payload(results: list[dict], spec: dict,
+                         spec_path: Path) -> dict:
+    """The staged/unsupported roster for every selected remaining record.
+
+    One entry per record in record-index order. A staged entry carries the
+    committed `.fields` bytes/hash/count, the model reference and the staged
+    artifact hashes. An unsupported entry carries the typed reason and the exact
+    missing field/byte; no value is invented.
+    """
+    by_index = {row["car"].get("recordIndex"): row for row in results}
+    entries = []
+    for car in spec["cars"]:
+        if car["scope"] != "remaining":
+            continue
+        row = by_index.get(car["recordIndex"])
+        if row is None:
+            continue
+        status = ("staged" if row["status"] in ("staged", "skipped")
+                  else "unsupported")
+        fields = row.get("fields")
+        if fields is None:
+            fields = (row.get("car") or {}).get("fields")
+        if fields is None:
+            fields = safe_fields(car)
+        entry = {
+            "slug": car["slug"],
+            "recordIndex": car["recordIndex"],
+            "recordId": car["recordId"],
+            "recordName": car["recordName"],
+            "class": car["class"],
+            "scope": car["scope"],
+            "status": status,
+            "stageSource": "batch-staging",
+            "drivetrain": car["drivetrain"],
+            "massKg": car["massKg"],
+            "gears": car["gears"],
+            "wheelBase": car["physics"]["wheelBase"],
+            "fields": fields,
+            "fieldsBytes": fields.get("bytes"),
+            "fieldsSha256": fields.get("sha256"),
+            "fieldCount": fields.get("fieldCount"),
+            "model": model_reference(car),
+            "artifacts": (artifacts_reference(row.get("car"))
+                          if status == "staged" else None),
+            "unsupported": (None if status == "staged"
+                            else unsupported_reference(row)),
+        }
+        entries.append(entry)
+
+    staged = sum(1 for entry in entries if entry["status"] == "staged")
+    unsupported = sum(1 for entry in entries if entry["status"] == "unsupported")
+    return {
+        "kind": "blur.vehicle-batch.roster",
+        "version": 1,
+        "generatedBy": "probes/vehicle-batch/build.py",
+        "spec": {"path": rel(spec_path), "sha256": sha256_file(spec_path)},
+        "rule": (
+            "One entry per selected RP_CarDynamics record in record-index order. "
+            "status=staged means the committed fields, model, manifest, mesh and "
+            "scene report were re-derived and agree. status=unsupported carries the "
+            "typed reason and the exact missing field/byte; no value is invented."),
+        "counts": {
+            "records": spec["counts"]["records"],
+            "inRoster": spec["counts"]["inRoster"],
+            "remaining": spec["counts"]["remaining"],
+            "selected": len(entries),
+            "staged": staged,
+            "unsupported": unsupported,
+            "coverage": spec["counts"]["inRoster"] + staged,
+        },
+        "entries": entries,
     }
 
 
@@ -954,42 +1218,29 @@ def main() -> int:
             result = stage_car(car, out_root, cache, tool_id,
                                resume=not args.no_resume)
         except StageBlocked as error:
-            payload = {
-                "kind": KIND,
-                "version": 1,
-                "status": "blocked",
-                "slug": car["slug"],
-                "recordIndex": car["recordIndex"],
-                "recordId": car["recordId"],
-                "class": car["class"],
-                "reasons": [reason(error.code, error.detail)],
-            }
+            payload = stage_blocked_payload(car, error.code, error.detail)
             (out_root / car["slug"]).mkdir(parents=True, exist_ok=True)
             clear_stage_markers(out_root / car["slug"])
             write_json(out_root / car["slug"] / "blocked.json", payload)
             result = {"slug": car["slug"], "status": "blocked",
-                      "reason": payload["reasons"][0], "car": payload}
+                      "reason": payload["reasons"][0], "car": payload,
+                      "fields": payload["fields"]}
         except stage_batch3.Unsupported as error:
-            payload = {
-                "kind": KIND,
-                "version": 1,
-                "status": "blocked",
-                "slug": car["slug"],
-                "recordIndex": car["recordIndex"],
-                "recordId": car["recordId"],
-                "class": car["class"],
-                "reasons": [reason("stage-unsupported", str(error))],
-            }
+            payload = stage_blocked_payload(car, "stage-unsupported", str(error))
             (out_root / car["slug"]).mkdir(parents=True, exist_ok=True)
             clear_stage_markers(out_root / car["slug"])
             write_json(out_root / car["slug"] / "blocked.json", payload)
             result = {"slug": car["slug"], "status": "blocked",
-                      "reason": payload["reasons"][0], "car": payload}
+                      "reason": payload["reasons"][0], "car": payload,
+                      "fields": payload["fields"]}
         except Exception as error:  # noqa: BLE001 - recorded, never hidden
+            fields = safe_fields(car)
             result = {
                 "slug": car["slug"],
                 "status": "error",
-                "reason": reason("stage-failed", str(error)),
+                "reason": reason("stage-failed", str(error),
+                                 missing=missing_for_reason("stage-failed", str(error))),
+                "fields": fields,
                 "car": {
                     "slug": car["slug"],
                     "recordIndex": car["recordIndex"],
@@ -999,6 +1250,8 @@ def main() -> int:
                     "drivetrain": car["drivetrain"],
                     "massKg": car["massKg"],
                     "gears": car["gears"],
+                    "wheelBase": car["physics"]["wheelBase"],
+                    "fields": fields,
                     "blockers": car["blockers"],
                 },
             }
@@ -1011,6 +1264,10 @@ def main() -> int:
                         tool_id)
     summary_path = out_root / "summary.json"
     write_json(summary_path, summary)
+
+    batch_roster = batch_roster_payload(results, spec, args.spec)
+    batch_roster_path = out_root / "batch-roster.json"
+    write_json(batch_roster_path, batch_roster)
 
     staged = [row for row in results if row["status"] in ("staged", "skipped")]
     write_json(out_root / "roster.fragment.json", {
@@ -1058,6 +1315,9 @@ def main() -> int:
         "outRoot": rel(out_root),
         "summary": rel(summary_path),
         "summarySha256": sha256_file(summary_path),
+        "batchRoster": rel(batch_roster_path),
+        "batchRosterSha256": sha256_file(batch_roster_path),
+        "batchRosterCounts": batch_roster["counts"],
         "counts": summary["counts"],
         "aggregates": summary["aggregates"],
     }, indent=1, sort_keys=True))

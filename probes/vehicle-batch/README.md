@@ -45,12 +45,19 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py probes/vehicle-batch/build.py --no-resume
 
 # second independent build + gate
-& $py probes/vehicle-batch/build.py --out-root _work/vehicle-batch/_repeat
+& $py probes/vehicle-batch/build.py --out-root _work/vehicle-batch/_repeat --no-resume
 & $py probes/vehicle-batch/verify.py
+
+# batch-roster gate: fields/model/artifact re-derivation, order, determinism
+& $py probes/vehicle-batch/tools/verify_batch_roster.py
 ```
 
 Exit codes: `0` when every selected car is staged or blocked with a typed
 reason; `1` when a car is `partial` or an unexpected `error` occurred.
+
+`batch-roster.json` is complete only for a full `--scope remaining` run (the
+default). A `--only` run writes the selected subset and the roster gate will
+report the missing entries.
 
 ## Spec schema (v1)
 
@@ -73,13 +80,17 @@ cars[]}` with 62 entries, one per `RP_CarDynamics` record. Each entry carries:
 | `evidence` | `inCommittedRoster`, `batch3Staged`, `v1Mapped` |
 
 Unknown or absent values are `null` next to a typed reason (`wheel.reason`,
-`hud == null`, `bodyReason`); a spec field is never invented.
+`hud == null`, `bodyReason`); a spec field is never invented. In
+`batch-roster.json` a blocked staging record becomes `status:"unsupported"` with
+the typed reason and the exact `missing` field/byte.
 
 ## Output layout
 
 ```
 _work/vehicle-batch/
   summary.json             machine-readable run report (counts, aggregates, records)
+  batch-roster.json        staged/unsupported roster for the remaining records
+  batch-roster-verify.json gate output (probes/vehicle-batch/tools/verify_batch_roster.py)
   roster.fragment.json     entries to append to probes/e1-drive/cars/roster.json
   ghost.fragment.json      pending ghost index entries (2 courses × staged car)
   guard-pins.json          per-car pin values for the four integration guards
@@ -104,7 +115,55 @@ _work/vehicle-batch/
 
 `staged.json` is the resume key: a car is skipped only when its spec entry, body
 hash, wheel path and the builder hashes match and every artifact hash still
-matches. Nothing is written under another probe's tree.
+matches. `staged.json` carries `schema:2`; a schema change forces a rebuild.
+Nothing is written under another probe's tree.
+
+## Batch roster (remaining 37)
+
+`build.py` writes `_work/vehicle-batch/batch-roster.json` with one entry per
+selected record, in record-index order. An entry carries:
+
+| field | meaning |
+| --- | --- |
+| `slug`, `recordIndex`, `recordId`, `recordName` | identity |
+| `class`, `scope`, `drivetrain`, `massKg`, `gears`, `wheelBase` | roster inputs |
+| `fields` | `path`, `bytes`, `sha256`, `fieldCount` re-derived from the committed `.fields` file |
+| `model` | `route` (`exact`/`alias`), `pakPath`, `sha256`, `decodedPath`; `null` only for `DefaultCar` |
+| `artifacts` | staged `manifest`/`mesh`/`sceneReport` bytes + SHA-256; `null` when unsupported |
+| `status` | `staged` or `unsupported` |
+| `unsupported` | `code`, `detail`, `summary`, `source`, `missing` and the full `reasons[]`; `null` when staged |
+
+`status:"staged"` means the committed `.fields` bytes/hash/count, the decoded
+body model, the part manifest, the LOD0 mesh and the scene report were
+re-derived and agree. `status:"unsupported"` means the committed chain refused
+the record; `missing` names the exact field/byte (for example `body.model`,
+`wheel.backleft.bounds`, `draw.index`). No value is invented and no model
+mapping is fabricated.
+
+Counts for the full run:
+
+| metric | value |
+| --- | ---: |
+| retail records | **62** |
+| already in the 25-car roster | **25** |
+| remaining selected | **37** |
+| **staged** | **32** |
+| **unsupported** | **5** |
+| coverage after staging | **57 / 62** |
+
+### Unsupported (5) — exact reason per car
+
+| # | slug | missing | exact builder/audit statement |
+|--:|---|---|---|
+| 8 | `defaultcar` | `body.model` | no vehicle record and no body model reference; `DefaultCar` is a physics fallback, not a car body |
+| 38 | `ratrod-na-stock` | `wheel.backleft.bounds` | wheel backleft bounds are not thin on X and round on Y/Z: `[1.6263989210128784, 0.846299558877945, 0.8462995886802673]` (round relative delta 0.0000) |
+| 58 | `hummer-h2-rat` | `wheel.caliper.parent` | wheel part `E_BrakeDisc_FrontRight1` is not a direct child of an `e_wheel_*` element |
+| 67 | `ford-supervan-stock` | `wheel.elementCount` | wheel element count 14 is not four per corner |
+| 79 | `toyota-supra-smooth` | `draw.index` | `build_manifest.draw_bounds` raises `KeyError: 'index'` (the draw row has no `index` field; empty index range) |
+
+These are committed-builder refusals, not compiler bugs. They stay unsupported
+until a documented builder decision exists; nothing is guessed, borrowed or
+substituted. The 32 staged cars are data only — no car is claimed playable.
 
 ## Integration contract
 
@@ -144,4 +203,21 @@ Authoritative pin values:
 `verify.py` checks the spec (62 records, unique ids, typed reasons), every staged
 car (artifact presence, hashes, cross-document draw counts, wheel and ghost
 inputs), determinism between two build roots, duplicates, aggregates, and one
-path-independence regression. See `docs/work/analysis/vehicle-batch-compiler.md`.
+path-independence regression.
+
+`tools/verify_batch_roster.py` is the roster gate. It re-derives every entry from
+the committed source (`.fields` bytes/hash/count, decoded body model, record
+identity, drivetrain, mass, wheelbase), checks the staged manifest/mesh/scene
+hashes and their internal arithmetic, checks the typed unsupported reason and
+`missing` field, checks record-index order and uniqueness, proves the batch
+roster plus the committed 25-car roster covers all 62 records exactly, and
+compares the primary and repeat build roots byte-for-byte. It prints
+`N/M checks passed` and exits `1` on failure.
+
+```powershell
+& $py probes/vehicle-batch/tools/verify_batch_roster.py
+# batch roster: 32 staged, 5 unsupported, coverage 57/62
+# PASS 2253/2253 checks passed
+```
+
+See `docs/work/analysis/vehicle-batch-compiler.md` for the full-run history.

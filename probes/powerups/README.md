@@ -31,6 +31,11 @@ Data-only power-up recovery for the Blur Web project. Nothing here changes
 | `tools/build_pickup_routes.mjs` | PWR8 | retail `.aid` route network + per-pickup arc/projection |
 | `tools/verify_pickup_routes.mjs` | PWR8 | independent pak/`.aid` re-decode + projection verifier |
 | `data/pickup-routes.json` | PWR8 | committed retail route network and per-pickup arc |
+| `tools/build_retail_placement.mjs` | PWR9 | deterministic retail pickup source + browser module builder |
+| `tools/verify_retail_placement.mjs` | PWR9 | independent re-derivation, band/count/determinism verifier |
+| `tools/retail_placement_module.template.mjs` | PWR9 | template for the generated browser module |
+| `data/retail-placement.json` | PWR9 | committed retail pickup source rows + measured layout identity |
+| `retail-placement.mjs` | PWR9 | browser-importable `retailPlacementsFor(mapId, layout)` |
 
 ## SuperShield (SS1)
 
@@ -337,6 +342,98 @@ Scope labels:
   not committed).
 - **Not a renderer claim:** this is decoded route geometry and planar
   projection only. No draw, GPU, physics or gameplay claim.
+
+## Retail pickup placement (PWR9)
+
+`retail-placement.mjs` is the committed, browser-importable ES module that
+places the retail pickups from `data/pickup-routes.json` on the measured layout
+the e1-drive page drives (`layout.course.samples`). It embeds
+`data/retail-placement.json` (63 KB) and exports
+`RETAIL_PLACEMENT_SCHEMA` and `retailPlacementsFor(mapId, layout)`.
+
+```powershell
+node probes/powerups/tools/build_retail_placement.mjs
+node probes/powerups/tools/verify_retail_placement.mjs
+```
+
+Import contract:
+
+```js
+import { RETAIL_PLACEMENT_SCHEMA, retailPlacementsFor } from '../../powerups/retail-placement.mjs';
+const set = retailPlacementsFor('amboy', layout);
+// layout = the measured layout the page drives:
+//   { course: { lengthMetres, band|corridor, samples: [{ arc, x, z, groundY }, ...] } }
+// set = { schema, mapId, source, pickups, unsupported }
+// pickups[]: { id, uid, type, x, y, z, arc, lateral, retailLateral, clamped,
+//              clampedBy, fraction, route, routeIndex, retailArc,
+//              routeLengthM, sampleIndex, source }
+// unsupported[]: { id, uid, type, reason }
+```
+
+Rule (recorded in every `source` string):
+
+```text
+fraction       = retail.arc / retail.routeLengthM
+measuredArc    = fraction * layout.course.lengthMetres
+sample         = nearest measured sample (ties to the earlier sample)
+appliedLateral = clamp(retail.lateral, -band, +band)
+x/z            = sample.x/z + leftNormal(sample) * appliedLateral
+y              = sample.groundY
+```
+
+The measured band is `layout.course.band.halfWidthMetres` when present,
+otherwise `layout.course.corridor.halfWidthMetres` (Amboy/Gracia 6 m, River
+310 m 6 m, River loop-01 1.25 m). A retail lateral outside the band is clamped
+and `clamped: true` records the applied value; an inside lateral is kept
+unchanged. `retailLateral` and `retailArc` stay in the output so the clamp is
+auditable.
+
+Result on the committed layouts:
+
+| map | layout | measured length | band | pickups | unsupported | clamped |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| amboy | `_work/e1-drive/amboy/layout.json` | 2,060.595 m | ±6 m | 82 | 0 | 56 |
+| gracia | `_work/e1-drive/gracia/layout.json` | 624.914 m | ±6 m | 59 | 0 | 44 |
+| river | `_work/e1-drive/sprint.json` (310 m) | 310.395 m | ±6 m | 54 | 0 | 38 |
+
+Verifier: **6,122/6,122** checks, two builds byte-identical. The verifier
+re-reads `pickup-routes.json` and the measured layout files, re-applies the rule
+independently, checks every placed pickup is inside the measured band, checks
+every clamped pickup is exactly on the band edge, checks every retail uid
+appears once in `pickups` or `unsupported`, and compares the committed JSON and
+module with two fresh builder runs.
+
+The largest clamps are recorded in `counts.clampedMaxOverM`: Amboy 52.633 m
+(uid 3288031175, carrier `Logic`), Gracia 144.002 m (uid 410117243, carrier
+`Logic`, serialized width 217.597 m) and River 37.197 m (uid 3370233259,
+carrier `MainLoop`). The Gracia/Amboy `Logic` entries are the wide catch-all
+route documented in PWR8, not a road lane; the clamp is a project placement
+choice, not a road-width claim.
+
+Scope labels:
+
+- **Applicable, not a physical projection:** the rule is applicable to every
+  retail pickup (finite arc, positive route length, non-empty measured samples,
+  finite band), so no pickup is unsupported. It is a linear arc-fraction remap,
+  not a physical projection: the measured layout is a sub-course of the retail
+  route and its arc origin differs from the retail `MainLoop` origin. The
+  committed `soundness` block records the numbers, e.g. Amboy's measured start
+  is 83.108 m from the nearest `MainLoop` point (retail arc 5,572.740 m) and its
+  measured end is 282.426 m away (retail arc 657.510 m); Gracia 157.452 m /
+  2,000.170 m and 15.718 m / 2,436.710 m; River 41.028 m / 2,608.170 m and
+  81.772 m / 2,922.310 m. The rule is a project placement choice, not retail
+  parity.
+- **Lateral is the decoded engine lateral:** `retail.lateral` is the
+  `pickup-routes.json` segment lateral (origin-relative, `[0, width]`), not a
+  racing-line-relative offset. The clamp is applied to that value and the
+  applied value is what the module returns.
+- **No invented coordinate:** every `x/y/z` comes from a committed measured
+  sample plus the clamped lateral along that sample's left normal `(-tz, tx)`.
+  A pickup with no finite arc, no positive route length or no measured sample
+  is returned in `unsupported` with the uid and reason; it is never dropped or
+  guessed.
+- **Not a renderer claim:** this is placement data only. No draw, GPU, physics
+  or gameplay claim.
 
 ## PWR1 definitions
 
