@@ -20,25 +20,28 @@ dalgaları). Sıra bağlayıcıdır: bir dalga yeşil olmadan sonraki başlamaz.
   instances 510/510, net-prediction 357/357, robustness 171/171.
 - **Entegrasyon:** Amboy 3 tur (`578d652`), Amboy/Gracia prop collider
   (`1c9c46e`), Amboy/Gracia power-up + oda bayrağı (`7341690`).
+- **Dalga 3:** pickup rotası (1610/1610), Gracia no-lap kararı (83/83), ışık
+  (973/973), araç materyali (3505/3505), HUD (12 test) ve 19 harita kararı
+  (2466/2466); HUD `?hud=retail` ile bağlı (`cd9f33b`).
 
 ## 1. Sıradaki işler (paralel, farklı dizinler)
 
 | # | Ajan | Dizin | İş | Kapı |
 |---|---|---|---|---|
-| 1 | PWR7 | `probes/powerups` | Retail pickup rotasının kendi polyline'ı; Amboy/Gracia retail slotlarını ölçülen parkura taşı | `verify_runtime_placement` + E2E |
-| 2 | LM2 | `probes/map-laps` | Gracia için kapalı tur araştırması (yoksa karar yaz) | `verify_*` |
-| 3 | MAPBATCH1 | `probes/map-batch` | `tools/verify_batch.py` + 19 seviye determinizmi | doğrulayıcı PASS |
-| 4 | HUD1 | `probes/hud-ui` | HUD'ı `e1-drive` HUD'ına bağla | E2E + ekran |
-| 5 | MAT1 | `probes/car-materials` | Boya/ışık reçetesini render'a bağla | görsel + hash |
-| 6 | LIGHT1 | `probes/lighting` | Işık/gölge/normal manifestini render'a bağla | görsel + hash |
-| 7 | MAPC1 | `probes/map-pipeline` | Kalan 13 harita için blok/derleme kararı | `verify_maps` |
+| 1 | PWR8 | `probes/powerups` | `pickup-routes.json`'ı oyuna bağla: pickup'ları rota yayına göre yerleştir | E2E + `verify_pickup_routes` |
+| 2 | LIGHT2 | `probes/lighting` | `runtime-lighting.mjs`'i render'a bağla | görsel + hash |
+| 3 | MAT2 | `probes/car-materials` | `runtime-materials.mjs`'i render'a bağla | görsel + hash |
+| 4 | MAPBATCH2 | `probes/map-batch` | `map-decisions.json`'daki oynanabilir haritaları `e1-drive`'a ekle | E2E |
+| 5 | HUD2 | `probes/hud-ui` | HUD'ı varsayılan yap (debug HUD yerine) | E2E + ekran |
+| 6 | VBATCH2 | `probes/vehicle-batch` | 25 → 61/62 araç | `verify_batch3` |
 
 ## 2. Ana ajan — entegrasyon sırası
 
-1. Retail pickup polyline → Amboy/Gracia gerçek yerleşim.
-2. HUD/materyal/ışık paritesi.
-3. Kalan haritalar (MAPBATCH1/MAPC1).
-4. Araç batch derleyici → 61/62.
+1. Retail pickup rotası → gerçek yerleşim.
+2. Işık + araç materyali → render.
+3. HUD'ı varsayılan yap.
+4. Kalan haritalar (map-decisions).
+5. Araç batch derleyici → 61/62.
 
 Her dalga sonunda: `verify_asset_probe --skip-build`, `check_e1_poc`,
 `node probes/e2e/run.mjs --scenarios …`, konsol 0, kanıt hash'leri,

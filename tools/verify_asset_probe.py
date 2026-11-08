@@ -100,6 +100,7 @@ def main():
         ('hud-ui',['node','--test','probes/hud-ui/test/']),
         ('map-pipeline-decisions',[sys.executable,'probes/map-pipeline/tools/verify_map_decisions.py']),
         ('map-laps-gracia-nolap',['node','probes/map-laps/tools/verify_gracia_no_lap.mjs']),
+        ('powerups-pickup-routes',['node','probes/powerups/tools/verify_pickup_routes.mjs']),
     ])
     results=[]
     for name,command in steps:

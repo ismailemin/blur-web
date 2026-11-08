@@ -24,19 +24,24 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Amboy/Gracia power-up:** oda bayrağıyla 6 pickup, misafir de alıyor.
 - **2 oyunculu + AI:** `mp-two` 52/52, `mp-ai` 71/71.
-- **Taşınabilir kapı:** `verify_asset_probe --skip-build` **67/67**,
+- **Taşınabilir kapı:** `verify_asset_probe --skip-build` **81/81**,
   `check_e1_poc` **23/23**.
-- **Tüm probe doğrulayıcıları yeşil:** race-rules 249/249, map-pipeline 930/930,
-  instances 510/510, net-prediction 357/357, robustness 171/171, map-laps 53/53,
-  map-props 259/259, powerups 7828/7828.
+- **Tüm probe doğrulayıcıları yeşil:** race-rules 249/249, map-pipeline 930/930
+  + kararlar 2466/2466, map-batch 1450/1450, instances 510/510,
+  net-prediction 357/357, robustness 171/171, map-laps 53/53 + Gracia 83/83,
+  map-props 259/259, powerups 7828/7828 + rotalar 1610/1610, lighting 973/973,
+  car-materials 3505/3505, HUD 12 test.
+- **Runtime modülleri hazır:** ışık, araç materyali, HUD (`?hud=retail` ile
+  bağlı), pickup rotası, 19 harita kararı.
 
 **Sıradaki (öncelik sırası):**
 
-1. Retail pickup yerleşimi: pickup rotasının kendi polyline'ı (Amboy/Gracia
-   retail slotlarının yalnız 2'si ölçülen parkura ≤5 m).
-2. Gracia için kapalı tur yok; noktadan noktaya kalıyor (LM1 kararı).
-3. HUD/materyal/ışık paritesi (HUD1/MAT1/LIGHT1 verisi hazır).
-4. Kalan 13 harita için MAPBATCH1/MAPC1 kararı.
+1. Retail pickup rotasını oyuna bağla: pickup'ları kendi rotalarının yay
+   konumuna göre yerleştir (veri hazır, `pickup-routes.json`).
+2. Işık ve araç materyalini render'a bağla (veri hazır; görsel doğrulama
+   gerekiyor).
+3. Gracia noktadan noktaya kalıyor (karar `gracia-no-lap.json`).
+4. Kalan 13 harita için `map-decisions.json` kararlarını uygula.
 5. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
    (kullanıcıdan VPS/domain/TLS bekliyor).
 
