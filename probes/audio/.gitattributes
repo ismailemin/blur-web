@@ -1,0 +1,3 @@
+# The runtime catalog is generated with LF and checked byte-for-byte by
+# tools/verify_runtime_audio.mjs. Keep it LF on every platform.
+data/runtime-audio.json text eol=lf

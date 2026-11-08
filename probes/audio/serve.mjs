@@ -3,6 +3,8 @@
 //   /                     -> probes/audio/harness/index.html      (P62 harness)
 //   /harness.js           -> probes/audio/harness/harness.js
 //   /web/, /web/<file>    -> probes/audio/web/<file>              (module harness)
+//   /runtime-audio.mjs    -> probes/audio/runtime-audio.mjs       (runtime module)
+//   /data/<file>.json     -> probes/audio/data/<file>.json        (runtime catalog)
 //   /_work/audio/<file>   -> _work/audio/<file>  (.wav/.json only)
 //
 // No directory listing, no writes, no path escapes. Callable as a module or:
@@ -16,11 +18,13 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HARNESS = path.join(ROOT, 'probes/audio/harness');
 const WEB = path.join(ROOT, 'probes/audio/web');
+const DATA = path.join(ROOT, 'probes/audio/data');
 const AUDIO = path.join(ROOT, '_work/audio');
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.wav': 'audio/wav',
@@ -50,6 +54,15 @@ export function startServer({ port = 8810 } = {}) {
         return;
       }
       file = safeJoin(WEB, relative);
+    } else if (pathname === '/runtime-audio.mjs') {
+      file = path.join(ROOT, 'probes/audio/runtime-audio.mjs');
+    } else if (pathname.startsWith('/data/')) {
+      const relative = pathname.slice('/data/'.length);
+      if (!/\.json$/i.test(relative)) {
+        response.writeHead(403).end('only .json');
+        return;
+      }
+      file = safeJoin(DATA, relative);
     } else if (pathname.startsWith('/_work/audio/')) {
       const relative = pathname.slice('/_work/audio/'.length);
       if (!/\.(wav|json)$/i.test(relative)) {
