@@ -1,3 +1,14 @@
+## 8 Kasım 2026 — lightmap render'da, 61 araç, Dumbo + Downtown MP açıldı
+
+- **Lightmap gerçekten render'da:** Amboy vitrini **83 lightmap dokusu (23,3 MB), 1173/1301 draw lightmap'li, 1251 draw dokulu, 0 hata/uyarı**. 9 haritada çözüldü; river tek-harita yolunda, downtown/highrise tipli `unsupported`.
+- **Araçlar 61/62:** hummer-h2-rat ve ford-supervan-stock sürüş diliminde; yalnızca `defaultcar` (gövde modeli yok) desteklenmiyor.
+- **Retail yarış çizgisi:** `probes/map-laps-aid` `.aid` çizgisini collision'a iz düşürüyor; **Dumbo 362 m**, **Downtown MP 86,45 m** (231 istasyonluk yanal detour); diğer beş seviye tipli blocker (hackney, brighton, sausalito, russianhill, bowl).
+- **Fiziksel pickup:** `probes/powerups-aid` gerçek dünya konumundan yerleştiriyor; Amboy 2/82, Gracia 2/59, River 0/54; kalanlar `off-course` (retail hat ölçülen parkurdan uzak).
+- **Çok oyunculu güçlendirmeler:** Amboy'da `?powerups=1` → 82 pickup, 8 tip, 0 hata.
+- **E2E:** 15 senaryo; düzeltilenler `solo-free` 22/22, `mp-two` 52/52, `mp-ai` 71/71, `mp-eight` 95/95, `reconnect` 56/56.
+- **Kapılar:** `map-batch` 1450/1450, kararlar 1809/1809, `verify_blocked` PASS, `map-props` 259/259, `verify-maps` 30/30, `map-laps-aid` 213/213, `powerups-aid` 6424/6424.
+- **Düzeltmeler:** sahne ambient yazımı 64 baytlık buffer'a sığdırıldı; River seviye chunk pini yenilendi.
+
 ## 8 Kasım 2026 — 11 harita, 59 araç, lightmap ve ses kataloğu
 
 - **Haritalar 7 → 11:** Highrise (14.27 m, 3.45 s), Tokyo Shutoko (279.01 m, 21.83 s), Barcelona Oval (753.02 m, 39.52 s) ve Amboy MP (122.29 m, 13.53 s) eklendi; hepsi **0 respawn, 0 konsol hatası**, `verify_e1_map` 22/22, kendi e2e senaryosu 12/12.
@@ -1083,6 +1094,7 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sunucu doğrulandı: `/` HTTP 200, `e1_drive.wasm` 1.003.249 B HTTP 200.
 - 5 araç seçici ve `?car=` URL'i; scripted mod `?script=drive&car=...`.
 - Kullanıcı testi için hazır; görsel sadakat/teker/engine draw-list işleri devam ediyor.
+
 
 
 

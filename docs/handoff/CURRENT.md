@@ -2,10 +2,11 @@
 
 **Güncelleme:** 8 Kasım 2026 (gece, geç)
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
-tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **59 araç, 11 harita**.
-**Son commit'ler:** `13cf0b1` 8 oyunculu oda, `70374f6` oyun kabuğu,
-`2a8c714` 57 araç, `d8101c2` Long Beach, `302e5d8` Hollywood Hills,
-`5cf4da5` Downtown, `8f3a1c0` Mount Haruna (yedinci harita).
+tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 11 harita**;
+lightmap 9 haritada render'da.
+**Son commit'ler:** `873184f` Amboy lightmap + 61 araç, `4c6ea8b` kayıt,
+`1a50930` map-slice lightmap, `a463175` 11 harita ışığı,
+`16f7580` hummer + supervan, `81a9f84` menü 59/11.
 **Bu oturumun kaydı:** [`docs/work/logs/2026-11-08-mp-eight.md`](../work/logs/2026-11-08-mp-eight.md)
 
 ## Şu an neredeyiz? (kısa özet)
@@ -20,24 +21,24 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **59 araç, 11 har
 - **Menü kabuğu:** boş URL menüyü açar (57 araç, 7 harita, mod/araç/harita
   seçimi, lobi); her yarış parametresi menüyü atlar. `?join=1` misafir akışı.
   Başsız Edge: 0 konsol hatası.
-- **Araçlar:** sürüş diliminde **59 araç** (25 → 57 → 59); yeni araçlarla
-  sprint çalışıyor (14.45–15.4 s, 0 hata). 3 araç tipli gerekçeyle
-  desteklenmiyor: `defaultcar` (gövde modeli yok), `hummer-h2-rat` (caliper
-  parent zinciri), `ford-supervan-stock` (tekerlek eleman sayısı).
+- **Araçlar:** sürüş diliminde **61 araç** (25 → 57 → 59 → 61). Yeni
+  `hummer-h2-rat` (tekerlek parçaları `DefaultElement` altında; köşe eleman
+  matrisiyle kanıtlandı) ve `ford-supervan-stock` (`E_Brake_Caliper_*` ad
+  varyantı + parent zarfı). Yalnızca `defaultcar` desteklenmiyor (gövde modeli
+  yok).
 - **Amboy 3 tur:** `?map=amboy&course=lap` → 3 tur, 0 respawn, ~112 s.
 - **Haritalar 4→11:** Long Beach, Hollywood Hills, LA Downtown, Mount Haruna,
   Highrise, Tokyo Shutoko, Barcelona Oval, Amboy MP. Hepsi 0 respawn ve
-  0 konsol hatası; her biri `verify_e1_map` 22/22 ve kendi e2e senaryosu 12/12.
+  0 konsol hatası; her biri `verify_e1_map` 22–23/23 ve kendi e2e senaryosu 12/12.
 - **Kapı kuralı:** geniş collision parkurları için `course.gateRule:
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
   nitro, shock, barge, kalkan, tamir, bitiş, geri sayım, wreck).
-- **Işık:** retail ambient render'a uygulandı (river 0.2532, amboy 0.1331,
-  gracia 0.1780, longbeach 0.7699). Lightmap decode tamam ama lightmap UV
-  (`TEXCOORD0.zw`) commit'li pakette yok; bu yüzden lightmap render'a bağlı
-  değil (tipli blocker).
+- **Işık:** retail ambient + **gerçek lightmap** render'da. Amboy vitrini:
+  **83 lightmap dokusu, 1173/1301 draw lightmap'li, 0 hata/uyarı**. 9 haritada
+  çözüldü; river tek-harita yolunda, downtown/highrise tipli `unsupported`.
 - **Multiplayer:** yeni haritalarda da çalışıyor (Oval, Amboy MP; 2 oyuncu,
-  0 hata).
+  0 hata). Amboy'da `?powerups=1` ile **82 pickup, 8 tip**, 0 hata.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Amboy/Gracia power-up:** retail yerleşim bağlı — Amboy **82**, Gracia **59**
   pickup, misafir hepsini alıyor; oda bayrağıyla `?powerups=1` gerekmiyor.

@@ -1,6 +1,6 @@
 # NEXT — sıradaki görevler
 
-**Güncelleme:** 8 Kasım 2026 (gece)
+**Güncelleme:** 8 Kasım 2026 (gece, geç)
 **Plan:** [`docs/plan/FULL_GAME.md`](../plan/FULL_GAME.md) (yol haritası) ve
 [`docs/plan/INTEGRATION_WAVES.md`](../plan/INTEGRATION_WAVES.md) (entegrasyon
 dalgaları). Sıra bağlayıcıdır: bir dalga yeşil olmadan sonraki başlamaz.
@@ -8,16 +8,18 @@ dalgaları). Sıra bağlayıcıdır: bir dalga yeşil olmadan sonraki başlamaz.
 
 ## 0. Tamamlanan (bu dalga)
 
-- **SHELL1 → `e1-drive`:** boş URL menüyü açar; yarış parametreleri menüyü
-  atlar; `?join=1` misafir akışı. `70374f6`.
-- **NET1 → 8 oyuncu:** oda servisi 8 oyuncu + WSS deploy (`2aa9de1`); istemci
-  `MP_MAX_PLAYERS=8`, 7 eş snapshot'ı, tüm eşler için uzak araç (`13cf0b1`);
-  **8 oyunculu yarış bitişe kadar** (`f6b1818`).
-- **Wave-1 probe verisi:** 19 analiz dokümanı (`50afc31`), tüm probe dizinleri
-  (`fadabdd`).
-- **V5 → 57 araç:** 32 staged araç sürüş dilimine alındı (`2a8c714`).
-- **Kırmızı doğrulayıcılar yeşil:** race-rules 249/249, map-pipeline 930/930,
-  instances 510/510, net-prediction 357/357, robustness 171/171.
+- **Araçlar 61/62:** hummer-h2-rat ve ford-supervan-stock sürüş diliminde;
+  yalnızca `defaultcar` (gövde modeli yok) desteklenmiyor.
+- **Lightmap render'da:** 9 haritada çözüldü ve bağlandı; Amboy vitrini
+  **83 doku, 1173/1301 draw lightmap'li, 0 hata/uyarı**. River tek-harita
+  yolunda; downtown/highrise tipli `unsupported`.
+- **Retail yarış çizgisi:** `probes/map-laps-aid` `.aid` çizgisini collision'a
+  iz düşürüyor; **Dumbo 362 m** path, diğer altı seviye tipli blocker.
+- **Fiziksel pickup:** `probes/powerups-aid` gerçek dünya konumundan
+  yerleştiriyor; Amboy 2/82, Gracia 2/59, River 0/54 (retail hat ölçülen
+  parkurdan uzak), kalanlar `off-course`.
+- **AI:** altı haritada 684 koşu, `verify-maps` 30/30.
+- **Menü:** 61 araç / 11 harita (menü verisi sıradaki ajanla 61'e çekilecek).
 - **Entegrasyon:** Amboy 3 tur (`578d652`), Amboy/Gracia prop collider
   (`1c9c46e`), Amboy/Gracia power-up + oda bayrağı (`7341690`).
 - **Dalga 3:** pickup rotası (1610/1610), Gracia no-lap kararı (83/83), ışık
