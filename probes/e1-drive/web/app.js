@@ -360,13 +360,22 @@ async function lightingAgreement(packetLight, mapId) {
   lightingModulePromise ??= import('/lighting/runtime-lighting.mjs');
   const module = await lightingModulePromise;
   const table = module.lightingFor(mapId);
-  const sun = table.sun;
-  const maxDirectionDelta = Math.max(...[0, 1, 2].map((index) =>
-    Math.abs(packetLight.direction[index] - sun.direction[index])));
-  const maxColourDelta = Math.max(...[0, 1, 2].map((index) =>
-    Math.abs(packetLight.colour[index] - sun.colour[index])));
-  const agree = maxDirectionDelta <= 1e-3 && maxColourDelta <= 1e-3;
-  const baked = sun.colour.every((value) => value === 0);
+  // A level may not serialize a sun (`C_LightList hasSun=0`). The committed table
+  // records `sun: null`; the renderer then uses the baked lightmap only. No
+  // fallback direction is invented.
+  const sun = table.sun ?? null;
+  const sunDirection = sun?.direction ?? [0, 1, 0];
+  const sunColour = sun?.colour ?? [0, 0, 0];
+  const maxDirectionDelta = sun
+    ? Math.max(...[0, 1, 2].map((index) =>
+      Math.abs(packetLight.direction[index] - sunDirection[index])))
+    : null;
+  const maxColourDelta = sun
+    ? Math.max(...[0, 1, 2].map((index) =>
+      Math.abs(packetLight.colour[index] - sunColour[index])))
+    : null;
+  const agree = sun ? (maxDirectionDelta <= 1e-3 && maxColourDelta <= 1e-3) : false;
+  const baked = sunColour.every((value) => value === 0);
   // Apply the committed ambient floor to the renderer. The shader uses a single
   // scalar (`ambient + (1 - ambient) * lambert`), so the retail per-channel
   // ambient is reduced to its luminance. This is a real value from the committed
@@ -392,8 +401,8 @@ async function lightingAgreement(packetLight, mapId) {
   let lightingApplied = null;
   if (consumer && typeof consumer.setLighting === 'function') {
     lightingApplied = consumer.setLighting({
-      sunDirection: sun.direction,
-      sunColour: sun.colour,
+      sunDirection,
+      sunColour,
       skyColour: sky,
       ambient: ambientApplied ?? 0.16,
       mode
@@ -401,8 +410,8 @@ async function lightingAgreement(packetLight, mapId) {
   }
   state.lightingApplied = {
     mode: mode === 2 ? 'rgb-normalised-gamma' : 'sun-sky',
-    sunDirection: sun.direction,
-    sunColour: sun.colour,
+    sunDirection,
+    sunColour,
     skyColour: sky,
     status: lightingApplied === false ? 'pending-scene' : 'applied'
   };
@@ -410,7 +419,7 @@ async function lightingAgreement(packetLight, mapId) {
     mapId,
     source: 'packet',
     packet: { direction: packetLight.direction.slice(0, 3), colour: packetLight.colour.slice(0, 3) },
-    committed: { direction: sun.direction, colour: sun.colour },
+    committed: { direction: sunDirection, colour: sunColour, sunSerialized: Boolean(sun) },
     maxDirectionDelta,
     maxColourDelta,
     agree,
@@ -1334,6 +1343,9 @@ function fail(message) {
 const consumer = new PacketConsumer(canvas, (event) => {
   if (event.state === 'error') fail(event.message);
 });
+// Diagnostics for the capture probe: the renderer's own counters (textured and
+// lightmapped draws, lightmap textures/bytes, ambient). Read-only.
+window.e1DriveConsumer = consumer;
 
 window.addEventListener('error', (event) => fail('page error: ' + event.message));
 window.addEventListener('unhandledrejection', (event) => fail('unhandled rejection: ' + (event.reason?.message ?? String(event.reason))));

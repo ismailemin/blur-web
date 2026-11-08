@@ -61,6 +61,8 @@ const MAP_PROPS_WORK = path.join(ROOT, '_work/map-props');
 // The map-batch packages (observatory, downtown) are the source documents the
 // E1 map package pins; the page re-fetches and hashes them at load.
 const MAP_BATCH_WORK = path.join(ROOT, '_work/map-batch');
+// The decoded retail lightmap RGBA files the renderer fetches by draw URL.
+const LIGHTING_WORK = path.join(ROOT, '_work/lighting');
 // The runtime HUD module (DOM-only) is served read-only from probes/hud-ui.
 const HUD_UI = path.join(ROOT, 'probes/hud-ui');
 // Runtime lighting / material tables (data-only modules) are served read-only.
@@ -347,6 +349,7 @@ export function startServer({ port = 8801 } = {}) {
     else if (pathname.startsWith('/_work/free-roam-prop/')) file = safeJoin(FREE_PROP_WORK, pathname.slice('/_work/free-roam-prop/'.length));
     else if (pathname.startsWith('/_work/map-props/')) file = safeJoin(MAP_PROPS_WORK, pathname.slice('/_work/map-props/'.length));
     else if (pathname.startsWith('/_work/map-batch/')) file = safeJoin(MAP_BATCH_WORK, pathname.slice('/_work/map-batch/'.length));
+    else if (pathname.startsWith('/_work/lighting/')) file = safeJoin(LIGHTING_WORK, pathname.slice('/_work/lighting/'.length));
     else if (pathname.startsWith('/audio/')) {
       const relative = pathname.slice('/audio/'.length);
       // `runtime-audio.mjs` and `data/*.json` are the retail event catalog at

@@ -691,6 +691,22 @@
       "recordIndex": 79,
       "layout": "RWD, 1400 kg, 6-speed",
       "why": "staged by probes/vehicle-batch; draws 48 and 50 have an empty index range (indexCount 0) and are skipped with the skip recorded in the manifest"
+    },
+    {
+      "slug": "hummer-h2-rat",
+      "name": "Hummer_H2_Rat",
+      "recordId": 3248311663,
+      "recordIndex": 58,
+      "layout": "AWD, 2500 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch; the front brake disc and caliper are serialized under DefaultElement and their corner is proven by the element matrix translation against the e_wheel_frontleft parent"
+    },
+    {
+      "slug": "ford-supervan-stock",
+      "name": "Ford_Supervan_Stock",
+      "recordId": 3716417016,
+      "recordIndex": 67,
+      "layout": "RWD, 890 kg, 6-speed",
+      "why": "staged by probes/vehicle-batch; the rear calipers use the E_Brake_Caliper_* name variant and the axle is proven from the e_wheel_* parent envelope"
     }
   ]
 }

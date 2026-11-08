@@ -138,9 +138,11 @@ const COMMITTED_MANIFESTS = {
   'dodge-vipergtsr-stock': 'sha256:67ae8648e202bc21685e7c95865d5719088afa81ef62d2f7403c4fd98e0c7eef',
   'ratrod-na-stock': 'sha256:7afc50e723216839e47b219cf6d649b214fba0db15e457d682ffbc1d1cafbeef',
   'toyota-supra-smooth': 'sha256:fe6aaeb1f0d7d59cd93f94f7be6b2323e8d64235f96d5802556b0cfede88d63e',
+  'hummer-h2-rat': 'sha256:84bc22943e8ab029e8b8c960f7e79ff9fde6d4657cff6bf12e1e8c6f4a93266d',
+  'ford-supervan-stock': 'sha256:5392f765699325828f29996b110575d41efe454181200ace9e201d03871e9f0f',
 };
 const COMMITTED_CAR_INDEX =
-  'sha256:555acb110c35374a91acecfac58098b55376c93fd35e52537d2df8715c3ae340';
+  'sha256:62ecdb7b0cf0be0ff5a99f3ffd925f6659705538572a2414224590b53a910ccb';
 
 // P52's per-car material/texture record plus its UV0 export. Committed output of
 // `build_car_textures.py`; a different file is a hard failure, because the car
@@ -148,7 +150,7 @@ const COMMITTED_CAR_INDEX =
 // consumer document is updated with it.
 const CAR_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/car-textures.json');
 const COMMITTED_CAR_TEXTURES =
-  'sha256:715d45bc5d034ccb67541bd5cb28e265efe39e0ff0cd4906210278e2cc82e541';
+  'sha256:93456d0a14d5a1368d5fd20ab3454658b407e9cb8cd8d94a4c1480b5b8d062d8';
 
 // P73b level-instance prop pack: the P73a UV0 export plus the four decoded BC1
 // sources, emitted by `build_level_instance_textures.py`. Committed output of
@@ -215,7 +217,7 @@ if (carTextureDoc.kind !== 'e1-drive.car-textures' || carTextureDoc.version !== 
   throw new Error('car texture manifest kind/version is not e1-drive.car-textures v1');
 }
 if (carTextureDoc.pins?.p52RosterIndex !==
-    'sha256:fc144a1c23d332abafbab92c0c15ff3f273f4a6562262dcb3b431bc7e778bf19' ||
+    'sha256:e678ac28a449c093fee1d26170c1113c4088e679d93ffc8bb6f1b15b9c62c084' ||
     carTextureDoc.pins?.carPartsIndex !== COMMITTED_CAR_INDEX) {
   throw new Error('car texture manifest does not carry the committed P52 roster and car-parts indexes');
 }
@@ -944,6 +946,8 @@ const COMMITTED_CAR_COVERAGE = {
   'dodge-vipergtsr-stock': { draws: 91, textured: 51, paint: 10, light: 13, noAlbedo: 17, textures: 8, rgbaBytes: 4472832 },
   'ratrod-na-stock': { draws: 51, textured: 23, paint: 0, light: 6, noAlbedo: 22, textures: 6, rgbaBytes: 2408448 },
   'toyota-supra-smooth': { draws: 82, textured: 49, paint: 9, light: 11, noAlbedo: 13, textures: 7, rgbaBytes: 3424256 },
+  'hummer-h2-rat': { draws: 82, textured: 22, paint: 0, light: 14, noAlbedo: 46, textures: 7, rgbaBytes: 3440640 },
+  'ford-supervan-stock': { draws: 79, textured: 65, paint: 0, light: 12, noAlbedo: 2, textures: 9, rgbaBytes: 2244608 },
 };
 {
   const bodyList = Object.values(bodies);
@@ -960,7 +964,8 @@ const COMMITTED_CAR_COVERAGE = {
     light: bodyList.reduce((sum, body) =>
       sum + body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeLightBlend').length, 0),
     noAlbedo: bodyList.reduce((sum, body) =>
-      sum + body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeShaderNoAlbedo').length, 0),
+      sum + body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeShaderNoAlbedo' ||
+        draw.textureBinding?.status === 'runtimeUnsupportedUv').length, 0),
     textures: bodyList.reduce((sum, body) => sum + body.textures.length, 0),
     rgbaBytes: bodyList.reduce((sum, body) =>
       sum + body.textures.reduce((inner, texture) => inner + texture.rgbaBytes, 0), 0),
@@ -974,7 +979,8 @@ const COMMITTED_CAR_COVERAGE = {
       textured: body.carDraws.filter((draw) => draw.textureId !== null).length,
       paint: body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimePaintLookup').length,
       light: body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeLightBlend').length,
-      noAlbedo: body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeShaderNoAlbedo').length,
+      noAlbedo: body.carDraws.filter((draw) => draw.textureBinding?.status === 'runtimeShaderNoAlbedo' ||
+        draw.textureBinding?.status === 'runtimeUnsupportedUv').length,
       textures: body.textures.length,
       rgbaBytes: body.textures.reduce((sum, texture) => sum + texture.rgbaBytes, 0)
     };

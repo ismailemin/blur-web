@@ -80,6 +80,9 @@ WHEEL_PART_KIND = (
     ("e_alloyrim_", "rim"),
     ("e_brakedisc_", "brakeDisc"),
     ("e_brakecaliper_", "brakeCaliper"),
+    # Some models serialize the caliper with a word break ("E_Brake_Caliper_*").
+    # It is the same part; the name variant is recorded, not guessed.
+    ("e_brake_caliper_", "brakeCaliper"),
 )
 
 CONTAIN_TOL = 0.005
@@ -754,10 +757,54 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
         raise Unsupported(f"e_wheel_* corners are {sorted(corners)}, expected {sorted(WHEEL_CORNERS)}")
     for element in wheel_parents:
         element["corner"] = wheel_corner(element["name"])
+    orphan_rows = []
     for element in wheel_elements:
         parent = elements_by_index.get(element["parent"])
         if parent is None or parent not in wheel_parents:
-            raise Unsupported(f"wheel part {element['name']} is not a direct child of an e_wheel_* element")
+            # Some models serialize a wheel part as a child of DefaultElement. The
+            # corner is proven by the element matrix translation against the four
+            # e_wheel_* translations; the serialized parent is never rewritten.
+            translation = element["matrix"][3][:3]
+            ranked = sorted(
+                ((sum((translation[i] - candidate["matrix"][3][i]) ** 2
+                      for i in range(3)) ** 0.5, candidate)
+                 for candidate in wheel_parents),
+                key=lambda item: (item[0], item[1]["name"]))
+            nearest_distance, nearest = ranked[0]
+            second_distance = ranked[1][0] if len(ranked) > 1 else None
+            if nearest_distance > 0.05 or (second_distance is not None
+                                           and second_distance < 0.5):
+                raise Unsupported(
+                    f"wheel part {element['name']} (element {element['index']}) is "
+                    f"parented to {(parent or {}).get('name')!r} and its translation "
+                    f"{translation} does not match exactly one e_wheel_* parent: "
+                    f"nearest {nearest['name']} at {nearest_distance:.6f} m, second "
+                    f"{second_distance if second_distance is None else round(second_distance, 6)} m")
+            shared = sorted(
+                other["name"] for other in wheel_elements
+                if other is not element
+                and all(abs(other["min"][i] - element["min"][i]) <= 1e-5
+                        and abs(other["max"][i] - element["max"][i]) <= 1e-5
+                        for i in range(3)))
+            orphan_rows.append({
+                "name": element["name"],
+                "index": element["index"],
+                "serializedParent": (parent or {}).get("name"),
+                "serializedParentIndex": element["parent"],
+                "matchedWheelParent": nearest["name"],
+                "matchedWheelParentIndex": nearest["index"],
+                "elementTranslation": translation,
+                "wheelParentTranslation": nearest["matrix"][3][:3],
+                "distanceMeters": nearest_distance,
+                "secondNearestParent": (ranked[1][1]["name"]
+                                        if len(ranked) > 1 else None),
+                "secondNearestDistanceMeters": second_distance,
+                "localBounds": {"min": element["min"], "max": element["max"]},
+                "sharedLocalBoundsWith": shared,
+                "rule": ("the corner is proven by the element matrix translation; the "
+                         "serialized parent is recorded as-is and not rewritten"),
+            })
+            parent = nearest
         element["corner"] = parent["corner"]
 
     # A brake caliper may genuinely be absent from a vehicle model. That is a
@@ -771,7 +818,9 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
     for corner in WHEEL_CORNERS:
         members = [element for element in wheel_elements if element["corner"] == corner]
         kinds = sorted(wheel_kind(element["name"]) for element in members)
-        expected = sorted(kind for _, kind in WHEEL_PART_KIND)
+        # One member per kind. The prefix table may list name variants of the same
+        # kind (e.g. brake caliper), so the expected list is the unique kind set.
+        expected = sorted(set(kind for _, kind in WHEEL_PART_KIND))
         if kinds == expected:
             continue
         without_caliper = sorted(kind for kind in expected if kind != "brakeCaliper")
@@ -1294,6 +1343,7 @@ def classify(scene: dict, mdl: dict, model_bounds: dict) -> dict:
         "tyreProofTier": tyre_tier,
         "wheelKindCounts": other_rows,
         "skippedEmptyDraws": skipped_empty_draws,
+        "orphanCorners": orphan_rows,
     }
 
 
@@ -1575,6 +1625,8 @@ def build(args: argparse.Namespace) -> dict:
     }
     if classified["skippedEmptyDraws"]:
         manifest["skippedEmptyDraws"] = classified["skippedEmptyDraws"]
+    if classified.get("orphanCorners"):
+        manifest["orphanCorners"] = classified["orphanCorners"]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     mesh_file = mesh_path_for(out_dir, args)

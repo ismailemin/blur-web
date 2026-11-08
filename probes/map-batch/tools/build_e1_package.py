@@ -58,7 +58,8 @@ ROOT = Path(__file__).resolve().parents[3]
 # The decoded retail lightmap textures are exported per map by
 # `probes/lighting/tools/export_lightmap_rgba.py`; the driving page fetches them
 # by URL. Only the four maps the lighting probe decoded have a set.
-LIGHTMAP_MAPS = {"river", "amboy", "gracia", "longbeach"}
+LIGHTMAP_MAPS = {"river", "amboy", "gracia", "longbeach", "observatory",
+                 "mharuna", "shutoko", "oval", "amboy-mp"}
 LIGHTMAP_URL = "/_work/lighting/%s/lightmap/%s.rgba"
 
 MAP_BUILDS = {
@@ -747,28 +748,29 @@ def build_map(map_id: str, check: bool = False, log=print):
     if cfg["id"] in LIGHTMAP_MAPS:
         lighting_path = ROOT / "probes/lighting/data/runtime-lighting.json"
         lighting = json.loads(lighting_path.read_text(encoding="utf-8"))
-        table = lighting["maps"][cfg["id"]]["lightmap"]
-        by_name = {texture["name"]: texture for texture in table["textures"]}
-        used = sorted({draw["lightmapName"] for draw in draw_records
-                       if draw.get("lightmapName")})
-        for name in used:
-            texture = by_name.get(name)
-            if texture is None:
-                raise SystemExit("lightmap %s is not in the committed lighting table" % name)
-            lightmap_records.append({
-                "name": name,
-                "width": texture["width"],
-                "height": texture["height"],
-                "format": texture["format"],
-                "formatName": texture["formatName"],
-                "sha256": texture["sha256"],
-                "decodedRgbaSha256": texture["decodedRgbaSha256"],
-                "bytes": texture["decodedRgbaBytes"],
-                "url": LIGHTMAP_URL % (cfg["id"], name),
-                "source": "probes/lighting/data/runtime-lighting.json",
-            })
-        if not lightmap_records:
-            raise SystemExit("%s has a lightmap set but no draw references it" % cfg["id"])
+        table = lighting["maps"][cfg["id"]].get("lightmap")
+        if table and table.get("decoded"):
+            by_name = {texture["name"]: texture for texture in table["textures"]}
+            used = sorted({draw["lightmapName"] for draw in draw_records
+                           if draw.get("lightmapName")})
+            for name in used:
+                texture = by_name.get(name)
+                if texture is None:
+                    raise SystemExit("lightmap %s is not in the committed lighting table" % name)
+                lightmap_records.append({
+                    "name": name,
+                    "width": texture["width"],
+                    "height": texture["height"],
+                    "format": texture["format"],
+                    "formatName": texture["formatName"],
+                    "sha256": texture["sha256"],
+                    "decodedRgbaSha256": texture["decodedRgbaSha256"],
+                    "bytes": texture["decodedRgbaBytes"],
+                    "url": LIGHTMAP_URL % (cfg["id"], name),
+                    "source": "probes/lighting/data/runtime-lighting.json",
+                })
+            if not lightmap_records:
+                raise SystemExit("%s has a lightmap set but no draw references it" % cfg["id"])
 
     map_body = {
         "kind": "e1-drive.map-package",

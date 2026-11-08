@@ -324,6 +324,10 @@ def cpp_classification(draw: dict, scene_report: dict) -> str:
         return "runtime_paint_lookup"
     if "_no_albedo" in binding:
         return "shader_no_albedo"
+    # A draw without a usable UV0 cannot bind an albedo texture; the Python
+    # resolver reports the same `unsupported_uv` status.
+    if not draw.get("uv0Available"):
+        return "unsupported_uv"
     return "unresolved"
 
 

@@ -589,6 +589,7 @@ export function createSession(geometry, tick0, options = {}) {
     materials: geometry.materials,
     textures: packetTextures,
     texturePack: geometry.texturePack,
+    lightmaps: Array.isArray(geometry.lightmaps) ? geometry.lightmaps : [],
     carTexturePack: body.texturePack,
     draws: staticDraws.concat(carDraws),
     physicsSurfaces,

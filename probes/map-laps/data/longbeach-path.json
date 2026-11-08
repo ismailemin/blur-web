@@ -26,15 +26,15 @@
   },
   "slice": {
    "path": "_work/map-slice/longbeach/slice.json",
-   "bytes": 1100708,
-   "sha256": "sha256:7525436d662d230cd4244dfb7821b1f41ed586ce0bb950b2ae3478199cf084b7",
-   "contentHash": "sha256:c800503f986e94bd84fc16295f424a779e965cd9c499affdeb65edcf0d008f39"
+   "bytes": 1109898,
+   "sha256": "sha256:82acdc7f160c4c32c5600981f6d09e763db773592d0384acb8f98eecee65c100",
+   "contentHash": "sha256:cabe52124b5506ae2c0801e2f652ce5369d3dfb54a4af15590b78e26e22ff695"
   },
   "render": {
    "path": "_work/map-slice/longbeach-render/render.json",
-   "bytes": 985213,
-   "sha256": "sha256:c79d5ea8653aa8c88fa115d7a048b91b308d85ca6502582f0605a7220086ec3a",
-   "contentHash": "sha256:c8bfff56018c059efdf31ae749c353435aab25d8359577b307606d378c032199"
+   "bytes": 1058791,
+   "sha256": "sha256:370dc4a46dd59d7fabba779c2729c5ae4e44240a1d9843ab3a674e5fbb3a8b2c",
+   "contentHash": "sha256:5ab20e8c66dec4d5954203f497c71e00d0c9a6fd62b47848b73e888a490d7fca"
   },
   "raster": {
    "path": "_work/map-laps/longbeach/grid.npz",
@@ -76,8 +76,8 @@
   },
   "corridor": {
    "drawPath": "probes/map-laps/data/longbeach-draw-layout.json",
-   "drawPathFileSha256": "sha256:ac9b68630a8c82c4f99a1f376466240ed89b9100df630bbf192a687be772eb30",
-   "drawPathCanonicalHash": "sha256:7ef9c05477e3ee76ea2017574f5acbcd21c42cfef7f50a1d35d86956ab7214b8",
+   "drawPathFileSha256": "sha256:41fcfbcae5029eb8f43a5e497f465d1e71daa4dbe31fb02a23b1fe10d6ae4643",
+   "drawPathCanonicalHash": "sha256:8404e7c8286197a41c531cc93639b944918ad1fc38c9c747feec33f16fbe38c9",
    "drawPathLengthMetres": 818.371718,
    "drawPathSamples": 3409,
    "cells": 14,
@@ -22574,5 +22574,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:4449ed75b1344e29a3d5b8c920a412d54a57eb14bfabdc9bca6ab66ce2fc8366"
+ "hash": "sha256:539142093d6e1e8196eb6ca5ab5a962e0e3843158ac9c58dec040248a582ca69"
 }

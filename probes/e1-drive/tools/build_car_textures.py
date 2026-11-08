@@ -56,8 +56,8 @@ MANIFEST_OUT = OUT_DIR / "car-textures.json"
 # Committed identities. The P52 roster index is the per-car record; the
 # car-parts index is the model/manifest/mesh map `build_geometry.mjs` already
 # pins. A regenerated or hand-edited input is a hard failure.
-COMMITTED_ROSTER_INDEX = "fc144a1c23d332abafbab92c0c15ff3f273f4a6562262dcb3b431bc7e778bf19"
-COMMITTED_CAR_INDEX = "555acb110c35374a91acecfac58098b55376c93fd35e52537d2df8715c3ae340"
+COMMITTED_ROSTER_INDEX = "e678ac28a449c093fee1d26170c1113c4088e679d93ffc8bb6f1b15b9c62c084"
+COMMITTED_CAR_INDEX = "62ecdb7b0cf0be0ff5a99f3ffd925f6659705538572a2414224590b53a910ccb"
 
 # The committed `scene_inspect.exe` output per car, which carries the merged
 # `uv0` array parallel to `positions`. The car-parts index does not record this
@@ -123,6 +123,8 @@ COMMITTED_SCENE_REPORTS = {
     "dodge-vipergtsr-stock": "e46c313d2bec2ef8c63eb600078644ee5953b16c5be067cd52f9b5de6f0ce341",
     "ratrod-na-stock": "18f39a36d8ffe89a9e999ab27ea9e7ef3821ae76cdc11c60293000f0c2ec8194",
     "toyota-supra-smooth": "3f0943d31b38caa4efbeebd659d653571cfa6becc3cdf88d38ba1ccbe7771e48",
+    "hummer-h2-rat": "312d79d9459edb4f27429b4471d983c83be71c27a4b38306ed00449c87f27d77",
+    "ford-supervan-stock": "c0e73ff099c6bd9bbee9c278c0abd62a6e3ac48f224ec5564cea01cb41ba51e9",
 }
 
 # P52 per-car totals (docs/work/analysis/car-materials.md §2, extended by the
@@ -308,6 +310,12 @@ EXPECTED_BY_CAR = {
     "toyota-supra-smooth": {"draws": 82, "staticAlbedoDraws": 49, "paintDraws": 9,
                            "lightDraws": 11, "noAlbedoDraws": 13, "textures": 7,
                            "rgbaBytes": 3424256, "uvValues": 63658},
+    "hummer-h2-rat": {"draws": 82, "staticAlbedoDraws": 22, "paintDraws": 0,
+                           "lightDraws": 14, "noAlbedoDraws": 46, "textures": 7,
+                           "rgbaBytes": 3440640, "uvValues": 64238},
+    "ford-supervan-stock": {"draws": 79, "staticAlbedoDraws": 65, "paintDraws": 0,
+                           "lightDraws": 12, "noAlbedoDraws": 2, "textures": 9,
+                           "rgbaBytes": 2244608, "uvValues": 77070},
 }
 EXPECTED = {
     key: sum(car[key] for car in EXPECTED_BY_CAR.values())
@@ -374,6 +382,9 @@ STATUS_TO_CLASS = {
     "static_albedo_image_resolved": "staticAlbedo",
     "runtime_light_blend": "runtimeLightBlend",
     "shader_no_albedo": "noAlbedoShader",
+    # A draw with no usable UV0 cannot bind an albedo texture. It is a typed
+    # non-static class, not an error.
+    "unsupported_uv": "unsupportedUv",
 }
 
 
@@ -620,6 +631,7 @@ def build_car(entry: dict, car_index_entry: dict) -> dict:
                     "runtimeLightBlend": "runtimeLightBlend",
                     "noAlbedoShader": "runtimePaintLookup" if material_draw.get("shaderFamily") == "paint"
                         else "runtimeShaderNoAlbedo",
+                    "unsupportedUv": "runtimeUnsupportedUv",
                 }[draw_class],
                 "reason": runtime_reason,
             })
@@ -652,7 +664,8 @@ def build_car(entry: dict, car_index_entry: dict) -> dict:
     textured = [draw for draw in draws if draw["drawClass"] == "staticAlbedo"]
     paint = [draw for draw in draws if draw["bindingStatus"] == "runtimePaintLookup"]
     light = [draw for draw in draws if draw["bindingStatus"] == "runtimeLightBlend"]
-    no_albedo = [draw for draw in draws if draw["bindingStatus"] == "runtimeShaderNoAlbedo"]
+    no_albedo = [draw for draw in draws if draw["bindingStatus"] in
+                 ("runtimeShaderNoAlbedo", "runtimeUnsupportedUv")]
     coverage = {
         "drawCount": len(draws),
         "staticAlbedoDraws": len(textured),
