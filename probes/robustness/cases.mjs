@@ -12,22 +12,26 @@
 // check, not of a format.
 
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import {
-  ChunkLoadError, assembleGeometry, parseBaseChunk, parseCarChunk, parseChunkIndex, parseLevelChunk,
+  CHUNK_ERROR, ChunkLoadError, assembleGeometry, parseBaseChunk, parseCarChunk, parseChunkIndex, parseLevelChunk,
   verifyChunkBytes, verifyChunkSha
 } from '../e1-drive/web/geometry-chunks.js';
 import { validateMapPackage } from '../e1-drive/web/map-package.js';
 import { validateSprintLayout } from '../e1-drive/web/sprint-layout.js';
 import {
-  GHOST_KEY_PREFIX, createGhostStore, decodeGhost, ghostHash, matrixFromQuaternion, validateGhostRecord
+  GHOST_INDEX_KIND, GHOST_KEY_PREFIX, createGhostStore, decodeGhost, ghostHash, matrixFromQuaternion, validateGhostRecord
 } from '../e1-drive/web/ghost-replay.js';
 import { createBestTimes } from '../e1-drive/web/sprint-best.js';
 import {
-  MpMapError, assertMpMapAgreement, buildMpResult, compareMpMapRecords, normalizePlayerName, normalizeRoomCode
+  MP_ROOM_CLOSED, MpMapError, MpSession, assertMpMapAgreement, buildMpResult, compareMpMapRecords,
+  normalizePlayerName, normalizeRoomCode
 } from '../e1-drive/web/mp-client.js';
+import { validateDocument } from '../content-db/loader.mjs';
+import { buildCatalog } from '../powerups/rules/engine.js';
+import { createPowerupModel } from '../e1-drive/web/powerups.js';
 import { fieldsUrl, loadRoster, resolveCar } from '../e1-drive/web/cars.js';
 import { SPRINT_PROP_PINS, checkPropManifest } from '../e1-drive/web/prop-layer.js';
 import { createSession } from '../e1-drive/web/packet-adapter.js';
@@ -37,8 +41,8 @@ import { packetHash, validatePacket } from '../render-packet/tools/packet-format
 import { checkInput, checkState, quantizeInput, quantizeState, validRoomCode } from '../net-mvp/protocol.mjs';
 
 import {
-  CAR_MESH_ID, IDENTITY, REAL_PATHS, ROOT, SLUG, WHEEL_CORNERS, hashOf as hashOfLocal, readCommittedJson,
-  syntheticGeometry, tick0State, validBaseDoc, validCarDoc, validIndexDoc, validLevelDoc, validPacket
+  CAR_MESH_ID, IDENTITY, REAL_PATHS, ROOT, SLUG, WHEEL_CORNERS, hashOf as hashOfLocal, readCommitted,
+  readCommittedJson, syntheticGeometry, tick0State, validBaseDoc, validCarDoc, validIndexDoc, validLevelDoc, validPacket
 } from './lib/fixtures.mjs';
 import { assert, rejectOnErrors } from './lib/probe.mjs';
 
@@ -245,18 +249,18 @@ function chunkIndexCases() {
   const mutate = (fn) => { const next = clone(valid); fn(next); return json(next); };
 
   cases.push({
-    id: 'chunk.index.valid', group: 'chunk-index', input: 'car-bodies.index.json', stage: 'parseChunkIndex',
+    id: 'chunk.index.valid', group: 'chunk-index', input: 'chunk index · car-bodies.index.json', stage: 'parseChunkIndex',
     description: 'the synthetic index with the same shape as the committed one', expected: 'accept', impact: 0,
     run: () => parseChunkIndex(json(valid))
   });
   cases.push({
-    id: 'chunk.index.empty', group: 'chunk-index', input: 'car-bodies.index.json', stage: 'parseChunkIndex',
+    id: 'chunk.index.empty', group: 'chunk-index', input: 'chunk index · car-bodies.index.json', stage: 'parseChunkIndex',
     description: 'zero-byte file (truncated download)', expected: 'reject', impact: 4,
     remediation: 'keep the typed INDEX_SCHEMA path and add the byte count to the message',
     run: () => parseChunkIndex('')
   });
   cases.push({
-    id: 'chunk.index.truncated-json', group: 'chunk-index', input: 'car-bodies.index.json', stage: 'parseChunkIndex',
+    id: 'chunk.index.truncated-json', group: 'chunk-index', input: 'chunk index · car-bodies.index.json', stage: 'parseChunkIndex',
     description: 'JSON cut mid-object', expected: 'reject', impact: 4,
     run: () => parseChunkIndex(json(valid).slice(0, 120))
   });
@@ -275,18 +279,18 @@ function chunkIndexCases() {
     ['car-fallback', (doc) => { doc.cars[SLUG].fallback = true; }, 5]
   ]) {
     cases.push({
-      id: 'chunk.index.' + id, group: 'chunk-index', input: 'car-bodies.index.json', stage: 'parseChunkIndex',
+      id: 'chunk.index.' + id, group: 'chunk-index', input: 'chunk index · car-bodies.index.json', stage: 'parseChunkIndex',
       description: 'index field "' + id + '" corrupted', expected: 'reject', impact,
       run: () => parseChunkIndex(mutate(mutateFn))
     });
   }
   cases.push({
-    id: 'chunk.index.extra-field', group: 'chunk-index', input: 'car-bodies.index.json', stage: 'parseChunkIndex',
+    id: 'chunk.index.extra-field', group: 'chunk-index', input: 'chunk index · car-bodies.index.json', stage: 'parseChunkIndex',
     description: 'unknown top-level field (forward compatibility)', expected: 'accept', impact: 1,
     run: () => parseChunkIndex(mutate((doc) => { doc.futureField = { ignored: true }; }))
   });
   cases.push({
-    id: 'chunk.index.car-bytes-negative', group: 'chunk-index', input: 'car-bodies.index.json',
+    id: 'chunk.index.car-bytes-negative', group: 'chunk-index', input: 'chunk index · car-bodies.index.json',
     stage: 'parseChunkIndex + verifyChunkBytes', description:
       'negative byte count: the index parser accepts it, verifyChunkBytes rejects it (delegated, typed)',
     expected: 'reject', impact: 4,
@@ -297,7 +301,7 @@ function chunkIndexCases() {
     }
   });
   cases.push({
-    id: 'chunk.index.car-bytes-float', group: 'chunk-index', input: 'car-bodies.index.json',
+    id: 'chunk.index.car-bytes-float', group: 'chunk-index', input: 'chunk index · car-bodies.index.json',
     stage: 'parseChunkIndex + verifyChunkBytes', description: 'fractional byte count is rejected by the byte check',
     expected: 'reject', impact: 3,
     run: () => {
@@ -306,7 +310,7 @@ function chunkIndexCases() {
     }
   });
   cases.push({
-    id: 'chunk.index.car-file-missing', group: 'chunk-index', input: 'car-bodies.index.json',
+    id: 'chunk.index.car-file-missing', group: 'chunk-index', input: 'chunk index · car-bodies.index.json',
     stage: 'parseChunkIndex + URL construction', description:
       'a missing file name is accepted by the parser; the loader would fetch /undefined and fail with CAR_MISSING (loud, but the message names a wrong URL)',
     expected: 'accept', impact: 2,
@@ -317,12 +321,12 @@ function chunkIndexCases() {
     }
   });
   cases.push({
-    id: 'chunk.index.policy-missing', group: 'chunk-index', input: 'car-bodies.index.json', stage: 'parseChunkIndex',
+    id: 'chunk.index.policy-missing', group: 'chunk-index', input: 'chunk index · car-bodies.index.json', stage: 'parseChunkIndex',
     description: 'the documented residency policy block removed', expected: 'accept', impact: 1,
     run: () => parseChunkIndex(mutate((doc) => { delete doc.policy; }))
   });
   cases.push({
-    id: 'chunk.index.duplicate-car-key-json', group: 'chunk-index', input: 'car-bodies.index.json', stage: 'parseChunkIndex',
+    id: 'chunk.index.duplicate-car-key-json', group: 'chunk-index', input: 'chunk index · car-bodies.index.json', stage: 'parseChunkIndex',
     description: 'duplicate JSON key for one car: JSON.parse keeps the last entry',
     expected: 'accept', impact: 2,
     run: () => {
@@ -339,22 +343,22 @@ function levelChunkCases() {
   const valid = validLevelDoc();
   const mutate = (fn) => { const next = clone(valid); fn(next); return json(next); };
   const reject = (id, description, mutateFn, impact, stage = 'parseLevelChunk') => cases.push({
-    id: 'chunk.level.' + id, group: 'level-chunk', input: 'level.geometry.json', stage,
+    id: 'chunk.level.' + id, group: 'level-chunk', input: 'level chunk · level.geometry.json', stage,
     description, expected: 'reject', impact, run: () => parseLevelChunk(mutate(mutateFn))
   });
 
   cases.push({
-    id: 'chunk.level.valid', group: 'level-chunk', input: 'level.geometry.json', stage: 'parseLevelChunk',
+    id: 'chunk.level.valid', group: 'level-chunk', input: 'level chunk · level.geometry.json', stage: 'parseLevelChunk',
     description: 'synthetic level chunk with the committed header shape', expected: 'accept', impact: 0,
     run: () => parseLevelChunk(json(valid))
   });
   cases.push({
-    id: 'chunk.level.empty', group: 'level-chunk', input: 'level.geometry.json', stage: 'parseLevelChunk',
+    id: 'chunk.level.empty', group: 'level-chunk', input: 'level chunk · level.geometry.json', stage: 'parseLevelChunk',
     description: 'zero-byte level chunk', expected: 'reject', impact: 5,
     run: () => parseLevelChunk('')
   });
   cases.push({
-    id: 'chunk.level.truncated-json', group: 'level-chunk', input: 'level.geometry.json', stage: 'parseLevelChunk',
+    id: 'chunk.level.truncated-json', group: 'level-chunk', input: 'level chunk · level.geometry.json', stage: 'parseLevelChunk',
     description: 'level chunk cut mid-array (truncated download)', expected: 'reject', impact: 5,
     run: () => parseLevelChunk(json(valid).slice(0, Math.floor(json(valid).length / 2)))
   });
@@ -369,7 +373,7 @@ function levelChunkCases() {
   // what that path actually does with the synthetic geometry the adapter accepts.
   const pageGeometry = (fn) => { const geometry = syntheticGeometry(); fn(geometry); return geometry; };
   cases.push({
-    id: 'chunk.level.huge-vertex-count', group: 'level-chunk', input: 'level.geometry.json',
+    id: 'chunk.level.huge-vertex-count', group: 'level-chunk', input: 'level chunk · level.geometry.json',
     stage: 'page-contract (producer + consumer count check)', description:
       'vertexCount 1e9 with three positions passes the chunk parser; the consumer rejects it later with an untyped count error',
     expected: 'reject', impact: 4,
@@ -384,7 +388,7 @@ function levelChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.level.negative-index-count', group: 'level-chunk', input: 'level.geometry.json',
+    id: 'chunk.level.negative-index-count', group: 'level-chunk', input: 'level chunk · level.geometry.json',
     stage: 'page-contract (consumer draw range check)', description:
       'negative indexCount passes both the chunk parser and the consumer range check (-3 % 3 is -0) and reaches drawIndexed',
     expected: 'reject', impact: 4,
@@ -400,7 +404,7 @@ function levelChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.level.null-positions-page', group: 'level-chunk', input: 'level.geometry.json',
+    id: 'chunk.level.null-positions-page', group: 'level-chunk', input: 'level chunk · level.geometry.json',
     stage: 'page-contract (createSession occluder)', description:
       'null mesh positions reach camera-occlusion and throw an untyped TypeError instead of LEVEL_SCHEMA',
     expected: 'reject', impact: 3,
@@ -411,7 +415,7 @@ function levelChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.level.nan-position-page', group: 'level-chunk', input: 'level.geometry.json',
+    id: 'chunk.level.nan-position-page', group: 'level-chunk', input: 'level chunk · level.geometry.json',
     stage: 'page-contract (producer + consumer float upload)', description:
       'a non-finite mesh position is accepted by createSession; the consumer uploads it to the GPU verbatim',
     expected: 'reject', impact: 4,
@@ -424,7 +428,7 @@ function levelChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.level.index-out-of-range-page', group: 'level-chunk', input: 'level.geometry.json',
+    id: 'chunk.level.index-out-of-range-page', group: 'level-chunk', input: 'level chunk · level.geometry.json',
     stage: 'page-contract (consumer index upload)', description:
       'an index reference outside the vertex range is uploaded as a Uint32 index (GPU reads out of bounds)',
     expected: 'reject', impact: 4,
@@ -437,7 +441,7 @@ function levelChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.level.index-u32-wrap', group: 'level-chunk', input: 'level.geometry.json',
+    id: 'chunk.level.index-u32-wrap', group: 'level-chunk', input: 'level chunk · level.geometry.json',
     stage: 'page-contract (consumer Uint32 conversion)', description:
       'an index >= 2^32 wraps silently in Uint32Array and points at a different vertex',
     expected: 'reject', impact: 4,
@@ -448,7 +452,7 @@ function levelChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.level.extra-field', group: 'level-chunk', input: 'level.geometry.json', stage: 'parseLevelChunk',
+    id: 'chunk.level.extra-field', group: 'level-chunk', input: 'level chunk · level.geometry.json', stage: 'parseLevelChunk',
     description: 'unknown level field (forward compatibility)', expected: 'accept', impact: 1,
     run: () => parseLevelChunk(mutate((doc) => { doc.future = true; }))
   });
@@ -461,7 +465,7 @@ function baseChunkCases() {
   const mutate = (fn) => { const next = clone(valid); fn(next); return json(next); };
   return [
     {
-      id: 'chunk.base.valid', group: 'base-chunk', input: 'base.geometry.json', stage: 'parseBaseChunk',
+      id: 'chunk.base.valid', group: 'base-chunk', input: 'base chunk · base.geometry.json', stage: 'parseBaseChunk',
       description: 'synthetic base chunk', expected: 'accept', impact: 0, run: () => parseBaseChunk(json(valid))
     },
     ...[
@@ -471,12 +475,12 @@ function baseChunkCases() {
       ['chunk-header', (doc) => { doc.chunk.kind = 'level'; }, 4],
       ['car-bodies', (doc) => { doc.carBodies[SLUG] = {}; }, 4]
     ].map(([id, fn, impact]) => ({
-      id: 'chunk.base.' + id, group: 'base-chunk', input: 'base.geometry.json', stage: 'parseBaseChunk',
+      id: 'chunk.base.' + id, group: 'base-chunk', input: 'base chunk · base.geometry.json', stage: 'parseBaseChunk',
       description: 'base field "' + id + '" corrupted', expected: 'reject', impact,
       run: () => parseBaseChunk(mutate(fn))
     })),
     {
-      id: 'chunk.base.extra-field', group: 'base-chunk', input: 'base.geometry.json', stage: 'parseBaseChunk',
+      id: 'chunk.base.extra-field', group: 'base-chunk', input: 'base chunk · base.geometry.json', stage: 'parseBaseChunk',
       description: 'unknown base field', expected: 'accept', impact: 1,
       run: () => parseBaseChunk(mutate((doc) => { doc.future = 1; }))
     }
@@ -490,22 +494,22 @@ function carChunkCases() {
   const valid = validCarDoc();
   const mutate = (fn) => { const next = clone(valid); fn(next); return json(next); };
   const reject = (id, description, fn, impact) => cases.push({
-    id: 'chunk.car.' + id, group: 'car-chunk', input: 'cars/<slug>.geometry.json', stage: 'parseCarChunk',
+    id: 'chunk.car.' + id, group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json', stage: 'parseCarChunk',
     description, expected: 'reject', impact, run: () => parseCarChunk(mutate(fn), validIndex, SLUG)
   });
 
   cases.push({
-    id: 'chunk.car.valid', group: 'car-chunk', input: 'cars/<slug>.geometry.json', stage: 'parseCarChunk',
+    id: 'chunk.car.valid', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json', stage: 'parseCarChunk',
     description: 'synthetic car chunk matching its index entry', expected: 'accept', impact: 0,
     run: () => parseCarChunk(json(valid), validIndex, SLUG)
   });
   cases.push({
-    id: 'chunk.car.unknown-slug', group: 'car-chunk', input: 'cars/<slug>.geometry.json', stage: 'parseCarChunk',
+    id: 'chunk.car.unknown-slug', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json', stage: 'parseCarChunk',
     description: 'car not present in the index', expected: 'reject', impact: 4,
     run: () => parseCarChunk(json(valid), validIndex, 'not-a-car')
   });
   cases.push({
-    id: 'chunk.car.empty', group: 'car-chunk', input: 'cars/<slug>.geometry.json', stage: 'parseCarChunk',
+    id: 'chunk.car.empty', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json', stage: 'parseCarChunk',
     description: 'zero-byte car chunk', expected: 'reject', impact: 5,
     run: () => parseCarChunk('', validIndex, SLUG)
   });
@@ -516,7 +520,7 @@ function carChunkCases() {
   reject('chunk-kind', 'chunk header kind is not car', (doc) => { doc.chunk.kind = 'level'; }, 4);
   reject('draws-missing', 'carDraws missing', (doc) => { delete doc.carDraws; }, 4);
   cases.push({
-    id: 'chunk.car.draws-count', group: 'car-chunk', input: 'cars/<slug>.geometry.json', stage: 'parseCarChunk',
+    id: 'chunk.car.draws-count', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json', stage: 'parseCarChunk',
     description: 'one draw but the index pins two', expected: 'reject', impact: 4,
     run: () => {
       const index = clone(validIndex);
@@ -531,7 +535,7 @@ function carChunkCases() {
 
   // Deep/producer cases.
   cases.push({
-    id: 'chunk.car.duplicate-draw-ids', group: 'car-chunk', input: 'cars/<slug>.geometry.json',
+    id: 'chunk.car.duplicate-draw-ids', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json',
     stage: 'page-contract (createSession)', description:
       'two car draws with the same id: the node ownership check sees 1 of 2 draws and throws an untyped Error',
     expected: 'reject', impact: 3,
@@ -544,7 +548,7 @@ function carChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.car.wheel-matrix-null', group: 'car-chunk', input: 'cars/<slug>.geometry.json',
+    id: 'chunk.car.wheel-matrix-null', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json',
     stage: 'page-contract (createSession matrix coercion)', description:
       'a null wheel-rest translation coerces to 0 in multiplyMat4, so the car is accepted with the wheel offset silently lost',
     expected: 'reject', impact: 4,
@@ -562,7 +566,7 @@ function carChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.car.duplicate-texture-ids', group: 'car-chunk', input: 'cars/<slug>.geometry.json',
+    id: 'chunk.car.duplicate-texture-ids', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json',
     stage: 'page-contract (createSession)', description: 'duplicate texture id across the packet texture set',
     expected: 'reject', impact: 3, evidence: 'packet-adapter.js:483-488',
     run: () => {
@@ -573,7 +577,7 @@ function carChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.car.texture-unknown', group: 'car-chunk', input: 'cars/<slug>.geometry.json',
+    id: 'chunk.car.texture-unknown', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json',
     stage: 'page-contract (createSession)', description: 'a car draw names a texture absent from the packet',
     expected: 'reject', impact: 3, evidence: 'packet-adapter.js:505-513',
     run: () => {
@@ -585,7 +589,7 @@ function carChunkCases() {
     }
   });
   cases.push({
-    id: 'chunk.car.extra-field', group: 'car-chunk', input: 'cars/<slug>.geometry.json', stage: 'parseCarChunk',
+    id: 'chunk.car.extra-field', group: 'car-chunk', input: 'car chunk · cars/<slug>.geometry.json', stage: 'parseCarChunk',
     description: 'unknown car chunk field', expected: 'accept', impact: 1,
     run: () => parseCarChunk(mutate((doc) => { doc.future = { x: 1 }; }), validIndex, SLUG)
   });
@@ -595,33 +599,38 @@ function carChunkCases() {
 // --------------------------------------------------------------- byte/hash checks
 function chunkByteCases() {
   const spec = { bytes: 4, sha256: 'sha256:' + 'a'.repeat(64) };
+  // The page passes the real CHUNK_ERROR codes for the level chunk; the same
+  // helper serves the car/base chunks with their own codes (app.js:2253-2257,
+  // 2268-2272, 2290-2294).
+  const levelCodes = { schema: CHUNK_ERROR.LEVEL_SCHEMA, bytes: CHUNK_ERROR.LEVEL_BYTES };
+  const levelSha = { sha: CHUNK_ERROR.LEVEL_SHA };
   const reject = (id, description, run, impact = 4) => ({
-    id: 'chunk.bytes.' + id, group: 'chunk-bytes', input: 'chunk bytes + index entry', stage: 'verifyChunkBytes/verifyChunkSha',
+    id: 'chunk.bytes.' + id, group: 'chunk-bytes', input: 'chunk bytes · chunk bytes + index entry', stage: 'verifyChunkBytes/verifyChunkSha',
     description, expected: 'reject', impact, run
   });
   return [
     {
-      id: 'chunk.bytes.valid', group: 'chunk-bytes', input: 'chunk bytes + index entry', stage: 'verifyChunkBytes',
+      id: 'chunk.bytes.valid', group: 'chunk-bytes', input: 'chunk bytes · chunk bytes + index entry', stage: 'verifyChunkBytes',
       description: 'matching length and hash', expected: 'accept', impact: 0,
       run: () => {
         const bytes = new Uint8Array([1, 2, 3, 4]);
-        verifyChunkBytes(bytes, spec, 'x', { schema: 'S', bytes: 'B' });
-        return verifyChunkSha(bytes, { ...spec, sha256: sha(Buffer.from(bytes)) }, 'x', async (value) => sha(Buffer.from(value)), { sha: 'H' });
+        verifyChunkBytes(bytes, spec, 'x', levelCodes);
+        return verifyChunkSha(bytes, { ...spec, sha256: sha(Buffer.from(bytes)) }, 'x', async (value) => sha(Buffer.from(value)), levelSha);
       }
     },
     reject('truncated', 'three of four bytes (truncated download)',
-      () => verifyChunkBytes(new Uint8Array([1, 2, 3]), spec, 'x', { schema: 'S', bytes: 'B' })),
-    reject('empty', 'zero bytes', () => verifyChunkBytes(new Uint8Array(0), spec, 'x', { schema: 'S', bytes: 'B' })),
+      () => verifyChunkBytes(new Uint8Array([1, 2, 3]), spec, 'x', levelCodes)),
+    reject('empty', 'a zero-byte chunk body', () => verifyChunkBytes(new Uint8Array(0), spec, 'x', levelCodes)),
     reject('spec-bytes-missing', 'index entry has no byte count',
-      () => verifyChunkBytes(new Uint8Array(4), { sha256: spec.sha256 }, 'x', { schema: 'S', bytes: 'B' })),
+      () => verifyChunkBytes(new Uint8Array(4), { sha256: spec.sha256 }, 'x', levelCodes)),
     reject('spec-sha-missing', 'index entry has no hash',
-      () => verifyChunkBytes(new Uint8Array(4), { bytes: 4 }, 'x', { schema: 'S', bytes: 'B' })),
+      () => verifyChunkBytes(new Uint8Array(4), { bytes: 4 }, 'x', levelCodes)),
     reject('wrong-hash', 'same length, different bytes (stale cache)',
-      () => verifyChunkSha(new Uint8Array([9, 9, 9, 9]), spec, 'x', async (value) => 'sha256:' + createHash('sha256').update(value).digest('hex'), { sha: 'H' })),
+      () => verifyChunkSha(new Uint8Array([9, 9, 9, 9]), spec, 'x', async (value) => 'sha256:' + createHash('sha256').update(value).digest('hex'), levelSha)),
     reject('not-bytes', 'a string instead of a byte body',
-      () => verifyChunkBytes('abcd', spec, 'x', { schema: 'S', bytes: 'B' })),
+      () => verifyChunkBytes('abcd', spec, 'x', levelCodes)),
     reject('hash-uppercase', 'index hash with uppercase hex',
-      () => verifyChunkBytes(new Uint8Array(4), { ...spec, sha256: spec.sha256.toUpperCase() }, 'x', { schema: 'S', bytes: 'B' }))
+      () => verifyChunkBytes(new Uint8Array(4), { ...spec, sha256: spec.sha256.toUpperCase() }, 'x', levelCodes))
   ];
 }
 
@@ -630,9 +639,9 @@ function packetCases() {
   const cases = [];
   const base = validPacket();
   const mutate = (fn) => { const next = clone(base); fn(next); return next; };
-  const offline = (id, description, fn, impact = 4) => cases.push({
+  const offline = (id, description, fn, impact = 4, evidence = null) => cases.push({
     id: 'packet.' + id, group: 'packet', input: 'packet v1.1 JSON', stage: 'validatePacket (offline contract)',
-    description, expected: 'reject', impact,
+    description, expected: 'reject', impact, evidence,
     run: () => rejectOnErrors(validatePacket(fn()), 'validatePacket')
   });
   cases.push({
@@ -642,7 +651,8 @@ function packetCases() {
   });
   offline('kind', 'kind is not blur.render-packet', () => mutate((p) => { p.kind = 'x'; }), 4);
   offline('version', 'unsupported packet version 2', () => mutate((p) => { p.version = 2; }), 4);
-  offline('missing-camera', 'camera removed', () => mutate((p) => { delete p.camera; }), 5);
+  offline('missing-camera', 'camera removed', () => mutate((p) => { delete p.camera; }), 5,
+    'packet-format.mjs:354-355 reads packet.camera.view without a null guard');
   offline('camera-near-above-far', 'camera near > far', () => mutate((p) => { p.camera.near = 10; p.camera.far = 1; }));
   offline('alpha-nan', 'update alpha is NaN', () => mutate((p) => { p.updates[1].alpha = NaN; }));
   offline('duplicate-mesh-id', 'two meshes with the same id', () => mutate((p) => { p.meshes[1].id = p.meshes[0].id; }), 3);
@@ -778,7 +788,15 @@ function stateCases() {
     id: 'state.tick-huge', group: 'engine-state', input: 'wasm e1_get_state()', stage: 'packet-adapter.appendState',
     description: 'tick 1e15 (over Number.MAX_SAFE_INTEGER) is accepted as a matrix update',
     expected: 'reject', impact: 2,
+    evidence: 'packet-adapter.js:1100-1128 copies state.tick into the update without an upper bound',
     run: () => { const session = build(); session.appendState(tick0State({ tick: 1e15 })); }
+  });
+  cases.push({
+    id: 'state.net-position-nan', group: 'engine-state', input: 'wasm e1_get_state()', stage: 'quantizeState (net protocol)',
+    description: 'a wasm state with a non-finite position is a typed NetError rejection at the net boundary',
+    expected: 'reject', impact: 3,
+    evidence: 'protocol.mjs:177-191 checkState returns a typed error for a non-finite position',
+    run: () => quantizeState(tick0State({ position: [NaN, 0, 0] }))
   });
   return cases;
 }
@@ -795,22 +813,22 @@ function sprintLayoutCases() {
     return next;
   };
   const reject = (base, id, description, fn, impact = 4, stage = 'validateSprintLayout') => cases.push({
-    id: 'layout.sprint.' + id, group: 'sprint-layout', input: 'sprint.json', stage,
+    id: 'layout.sprint.' + id, group: 'sprint-layout', input: 'sprint layout · sprint.json', stage,
     description, expected: 'reject', impact,
     run: () => rejectOnErrors(validateSprintLayout(mutate(base, fn)), 'validateSprintLayout')
   });
   cases.push({
-    id: 'layout.sprint.valid', group: 'sprint-layout', input: 'sprint-short.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.valid', group: 'sprint-layout', input: 'sprint layout · sprint-short.json', stage: 'validateSprintLayout',
     description: 'committed 29 m regression layout', expected: 'accept', impact: 0,
     run: () => rejectOnErrors(validateSprintLayout(short), 'validateSprintLayout')
   });
   cases.push({
-    id: 'layout.sprint.path-valid', group: 'sprint-layout', input: 'sprint.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.path-valid', group: 'sprint-layout', input: 'sprint layout · sprint.json', stage: 'validateSprintLayout',
     description: 'committed 310 m path layout', expected: 'accept', impact: 0,
     run: () => rejectOnErrors(validateSprintLayout(pathLayout()), 'validateSprintLayout')
   });
   cases.push({
-    id: 'layout.sprint.stale-hash', group: 'sprint-layout', input: 'sprint-short.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.stale-hash', group: 'sprint-layout', input: 'sprint layout · sprint-short.json', stage: 'validateSprintLayout',
     description: 'hand-edited gate without recomputing the content hash', expected: 'reject', impact: 5,
     run: () => rejectOnErrors(validateSprintLayout(mutate(short, (doc) => { doc.gates[3].x -= 1; }, { rehashDoc: false })), 'validateSprintLayout')
   });
@@ -829,14 +847,14 @@ function sprintLayoutCases() {
     doc.gates[1].a = [0, 0]; doc.gates[1].b = [1, 0]; doc.gates[1].tangent = { tx: 1, tz: 0 };
   }, 3);
   cases.push({
-    id: 'layout.sprint.path-sample-null', group: 'sprint-layout', input: 'sprint.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.path-sample-null', group: 'sprint-layout', input: 'sprint layout · sprint.json', stage: 'validateSprintLayout',
     description: 'null ground height in a measured sample is accepted: validateSprintLayout never inspects course samples',
     expected: 'reject', impact: 4,
     evidence: 'sprint-layout.js:1672-1825 reads samples only to test Array.isArray(course.samples); map-package.js:116-126 has the sample loop',
     run: () => rejectOnErrors(validateSprintLayout(mutate(pathLayout(), (doc) => { doc.course.samples[3].groundY = null; })), 'validateSprintLayout')
   });
   cases.push({
-    id: 'layout.sprint.path-sample-order', group: 'sprint-layout', input: 'sprint.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.path-sample-order', group: 'sprint-layout', input: 'sprint layout · sprint.json', stage: 'validateSprintLayout',
     description: 'non-monotonic sample arcs are accepted: the arc order is never checked on the River path',
     expected: 'reject', impact: 4,
     evidence: 'same as path-sample-null',
@@ -847,33 +865,33 @@ function sprintLayoutCases() {
   // The River sprint does not route through checkLayoutShape, so the band and
   // countdown declared by the layout are never validated here.
   cases.push({
-    id: 'layout.sprint.band-unchecked', group: 'sprint-layout', input: 'sprint-short.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.band-unchecked', group: 'sprint-layout', input: 'sprint layout · sprint-short.json', stage: 'validateSprintLayout',
     description: 'band 7 m instead of the declared 6 m is accepted: River layouts never validate band half-width',
     expected: 'reject', impact: 3,
     evidence: 'sprint-layout.js:1672-1825 has no band check; map-package.js:127 checks only map layouts',
     run: () => rejectOnErrors(validateSprintLayout(mutate(short, (doc) => { doc.course.band.halfWidthMetres = 7; })), 'validateSprintLayout')
   });
   cases.push({
-    id: 'layout.sprint.countdown-unchecked', group: 'sprint-layout', input: 'sprint-short.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.countdown-unchecked', group: 'sprint-layout', input: 'sprint layout · sprint-short.json', stage: 'validateSprintLayout',
     description: 'countdown 999 ticks is accepted: the page starts the timer from an unvalidated countdown',
     expected: 'reject', impact: 4,
     evidence: 'sprint-layout.js:1672-1825 has no countdown check',
     run: () => rejectOnErrors(validateSprintLayout(mutate(short, (doc) => { doc.countdown.ticks = 999; })), 'validateSprintLayout')
   });
   cases.push({
-    id: 'layout.sprint.respawn-unchecked', group: 'sprint-layout', input: 'sprint-short.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.respawn-unchecked', group: 'sprint-layout', input: 'sprint layout · sprint-short.json', stage: 'validateSprintLayout',
     description: 'respawn rule removed is accepted; createSprintRules later assumes it exists',
     expected: 'reject', impact: 3,
     evidence: 'sprint-layout.js:1672-1825 never checks layout.rules',
     run: () => rejectOnErrors(validateSprintLayout(mutate(short, (doc) => { delete doc.rules.respawn; })), 'validateSprintLayout')
   });
   cases.push({
-    id: 'layout.sprint.extra-field', group: 'sprint-layout', input: 'sprint-short.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.extra-field', group: 'sprint-layout', input: 'sprint layout · sprint-short.json', stage: 'validateSprintLayout',
     description: 'unknown layout field', expected: 'accept', impact: 1,
     run: () => rejectOnErrors(validateSprintLayout(mutate(short, (doc) => { doc.future = 1; })), 'validateSprintLayout')
   });
   cases.push({
-    id: 'layout.sprint.coherent-unpinned-edit', group: 'sprint-layout', input: 'sprint-short.json', stage: 'validateSprintLayout',
+    id: 'layout.sprint.coherent-unpinned-edit', group: 'sprint-layout', input: 'sprint layout · sprint-short.json', stage: 'validateSprintLayout',
     description: 'a coherently re-hashed layout that moves the finish 5 m earlier is accepted: the page checks the self hash, not a registry pin',
     expected: 'reject', impact: 4,
     evidence: 'app.js:2468 calls validateSprintLayout only; sprint-layout.js:1677-1682 verifies the self hash; map-registry.js:34 river bestKey has no layout pin',
@@ -899,12 +917,12 @@ function mapPackageCases() {
     return [nextMap, nextLayout, pins];
   };
   const reject = (id, description, fn, impact = 4) => cases.push({
-    id: 'map.package.' + id, group: 'map-package', input: 'map.json + layout.json', stage: 'validateMapPackage',
+    id: 'map.package.' + id, group: 'map-package', input: 'map package · map.json + layout.json', stage: 'validateMapPackage',
     description, expected: 'reject', impact,
     run: () => rejectOnErrors(validateMapPackage(...pair(fn)), 'validateMapPackage')
   });
   cases.push({
-    id: 'map.package.valid', group: 'map-package', input: 'map.json + layout.json', stage: 'validateMapPackage',
+    id: 'map.package.valid', group: 'map-package', input: 'map package · map.json + layout.json', stage: 'validateMapPackage',
     description: 'synthetic map and layout against synthetic pins', expected: 'accept', impact: 0,
     run: () => rejectOnErrors(validateMapPackage(map, layout, pins), 'validateMapPackage')
   });
@@ -932,19 +950,23 @@ function mapPackageCases() {
   reject('layout-sample-null', 'layout sample is not finite', (m, l) => { l.course.samples[0].x = null; }, 4);
   reject('layout-hash-content', 'layout self hash does not match its content', (m, l) => { l.gates[1].id = 'edited'; }, 4);
   cases.push({
-    id: 'map.package.extra-field', group: 'map-package', input: 'map.json + layout.json', stage: 'validateMapPackage',
+    id: 'map.package.extra-field', group: 'map-package', input: 'map package · map.json + layout.json', stage: 'validateMapPackage',
     description: 'unknown map field', expected: 'accept', impact: 1,
     run: () => rejectOnErrors(validateMapPackage(...pair((m) => { m.future = 1; })), 'validateMapPackage')
   });
   cases.push({
-    id: 'map.package.missing-spawn-app', group: 'map-package', input: 'map.json + layout.json',
+    id: 'map.package.missing-spawn-app', group: 'map-package', input: 'map package · map.json + layout.json',
     stage: 'page-contract (app.js spawn read)', description:
       'validateMapPackage accepts a layout without course.spawn; app.js then dereferences mapLayout.course.spawn.x and throws a TypeError',
     expected: 'reject', impact: 5,
     evidence: 'app.js:2376-2381',
     run: () => {
       const [nextMap, nextLayout] = pair((m, l) => { delete l.course.spawn; });
-      rejectOnErrors(validateMapPackage(nextMap, nextLayout, pins), 'validateMapPackage');
+      // Recompute the self hash and the registry pin so the only remaining
+      // problem is the missing spawn: validateMapPackage does not inspect it.
+      rehash(nextLayout);
+      const nextPins = { ...pins, layoutContentHash: nextLayout.hash };
+      rejectOnErrors(validateMapPackage(nextMap, nextLayout, nextPins), 'validateMapPackage');
       const spawn = {
         x: nextLayout.course.spawn.x,
         z: nextLayout.course.spawn.z,
@@ -954,7 +976,7 @@ function mapPackageCases() {
     }
   });
   cases.push({
-    id: 'map.package.mesh-positions-absent', group: 'map-package', input: 'map.json + layout.json',
+    id: 'map.package.mesh-positions-absent', group: 'map-package', input: 'map package · map.json + layout.json',
     stage: 'page-contract (consumer mesh upload)', description:
       'validateMapPackage never checks mesh positions; the consumer then fails with an untyped position-count error',
     expected: 'reject', impact: 4,
@@ -977,15 +999,15 @@ function ghostCases() {
   const base = validGhostRecord();
   const check = (record) => rejectOnErrors(validateGhostRecord(record), 'validateGhostRecord');
   const reject = (id, description, fn, impact = 4) => cases.push({
-    id: 'ghost.' + id, group: 'ghost', input: 'ghost JSON', stage: 'validateGhostRecord',
+    id: 'ghost.' + id, group: 'ghost', input: 'ghost record · ghost JSON', stage: 'validateGhostRecord',
     description, expected: 'reject', impact, run: () => check(fn(base))
   });
   cases.push({
-    id: 'ghost.valid', group: 'ghost', input: 'ghosts/<slug>-310m.json', stage: 'validateGhostRecord',
+    id: 'ghost.valid', group: 'ghost', input: 'ghost record · ghosts/<slug>-310m.json', stage: 'validateGhostRecord',
     description: 'committed reference ghost', expected: 'accept', impact: 0, run: () => check(base)
   });
   cases.push({
-    id: 'ghost.empty', group: 'ghost', input: 'ghost JSON', stage: 'validateGhostRecord',
+    id: 'ghost.empty', group: 'ghost', input: 'ghost record · ghost JSON', stage: 'validateGhostRecord',
     description: 'empty object', expected: 'reject', impact: 3, run: () => check({})
   });
   reject('hash-mismatch', 'one sample byte changed without recomputing the hash', (record) => {
@@ -996,7 +1018,7 @@ function ghostCases() {
   reject('tick-count', 'tickCount 1', (record) => { const n = clone(record); n.tickCount = 1; n.hash = ghostHash(n); return n; }, 3);
   reject('finish-tick', 'finishTick is not tickCount-1', (record) => { const n = clone(record); n.finishTick -= 1; n.hash = ghostHash(n); return n; }, 3);
   reject('time-zero', 'timeSeconds 0', (record) => { const n = clone(record); n.timeSeconds = 0; n.hash = ghostHash(n); return n; }, 3);
-  reject('tick-hz', 'tickHz 30', (record) => { const n = clone(record); n.tickHz = 30; n.hash = ghostHash(n); return n; }, 3);
+  reject('tick-hz', 'tickHz 30 instead of the 60 Hz recording rate', (record) => { const n = clone(record); n.tickHz = 30; n.hash = ghostHash(n); return n; }, 3);
   reject('course', 'course "lap"', (record) => { const n = clone(record); n.course = 'lap'; n.hash = ghostHash(n); return n; }, 4);
   reject('car', 'missing car slug', (record) => { const n = clone(record); n.car = ''; n.hash = ghostHash(n); return n; }, 3);
   reject('sample-bytes', 'sample data one byte short', (record) => {
@@ -1011,18 +1033,18 @@ function ghostCases() {
   }, 3);
   reject('hash-missing', 'hash removed', (record) => { const n = clone(record); delete n.hash; return n; }, 3);
   cases.push({
-    id: 'ghost.base64-non-alphabet', group: 'ghost', input: 'ghost JSON', stage: 'validateGhostRecord',
+    id: 'ghost.base64-non-alphabet', group: 'ghost', input: 'ghost record · ghost JSON', stage: 'validateGhostRecord',
     description: 'non-base64 character in sample data: the decoder throws instead of returning an error list',
     expected: 'reject', impact: 3,
     run: () => { const n = clone(base); n.sample.data = '!!!!' + n.sample.data.slice(4); n.hash = ghostHash(n); return check(n); }
   });
   cases.push({
-    id: 'ghost.base64-length', group: 'ghost', input: 'ghost JSON', stage: 'validateGhostRecord',
+    id: 'ghost.base64-length', group: 'ghost', input: 'ghost record · ghost JSON', stage: 'validateGhostRecord',
     description: 'sample data length is not a multiple of 4', expected: 'reject', impact: 3,
     run: () => { const n = clone(base); n.sample.data = n.sample.data.slice(0, -1); return check(n); }
   });
   cases.push({
-    id: 'ghost.nan-sample', group: 'ghost', input: 'ghost JSON', stage: 'validateGhostRecord',
+    id: 'ghost.nan-sample', group: 'ghost', input: 'ghost record · ghost JSON', stage: 'validateGhostRecord',
     description: 'a NaN sample with a recomputed hash is accepted by the store; the consumer later rejects it as non-rigid',
     expected: 'reject', impact: 4,
     evidence: 'ghost-replay.js:246-278 checks length/hash but not finite floats; packet-consumer.js:1261 isRigid',
@@ -1034,7 +1056,7 @@ function ghostCases() {
     }
   });
   cases.push({
-    id: 'ghost.zero-quaternion', group: 'ghost', input: 'ghost JSON', stage: 'validateGhostRecord',
+    id: 'ghost.zero-quaternion', group: 'ghost', input: 'ghost record · ghost JSON', stage: 'validateGhostRecord',
     description: 'a zero quaternion is accepted and produces a plausible identity rotation instead of being rejected',
     expected: 'reject', impact: 3,
     evidence: 'ghost-replay.js:266-277; matrixFromQuaternion normalises no quaternion (ghost-replay.js:131-143)',
@@ -1046,17 +1068,18 @@ function ghostCases() {
     }
   });
   cases.push({
-    id: 'ghost.time-huge', group: 'ghost', input: 'ghost JSON', stage: 'validateGhostRecord',
+    id: 'ghost.time-huge', group: 'ghost', input: 'ghost record · ghost JSON', stage: 'validateGhostRecord',
     description: 'timeSeconds 1e308 is finite and positive, so it is accepted', expected: 'reject', impact: 2,
+    evidence: 'ghost-replay.js:257 checks only Number.isFinite(timeSeconds) and > 0',
     run: () => { const n = clone(base); n.timeSeconds = 1e308; n.hash = ghostHash(n); return check(n); }
   });
   cases.push({
-    id: 'ghost.extra-field', group: 'ghost', input: 'ghost JSON', stage: 'validateGhostRecord',
+    id: 'ghost.extra-field', group: 'ghost', input: 'ghost record · ghost JSON', stage: 'validateGhostRecord',
     description: 'unknown ghost field', expected: 'accept', impact: 1,
     run: () => { const n = clone(base); n.future = 1; n.hash = ghostHash(n); return check(n); }
   });
   cases.push({
-    id: 'ghost.decode-nan', group: 'ghost', input: 'ghost JSON', stage: 'decodeGhost + ghostMatrices',
+    id: 'ghost.decode-nan', group: 'ghost', input: 'ghost record · ghost JSON', stage: 'decodeGhost + ghostMatrices',
     description: 'decodeGhost accepts a NaN sample (validate passes) and ghostPoseAt returns NaN position',
     expected: 'reject', impact: 4,
     evidence: 'ghost-replay.js:280-289',
@@ -1069,12 +1092,62 @@ function ghostCases() {
   return cases;
 }
 
+// ---------------------------------------------------------------- ghost index
+function ghostIndexCases() {
+  const indexPath = REAL_PATHS.ghostIndex;
+  const load = () => readCommittedJson(indexPath);
+  const entryOf = (index) => index.cars?.[SLUG]?.['310m'] ?? null;
+  const codes = { schema: CHUNK_ERROR.CAR_SCHEMA, bytes: CHUNK_ERROR.CAR_BYTES };
+  const shaCodes = { sha: CHUNK_ERROR.CAR_SHA };
+  const cases = [];
+  cases.push({
+    id: 'ghost.index.valid', group: 'ghost-index', input: 'ghost index · probes/e1-drive/ghosts/index.json',
+    stage: 'ghost index + verifyChunkBytes/verifyChunkSha',
+    description: 'the committed ghost index entry matches its file bytes and SHA-256', expected: 'accept', impact: 0,
+    run: async () => {
+      const index = load();
+      if (index.kind !== GHOST_INDEX_KIND) throw new Error('ghost index kind is not ' + GHOST_INDEX_KIND);
+      const entry = entryOf(index);
+      if (!entry) throw new Error('ghost index has no ' + SLUG + ' 310m entry');
+      const bytes = readCommitted(entry.file);
+      verifyChunkBytes(bytes, entry, 'ghost ' + SLUG, codes);
+      return verifyChunkSha(bytes, entry, 'ghost ' + SLUG, async (value) => sha(Buffer.from(value)), shaCodes);
+    }
+  });
+  cases.push({
+    id: 'ghost.index.bytes-mismatch', group: 'ghost-index', input: 'ghost index · probes/e1-drive/ghosts/index.json',
+    stage: 'verifyChunkBytes (ghost index pin)',
+    description: 'a ghost file shorter than the index byte pin is a typed CHUNK_CAR_BYTES rejection',
+    expected: 'reject', impact: 4,
+    evidence: 'app.js:1875-1894 reads the index and checks the file SHA-256; geometry-chunks.js:59-62 is the typed byte check',
+    run: () => {
+      const entry = entryOf(load());
+      const spec = { ...entry, bytes: entry.bytes - 1 };
+      return verifyChunkBytes(readCommitted(entry.file), spec, 'ghost ' + SLUG, codes);
+    }
+  });
+  cases.push({
+    id: 'ghost.index.sha-mismatch', group: 'ghost-index', input: 'ghost index · probes/e1-drive/ghosts/index.json',
+    stage: 'verifyChunkSha (ghost index pin)',
+    description: 'ghost bytes that do not match the index SHA-256 are a typed CHUNK_CAR_SHA256 rejection',
+    expected: 'reject', impact: 4,
+    evidence: 'app.js:1883-1885 compares the fetched text SHA-256 with the index entry; geometry-chunks.js:67-74 is the typed hash check',
+    run: () => {
+      const entry = entryOf(load());
+      const spec = { ...entry, sha256: 'sha256:' + '0'.repeat(64) };
+      return verifyChunkSha(readCommitted(entry.file), spec, 'ghost ' + SLUG,
+        async (value) => sha(Buffer.from(value)), shaCodes);
+    }
+  });
+  return cases;
+}
+
 // -------------------------------------------------------------- localStorage best
 function bestTimeCases() {
   const key = 'e1-drive.sprint.best.v2.310m';
   const cases = [];
   cases.push({
-    id: 'storage.best.valid', group: 'storage-best', input: 'localStorage', stage: 'createBestTimes',
+    id: 'storage.best.valid', group: 'storage', input: 'localStorage', stage: 'createBestTimes',
     description: 'a stored best time is read back', expected: 'accept', impact: 0,
     run: () => {
       const storage = fakeStorage({ [key]: JSON.stringify({ kind: 'e1-drive.sprint-best', version: 1, cars: { [SLUG]: { seconds: 14.65 } } }) });
@@ -1082,17 +1155,17 @@ function bestTimeCases() {
     }
   });
   cases.push({
-    id: 'storage.best.malformed-json', group: 'storage-best', input: 'localStorage', stage: 'createBestTimes',
+    id: 'storage.best.malformed-json', group: 'storage', input: 'localStorage', stage: 'createBestTimes',
     description: 'truncated JSON degrades to no best time (documented)', expected: 'accept', impact: 1,
     run: () => { if (createBestTimes(fakeStorage({ [key]: '{oops' }), key).bestFor(SLUG) !== null) throw new Error('bad'); }
   });
   cases.push({
-    id: 'storage.best.wrong-kind', group: 'storage-best', input: 'localStorage', stage: 'createBestTimes',
+    id: 'storage.best.wrong-kind', group: 'storage', input: 'localStorage', stage: 'createBestTimes',
     description: 'wrong kind degrades to no best time', expected: 'accept', impact: 1,
     run: () => { createBestTimes(fakeStorage({ [key]: JSON.stringify({ kind: 'x', version: 1, cars: {} }) }), key).read(); }
   });
   cases.push({
-    id: 'storage.best.seconds-string', group: 'storage-best', input: 'localStorage', stage: 'createBestTimes',
+    id: 'storage.best.seconds-string', group: 'storage', input: 'localStorage', stage: 'createBestTimes',
     description: 'a string seconds value is dropped instead of being coerced', expected: 'accept', impact: 1,
     run: () => {
       const storage = fakeStorage({ [key]: JSON.stringify({ kind: 'e1-drive.sprint-best', version: 1, cars: { [SLUG]: { seconds: '14.0' } } }) });
@@ -1100,7 +1173,7 @@ function bestTimeCases() {
     }
   });
   cases.push({
-    id: 'storage.best.huge-seconds', group: 'storage-best', input: 'localStorage', stage: 'createBestTimes',
+    id: 'storage.best.huge-seconds', group: 'storage', input: 'localStorage', stage: 'createBestTimes',
     description: 'seconds 1e308 is accepted and displayed as the best time', expected: 'reject', impact: 1,
     run: () => {
       const storage = fakeStorage({ [key]: JSON.stringify({ kind: 'e1-drive.sprint-best', version: 1, cars: { [SLUG]: { seconds: 1e308 } } }) });
@@ -1108,12 +1181,12 @@ function bestTimeCases() {
     }
   });
   cases.push({
-    id: 'storage.best.submit-nan', group: 'storage-best', input: 'localStorage', stage: 'createBestTimes.submit',
+    id: 'storage.best.submit-nan', group: 'storage', input: 'localStorage', stage: 'createBestTimes.submit',
     description: 'submitting NaN seconds is rejected', expected: 'reject', impact: 2,
     run: () => { createBestTimes(fakeStorage(), key).submit(SLUG, { seconds: NaN }); }
   });
   cases.push({
-    id: 'storage.best.quota', group: 'storage-best', input: 'localStorage', stage: 'createBestTimes',
+    id: 'storage.best.quota', group: 'storage', input: 'localStorage', stage: 'createBestTimes',
     description: 'a setItem quota error disables persistence instead of breaking the drive loop', expected: 'accept', impact: 1,
     run: () => {
       const store = createBestTimes(throwingStorage('QuotaExceededError'), key);
@@ -1131,7 +1204,7 @@ function ghostStoreCases() {
   const store = (raw) => ({ getItem: () => raw, setItem: () => {} });
   const cases = [];
   cases.push({
-    id: 'storage.ghost.valid', group: 'storage-ghost', input: 'localStorage', stage: 'createGhostStore',
+    id: 'storage.ghost.valid', group: 'storage', input: 'localStorage', stage: 'createGhostStore',
     description: 'a valid stored record is returned', expected: 'accept', impact: 0,
     run: () => {
       const raw = JSON.stringify({ kind: 'e1-drive.sprint-ghost-store', version: 1, course: '310m', cars: { [SLUG]: record } });
@@ -1139,7 +1212,7 @@ function ghostStoreCases() {
     }
   });
   cases.push({
-    id: 'storage.ghost.malformed-json', group: 'storage-ghost', input: 'localStorage', stage: 'createGhostStore',
+    id: 'storage.ghost.malformed-json', group: 'storage', input: 'localStorage', stage: 'createGhostStore',
     description: 'truncated JSON degrades to an empty store and records lastError', expected: 'accept', impact: 1,
     run: () => {
       const ghostStore = createGhostStore(store('{"kind":'), '310m');
@@ -1147,7 +1220,7 @@ function ghostStoreCases() {
     }
   });
   cases.push({
-    id: 'storage.ghost.wrong-course', group: 'storage-ghost', input: 'localStorage', stage: 'createGhostStore',
+    id: 'storage.ghost.wrong-course', group: 'storage', input: 'localStorage', stage: 'createGhostStore',
     description: 'a store for another course is dropped', expected: 'accept', impact: 1,
     run: () => {
       const raw = JSON.stringify({ kind: 'e1-drive.sprint-ghost-store', version: 1, course: 'short', cars: { [SLUG]: record } });
@@ -1155,7 +1228,7 @@ function ghostStoreCases() {
     }
   });
   cases.push({
-    id: 'storage.ghost.bad-hash', group: 'storage-ghost', input: 'localStorage', stage: 'createGhostStore',
+    id: 'storage.ghost.bad-hash', group: 'storage', input: 'localStorage', stage: 'createGhostStore',
     description: 'a record whose hash does not recompute is dropped', expected: 'accept', impact: 1,
     run: () => {
       const bad = clone(record); bad.timeSeconds += 1;
@@ -1164,17 +1237,17 @@ function ghostStoreCases() {
     }
   });
   cases.push({
-    id: 'storage.ghost.submit-wrong-car', group: 'storage-ghost', input: 'localStorage', stage: 'createGhostStore.submit',
+    id: 'storage.ghost.submit-wrong-car', group: 'storage', input: 'localStorage', stage: 'createGhostStore.submit',
     description: 'submitting a record under another slug is rejected', expected: 'reject', impact: 2,
     run: () => { createGhostStore(fakeStorage(), '310m').submit('other-car', record); }
   });
   cases.push({
-    id: 'storage.ghost.submit-layout-mismatch', group: 'storage-ghost', input: 'localStorage', stage: 'createGhostStore.submit',
+    id: 'storage.ghost.submit-layout-mismatch', group: 'storage', input: 'localStorage', stage: 'createGhostStore.submit',
     description: 'submitting a ghost from another layout is rejected', expected: 'reject', impact: 3,
     run: () => { createGhostStore(fakeStorage(), '310m', { layoutHash: 'sha256:' + '0'.repeat(64) }).submit(SLUG, record); }
   });
   cases.push({
-    id: 'storage.ghost.huge-tickcount', group: 'storage-ghost', input: 'localStorage', stage: 'validateGhostRecord',
+    id: 'storage.ghost.huge-tickcount', group: 'storage', input: 'localStorage', stage: 'validateGhostRecord',
     description: 'tickCount 1e9 with no matching bytes is rejected before allocation', expected: 'reject', impact: 3,
     run: () => {
       const bad = clone(record); bad.tickCount = 1e9; bad.hash = ghostHash(bad);
@@ -1189,38 +1262,40 @@ function rosterCases() {
   const doc = rosterFixture();
   const cases = [];
   cases.push({
-    id: 'roster.valid', group: 'roster', input: 'cars.json', stage: 'loadRoster',
+    id: 'roster.valid', group: 'roster', input: 'roster · cars.json', stage: 'loadRoster',
     description: 'synthetic PASS roster', expected: 'accept', impact: 0,
     run: () => loadRoster(fakeFetch(doc))
   });
   cases.push({
-    id: 'roster.http-500', group: 'roster', input: 'cars.json', stage: 'loadRoster',
+    id: 'roster.http-500', group: 'roster', input: 'roster · cars.json', stage: 'loadRoster',
     description: 'roster fetch HTTP 500', expected: 'reject', impact: 3,
     run: () => loadRoster(fakeFetch(doc, { status: 500 }))
   });
   cases.push({
-    id: 'roster.not-json', group: 'roster', input: 'cars.json', stage: 'loadRoster',
+    id: 'roster.not-json', group: 'roster', input: 'roster · cars.json', stage: 'loadRoster',
     description: 'roster body is truncated JSON', expected: 'reject', impact: 3,
+    evidence: 'cars.js:21 awaits response.json() before any schema check, so a truncated body is a SyntaxError',
     run: () => loadRoster(fakeFetch('{"kind":'))
   });
   cases.push({
-    id: 'roster.kind', group: 'roster', input: 'cars.json', stage: 'loadRoster',
+    id: 'roster.kind', group: 'roster', input: 'roster · cars.json', stage: 'loadRoster',
     description: 'wrong roster kind', expected: 'reject', impact: 3,
     run: () => loadRoster(fakeFetch({ ...doc, kind: 'x' }))
   });
   cases.push({
-    id: 'roster.status-fail', group: 'roster', input: 'cars.json', stage: 'loadRoster',
+    id: 'roster.status-fail', group: 'roster', input: 'roster · cars.json', stage: 'loadRoster',
     description: 'roster gate status FAIL', expected: 'reject', impact: 4,
     run: () => loadRoster(fakeFetch({ ...doc, status: 'FAIL', failures: ['mass <= 0'] }))
   });
   cases.push({
-    id: 'roster.cars-not-array', group: 'roster', input: 'cars.json', stage: 'loadRoster',
+    id: 'roster.cars-not-array', group: 'roster', input: 'roster · cars.json', stage: 'loadRoster',
     description: 'roster.cars is not an array', expected: 'reject', impact: 3,
     run: () => loadRoster(fakeFetch({ ...doc, roster: { cars: {} } }))
   });
   cases.push({
-    id: 'roster.duplicate-slug', group: 'roster', input: 'cars.json', stage: 'loadRoster + resolveCar',
+    id: 'roster.duplicate-slug', group: 'roster', input: 'roster · cars.json', stage: 'loadRoster + resolveCar',
     description: 'two cars with the same slug: resolveCar silently takes the first', expected: 'reject', impact: 2,
+    evidence: 'cars.js:32-40 uses Array.find, which returns the first matching slug',
     run: () => {
       const second = { ...doc.roster.cars[0], fields: { ...doc.roster.cars[0].fields, sha256: sha('other') } };
       const roster = { ...doc, roster: { ...doc.roster, cars: [doc.roster.cars[0], second] } };
@@ -1229,7 +1304,7 @@ function rosterCases() {
     }
   });
   cases.push({
-    id: 'roster.default-missing', group: 'roster', input: 'cars.json', stage: 'loadRoster + resolveCar',
+    id: 'roster.default-missing', group: 'roster', input: 'roster · cars.json', stage: 'loadRoster + resolveCar',
     description: 'roster default is not covered by the cars list; rejected only when the car is resolved', expected: 'reject', impact: 3,
     run: () => {
       const roster = { ...doc, roster: { ...doc.roster, default: 'missing' } };
@@ -1238,7 +1313,7 @@ function rosterCases() {
     }
   });
   cases.push({
-    id: 'roster.fields-hash-unchecked', group: 'roster', input: 'cars/<slug>.fields', stage: 'page-contract (fields load)',
+    id: 'roster.fields-hash-unchecked', group: 'roster', input: 'car fields · cars/<slug>.fields', stage: 'page-contract (fields load)',
     description: 'the page never compares the fetched fields bytes with the roster fields.sha256 / bytes; a stale car silently drives',
     expected: 'reject', impact: 5,
     evidence: 'app.js:2301-2309 fetches and uses fieldBytes; cars.js:44-46 builds the URL; the roster sha is never read',
@@ -1250,6 +1325,60 @@ function rosterCases() {
       // The page would feed the fetched bytes straight to e1_create.
     }
   });
+  cases.push({
+    id: 'roster.committed-25', group: 'roster', input: 'roster · _work/e1-drive/cars.json', stage: 'loadRoster (committed)',
+    description: 'the committed roster is a PASS document with the full 25-car field set', expected: 'accept', impact: 0,
+    run: () => {
+      const roster = readCommittedJson(REAL_PATHS.roster);
+      if (roster.kind !== 'e1-drive.car-roster' || roster.status !== 'PASS' ||
+          !Array.isArray(roster.roster?.cars) || roster.roster.cars.length !== 25) {
+        throw new Error('committed roster is not the 25-car PASS document');
+      }
+    }
+  });
+  cases.push({
+    id: 'roster.fields-bytes-mismatch', group: 'roster', input: 'car fields · _work/e1-drive/cars/<slug>.fields',
+    stage: 'verifyChunkBytes (roster fields pin)',
+    description: 'a fields file shorter than the roster byte pin is a typed CHUNK_CAR_BYTES rejection',
+    expected: 'reject', impact: 4,
+    evidence: 'cars.js:44-46; app.js:2301-2309; geometry-chunks.js:59-62',
+    run: () => {
+      const roster = readCommittedJson(REAL_PATHS.roster);
+      const car = roster.roster.cars[0];
+      const spec = { bytes: car.fields.bytes, sha256: 'sha256:' + car.fields.sha256 };
+      return verifyChunkBytes(new Uint8Array(car.fields.bytes - 1), spec, 'car fields ' + car.slug,
+        { schema: CHUNK_ERROR.CAR_SCHEMA, bytes: CHUNK_ERROR.CAR_BYTES });
+    }
+  });
+  cases.push({
+    id: 'roster.fields-sha-mismatch', group: 'roster', input: 'car fields · _work/e1-drive/cars/<slug>.fields',
+    stage: 'verifyChunkSha (roster fields pin)',
+    description: 'fields bytes that do not match the roster SHA-256 are a typed CHUNK_CAR_SHA256 rejection',
+    expected: 'reject', impact: 4,
+    evidence: 'cars.js:44-46; app.js:2301-2309; geometry-chunks.js:67-74',
+    run: () => {
+      const roster = readCommittedJson(REAL_PATHS.roster);
+      const car = roster.roster.cars[0];
+      const spec = { bytes: car.fields.bytes, sha256: 'sha256:' + car.fields.sha256 };
+      return verifyChunkSha(new Uint8Array(car.fields.bytes), spec, 'car fields ' + car.slug,
+        async (value) => sha(Buffer.from(value)), { sha: CHUNK_ERROR.CAR_SHA });
+    }
+  });
+  cases.push({
+    id: 'roster.fields-committed-valid', group: 'roster', input: 'car fields · _work/e1-drive/cars/<slug>.fields',
+    stage: 'verifyChunkBytes/verifyChunkSha (roster fields pin)',
+    description: 'the committed fields file matches its roster bytes and SHA-256', expected: 'accept', impact: 0,
+    run: async () => {
+      const roster = readCommittedJson(REAL_PATHS.roster);
+      const car = roster.roster.cars[0];
+      const bytes = readCommitted(car.fields.path);
+      const spec = { bytes: car.fields.bytes, sha256: 'sha256:' + car.fields.sha256 };
+      verifyChunkBytes(bytes, spec, 'car fields ' + car.slug,
+        { schema: CHUNK_ERROR.CAR_SCHEMA, bytes: CHUNK_ERROR.CAR_BYTES });
+      return verifyChunkSha(bytes, spec, 'car fields ' + car.slug,
+        async (value) => sha(Buffer.from(value)), { sha: CHUNK_ERROR.CAR_SHA });
+    }
+  });
   return cases;
 }
 
@@ -1259,39 +1388,93 @@ function propCases() {
   const cases = [];
   const check = (manifest, pins = SPRINT_PROP_PINS) => rejectOnErrors(checkPropManifest(manifest, pins), 'checkPropManifest');
   cases.push({
-    id: 'props.valid', group: 'prop-manifest', input: 'colliders-v2.json', stage: 'checkPropManifest',
+    id: 'props.valid', group: 'prop-manifest', input: 'collision manifest · colliders-v2.json', stage: 'checkPropManifest',
     description: 'committed V2 manifest against the 310 m pins', expected: 'accept', impact: 0,
     run: () => check(base)
   });
   cases.push({
-    id: 'props.kind', group: 'prop-manifest', input: 'colliders-v2.json', stage: 'checkPropManifest',
+    id: 'props.kind', group: 'prop-manifest', input: 'collision manifest · colliders-v2.json', stage: 'checkPropManifest',
     description: 'wrong manifest kind', expected: 'reject', impact: 3,
     run: () => check({ ...base, kind: 'x' })
   });
   cases.push({
-    id: 'props.variant', group: 'prop-manifest', input: 'colliders-v2.json', stage: 'checkPropManifest',
+    id: 'props.variant', group: 'prop-manifest', input: 'collision manifest · colliders-v2.json', stage: 'checkPropManifest',
     description: 'wrong manifest variant', expected: 'reject', impact: 4,
     run: () => check({ ...base, variant: 'v1' })
   });
   cases.push({
-    id: 'props.collider-count', group: 'prop-manifest', input: 'colliders-v2.json', stage: 'checkPropManifest',
+    id: 'props.collider-count', group: 'prop-manifest', input: 'collision manifest · colliders-v2.json', stage: 'checkPropManifest',
     description: 'one collider removed', expected: 'reject', impact: 4,
     run: () => check({ ...base, colliders: base.colliders.slice(1) })
   });
   cases.push({
-    id: 'props.content-hash', group: 'prop-manifest', input: 'colliders-v2.json', stage: 'checkPropManifest',
+    id: 'props.content-hash', group: 'prop-manifest', input: 'collision manifest · colliders-v2.json', stage: 'checkPropManifest',
     description: 'content hash unchanged while colliders were edited (hand-edited file)', expected: 'reject', impact: 4,
+    evidence: 'prop-layer.js:237-242 compares the declared contentSha256 with the pin; it never recomputes it from colliders',
     run: () => check({ ...base, colliders: base.colliders.map((collider, index) => index === 0 ? { ...collider, active: false } : collider) })
   });
   cases.push({
-    id: 'props.profile-count', group: 'prop-manifest', input: 'colliders-v2.json', stage: 'checkPropManifest',
+    id: 'props.profile-count', group: 'prop-manifest', input: 'collision manifest · colliders-v2.json', stage: 'checkPropManifest',
     description: 'profile collider count differs from the pin', expected: 'reject', impact: 3,
     run: () => check({ ...base, profiles: { ...base.profiles, roadside: { ...base.profiles.roadside, colliders: 1 } } })
   });
   cases.push({
-    id: 'props.extra-field', group: 'prop-manifest', input: 'colliders-v2.json', stage: 'checkPropManifest',
+    id: 'props.extra-field', group: 'prop-manifest', input: 'collision manifest · colliders-v2.json', stage: 'checkPropManifest',
     description: 'unknown manifest field', expected: 'accept', impact: 1,
     run: () => check({ ...base, future: 1 })
+  });
+  return cases;
+}
+
+// ------------------------------------------------------------- power-up manifest
+function powerupManifestCases() {
+  const runtimePath = '_work/powerups/powerups.json';
+  const contentDbPath = '_work/content-db/content.json';
+  const cases = [];
+  cases.push({
+    id: 'powerup.manifest.runtime-valid', group: 'power-up-manifest',
+    input: 'power-up manifest · _work/powerups/powerups.json', stage: 'buildCatalog (PWR1 runtime manifest)',
+    description: 'the committed runtime power-up manifest builds the 11-entity catalog', expected: 'accept', impact: 0,
+    run: () => {
+      const manifest = readCommittedJson(runtimePath);
+      if (manifest.schema !== 'blur-powerups/1') throw new Error('runtime manifest schema is not blur-powerups/1');
+      const catalog = buildCatalog(manifest);
+      if (catalog.entities.size !== 11) throw new Error('runtime manifest has ' + catalog.entities.size + ' entities');
+    }
+  });
+  cases.push({
+    id: 'powerup.manifest.entities-missing', group: 'power-up-manifest',
+    input: 'power-up manifest · _work/powerups/powerups.json', stage: 'createPowerupModel (runtime manifest)',
+    description: 'a runtime manifest without an entities array is rejected (untyped: the builder has no typed manifest error)',
+    expected: 'reject', impact: 3,
+    evidence: 'powerups.js:156 throws a plain Error when manifest.entities is not an array',
+    run: () => {
+      const manifest = readCommittedJson(runtimePath);
+      return createPowerupModel({ manifest: { ...manifest, entities: null }, createWorld: () => ({}) });
+    }
+  });
+  cases.push({
+    id: 'powerup.manifest.content-db-valid', group: 'power-up-manifest',
+    input: 'power-up manifest · _work/content-db/powerups.json', stage: 'validateDocument (content-db)',
+    description: 'the committed content-db power-up section passes the typed content-db validator', expected: 'accept', impact: 0,
+    run: () => {
+      const doc = readCommittedJson(contentDbPath);
+      if (!Array.isArray(doc.powerups) || doc.powerups.length !== 11) {
+        throw new Error('content-db power-up section is not the 11-entry manifest');
+      }
+      if (validateDocument(doc) !== true) throw new Error('content-db validator did not accept the document');
+    }
+  });
+  cases.push({
+    id: 'powerup.manifest.content-db-corrupt', group: 'power-up-manifest',
+    input: 'power-up manifest · _work/content-db/powerups.json', stage: 'validateDocument (content-db)',
+    description: 'a corrupted content-db power-up entry is a typed ContentDbError rejection', expected: 'reject', impact: 4,
+    evidence: 'content-db/loader.mjs:216-393 validates every power-up entry hash and reference',
+    run: () => {
+      const doc = readCommittedJson(contentDbPath);
+      doc.powerups[0].nameKey = { status: 'corrupt' };
+      return validateDocument(doc);
+    }
   });
   return cases;
 }
@@ -1310,7 +1493,7 @@ function multiplayerCases() {
   const build = (roomValue = room, resultValue = results) => buildMpResult({ layout, room: roomValue, results: resultValue });
 
   cases.push({
-    id: 'mp.result.valid', group: 'multiplayer', input: 'room.finished', stage: 'buildMpResult',
+    id: 'mp.result.valid', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'buildMpResult',
     description: 'two-player result table', expected: 'accept', impact: 0,
     run: () => {
       const first = build();
@@ -1319,24 +1502,39 @@ function multiplayerCases() {
     }
   });
   cases.push({
-    id: 'mp.result.missing-layout', group: 'multiplayer', input: 'room.finished', stage: 'buildMpResult',
+    id: 'mp.result.eight-players', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'buildMpResult',
+    description: 'the eight-player room capacity produces eight result rows', expected: 'accept', impact: 0,
+    run: () => {
+      const players = Array.from({ length: 8 }, (_, index) => ({
+        id: 'p' + index, slot: index + 1, name: 'P' + index, car: SLUG, host: index === 0, connected: true
+      }));
+      const finishes = players.map((player, index) => ({
+        playerId: player.id, tick: 600 + index * 10, hash: 'sha256:' + index
+      }));
+      const table = buildMpResult({ layout, room: { players }, results: finishes });
+      if (table.rows.length !== 8) throw new Error('expected 8 result rows, got ' + table.rows.length);
+    }
+  });
+  cases.push({
+    id: 'mp.result.missing-layout', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'buildMpResult',
     description: 'layout missing', expected: 'reject', impact: 3,
     run: () => buildMpResult({ room, results })
   });
   cases.push({
-    id: 'mp.result.empty-room', group: 'multiplayer', input: 'room.finished', stage: 'buildMpResult',
+    id: 'mp.result.empty-room', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'buildMpResult',
     description: 'room with no players', expected: 'reject', impact: 3,
     run: () => build({ players: [] })
   });
   cases.push({
-    id: 'mp.result.results-not-array', group: 'multiplayer', input: 'room.finished', stage: 'buildMpResult',
+    id: 'mp.result.results-not-array', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'buildMpResult',
     description: 'results is not an array', expected: 'reject', impact: 3,
     run: () => buildMpResult({ layout, room, results: {} })
   });
   cases.push({
-    id: 'mp.result.duplicate-player-ids', group: 'multiplayer', input: 'room.finished', stage: 'page-contract (buildMpResult)',
+    id: 'mp.result.duplicate-player-ids', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'page-contract (buildMpResult)',
     description: 'two players share one id: both rows take the same finish and the table is silently wrong',
     expected: 'reject', impact: 4,
+    evidence: 'mp-client.js:235-237 matches results with Array.find by playerId; duplicate ids share one result',
     run: () => {
       const table = build({ players: [room.players[0], { ...room.players[1], id: 'a' }] });
       const finished = table.rows.filter((row) => row.status === 'finished');
@@ -1344,8 +1542,9 @@ function multiplayerCases() {
     }
   });
   cases.push({
-    id: 'mp.result.huge-tick', group: 'multiplayer', input: 'room.finished', stage: 'page-contract (buildMpResult)',
+    id: 'mp.result.huge-tick', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'page-contract (buildMpResult)',
     description: 'a 1e12 finish tick is accepted and produces a 1.6e10 s race time', expected: 'reject', impact: 3,
+    evidence: 'mp-client.js:237 accepts any integer tick greater than the countdown; no upper bound',
     run: () => {
       const table = build(room, [{ playerId: 'a', tick: 1e12, hash: 'x' }, { playerId: 'b', tick: 600, hash: 'y' }]);
       const row = table.rows.find((entry) => entry.playerId === 'a');
@@ -1353,22 +1552,24 @@ function multiplayerCases() {
     }
   });
   cases.push({
-    id: 'mp.result.duplicate-slots', group: 'multiplayer', input: 'room.finished', stage: 'page-contract (buildMpResult)',
+    id: 'mp.result.duplicate-slots', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'page-contract (buildMpResult)',
     description: 'two players share slot 1: ordering is silently resolved by sort stability', expected: 'reject', impact: 2,
+    evidence: 'mp-client.js:192-203 sorts by slot but never checks slot uniqueness',
     run: () => {
       build({ players: [room.players[0], { ...room.players[1], slot: 1 }] });
     }
   });
   cases.push({
-    id: 'mp.result.name-object', group: 'multiplayer', input: 'room.finished', stage: 'page-contract (buildMpResult)',
+    id: 'mp.result.name-object', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'page-contract (buildMpResult)',
     description: 'a non-string player name is accepted and rendered as [object Object]', expected: 'reject', impact: 2,
+    evidence: 'mp-client.js:195-202 and :242 copy player.name without a string check',
     run: () => {
       const table = build({ players: [{ ...room.players[0], name: { evil: true } }, room.players[1]] });
       if (typeof table.rows[0].name === 'string') throw new Error('the non-string name was rejected (this is the fixed behaviour)');
     }
   });
   cases.push({
-    id: 'mp.result.tick-nan', group: 'multiplayer', input: 'room.finished', stage: 'buildMpResult',
+    id: 'mp.result.tick-nan', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'buildMpResult',
     description: 'a NaN finish tick becomes an explicit DNF row (documented, not guessed)', expected: 'accept', impact: 1,
     run: () => {
       const table = build(room, [{ playerId: 'a', tick: NaN, hash: 'x' }, { playerId: 'b', tick: 600, hash: 'y' }]);
@@ -1386,7 +1587,7 @@ function multiplayerCases() {
     ['non-string', 12345, 'reject']
   ]) {
     cases.push({
-      id: 'mp.room-code.' + id, group: 'multiplayer', input: 'room-server message', stage: 'normalizeRoomCode',
+      id: 'mp.room-code.' + id, group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'normalizeRoomCode',
       description: 'room code ' + JSON.stringify(value), expected: expect, impact: expect === 'reject' ? 2 : 0,
       run: () => {
         const code = normalizeRoomCode(value);
@@ -1407,7 +1608,7 @@ function multiplayerCases() {
     });
   }
   cases.push({
-    id: 'mp.name-control-characters', group: 'multiplayer', input: 'room-server message', stage: 'normalizePlayerName',
+    id: 'mp.name-control-characters', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'normalizePlayerName',
     description: 'a 30-character HTML-shaped name is trimmed to the 24-character rule; the page renders it as textContent',
     expected: 'accept', impact: 1,
     run: () => {
@@ -1416,11 +1617,27 @@ function multiplayerCases() {
     }
   });
   cases.push({
-    id: 'mp.map-compare-record', group: 'multiplayer', input: 'room-server message', stage: 'compareMpMapRecords',
+    id: 'mp.map-compare-record', group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'compareMpMapRecords',
     description: 'map record hash mismatch is a typed refusal', expected: 'reject', impact: 4,
     run: () => {
       const expected = { id: 'river', packageHash: 'sha256:a', layoutHash: 'sha256:b', physicsHash: 'sha256:c' };
       assertMpMapAgreement(expected, { ...expected, physicsHash: 'sha256:d' }, 'room map');
+    }
+  });
+  cases.push({
+    id: 'mp.room-message.late-finish', group: 'multiplayer', input: 'room-server messages · room.finished',
+    stage: 'MpSession.reportFinished',
+    description: 'a late finish report after the room result is a typed MP_ROOM_CLOSED rejection',
+    expected: 'reject', impact: 3,
+    evidence: 'mp-client.js:480-489 rejects a finish report when room.phase is finished',
+    run: () => {
+      class FakeNet {
+        constructor() {}
+        on() {}
+      }
+      const session = new MpSession({ NetClient: FakeNet, url: 'ws://loopback', name: 'Host', host: true });
+      session.room = { phase: 'finished' };
+      return session.reportFinished({ tick: 1 });
     }
   });
 
@@ -1435,8 +1652,11 @@ function multiplayerCases() {
     ['negative-speed', validNetState({ speed: -3 }), 'accept']
   ]) {
     cases.push({
-      id: 'mp.state.' + id, group: 'multiplayer', input: 'room-server message', stage: 'quantizeState',
+      id: 'mp.state.' + id, group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'quantizeState',
       description: 'peer state: ' + id, expected: expect, impact: expect === 'reject' ? 3 : 0,
+      evidence: id === 'tick-over-limit'
+        ? 'protocol.mjs:177-191 checkState accepts any non-negative integer; the 100,000,000 limit is only in validTick (:235-236)'
+        : null,
       run: () => {
         if (expect === 'reject') quantizeState(state);
         else quantizeState(state);
@@ -1450,7 +1670,7 @@ function multiplayerCases() {
     ['missing-field', { throttle: 0 }, 'reject']
   ]) {
     cases.push({
-      id: 'mp.input.' + id, group: 'multiplayer', input: 'room-server message', stage: 'quantizeInput',
+      id: 'mp.input.' + id, group: 'multiplayer', input: 'room-server messages · room.finished', stage: 'quantizeInput',
       description: 'peer input: ' + id, expected: expect, impact: 2,
       run: () => { quantizeInput(input); }
     });
@@ -1474,19 +1694,55 @@ export function sourceContractCases() {
     expected: 'reject', impact: 5, evidence,
     run: () => assert(condition(), 'the guard is present (this is the fixed behaviour)')
   });
-  sourceCase('source.index-no-bootstrap-error', 'index.html',
+  const acceptCase = (id, input, description, run) => cases.push({
+    id, group: 'source-contract', input, stage: 'static source contract', description,
+    expected: 'accept', impact: 0, run
+  });
+  sourceCase('source.index-no-bootstrap-error', 'app modules · index.html',
     'index.html registers no error handler before app.js; a failed chunk/import leaves a blank page with no message',
     'index.html:107 loads app.js; app.js:1231-1232 registers window.onerror only after the module has executed',
     () => !/onerror|window\.addEventListener\(\s*['"]error['"]/.test(page));
-  sourceCase('source.module-no-integrity', 'app.js / e1_drive.wasm',
+  sourceCase('source.module-no-integrity', 'wasm module · e1_drive.wasm',
     'the wasm module is dynamically imported with no hash or size pin; a truncated/mismatched module only fails inside factory()',
     'app.js:2254 await import(ENGINE_MODULE); e1_drive.wasm has no page-level pin',
     () => !/e1_drive\.wasm/.test(app) && /await import\(ENGINE_MODULE\)/.test(app));
+  acceptCase('source.app-modules-present', 'app modules · probes/e1-drive/web/*.js',
+    'the current app module set is present on disk',
+    () => {
+      const files = new Set(readdirSync(path.join(ROOT, 'probes/e1-drive/web')));
+      const required = [
+        'app.js', 'boot.js', 'menu.js', 'cars.js', 'geometry-chunks.js', 'map-package.js',
+        'sprint-layout.js', 'ghost-replay.js', 'mp-client.js', 'mp-ai.js', 'mp-remote.js',
+        'packet-adapter.js', 'packet-consumer.js', 'powerups.js', 'prop-layer.js',
+        'sprint-best.js', 'sprint-rules.js', 'telemetry.js'
+      ];
+      const missing = required.filter((name) => !files.has(name));
+      if (missing.length) throw new Error('missing app modules: ' + missing.join(', '));
+    });
+  acceptCase('source.wasm-module-present', 'wasm module · _work/e1-drive/module/e1_drive.wasm',
+    'the built wasm module is present with the WebAssembly magic and version 1',
+    () => {
+      const bytes = readCommitted('_work/e1-drive/module/e1_drive.wasm');
+      if (bytes.length < 8) throw new Error('wasm module is shorter than the 8-byte header');
+      if (bytes[0] !== 0x00 || bytes[1] !== 0x61 || bytes[2] !== 0x73 || bytes[3] !== 0x6d) {
+        throw new Error('wasm module has no \\0asm magic');
+      }
+      if (bytes.readUInt32LE(4) !== 1) throw new Error('wasm module version is not 1');
+    });
+  cases.push({
+    id: 'source.chunk-loader-typed', group: 'source-contract', input: 'app modules · geometry-chunks.js',
+    stage: 'verifyChunkBytes (typed contract)',
+    description: 'the chunk byte check rejects a short chunk with a typed CHUNK_LEVEL_BYTES code',
+    expected: 'reject', impact: 4,
+    evidence: 'geometry-chunks.js:51-63 throws ChunkLoadError(codeFor.bytes)',
+    run: () => verifyChunkBytes(new Uint8Array(1), { bytes: 4, sha256: 'sha256:' + 'a'.repeat(64) },
+      'source contract', { schema: CHUNK_ERROR.LEVEL_SCHEMA, bytes: CHUNK_ERROR.LEVEL_BYTES })
+  });
   sourceCase('source.river-physics-unpinned', 'Level.levelphysics',
     'the River route computes the physics SHA-256 but never compares it with a pin; only map-package mode checks physics',
     'app.js:2308 physicsSha; app.js:2339-2341 the only comparison is inside if (MAP_IS_PACKAGE); map-registry.js:39 river pins:null',
     () => /if \(physicsSha !== MAP\.pins\.physicsFileSha256\)/.test(app) && /pins: null/.test(registry));
-  sourceCase('source.car-fields-unpinned', 'cars/<slug>.fields',
+  sourceCase('source.car-fields-unpinned', 'car fields · cars/<slug>.fields',
     'the roster records fields.sha256 and fields.bytes but the page never verifies the fetched field bytes',
     'cars.js:44-46; app.js:2301-2302,2307-2309; roster entries in _work/e1-drive/cars.json carry fields.sha256',
     () => !/fields\.sha256/.test(app) && !/fields\.sha256/.test(cars));
@@ -1494,7 +1750,7 @@ export function sourceContractCases() {
     'spawn.json is parsed and used without a finite/schema check (x, z, heading)',
     'app.js:2416 JSON.parse(spawnText) then layoutStartPosition(layout, spawn) at 2576',
     () => !/spawn\.x.*Number\.isFinite|Number\.isFinite\(spawn/.test(app));
-  sourceCase('source.packet-not-validated-live', 'live packet',
+  sourceCase('source.packet-not-validated-live', 'packet v1.1 · live packet',
     'the page never runs validatePacket on the live timeline; only consumer structural checks run',
     'app.js has no import of packet-format.mjs; packet-consumer.js:749-752 checks kind/version/convention',
     () => !/validatePacket/.test(app));
@@ -1513,10 +1769,12 @@ export function buildCases() {
   add(sprintLayoutCases());
   add(mapPackageCases());
   add(ghostCases());
+  add(ghostIndexCases());
   add(bestTimeCases());
   add(ghostStoreCases());
   add(rosterCases());
   add(propCases());
+  add(powerupManifestCases());
   add(multiplayerCases());
   return allCases;
 }

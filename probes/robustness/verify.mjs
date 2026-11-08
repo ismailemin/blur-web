@@ -114,8 +114,8 @@ const expectedCodes = [
   ['chunk.base.version', 'CHUNK_BASE_SCHEMA'],
   ['chunk.car.unknown-slug', 'CHUNK_CAR_UNKNOWN'],
   ['chunk.car.fallback', 'CHUNK_CAR_SCHEMA'],
-  ['chunk.bytes.truncated', 'CHUNK_BYTES'],
-  ['chunk.bytes.wrong-hash', 'CHUNK_SHA256']
+  ['chunk.bytes.truncated', 'CHUNK_LEVEL_BYTES'],
+  ['chunk.bytes.wrong-hash', 'CHUNK_LEVEL_SHA256']
 ];
 for (const [id, code] of expectedCodes) {
   const row = byId.get(id);
@@ -125,7 +125,7 @@ for (const [id, code] of expectedCodes) {
 check('detected: every parser rejection is typed',
   rows.filter((row) => row.stage.startsWith('parseChunk')).every((row) =>
     row.expected === 'accept' || row.category !== 'detected-untyped'));
-check('detected: ghost base64 errors are crashes (decoder throws)', byId.get('ghost.base64-length')?.category === 'crash');
+check('detected: ghost base64 errors are untyped decoder throws', byId.get('ghost.base64-length')?.category === 'detected-untyped');
 check('detected: missing spawn crashes in the app path', byId.get('map.package.missing-spawn-app')?.category === 'crash');
 check('detected: River physics pin gap is silent', byId.get('source.river-physics-unpinned')?.category === 'silent');
 check('detected: fields pin gap is silent', byId.get('roster.fields-hash-unchecked')?.category === 'silent');
