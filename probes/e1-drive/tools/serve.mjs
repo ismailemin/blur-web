@@ -64,6 +64,7 @@ const CAR_MATERIALS = path.join(ROOT, 'probes/car-materials');
 // and the committed rules prototype (never copied or edited here).
 const POWERUPS_WORK = path.join(ROOT, '_work/powerups');
 const POWERUPS_RULES = path.join(ROOT, 'probes/powerups/rules');
+const POWERUPS_DIR = path.join(ROOT, 'probes/powerups');
 const POWERUPS_RULE_FILES = new Set(['engine.js', 'projectiles.js']);
 // M3 map packages and the read-only level physics bytes. The map-slice tree is
 // generated game-data output; `game-data/` is the installed game tree. Neither
@@ -329,7 +330,10 @@ export function startServer({ port = 8801 } = {}) {
     else if (pathname.startsWith('/map-data/')) file = safeJoin(MAP_DATA_LEVELS, pathname.slice('/map-data/'.length));
     else if (pathname.startsWith('/powerups/')) {
       const name = pathname.slice('/powerups/'.length);
+      // The rules prototype is served from `rules/`; the committed retail
+      // placement module sits at the probe root.
       if (POWERUPS_RULE_FILES.has(name)) file = path.join(POWERUPS_RULES, name);
+      else if (name === 'retail-placement.mjs') file = path.join(POWERUPS_DIR, name);
     }
     else if (pathname.startsWith('/ghosts/')) file = safeJoin(GHOSTS, pathname.slice('/ghosts/'.length));
     else if (pathname.startsWith('/prop-collision/')) file = safeJoin(PROP, pathname.slice('/prop-collision/'.length));

@@ -1427,6 +1427,7 @@ let powerupManifest = null;
 let powerupProjectileManifest = null;
 let powerupProjectileModel = null;
 let powerupEngine = null;
+let powerupRetailPlacement = null;
 let powerupModel = null;
 let powerupView = null;
 let powerupRelay = null;
@@ -5626,6 +5627,17 @@ async function initPowerups() {
   if (typeof powerupEngine.createWorld !== 'function') {
     throw new Error('PWR1 rules prototype does not export createWorld');
   }
+  // The committed retail placement module. A missing module is not fatal: the
+  // host falls back to the labelled provisional arcs.
+  try {
+    powerupRetailPlacement = await import('/powerups/retail-placement.mjs');
+    if (typeof powerupRetailPlacement.retailPlacementsFor !== 'function') {
+      throw new Error('retail-placement.mjs does not export retailPlacementsFor');
+    }
+  } catch (error) {
+    powerupRetailPlacement = null;
+    state.powerups.retailPlacementError = error.message;
+  }
   powerupProjectileModel = await import('/powerups/projectiles.js');
   if (typeof powerupProjectileModel.createProjectileModel !== 'function') {
     throw new Error('PWR4 rules prototype does not export createProjectileModel');
@@ -5944,15 +5956,40 @@ function mpPowerupHostStart() {
       massKg: sessionMassKg
     });
   }
-  // Pickup arcs: the 310 m course keeps its fixed provisional arcs. A package
-  // map scales the same arc fractions to its measured length, so the six
-  // pickups spread over the whole course instead of clustering at the start.
-  // This stays a labelled project rule, not retail placement.
-  const courseLength = Number.isFinite(COURSE_LENGTH_METRES) ? COURSE_LENGTH_METRES : null;
-  const placementOptions = (MAP_IS_PACKAGE && courseLength && courseLength > 0)
-    ? { arcs: POWERUP_PLACEMENT_ARCS.map((arc) => Math.round((arc / 310) * courseLength * 1e6) / 1e6) }
-    : {};
-  const spawned = powerupModel.spawnProvisionalPickups(sprintRules.layout, placementOptions);
+  // Retail placement first: `retail-placement.mjs` projects each retail pickup
+  // onto the measured course by its own route arc. If it is unavailable or the
+  // map has no retail route, fall back to the labelled provisional arcs.
+  let spawned = [];
+  let placementSource = 'provisional-measured-arc';
+  if (powerupRetailPlacement) {
+    try {
+      const doc = powerupRetailPlacement.retailPlacementsFor(MAP.id, sprintRules.layout);
+      for (const pickup of doc.pickups) {
+        const item = powerupModel.spawnPickup(pickup.type, { x: pickup.x, y: pickup.y, z: pickup.z }, {
+          source: 'retail-placement',
+          placement: 'retail-route-arc',
+          arc: pickup.arc,
+          note: pickup.source
+        });
+        spawned.push({ id: item.id, ...pickup });
+      }
+      state.powerups.retailUnsupported = doc.unsupported ?? [];
+      placementSource = 'retail-route-arc';
+    } catch (error) {
+      state.powerups.retailPlacementError = error.message;
+    }
+  }
+  if (!spawned.length) {
+    // Fallback: the 310 m course keeps its fixed provisional arcs; a package map
+    // scales the same arc fractions to its measured length. Labelled, not retail.
+    const courseLength = Number.isFinite(COURSE_LENGTH_METRES) ? COURSE_LENGTH_METRES : null;
+    const placementOptions = (MAP_IS_PACKAGE && courseLength && courseLength > 0)
+      ? { arcs: POWERUP_PLACEMENT_ARCS.map((arc) => Math.round((arc / 310) * courseLength * 1e6) / 1e6) }
+      : {};
+    spawned = powerupModel.spawnProvisionalPickups(sprintRules.layout, placementOptions);
+    placementSource = 'provisional-measured-arc';
+  }
+  state.powerups.placementSource = placementSource;
   state.powerups.placement = powerupModel.placement;
   state.powerups.phase = 'running';
   state.powerups.status = 'host power-up world running';
@@ -6259,6 +6296,9 @@ function mpPowerupCapture() {
     types: state.powerups.types,
     deferred: state.powerups.deferred,
     placement: hud?.placement ?? state.powerups.placement,
+    placementSource: state.powerups.placementSource ?? null,
+    retailUnsupported: state.powerups.retailUnsupported ?? null,
+    retailPlacementError: state.powerups.retailPlacementError ?? null,
     courseLengthMetres: COURSE_LENGTH_METRES,
     boostModel: powerupModel?.boost ?? null,
     labels: hud?.labels ?? state.powerups.snapshot?.labels ?? null,
