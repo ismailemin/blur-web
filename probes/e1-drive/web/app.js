@@ -4055,6 +4055,18 @@ async function mpAiRelayPoll() {
 function mpBuildAiRecords() {
   if (!state.mp?.ai || !MP_HOST) return state.mp?.ai ?? null;
   const ai = state.mp.ai;
+  // No AI needs no roster: the lobby can render (and the host can start) before
+  // the roster document has loaded, and a zero-AI room must not surface a
+  // roster error.
+  if (ai.count === 0) {
+    ai.mapId = MAP.id;
+    ai.players = [];
+    ai.built = true;
+    ai.ready = true;
+    ai.errors = [];
+    ai.errorCodes = [];
+    return ai;
+  }
   const built = buildAiRoster(state.roster, {
     count: ai.count,
     cars: ai.cars,

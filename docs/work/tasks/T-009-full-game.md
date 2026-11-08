@@ -102,12 +102,17 @@ edilemeyen her öğe tipli `unsupported` olarak raporlanır.
 
 - **Dalga 1 tamamlandı ve commit edildi** (`50afc31`, `fadabdd`, `2aa9de1`,
   `70374f6`, `13cf0b1`): 25 araç, menü kabuğu, 8 oyunculu oda, tüm probe verisi.
-- **8 insan oyunculu oda kanıtlı:** `mp-eight` E2E 73/73; oda istatistiği
-  `connections:8, maxPlayersSeen:8, protocolErrors:0`.
-- **Dalga 2 (bu oturum):** kırmızı doğrulayıcılar + entegrasyon. Sıra
+- **8 insan oyunculu oda, bitişe kadar kanıtlı:** `mp-eight` E2E 95/95; 8 satırlı
+  ortak sonuç tablosu; `connections:8, maxPlayersSeen:8, protocolErrors:0`.
+- **Dalga 2 tamamlandı:** tüm probe doğrulayıcıları yeşil (race-rules 249/249,
+  map-pipeline 930/930, map-batch 1450/1450, instances 510/510, net-prediction
+  357/357, robustness 171/171, map-laps 53/53, map-props 259/259, powerups
+  7828/7828).
+- **Entegrasyon:** Amboy 3 tur (`578d652`), Amboy/Gracia prop collider
+  (`1c9c46e`), Amboy/Gracia power-up + oda bayrağı (`7341690`), misafir menü
+  akışı (`30133c1`).
+- **Dalga 3 (sıradaki):** retail pickup rotası, Gracia tur kararı, HUD/materyal/
+  ışık runtime modülleri, kalan 13 harita kararı. Sıra
   [`docs/handoff/NEXT.md`](../../handoff/NEXT.md) §1.
 - Hiçbir ajan commit etmiyor; ana ajan kapıdan sonra commit ediyor.
-- Kırmızı: race-rules `verify-modes` 235/249, instances determinizm/doku,
-  net-prediction sınırlı snapshot, robustness 135/168, map-pipeline
-  `verify_blocked` şeması, map-batch doğrulayıcısı yok.
 - Oturum kaydı: [`docs/work/logs/2026-11-08-mp-eight.md`](../logs/2026-11-08-mp-eight.md).
