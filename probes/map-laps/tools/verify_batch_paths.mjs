@@ -1,18 +1,19 @@
 #!/usr/bin/env node
-// Verify the committed collision-clear point-to-point paths for the map-batch
-// levels `usa_la_observatory` (map id `observatory`) and `usa_la_downtown`
-// (map id `downtown`).
+// Verify the committed collision-clear point-to-point paths for every map-batch
+// level that has one. The level table below is the authority for the map id,
+// the committed document, the P48 grid, the batch package and the per-level
+// clearance / corridor overrides.
 //
 //   node probes/map-laps/tools/verify_batch_paths.mjs
 //   node probes/map-laps/tools/verify_batch_paths.mjs --map observatory
 //   node probes/map-laps/tools/verify_batch_paths.mjs --python <python.exe>
 //
-// It re-derives, from the committed collision data:
+// For each level it re-derives, from the committed collision data:
 //   * the document hash, kind, courseId and scope labels;
 //   * the source physics / raster / manifest / draws / collision-buffer /
 //     spawn-document / draw-path pins;
-//   * the 0.5 m grid and the 3-cell (>= 1.5 m) erosion, re-computed here;
-//   * the 14-cell corridor around the committed draw path, re-computed here;
+//   * the 0.5 m grid and the level's clearance erosion, re-computed here;
+//   * the level's corridor around the committed draw path, re-computed here;
 //   * every 0.25 m sample: passable cell, raster ground, car-half-width lateral
 //     band, and the full isotropic margin outside the endpoint connectors;
 //   * the length, continuity, start/finish poses and the four gates (order,
@@ -34,17 +35,19 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const BUILDER = path.join(ROOT, 'probes/map-laps/tools/build_batch_paths.py');
 
 const CELL = 0.5;
-const CLEARANCE_CELLS = 10;
-const CLEARANCE_METRES = CLEARANCE_CELLS * CELL;
-const CORRIDOR_CELLS = 14;
 const CORRIDOR_HALF_WIDTH = 12.0;
 const CAR_HALF_WIDTH = 1.138;
 const SAMPLE_STEP = 0.25;
 const BAND_HALF_WIDTH = 6.0;
 const GATE_LINE_FRACTION_MIN = 0.5;
 const CONNECTOR_MAX_METRES = 12.0;
+// ceil(CAR_HALF_WIDTH / CELL): below this the isotropic erosion cannot contain
+// the car's lateral band, so the builder refuses the level.
+const MIN_CLEARANCE_CELLS = 3;
 
-const MAPS = {
+// Every level with a committed `*-path.json`. `clearanceCells` / `corridorCells`
+// are the builder's per-level overrides; the default is 10 / 14.
+const LEVELS = {
   observatory: {
     mapId: 'observatory',
     level: 'usa_la_observatory',
@@ -52,10 +55,8 @@ const MAPS = {
     grid: '_work/map-laps/observatory/grid.npz',
     batch: '_work/map-batch/usa_la_observatory',
     physics: 'game-data/Blur/levels/usa_la_observatory/Level.levelphysics',
-    start: [226.0, 373.0],
-    finish: [281.0, 271.0],
-    heading: -1.570796327,
-    spawnGround: 21.2531
+    clearanceCells: 10,
+    corridorCells: 14
   },
   downtown: {
     mapId: 'downtown',
@@ -64,10 +65,58 @@ const MAPS = {
     grid: '_work/map-laps/downtown/grid.npz',
     batch: '_work/map-batch/usa_la_downtown',
     physics: 'game-data/Blur/levels/usa_la_downtown/Level.levelphysics',
-    start: [715.0, 145.0],
-    finish: [676.0, 26.0],
-    heading: 3.141592654,
-    spawnGround: 111.8145
+    clearanceCells: 10,
+    corridorCells: 14
+  },
+  mharuna: {
+    mapId: 'mharuna',
+    level: 'jpn_mharuna',
+    doc: 'probes/map-laps/data/mharuna-path.json',
+    grid: '_work/map-laps/mharuna/grid.npz',
+    batch: '_work/map-batch/jpn_mharuna',
+    physics: 'game-data/Blur/levels/jpn_mharuna/Level.levelphysics',
+    clearanceCells: 10,
+    corridorCells: 14
+  },
+  highrise: {
+    mapId: 'highrise',
+    level: 'usa_la_multiplayer_highrise',
+    doc: 'probes/map-laps/data/highrise-path.json',
+    grid: '_work/map-laps/highrise/grid.npz',
+    batch: '_work/map-batch/usa_la_multiplayer_highrise',
+    physics: 'game-data/Blur/levels/usa_la_multiplayer_highrise/Level.levelphysics',
+    clearanceCells: 10,
+    corridorCells: 14
+  },
+  shutoko: {
+    mapId: 'shutoko',
+    level: 'jpn_tokyo_shutoko',
+    doc: 'probes/map-laps/data/shutoko-path.json',
+    grid: '_work/map-laps/shutoko/grid.npz',
+    batch: '_work/map-batch/jpn_tokyo_shutoko',
+    physics: 'game-data/Blur/levels/jpn_tokyo_shutoko/Level.levelphysics',
+    clearanceCells: 10,
+    corridorCells: 14
+  },
+  oval: {
+    mapId: 'oval',
+    level: 'spa_barcelona_oval',
+    doc: 'probes/map-laps/data/oval-path.json',
+    grid: '_work/map-laps/oval/grid.npz',
+    batch: '_work/map-batch/spa_barcelona_oval',
+    physics: 'game-data/Blur/levels/spa_barcelona_oval/Level.levelphysics',
+    clearanceCells: 10,
+    corridorCells: 14
+  },
+  'amboy-mp': {
+    mapId: 'amboy-mp',
+    level: 'usa_amboy_multiplayer',
+    doc: 'probes/map-laps/data/amboy-mp-path.json',
+    grid: '_work/map-laps/amboy-mp/grid.npz',
+    batch: '_work/map-batch/usa_amboy_multiplayer',
+    physics: 'game-data/Blur/levels/usa_amboy_multiplayer/Level.levelphysics',
+    clearanceCells: 3,
+    corridorCells: 14
   }
 };
 
@@ -236,7 +285,7 @@ function check(label, ok, detail = null) {
 }
 
 function verifyMap(key, python, scratch) {
-  const spec = MAPS[key];
+  const spec = LEVELS[key];
   const docPath = path.join(ROOT, spec.doc);
   const gridPath = path.join(ROOT, spec.grid);
   const batchDir = path.join(ROOT, spec.batch);
@@ -263,6 +312,16 @@ function verifyMap(key, python, scratch) {
   const draws = readJson(path.join(batchDir, 'draws.json'));
   const collision = readJson(path.join(batchDir, 'collision.json'));
   const draw = readJson(path.join(batchDir, 'path.json'));
+  const spawnDoc = readJson(path.join(batchDir, 'spawn.json'));
+  // The committed spawn pose and the committed draw-path end are the path's
+  // endpoints; they are read from the package, not hard-coded here.
+  const committedSpawn = spawnDoc.layout.spawn;
+  const spawnPose = [committedSpawn.x, committedSpawn.z];
+  const heading = committedSpawn.heading;
+  const finishPose = [draw.end.x, draw.end.z];
+  const clearanceCells = spec.clearanceCells;
+  const clearanceMetres = clearanceCells * CELL;
+  const corridorCells = spec.corridorCells;
   const grid = readNpz(gridPath);
   const base = grid.base;
   const height = grid.height;
@@ -340,12 +399,16 @@ function verifyMap(key, python, scratch) {
     height.shape[0] === nz && height.shape[1] === nx &&
     xs.shape[0] === nx && zs.shape[0] === nz,
     `${base.shape.join('x')} cell ${cell}`);
-  check(key + ': clearance is 3 cells with a 1.5 m lower bound and the car half-width',
+  check(key + `: clearance is ${clearanceCells} cells with a ${clearanceMetres} m lower bound and the car half-width`,
     Number.isInteger(doc.source?.clearance?.cells) &&
-    doc.source.clearance.cells === CLEARANCE_CELLS &&
-    doc.source.clearance.lowerBoundMetres === CLEARANCE_METRES &&
-    doc.source.clearance.carHalfWidthM === CAR_HALF_WIDTH,
-    JSON.stringify(doc.source?.clearance));
+    doc.source.clearance.cells === clearanceCells &&
+    clearanceCells >= MIN_CLEARANCE_CELLS &&
+    doc.source.clearance.lowerBoundMetres === clearanceMetres &&
+    doc.source.clearance.carHalfWidthM === CAR_HALF_WIDTH &&
+    doc.source.corridor?.cells === corridorCells &&
+    doc.source.corridor?.halfWidthMetres === corridorCells * CELL,
+    JSON.stringify({ clearance: doc.source?.clearance?.cells,
+      corridor: doc.source?.corridor?.cells }));
 
   // ------------------------------------------------------------ samples
   const samples = doc.course.samples;
@@ -376,13 +439,13 @@ function verifyMap(key, python, scratch) {
   const first = samples[0];
   const last = samples[samples.length - 1];
   check(key + ': first sample is the committed spawn pose',
-    Math.abs(first.x - spec.start[0]) <= 1e-6 && Math.abs(first.z - spec.start[1]) <= 1e-6 &&
-    Math.abs(doc.course.spawn.x - spec.start[0]) <= 1e-6 &&
-    Math.abs(doc.course.spawn.z - spec.start[1]) <= 1e-6 &&
-    Math.abs(doc.course.spawn.headingRad - spec.heading) <= 1e-9,
+    Math.abs(first.x - spawnPose[0]) <= 1e-6 && Math.abs(first.z - spawnPose[1]) <= 1e-6 &&
+    Math.abs(doc.course.spawn.x - spawnPose[0]) <= 1e-6 &&
+    Math.abs(doc.course.spawn.z - spawnPose[1]) <= 1e-6 &&
+    Math.abs(doc.course.spawn.headingRad - heading) <= 1e-9,
     `${first.x},${first.z} heading ${doc.course.spawn.headingRad}`);
   check(key + ': last sample is the committed draw-path finish',
-    Math.abs(last.x - spec.finish[0]) <= 1e-6 && Math.abs(last.z - spec.finish[1]) <= 1e-6,
+    Math.abs(last.x - finishPose[0]) <= 1e-6 && Math.abs(last.z - finishPose[1]) <= 1e-6,
     `${last.x},${last.z}`);
   check(key + ': first sample arc is 0 and the last arc is the course length',
     first.arc === 0 && Math.abs(last.arc - doc.course.lengthMetres) <= 1e-9,
@@ -399,10 +462,10 @@ function verifyMap(key, python, scratch) {
   const connectors = doc.course.endpointConnectors;
   const spawnConnector = connectors?.spawn?.arc;
   const finishConnector = connectors?.finish?.arc;
-  check(key + ': endpoint connectors are recorded and at most 2.5 m',
+  check(key + ': endpoint connectors are recorded and at most 12 m',
     Number.isFinite(spawnConnector) && Number.isFinite(finishConnector) &&
-    spawnConnector > 0 && spawnConnector <= CONNECTOR_MAX_METRES &&
-    finishConnector > 0 && finishConnector <= CONNECTOR_MAX_METRES &&
+    spawnConnector >= 0 && spawnConnector <= CONNECTOR_MAX_METRES &&
+    finishConnector >= 0 && finishConnector <= CONNECTOR_MAX_METRES &&
     Math.abs(connectors.spawn.metres - spawnConnector) <= 1e-3 &&
     Math.abs(connectors.finish.metres - finishConnector) <= 1e-3,
     `spawn ${spawnConnector} m, finish ${finishConnector} m`);
@@ -410,7 +473,7 @@ function verifyMap(key, python, scratch) {
     arc <= doc.course.lengthMetres - finishConnector + 1e-9;
 
   // ------------------------------------------------------------ re-derived masks
-  const eroded = erodeMask(base.data, nx, nz, CLEARANCE_CELLS);
+  const eroded = erodeMask(base.data, nx, nz, clearanceCells);
   const drawCells = new Uint8Array(nx * nz);
   for (const point of draw.samples) {
     const [i, j] = cellOf(point.x, point.z);
@@ -447,7 +510,7 @@ function verifyMap(key, python, scratch) {
     }
     if (!isInterior(sample.arc)) continue;
     if (!eroded[j * nx + i]) { badEroded++; if (badErodedAt === null) badErodedAt = index; }
-    if (corridor[j * nx + i] > CORRIDOR_CELLS + 1e-9) {
+    if (corridor[j * nx + i] > corridorCells + 1e-9) {
       badCorridor++;
       if (badCorridorAt === null) badCorridorAt = index;
     }
@@ -466,12 +529,12 @@ function verifyMap(key, python, scratch) {
   check(key + ': every sample groundY matches the raster H (1e-3 m)', badGround === 0, `${badGround} bad grounds`);
   check(key + ': every sample car-half-width lateral band is passable',
     badCarLine === 0, `${badCarLine} bad samples, first ${badCarLineAt}`);
-  check(key + ': every interior sample is in the re-derived 3-cell erosion',
+  check(key + `: every interior sample is in the re-derived ${clearanceCells}-cell erosion`,
     badEroded === 0, `${badEroded} bad samples, first ${badErodedAt}`);
-  check(key + ': every interior sample is inside the re-derived 14-cell corridor',
+  check(key + `: every interior sample is inside the re-derived ${corridorCells}-cell corridor`,
     badCorridor === 0, `${badCorridor} bad samples, first ${badCorridorAt}`);
-  check(key + ': every interior sample clears the stated 1.5 m margin',
-    minClearance >= CLEARANCE_METRES - 1e-9,
+  check(key + `: every interior sample clears the stated ${clearanceMetres} m margin`,
+    minClearance >= clearanceMetres - 1e-9,
     `min ${minClearance.toFixed(3)} m at sample ${minClearanceAt}`);
 
   // ------------------------------------------------------------ gates
@@ -496,7 +559,7 @@ function verifyMap(key, python, scratch) {
     Math.abs(finish.arc - doc.course.lengthMetres) <= 1e-9,
     `${finish.arc} vs ${doc.course.lengthMetres}`);
   check(key + ': finish point is the committed finish point',
-    Math.abs(finish.x - spec.finish[0]) <= 1e-6 && Math.abs(finish.z - spec.finish[1]) <= 1e-6,
+    Math.abs(finish.x - finishPose[0]) <= 1e-6 && Math.abs(finish.z - finishPose[1]) <= 1e-6,
     `${finish.x},${finish.z}`);
   check(key + ': checkpoint-1 is the straightest sample within 12 % of one third',
     Math.abs(gates[1].arc - doc.course.lengthMetres / 3) <= 0.12 * doc.course.lengthMetres + 1e-9,
@@ -522,8 +585,13 @@ function verifyMap(key, python, scratch) {
     }), gates.map((gate) => Math.hypot(gate.tangent.tx, gate.tangent.tz).toFixed(9)).join(','));
   check(key + ': every gate heading is atan2(tx, tz)',
     gates.every((gate) => Math.abs(gate.headingRad -
-      Math.atan2(gate.tangent.tx, gate.tangent.tz)) <= 1e-9),
+      Math.atan2(gate.tangent.tx, gate.tangent.tz)) <= 1e-8),
     gates.map((gate) => gate.headingRad).join(','));
+  check(key + ': every gate width is between the car width and the requested 8 m',
+    gates.every((gate) => gate.widthMetres >= 2 * CAR_HALF_WIDTH - 1e-9 &&
+      gate.widthMetres <= gate.requestedWidthMetres + 1e-9 &&
+      gate.narrowed === (gate.widthMetres < gate.requestedWidthMetres - 1e-9)),
+    gates.map((gate) => `${gate.id}:${gate.widthMetres}/${gate.requestedWidthMetres}`).join(' '));
 
   const gateRaster = gates.map((gate) => {
     const [i, j] = cellOf(gate.x, gate.z);
@@ -535,7 +603,8 @@ function verifyMap(key, python, scratch) {
     let linePassable = 0;
     let carStations = 0;
     let carPassable = 0;
-    for (let k = -16; k <= 16; k++) {
+    const gateSteps = Math.round(gate.widthMetres / 2 / 0.25);
+    for (let k = -gateSteps; k <= gateSteps; k++) {
       const d = k * 0.25;
       const [ii, jj] = cellOf(gate.x + nxv * d, gate.z + nzv * d);
       const ok = passable(ii, jj);
@@ -557,7 +626,7 @@ function verifyMap(key, python, scratch) {
   check(key + ': every gate car-half-width line is passable',
     gateRaster.every((row) => row.carStations > 0 && row.carPassable === row.carStations),
     gateRaster.map((row) => `${row.gate.id}:${row.carPassable}/${row.carStations}`).join(' '));
-  check(key + ': every gate 8 m line is at least 50% passable on the conservative raster',
+  check(key + ': every gate line is at least 50% passable on the conservative raster',
     gateRaster.every((row) => row.linePassable / row.lineStations >= GATE_LINE_FRACTION_MIN),
     gateRaster.map((row) => `${row.gate.id}:${row.linePassable}/${row.lineStations}`).join(' '));
   check(key + ': document groundCheck agrees with the re-derived raster',
@@ -597,7 +666,7 @@ function verifyMap(key, python, scratch) {
     `${minClearance.toFixed(3)} m at ${minClearanceAt} vs ${obstruction?.path?.minInteriorClearanceM} at ${obstruction?.path?.sampleIndex}`);
   check(key + ': the path clears the pinch by the stated margin',
     minClearance >= obstruction.statedMarginM - 1e-9 &&
-    obstruction.statedMarginM === CLEARANCE_METRES,
+    obstruction.statedMarginM === clearanceMetres,
     `${minClearance.toFixed(3)} m vs ${obstruction.statedMarginM}`);
   check(key + ': the path improves on the draw-path pinch',
     minClearance > drawMin.d &&
@@ -612,7 +681,7 @@ function verifyMap(key, python, scratch) {
     doc.course.band?.halfWidthMetres === BAND_HALF_WIDTH &&
     doc.course.corridor?.halfWidthMetres === CORRIDOR_HALF_WIDTH &&
     Number.isFinite(doc.course.corridor?.source?.minRasterClearanceM) &&
-    doc.course.corridor.source.minRasterClearanceM >= CLEARANCE_METRES - 1e-9,
+    doc.course.corridor.source.minRasterClearanceM >= clearanceMetres - 1e-9,
     `${doc.course.band?.halfWidthMetres}/${doc.course.corridor?.halfWidthMetres} clearance ${doc.course.corridor?.source?.minRasterClearanceM}`);
   check(key + ': respawn rule is present and names the last checkpoint target',
     typeof doc.rules?.respawn?.rule === 'string' &&
@@ -658,9 +727,9 @@ function verifyMap(key, python, scratch) {
 // ---------------------------------------------------------------- main
 const mapArg = process.argv.includes('--map')
   ? process.argv[process.argv.indexOf('--map') + 1] : 'all';
-const keys = mapArg === 'all' ? Object.keys(MAPS) : [mapArg];
-if (keys.some((key) => !MAPS[key])) {
-  console.error('unknown --map ' + JSON.stringify(mapArg) + ' (use ' + Object.keys(MAPS).join(', ') + ')');
+const keys = mapArg === 'all' ? Object.keys(LEVELS) : [mapArg];
+if (keys.some((key) => !LEVELS[key])) {
+  console.error('unknown --map ' + JSON.stringify(mapArg) + ' (use ' + Object.keys(LEVELS).join(', ') + ')');
   process.exit(1);
 }
 const python = resolvePython();

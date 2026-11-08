@@ -1,0 +1,939 @@
+{
+ "kind": "e1-drive.sprint",
+ "version": 1,
+ "courseId": "highrise",
+ "scope": {
+  "collisionOnly": true,
+  "drawGeometryRead": false,
+  "drawPathReadForCorridor": true,
+  "drawCoverageSource": "not measured for this collision path",
+  "rendererClaim": false,
+  "vehiclePhysics": false,
+  "gameRun": false,
+  "pathDriven": false,
+  "engineTrace": "not run by this builder; the path is a geometric raster result, not a driven lap",
+  "note": "a data layout, not an e1-drive integration: no gate mesh, no race director, no lap timing, no car simulated"
+ },
+ "source": {
+  "map": "highrise",
+  "level": "usa_la_multiplayer_highrise",
+  "probe": "probes/map-laps (collision-only point-to-point path)",
+  "probeScope": "collisionOnly",
+  "physics": {
+   "path": "game-data/Blur/levels/usa_la_multiplayer_highrise/Level.levelphysics",
+   "bytes": 136451,
+   "sha256": "sha256:de95aca0edf1b89b0168860bcf733def41e1874b721a853de69f5e675f156703"
+  },
+  "slice": {
+   "path": "_work/map-batch/usa_la_multiplayer_highrise/collision.json",
+   "bytes": 2872,
+   "sha256": "sha256:60d38dbecb27163ee192869b1a7ee1c26344c0c29823bed7d7e37a7c336014e0",
+   "contentHash": "sha256:60d38dbecb27163ee192869b1a7ee1c26344c0c29823bed7d7e37a7c336014e0",
+   "contentHashSource": "the map-batch package records no canonical content hash for collision.json; its committed file pin is used",
+   "note": "the collision slice document; the map-batch manifest is not pinned here because it pins map-registry.js, which pins this package"
+  },
+  "render": {
+   "path": "_work/map-batch/usa_la_multiplayer_highrise/draws.json",
+   "bytes": 95816,
+   "sha256": "sha256:343b743a3ea260f380190461a47f51a493f824b62ce48a4b0d7a2051921e8178",
+   "contentHash": "sha256:343b743a3ea260f380190461a47f51a493f824b62ce48a4b0d7a2051921e8178",
+   "contentHashSource": "the map-batch package records no canonical content hash for draws.json; its committed file pin is used"
+  },
+  "blockers": {
+   "path": "_work/map-batch/usa_la_multiplayer_highrise/blockers.json",
+   "bytes": 3638,
+   "sha256": "sha256:7a4b4ccbec3830bcbe30dfbe75d6195a179c36b306a28b6432ce267cb72aa980"
+  },
+  "textures": {
+   "path": "_work/map-batch/usa_la_multiplayer_highrise/textures/index.json",
+   "bytes": 68429,
+   "sha256": "sha256:a7c5ad99352078761f667f1b7a02e4332c1cb45736808f31eebb40fd912899bd"
+  },
+  "spawnDocument": {
+   "path": "_work/map-batch/usa_la_multiplayer_highrise/spawn.json",
+   "bytes": 9590,
+   "sha256": "sha256:487ecaf17b10392f71f016c1c5bcf7d8a953e2627e7aec3e64e9d16cacb8fff5"
+  },
+  "drawPathDocument": {
+   "path": "_work/map-batch/usa_la_multiplayer_highrise/path.json",
+   "bytes": 5175,
+   "sha256": "sha256:53aa1d303b8b4f9b04d77f6fa407c2aed4feb33d8ae451c49ddca2fa3c1a4dc7"
+  },
+  "raster": {
+   "path": "_work/map-laps/highrise/grid.npz",
+   "fileSha256": "sha256:722dafce3c8a61b89dfbc6de8fa201589b634f4af64641f0f1819729c8810566",
+   "cell": 0.5,
+   "surfaceMinNormalY": 0.94,
+   "stepLimit": 0.05,
+   "gradeLimit": 0.05,
+   "wallDilateMetres": 0.5,
+   "staticTriangles": 2522,
+   "notInRaster": "the committed collision buffer ships 1 static triangle-mesh shapes; 1 excluded shapes (1x FluidMesh) are not in the buffer and are not in the raster",
+   "source": "P48 passable raster built from the committed collision.positions.f32.bin / collision.indices.u32.bin triangle buffer"
+  },
+  "sliceCollision": {
+   "positions": {
+    "path": "_work/map-batch/usa_la_multiplayer_highrise/collision.positions.f32.bin",
+    "bytes": 21060,
+    "sha256": "sha256:ca784135d3e53391be49aaf441ce3145b797c4045c52cc0abf60ca784642afe7"
+   },
+   "indices": {
+    "path": "_work/map-batch/usa_la_multiplayer_highrise/collision.indices.u32.bin",
+    "bytes": 30264,
+    "sha256": "sha256:70b68849626f806f8537bfcf3a77793436910324d8a806ebffedef3b64078c7f"
+   },
+   "note": "the same 2522 triangles as the raster; the buffer is the committed collision surface"
+  },
+  "clearance": {
+   "cells": 10,
+   "lowerBoundMetres": 5,
+   "metric": "8-connected erosion: a retained cell has all 8 neighbours over every one of the 10 erosion layers, so its Chebyshev distance to a blocked cell is >= 5.0 m and its Euclidean distance is at least that",
+   "carHalfWidthM": 1.138,
+   "carHalfLengthM": 1.7905,
+   "carCircumradiusM": 2.121541,
+   "carEnvelope": {
+    "length": 2.981,
+    "width": 1.676,
+    "safetyMargin": 0.3,
+    "source": "documented maximum XT envelope plus a labelled 0.30 m margin; not a recovered retail hull"
+   },
+   "interiorMinClearanceM": 5.5,
+   "interiorMinSample": 43,
+   "lateralBandMetres": 1.138,
+   "lateralBandSamples": 59,
+   "lateralBandBlocked": 0
+  },
+  "corridor": {
+   "drawPath": "_work/map-batch/usa_la_multiplayer_highrise/path.json",
+   "drawPathFileSha256": "sha256:53aa1d303b8b4f9b04d77f6fa407c2aed4feb33d8ae451c49ddca2fa3c1a4dc7",
+   "drawPathLengthMetres": 6.242640687,
+   "drawPathSamples": 27,
+   "cells": 14,
+   "halfWidthMetres": 7,
+   "penaltyPerCell": 0.2,
+   "note": "the committed draw-covered path is the corridor centre line only; no sample, gate or ground value is taken from it"
+  },
+  "endpoints": {
+   "spawn": {
+    "x": 202,
+    "z": -267,
+    "headingRad": -2.15879893,
+    "groundY": 218.184,
+    "rasterCell": [
+     450,
+     380
+    ]
+   },
+   "finish": {
+    "x": 197,
+    "z": -266,
+    "groundY": 218.184,
+    "rasterCell": [
+     440,
+     382
+    ]
+   },
+   "spawnSnap": {
+    "metres": 2.5,
+    "rasterCell": [
+     455,
+     380
+    ],
+    "x": 204.5,
+    "z": -267
+   },
+   "finishSnap": {
+    "metres": 2.0616,
+    "rasterCell": [
+     441,
+     386
+    ],
+    "x": 197.5,
+    "z": -264
+   },
+   "connectorArcs": {
+    "spawn": [
+     0,
+     2.5
+    ],
+    "finish": [
+     12.207107,
+     14.26866
+    ]
+   },
+   "rule": "the committed spawn/finish poses are the first/last samples; each is joined to the nearest eroded cell by a straight connector. Every sample is checked against the car half-width lateral band; only samples outside the connectors carry the full isotropic margin",
+   "reason": "the committed spawn sits 3.905 m from a blocked raster cell, so the isotropic 10-cell erosion cannot contain it; the connector keeps the committed pose without relaxing the interior rule"
+  },
+  "obstruction": {
+   "label": "narrowest draw-path clearance to a blocked raster cell",
+   "drawPath": {
+    "sampleIndex": 14,
+    "arc": 3.414214,
+    "x": 199,
+    "z": -268,
+    "clearanceM": 1.5,
+    "nearestBlockedCell": [
+     444,
+     375
+    ],
+    "nearestBlockedCellHeightM": 218.184,
+    "nearestBlockedCellEdgeDhM": 0.0302,
+    "nearestBlockedCellWall": false
+   },
+   "path": {
+    "minInteriorClearanceM": 5.5,
+    "sampleIndex": 43,
+    "arc": 10.707107,
+    "x": 199,
+    "z": -264
+   },
+   "statedMarginM": 5,
+   "improvementM": 4,
+   "source": "P48 raster blocked-cell distance on the 0.5 m grid; the blocked cell is a raster cell whose surface step or wall exceeds the committed P48 rule"
+  },
+  "spawn": {
+   "x": 202,
+   "z": -267,
+   "headingRad": -2.15879893
+  },
+  "spawnSource": "position and heading: the committed spawn.json pose (layout.spawn); the start gate's line uses the collision path's 5 m tangent",
+  "groundSource": "P48 collision raster H at each 0.25 m sample's 0.5 m cell (4 decimals); the committed spawn/finish ground is recorded in source.endpoints",
+  "gateLineSource": "5 m tangent window, 8 m line, oriented so the approach side is positive",
+  "checkpointStationSource": "straightest sample within +/-12 % of one-third / two-thirds of the measured collision arc"
+ },
+ "course": {
+  "rule": "point-to-point collision-clear path; the spawn is the committed spawn pose and the finish is the committed draw-path end; every interior sample is on the P48 passable raster eroded by 10 cells (>= 5.0 m) inside a 14-cell corridor around the committed draw-covered path",
+  "name": "usa_la_multiplayer_highrise collision-clear path",
+  "spawn": {
+   "x": 202,
+   "z": -267,
+   "headingRad": -2.15879893
+  },
+  "spawnGroundY": 218.184,
+  "start": {
+   "x": 202,
+   "z": -267,
+   "arc": 0,
+   "groundY": 218.184
+  },
+  "finish": {
+   "x": 197,
+   "z": -266,
+   "arc": 14.26866,
+   "groundY": 218.184
+  },
+  "measuredEnd": {
+   "x": 197,
+   "z": -266,
+   "arc": 14.26866,
+   "groundY": 218.184
+  },
+  "lengthMetres": 14.26866,
+  "finishArc": 14.26866,
+  "sampleStepMetres": 0.25,
+  "sampleCount": 59,
+  "span": {
+   "startArc": 0,
+   "finishArc": 14.26866,
+   "lengthMetres": 14.26866,
+   "measuredLengthMetres": 14.26866,
+   "drawPathLengthMetres": 6.242640687,
+   "finishClearanceMetres": 0,
+   "note": "arcs are measured along the collision-clear path; the committed draw path is 6.242641 m and is not the authority"
+  },
+  "band": {
+   "halfWidthMetres": 6,
+   "source": "declared controller and respawn band for this path; the page validator requires the committed 6 m value",
+   "note": "not a road-width claim"
+  },
+  "corridor": {
+   "rule": "off-course respawn band is a declared +/-12.0 m around the collision-clear path",
+   "halfWidthMetres": 12,
+   "source": {
+    "minRasterClearanceM": 5.5,
+    "clearanceLowerBoundM": 5,
+    "carHalfWidthM": 1.138,
+    "carCircumradiusM": 2.121541,
+    "note": "declared respawn rule at the measured 5.500 m clearance lower bound; the car half-width is 1.138 m and the circumradius is 2.122 m"
+   }
+  },
+  "endpointConnectors": {
+   "spawn": {
+    "arc": 2.5,
+    "metres": 2.5,
+    "samples": 10
+   },
+   "finish": {
+    "arc": 2.061553,
+    "metres": 2.0616,
+    "samples": 9
+   },
+   "note": "the connector samples are passable and their car half-width lateral band is passable; the isotropic margin applies to every sample outside the connector arcs"
+  },
+  "coverage": {
+   "measured": false,
+   "source": "not measured",
+   "note": "draw coverage of this collision path was not measured; the committed draw path's coverage does not apply to this line"
+  },
+  "samples": [
+   {
+    "arc": 0,
+    "x": 202,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 0.25,
+    "x": 202.25,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 0.5,
+    "x": 202.5,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 0.75,
+    "x": 202.75,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 1,
+    "x": 203,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 1.25,
+    "x": 203.25,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 1.5,
+    "x": 203.5,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 1.75,
+    "x": 203.75,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 2,
+    "x": 204,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 2.25,
+    "x": 204.25,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 2.5,
+    "x": 204.5,
+    "z": -267,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 2.75,
+    "x": 204.5,
+    "z": -266.75,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 3,
+    "x": 204.5,
+    "z": -266.5,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 3.25,
+    "x": 204.5,
+    "z": -266.25,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 3.5,
+    "x": 204.5,
+    "z": -266,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 3.75,
+    "x": 204.5,
+    "z": -265.75,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 4,
+    "x": 204.5,
+    "z": -265.5,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 4.25,
+    "x": 204.5,
+    "z": -265.25,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 4.5,
+    "x": 204.5,
+    "z": -265,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 4.75,
+    "x": 204.5,
+    "z": -264.75,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 5,
+    "x": 204.5,
+    "z": -264.5,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 5.235702,
+    "x": 204.333333,
+    "z": -264.333333,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 5.471405,
+    "x": 204.166667,
+    "z": -264.166667,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 5.707107,
+    "x": 204,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 5.957107,
+    "x": 203.75,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 6.207107,
+    "x": 203.5,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 6.457107,
+    "x": 203.25,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 6.707107,
+    "x": 203,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 6.957107,
+    "x": 202.75,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 7.207107,
+    "x": 202.5,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 7.457107,
+    "x": 202.25,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 7.707107,
+    "x": 202,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 7.957107,
+    "x": 201.75,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 8.207107,
+    "x": 201.5,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 8.457107,
+    "x": 201.25,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 8.707107,
+    "x": 201,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 8.957107,
+    "x": 200.75,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 9.207107,
+    "x": 200.5,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 9.457107,
+    "x": 200.25,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 9.707107,
+    "x": 200,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 9.957107,
+    "x": 199.75,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 10.207107,
+    "x": 199.5,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 10.457107,
+    "x": 199.25,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 10.707107,
+    "x": 199,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 10.957107,
+    "x": 198.75,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 11.207107,
+    "x": 198.5,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 11.457107,
+    "x": 198.25,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 11.707107,
+    "x": 198,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 11.957107,
+    "x": 197.75,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 12.207107,
+    "x": 197.5,
+    "z": -264,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 12.436168,
+    "x": 197.444444,
+    "z": -264.222222,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 12.66523,
+    "x": 197.388889,
+    "z": -264.444444,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 12.894291,
+    "x": 197.333333,
+    "z": -264.666667,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 13.123352,
+    "x": 197.277778,
+    "z": -264.888889,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 13.352414,
+    "x": 197.222222,
+    "z": -265.111111,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 13.581475,
+    "x": 197.166667,
+    "z": -265.333333,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 13.810537,
+    "x": 197.111111,
+    "z": -265.555556,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 14.039598,
+    "x": 197.055556,
+    "z": -265.777778,
+    "groundY": 218.184,
+    "covered": null
+   },
+   {
+    "arc": 14.26866,
+    "x": 197,
+    "z": -266,
+    "groundY": 218.184,
+    "covered": null
+   }
+  ]
+ },
+ "gates": [
+  {
+   "id": "start",
+   "kind": "start",
+   "index": 0,
+   "sampleIndex": 0,
+   "arc": 0,
+   "x": 202,
+   "z": -267,
+   "groundY": 218.184,
+   "height": 218.184,
+   "headingRad": 0.785398163,
+   "tangent": {
+    "tx": 0.707106781,
+    "tz": 0.707106781,
+    "windowMetres": 3.536
+   },
+   "widthMetres": 8,
+   "requestedWidthMetres": 8,
+   "narrowed": false,
+   "a": [
+    199.171573,
+    -264.171573
+   ],
+   "b": [
+    204.828427,
+    -269.828427
+   ],
+   "coverage": {
+    "measured": false,
+    "source": "not measured",
+    "note": "the collision path has no draw-coverage measurement; the gate line is rules geometry only"
+   },
+   "groundCheck": {
+    "rasterCell": [
+     450,
+     380
+    ],
+    "passable": true,
+    "rasterHeightM": 218.184006,
+    "groundY": 218.184,
+    "groundDeltaM": 0,
+    "lineStations": 33,
+    "linePassableStations": 33,
+    "carHalfWidthStations": 9,
+    "carHalfWidthPassable": true,
+    "source": "P48 passable raster (grid.npz base) at 0.5 m; gate line stations at 0.25 m"
+   }
+  },
+  {
+   "id": "checkpoint-1",
+   "kind": "checkpoint",
+   "index": 1,
+   "sampleIndex": 26,
+   "arc": 6.457107,
+   "x": 203.25,
+   "z": -264,
+   "groundY": 218.184,
+   "height": 218.184,
+   "headingRad": -1.19028995,
+   "tangent": {
+    "tx": -0.928476691,
+    "tz": 0.371390676,
+    "windowMetres": 4.039
+   },
+   "widthMetres": 8,
+   "requestedWidthMetres": 8,
+   "narrowed": false,
+   "a": [
+    204.735563,
+    -260.286093
+   ],
+   "b": [
+    201.764437,
+    -267.713907
+   ],
+   "coverage": {
+    "measured": false,
+    "source": "not measured",
+    "note": "the collision path has no draw-coverage measurement; the gate line is rules geometry only"
+   },
+   "groundCheck": {
+    "rasterCell": [
+     453,
+     386
+    ],
+    "passable": true,
+    "rasterHeightM": 218.184006,
+    "groundY": 218.184,
+    "groundDeltaM": 0,
+    "lineStations": 33,
+    "linePassableStations": 33,
+    "carHalfWidthStations": 9,
+    "carHalfWidthPassable": true,
+    "source": "P48 passable raster (grid.npz base) at 0.5 m; gate line stations at 0.25 m"
+   }
+  },
+  {
+   "id": "checkpoint-2",
+   "kind": "checkpoint",
+   "index": 2,
+   "sampleIndex": 33,
+   "arc": 8.207107,
+   "x": 201.5,
+   "z": -264,
+   "groundY": 218.184,
+   "height": 218.184,
+   "headingRad": -1.570796327,
+   "tangent": {
+    "tx": -1,
+    "tz": 0,
+    "windowMetres": 5
+   },
+   "widthMetres": 8,
+   "requestedWidthMetres": 8,
+   "narrowed": false,
+   "a": [
+    201.5,
+    -260
+   ],
+   "b": [
+    201.5,
+    -268
+   ],
+   "coverage": {
+    "measured": false,
+    "source": "not measured",
+    "note": "the collision path has no draw-coverage measurement; the gate line is rules geometry only"
+   },
+   "groundCheck": {
+    "rasterCell": [
+     449,
+     386
+    ],
+    "passable": true,
+    "rasterHeightM": 218.184006,
+    "groundY": 218.184,
+    "groundDeltaM": 0,
+    "lineStations": 33,
+    "linePassableStations": 33,
+    "carHalfWidthStations": 9,
+    "carHalfWidthPassable": true,
+    "source": "P48 passable raster (grid.npz base) at 0.5 m; gate line stations at 0.25 m"
+   }
+  },
+  {
+   "id": "finish",
+   "kind": "finish",
+   "index": 3,
+   "sampleIndex": 58,
+   "arc": 14.26866,
+   "x": 197,
+   "z": -266,
+   "groundY": 218.184,
+   "height": 218.184,
+   "headingRad": -2.122451309,
+   "tangent": {
+    "tx": -0.851658317,
+    "tz": -0.524097426,
+    "windowMetres": 3.816
+   },
+   "widthMetres": 8,
+   "requestedWidthMetres": 8,
+   "narrowed": false,
+   "a": [
+    194.90361,
+    -262.593367
+   ],
+   "b": [
+    199.09639,
+    -269.406633
+   ],
+   "coverage": {
+    "measured": false,
+    "source": "not measured",
+    "note": "the collision path has no draw-coverage measurement; the gate line is rules geometry only"
+   },
+   "groundCheck": {
+    "rasterCell": [
+     440,
+     382
+    ],
+    "passable": true,
+    "rasterHeightM": 218.184006,
+    "groundY": 218.184,
+    "groundDeltaM": 0,
+    "lineStations": 33,
+    "linePassableStations": 32,
+    "carHalfWidthStations": 9,
+    "carHalfWidthPassable": true,
+    "source": "P48 passable raster (grid.npz base) at 0.5 m; gate line stations at 0.25 m"
+   }
+  }
+ ],
+ "countdown": {
+  "ticks": 90,
+  "stepTicks": 30,
+  "labels": [
+   "3",
+   "2",
+   "1"
+  ],
+  "goLabel": "GO",
+  "rule": "input is held at zero until the countdown reaches GO; the timer starts at GO and the car is on the start line"
+ },
+ "rules": {
+  "tickHz": 60,
+  "timer": "elapsed engine ticks from GO at 1/60 s; it keeps running across a respawn and freezes on the finish",
+  "gateOrder": "checkpoints count only in index order; a finish crossing is rejected until every checkpoint is passed",
+  "finishRequiresAllCheckpoints": true,
+  "progress": "progress is the arc length of the nearest point on the collision-clear path, clamped to the finish arc",
+  "respawn": {
+   "fallBelowGroundMetres": 1,
+   "airborneTicks": 30,
+   "outsideBandMarginMetres": 1,
+   "overshootMarginMetres": 2,
+   "target": "the gate point of the last passed checkpoint (the start line before the first checkpoint)",
+   "rule": "respawn when the chassis falls more than 1 m below the measured ground at its arc, stays airborne for 30 ticks, or leaves the declared band; the attempt timer keeps running and the last checkpoint is kept"
+  },
+  "limits": [
+   "one point-to-point sprint on the collision-clear path, not a lap and not a retail start line",
+   "the path is the P48 passable raster eroded by 10 cells (>= 5.0 m) inside a 14-cell corridor around the committed draw-covered path",
+   "the committed spawn/finish poses are joined to the eroded path by 2.500 m / 2.062 m connectors; the connectors are laterally car-width passable but do not carry the full isotropic margin",
+   "the 6 m band is the page validator's declared controller/respawn band; the measured respawn corridor is 12.0 m and the measured interior clearance is 5.500 m",
+   "the path clears the narrowest draw-path pinch (1.500 m) by 5.500 m (stated margin 5.0 m)",
+   "gates are rules geometry only; no gate mesh is added to the render packet",
+   "the 1 excluded collision shapes are not in the raster; no prop collider, opponent, AI or race audio is added"
+  ]
+ },
+ "integration": {
+  "integrated": false,
+  "needed": [
+   "map-registry.js needs the new layout file/content pins (sampleCount, lengthMetres, checkpointArcs) for ?map=highrise&script=sprint",
+   "the E1 map-batch package builder copies this document verbatim as _work/e1-drive/highrise/layout.json",
+   "the e1-drive highrise geometry packet must be loaded before this layout; this document carries no draw geometry",
+   "gate lines are rules geometry only; no gate mesh, start banner or race director exists for this map",
+   "draw coverage of this collision path is not measured; the committed draw path's coverage does not apply"
+  ],
+  "missingData": [
+   "decoded InstancedTriangleMesh / FluidMesh collision shapes (1x FluidMesh)",
+   "draw coverage of the collision path at 0.25 m samples and across the 8 m gate lines",
+   "retail start-line / route record for the map"
+  ]
+ },
+ "hash": "sha256:d719377ca104bc24f13c864e7b24e0ec8e8478a0f863f7417273dd709a0f088c"
+}

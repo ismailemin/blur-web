@@ -511,3 +511,111 @@ The map package's collision buffer still excludes the ten
 `InstancedTriangleMesh` records and the FluidMesh; the engine loads the complete
 `Level.levelphysics`, so the driven run covers them even though the raster does
 not.
+
+## 13. Remaining map-batch levels: four more paths and seven typed blockers
+
+`probes/map-laps/data/remaining-paths.json` is the committed summary
+(`blur.map-laps.remaining-paths/1`) for the twelve map-batch levels that did not
+have a path document. It is **not** a new model: the builder, the P48 raster, the
+A* line, the 0.25 m simplification/resample, the endpoint connectors and the gate
+rules are the ones in section 12. Only the per-level `clearance_cells` /
+`corridor_cells` overrides differ; they live in `LEVELS` in
+`build_batch_paths.py` and are copied into every document and blocker. For a
+blocked level the override is the furthest-reaching attempt found by the sweep
+(so the blocker names the real stage); the exact `(cells, corridor)` pair is in
+the table and in `blocked.json`.
+
+| level | mapId | verdict | length (m) | samples | gates (m) | clearance / corridor | evidence / reason |
+| --- | --- | --- | ---: | ---: | --- | --- | --- |
+| `usa_la_multiplayer_highrise` | `highrise` | **path** | **14.268660** | 59 | 0 / 6.457107 / 8.207107 / 14.268660 | 10 / 14 | corridor is the committed 6.243 m draw path; the 208.948 m recovered collision path is not the corridor source |
+| `jpn_tokyo_shutoko` | `shutoko` | **path** | **279.005135** | 1,129 | 0 / 62.633926 / 152.974197 / 279.005135 | 10 / 14 | finish gate narrowed 8 m -> 6 m (13/33 passable at 8 m) |
+| `spa_barcelona_oval` | `oval` | **path** | **753.021127** | 3,018 | 0 / 160.668873 / 411.801432 / 753.021127 | 10 / 14 | spawn connector 0 m (the spawn is already on an eroded cell) |
+| `usa_amboy_multiplayer` | `amboy-mp` | **path** | **122.293808** | 495 | 0 / 26.551563 / 66.991298 / 122.293808 | **3 / 14** | 5 m default erodes the corridor away; 3 cells = 1.5 m is the car-half-width floor; start gate 0.5 m window + 7 m line, finish 6.5 m |
+| `uk_london_hackney` | `hackney` | blocked | - | 0 | - | 10 / 28 | `astar`: the P48 raster is **split** (base components 16 / 297); all 3,161 draw samples are outside the mask |
+| `usa_ny_dumbo` | `dumbo` | blocked | - | 0 | - | 3 / 14 | `astar`: the raster is connected but the **3-cell erosion is split** (components 3 / 1); at 1 cell the only connection is a sub-1 m pinch whose car band fails |
+| `uk_brighton` | `brighton` | blocked | - | 0 | - | 10 / 14 | `corridor`: the P48 raster is **split** (base components 11 / 266); the finish's nearest eroded cell is 23.200 m (43.7 cells) away |
+| `usa_sanfran_sausalito` | `sausalito` | blocked | - | 0 | - | 10 / 28 | `lateral-band`: 3 samples fail; the committed finish sits in a ~2.25 m passage, below the 2.276 m car band |
+| `usa_sanfran_russianhill` | `russianhill` | blocked | - | 0 | - | 7 / 14 | `lateral-band`: 11 samples fail; the spawn has no 8..10-cell eroded cell within 40 m and at 7 cells the nearest is 40.478 m |
+| `usa_la_downtown_multiplayer` | `downtown-mp` | blocked | - | 0 | - | 10 / 14 | `connector`: station 336 (182.115, -173.308) is blocked; the finish is in raster component 1, the spawn in 2 |
+| `spa_barcelona_bowl_multiplayer` | `bowl` | blocked | - | 0 | - | 9 / 14 | `connector`: station 1472 (22.000, 366.750) is blocked, 6.25 m from the finish |
+| `showroom` | `showroom` | **unsupported** | - | 0 | - | - | `showroom is not a race/sprint map` (`map-decisions.json` blocker `showroom-mode`) |
+
+Verdicts are three-way on purpose: `path` is a committed collision path,
+`blocked` is a typed blocker with the exact blocked samples, and `unsupported`
+is out of scope for a sprint path. A blocked level is **not** a builder failure;
+`--all` records it and continues.
+
+### Commands
+
+```powershell
+$py   = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+$node = "_work/toolchains/emsdk/node/24.19.0_64bit/node.exe"
+
+# every level (paths written, blockers recorded, run exits 0 unless a level failed unexpectedly)
+& $py probes/map-laps/tools/build_batch_paths.py --map all
+
+# one level, and the stale check
+& $py probes/map-laps/tools/build_batch_paths.py --map shutoko
+& $py probes/map-laps/tools/build_batch_paths.py --map shutoko --check
+
+# the summary document
+& $py probes/map-laps/tools/build_remaining_paths.py
+& $py probes/map-laps/tools/build_remaining_paths.py --check
+
+# verifiers
+& $node probes/map-laps/tools/verify_batch_paths.mjs          # every committed path
+& $node probes/map-laps/tools/verify_batch_paths.mjs --map oval
+& $node probes/map-laps/tools/verify_remaining_paths.mjs      # the twelve-level summary
+```
+
+`build_batch_paths.py --map all` walks `LEVELS` (and the `UNSUPPORTED` entry) in
+sorted order. A level with no path raises a typed `PathBlocked`, which is written to
+`_work/map-laps/<mapId>/blocked.json` (stage, clearance/corridor cells, the
+exact blocked samples and the 8-connected raster/erosion components) and the run
+continues. Only an unexpected failure (a package pin mismatch, a broken
+invariant) sets a non-zero exit at the end.
+
+`build_remaining_paths.py` reads only committed data: the batch `path.json`,
+the committed `*-path.json`, the blocker records and
+`probes/map-pipeline/data/map-decisions.json`. It never paraphrases a reason.
+
+### Gate-line rule (new, applied only where needed)
+
+The requested gate line is 8 m, as in section 12. A gate keeps the 8 m line when
+it is at least 50 % passable on the P48 raster with a fully passable
+car-half-width centre; otherwise it is narrowed to the widest line that meets
+both rules, and the gate records `narrowed: true`, `widthMetres`,
+`requestedWidthMetres` and `narrowedReason`. The start gate may use a shorter
+tangent window (`start_gate_window`, 0.5 m for `amboy-mp`) when the committed
+spawn departs at an angle to the path's 5 m chord; the window is recorded in
+`tangent.windowMetres`. Both are explicit, per-level rules, not silent fallbacks.
+They leave `observatory`, `downtown` and `mharuna` byte-identical (their 8 m
+lines already pass and their start windows stay 5 m).
+
+### Scope labels
+
+The path documents keep the section 12 labels (`collisionOnly: true`,
+`drawGeometryRead: false`, `rendererClaim/vehiclePhysics/gameRun/pathDriven:
+false`, `covered: null`). `remaining-paths.json` adds the same labels plus
+`verdict`. A `path` verdict is **data only**: it is not a playable map, not an
+E1 registry entry, not a driven lap and not a renderer claim. No map here has
+been added to `map-registry.js`; the main agent owns that integration.
+
+### Artifacts
+
+| file | role |
+| --- | --- |
+| `probes/map-laps/data/highrise-path.json` | committed collision path, `courseId: "highrise"` |
+| `probes/map-laps/data/shutoko-path.json` | committed collision path, `courseId: "shutoko"` |
+| `probes/map-laps/data/oval-path.json` | committed collision path, `courseId: "oval"` |
+| `probes/map-laps/data/amboy-mp-path.json` | committed collision path, `courseId: "amboy-mp"` |
+| `probes/map-laps/data/remaining-paths.json` | twelve-level verdict summary |
+| `_work/map-laps/<mapId>/blocked.json` | typed blocker for each blocked level (not committed) |
+| `_work/map-laps/<mapId>/grid.npz` | P48 raster per level (not committed) |
+
+The verifiers print `N/M checks passed` and exit 1 on any failure.
+`verify_batch_paths.mjs` re-derives every sample, gate, obstruction and source
+pin from the committed data and runs the builder twice plus `--check` per level;
+`verify_remaining_paths.mjs` re-derives each verdict, the path hashes and
+lengths, the blocker stages/reasons and the map-decisions lengths, and runs the
+summary generator twice plus `--check`.
