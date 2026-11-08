@@ -22,12 +22,15 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py probes/powerups/tools/extract_pickup_placement_levels.py --level spa_barcelona_gracia
 node probes/powerups/tools/build_runtime_placement.mjs
 
-# 2. Map pipeline: blocked inventory pins map-registry.js bytes
+# 2. Map pipeline: blocked inventory pins map-registry.js bytes; the decision
+#    table pins the blocked inventory AND the batch summary, so it runs last.
 & $py probes/map-pipeline/tools/blocked_inventory.py
-& $py probes/map-pipeline/tools/build_map_decisions.py
 
 # 3. Nineteen-level batch (pins the registry map set and the probe docs)
 & $py probes/map-batch/build_map.py --all
+
+# 3b. Decision table (pins blocked inventory + batch summary + registry)
+& $py probes/map-pipeline/tools/build_map_decisions.py
 
 # 4. Lighting and car materials
 & $py probes/lighting/tools/build_manifest.py
