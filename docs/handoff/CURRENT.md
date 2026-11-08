@@ -26,6 +26,10 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
 - **Long Beach 4. harita:** `?map=longbeach&script=sprint` → 785.82 m,
   **57.07 s, 0 respawn**; draw yolu 227 m'deki 10 cm kaldırıma takılıyordu,
   collision rasterından üretilen yol 6.836 m açıklıkla geçiyor.
+- **Hollywood Hills 5. harita:** `?map=observatory&script=sprint` → 536.62 m,
+  **81.5 s, 0 respawn**; e2e `solo-observatory` 12/12.
+- **Downtown paketi hazır, oynanamıyor:** araç ~%66.8'de koridordan çıkıyor;
+  yol düzeltmesi gerekiyor (`docs/work/analysis/observatory-downtown-packages.md`).
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Amboy/Gracia power-up:** retail yerleşim bağlı — Amboy **82**, Gracia **59**
   pickup, misafir hepsini alıyor; oda bayrağıyla `?powerups=1` gerekmiyor.
