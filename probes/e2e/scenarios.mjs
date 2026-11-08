@@ -86,7 +86,7 @@ function probeSummary(probe) {
 }
 
 /** Poll the page probe until `predicate` holds; fail early on a page error. */
-async function waitProbe(ctx, page, predicate, { timeoutMs, label, allowError = false }) {
+export async function waitProbe(ctx, page, predicate, { timeoutMs, label, allowError = false }) {
   const started = Date.now();
   let last = null;
   while (Date.now() - started < timeoutMs) {
@@ -1091,4 +1091,5 @@ export async function mpEight(ctx) {
     remoteTicks: ticks
   };
 }
+
 

@@ -1,0 +1,49 @@
+// `solo-longbeach`: the fourth playable map. The course is the committed
+// collision-derived path (785.823230 m), not the draw path: the draw path
+// crosses a 10 cm curb at arc 226.8 m and the car cannot pass.
+//
+import { waitProbe } from './scenarios.mjs';
+
+// The scenario asserts the map/layout identity, the finish, the two
+// checkpoints, zero respawns and a clean console. It does not pin a tick: the
+// collision path's settle differs from the draw path by a few ticks.
+
+export async function soloLongbeach(ctx) {
+  const anchor = ctx.anchors.longbeach;
+  const url = ctx.base + '/?map=longbeach&script=sprint&car=' +
+    encodeURIComponent(anchor.slug) + '&audio=0';
+  const page = await ctx.openPage('longbeach');
+  await page.navigate(url);
+  const running = await waitProbe(ctx, page, (probe) => probe.consumer === 'running' && probe.engineTick >= 2,
+    { timeoutMs: 120000, label: 'longbeach running' });
+  await ctx.shot(page, 'start');
+
+  ctx.A.check('longbeach: URL is the requested scripted sprint', running.url === url, running.url);
+  ctx.A.check('longbeach: map is longbeach', running.map?.id === 'longbeach', ctx.fmt(running.map));
+  ctx.A.check('longbeach: course is longbeach', running.sprint?.courseId === anchor.courseId,
+    running.sprint?.courseId);
+  ctx.A.check('longbeach: layout hash is the committed collision path',
+    running.sprintLayoutHash === anchor.layoutHash,
+    running.sprintLayoutHash + ' vs ' + anchor.layoutHash);
+  ctx.evidence.start = running;
+
+  const done = await waitProbe(ctx, page, (probe) => probe.sprintResult !== null,
+    { timeoutMs: 180000, label: 'longbeach finish' });
+  await ctx.shot(page, 'finish');
+  const result = done.sprintResult;
+  ctx.A.check('longbeach: finish time is ' + anchor.timeSeconds + ' s',
+    Math.abs(result.timeSeconds - anchor.timeSeconds) <= anchor.timeToleranceSeconds,
+    'expected ' + anchor.timeSeconds + ' ± ' + anchor.timeToleranceSeconds + ', got ' + result.timeSeconds);
+  ctx.A.check('longbeach: two checkpoints were passed', result.checkpoints === anchor.checkpoints,
+    'got ' + result.checkpoints);
+  ctx.A.check('longbeach: no respawn', result.respawns === 0, 'respawns ' + result.respawns);
+  ctx.A.check('longbeach: results overlay is visible', done.overlays.resultsHidden === false,
+    ctx.fmt(done.overlays));
+  ctx.A.check('longbeach: results overlay shows the measured race time',
+    (done.overlays.resultsTime ?? '').includes(anchor.timeSeconds.toFixed(3)),
+    done.overlays.resultsTime);
+  ctx.A.check('longbeach: no console error', page.messages.filter((m) => m.type === 'error').length === 0,
+    ctx.fmt(page.messages.slice(-4)));
+  ctx.evidence.finish = done;
+}
+
