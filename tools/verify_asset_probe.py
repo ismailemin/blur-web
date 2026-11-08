@@ -103,6 +103,8 @@ def main():
         ('map-pipeline-decisions',[sys.executable,'probes/map-pipeline/tools/verify_map_decisions.py']),
         ('map-laps-gracia-nolap',['node','probes/map-laps/tools/verify_gracia_no_lap.mjs']),
         ('powerups-pickup-routes',['node','probes/powerups/tools/verify_pickup_routes.mjs']),
+        ('powerups-retail-placement',['node','probes/powerups/tools/verify_retail_placement.mjs']),
+        ('vehicle-batch-roster',[sys.executable,'probes/vehicle-batch/tools/verify_batch_roster.py']),
     ])
     results=[]
     for name,command in steps:
