@@ -74,6 +74,18 @@ const MAPS = Object.freeze({
     level: 'usa_amboy_multiplayer',
     outDir: '_work/e1-drive/amboy-mp',
     layout: 'probes/map-laps/data/amboy-mp-path.json'
+  }),
+  dumbo: Object.freeze({
+    id: 'dumbo',
+    level: 'usa_ny_dumbo',
+    outDir: '_work/e1-drive/dumbo',
+    layout: 'probes/map-laps-aid/data/dumbo-aid-path.json'
+  }),
+  'downtown-mp': Object.freeze({
+    id: 'downtown-mp',
+    level: 'usa_la_downtown_multiplayer',
+    outDir: '_work/e1-drive/downtown-mp',
+    layout: 'probes/map-laps-aid/data/downtown-mp-aid-path.json'
   })
 });
 

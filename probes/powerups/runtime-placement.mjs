@@ -70,10 +70,10 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
   },
   "sources": {
     "_work/powerups/runtime-amboy.json": {
-      "sha256": "66f6b2133325052497c5cd24c931fa1bb20556cf61de3b7dbf033e8888c5292f"
+      "sha256": "a1d46d6f046b78ebd4e1f35d6bc7b2324bd1e170f2979b7a7bc3b519ff4cb514"
     },
     "_work/powerups/runtime-gracia.json": {
-      "sha256": "4245749be5ab073b14fbde1e82933724b22c5649fee4eb5bbebf258f7c3da130"
+      "sha256": "cc0a82db62e55e13640456a12f2f3bc784ac39468c417dad72321d2221cc660f"
     },
     "_work/powerups/placements.json": {
       "sha256": "3b1b50ef24b224267802b2eb2794ad329a194e6a33c80438b530b8c579fa5540"

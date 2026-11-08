@@ -258,6 +258,63 @@ MAP_BUILDS = {
             "spawn, checkpoints and finish are the committed map-batch pose and collision-clear path, not a retail start line",
         ],
     ),
+    "dumbo": dict(
+        id="dumbo",
+        level="usa_ny_dumbo",
+        batch="_work/map-batch/usa_ny_dumbo",
+        out_dir="_work/e1-drive/dumbo",
+        layout="probes/map-laps-aid/data/dumbo-aid-path.json",
+        physics="game-data/Blur/levels/usa_ny_dumbo/Level.levelphysics",
+        mesh_id="dumbo.direct",
+        render_label="dumbo-direct-draws",
+        package_label="usa_ny_dumbo",
+        course_name="usa_ny_dumbo retail AI racing line",
+        decal_status="blocked-effect-not-static-albedo",
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-decoder-size-limit",
+                             "blocked-missing-texture-source",
+                             "blocked-runtime-albedo-parameter"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=7953,
+        instance_sections=38,
+        unsupported_sections=11,
+        map_limits=[
+            "direct LOD0 draws only; 11 unsupported sections and 7,953 instance descriptions in 38 sections are not applied",
+            "385 effect draws and 268 diagnostic draws (250 alpha-rule, 5 decoder-size, 4 missing texture source, 9 runtime-albedo) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "spawn, checkpoints and finish are the retail AI racing line projected onto collision, not the committed draw path",
+        ],
+    ),
+    "downtown-mp": dict(
+        id="downtown-mp",
+        level="usa_la_downtown_multiplayer",
+        batch="_work/map-batch/usa_la_downtown_multiplayer",
+        out_dir="_work/e1-drive/downtown-mp",
+        layout="probes/map-laps-aid/data/downtown-mp-aid-path.json",
+        physics="game-data/Blur/levels/usa_la_downtown_multiplayer/Level.levelphysics",
+        mesh_id="downtown-mp.direct",
+        render_label="downtown-mp-direct-draws",
+        package_label="usa_la_downtown_multiplayer",
+        course_name="usa_la_downtown_multiplayer retail AI racing line",
+        decal_status=None,
+        diagnostic_statuses=("blocked-alpha-rule-missing",
+                             "blocked-runtime-albedo-parameter"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=420,
+        instance_sections=1,
+        unsupported_sections=0,
+        map_limits=[
+            "direct LOD0 draws only; 0 unsupported sections and 420 instance descriptions in 1 section are not applied",
+            "23 diagnostic draws (22 alpha-rule, 1 runtime-albedo) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "spawn, checkpoints and finish are the retail AI racing line with a bounded lateral detour, not the committed draw path",
+        ],
+    ),
 }
 
 
