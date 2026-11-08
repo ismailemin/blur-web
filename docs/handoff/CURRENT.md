@@ -53,22 +53,23 @@ lightmap 9 haritada render'da.
 - **Runtime modülleri hazır:** ışık, araç materyali, HUD (`?hud=retail` ile
   bağlı), pickup rotası, 19 harita kararı.
 
-**Paralel dalga (bu gece, 7 ajan):** kalan harita yolları (`map-laps`),
-lightmap decode (`lighting`), fiziksel pickup iz düşümü (`powerups`),
-5 desteklenmeyen araç (`vehicle-batch`), HUD (`hud-ui`), ses kataloğu
-(`audio`), yeni haritalarda AI (`ai-driver`), menü 57 araç/7 harita
-(`game-shell`).
+**Paralel dalga (tamamlandı):** harita yolları (`map-laps`, `map-laps-aid`),
+lightmap decode (`lighting`), fiziksel pickup iz düşümü (`powerups`,
+`powerups-aid`), araçlar (`vehicle-batch`), HUD (`hud-ui`), ses kataloğu
+(`audio`), yeni haritalarda AI (`ai-driver`), menü (`game-shell`).
 
-**Sıradaki (öncelik sırası):**
+**Sıradaki (öncelik sırası) — ayrıntı [`RESUME.md`](RESUME.md):**
 
-1. Kalan 12 haritanın collision yollarını `e1-drive`'a al (ajan çıktısı hazır
-   olunca registry + pin + e2e).
-2. Lightmap decode → gerçek ışık paritesi; araç materyalini render'a bağla.
-3. Fiziksel pickup iz düşümü (arc-korrespondans tablosu).
-4. 5 desteklenmeyen aracı çöz (ajan çıktısı).
-5. HUD/ses/AI/menü bağlantıları.
-6. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
-   (kullanıcıdan VPS/domain/TLS bekliyor).
+1. `verify_asset_probe --skip-build` kapısını yeşile al (`gate-full17.log`).
+2. Menüyü 61 araç / 13 haritaya çek (`probes/game-shell`).
+3. River lightmap'i (`build_geometry.mjs` tek-harita yolu).
+4. Dumbo / Downtown MP lightmap decode (`probes/lighting`).
+5. Kalan 6 harita tipli blocker (hackney, brighton, sausalito, russianhill,
+   bowl, showroom).
+6. `defaultcar` (gövde modeli yok) tipli `unsupported`.
+7. Retail pickup fiziksel yerleşimi (Amboy 2/82, Gracia 2/59, River 0/54).
+8. Retail 1:1 parite (kullanıcıdan referans kare), internet deploy
+   (kullanıcıdan VPS/domain/TLS).
 
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)
 
