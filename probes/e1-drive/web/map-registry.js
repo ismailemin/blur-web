@@ -77,7 +77,22 @@ export const MAPS = Object.freeze({
     bestKey: 'e1-drive.sprint.best.v3.amboy',
     courses: Object.freeze(['310', 'lap']),
     multiplayer: true,
-    propLayer: false,
+    propLayer: true,
+    // The Amboy prop colliders (roadside profile: 484 active, the measured line
+    // stays clear). The loader manifest names the colliders document; both files
+    // are pinned by SHA-256.
+    propPins: Object.freeze({
+      label: 'amboy-roadside',
+      profile: 'roadside',
+      manifest: '_work/map-props/manifest-amboy.json',
+      manifestFileSha256: 'sha256:c0bc83f575268ab70b45490fb07248d4e446fb2e2b1dfe25e42c325d7d6cfb44',
+      collidersFile: 'colliders-amboy.json',
+      collidersFileSha256: 'sha256:7007b72afea3a315f04cb02cad92002801fdd733463f25e7e7797c9aaa40d05b',
+      manifestContentSha256: 'sha256:a8edf42cd879f7d029bdd1e1380b1776740371bb767da43a7c7279d22f4018d6',
+      manifestColliders: 484,
+      colliders: 484,
+      variant: null
+    }),
     ghost: false,
     pins: Object.freeze({
       mapFileSha256: 'sha256:52acd10348ab1e747461eae3f5ec9854de1300910096dc50bc8ab7f06850e01a',
@@ -137,7 +152,21 @@ export const MAPS = Object.freeze({
     bestKey: 'e1-drive.sprint.best.v3.gracia',
     courses: Object.freeze(['310']),
     multiplayer: true,
-    propLayer: false,
+    propLayer: true,
+    // Gracia prop colliders (roadside: 965 active; the 8 colliders that sit on
+    // the measured path stay inactive, so the line is clear).
+    propPins: Object.freeze({
+      label: 'gracia-roadside',
+      profile: 'roadside',
+      manifest: '_work/map-props/manifest-gracia.json',
+      manifestFileSha256: 'sha256:9b9826a39387d41267473dd4f467b972b8cb9afe954b263088ea2b991143a828',
+      collidersFile: 'colliders-gracia.json',
+      collidersFileSha256: 'sha256:57da056dfc523cf590c952bd003de780b734a64ee5ee18fa2618e760739381e0',
+      manifestContentSha256: 'sha256:b3dedf1e22421dce6cad1ed7770fa54ec1f0dc074ccd9bb7f8ad5d0fd1694249',
+      manifestColliders: 973,
+      colliders: 965,
+      variant: null
+    }),
     ghost: false,
     pins: Object.freeze({
       mapFileSha256: 'sha256:562b56889b80d3368d5a1f08f009d6f351b6d3de33b3539df51c666a737a6a0d',

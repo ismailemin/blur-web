@@ -224,8 +224,13 @@ export function collisionProbePose(manifest, spec) {
  */
 export function checkPropManifest(manifest, pins) {
   const errors = [];
-  if (manifest?.kind !== 'prop-collision-colliders' || manifest?.version !== 1) {
-    errors.push('manifest is not prop-collision-colliders v1');
+  // River uses `prop-collision-colliders`; the Amboy/Gracia builder emits
+  // `map-props-colliders` with the `blur.map-props/1` schema. Both are the same
+  // OBB contract the resolver consumes.
+  const kindOk = (manifest?.kind === 'prop-collision-colliders') ||
+    (manifest?.kind === 'map-props-colliders' && manifest?.schema === 'blur.map-props/1');
+  if (!kindOk || manifest?.version !== 1) {
+    errors.push('manifest is not prop-collision-colliders v1 or map-props-colliders v1');
   }
   if (pins.variant !== null && manifest?.variant !== pins.variant) {
     errors.push('manifest variant is ' + JSON.stringify(manifest?.variant) + ', expected ' + pins.variant);

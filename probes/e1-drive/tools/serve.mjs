@@ -53,6 +53,8 @@ const RACE_RULES = path.join(ROOT, 'probes/race-rules');
 const GAME_SHELL = path.join(ROOT, 'probes/game-shell');
 // Measured lap layouts (Amboy loop-01) are committed data under probes/map-laps.
 const MAP_LAPS = path.join(ROOT, 'probes/map-laps');
+// Amboy/Gracia prop colliders (built by probes/map-props) live in _work.
+const MAP_PROPS_WORK = path.join(ROOT, '_work/map-props');
 // PWR1 read-only inputs for the power-up slice: the manifest the model consumes
 // and the committed rules prototype (never copied or edited here).
 const POWERUPS_WORK = path.join(ROOT, '_work/powerups');
@@ -328,6 +330,7 @@ export function startServer({ port = 8801 } = {}) {
     else if (pathname.startsWith('/prop-collision/')) file = safeJoin(PROP, pathname.slice('/prop-collision/'.length));
     else if (pathname.startsWith('/_work/prop-collision/')) file = safeJoin(PROP_WORK, pathname.slice('/_work/prop-collision/'.length));
     else if (pathname.startsWith('/_work/free-roam-prop/')) file = safeJoin(FREE_PROP_WORK, pathname.slice('/_work/free-roam-prop/'.length));
+    else if (pathname.startsWith('/_work/map-props/')) file = safeJoin(MAP_PROPS_WORK, pathname.slice('/_work/map-props/'.length));
     else if (pathname.startsWith('/audio/')) file = safeJoin(AUDIO, pathname.slice('/audio/'.length));
     else if (pathname.startsWith('/_work/audio/')) file = safeJoin(AUDIO_WORK, pathname.slice('/_work/audio/'.length));
     else if (pathname.startsWith('/net-mvp/')) {

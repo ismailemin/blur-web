@@ -2577,22 +2577,55 @@ async function loadEngine(carOverride = null) {
     // the physics authority; the layer only resolves the pose after the tick.
     // A changed file, profile or collider count throws a typed PropManifestError;
     // there is no fallback to an older manifest.
-    const pins = (SOAK || MAP_IS_PACKAGE) ? null : propPinsForCourse(COURSE_PARAM);
+    const pins = SOAK ? null
+      : (MAP_IS_PACKAGE ? (MAP.propPins ?? null) : propPinsForCourse(COURSE_PARAM));
     if (pins) {
-      const [manifestResponse, resolver] = await Promise.all([
-        fetch('/' + pins.manifest, { cache: 'no-store' }),
-        import(PROP_RESOLVER_URL)
-      ]);
-      if (!manifestResponse.ok) {
-        throw new PropManifestError('manifest-fetch',
-          'prop manifest fetch failed: HTTP ' + manifestResponse.status + ' (' + pins.manifest + ')');
+      const resolver = await import(PROP_RESOLVER_URL);
+      let manifest;
+      if (pins.collidersFile) {
+        // Amboy/Gracia: a loader manifest names the colliders document. Both
+        // files are pinned; a mismatch is a typed failure, never a fallback.
+        const loaderResponse = await fetch('/' + pins.manifest, { cache: 'no-store' });
+        if (!loaderResponse.ok) {
+          throw new PropManifestError('manifest-fetch',
+            'prop loader manifest fetch failed: HTTP ' + loaderResponse.status + ' (' + pins.manifest + ')');
+        }
+        const loaderText = await loaderResponse.text();
+        if ('sha256:' + sha256Hex(loaderText) !== pins.manifestFileSha256) {
+          throw new PropManifestError('manifest-file-sha256',
+            'prop loader manifest does not match its pinned SHA-256 (' + pins.manifest + ')');
+        }
+        const loader = JSON.parse(loaderText);
+        if (loader?.colliders?.file !== pins.collidersFile ||
+            loader?.colliders?.sha256 !== pins.collidersFileSha256.replace(/^sha256:/, '')) {
+          throw new PropManifestError('manifest-pins',
+            'prop loader manifest names a different colliders file than the pin');
+        }
+        const collidersUrl = '/_work/map-props/' + pins.collidersFile;
+        const collidersResponse = await fetch(collidersUrl, { cache: 'no-store' });
+        if (!collidersResponse.ok) {
+          throw new PropManifestError('manifest-fetch',
+            'prop colliders fetch failed: HTTP ' + collidersResponse.status + ' (' + collidersUrl + ')');
+        }
+        const collidersText = await collidersResponse.text();
+        if ('sha256:' + sha256Hex(collidersText) !== pins.collidersFileSha256) {
+          throw new PropManifestError('manifest-file-sha256',
+            'prop colliders document does not match its pinned SHA-256 (' + pins.collidersFile + ')');
+        }
+        manifest = JSON.parse(collidersText);
+      } else {
+        const manifestResponse = await fetch('/' + pins.manifest, { cache: 'no-store' });
+        if (!manifestResponse.ok) {
+          throw new PropManifestError('manifest-fetch',
+            'prop manifest fetch failed: HTTP ' + manifestResponse.status + ' (' + pins.manifest + ')');
+        }
+        const text = await manifestResponse.text();
+        if ('sha256:' + sha256Hex(text) !== pins.manifestFileSha256) {
+          throw new PropManifestError('manifest-file-sha256',
+            'prop manifest file does not match its pinned SHA-256 (' + pins.manifest + ')');
+        }
+        manifest = JSON.parse(text);
       }
-      const text = await manifestResponse.text();
-      if ('sha256:' + sha256Hex(text) !== pins.manifestFileSha256) {
-        throw new PropManifestError('manifest-file-sha256',
-          'prop manifest file does not match its pinned SHA-256 (' + pins.manifest + ')');
-      }
-      const manifest = JSON.parse(text);
       const pinCheck = checkPropManifest(manifest, pins);
       if (!pinCheck.ok) {
         throw new PropManifestError('manifest-pins',
@@ -2601,7 +2634,7 @@ async function loadEngine(carOverride = null) {
       propWorld = resolver.createWorld(
         pins.profile === 'roadside' ? applyDrivenLineExclusions(manifest) : manifest,
         { profile: pins.profile });
-      propLayer = createPropLayer({ world: propWorld, carEnvelope: manifest.carEnvelope, pins });
+      propLayer = createPropLayer({ world: propWorld, carEnvelope: manifest.carEnvelope ?? pins.carEnvelope, pins });
       state.props = propLayer.snapshot();
       if (COLLISION_PROBE) {
         collisionProbeLayout = layout;
@@ -6524,6 +6557,26 @@ function mpInstallDebugApi() {
 }
 
 /** Capture/debug surface for the chunked load path; the page never depends on it. */
+// Prop-collision debug surface: lets a capture prove that a point inside a
+// collider returns a contact, without driving into it. Read-only.
+window.__e1Props = {
+  snapshot: () => (propLayer ? propLayer.snapshot() : null),
+  colliderCount: () => (propWorld?.colliders?.length ?? 0),
+  colliderAt: (index) => {
+    const collider = propWorld?.colliders?.[index] ?? null;
+    return collider ? {
+      id: collider.id,
+      center: [collider.cx ?? null, null, collider.cz ?? null],
+      bottom: collider.bottom ?? null, top: collider.top ?? null,
+      half: [collider.hu ?? null, null, collider.hv ?? null]
+    } : null;
+  },
+  contactsAt: (x, z, yawRad = 0, baseY = null) => (propWorld
+    ? propWorld.contactsAll(x, z, yawRad,
+      Number.isFinite(baseY) ? baseY : (state.position?.[1] ?? 0),
+      state.props?.carEnvelope ?? null)
+    : [])
+};
 window.__e1Chunks = {
   switchCar: (slug) => switchCarInPlace(slug),
   state: () => state.chunk ?? null,
