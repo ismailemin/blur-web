@@ -42,6 +42,7 @@ export function raceUrl(config) {
   query.set('race', '1');
   if (config.mode === 'multiplayer') {
     query.set('mp', '1');
+    if (config.mp?.powerups) query.set('powerups', '1');
     if (config.mp?.role === 'host') {
       query.set('host', '1');
       if (config.mapId) query.set('map', config.mapId);

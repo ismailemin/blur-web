@@ -922,6 +922,9 @@ export async function modeMatrix(ctx) {
  */
 export async function mpEight(ctx) {
   const car = ctx.anchors.cars.default;
+  // A retry reuses the same room service, so counters are compared as deltas.
+  const baseline = ctx.roomServer?.stats?.() ?? null;
+  const delta = (key) => (baseline ? (ctx.roomServer.stats()[key] ?? 0) - (baseline[key] ?? 0) : null);
   const roomQuery = '&mpServer=' + encodeURIComponent(ctx.roomUrl) + '&audio=0';
   const host = await ctx.openPage('host');
   const hostUrl = ctx.base + '/?mp=1&host=1&script=sprint&car=' + encodeURIComponent(car) +
@@ -1007,6 +1010,47 @@ export async function mpEight(ctx) {
   ctx.A.check('mp8: every snapshot tick is a positive integer',
     ticks.every((row) => row.every((tick) => Number.isInteger(tick) && tick >= 0)), ctx.fmt(ticks));
 
+  // The whole field must finish and share one result table. The scripted sprint
+  // drives every page; the host's RaceSession owns the authoritative table.
+  const hostResult = await waitMp(ctx, host, (probe) => probe.mp.result !== null,
+    { timeoutMs: 180000, label: 'host eight-player result' });
+  const result = hostResult.mp.result;
+  ctx.A.check('mp8: the shared result table has eight rows',
+    result.rows.length === 8, ctx.fmt(result.rows.map((row) => [row.playerId, row.positionNumber])));
+  const positions = result.rows.map((row) => row.positionNumber);
+  // Standard competition ranking: ties share a position (1,1,3,3,…).
+  const rankingOk = positions.every((position, index) =>
+    Number.isInteger(position) && position >= 1 && position <= 8 &&
+    (index === 0 ? position === 1 : position >= positions[index - 1]) &&
+    (index === 0 || position === positions[index - 1] || position === index + 1));
+  ctx.A.check('mp8: the eight rows form a valid competition ranking',
+    rankingOk, ctx.fmt(positions));
+  ctx.A.check('mp8: the winner is position 1',
+    positions[0] === 1, ctx.fmt(positions));
+  ctx.A.check('mp8: every row finished (no DNF)',
+    result.rows.every((row) => row.status === 'finished'), ctx.fmt(result.rows.map((row) => [row.playerId, row.status])));
+  ctx.A.check('mp8: every human row reports its own finish hash',
+    result.rows.every((row) => typeof row.finishHash === 'string' && row.finishHash.startsWith('sha256:')),
+    ctx.fmt(result.rows.map((row) => [row.playerId, row.finishHash])));
+
+  // Every page must render the same table from the same broadcast bytes.
+  for (const [index, page] of pages.entries()) {
+    const probe = await waitMp(ctx, page, (value) => value.mp.result !== null,
+      { timeoutMs: 120000, label: 'page ' + index + ' result' });
+    ctx.A.check('mp8: page ' + index + ' renders the same result hash',
+      probe.mp.result.hash === result.hash, ctx.fmt({ page: probe.mp.result.hash, host: result.hash }));
+    ctx.A.check('mp8: page ' + index + ' shows the results overlay',
+      probe.overlays.resultsHidden === false, ctx.fmt(probe.overlays.resultsHidden));
+  }
+  ctx.evidence.result = {
+    hash: result.hash,
+    order: result.order,
+    rows: result.rows.map((row) => ({
+      playerId: row.playerId, position: row.positionNumber,
+      tick: row.tick, timeSeconds: row.timeSeconds
+    }))
+  };
+
   // Evidence frames. Eight WebGPU contexts share one GPU process, so a full-size
   // capture can starve; the guests are closed first and the host is captured
   // last. The functional assertions above are already complete.
@@ -1030,10 +1074,12 @@ export async function mpEight(ctx) {
   if (stats) {
     ctx.A.check('mp8: the room service saw eight players in one room', stats.maxPlayersSeen === 8,
       ctx.fmt({ maxPlayersSeen: stats.maxPlayersSeen }));
-    ctx.A.check('mp8: the room service created exactly one room', stats.roomsCreated === 1,
-      ctx.fmt({ roomsCreated: stats.roomsCreated }));
-    ctx.A.check('mp8: the room service recorded no protocol errors', stats.protocolErrors === 0,
-      ctx.fmt({ protocolErrors: stats.protocolErrors }));
+    ctx.A.check('mp8: this attempt created exactly one room', delta('roomsCreated') === 1,
+      ctx.fmt({ roomsCreated: delta('roomsCreated'), total: stats.roomsCreated }));
+    ctx.A.check('mp8: this attempt finished exactly one room', delta('roomsFinished') === 1,
+      ctx.fmt({ roomsFinished: delta('roomsFinished'), total: stats.roomsFinished }));
+    ctx.A.check('mp8: the room service recorded no protocol errors', delta('protocolErrors') === 0,
+      ctx.fmt({ protocolErrors: delta('protocolErrors') }));
     ctx.evidence.roomStats = stats;
   } else {
     ctx.evidence.roomStatsUnavailable = 'attached room service; --base/--room-url has no stats()';
