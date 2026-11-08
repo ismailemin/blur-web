@@ -21,6 +21,9 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
   seçimi, lobi); her yarış parametresi menüyü atlar. `?join=1` misafir akışı.
   Başsız Edge: 0 konsol hatası.
 - **Amboy 3 tur:** `?map=amboy&course=lap` → 3 tur, 0 respawn, ~112 s.
+- **Long Beach 4. harita:** `?map=longbeach&script=sprint` → 785.82 m,
+  **57.07 s, 0 respawn**; draw yolu 227 m'deki 10 cm kaldırıma takılıyordu,
+  collision rasterından üretilen yol 6.836 m açıklıkla geçiyor.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Amboy/Gracia power-up:** oda bayrağıyla 6 pickup, misafir de alıyor.
 - **2 oyunculu + AI:** `mp-two` 52/52, `mp-ai` 71/71.
@@ -36,16 +39,13 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
 
 **Sıradaki (öncelik sırası):**
 
-1. Long Beach sürülebilir yol: paket hazır (818.37 m, 1.039 draw), ama ölçülen
-   yol arc 226.8 m'de motor çarpışmasına takılıyor; polyline düzeltmesi
-   gerekiyor (`docs/work/analysis/longbeach-path-blocked.md`).
-2. Retail pickup rotasını oyuna bağla: pickup'ları kendi rotalarının yay
+1. Retail pickup rotasını oyuna bağla: pickup'ları kendi rotalarının yay
    konumuna göre yerleştir (veri hazır, `pickup-routes.json`).
-3. Işık ve araç materyalini render'a bağla (veri hazır; görsel doğrulama
+2. Işık ve araç materyalini render'a bağla (veri hazır; görsel doğrulama
    gerekiyor).
-4. Gracia noktadan noktaya kalıyor (karar `gracia-no-lap.json`).
-5. Kalan 13 harita için `map-decisions.json` kararlarını uygula.
-6. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
+3. Gracia noktadan noktaya kalıyor (karar `gracia-no-lap.json`).
+4. Kalan 15 harita için `map-decisions.json` kararlarını uygula.
+5. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
    (kullanıcıdan VPS/domain/TLS bekliyor).
 
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)

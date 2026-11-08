@@ -1,3 +1,10 @@
+## 8 Kasım 2026 — Long Beach dördüncü harita olarak entegre edildi
+
+- **Long Beach artık oynanabilir:** `?map=longbeach&script=sprint` → **785.82 m**, **57.07 s, 2 checkpoint, 0 respawn, 0 konsol hatası**.
+- Draw yolu 227 m'de 10 cm'lik kaldırıma takılıyordu; collision rasterından üretilen yol kaldırımı **6.836 m** açıklıkla geçiyor. `map_package_builder.mjs` artık `layoutSource` kabul ediyor.
+- Kanıt: `verify_e1_map --map longbeach` 23/23, `verify_longbeach_path` 57/57, gerçek fizik sürüşü tick 3422; `map-batch` 1450/1450 (4 playable), `verify_blocked` 930/930, `verify_map_decisions` 2435/2435.
+- Ayrıntı: `docs/work/analysis/longbeach-path.md`.
+
 ## 8 Kasım 2026 — entegrasyon dalgası: 8 oyunculu bitiş, Amboy 3 tur, prop collider, power-up
 
 - **8 oyunculu yarış bitişe kadar:** `mp-eight` **95/95**; 8 satırlı ortak sonuç tablosu, `roomsFinished:1, maxPlayersSeen:8, protocolErrors:0`. Commit `f6b1818`.
@@ -1053,6 +1060,7 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sunucu doğrulandı: `/` HTTP 200, `e1_drive.wasm` 1.003.249 B HTTP 200.
 - 5 araç seçici ve `?car=` URL'i; scripted mod `?script=drive&car=...`.
 - Kullanıcı testi için hazır; görsel sadakat/teker/engine draw-list işleri devam ediyor.
+
 
 
 
