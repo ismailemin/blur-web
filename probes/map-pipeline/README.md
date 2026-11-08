@@ -40,6 +40,27 @@ under `_work/map-pipeline/`, `_work/logs/map-pipeline/` and one analysis documen
 | `tools/export_candidate.py` | candidate spawn/course/checkpoints/finish layout |
 | `tools/build_summary.py` | SVG/HTML top-down + table summary |
 | `tools/verify_maps.py` | deterministic re-measure and classification check |
+| `tools/blocked_inventory.py` | merge the 19-map evidence into `_work/map-pipeline/blocked/inventory-19.json` |
+| `tools/verify_blocked.py` | deterministic re-measure of the blocked inventory and the three extended probes |
+
+### Blocked-inventory coverage schema
+
+`blocked_inventory.py` mirrors the three coverage views of every extended probe
+(`coverage.allTriangles`, `coverage.upFacingTriangles`,
+`coverage.newSectionsOnly`) into `extendedProbe.coverageFraction`,
+`upFacingCoverageFraction` and `newOnlyCoverageFraction`. `verify_blocked.py`
+does not trust those mirrors: it re-derives all three fractions from the probe
+document itself and only cross-checks a mirror when the field is present, so a
+stale `inventory-19.json` cannot mask a wrong measurement.
+
+The documented invariant (`docs/work/analysis/map-pipeline-blocked.md` §4.2,
+§5.2) is 100 % coverage of the committed collision path by the extended
+extraction as a whole, on all triangles and on up-facing triangles only.
+`newSectionsOnly` is a **subset** view: the same stations tested against only
+the newly extracted (non-committed) sections. It is therefore not 100 %
+(Longbeach 0.598021; the committed sections carry the remaining stations), and
+the verifier asserts the subset invariants instead — same sample/station count,
+covered stations <= the full set, fraction recomputed from its own counts.
 
 ## Reproduce
 
@@ -54,6 +75,8 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 & $py probes/map-pipeline/tools/rank_maps.py
 & $py probes/map-pipeline/tools/build_summary.py
 & $py probes/map-pipeline/tools/verify_maps.py
+& $py probes/map-pipeline/tools/blocked_inventory.py
+& $py probes/map-pipeline/tools/verify_blocked.py
 ```
 
 The full 19-level extraction is recorded in

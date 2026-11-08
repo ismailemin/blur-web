@@ -261,12 +261,62 @@ def main(argv=None):
         check(name + " probe new section count", probe["newSections"] == len(new_rows))
         check(name + " probe new triangle sum", probe["newTriangles"] ==
               sum(item["triangles"] for item in new_rows.values()))
+        # Coverage is re-derived from the probe document itself (the producer's
+        # output) rather than from `extendedProbe`, which is only a mirror and
+        # was missing `newOnlyCoverageFraction` until the inventory was rebuilt.
+        # The documented invariant (docs/work/analysis/map-pipeline-blocked.md
+        # §4.2, §5.2) is that the extended extraction as a whole covers 100 % of
+        # the committed collision path, on all triangles and on up-facing
+        # triangles only. `newSectionsOnly` is a subset view: the same stations
+        # tested against only the newly extracted (non-committed) sections, so it
+        # must be a consistent subset, not 100 % (Longbeach 0.598021; the
+        # committed sections carry the remaining stations).
+        coverage = source["coverage"]
+        all_cov = coverage["allTriangles"]
+        up_cov = coverage["upFacingTriangles"]
+        new_cov = coverage["newSectionsOnly"]
         check(name + " probe coverage fraction 1.0",
-              probe["coverageFraction"] == 1.0, str(probe["coverageFraction"]))
+              all_cov["fraction"] == 1.0, str(all_cov["fraction"]))
         check(name + " probe up-facing coverage 1.0",
-              probe["upFacingCoverageFraction"] == 1.0, str(probe["upFacingCoverageFraction"]))
-        check(name + " probe new-sections-only coverage 1.0",
-              probe["newOnlyCoverageFraction"] == 1.0, str(probe["newOnlyCoverageFraction"]))
+              up_cov["fraction"] == 1.0, str(up_cov["fraction"]))
+        check(name + " probe coverage fraction recomputes",
+              all_cov["fraction"] ==
+              round(all_cov["coveredStations"] / max(1, all_cov["stationTests"]), 6),
+              "%d/%d" % (all_cov["coveredStations"], all_cov["stationTests"]))
+        check(name + " probe up-facing fraction recomputes",
+              up_cov["fraction"] ==
+              round(up_cov["coveredStations"] / max(1, up_cov["stationTests"]), 6),
+              "%d/%d" % (up_cov["coveredStations"], up_cov["stationTests"]))
+        check(name + " probe full coverage has no gaps",
+              all_cov["gapRuns"] == 0 and all_cov["gapMetres"] == 0,
+              "%s runs / %s m" % (all_cov["gapRuns"], all_cov["gapMetres"]))
+        check(name + " probe up-facing coverage has no gaps",
+              up_cov["gapRuns"] == 0 and up_cov["gapMetres"] == 0,
+              "%s runs / %s m" % (up_cov["gapRuns"], up_cov["gapMetres"]))
+        check(name + " probe new-sections-only tests the same stations",
+              new_cov["samples"] == all_cov["samples"] and
+              new_cov["stationTests"] == all_cov["stationTests"],
+              "%s/%s vs %s/%s" % (new_cov["samples"], new_cov["stationTests"],
+                                  all_cov["samples"], all_cov["stationTests"]))
+        check(name + " probe new-sections-only is a subset of the full set",
+              new_cov["coveredStations"] <= all_cov["coveredStations"] and
+              new_cov["fraction"] <= all_cov["fraction"],
+              "%d vs %d" % (new_cov["coveredStations"], all_cov["coveredStations"]))
+        check(name + " probe new-sections-only fraction recomputes",
+              new_cov["fraction"] ==
+              round(new_cov["coveredStations"] / max(1, new_cov["stationTests"]), 6),
+              "%d/%d" % (new_cov["coveredStations"], new_cov["stationTests"]))
+        check(name + " probe new sections cover part of the path",
+              new_cov["coveredStations"] > 0, str(new_cov["coveredStations"]))
+        # The inventory mirror must agree with the probe output wherever the
+        # field exists, so a stale or hand-edited `extendedProbe` fails instead
+        # of silently masking a changed measurement.
+        for field, value in (("coverageFraction", all_cov["fraction"]),
+                             ("upFacingCoverageFraction", up_cov["fraction"]),
+                             ("newOnlyCoverageFraction", new_cov["fraction"])):
+            if field in probe:
+                check(name + " probe " + field + " mirror agrees",
+                      probe[field] == value, "%s vs %s" % (probe[field], value))
         check(name + " recovered path equals collision diameter",
               abs(probe["componentPathM"] - row["collisionPathM"]) <= 0.001,
               "%s vs %s" % (probe["componentPathM"], row["collisionPathM"]))
