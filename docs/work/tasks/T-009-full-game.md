@@ -86,6 +86,17 @@ edilemeyen her öğe tipli `unsupported` olarak raporlanır.
 | MAPMAT1 | `probes/map-materials` | harita materyalleri |
 | CAREER1 | `probes/career` | kariyer verisi |
 | REPLAY1 | `probes/replay` | yarış tekrarı |
+| CARCOL1 | `probes/car-collision` | araba-araba çarpışma |
+| NET2 | `probes/net-webrtc` | WebRTC transport |
+| AI5 | `probes/ai-driver` | yarış çizgisi/hız profili |
+| SPLIT1 | `probes/split-screen` | split-screen tasarımı |
+| DVIS1 | `probes/damage-visuals` | hasar görselleri |
+| COCKPIT1 | `probes/cockpit` | kokpit görünümü |
+| LAMP1 | `probes/lights` | araç ışıkları/emissive |
+| MINIMAP1 | `probes/minimap` | minimap geometrisi |
+| STAND1 | `probes/standings` | canlı sıralama |
+| SUSP1 | `probes/suspension` | süspansiyon/teker görseli |
+| LIVERY1 | `probes/liveries` | boya/livery presetleri |
 
 ## Durum
 
