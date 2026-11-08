@@ -35,3 +35,10 @@ export {
   RESULT_STATUS
 } from './result-model.mjs';
 export { RaceSession } from './race-session.mjs';
+export {
+  ModeSession,
+  MODE_KIND,
+  MODE_STATUS,
+  MODE_EVENT,
+  MODE_RULES
+} from './mode-rules.mjs';
