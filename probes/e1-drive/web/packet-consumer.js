@@ -968,6 +968,14 @@ export class PacketConsumer {
     sceneBytes.set([0.16, 0, 0, 0], 8);
     this.sceneBuffer = this.device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.device.queue.writeBuffer(this.sceneBuffer, 0, sceneBytes);
+    // A map may have supplied its committed retail ambient before the scene
+    // buffer existed; apply it now.
+    if (Number.isFinite(this.pendingAmbient)) {
+      this.device.queue.writeBuffer(this.sceneBuffer, 32,
+        new Float32Array([this.pendingAmbient, 0, 0, 0]));
+      this.stats.ambient = this.pendingAmbient;
+      this.stats.ambientSource = 'retail-upNormalAmbientScaled-luminance';
+    }
     this.buffers.push(this.sceneBuffer);
     this.stats.buffersCreated++;
     this.sceneBindGroup = this.device.createBindGroup({
@@ -1321,6 +1329,24 @@ export class PacketConsumer {
    * This is a labelled presentation overlay only: it never writes a physics or
    * packet value, and the default `null` hides it.
    */
+  /**
+   * Replace the diagnostic ambient floor with the committed retail ambient.
+   * `value` is the luminance of `lighting.ambient.upNormalAmbientScaled` for the
+   * loaded map; the shader uses it as `ambient + (1 - ambient) * lambert`.
+   * Returns false when the scene buffer does not exist yet.
+   */
+  setAmbient(value) {
+    if (!Number.isFinite(value) || value < 0 || value > 1) return false;
+    // Keep it as the pending value so a later scene creation applies it too.
+    this.pendingAmbient = value;
+    if (this.sceneBuffer) {
+      this.device.queue.writeBuffer(this.sceneBuffer, 32, new Float32Array([value, 0, 0, 0]));
+      this.stats.ambient = value;
+      this.stats.ambientSource = 'retail-upNormalAmbientScaled-luminance';
+    }
+    return true;
+  }
+
   setPowerupMarkers(markers) {
     if (!markers) {
       this.powerupMarkers = null;

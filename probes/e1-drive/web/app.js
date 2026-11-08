@@ -367,6 +367,22 @@ async function lightingAgreement(packetLight, mapId) {
     Math.abs(packetLight.colour[index] - sun.colour[index])));
   const agree = maxDirectionDelta <= 1e-3 && maxColourDelta <= 1e-3;
   const baked = sun.colour.every((value) => value === 0);
+  // Apply the committed ambient floor to the renderer. The shader uses a single
+  // scalar (`ambient + (1 - ambient) * lambert`), so the retail per-channel
+  // ambient is reduced to its luminance. This is a real value from the committed
+  // table, not the old hardcoded 0.16.
+  const ambient = table.ambient?.upNormalAmbientScaled ?? null;
+  let ambientApplied = null;
+  if (Array.isArray(ambient) && ambient.length >= 3) {
+    const luminance = 0.2126 * ambient[0] + 0.7152 * ambient[1] + 0.0722 * ambient[2];
+    const value = Math.max(0, Math.min(1, luminance));
+    if (consumer && typeof consumer.setAmbient === 'function') {
+      ambientApplied = consumer.setAmbient(value) ? value : null;
+    }
+    state.ambientApplied = ambientApplied === null
+      ? { value, status: 'rejected' }
+      : { value, status: 'applied', source: 'retail-upNormalAmbientScaled-luminance' };
+  }
   return {
     mapId,
     source: 'packet',
@@ -375,9 +391,10 @@ async function lightingAgreement(packetLight, mapId) {
     maxDirectionDelta,
     maxColourDelta,
     agree,
+    ambient: ambient ? { committed: ambient, appliedLuminance: ambientApplied } : null,
     note: baked
       ? 'the retail sun colour is [0,0,0] because this map bakes the sun into lightmaps; '
-        + 'the page uses the packet diagnostic light until the lightmap decode exists'
+        + 'the ambient term now comes from the committed table, the directional light stays diagnostic'
       : 'the retail sun is a live directional colour; a mismatch means the packet light is diagnostic'
   };
 }
