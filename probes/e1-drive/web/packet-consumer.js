@@ -1501,7 +1501,7 @@ export class PacketConsumer {
     // Keep it as the pending value so a later scene creation applies it too.
     this.pendingAmbient = value;
     if (this.sceneBuffer) {
-      this.device.queue.writeBuffer(this.sceneBuffer, 52, new Float32Array([value, 0, 0, 0]));
+      this.device.queue.writeBuffer(this.sceneBuffer, 52, new Float32Array([value]));
       this.stats.ambient = value;
       this.stats.ambientSource = 'retail-upNormalAmbientScaled-luminance';
     }
@@ -1543,7 +1543,7 @@ export class PacketConsumer {
     }
     if (Number.isFinite(this.pendingAmbient)) {
       this.device.queue.writeBuffer(this.sceneBuffer, 52,
-        new Float32Array([this.pendingAmbient, 0, 0, 0]));
+        new Float32Array([this.pendingAmbient]));
       this.stats.ambient = this.pendingAmbient;
     }
     return true;
