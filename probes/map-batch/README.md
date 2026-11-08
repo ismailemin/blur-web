@@ -15,9 +15,21 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 # two independent builds per level; every pinned file compared byte-for-byte
 & $py probes/map-batch/build_map.py --all --determinism
 
-# independent verifier (>=300 checks; ~350k with per-texture pins)
-& $py probes/map-batch/verify_batch.py
+# independent verifier: re-derives the counts, pins, sector/chunk table, path
+# and spawn from the raw artifacts, then rebuilds every level twice into temp
+# directories for a byte-for-byte comparison
+& $py probes/map-batch/tools/verify_batch.py
+
+# fast pass without the two-build determinism comparison
+& $py probes/map-batch/tools/verify_batch.py --skip-determinism
+
+# subset + machine-readable report (written outside _work/)
+& $py probes/map-batch/tools/verify_batch.py --levels usa_amboy,showroom --json "$env:TEMP/map-batch-verify.json"
 ```
+
+The per-draw / per-texture pin verifier (`probes/map-batch/verify_batch.py`)
+remains available; `tools/verify_batch.py` is the independent batch verifier and
+does not import `map_batch_lib`.
 
 ## Output
 
@@ -44,6 +56,32 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 Batch evidence lives at `_work/map-batch/batch-summary.json` (per-level counts and
 timings + total) and `_work/map-batch/determinism.json` (two-build hashes).
 Logs are written to `_work/logs/map-batch/`.
+
+## Verifier
+
+`tools/verify_batch.py` is independent of the builder: it never imports
+`map_batch_lib`. Per level it re-reads the emitted documents and re-derives:
+
+- every manifest pin (bytes + sha256), the manifest content hash and the report
+  hashes;
+- the per-map counts from the binary buffers, the draw records, the texture
+  table, the collision mesh and the path;
+- the sector/chunk table from `_work/map-pipeline/draw-probes-*.json`, the
+  merged section slices against the native probe pins, and the staged
+  `geometry.chunk` / `node.chunk` files;
+- the path samples from the measured covered/collision path (documented 0.25 m
+  resample), then length, continuity, checkpoints, spawn pose and the 25-ray
+  spawn band;
+- schemas and finite floats for all eight JSON documents;
+- determinism: two fresh builds into throw-away temp directories compared
+  byte-for-byte, plus the committed package against a fresh build
+  (`report.json` is compared modulo its timing fields).
+
+Every check prints `PASS`/`FAIL` with a detail. The run ends with
+`N/M checks passed` and exits 1 on any failure. A map that cannot be built is
+recorded as a typed `unsupported` record (`status`, `reason`, `byteOffset`) and
+is never skipped. The verifier writes nothing under `_work/`; `--json PATH`
+writes an optional report wherever the caller asks.
 
 ## What is reused (no second decoder)
 
