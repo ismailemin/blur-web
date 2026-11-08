@@ -1905,7 +1905,9 @@ def verify_batch(rep: Report, results: dict) -> None:
                  "" if not grade_bad else " first_bad=%r" % (grade_bad[0],)))
 
     integrated = registry_maps()
-    rep.check(len(integrated) == 3 and integrated == {
+    # The registry grows as maps are integrated; the check pins the exact
+    # level -> id set, not a count, so adding a map is a deliberate edit here.
+    rep.check(integrated == {
         "usa_la_river": "river", "usa_amboy": "amboy",
         "spa_barcelona_gracia": "gracia"},
         "registry/integrated",

@@ -1,7 +1,8 @@
 // Build the E1 map artifacts from a committed map-slice render package.
 //
-// This is the shared engine behind `build_map_amboy.mjs` and
-// `build_map_gracia.mjs`. It reads the packages read-only and writes:
+// This is the shared engine behind `build_map_amboy.mjs`,
+// `build_map_gracia.mjs` and `build_map_longbeach.mjs`. It reads the packages
+// read-only and writes:
 //
 //   _work/e1-drive/<map>/map.json      E1 map document (one merged mesh, the
 //                                      opaque draw list, textures, hidden
@@ -118,6 +119,64 @@ export const MAP_BUILDS = Object.freeze({
       'direct LOD0 draws only; 4 unsupported sections and 2,714 instance descriptions are not applied',
       '518 Racification effect/decal draws, 426 BC3-alpha draws, 5 decoder-size draws and 4 runtime-albedo draws are skipped with labels; no fallback texture or colour',
       'collision triangles exclude the two Boxes and 38 InstancedTriangleMeshes',
+      'spawn, checkpoints and finish are derived from the measured path, not a retail start line'
+    ]
+  }),
+  longbeach: Object.freeze({
+    id: 'longbeach',
+    level: 'usa_la_longbeachdocks',
+    outDir: '_work/e1-drive/longbeach',
+    slice: '_work/map-slice/longbeach/slice.json',
+    render: '_work/map-slice/longbeach-render/render.json',
+    diagnostics: '_work/map-slice/longbeach-render/diagnostics.json',
+    physics: 'game-data/Blur/levels/usa_la_longbeachdocks/Level.levelphysics',
+    sliceContent: 'c800503f986e94bd84fc16295f424a779e965cd9c499affdeb65edcf0d008f39',
+    renderContent: 'c8bfff56018c059efdf31ae749c353435aab25d8359577b307606d378c032199',
+    meshId: 'longbeach.direct',
+    renderLabel: 'longbeach-direct-draws',
+    packageLabel: 'longbeach-render',
+    uvProvenance: 'map-slice merged draws.uv0.f32.bin (1,141/1,141 UV0 hashes verified by MAP8)',
+    uvNote: 'byte-identical to the MAP8 slice buffers; positions and UV0 are separate per-vertex streams, indices are global',
+    // This level has no additive effect/decal layer in the direct pass:
+    // diagnostics.groups.effectDecal is present with draws:0, indexRanges:[].
+    decalCount: 0,
+    collisionNote: 'static triangle meshes only; the ten InstancedTriangleMeshes and the FluidMesh are not in this buffer',
+    collisionReason: 'hidden physics provenance; the engine loads the complete Level.levelphysics, this mesh is not uploaded or drawn',
+    collisionSourceNote: 'static triangle meshes only; the ten InstancedTriangleMeshes and the FluidMesh are not in this buffer',
+    instanceDescriptions: 7476,
+    instanceSections: 33,
+    unsupportedSectionsFallback: 2,
+    // 102 blocked = 0 effect/decal + 4 decoder-size + 93 alpha-rule +
+    // 4 runtime-albedo + 1 no-static-albedo. The builder's `diagnosticDraws`
+    // covers only the three diagnostic groups (101), so the single
+    // no-static-albedo draw is carried in the labels and in the prose below.
+    blockedLabels: Object.freeze({
+      noStaticAlbedo: 1,
+      bc3AlphaRuleMissing: 93,
+      decoderSizeLimit: 4,
+      runtimeAlbedoParameter: 4
+    }),
+    courseName: 'usa_la_longbeachdocks measured draw-covered path',
+    courseRule: 'point-to-point measured path; the spawn is the first layout point and the finish is the last',
+    spanNote: 'arcs are measured by summing the float32 layout buffer in this builder (818.371718 m); the declared 818.371716 m path agrees within 2e-6 m',
+    bandSource: 'declared controller and respawn band for this measured path; usa_la_longbeachdocks has no measured car-width band',
+    // 818.371716 m / 1,730.511 m collision diameter = 0.4729077133863928.
+    coveragePath: 0.4729,
+    coverageNote: 'draw coverage, not car-width gate coverage; see docs/work/analysis/map-slice-longbeach.md',
+    gateCoverageNote: 'the gate line is derived from the measured polyline; gate-width draw/collision coverage was not measured for usa_la_longbeachdocks',
+    progressText: 'progress is the arc length of the nearest point on the measured usa_la_longbeachdocks path, clamped to the finish arc',
+    layoutLimits: [
+      'one point-to-point sprint on the measured usa_la_longbeachdocks draw-covered path, not a lap and not a retail start line',
+      'the 6 m band is a declared controller/respawn band, not a measured road width',
+      'gates are rules geometry only; no gate mesh is added to the render packet',
+      'the draw-covered path is 47.29 % of the collision diameter (818.372 m / 1,730.511 m); the rest of the collision surface has no direct-draw geometry in this package',
+      'no Longbeach prop colliders, opponents, AI or race audio'
+    ],
+    mapLimits: [
+      'direct LOD0 draws only; 2 unsupported sections and 7,476 instance descriptions in 33 sections are not applied',
+      'this level has no effect/decal draws; 93 BC3-alpha, 4 decoder-size, 4 runtime-albedo and 1 no-static-albedo draw are skipped with labels; no fallback texture or colour',
+      'blockedDraws 102 = 0 effect/decal + 101 diagnostic (4 decoder-size, 93 alpha-rule, 4 runtime-albedo) + 1 no-static-albedo; the builder has no count field for the no-static-albedo draw, so it is recorded only in blocked.labels',
+      'collision triangles exclude the ten InstancedTriangleMeshes and the FluidMesh',
       'spawn, checkpoints and finish are derived from the measured path, not a retail start line'
     ]
   })
