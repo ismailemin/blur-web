@@ -371,7 +371,27 @@ function checkMatrix(result) {
     dropped: m.network.snapshotDropped,
     expectedUnique
   });
-  check('SCENARIO', `${id}: delivered snapshots are bounded`, m.network.snapshotDelivered >= m.network.snapshotUnique && m.network.snapshotDelivered <= m.network.snapshotUnique + m.network.duplicateScheduled);
+  // Delivery accounting. Every unique snapshot either arrives exactly once or is
+  // still in flight when the observation window closes (the run stops at the
+  // last simulated tick, so packets whose arrival is ahead of it are legitimately
+  // undelivered, not lost). Duplicates add at most one extra delivery each. This
+  // bounds amplification and proves no snapshot is silently dropped or applied
+  // twice.
+  const net = m.network;
+  check(
+    'SCENARIO',
+    `${id}: delivered snapshots are bounded`,
+    net.snapshotDelivered + net.snapshotInFlight === net.snapshotUnique + net.duplicateDelivered &&
+      net.snapshotDelivered <= net.snapshotUnique + net.duplicateScheduled &&
+      net.duplicateDelivered <= net.duplicateScheduled,
+    {
+      delivered: net.snapshotDelivered,
+      inFlight: net.snapshotInFlight,
+      unique: net.snapshotUnique,
+      duplicateScheduled: net.duplicateScheduled,
+      duplicateDelivered: net.duplicateDelivered
+    }
+  );
   if (m.lossPct === 0) {
     check('SCENARIO', `${id}: zero loss has zero input fallbacks`, m.network.inputFallbacks === 0, m.network.inputFallbacks);
   } else {

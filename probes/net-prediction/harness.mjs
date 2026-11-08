@@ -427,6 +427,7 @@ export function runScenario(options = {}) {
   const renderAngles = [];
   let deliveryIndex = 0;
   let deliveredSnapshots = 0;
+  let duplicateDelivered = 0;
   let hostMigrated = false;
   let finite = true;
   let wrapped = false;
@@ -468,6 +469,7 @@ export function runScenario(options = {}) {
       }
       if (skip) continue;
       deliveredSnapshots++;
+      if (packet.duplicateOf !== undefined) duplicateDelivered++;
       baseline.add(packet.state);
       predictor.onSnapshot({ tick: packet.tick, state: packet.state, flags: packet.flags, authority: true });
     }
@@ -582,7 +584,12 @@ export function runScenario(options = {}) {
       snapshotUnique: snapshotSent,
       snapshotDropped,
       snapshotDelivered: deliveredSnapshots,
+      // Packets scheduled but whose arrival is still ahead of the last simulated
+      // tick: the run's observation window closes before they land, so they are
+      // legitimately undelivered rather than lost.
+      snapshotInFlight: packets.length - deliveryIndex,
       duplicateScheduled,
+      duplicateDelivered,
       gapWindows: config.gapWindows,
       repositionTicks: config.repositionTicks,
       wreckWindow: config.wreckWindow,
