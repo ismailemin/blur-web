@@ -23,6 +23,11 @@ Data-only power-up recovery for the Blur Web project. Nothing here changes
 | `tools/build_pickup_runtime.py` | PWR6 | final runtime placement set (byte offsets, yaw, structure, reachability) |
 | `tools/verify_pickup_runtime.py` | PWR6 | independent direct-offset verifier + two-build determinism |
 | `tools/pickup_runtime_common.py` | PWR6 | projection and collision/visible-geometry queries |
+| `tools/build_runtime_placement.mjs` | PWR7 | deterministic browser placement JSON + module from `_work/` |
+| `tools/verify_runtime_placement.mjs` | PWR7 | independent projection/bounds/respawn/determinism verifier |
+| `tools/runtime_placement_module.template.mjs` | PWR7 | template for the generated browser module |
+| `data/runtime-placement.json` | PWR7 | committed generated placement data |
+| `runtime-placement.mjs` | PWR7 | browser-importable `placementsFor(mapId, layout)` |
 
 ## SuperShield (SS1)
 
@@ -169,6 +174,58 @@ spawnable, 1 within 2.0 m (0.834 m). All 8 MP types are on both primary routes;
 the measured sub-course touches only Shunt/Blindfire (Amboy) and
 Blindfire/Bomb (Gracia). SuperShield stays a project extension with no slot.
 Full contract and tables: `docs/work/analysis/pickup-placement-all-maps.md`.
+
+## runtime-placement (PWR7)
+
+`runtime-placement.mjs` is the committed, browser-importable ES module for the
+e1-drive power-up slice. It embeds `data/runtime-placement.json` (145 KB, under
+the 200 KB embed limit) and exports `RUNTIME_PLACEMENT_SCHEMA` and
+`placementsFor(mapId, layout)`.
+
+```powershell
+node probes/powerups/tools/build_runtime_placement.mjs
+node probes/powerups/tools/verify_runtime_placement.mjs
+```
+
+Import contract:
+
+```js
+import { RUNTIME_PLACEMENT_SCHEMA, placementsFor } from '../../powerups/runtime-placement.mjs';
+const set = placementsFor('amboy');         // { schema, mapId, source, pickups, unsupported }
+const lap = placementsFor('river', 'lap');  // river: '310m' (default) or 'lap'
+// pickups[]: { id, type, x, y, z, respawnSeconds, lapMin, lapMax, source }
+//   id is "<mapId>:<retail PickupPosition uid>"
+// unsupported[]: { id, type, reason }
+```
+
+Scope labels:
+
+- **Projected:** every pickup's `source` names the retail `PickupPosition` uid,
+  actorpack record, route record and the nearest-segment `(arc, lateral,
+  distance)` on the named measured layout. The rule is the committed
+  `probes/race-rules/course-model.mjs` `CourseModel.project` (clamped segment,
+  sample-arc interpolation, ties to the earlier segment). A clamped projection
+  is labelled `endpoint-clamped`.
+- **Not moved:** `x/y/z` are the retail `WorldMatrix.aw` world coordinates. The
+  measured layout is a sub-course of the retail route; the projection is
+  reported, never applied. This is the PWR6 rule "projections are reported, not
+  used to move a slot".
+- **Respawn:** `Normal` is `null` (not serialized); `Long` 5 s and `VeryLong`
+  20 s come from `MultiplayerConfig`. The host must supply a labelled Normal
+  timer and must not guess one here.
+- **Lap window:** every recovered `ActivationLap` is 0, so `lapMin` is 0 and
+  `lapMax` is the layout's lap count (1 for the sprint layouts, 3 for River
+  `lap`). There is no per-lap activation gate in the retail data.
+- **Unsupported:** only the retail `PickupActiveLevel != 1` slot (Amboy uid
+  4231571987) is excluded, with reason `pickup-active-level-0`. No placement is
+  dropped silently; every retail uid appears once in `pickups` or
+  `unsupported`.
+- **Primary route only:** Amboy 633252245, Gracia 46220414, River 1643385212.
+  Alternate raced variants stay in `_work/powerups` and are not mixed into one
+  set.
+- **Counts:** Amboy 82 pickups / 1 unsupported, Gracia 59 / 0, River 54 / 0
+  (both `310m` and `lap`). Verifier **7,828/7,828** checks, two builds
+  byte-identical.
 
 ## PWR1 definitions
 
