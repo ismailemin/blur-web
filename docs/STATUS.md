@@ -1,3 +1,14 @@
+## 8 Kasım 2026 — entegrasyon dalgası: 8 oyunculu bitiş, Amboy 3 tur, prop collider, power-up
+
+- **8 oyunculu yarış bitişe kadar:** `mp-eight` **95/95**; 8 satırlı ortak sonuç tablosu, `roomsFinished:1, maxPlayersSeen:8, protocolErrors:0`. Commit `f6b1818`.
+- **Amboy 3 tur:** `?map=amboy&course=lap` → 3 tur, **0 respawn**, ~112 s; respawn bandı araç genişliğinden türetildi (1.498 m). Commit `578d652`.
+- **Amboy/Gracia prop collider:** 484 / 965 aktif collider, pinli iki dosyalı manifest, collider merkezinde gerçek temas kanıtlı. Commit `1c9c46e`.
+- **Amboy/Gracia power-up:** oda `powerups` bayrağı taşır; 6 pickup ölçülen parkura ölçeklenir; misafir de alır. Commit `7341690`.
+- **Tüm probe doğrulayıcıları yeşil:** race-rules 249/249, map-pipeline 930/930, instances 510/510, net-prediction 357/357, robustness 171/171, map-laps 53/53, map-props 259/259, powerups 7828/7828.
+- **Misafir menü akışı:** `?join=1` + oda kodu → `?race=1&mp=1&room=CODE`.
+- Kapılar: `verify_asset_probe --skip-build` 67/67, `check_e1_poc` 23/23, e2e solo-sprint 39/39, solo-lap 23/23, mp-two 52/52, mp-ai 71/71, mp-eight 95/95.
+- Ayrıntı: `docs/work/logs/2026-11-08-mp-eight.md` (ikinci bölüm).
+
 ## 8 Kasım 2026 — 8 oyunculu oda + oyun kabuğu
 
 - **8 insan oyunculu oda kanıtlandı:** 8 gerçek tarayıcı sayfası aynı odada; her sayfa diğer 7 oyuncunun 20 Hz snapshot'ını alıyor. Yeni `mp-eight` E2E senaryosu **73/73 PASS**; oda istatistiği `connections:8, roomsCreated:1, maxPlayersSeen:8, protocolErrors:0`. Commit `13cf0b1`.
@@ -1042,6 +1053,7 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sunucu doğrulandı: `/` HTTP 200, `e1_drive.wasm` 1.003.249 B HTTP 200.
 - 5 araç seçici ve `?car=` URL'i; scripted mod `?script=drive&car=...`.
 - Kullanıcı testi için hazır; görsel sadakat/teker/engine draw-list işleri devam ediyor.
+
 
 
 

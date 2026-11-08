@@ -9,36 +9,36 @@ dalgaları). Sıra bağlayıcıdır: bir dalga yeşil olmadan sonraki başlamaz.
 ## 0. Tamamlanan (bu dalga)
 
 - **SHELL1 → `e1-drive`:** boş URL menüyü açar; yarış parametreleri menüyü
-  atlar. `70374f6`.
+  atlar; `?join=1` misafir akışı. `70374f6`.
 - **NET1 → 8 oyuncu:** oda servisi 8 oyuncu + WSS deploy (`2aa9de1`); istemci
-  `MP_MAX_PLAYERS=8`, 7 eş snapshot'ı, tüm eşler için uzak araç (`13cf0b1`).
+  `MP_MAX_PLAYERS=8`, 7 eş snapshot'ı, tüm eşler için uzak araç (`13cf0b1`);
+  **8 oyunculu yarış bitişe kadar** (`f6b1818`).
 - **Wave-1 probe verisi:** 19 analiz dokümanı (`50afc31`), tüm probe dizinleri
   (`fadabdd`).
 - **V5:** 25 araç (`4157c87`).
+- **Kırmızı doğrulayıcılar yeşil:** race-rules 249/249, map-pipeline 930/930,
+  instances 510/510, net-prediction 357/357, robustness 171/171.
+- **Entegrasyon:** Amboy 3 tur (`578d652`), Amboy/Gracia prop collider
+  (`1c9c46e`), Amboy/Gracia power-up + oda bayrağı (`7341690`).
 
 ## 1. Sıradaki işler (paralel, farklı dizinler)
 
 | # | Ajan | Dizin | İş | Kapı |
 |---|---|---|---|---|
-| 1 | MODE1 | `probes/race-rules` | 14 kırmızıyı kapat: C06 sidecar hash, C24/C49/C92, E04/E06, D205/D405/D805, D-T01/T02, P205/P405/P805 | `verify-modes.mjs` 249/249 |
-| 2 | MAPC1 | `probes/map-pipeline` | `verify_blocked.py` şeması (`newOnlyCoverageFraction`); 19 harita sıralaması | `verify_blocked.py` PASS |
-| 3 | MAPBATCH1 | `probes/map-batch` | eksik `tools/verify_batch.py`; 19 seviye determinizmi | doğrulayıcı PASS |
-| 4 | DECAL1 | `probes/instances` | determinizm (river/amboy), doku RGBA, decal UV hash, toplamlar | `verify_instances_decals.py` PASS |
-| 5 | NET2 | `probes/net-prediction` | C211/C228/C245/C262 sınırlı snapshot | `verify.mjs` PASS |
-| 6 | ROBUST1 | `probes/robustness` | 135/168 → envanter/docs güncel | `verify.mjs` PASS |
-| 7 | PM1 | `probes/map-props` | Amboy/Gracia prop collider'larını `e1-drive`'a bağla | E2E collider sayısı |
-| 8 | LM1 | `probes/map-laps` | Amboy loop-01 (284.4524 m) 3 turluk gerçek layout | E2E lap |
-| 9 | PWR6 | `probes/powerups` | Amboy/Gracia pickup yerleşimi (`?powerups=1`) | E2E pickup |
-| 10 | HUD1/MAT1/LIGHT1 | `probes/hud-ui`, `car-materials`, `lighting` | HUD/materyal/ışık paritesi | görsel + hash |
+| 1 | PWR7 | `probes/powerups` | Retail pickup rotasının kendi polyline'ı; Amboy/Gracia retail slotlarını ölçülen parkura taşı | `verify_runtime_placement` + E2E |
+| 2 | LM2 | `probes/map-laps` | Gracia için kapalı tur araştırması (yoksa karar yaz) | `verify_*` |
+| 3 | MAPBATCH1 | `probes/map-batch` | `tools/verify_batch.py` + 19 seviye determinizmi | doğrulayıcı PASS |
+| 4 | HUD1 | `probes/hud-ui` | HUD'ı `e1-drive` HUD'ına bağla | E2E + ekran |
+| 5 | MAT1 | `probes/car-materials` | Boya/ışık reçetesini render'a bağla | görsel + hash |
+| 6 | LIGHT1 | `probes/lighting` | Işık/gölge/normal manifestini render'a bağla | görsel + hash |
+| 7 | MAPC1 | `probes/map-pipeline` | Kalan 13 harita için blok/derleme kararı | `verify_maps` |
 
 ## 2. Ana ajan — entegrasyon sırası
 
-1. Kırmızı doğrulayıcılar (1–6) yeşil.
-2. PM1 → `e1-drive` prop collider (hash pinleri + tipli eksik-manifest hatası).
-3. LM1 → Amboy gerçek tur; Gracia noktadan noktaya kalır.
-4. PWR6 → Amboy/Gracia pickup'ları `?powerups=1` arkasında.
-5. HUD/materyal/ışık paritesi.
-6. Araç batch derleyici → 61/62.
+1. Retail pickup polyline → Amboy/Gracia gerçek yerleşim.
+2. HUD/materyal/ışık paritesi.
+3. Kalan haritalar (MAPBATCH1/MAPC1).
+4. Araç batch derleyici → 61/62.
 
 Her dalga sonunda: `verify_asset_probe --skip-build`, `check_e1_poc`,
 `node probes/e2e/run.mjs --scenarios …`, konsol 0, kanıt hash'leri,

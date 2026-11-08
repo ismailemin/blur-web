@@ -12,31 +12,32 @@ tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; 25 araç, 3 harita
 
 **Çalışan ve kanıtlı:**
 
-- **8 insan oyunculu oda:** 8 gerçek tarayıcı sayfası aynı odada; her sayfa
-  diğer 7 oyuncunun 20 Hz snapshot'ını alıyor. `mp-eight` E2E **73/73 PASS**;
-  oda istatistiği `connections:8, roomsCreated:1, maxPlayersSeen:8,
+- **8 insan oyunculu oda, bitişe kadar:** 8 gerçek tarayıcı sayfası aynı odada;
+  her sayfa diğer 7 oyuncunun 20 Hz snapshot'ını alıyor ve **8 satırlı ortak
+  sonuç tablosu** üretiliyor. `mp-eight` E2E **95/95 PASS**; oda istatistiği
+  `connections:8, roomsCreated:1, roomsFinished:1, maxPlayersSeen:8,
   protocolErrors:0`.
 - **Menü kabuğu:** boş URL menüyü açar (25 araç, 3 harita, mod/araç/harita
-  seçimi, lobi); her yarış parametresi menüyü atlar, eski derin bağlantılar
-  bozulmaz. Başsız Edge: 0 konsol hatası.
-- **2 oyunculu + AI:** `mp-two` 52/52, `mp-ai` 71/71 (2 insan + 2 AI).
+  seçimi, lobi); her yarış parametresi menüyü atlar. `?join=1` misafir akışı.
+  Başsız Edge: 0 konsol hatası.
+- **Amboy 3 tur:** `?map=amboy&course=lap` → 3 tur, 0 respawn, ~112 s.
+- **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
+- **Amboy/Gracia power-up:** oda bayrağıyla 6 pickup, misafir de alıyor.
+- **2 oyunculu + AI:** `mp-two` 52/52, `mp-ai` 71/71.
 - **Taşınabilir kapı:** `verify_asset_probe --skip-build` **67/67**,
   `check_e1_poc` **23/23**.
-- 25 araç, River/Amboy/Gracia oynanabilir; Longbeach paketi derliyor.
+- **Tüm probe doğrulayıcıları yeşil:** race-rules 249/249, map-pipeline 930/930,
+  instances 510/510, net-prediction 357/357, robustness 171/171, map-laps 53/53,
+  map-props 259/259, powerups 7828/7828.
 
-**Kırmızı / eksik (öncelik sırası):**
+**Sıradaki (öncelik sırası):**
 
-1. `probes/race-rules/verify-modes.mjs` — 235/249 (14 kırmızı: C06 sidecar
-   hash, C24, C49, C92, E04, E06, D205/D405/D805, D-T01/T02, P205/P405/P805).
-2. `probes/map-pipeline/tools/verify_blocked.py` — `KeyError:
-   'newOnlyCoverageFraction'`; `probes/map-batch` doğrulayıcısı yok.
-3. `probes/instances/tools/verify_instances_decals.py` — determinizm + doku +
-   decal UV hash.
-4. `probes/net-prediction/verify.mjs` — C211/C228/C245/C262 sınırlı snapshot.
-5. `probes/robustness/verify.mjs` — 135/168 envanter.
-6. Entegrasyon: PM1 prop collider (Amboy/Gracia), LM1 Amboy turu, PWR6
-   Amboy/Gracia pickup, HUD/materyal/ışık paritesi.
-7. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
+1. Retail pickup yerleşimi: pickup rotasının kendi polyline'ı (Amboy/Gracia
+   retail slotlarının yalnız 2'si ölçülen parkura ≤5 m).
+2. Gracia için kapalı tur yok; noktadan noktaya kalıyor (LM1 kararı).
+3. HUD/materyal/ışık paritesi (HUD1/MAT1/LIGHT1 verisi hazır).
+4. Kalan 13 harita için MAPBATCH1/MAPC1 kararı.
+5. Retail 1:1 parite (kullanıcıdan referans kare bekliyor), internet deploy
    (kullanıcıdan VPS/domain/TLS bekliyor).
 
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)
