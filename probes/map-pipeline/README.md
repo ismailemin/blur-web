@@ -93,7 +93,9 @@ $py = "C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependenc
 The verifier re-derives every verdict and every measured field, re-reads the
 levelrender chunk offsets, rebuilds the document twice and compares it
 byte-for-byte. It prints `N/M checks passed` and exits 1 on failure; the current
-run is **2463/2463 checks passed**.
+run is **2466/2466 checks passed**. `batch-summary.json` and `batch/verify.json`
+are pinned by stable content: their wall-clock timing fields are excluded, so a
+verifier rerun does not invalidate the decision document.
 
 ## Tools
 

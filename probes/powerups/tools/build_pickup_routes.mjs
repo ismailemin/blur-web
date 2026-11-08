@@ -432,8 +432,7 @@ function corridorProjection(route, x, z) {
         along,
         lateral,
         offset: width > 0 ? lateral / width : 0,
-        width,
-        racingOffset: segment.offsets[RACING_LINE]
+        width
       };
     }
   }

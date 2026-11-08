@@ -264,7 +264,7 @@ Result:
 | river | **54/54** | 0 | 21 / 28 / 44 | 0.000 m |
 
 Verifier: **1,610/1,610** checks, two builds byte-identical
-(`sha256 005a2276…`, 1,147,276 bytes). An independent Python cross-check with
+(`sha256 362643ba…`, 1,215,413 bytes). An independent Python cross-check with
 the committed `probes/course/tools/aid_decode.py` agrees on all 81 routes
 (points, widths, racing offsets, byte offsets, lengths) and all 195 pickups
 (route, segment, corridor distance, racing-line distance, arc).
