@@ -10,6 +10,9 @@ dalgaları). Sıra bağlayıcıdır: bir dalga yeşil olmadan sonraki başlamaz.
 
 - **Araçlar 61/62:** hummer-h2-rat ve ford-supervan-stock sürüş diliminde;
   yalnızca `defaultcar` (gövde modeli yok) desteklenmiyor.
+- **Haritalar 13/19:** Dumbo (362 m) ve Downtown MP (86,45 m) retail `.aid`
+  yarış çizgisinden açıldı; kalan 6 seviye tipli blocker (hackney, brighton,
+  sausalito, russianhill, bowl, showroom).
 - **Lightmap render'da:** 9 haritada çözüldü ve bağlandı; Amboy vitrini
   **83 doku, 1173/1301 draw lightmap'li, 0 hata/uyarı**. River tek-harita
   yolunda; downtown/highrise tipli `unsupported`.

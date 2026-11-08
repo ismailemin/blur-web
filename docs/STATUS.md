@@ -1,3 +1,12 @@
+## 9 Kasım 2026 — 13 harita, 61 araç, Amboy lightmap vitrini
+
+- **Haritalar 11 → 13:** Dumbo (362 m) ve Downtown MP (86,45 m) retail `.aid` yarış çizgisinden açıldı. Dumbo'da 0, Downtown MP'de 231 istasyonluk yanal detour (maks 9,5 m). Kalan 6 seviye tipli blocker: hackney, brighton, sausalito, russianhill, bowl, showroom.
+- **E2E:** `solo-dumbo` 12/12, `solo-downtown-mp` 12/12; 15 senaryo + 2 yeni = 17 senaryo.
+- **Araçlar 61/62:** hummer-h2-rat ve ford-supervan-stock sürüş diliminde; `defaultcar` gövde modeli yok.
+- **Lightmap:** Amboy vitrini **83 doku, 1173/1301 draw lightmap'li, 0 hata/uyarı**; 9 haritada çözüldü.
+- **Retail pickup:** `probes/powerups-aid` gerçek dünya konumundan; Amboy 2/82, Gracia 2/59, River 0/54 (kalanlar `off-course`).
+- **Kapılar:** `map-batch` 1450/1450, kararlar 1732/1732, `verify_blocked` PASS, `map-props` 259/259, `verify-maps` 30/30, `map-laps-aid` 213/213, `powerups-aid` 6424/6424, `runtime-materials` 8509/8509.
+
 ## 8 Kasım 2026 — lightmap render'da, 61 araç, Dumbo + Downtown MP açıldı
 
 - **Lightmap gerçekten render'da:** Amboy vitrini **83 lightmap dokusu (23,3 MB), 1173/1301 draw lightmap'li, 1251 draw dokulu, 0 hata/uyarı**. 9 haritada çözüldü; river tek-harita yolunda, downtown/highrise tipli `unsupported`.
@@ -1094,6 +1103,7 @@ Bağımsız instance aracı da tamamlandı/donduruldu; root tekrar çalıştırm
 - Sunucu doğrulandı: `/` HTTP 200, `e1_drive.wasm` 1.003.249 B HTTP 200.
 - 5 araç seçici ve `?car=` URL'i; scripted mod `?script=drive&car=...`.
 - Kullanıcı testi için hazır; görsel sadakat/teker/engine draw-list işleri devam ediyor.
+
 
 
 

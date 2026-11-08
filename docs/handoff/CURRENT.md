@@ -2,7 +2,7 @@
 
 **Güncelleme:** 8 Kasım 2026 (gece, geç)
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
-tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 11 harita**;
+tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 13 harita**;
 lightmap 9 haritada render'da.
 **Son commit'ler:** `873184f` Amboy lightmap + 61 araç, `4c6ea8b` kayıt,
 `1a50930` map-slice lightmap, `a463175` 11 harita ışığı,
