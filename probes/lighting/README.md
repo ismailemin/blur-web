@@ -22,6 +22,9 @@ Nothing is guessed, scaled or interpolated.
 | `tools/verify_runtime_lighting.mjs` | 16,108-check runtime table verifier (lighting + lightmap). |
 | `tools/lightmap_reference.py` | Independent lightmap reference: re-scans the retail bytes and re-decodes every lightmap without importing the manifest builder. |
 | `tools/verify_lightmap.mjs` | Lightmap verifier: compares the reference to the manifest and runtime table, checks the `g_tLightmap` reference set, and checks two reference builds are byte-identical. |
+| `tools/export_lightmap_rgba.py` | Deterministic exporter: writes each decoded mip-0 RGBA8 buffer to `_work/lighting/<map>/lightmap/<name>.rgba` plus a per-map `index.json`. |
+| `lightmap-runtime.mjs` | Renderer resolver: maps a map id and `g_tLightmap` name to the exported `.rgba` URL, byte count and sha256, and returns the committed shader rule. |
+| `tools/verify_lightmap_runtime.mjs` | Export verifier: re-derives the index, checks every file hash/size, checks the resolver against the index, and checks determinism. |
 
 `_work/lighting/` is a gitignored build artifact. The committed runtime table
 pins each manifest path, byte count and sha256, so a stale or edited manifest is
@@ -123,6 +126,57 @@ Only the ids in `LIGHTING_MAPS` are accepted; the retail package id
 | unknown map id | `LightingError` | `unknown-map` |
 | non-string map id | `LightingError` | `invalid-map-id` |
 
+### Lightmap pixel resolver
+
+`lightmap-runtime.mjs` joins the committed table to the exported `.rgba` files.
+It imports `runtime-lighting.mjs`, so it needs no `_work` read at import time and
+embeds no pixels.
+
+```js
+import {
+  LIGHTMAP_RUNTIME_SCHEMA,
+  LIGHTMAP_MAPS,
+  lightmapSetFor,
+  lightmapTextureFor,
+  lightmapShaderFor,
+  LightmapRuntimeError
+} from './probes/lighting/lightmap-runtime.mjs';
+
+LIGHTMAP_RUNTIME_SCHEMA; // 'blur.lightmap-runtime/1'
+LIGHTMAP_MAPS;           // ['river', 'amboy', 'gracia', 'longbeach'] (frozen)
+
+const set = lightmapSetFor('river');
+// {
+//   mapId: 'river',
+//   count: 132,
+//   uvSet: 'luxlightmap',
+//   shader: { uvSource, sunSky, rgbNormalisedGamma },
+//   textures: [{ name, width, height, url, bytes, sha256 }]
+// }
+
+const texture = lightmapTextureFor('river', 'lightmap_main_000-a');
+// {
+//   name: 'lightmap_main_000-a', width: 256, height: 256,
+//   url: '/_work/lighting/river/lightmap/lightmap_main_000-a.rgba',
+//   bytes: 262144, sha256: '93d7f2f6…37d1'
+// }   // or null
+
+const shader = lightmapShaderFor('river');
+// { uvSource, sunSky, rgbNormalisedGamma }, verbatim from the runtime table
+```
+
+`url` is `/_work/lighting/<map>/lightmap/<name>.rgba`, `bytes` is the file size
+(`width * height * 4`) and `sha256` is the file hash, so a consumer can verify
+the download before uploading it as an RGBA8 texture. `lightmapSetFor` throws
+`LightmapRuntimeError` with `code === 'invalid-map-id'`, `'unknown-map'` or
+`'lightmap-unavailable'`. `lightmapTextureFor` returns `null` for a name outside
+the set (including a non-string name). `lightmapShaderFor(mapId)` returns the
+same frozen object as `lightmapSetFor(mapId).shader`.
+
+The shader object is the committed rule, not a choice: a material effect decides
+whether it uses `sunSky` (`.g`/`.b`) or `rgbNormalisedGamma` (`(.rgb*.a)^2`).
+The resolver does not pick one, apply it, generate mips, or bind a sampler.
+
 ### Field semantics
 
 - `sun.direction` is the unit vector pointing from the surface toward the sun
@@ -167,8 +221,10 @@ Only the ids in `LIGHTING_MAPS` are accepted; the retail package id
   name. The rule is repeated in `lightmap.provenance.setHashRule` in the
   manifest.
 - The runtime table carries identity, dimensions, byte counts, source offsets
-  and hashes. It does not carry pixels. A renderer decodes the source blob with
-  the committed reader, or uses its own decoder and verifies the hashes.
+  and hashes. It does not carry pixels. `tools/export_lightmap_rgba.py` writes
+  the mip-0 pixels to `_work/lighting/<map>/lightmap/` (section below), and
+  `lightmap-runtime.mjs` resolves them; a renderer can also decode the source
+  blob with the committed reader and verify the hashes.
 
 ### `missing`
 
@@ -224,6 +280,91 @@ The per-texture names, dimensions, source block/index, stream record offsets,
 blob sha256 and decoded RGBA sha256 are in each manifest's `lightmap.textures`
 and in the runtime table's `lightmap.textures`.
 
+## Exported lightmap pixels (renderer input)
+
+The runtime table carries identity and hashes, not pixels. `tools/export_lightmap_rgba.py`
+re-runs the committed decode and writes the mip-0 RGBA8 buffer of every
+`g_tLightmap` texture:
+
+```text
+_work/lighting/<map>/lightmap/<name>.rgba    raw mip-0 RGBA8, width*height*4 bytes
+_work/lighting/<map>/lightmap/index.json     per-texture size/hash + set hash
+```
+
+`_work/` is gitignored: the pixels are a local build artifact and are never
+committed. The export is byte-deterministic — two runs produce identical files
+and identical `index.json` bytes.
+
+| map | textures | `.rgba` files | exported bytes |
+| --- | ---: | ---: | ---: |
+| `river` | 132 | 132 | 38,535,168 |
+| `amboy` | 96 | 96 | 28,311,552 |
+| `gracia` | 113 | 113 | 29,622,272 |
+| `longbeach` | 114 | 114 | 31,457,280 |
+
+455 files, 127,926,272 bytes in total.
+
+### `.rgba` byte contract
+
+- Raw mip 0, no header and no mip chain: exactly `width * height * 4` bytes.
+- Row-major, row 0 first (the D3D top row), channels R, G, B, A, 8 bits each
+  (`texture_reader.cpp` writes `out[(py*width+px)*4]`).
+- The bytes are the decoded DXT5/BC3 texels. No sRGB decode, gamma or colour
+  transform is applied (`colorTransformApplied: false`, matching the decoder's
+  `colorTransformApplied:false`).
+- Per texture, `sha256` (the file) and `decodedRgbaSha256` (the pixel buffer) are
+  equal by construction; the index keeps both names so a consumer can check
+  either.
+
+### `index.json`
+
+```json
+{
+  "schema": "blur.lightmap-rgba/1",
+  "kind": "lightmap-rgba-export",
+  "mapId": "river",
+  "level": "usa_la_river",
+  "uvSet": "luxlightmap",
+  "format": "RGBA8",
+  "sourceFormat": 894720068,
+  "sourceFormatName": "DXT5/BC3",
+  "mipLevel": 0,
+  "colorTransformApplied": false,
+  "count": 132,
+  "width": null,
+  "height": null,
+  "dimensions": { "256x256": 127, "512x512": 5 },
+  "bytes": 38535168,
+  "sha256": "8cba30f8a8667746f04f9f57c17fcb30f8f7615296854951e3c05b4cd7708059",
+  "setHashRule": "sha256 over canonical JSON of the per-texture (name, decodedRgbaSha256) pairs sorted by name; ...",
+  "textures": [
+    {
+      "name": "lightmap_main_000-a",
+      "width": 256,
+      "height": 256,
+      "bytes": 262144,
+      "sha256": "93d7f2f67689e86c7fc6ed7fee8c159f428a446489d34228445dc9437d4837d1",
+      "decodedRgbaSha256": "93d7f2f67689e86c7fc6ed7fee8c159f428a446489d34228445dc9437d4837d1",
+      "file": "river/lightmap/lightmap_main_000-a.rgba"
+    }
+  ],
+  "source": "..."
+}
+```
+
+`file` is relative to the export root (`_work/lighting`), so the index is
+identical whichever `--out-root` is used. The set-level `sha256` uses the
+manifest rule over `(name, decodedRgbaSha256)`, so it equals the manifest and
+runtime table `lightmap.decodedRgbaSha256` — for `river` that is
+`8cba30f8…8059`, the value in the table above.
+
+The exporter aborts, writing no index, when a decode fails, when a decoded field
+disagrees with the PC TextureDesc (dimensions, format, mip count, pixel offset,
+encoded byte count), when a `g_tLightmap` reference is unresolved, or when the
+committed runtime table disagrees with the retail bytes. It never writes a
+placeholder, a white texture or a partial set; stale `.rgba` files from a
+previous larger set are removed only after the new set decodes cleanly.
+
 ## Commands
 
 Use the bundled Python:
@@ -248,7 +389,25 @@ node probes/lighting/tools/verify_runtime_lighting.mjs   # expect 16108/16108
 # 3. Independently re-derive and verify the lightmap set.
 python probes/lighting/tools/lightmap_reference.py --levels river,amboy,gracia,longbeach
 node probes/lighting/tools/verify_lightmap.mjs           # expect N/N, two builds identical
+
+# 4. Export the decoded mip-0 RGBA8 pixels and verify the renderer resolver.
+python probes/lighting/tools/export_lightmap_rgba.py     # writes _work/lighting/<map>/lightmap/
+node probes/lighting/tools/verify_lightmap_runtime.mjs   # expect 6052/6052
 ```
+
+`export_lightmap_rgba.py --maps river --out-root <dir>` exports a subset to
+another root; `--quiet` suppresses the per-map summary. The output is
+byte-deterministic and the index is independent of the root.
+
+`verify_lightmap_runtime.mjs` checks the export index against the committed
+runtime table (count, dimensions, byte totals, set sha256, every per-texture
+hash), checks every `.rgba` file's size and sha256, checks that no stale
+`.rgba` remains, and checks that `lightmap-runtime.mjs` returns exactly the
+index and the committed shader rule. It then runs the exporter twice into fresh
+temporary roots and requires both indexes to be byte-identical to each other and
+to the committed export, with every re-derived file hash matching. It exits `1`
+on any failure. Set `PYTHON` to the bundled interpreter when `python` is not on
+`PATH`.
 
 `verify_runtime_lighting.mjs` re-derives every value from
 `_work/lighting/<map>.json` without importing the builder, rejects any numeric
@@ -276,9 +435,19 @@ The runtime and lightmap verifiers are not yet wired into
   single atlas. `width`/`height` are `null` when the set mixes dimensions; use
   `dimensions` and the per-texture entries.
 - The lightmap block records identity, dimensions, format, source offsets and
-  hashes. It does **not** include pixels, bind a sampler, generate mips, apply
-  sRGB/colour transforms, or choose between `SunSkyLightmap` and
+  hashes. It does **not** include pixels. The exported `.rgba` files carry the
+  mip-0 pixels, but they still do not bind a sampler, generate mips, apply an
+  sRGB/colour transform, or choose between `SunSkyLightmap` and
   `RGBLightmapNormalisedGamma`. Those remain renderer/material responsibilities.
+- The exported pixels are mip 0 only and are a gitignored `_work/` artifact. The
+  committed contract is the runtime table plus the export index schema; a
+  consumer that regenerates the pixels must check them against the table's
+  `decodedRgbaSha256`.
+- Exporting the pixels does not supply the lightmap UV. `uvSet` is
+  `'luxlightmap'` (`TEXCOORD0.zw`), but the committed map-slice UV0 stream is
+  2 components, so a renderer still has no lightmap UV to sample with. A planar
+  projection would be a fabricated UV and is not generated here (see
+  `docs/work/analysis/lighting-runtime-agreement.md`).
 - The lightmap set covers the whole level, not just the measured map-slice. A
   renderer that draws a subset still needs the per-material `g_tLightmap` name
   from the material binding.
