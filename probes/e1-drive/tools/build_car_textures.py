@@ -56,8 +56,8 @@ MANIFEST_OUT = OUT_DIR / "car-textures.json"
 # Committed identities. The P52 roster index is the per-car record; the
 # car-parts index is the model/manifest/mesh map `build_geometry.mjs` already
 # pins. A regenerated or hand-edited input is a hard failure.
-COMMITTED_ROSTER_INDEX = "20570f76fa156ce08d13afc39d434d50fb7259686d06f8fe8111841c416286e0"
-COMMITTED_CAR_INDEX = "4d56ac5a77c0946548b9c1c6669fef04de4c66358da71aec75c32f96df035aaa"
+COMMITTED_ROSTER_INDEX = "0cce07379af01cf0f21829285cec41b01cf4cd6e0ceae72249dafb13db379455"
+COMMITTED_CAR_INDEX = "94b31721a34cfa4a2af1c90c1893af2fd2a28c567d80cf14f42a47569fd15315"
 
 # The committed `scene_inspect.exe` output per car, which carries the merged
 # `uv0` array parallel to `positions`. The car-parts index does not record this
@@ -79,6 +79,16 @@ COMMITTED_SCENE_REPORTS = {
     "ford-bronco-offroad": "d9d86338ecbceb25a35bc33a1145a8e2e8d1051d580e54d85a4be232433b686f",
     "nissan-skyliner34ztune-stock": "1cfbcd8b24e2503880b7a42516b4995704d41e7c374812b129a8cb8e461d61f8",
     "chevrolet-socalhhr-stock": "e00de48acd15b286df7c72a8d727d959c3c9a1474ff0de847b5c8d9009928207",
+    "dodge-challenger-tuner": "9b14dba71b887d48cfef443cb7ca3cae88959524c1061ff5e2a3824d04f352fd",
+    "nissan-350znismo-stock": "f8c0002638495675b6b179d73e1a545702baaf2e451f8c5057659157dbbe9e43",
+    "chevrolet-camaro-stocke3": "7d4c537b9043b6942d8e59590920d24cbbb5ccccf25ab641497aaf632452b2ef",
+    "volkswagen-beetle-offroad": "d839d0c45184c69e72c69b32e4627b6a37dfccf6ac0b07775073712c1eb32756",
+    "foose-stallion-stock": "6a61f07e8b773e03f300e63d57e6cc2f3cc67cadd99b0fdf7bfe2f3078af9f87",
+    "chevrolet-camaro-ratdrift": "f39018a9979a0cfe8a7bafee6f2c61e5bab2f50e356280d927c1fe8fd0a99a74",
+    "corvette-c3-rat": "496fcc5524700e8d910374144507d21fcb85adb281ce180d16ac4a76be133289",
+    "bmw-m3e92-tuner": "3a1abbb5c8640b98915d948174055ddf13add40e379f123b93dce6c570748f31",
+    "koenigsegg-ccxr-stock": "38a572e60124bdcc4a55b0c54e68de9ab3c2c488d50e304aa99cdf36b26c61fe",
+    "toyota-supratrd-stock": "35bf917be0649fbd4432c69c9d332e3f0f3362c96d73f4db7f20fde050362ee1",
 }
 
 # P52 per-car totals (docs/work/analysis/car-materials.md §2, extended by the
@@ -132,6 +142,36 @@ EXPECTED_BY_CAR = {
     "chevrolet-socalhhr-stock": {"draws": 85, "staticAlbedoDraws": 64, "paintDraws": 0,
                                  "lightDraws": 10, "noAlbedoDraws": 11, "textures": 8,
                                  "rgbaBytes": 3686400, "uvValues": 64956},
+    "dodge-challenger-tuner": {"draws": 93, "staticAlbedoDraws": 50, "paintDraws": 0,
+                               "lightDraws": 11, "noAlbedoDraws": 32, "textures": 8,
+                               "rgbaBytes": 4472832, "uvValues": 53412},
+    "nissan-350znismo-stock": {"draws": 123, "staticAlbedoDraws": 52, "paintDraws": 0,
+                               "lightDraws": 14, "noAlbedoDraws": 57, "textures": 8,
+                               "rgbaBytes": 3686400, "uvValues": 77332},
+    "chevrolet-camaro-stocke3": {"draws": 100, "staticAlbedoDraws": 31, "paintDraws": 9,
+                                 "lightDraws": 12, "noAlbedoDraws": 48, "textures": 7,
+                                 "rgbaBytes": 3424256, "uvValues": 72772},
+    "volkswagen-beetle-offroad": {"draws": 85, "staticAlbedoDraws": 29, "paintDraws": 13,
+                                  "lightDraws": 5, "noAlbedoDraws": 38, "textures": 8,
+                                  "rgbaBytes": 3702784, "uvValues": 72402},
+    "foose-stallion-stock": {"draws": 103, "staticAlbedoDraws": 46, "paintDraws": 2,
+                             "lightDraws": 10, "noAlbedoDraws": 45, "textures": 8,
+                             "rgbaBytes": 4472832, "uvValues": 71022},
+    "chevrolet-camaro-ratdrift": {"draws": 99, "staticAlbedoDraws": 37, "paintDraws": 0,
+                                  "lightDraws": 14, "noAlbedoDraws": 48, "textures": 8,
+                                  "rgbaBytes": 4472832, "uvValues": 64504},
+    "corvette-c3-rat": {"draws": 83, "staticAlbedoDraws": 35, "paintDraws": 0,
+                        "lightDraws": 10, "noAlbedoDraws": 38, "textures": 8,
+                        "rgbaBytes": 2768896, "uvValues": 67528},
+    "bmw-m3e92-tuner": {"draws": 94, "staticAlbedoDraws": 54, "paintDraws": 7,
+                        "lightDraws": 10, "noAlbedoDraws": 23, "textures": 8,
+                        "rgbaBytes": 3432448, "uvValues": 60304},
+    "koenigsegg-ccxr-stock": {"draws": 97, "staticAlbedoDraws": 63, "paintDraws": 9,
+                              "lightDraws": 17, "noAlbedoDraws": 8, "textures": 9,
+                              "rgbaBytes": 3563520, "uvValues": 80036},
+    "toyota-supratrd-stock": {"draws": 88, "staticAlbedoDraws": 53, "paintDraws": 11,
+                              "lightDraws": 9, "noAlbedoDraws": 15, "textures": 7,
+                              "rgbaBytes": 3424256, "uvValues": 72244},
 }
 EXPECTED = {
     key: sum(car[key] for car in EXPECTED_BY_CAR.values())

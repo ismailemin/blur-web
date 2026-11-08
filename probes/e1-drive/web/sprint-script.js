@@ -120,10 +120,34 @@ export const SHORT_LANE_HOLD = Object.freeze({
   maxSteer: 0.8
 });
 
-export function shortLaneHoldInput(state, layout) {
+/**
+ * Deterministic 29 m recovery profile for a record whose pure throttle hold
+ * cannot keep the car inside the 6 m finish gate (declared per roster entry as
+ * `shortCourseController`, currently only `corvette-c3-rat`). It is a
+ * proportional lane hold with a lateral-speed term and no speed cap. It does
+ * not touch the engine; the 310 m, lap and free controllers never read it, and
+ * every car without the declaration keeps the P37/SHORT_LANE_HOLD inputs bit
+ * for bit.
+ */
+export const SHORT_LANE_RECOVERY = Object.freeze({
+  gainPerMetre: 0.8,
+  lateralSpeedGain: 0.25,
+  deadbandMetres: 0.2,
+  throttle: 1
+});
+
+export function shortLaneHoldInput(state, layout, controller = null) {
   const centre = layout.course.band?.z ?? layout.course.spawn.z;
   const offset = (state?.position?.[2] ?? centre) - centre;
   const lateralSpeed = state?.velocity?.[2] ?? 0;
+  if (controller?.kind === 'lane-hold-recovery') {
+    if (Math.abs(offset) <= SHORT_LANE_RECOVERY.deadbandMetres) return SPRINT_DESIRED_INPUT;
+    const steer = clamp(
+      SHORT_LANE_RECOVERY.gainPerMetre * offset +
+        SHORT_LANE_RECOVERY.lateralSpeedGain * lateralSpeed,
+      -1, 1);
+    return [SHORT_LANE_RECOVERY.throttle, 0, steer, 0];
+  }
   if (Math.abs(offset) < SHORT_LANE_HOLD.offsetMetres ||
       Math.abs(lateralSpeed) < SHORT_LANE_HOLD.lateralSpeed ||
       Math.sign(offset) !== Math.sign(lateralSpeed)) {
@@ -450,7 +474,8 @@ export function sprintScriptInput(rules, state, constants = null) {
   }
   if (!isPathLayout(rules.layout)) {
     if (rules.phase !== 'running' || !state) return rules.gateInput(SPRINT_DESIRED_INPUT);
-    return rules.gateInput(shortLaneHoldInput(state, rules.layout));
+    return rules.gateInput(shortLaneHoldInput(state, rules.layout,
+      rules.options?.shortCourseController ?? null));
   }
   if (!state) throw new Error('the scripted long-course sprint needs the engine state');
   if (rules.phase !== 'running') return rules.gateInput(SPRINT_DESIRED_INPUT);

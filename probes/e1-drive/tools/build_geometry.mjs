@@ -93,10 +93,20 @@ const COMMITTED_MANIFESTS = {
   'audi-s3-stock': 'sha256:9b0fcdd52bc1113760a37f65162ccb5423ae3e5bbe1a8aacbf6c76ccc96432b2',
   'ford-bronco-offroad': 'sha256:9d05caf3aad8d21d63d1b3dfd05e9b3a4820ea7d993d196cde5d1d388f79b4be',
   'nissan-skyliner34ztune-stock': 'sha256:c119bac367bb3f16a2384cea14c74d55ce174f6f4328bd0920adb4c6ae37f1a7',
-  'chevrolet-socalhhr-stock': 'sha256:576a5711991e2f68842e51130a1c6d0548bf359e6f08876d7af8f03e8796c0d5'
+  'chevrolet-socalhhr-stock': 'sha256:576a5711991e2f68842e51130a1c6d0548bf359e6f08876d7af8f03e8796c0d5',
+  'dodge-challenger-tuner': 'sha256:b23ff848193d61f7dc6e26ac401b38f3692cad71ca9081684c3e30c3a3ff6ff6',
+  'nissan-350znismo-stock': 'sha256:53eef9738eaad7cf9b0ef57a76dd8213ac06e79a03a7b4a60b2356fa05e4f045',
+  'chevrolet-camaro-stocke3': 'sha256:810c5e003bb7a0fe6709671059292348b3f5282724e0a9d796ee032da9fc5f34',
+  'volkswagen-beetle-offroad': 'sha256:2d1fed92ec68a1292798654acfb36a70e6bab2266be85e5e1bd9b7850b93dca8',
+  'foose-stallion-stock': 'sha256:b71f4a8249159b2964601063821a79b14c2b285c4986a055f34dd7e1ce30a4d4',
+  'chevrolet-camaro-ratdrift': 'sha256:39550354e5f76114a66893a5036a1fca1b20ec1252335445c16eeca264b11b6e',
+  'corvette-c3-rat': 'sha256:ab49b97970f43f6d11ff820df5c0f4a4af43f79b59144a025bc818266b5f2691',
+  'bmw-m3e92-tuner': 'sha256:405b58af11b87670135ae13f381b42fe164c731f6fd0b705a64b3c36122dc6f9',
+  'koenigsegg-ccxr-stock': 'sha256:5513ae8cd72288664a54318b5ff4de7a87ce34e7f6fdf3da878cd530a351ea63',
+  'toyota-supratrd-stock': 'sha256:3ec8411f751013be12e63d8500644bb7bc7f459daa540ecccad99f9c6dd2e46b'
 };
 const COMMITTED_CAR_INDEX =
-  'sha256:4d56ac5a77c0946548b9c1c6669fef04de4c66358da71aec75c32f96df035aaa';
+  'sha256:94b31721a34cfa4a2af1c90c1893af2fd2a28c567d80cf14f42a47569fd15315';
 
 // P52's per-car material/texture record plus its UV0 export. Committed output of
 // `build_car_textures.py`; a different file is a hard failure, because the car
@@ -104,7 +114,7 @@ const COMMITTED_CAR_INDEX =
 // consumer document is updated with it.
 const CAR_TEXTURE_MANIFEST = path.join(ROOT, '_work/e1-drive/car-textures.json');
 const COMMITTED_CAR_TEXTURES =
-  'sha256:4807315d5de48c9d1fc4b84d703ab4390014e0a4db7f423e5f085876b1fa4a7c';
+  'sha256:468e883192a60a6485a65f532fd9e0e0ab4edb47e9749f966ae76ce373a15f61';
 
 // P73b level-instance prop pack: the P73a UV0 export plus the four decoded BC1
 // sources, emitted by `build_level_instance_textures.py`. Committed output of
@@ -171,7 +181,7 @@ if (carTextureDoc.kind !== 'e1-drive.car-textures' || carTextureDoc.version !== 
   throw new Error('car texture manifest kind/version is not e1-drive.car-textures v1');
 }
 if (carTextureDoc.pins?.p52RosterIndex !==
-    'sha256:20570f76fa156ce08d13afc39d434d50fb7259686d06f8fe8111841c416286e0' ||
+    'sha256:0cce07379af01cf0f21829285cec41b01cf4cd6e0ceae72249dafb13db379455' ||
     carTextureDoc.pins?.carPartsIndex !== COMMITTED_CAR_INDEX) {
   throw new Error('car texture manifest does not carry the committed P52 roster and car-parts indexes');
 }
@@ -826,11 +836,12 @@ for (const rosterCar of roster.cars) {
   }
 }
 
-// The fifteen bodies must reproduce the pinned per-car P52 coverage exactly: a
-// silently dropped texture or draw is the failure mode this whole pass exists to
-// prevent. The first five rows are the original anchors; the next ten are the
-// V1-audited batch 1. Each row is the car's own value, so a roster addition
-// cannot hide behind an aggregate total.
+// The twenty-five bodies must reproduce the pinned per-car P52 coverage exactly:
+// a silently dropped texture or draw is the failure mode this whole pass exists
+// to prevent. The first five rows are the original anchors, the next ten are the
+// V1-audited batch 1 and the last ten are batch 2 (seven C records + three B
+// cars). Each row is the car's own value, so a roster addition cannot hide
+// behind an aggregate total.
 const COMMITTED_CAR_COVERAGE = {
   'corvette-zr1-stock': { draws: 100, textured: 50, paint: 10, light: 17, noAlbedo: 23, textures: 9, rgbaBytes: 4538368 },
   'lotus-exige-cup260-stock': { draws: 88, textured: 48, paint: 0, light: 14, noAlbedo: 26, textures: 9, rgbaBytes: 4997120 },
@@ -846,7 +857,17 @@ const COMMITTED_CAR_COVERAGE = {
   'audi-s3-stock': { draws: 99, textured: 49, paint: 11, light: 17, noAlbedo: 22, textures: 7, rgbaBytes: 3424256 },
   'ford-bronco-offroad': { draws: 82, textured: 25, paint: 10, light: 7, noAlbedo: 40, textures: 6, rgbaBytes: 2392064 },
   'nissan-skyliner34ztune-stock': { draws: 96, textured: 46, paint: 14, light: 13, noAlbedo: 23, textures: 7, rgbaBytes: 2379776 },
-  'chevrolet-socalhhr-stock': { draws: 85, textured: 64, paint: 0, light: 10, noAlbedo: 11, textures: 8, rgbaBytes: 3686400 }
+  'chevrolet-socalhhr-stock': { draws: 85, textured: 64, paint: 0, light: 10, noAlbedo: 11, textures: 8, rgbaBytes: 3686400 },
+  'dodge-challenger-tuner': { draws: 93, textured: 50, paint: 0, light: 11, noAlbedo: 32, textures: 8, rgbaBytes: 4472832 },
+  'nissan-350znismo-stock': { draws: 123, textured: 52, paint: 0, light: 14, noAlbedo: 57, textures: 8, rgbaBytes: 3686400 },
+  'chevrolet-camaro-stocke3': { draws: 100, textured: 31, paint: 9, light: 12, noAlbedo: 48, textures: 7, rgbaBytes: 3424256 },
+  'volkswagen-beetle-offroad': { draws: 85, textured: 29, paint: 13, light: 5, noAlbedo: 38, textures: 8, rgbaBytes: 3702784 },
+  'foose-stallion-stock': { draws: 103, textured: 46, paint: 2, light: 10, noAlbedo: 45, textures: 8, rgbaBytes: 4472832 },
+  'chevrolet-camaro-ratdrift': { draws: 99, textured: 37, paint: 0, light: 14, noAlbedo: 48, textures: 8, rgbaBytes: 4472832 },
+  'corvette-c3-rat': { draws: 83, textured: 35, paint: 0, light: 10, noAlbedo: 38, textures: 8, rgbaBytes: 2768896 },
+  'bmw-m3e92-tuner': { draws: 94, textured: 54, paint: 7, light: 10, noAlbedo: 23, textures: 8, rgbaBytes: 3432448 },
+  'koenigsegg-ccxr-stock': { draws: 97, textured: 63, paint: 9, light: 17, noAlbedo: 8, textures: 9, rgbaBytes: 3563520 },
+  'toyota-supratrd-stock': { draws: 88, textured: 53, paint: 11, light: 9, noAlbedo: 15, textures: 7, rgbaBytes: 3424256 }
 };
 {
   const bodyList = Object.values(bodies);

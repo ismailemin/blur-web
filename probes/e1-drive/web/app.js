@@ -2468,7 +2468,9 @@ async function loadEngine(carOverride = null) {
       const checked = validateSprintLayout(layout, geometry, spawn);
       if (!checked.ok) throw new Error('sprint layout rejected: ' + checked.errors.join('; '));
     }
-    if (!COLLISION_PROBE) sprintRules = createSprintRules(layout);
+    if (!COLLISION_PROBE) sprintRules = createSprintRules(layout, {
+      shortCourseController: car?.shortCourseController ?? null
+    });
     soakLayout = layout;
     state.sprintLayoutHash = layout.hash;
     state.sprintCourseId = layout.courseId ?? null;
@@ -3344,7 +3346,9 @@ async function soakBeginPhase(name, tick0 = null) {
     soakTotalTicks += 1;
   } else if (name === 'sprint') {
     const world0 = createWorld(spawn.x, spawn.z, layoutStartHeading(soakLayout, spawn));
-    sprintRules = createSprintRules(soakLayout);
+    sprintRules = createSprintRules(soakLayout, {
+      shortCourseController: car?.shortCourseController ?? null
+    });
     const tick1 = await startTimeline(world0, { reload: true, packetScript: SPRINT_PACKET_SCRIPT });
     applyState(tick1);
     soakPhaseTicks[name] += 1;

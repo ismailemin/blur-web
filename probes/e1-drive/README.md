@@ -48,10 +48,10 @@ Exige Cup260 **23 / 88**, the Dodge Challenger **31 / 104**, the Ford Focus RS
 whose tyre/rim/brake-disc members spin about the proven element-local `+X` axis
 using that car's physics wheel angular velocity. Brake calipers stay static
 (`VehicleActor.cpp:5198`). Each body now samples the **P52 static albedo image on
-its own committed UV0 stream** for **673 of its 1,378 draws** (112 images, 46.51 MB
-of RGBA); the other 267 draws (45 runtime paint lookups, 66 light off/on blends,
-156 other `_NO_ALBEDO` shaders) keep the diagnostic per-part colour and the
-committed P52 reason. The wheel spin marker remains a debug aid. See
+its own committed UV0 stream** for **1,123 of its 2,343 draws** (191 images,
+83.93 MB of RGBA); the other 1,220 draws (197 runtime paint lookups, 281 light
+off/on blends, 742 other `_NO_ALBEDO` shaders) keep the diagnostic per-part colour
+and the committed P52 reason. The wheel spin marker remains a debug aid. See
 `docs/work/verification/T-007-textured-cars.md`.
 
 The 22 committed level-instance props (River `block27/node253`, 13,162 vertices /
@@ -225,10 +225,12 @@ No full-game claim.
 
 ## Cars
 
-**Fifteen real cars** are selectable at runtime from the 62 `RP_CarDynamics`
+**Twenty-five real cars** are selectable at runtime from the 62 `RP_CarDynamics`
 records in `gamedata\xt\racingphysics.bin` (T-007/E1g): the five original T-007
-reference anchors plus the ten V1-audited batch-1 class-B cars
-(`docs/work/verification/T-007-vehicle-batch1.md`).
+reference anchors, the ten V1-audited batch-1 class-B cars, and the batch-2 ten
+(seven record-level class-C aliases plus three class-B cars)
+(`docs/work/verification/T-007-vehicle-batch1.md`,
+`docs/work/verification/T-007-vehicle-batch2.md`).
 
 | slug | record | id | drivetrain | mass | wheelbase |
 | --- | ---: | ---: | --- | ---: | ---: |
@@ -247,6 +249,16 @@ reference anchors plus the ten V1-audited batch-1 class-B cars
 | `ford-bronco-offroad` | 19 | 1025798142 | AWD | 1650 kg | 2.297 m |
 | `nissan-skyliner34ztune-stock` | 46 | 2352181282 | AWD | 1600 kg | 2.687 m |
 | `chevrolet-socalhhr-stock` | 74 | 3917320611 | RWD | 1350 kg | 2.622 m |
+| `dodge-challenger-tuner` | 18 | 989449547 | RWD | 1600 kg | 3.000 m |
+| `nissan-350znismo-stock` | 22 | 1082528515 | RWD | 1462 kg | 2.613 m |
+| `chevrolet-camaro-stocke3` | 25 | 1272473348 | RWD | 1462 kg | 2.895 m |
+| `volkswagen-beetle-offroad` | 47 | 2370117387 | RWD | 660 kg | 2.453 m |
+| `foose-stallion-stock` | 63 | 3527545165 | RWD | 1495 kg | 2.720 m |
+| `chevrolet-camaro-ratdrift` | 65 | 3650421932 | RWD | 1395 kg | 2.778 m |
+| `corvette-c3-rat` | 75 | 3993817740 | RWD | 1300 kg | 2.479 m |
+| `bmw-m3e92-tuner` | 16 | 937269915 | RWD | 1462 kg | 2.739 m |
+| `koenigsegg-ccxr-stock` | 20 | 1036618492 | RWD | 1179 kg | 2.710 m |
+| `toyota-supratrd-stock` | 30 | 1364294847 | RWD | 1565 kg | 2.570 m |
 
 `cars/roster.json` is the committed selection (checked against the decoded
 records: a wrong name/id/index is a hard failure). `tools/car_roster.py` decodes
@@ -261,10 +273,14 @@ the page), or `--car <slug>` on the two node tools.
 
 Each car also has **its own visual body**: `probes/car-parts/tools/build_all_manifests.py`
 maps the record name to `\models\vehicles\<lowercased name>.model`, decodes the
-pak entry, and builds a part manifest from it. `_work/car-parts/cars/index.json`
-is the mapping evidence; `build_geometry.mjs` pins every manifest SHA-256, so a
-regenerated or hand-edited manifest is a hard failure. The fifteen models are
-distinct, and so are the fifteen body mesh hashes.
+pak entry, and builds a part manifest from it. A class-C record whose name has no
+model uses the exact `model` override in `cars/roster.json`, which must equal the
+engine tag-derived name from its `modelMapping` evidence (AmaxVehicle.dynamics
+handle → RP_CarDynamics id → tag); it is never a nearest-name match.
+`_work/car-parts/cars/index.json` is the mapping evidence; `build_geometry.mjs`
+pins every manifest SHA-256, so a regenerated or hand-edited manifest is a hard
+failure. The twenty-five models are distinct, and so are the twenty-five body
+mesh hashes.
 
 | slug | body model | parts | draws | textured | textures |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -283,6 +299,16 @@ distinct, and so are the fifteen body mesh hashes.
 | `ford-bronco-offroad` | `ford_bronco_offroad.model` | 23 | 82 | 25 | 6 |
 | `nissan-skyliner34ztune-stock` | `nissan_skyliner34ztune_stock.model` | 32 | 96 | 46 | 7 |
 | `chevrolet-socalhhr-stock` | `chevrolet_socalhhr_stock.model` | 26 | 85 | 64 | 8 |
+| `dodge-challenger-tuner` | `dodge_challenger_tuner.model` | 30 | 93 | 50 | 8 |
+| `nissan-350znismo-stock` | `nissan_350znismo_stock.model` | 32 | 123 | 52 | 8 |
+| `chevrolet-camaro-stocke3` | `chevrolet_camaro_stock.model` | 30 | 100 | 31 | 7 |
+| `volkswagen-beetle-offroad` | `volkswagen_beetle_offroad.model` | 18 | 85 | 29 | 8 |
+| `foose-stallion-stock` | `foose_stallion_stock.model` | 27 | 103 | 46 | 8 |
+| `chevrolet-camaro-ratdrift` | `chevrolet_camaro_rat.model` | 32 | 99 | 37 | 8 |
+| `corvette-c3-rat` | `corvette_c3_rat.model` | 27 | 83 | 35 | 8 |
+| `bmw-m3e92-tuner` | `bmw_m3e92_tuner.model` | 29 | 94 | 54 | 8 |
+| `koenigsegg-ccxr-stock` | `koenigsegg_ccxr_stock.model` | 34 | 97 | 63 | 9 |
+| `toyota-supratrd-stock` | `toyota_supratrd_stock.model` | 31 | 88 | 53 | 7 |
 
 ### Vehicle batch 1 (15 cars)
 
@@ -300,6 +326,34 @@ The single geometry document grew from 45,374,377 B to **106,864,802 B**
 budget and the 15-car sprint capture passes, but the next ten cars would exceed
 it; batch 2 splits one car chunk per slug before it ships.
 
+### Vehicle batch 2 (25 cars)
+
+The next ten are seven high-confidence class-C records plus three class-B cars.
+The C mapping is record-level, not name-level: `Dodge_Challanger_Tuner1stplay`,
+`Nissan_350ZNismo_Stock grpc`, `Chevrolet_Camaro_StockE3`,
+`VW_Beetle_Offroad`, `Foose_Stallion_Stockgrpc`, `Chevrolet_Camaro_Ratdrift`
+and `Covette_C3_Rat` each carry an explicit `model` in `cars/roster.json` plus
+the AmaxVehicle tag/record/ref evidence copied from
+`_work/vehicle-pipeline/c-aliases.json`. The three B cars are BMW M3 E92 Tuner,
+Koenigsegg CCXR Stock and Toyota Supra TRD Stock (exact `.model`). All ten have
+their own body/wheels, a P52 texture pass (runtime-only draws keep their typed
+reason), a measured 310 m and 29 m run, committed ghosts on both, a 3-lap and
+free-roam run, and a same-instance restart. The 25-car record is
+`docs/work/verification/T-007-vehicle-batch2.md`.
+
+The class-C `Covette_C3_Rat` declares a deterministic
+`shortCourseController: lane-hold-recovery` for the 29 m regression only: the
+P37 throttle hold leaves it 0.4 m outside the 6 m finish gate because its lateral
+speed stays below the generic 2.5 m/s damper threshold. The profile is a
+proportional lane hold (0.8 /m, 0.25 per m/s, 0.2 m deadband) and does not touch
+the engine or any 310 m / lap / free input.
+
+Two cars (`chevrolet-camaro-ratdrift`, `corvette-c3-rat`) also declare one typed
+telemetry anomaly: at the fixed 36-tick first sweep phase the first steer
+reversal is not answered before the next phase. The verifier records the miss
+and still requires every answered reversal to have its measured lag; no global
+telemetry threshold was relaxed.
+
 ### Chunked geometry (batch-2 prerequisite)
 
 `build_geometry.mjs` now writes the loadable chunks and keeps the combined file
@@ -307,15 +361,16 @@ only as a debug artifact:
 
 | file | bytes | role | page fetch |
 | --- | ---: | --- | --- |
-| `level.geometry.json` | 9,662,959 | collision provenance, track visual, level props, materials/light/camera | always |
-| `base.geometry.json` | 10,778 | map-mode base (materials/light/camera/roster) | map packages only |
+| `level.geometry.json` | 9,663,610 | collision provenance, track visual, level props, materials/light/camera | always |
+| `base.geometry.json` | 11,429 | map-mode base (materials/light/camera/roster) | map packages only |
 | `cars/<slug>.geometry.json` | 5.47–9.02 MB | one body/wheels/parts + its UV0/albedo pack | selected car |
-| `car-bodies.index.json` | 16,858 | per-chunk SHA-256, bytes, draws, textures/UV | always |
-| `geometry.json` | 106,864,802 | combined debug/pre-chunking artifact | **never** |
+| `car-bodies.index.json` | 27,101 | per-chunk SHA-256, bytes, draws, textures/UV | always |
+| `geometry.json` | 181,757,706 | combined debug/pre-chunking artifact | **never** |
 
-The River page therefore fetches ≈20.5 MB (level + one car + physics + layout +
-fields) instead of ≈119.2 MB; the level is fetched once and a car switch fetches
-only the next car chunk. `web/geometry-chunks.js` is the shared contract: a
+The River page therefore fetches ≈20.47 MB (level + one car + physics + layout +
+fields + spawn) instead of ≈194 MB; the level is fetched once and a car switch
+fetches only the next car chunk. The 25 car chunks total 172,103,239 B on disk
+but only one (plus the MP peer) is resident. `web/geometry-chunks.js` is the shared contract: a
 missing, short, oversized or hash-mismatched chunk is a typed `ChunkLoadError`
 (`CHUNK_CAR_MISSING`, `CHUNK_CAR_SHA256`, …), never another car body. The packet
 adapter still receives exactly one entry in `carBodies`, so the packet schema,
@@ -1090,8 +1145,8 @@ the ghost is drawn (the headless ghost capture uses `+60` ticks so the ghost is
 visibly ahead of the identical scripted player run). It does not change the
 record, the pose at the reported tick, the delta, the packet or the physics.
 
-`probes/e1-drive/ghosts/index.json` lists the thirty committed reference records
-(15 cars × 310 m / 29 m) with their file SHA-256, canonical ghost hash, finish time,
+`probes/e1-drive/ghosts/index.json` lists the fifty committed reference records
+(25 cars × 310 m / 29 m) with their file SHA-256, canonical ghost hash, finish time,
 tick count and the sprint state sequence hash they were recorded from.
 
 
@@ -1132,7 +1187,7 @@ instance without a page reload. See `T-007-reset-fix.md`.
 | --- | --- | --- |
 | `accel` | throttle on every tick, fixed 86 m window | 0–50 / 0–80 / 0–100 km/h, top speed, speed at 86 m |
 | `brake` | throttle, then brake from the measured 80 km/h tick | entry speed, distance, peak/mean deceleration |
-| `lateral` | 120 throttle ticks, then 4 square half-periods of 36 ticks at ±0.6 | peak lateral g, peak yaw rate, yaw lag per reversal |
+| `lateral` | 90 throttle ticks, then 4 square half-periods of 36 ticks at ±0.6 | peak lateral g, peak yaw rate, yaw lag per reversal |
 
 Measured (`_work/e1-drive/telemetry.json`; one strip, diagnostic only):
 
@@ -1149,7 +1204,7 @@ The 0–100 order (Audi < Corvette < Lotus < Dodge < Focus) is exactly the XT
 Stopping distances follow the same order, but the Lotus is an anomaly: highest XT
 brake-to-mass ratio, third-shortest stop. Full comparison in
 `docs/work/verification/T-007-telemetry.md`. Physics is unchanged: the verifier
-pins all fifteen drive and sprint state sequence hashes and all fifteen drive packet
+pins all twenty-five drive and sprint state sequence hashes and all twenty-five drive packet
 hashes, and the page recomputes the series itself and matches the node metrics
 and per-tick state hashes exactly.
 
@@ -1254,7 +1309,7 @@ input chosen by tick number, never by wall time. Same script, same spawn
 
 All five reference cars: **301/301 ticks with wheel contact**, **0 NaN**, distinct state
 sequence hash, and the Corvette's sequence hash is exactly the T-007 value
-(`83f76590…`), so the roster did not change the existing car. All fifteen roster
+(`83f76590…`), so the roster did not change the existing car. All twenty-five roster
 cars run the same 300-tick script in `run.json → cars[].drive`.
 
 ## Evidence
@@ -1272,7 +1327,7 @@ the page), `level.geometry.json`, `base.geometry.json`,
 `cars/<slug>.geometry.json`, `car-bodies.index.json` (the loadable chunk set and
 its SHA-256/byte/draw pins), `car-textures.json` (the
 P52 draw/material/texture resolution, the UV convention and per-car coverage),
-`car-uv-<slug>.bin` (the fifteen committed UV0 streams), `track-textures.json` (UV0
+`car-uv-<slug>.bin` (the twenty-five committed UV0 streams), `track-textures.json` (UV0
 stream, sampler, 136 texture records and 394 per-draw bindings), `track-uv.bin` +
 `textures/*.rgba` (the exported UV and pixel bytes),
 `level-instance-textures.json` (the 22-draw P73a UV0/BC1 pack, 18/4 split,

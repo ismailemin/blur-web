@@ -3424,3 +3424,69 @@ packet hashes and the 301-tick state anchors.
 
 Full chunk sizes, hashes, load flow and limits:
 `docs/work/verification/T-007-chunking.md`.
+
+## 41. Vehicle batch 2: 25 cars (T-007/batch2)
+
+### 41.1 What changed
+
+`probes/e1-drive/cars/roster.json` grew from 15 to **25 cars**. The ten new
+entries are the seven high-confidence class-C records
+(`Dodge_Challanger_Tuner1stplay`, `Nissan_350ZNismo_Stock grpc`,
+`Chevrolet_Camaro_StockE3`, `VW_Beetle_Offroad`, `Foose_Stallion_Stockgrpc`,
+`Chevrolet_Camaro_Ratdrift`, `Covette_C3_Rat`) and three class-B cars
+(`BMW_M3E92_Tuner`, `Koenigsegg_CCXR_Stock`, `Toyota_SupraTRD_Stock`).
+
+A class-C entry carries an explicit `model` plus the record-level evidence
+(AmaxVehicle tag/record/dynamics ref) copied from
+`_work/vehicle-pipeline/c-aliases.json`. `build_all_manifests.py` checks that the
+tag lowercased + `.model` is exactly that file and that the supplied record id
+matches; there is no nearest-name or similarity mapping. The seven bodies were
+staged by V3; the integration reuses the committed builders.
+
+The chunked pipeline is unchanged in shape: one level, one `cars/<slug>` chunk
+per car, the index and the debug combined file. The chunk index now pins 25
+chunks; the ten new chunks are 6.15–8.49 MB. The 25 car chunks total
+172,103,239 B, but the page still loads only the level and one selected car
+(≈20.6 MiB with the default Corvette, largest chunk 20.7 MiB).
+
+### 41.2 New per-car behaviour
+
+- 310 m: all ten finish with 2/2 checkpoints, 0 respawn, 0 NaN (14.283–15.333 s).
+- 29 m: all ten finish (2.483–3.300 s). `corvette-c3-rat` needs a declared
+  deterministic `lane-hold-recovery` controller because the P37 throttle hold
+  leaves it 0.4 m outside the 6 m gate and its lateral speed stays below the
+  generic 2.5 m/s damper threshold. The controller is on the roster entry, is
+  applied only to the 29 m layout, and leaves the other 24 cars' inputs and
+  hashes bit-identical.
+- Lap/free/restart/ghost: all ten complete the 3-lap loop, the free-roam
+  containment run, a same-instance restart and both committed ghosts (50 records
+  total).
+- Telemetry: `chevrolet-camaro-ratdrift` and `corvette-c3-rat` declare one
+  typed lateral first-reversal miss at the fixed 36-tick phase; the miss is
+  recorded as an anomaly, all answered reversals keep their measured lag, and
+  no other car is allowed a miss.
+
+### 41.3 Verification and page bytes
+
+`verify_e1_drive.mjs` is **3665/3665 checks, 0 failures**. The original 15 cars'
+drive/310 m/29 m/free/lap state anchors did not move; the per-car `packet` hash
+moved for all cars because it is the whole-packet document identity of the
+25-car `car-textures.json` (same documented behaviour as P49/P55/P59/P73b).
+
+| page assets | batch 1 | batch 2 |
+|---|---:|---:|
+| level + one car chunk | 9,662,959 + 8,468,680 = 18,131,639 B | 9,663,610 + 8,468,680 = 18,132,290 B |
+| physics + layout + fields + spawn | 2,339,419 B | 2,339,419 B |
+| total | ≈20.47 MB | **20,471,709 B (≈20.47 MB)** |
+
+The largest car chunk (Lotus, 9,018,247 B) gives ≈21.02 MB. The page never
+fetches the 181,757,706 B combined document and never fetches 25 bodies. Full record, chunk pins and browser evidence:
+`docs/work/verification/T-007-vehicle-batch2.md`.
+
+### 41.4 External pins
+
+The portable suite stops at `prop-collision-v2` (44/45) because its V1
+regression pins the whole 15-car `geometry.json` hash; the collider data and the
+23 driven-line exclusions are unchanged. `tools/check_e1_poc.py` still asserts
+three hard-coded 15-car totals. Both files are outside this task's ownership and
+need a re-pin by their owners; details are in the batch-2 verification document.

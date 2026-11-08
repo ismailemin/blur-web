@@ -10,10 +10,13 @@
   },
   "selection": [
     "Every record is decoded and gated by tools/car_roster.py. The first five are the T-007",
-    "reference anchors (one per drivetrain mix) and must not move. The following ten are the",
-    "V1 audit's high/medium-confidence class-B cars in the manifest order of",
-    "_work/vehicle-pipeline/cars.json; each has an exact .model, a complete car-parts manifest,",
-    "a P52-style material pass and a measured 310 m scripted run."
+    "reference anchors (one per drivetrain mix) and must not move. Cars 6-15 are the V1 audit's",
+    "high/medium-confidence class-B batch 1; cars 16-25 are batch 2: the seven high-confidence C",
+    "records (record-level AmaxVehicle.dynamics -> RP_CarDynamics id -> engine tag model, from",
+    "_work/vehicle-pipeline/c-aliases.json) plus three high-confidence B cars with exact .model",
+    "entries. Each has a complete car-parts manifest, a P52-style material pass, its own geometry",
+    "chunk and a measured 310 m scripted run. A C entry carries the exact model override plus the",
+    "AmaxVehicle identity it was resolved from; no name similarity or nearest file is used."
   ],
   "default": "corvette-zr1-stock",
   "cars": [
@@ -136,6 +139,193 @@
       "recordIndex": 74,
       "layout": "RWD, 1350 kg, 6-speed",
       "why": "V1 batch 1 (medium confidence: 20/20 preview-paired wheel draws), exact chevrolet_socalhhr_stock.model, 85 draws / 64 static"
+    },
+    {
+      "slug": "dodge-challenger-tuner",
+      "name": "Dodge_Challanger_Tuner1stplay",
+      "recordId": 989449547,
+      "recordIndex": 18,
+      "layout": "RWD, 1600 kg, 6-speed",
+      "why": "batch 2 high-confidence C record: AmaxVehicle 'Dodge_Challenger_Tuner' (3110784083, ref 1211) carries this exact RP_CarDynamics id through its dynamics handle; the engine tag resolves to \\models\\vehicles\\dodge_challenger_tuner.model. Record name is misspelled ('Challanger'/'1stplay'); model is the record-level tag, not a name guess",
+      "model": "\\models\\vehicles\\dodge_challenger_tuner.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 18,
+        "recordId": 989449547,
+        "amaxTag": "Dodge_Challenger_Tuner",
+        "amaxRecordId": 3110784083,
+        "amaxRefIndex": 1211,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "AmaxVehicle.dynamics FlaskHandle -> XT refs -> RP_CarDynamics id; engine builds models/vehicles/%s.model from the vehicle tag"
+      }
+    },
+    {
+      "slug": "nissan-350znismo-stock",
+      "name": "Nissan_350ZNismo_Stock grpc",
+      "recordId": 1082528515,
+      "recordIndex": 22,
+      "layout": "RWD, 1462 kg, 6-speed",
+      "why": "batch 2 high-confidence C record: AmaxVehicle 'Nissan_350ZNismo_Stock' (1250219732, ref 1332) carries this exact RP_CarDynamics id; tag -> \\models\\vehicles\\nissan_350znismo_stock.model. The record name carries the ' grpc' suffix and a space",
+      "model": "\\models\\vehicles\\nissan_350znismo_stock.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 22,
+        "recordId": 1082528515,
+        "amaxTag": "Nissan_350ZNismo_Stock",
+        "amaxRecordId": 1250219732,
+        "amaxRefIndex": 1332,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "AmaxVehicle.dynamics FlaskHandle -> XT refs -> RP_CarDynamics id; engine builds models/vehicles/%s.model from the vehicle tag"
+      }
+    },
+    {
+      "slug": "chevrolet-camaro-stocke3",
+      "name": "Chevrolet_Camaro_StockE3",
+      "recordId": 1272473348,
+      "recordIndex": 25,
+      "layout": "RWD, 1462 kg, 6-speed",
+      "why": "batch 2 high-confidence C record: AmaxVehicle 'Chevrolet_Camaro_Stock' (3715397335, ref 1569) carries this exact RP_CarDynamics id; tag -> \\models\\vehicles\\chevrolet_camaro_stock.model. The 'E3' suffix is not part of the model name",
+      "model": "\\models\\vehicles\\chevrolet_camaro_stock.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 25,
+        "recordId": 1272473348,
+        "amaxTag": "Chevrolet_Camaro_Stock",
+        "amaxRecordId": 3715397335,
+        "amaxRefIndex": 1569,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "AmaxVehicle.dynamics FlaskHandle -> XT refs -> RP_CarDynamics id; engine builds models/vehicles/%s.model from the vehicle tag"
+      }
+    },
+    {
+      "slug": "volkswagen-beetle-offroad",
+      "name": "VW_Beetle_Offroad",
+      "recordId": 2370117387,
+      "recordIndex": 47,
+      "layout": "RWD, 660 kg, 6-speed",
+      "why": "batch 2 high-confidence C record: AmaxVehicle 'Volkswagen_Beetle_OffRoad' (3121525528, ref 2931) carries this exact RP_CarDynamics id; tag -> \\models\\vehicles\\volkswagen_beetle_offroad.model",
+      "model": "\\models\\vehicles\\volkswagen_beetle_offroad.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 47,
+        "recordId": 2370117387,
+        "amaxTag": "Volkswagen_Beetle_OffRoad",
+        "amaxRecordId": 3121525528,
+        "amaxRefIndex": 2931,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "AmaxVehicle.dynamics FlaskHandle -> XT refs -> RP_CarDynamics id; engine builds models/vehicles/%s.model from the vehicle tag"
+      }
+    },
+    {
+      "slug": "foose-stallion-stock",
+      "name": "Foose_Stallion_Stockgrpc",
+      "recordId": 3527545165,
+      "recordIndex": 63,
+      "layout": "RWD, 1495 kg, 6-speed",
+      "why": "batch 2 high-confidence C record: base AmaxVehicle 'Foose_Stallion_Stock' (1233078605, ref 4357) carries this exact RP_CarDynamics id; the explicit variant Foose_Stallion_Stock_Khan shares the same record and is recorded, not selected. Base tag -> \\models\\vehicles\\foose_stallion_stock.model",
+      "model": "\\models\\vehicles\\foose_stallion_stock.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 63,
+        "recordId": 3527545165,
+        "amaxTag": "Foose_Stallion_Stock",
+        "amaxRecordId": 1233078605,
+        "amaxRefIndex": 4357,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "sharedRecordVariants": ["Foose_Stallion_Stock_Khan"],
+        "reason": "base AmaxVehicle selected because it is the parent; the Khan variant is a shipped body of the same physics and is recorded in c-aliases.json"
+      }
+    },
+    {
+      "slug": "chevrolet-camaro-ratdrift",
+      "name": "Chevrolet_Camaro_Ratdrift",
+      "recordId": 3650421932,
+      "recordIndex": 65,
+      "layout": "RWD, 1395 kg, 6-speed",
+      "why": "batch 2 high-confidence C record: AmaxVehicle 'Chevrolet_Camaro_Rat' (1782464698, ref 4491) carries this exact RP_CarDynamics id; tag -> \\models\\vehicles\\chevrolet_camaro_rat.model; it shares the Chevrolet Camaro wheel model with record 25",
+      "model": "\\models\\vehicles\\chevrolet_camaro_rat.model",
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 65,
+        "recordId": 3650421932,
+        "amaxTag": "Chevrolet_Camaro_Rat",
+        "amaxRecordId": 1782464698,
+        "amaxRefIndex": 4491,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "reason": "AmaxVehicle.dynamics FlaskHandle -> XT refs -> RP_CarDynamics id; engine builds models/vehicles/%s.model from the vehicle tag"
+      },
+      "telemetry": {
+        "lateralMissedReversals": 1,
+        "reason": "at the fixed 36-tick first sweep phase the measured yaw rate stays positive through the phase (entry 29.4 km/h, peak 27.4 deg/s); the first steer reversal is not answered before the next phase, so its lag is null. The second and third reversals are answered in 0 and 20 ticks. Recorded as a typed telemetry anomaly, not a passed reversal"
+      }
+    },
+    {
+      "slug": "corvette-c3-rat",
+      "name": "Covette_C3_Rat",
+      "recordId": 3993817740,
+      "recordIndex": 75,
+      "layout": "RWD, 1300 kg, 6-speed",
+      "why": "batch 2 high-confidence C record: AmaxVehicle 'Corvette_C3_Rat' (3069361973, ref 4963) carries this exact RP_CarDynamics id; tag -> \\models\\vehicles\\corvette_c3_rat.model. Record name is misspelled ('Covette'); model is the record-level tag. doNotShowInGame is true in the XT record and is recorded, not used as a proof",
+      "model": "\\models\\vehicles\\corvette_c3_rat.model",
+      "shortCourseController": {
+        "kind": "lane-hold-recovery",
+        "reason": "the 29 m regression's P37 throttle hold leaves this 1300 kg RWD record 0.4 m outside the 6 m finish gate (measured: finish z 1046.62 at x -57.89, gate z 1047..1053); the generic high-speed damper never engages because lateral speed stays below 2.5 m/s. The recovery profile is a deterministic proportional lane hold (gain 0.8 /m, 0.25 per m/s lateral, 0.2 m deadband) that keeps the car inside the gate",
+        "evidence": "_work/logs/e1-drive/batch2-c3-short-controller.log (probe and full verifier run)",
+        "scope": "29 m straight regression controller only; engine physics and the 310 m / lap / free controllers are unchanged"
+      },
+      "telemetry": {
+        "lateralMissedReversals": 1,
+        "reason": "at the fixed 36-tick first sweep phase the measured yaw rate stays positive through the phase (entry 33.2 km/h, peak 25.3 deg/s); the first steer reversal is not answered before the next phase, so its lag is null. The second and third reversals are answered in 0 and 15 ticks. Recorded as a typed telemetry anomaly, not a passed reversal"
+      },
+      "modelMapping": {
+        "source": "_work/vehicle-pipeline/c-aliases.json",
+        "recordIndex": 75,
+        "recordId": 3993817740,
+        "amaxTag": "Corvette_C3_Rat",
+        "amaxRecordId": 3069361973,
+        "amaxRefIndex": 4963,
+        "rpType": "RP_CarDynamics",
+        "handleResolvesToExactRecordId": true,
+        "nameSimilarityUsed": false,
+        "doNotShowInGame": true,
+        "reason": "AmaxVehicle.dynamics FlaskHandle -> XT refs -> RP_CarDynamics id; engine builds models/vehicles/%s.model from the vehicle tag"
+      }
+    },
+    {
+      "slug": "bmw-m3e92-tuner",
+      "name": "BMW_M3E92_Tuner",
+      "recordId": 937269915,
+      "recordIndex": 16,
+      "layout": "RWD, 1462 kg, 7-speed",
+      "why": "batch 2 high-confidence B car: exact \\models\\vehicles\\bmw_m3e92_tuner.model (V1 class B, 94 draws / 54 static, 8 textures), the only 7-speed in the roster"
+    },
+    {
+      "slug": "koenigsegg-ccxr-stock",
+      "name": "Koenigsegg_CCXR_Stock",
+      "recordId": 1036618492,
+      "recordIndex": 20,
+      "layout": "RWD, 1179 kg, 6-speed",
+      "why": "batch 2 high-confidence B car: exact \\models\\vehicles\\koenigsegg_ccxr_stock.model (V1 class B, 97 draws / 63 static, 9 textures); lightest 6-speed RWD body after the Beetle"
+    },
+    {
+      "slug": "toyota-supratrd-stock",
+      "name": "Toyota_SupraTRD_Stock",
+      "recordId": 1364294847,
+      "recordIndex": 30,
+      "layout": "RWD, 1565 kg, 6-speed",
+      "why": "batch 2 high-confidence B car: exact \\models\\vehicles\\toyota_supratrd_stock.model (V1 class B, 88 draws / 53 static, 7 textures)"
     }
   ]
 }

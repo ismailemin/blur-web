@@ -69,6 +69,9 @@ const PROFILE = path.join(OUT, 'edge-profile-' + PORT);
 const VIEWPORT = { width: 1600, height: 900 };
 const TICKS = option('--ticks', '0,150,240,300').split(',').map(Number);
 const ONLY_CAR = option('--car', null);
+// `--mode mp` host car. The default is the roster default (Corvette); a
+// different C/B body can be requested without touching the guest selection.
+const HOST_CAR = option('--host-car', null);
 // `--mode mp` drives two different roster cars by default (M1.1 chunking): the
 // host uses the default car, the guest a different chunk. `--guest-car` overrides.
 const GUEST_CAR = option('--guest-car', null);
@@ -141,7 +144,11 @@ if (cars.length === 0) {
   throw new Error('unknown car ' + JSON.stringify(ONLY_CAR) + '; run.json has ' +
                   run.cars.map((car) => car.slug).join(', '));
 }
-const defaultSlug = run.defaultCar;
+const defaultSlug = HOST_CAR ?? run.defaultCar;
+if (HOST_CAR && !run.cars.some((car) => car.slug === HOST_CAR)) {
+  throw new Error('unknown --host-car ' + JSON.stringify(HOST_CAR) + '; run.json has ' +
+                  run.cars.map((car) => car.slug).join(', '));
+}
 const labelFor = (tick) => (tick === 0 ? 'start' : tick >= 300 ? 'end' : tick === MID_TICK ? 'mid' : tick === 240 ? 'coast' : 'mid-' + tick);
 
 /** Per-car expected tick data from the node producer's own artifacts. */

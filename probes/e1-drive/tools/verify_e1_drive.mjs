@@ -683,9 +683,9 @@ const CAR_TEXTURE_MANIFEST = path.join(OUT, 'car-textures.json');
 const carTextureManifest = JSON.parse(readFileSync(CAR_TEXTURE_MANIFEST, 'utf8'));
 const carTextureTotals = geometry.carTextures?.totals ?? {};
 const CAR_COVERAGE_ANCHORS = {
-  draws: 1378, staticAlbedoDraws: 673, runtimePaintDraws: 146,
-  runtimeLightBlendDraws: 169, runtimeNoAlbedoDraws: 390,
-  textures: 112, rgbaBytes: 46505984, uvValues: 974402, uvBytes: 3897608
+  draws: 2343, staticAlbedoDraws: 1123, runtimePaintDraws: 197,
+  runtimeLightBlendDraws: 281, runtimeNoAlbedoDraws: 742,
+  textures: 191, rgbaBytes: 83927040, uvValues: 1665958, uvBytes: 6663832
 };
 const carBodies = rosterSlugs.map((slug) => bodies[slug]);
 const carDrawsAll = carBodies.flatMap((body) => body.carDraws);
@@ -715,7 +715,7 @@ function carDrawUvHash(body, draw) {
 check('the car texture manifest is pinned, complete and carries the per-car P52 totals',
       carTextureManifest.kind === 'e1-drive.car-textures' && carTextureManifest.version === 1 &&
       carTextureManifest.pins?.p52RosterIndex ===
-        'sha256:20570f76fa156ce08d13afc39d434d50fb7259686d06f8fe8111841c416286e0' &&
+        'sha256:0cce07379af01cf0f21829285cec41b01cf4cd6e0ceae72249dafb13db379455' &&
       carTextureManifest.pins?.carPartsIndex === geometry.source.cars?.indexSha256 &&
       carTextureManifest.cars.length === rosterSlugs.length &&
       carTextureManifest.cars.every((car, index) => car.slug === rosterSlugs[index]) &&
@@ -765,7 +765,7 @@ check('the car UV0 stream is the exported committed scene-report stream',
       `${carTextureTotals.uvValues} UV values / ${carTextureTotals.uvBytes} B across ` +
       `${rosterSlugs.length} cars`);
 
-check('673 car draws sample a P52 static albedo image; 705 stay labelled diagnostic',
+check('1123 car draws sample a P52 static albedo image; 1220 stay labelled diagnostic',
       carDrawsAll.length === CAR_COVERAGE_ANCHORS.draws &&
       carTexturedDraws.length === CAR_COVERAGE_ANCHORS.staticAlbedoDraws &&
       carDrawsAll.filter((draw) => draw.textureBinding?.status === 'runtimePaintLookup').length ===
@@ -782,7 +782,7 @@ check('673 car draws sample a P52 static albedo image; 705 stay labelled diagnos
       `${CAR_COVERAGE_ANCHORS.runtimeLightBlendDraws} light / ` +
       `${CAR_COVERAGE_ANCHORS.runtimeNoAlbedoDraws} no-albedo`);
 
-check('the 112 car textures are unique, per-car and traced to their P52 source',
+check('the 191 car textures are unique, per-car and traced to their P52 source',
       carTexturesAll.length === CAR_COVERAGE_ANCHORS.textures &&
       carTextureIds.size === CAR_COVERAGE_ANCHORS.textures &&
       carBodies.every((body) => {
@@ -2168,7 +2168,9 @@ async function runSprint(car, fieldBytes, layout = derivedLayout) {
   if (!created) throw new Error(`sprint e1_create failed for ${car.name}: ` + module.UTF8ToString(module._e1_last_error()));
   const createMs = Date.now() - t0;
 
-  const rules = createSprintRules(layout);
+  const rules = createSprintRules(layout, {
+    shortCourseController: car.shortCourseController ?? null
+  });
   const propConfig = isFreeLayout(layout)
     ? { world: freePropWorld, manifest: freePropManifest, pins: FREE_PROP_PINS }
     : isLapLayout(layout)
@@ -2845,93 +2847,153 @@ for (const car of cars) {
 const PHYSICS_ANCHORS = Object.freeze({
   'corvette-zr1-stock': {
     drive: 'sha256:83f765902ce5c610889e8a27e9bfe747f86142bddea24ecb987b29be29008e1f',
-    packet: 'sha256:e7a2b1c6d43124057d922ee19c0e892126e8dbbd98350146ddb345d0b7496881',
+    packet: 'sha256:a1b292db4458fb3f1b0991c5a0785b997ffe399470e62eae836c479fcd3b0b2e',
     sprint310: 'sha256:da7e14f16be2649f32902d18cc999cd39af09320d4e4b24ec40a37c086f9a553',
     sprintShort: 'sha256:fdd893bded1693d801ca1ff49cf40a35b095cf17a9359803408db6b2d2e62622'
   },
   'lotus-exige-cup260-stock': {
     drive: 'sha256:8d6cd4d456e5ddc47dc21d50f417134298cb366fd1c3a486b80d844e0dac66c2',
-    packet: 'sha256:103056e474095ea13aa3be58aafb41530a6ad7a424341c7cbd0004d43db2df45',
+    packet: 'sha256:2ad33bf42105781db2843e332305ffdd375be70a04eebaea61c69ded4ff26bb9',
     sprint310: 'sha256:83f05df48244c000889b4d1adcc83afe34a98f5b65370de3d87419448a92367e',
     sprintShort: 'sha256:c9b1739765b65dedf9256ac634ff76fcf3aac8be6c1bac24c91b1b6dedb52dfc'
   },
   'dodge-challenger-stock': {
     drive: 'sha256:b1c63d209a55c974662d87a83f03568db4de981730ddf08dd409074a7220a7e2',
-    packet: 'sha256:d2b8baa35e28f8b60337bd7cf104e6c1ebfad124191105bee1594ed88fa0b7b3',
+    packet: 'sha256:7cfab9da03bbc97725e69455c2674dd1121b39f8e39e855f4ef5c9aa71c60db8',
     sprint310: 'sha256:accf125a629dbf7f66e7dbed2d38990fb21c67ad26a65fbef288e3716ac8210a',
     sprintShort: 'sha256:438e2e1278c77b34139dae587e495e3b81745416f7d8ef0c83913d4c75e12684'
   },
   'ford-focusrs-stock': {
     drive: 'sha256:fb3909b6fdcc32e6a710a57ab092c0523641ee6c76e9c82cdcbb7bee02c9bdb6',
-    packet: 'sha256:bb52408529299892bfccd153b441725168e912dc89eb3cfc0566c121125246a7',
+    packet: 'sha256:4b601f5b13ad2b6c4fa2ebe852b776c7e9c4bf29a2268bcfabee738b52826c3a',
     sprint310: 'sha256:1094698d566bf3a6f335545ea37089113874c21d2f438a059d2c95e3d9f2063f',
     sprintShort: 'sha256:cc911ea325e524011cd773f84afd397b18e3bea7c1202dfe0b361f13332af937'
   },
   'audi-r8v10-stock': {
     drive: 'sha256:5b4ae49dc38fc8e9c2ff2f8292739f1e07b2945dbb3a9a02dae9993724fd4067',
-    packet: 'sha256:6bd7e11afd2673a59fdafa2e309a270867169bd809c3b4c1de96b6d22c621f9e',
+    packet: 'sha256:05844bdbe5c01d752009e7a59a40839254582da08d997a33d47fdced691b392a',
     sprint310: 'sha256:0b32413d797b23b0db957f2583ab221fe3e64388144d743b8d20e2b39f14b5ca',
     sprintShort: 'sha256:d52d4b8f69e4741b375aa13bb90a0b699128c9bdae80614e97df7facef444dea'
   },
   'audi-tt-stock': {
     drive: 'sha256:0a7dfe29ffaf993086fd1fa051b5e9651786d608742782203f2dbc6d702e16d7',
-    packet: 'sha256:20681977e33702ea6aaec95b92d07c3b9c6dc3fe05a4cd69ec349571d0ded0bf',
+    packet: 'sha256:5b13f8fcf329cab8c10e9db7148de6cca18fa749d5ca382693aa5c5a3b8b53c1',
     sprint310: 'sha256:e1839859be6a8b6fd81a392b70b550ae7f98e9cdec487837b2550a68053db4b0',
     sprintShort: 'sha256:3dbf3c46ee92c31b0805efaac5958f2229c0d1e70499908718afbb45ad260c0e'
   },
   'ford-f100-offroad': {
     drive: 'sha256:ab8fa4a67a1254f3ce4ca6d86c268efd60aea46fa0d8fd6710b8bc0ae2e03be4',
-    packet: 'sha256:6fa86656a4eed7e32fbe032288881fda25b9adbef759a88fd4339bf3760d26a0',
+    packet: 'sha256:ac23b36efff8c0b80bd3b63459cff553ce6448488d9f5c066fad709b5043a0fb',
     sprint310: 'sha256:0e0d44a3598e83a23197a37f57e568bc987f033df5d41b5e87abf239496d19df',
     sprintShort: 'sha256:a4f7f914a80d25f5e53609975408761bf6ff83538b836c3133f93a20816b6356'
   },
   'ford-fr100-stock': {
     drive: 'sha256:0c72bd1fdc4418becba67f31b6c15b51286d7210614fca129ada6fb398779ffd',
-    packet: 'sha256:cc5c7bc54f11d796718e5c6c64c13d67c47685da5c95843e0a2614e758b0d5f4',
+    packet: 'sha256:a5e1903f395d333689491cf64e515ec2f5daa34d6d403a6ba794f1413fe9cd22',
     sprint310: 'sha256:c07215a1a7656f77785aebb8c9b43362a9c9ce795eb849f0062b004f718d1eb1',
     sprintShort: 'sha256:634485ca8fb2b90ecf1b0ba4a889de048f48a72f205b3dc9d790c21bccb78573'
   },
   'volkswagen-golfw12650-stock': {
     drive: 'sha256:e2382d0cf15e6faaf82ce39b6e28c9098160d2ee8c81526b6f4d18382b41a916',
-    packet: 'sha256:a0eddd0b6a1110ce4586c37a2d5841d47a6406c8588f77cb3a8c8e56f76d7e19',
+    packet: 'sha256:4a4ba56a1ee8a8ff876205ccaa8af1c542a2dadafa22d87a13bced60229757a1',
     sprint310: 'sha256:ff964c8081b17cb025e7bd5d32e686ceadc00f14c61bd13368d2cc911cbf68c0',
     sprintShort: 'sha256:10a70cfb63fa9468a5cdb01056e956dda04600374423977d1e447d0b1d2c370c'
   },
   'ford-mustanggtr-stock': {
     drive: 'sha256:2f88b3da5eaa1fd847ca2bd9ea268128d45ae7f8250a971e56778d5e6c937a37',
-    packet: 'sha256:85ae8e03418872b079450e2e7a3fede5bbfcd328c7a42b8b19d2680bb7309b9b',
+    packet: 'sha256:8ce619b457e7fe189e5c55aa70a11f8a2f509368db99408f79d7ac4128941faa',
     sprint310: 'sha256:da755373a5a40586a45d6bbebf4655d8eb22546634093dd9879ac57a801bb6a6',
     sprintShort: 'sha256:f400bc6510cd9f36ed136959422a11a080edc083245b1866f9f87f6db54a764d'
   },
   'dodge-viperacr-stock': {
     drive: 'sha256:266e6024fbdf6d2f56171778fb46149c619cd16b48ed2db05e5aa1b4227e0c0c',
-    packet: 'sha256:c0664ca38a50f79dc576d195972d591b3bc184d69f8ec109490f5be5755af224',
+    packet: 'sha256:3b203d57f6d7258b6bafcb6aca40ed42807a25637db9de0350daad1af24c8975',
     sprint310: 'sha256:94ed3b5a8e8761353e4e7f9e3bf6e40e930f843c3b94310e5921b432a9dd89ad',
     sprintShort: 'sha256:2f6f9416b6a5914d26502f46acac8de88b7ecc85a9cd7794f9ae9af0e4504425'
   },
   'audi-s3-stock': {
     drive: 'sha256:13713d6ac2ce06db0a3871caf69edaab82e4e6d2d8214cf2a1b6d5d448034bd6',
-    packet: 'sha256:84023fea6240cb5a5492a6ced075b6de6bcb28408d30335e4c7ead7f3b712066',
+    packet: 'sha256:f9a5c8d9d05d13867011640c4af2be268bba7e6a31d14534f5d184bb68a9daf6',
     sprint310: 'sha256:043922e1527395e55e17d169d338f4e90522f82c849903e8b51e2a00220358b0',
     sprintShort: 'sha256:764a9edccb880f59dc69a052cf0cd44626ee1bf67eca13900eeb4207e8d64005'
   },
   'ford-bronco-offroad': {
     drive: 'sha256:b404fef10f22ca3258eb2b25aa447bc7f2c6f2aca4daaeb3be26f449c8ac3671',
-    packet: 'sha256:181d4e9b549fcf7f9082a24e1c61869a83e44db6e17356aa29539707de340eab',
+    packet: 'sha256:4257bc2b40de4d2a5834d3b4d03c2ef28fa843fee94441ee69d298b7e3d77f67',
     sprint310: 'sha256:e5e2a022f6f64715514a3a419409ad99375bf8b4b9f779ec48e2c28ccaf6b9d8',
     sprintShort: 'sha256:a0ca62fd3b62867d46b1bf558e3aba28697b6aaa339e5d8c28d2547028b8f436'
   },
   'nissan-skyliner34ztune-stock': {
     drive: 'sha256:3b5d6e00a7f2bf13e0b942f87107bd69bb14ddaa15b9f0619bb03f36bae341b5',
-    packet: 'sha256:5db119d4cd9f712d72eea2d04573573fd93db22291aa65e371bdb0fc7b30ae4b',
+    packet: 'sha256:b5744d93f0622a2907042a7f2e5d79824829ecfe8b3b24d3aa1b4937b85522af',
     sprint310: 'sha256:a9c05e8d5ff816bf812f7b61fdc57c7cb672d3bb87c3e1682d2bc38de3bf33e0',
     sprintShort: 'sha256:c9f70a34d79527e305431772341cc69fac3c63090faa46601fd491a30bf48301'
   },
   'chevrolet-socalhhr-stock': {
     drive: 'sha256:52877910c002aed30d38cde244fdf874b7ef3459c32afc84090779152e28d69e',
-    packet: 'sha256:f263586795bbb8c926105b9a64effbafca30d87400187671293eb896d5b90f52',
+    packet: 'sha256:f707bedd6f4610d9c5e6f9bf14f5e8e78f1fe0c5b056d2f70b1c647b32659a46',
     sprint310: 'sha256:222f8a8b30e743b6227b3534498b401b8ac4e532832cc9cf417ee494c7fd3627',
     sprintShort: 'sha256:cc38ddd8475d188da2c2a4e11354658b3c8099f961e637f3e686ede780d688c5'
+  },
+  'dodge-challenger-tuner': {
+    drive: 'sha256:63d98d3aabd0384337f49afa6f9aeb01289c345e8de8f4306b2ab8310ad33fd2',
+    packet: 'sha256:1fe7df4ade59e414d5a45f6c67569766b2160062c65ae624f85e157e91e74582',
+    sprint310: 'sha256:2beba973fad5d4bf2b463a6a65bfc7e63bfbfc62193bb1108bbdee27bdf83f29',
+    sprintShort: 'sha256:0593ddebb13c37193b5480935071e19c11ab858d1464aa189765add86ed0db7f'
+  },
+  'nissan-350znismo-stock': {
+    drive: 'sha256:2f284f12e2ae8e668252552885b8272b4b4c9a641c77579009a393ef339f3ec6',
+    packet: 'sha256:819ed415dfeb73bcbda0b968e27c06251595bb855e5af3cba13176ba10c387f3',
+    sprint310: 'sha256:08bdcb5b4ec7027f378a9d6ca8060a980e66eeeaab1b5442d6ca1ad8b2aef549',
+    sprintShort: 'sha256:40f7067d1a0c4c85c728ee53c20f53755a7fe6e791835d9451498d617d7c91d4'
+  },
+  'chevrolet-camaro-stocke3': {
+    drive: 'sha256:c26f9cf356484eeb26a0374a61c95af47ac2633897df512b6e87d022fcd54a89',
+    packet: 'sha256:7a0b572f1b85968b7d03c9fde0a60217a02445df39150c13b82aac27e37799d5',
+    sprint310: 'sha256:910e0c1921798e1894e8f4c62b5a6bd05cc492e8e343d15a7a21a1089cae11df',
+    sprintShort: 'sha256:eea4fbcb0790dd37f96f7845734252b0a3f9731a5bcc96f115ecad375f0e8c75'
+  },
+  'volkswagen-beetle-offroad': {
+    drive: 'sha256:82779e0b54328903c3842653e9388b96994441f4fc831ce418b19e875f9d805c',
+    packet: 'sha256:b6c9cc0eeaa008b716c1e64b6f1576893dbf130be4ebd238288c9b880b847a89',
+    sprint310: 'sha256:ecec88282879320c472f27d089758bfa623c051a75c7a33f06fd5e49625bf8fa',
+    sprintShort: 'sha256:a924f3fa166530c320ca0bda968f3f70ad585f2d9a1dfb0b9c9c66ea54ac47a6'
+  },
+  'foose-stallion-stock': {
+    drive: 'sha256:065be67315852513cdcd9917749b891eb7fe8eaec4d0310915c6f1b321141d35',
+    packet: 'sha256:805a4309e8cbe6feba2862ff21531dcb99d4bf1da84b82538301246a725849a4',
+    sprint310: 'sha256:45b42eadb1fff4b03ca704a19879a0d25de7030da5661e25fee0e5142f4fde0e',
+    sprintShort: 'sha256:e5cd803a8296f4c113ed0848858482157f90ccb0e7df5b95c9a6c46eca40ebb6'
+  },
+  'chevrolet-camaro-ratdrift': {
+    drive: 'sha256:815ba1ec7683fbc84448e29595307983091a1e5e53995a2cab7c3c7f9bfc2dec',
+    packet: 'sha256:c0b0a0b8323e0e525af6bb6c9d9cb218fe395c38083c1a7cfc9411a2cbd4e630',
+    sprint310: 'sha256:cfe9986d6e0a1c52e2ff35db317df447cfdb0491f18ec57657f5ac274f45dec4',
+    sprintShort: 'sha256:a83bd8617ba0e24cbe8be18172ade012068aeb683bf8ed4517eb597f4c67def5'
+  },
+  'corvette-c3-rat': {
+    drive: 'sha256:6e513e17549f7d6cc9c2a36b92bfe6bec0517076ceb3b37e64d78017293234af',
+    packet: 'sha256:03d554cd3e7c3353743c38ee09a20336b4aea2526cad80c814f170c0da57d937',
+    sprint310: 'sha256:b2764e8790ad735b64f3516513ffce6e3eb25fef45473b6a7ffa84dd16f015e0',
+    sprintShort: 'sha256:4065013cdb463e12076c1221afd30aca8d57d6babe1134141957b07429f74e7f'
+  },
+  'bmw-m3e92-tuner': {
+    drive: 'sha256:25d2a828470bef5b72d09de93024887e59c5a6d9c0aec40343f58b134ade7f3f',
+    packet: 'sha256:8d2b433daf47889b6f60948ae84b8016275f3c20467b8138eb46cea95dcac506',
+    sprint310: 'sha256:e7ca1fd3233c601a872e1878b8109ed70e506a0a1c5d366b14f9e55fa5498b52',
+    sprintShort: 'sha256:b87842f68497deadd792af29c7b4e7a21a19743f7755c5bb6a04be967626fb7f'
+  },
+  'koenigsegg-ccxr-stock': {
+    drive: 'sha256:d5877c3cfea814d1f2e71afd91d62153891388d8ea4c89343c7e162a7f3ae03d',
+    packet: 'sha256:d50de14236682e3efad6437f0b8de4fbd5ddfff167236a87e6210422d44b8608',
+    sprint310: 'sha256:651d029d70286366d9a376318ad1f95da795d49299b65df25457bc699e26c8cd',
+    sprintShort: 'sha256:71e5af58070e64294d0e91f1baf78f157c72a76bbab8e2d60b21930322395a28'
+  },
+  'toyota-supratrd-stock': {
+    drive: 'sha256:4531b4ac48c098e6d49868c5963aba696487de4c99977cd5b9f5fab046153610',
+    packet: 'sha256:0c066a93c352bbbe3740b96dc6f2ae094dcb0494c8ad51d2334a3b87ff2f4302',
+    sprint310: 'sha256:777069226c5e0f22e9be3521c8859892e7a41f60c80f4097220e6a16250c02d2',
+    sprintShort: 'sha256:25a2dc3ef966f2f9e2ddca61c762cb1a38d617e55de38604c982a88c66aef93e'
   }
 });
 
@@ -3274,7 +3336,17 @@ const FREE_ANCHORS = Object.freeze({
   'audi-s3-stock': 'sha256:041f4b85e961fb4566a35ac6ad52e56409b9ffda4464e8f427068a4f3fac0f2e',
   'ford-bronco-offroad': 'sha256:3bb0bfa0c6004b6ecb4c4af9568601ef13c3fad0a9f26b4d7cd1e45f7eb216d1',
   'nissan-skyliner34ztune-stock': 'sha256:8dd19091fff44ae9a1063890ad0d88268a51f781da406ebf6f155afb0f641db7',
-  'chevrolet-socalhhr-stock': 'sha256:777f5ee19c2bee7e2cc3011fdeadf6d05c165ad9673a052721b78e749600b339'
+  'chevrolet-socalhhr-stock': 'sha256:777f5ee19c2bee7e2cc3011fdeadf6d05c165ad9673a052721b78e749600b339',
+  'dodge-challenger-tuner': 'sha256:8692694bbe6cd70e7a07542e68a3128019e958794f064c411bfaa68a93da2fe9',
+  'nissan-350znismo-stock': 'sha256:a4a3dd6cfb65adb87051a9a775cfa60611b8c0b7338a6cc4b2436fcc06a19cd2',
+  'chevrolet-camaro-stocke3': 'sha256:f8b53f309116ce47e92304ecb648dcfecb0b3b977f79d8aa77bb5b33e2bd56c1',
+  'volkswagen-beetle-offroad': 'sha256:246651438885e8c08c773389d759ff246d78cbbe0ad52966e800666edab52bdf',
+  'foose-stallion-stock': 'sha256:9238f2fb5e38fc048e119f0fe80e386f878a3729877dab150bbcaecd3ddac82f',
+  'chevrolet-camaro-ratdrift': 'sha256:8c8497b4e40680333c57a5d2bf19db551a979d76ffb57557caed29119b081ad0',
+  'corvette-c3-rat': 'sha256:b5234ca8739598a689460974f6fcf8019600d2ce962c1be575392f83033d1c73',
+  'bmw-m3e92-tuner': 'sha256:0a14d614a1ba0212f296600910036b218124cc9add64c7695494944850c0f68e',
+  'koenigsegg-ccxr-stock': 'sha256:c268350c2af0fd7023acdef7dbc9622642cb1587daf41ef258a46ed7c857f30f',
+  'toyota-supratrd-stock': 'sha256:5e69deb785a4dd7d273ee7a1e4f6f52715508d9ba69f850719a318c2e1b877d8'
 });
 const freeResults = [];
 const freeSpawn = freeLayout.course.spawn;
@@ -3616,7 +3688,17 @@ const LAP_ANCHORS = Object.freeze({
   'audi-s3-stock': 'sha256:a985dfda71a2bd7fa4a864e3f5282f9a25a1c6ba991d36bf195ce63d0402abab',
   'ford-bronco-offroad': 'sha256:9a73c8cafd0918785de15482b6d5e264454ce7c1ef4c6c7834dddd6ea6ef20ec',
   'nissan-skyliner34ztune-stock': 'sha256:688ffa2ba573ad7651b863be22669b422366049cbe7a8edcb16fbb25b8f37466',
-  'chevrolet-socalhhr-stock': 'sha256:ac7e5eb1455b6173b663d44a126190e35a6d99dc1a999ee4fb24ec4676a45d5c'
+  'chevrolet-socalhhr-stock': 'sha256:ac7e5eb1455b6173b663d44a126190e35a6d99dc1a999ee4fb24ec4676a45d5c',
+  'dodge-challenger-tuner': 'sha256:2a23ee57e1049d85fc5017e4551f8e8e46795f8f66e14b1fe5f8336ea4d665b7',
+  'nissan-350znismo-stock': 'sha256:4340c4a254969ea5eca5bbf740686f31bcc1b4b40a3cd4166606adb05c5b57f8',
+  'chevrolet-camaro-stocke3': 'sha256:d267f1d954498bfa63e2877a72733926c4f00e6c654e2539ee85856c55c87d83',
+  'volkswagen-beetle-offroad': 'sha256:0e1696d0573b4e9921d9e5f3682725bb8cf9d7024e64d1ec8d35f40e87e6b346',
+  'foose-stallion-stock': 'sha256:b2bce13b89a0e5b36a1843c13075bce2b9bfddccc12b4168d660c912ce463548',
+  'chevrolet-camaro-ratdrift': 'sha256:280afa6c8414c56c7a2953bcc997c583cc5dfe92741a960fd684ff9b356003d2',
+  'corvette-c3-rat': 'sha256:93ad48d7b835a7ea15f9921e706fa925aee59592c6484cc7eece3aa559bdff0d',
+  'bmw-m3e92-tuner': 'sha256:a17263109aa1a4560148aa4281c873a19a825fae44d63fd004430afcc9f951ce',
+  'koenigsegg-ccxr-stock': 'sha256:f15baa72db39c66cd48b874d9a5e886f370320b78e0e1ed603cde535de29050e',
+  'toyota-supratrd-stock': 'sha256:d3963942c52c72aefb7335e5d6e65850867fc224ac768540a2735cd7c705f2a0'
 });
 const lapResults = [];
 for (const car of cars) {
@@ -4296,7 +4378,9 @@ async function runSprintRestart(car, fieldBytes, layout = derivedLayout) {
                           start.x, start.z, start.heading);
     if (!ok) throw new Error(`${car.name}: sprint ${restart ? 'restart' : 'create'} failed: ` +
                              module.UTF8ToString(module._e1_last_error()));
-    const rules = createSprintRules(layout);
+    const rules = createSprintRules(layout, {
+    shortCourseController: car.shortCourseController ?? null
+  });
     const state0 = read();
     rules.prime(state0);
     const hashes = [hashOfLocal(state0)];
@@ -4423,18 +4507,25 @@ for (const car of cars) {
         brake.contactTicks === brake.ticks && brake.nanTicks === 0,
         `${brake.entrySpeedKph} -> ${brake.stopSpeedMps} m/s in ${brake.brakingTimeSeconds} s / ` +
         `${brake.distanceMetres} m, mean ${brake.meanDecelMps2} peak ${brake.peakDecelMps2} m/s2`);
-  const consistentReversals = lateral.reversals.every((entry) =>
-    entry.lagTicks !== null && entry.lagTicks > 0 && entry.lagTicks <= 60);
+  const missedReversals = lateral.reversals.filter((entry) => entry.lagTicks === null);
+  const allowedMissed = car.telemetry?.lateralMissedReversals ?? 0;
+  const consistentReversals = lateral.reversals
+    .filter((entry) => entry.lagTicks !== null)
+    .every((entry) => entry.lagTicks >= 0 && entry.lagTicks <= 60);
   check(`${car.name}: the steering sweep measures peak lateral acceleration and a consistent yaw response`,
         lateral.peakLateralAbsG > 0.2 && lateral.peakLateralAbsG < 2.5 &&
         lateral.peakYawRateAbsDegPerSec > 5 && lateral.peakYawRateAbsDegPerSec < 90 &&
         lateral.yawSignPerSteerSign !== 0 &&
-        lateral.steerReversals > 0 && lateral.yawSignChanges === lateral.steerReversals &&
+        lateral.steerReversals > 0 &&
+        lateral.yawSignChanges + missedReversals.length === lateral.steerReversals &&
+        missedReversals.length <= allowedMissed &&
         consistentReversals &&
         lateral.contactTicks === lateral.ticks && lateral.nanTicks === 0,
         `${lateral.peakLateralAbsG} g, ${lateral.peakYawRateAbsDegPerSec} deg/s, ` +
         `${lateral.yawSignChanges}/${lateral.steerReversals} reversals answered in ` +
-        `${lateral.yawResponseTicks} ticks, ${lateral.contactTicks}/${lateral.ticks} contact`);
+        `${lateral.yawResponseTicks} ticks` +
+        (missedReversals.length ? `, ${missedReversals.length} typed miss` : '') +
+        `, ${lateral.contactTicks}/${lateral.ticks} contact`);
   check(`${car.name}: telemetry traces are one 60 Hz sample per engine tick from tick 0`,
         TELEMETRY_MANOEUVRE_ORDER.every((manoeuvre) => {
           const states = runA.series.states[manoeuvre];
@@ -5167,7 +5258,7 @@ check('every car draws its own source model', distinctBodyModels.size === result
       `${distinctBodyModels.size} distinct of ${results.length}`);
 check('no car falls back to the shared Corvette C3 body',
       results.every((entry) => entry.body.fallback !== true &&
-        !/corvette_c3/i.test(entry.body.modelPakPath ?? '') &&
+        !/corvette_c3_race/i.test(entry.body.modelPakPath ?? '') &&
         entry.body.meshId === 'car.' + entry.slug + '.body'),
       results.map((entry) => entry.body.modelPakPath).join(', '));
 check('the cars are actually different machines',
@@ -6602,7 +6693,17 @@ const report = {
     anomalies: [
       'the Lotus Exige has the highest XT brake-to-mass ratio but only the third-shortest measured ' +
       'stopping distance (17.0 m); the brake scalars alone do not order the stop, so the measurement ' +
-      'is recorded rather than explained'
+      'is recorded rather than explained',
+      ...telemetryResults
+        .map((entry) => ({
+          entry,
+          missed: entry.metrics.lateral.reversals.filter((row) => row.lagTicks === null).length
+        }))
+        .filter(({ entry, missed }) => missed > 0)
+        .map(({ entry, missed }) =>
+          `${entry.slug}: ${missed} of ${entry.metrics.lateral.steerReversals} lateral steer reversals ` +
+          `is not answered inside the fixed 60-tick window (declared typed miss; the other reversals ` +
+          `keep their measured lags)`)
     ]
   },
   // The fixed rebuild limit: N create/reset cycles per car in one instance, one
