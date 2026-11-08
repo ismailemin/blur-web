@@ -1,5 +1,5 @@
 {
- "canonicalSha256": "03d1b1c3a2175fb63d5fa849e6087343bc25e41552b8cca4c504f3618a439e83",
+ "canonicalSha256": "df8deb710aef0bab96beffc8bcc6920d1c852bf413db5da3653b926bdaf1f51b",
  "generatedBy": "probes/map-pipeline/tools/build_map_decisions.py",
  "levels": [
   {
@@ -51,6 +51,53 @@
   },
   {
    "blocker": null,
+   "city": "Hollywood Hills",
+   "cityKey": "CRN_LA_OBSERVATORY",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 1061,
+    "collisionTriangles": 111496,
+    "collisionVertices": 59247,
+    "drawTriangles": 145090,
+    "draws": 1201,
+    "instanceDescriptionsSkipped": 0,
+    "sectionsProbed": 53,
+    "sectionsSupported": 23,
+    "sectionsUnsupported": 30,
+    "textureBlobs": 97,
+    "textureSources": 98
+   },
+   "distanceRank": 2,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 264458,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "observatory",
+    "playableDistanceItems": [],
+    "registryMapId": "observatory",
+    "reportGrade": "playable",
+    "reportMapId": "observatory"
+   },
+   "kind": "race",
+   "level": "usa_la_observatory",
+   "paths": {
+    "collisionM": 562.311,
+    "drawCoveredM": 562.352380466,
+    "packageKind": "draw-covered-measured",
+    "packageM": 562.352380466,
+    "recoveredM": null,
+    "samples": 2341
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
+  {
+   "blocker": null,
    "city": "Barcelona Gracia",
    "cityKey": "CRN_BARCELONA_GRACIA",
    "citySource": "docs/work/analysis/localization.md#3.2",
@@ -67,7 +114,7 @@
     "textureBlobs": 734,
     "textureSources": 739
    },
-   "distanceRank": 2,
+   "distanceRank": 3,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 104361,
@@ -114,7 +161,7 @@
     "textureBlobs": 179,
     "textureSources": 186
    },
-   "distanceRank": 3,
+   "distanceRank": 4,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 199742,
@@ -161,7 +208,7 @@
     "textureBlobs": 300,
     "textureSources": 300
    },
-   "distanceRank": 4,
+   "distanceRank": 5,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 279165,
@@ -189,326 +236,6 @@
    },
    "verdict": "playable",
    "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
-  },
-  {
-   "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 500020,
-      "geometryBlock": 31,
-      "id": "g31-n239",
-      "nodeBlock": 239,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 636688,
-      "geometryBlock": 34,
-      "id": "g34-n205",
-      "nodeBlock": 205,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 788136,
-      "geometryBlock": 35,
-      "id": "g35-n249",
-      "nodeBlock": 249,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 798290,
-      "geometryBlock": 36,
-      "id": "g36-n131",
-      "nodeBlock": 131,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 601578,
-      "geometryBlock": 40,
-      "id": "g40-n119",
-      "nodeBlock": 119,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 548356,
-      "geometryBlock": 41,
-      "id": "g41-n203",
-      "nodeBlock": 203,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 572468,
-      "geometryBlock": 42,
-      "id": "g42-n185",
-      "nodeBlock": 185,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 804004,
-      "geometryBlock": 43,
-      "id": "g43-n257",
-      "nodeBlock": 257,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 698896,
-      "geometryBlock": 55,
-      "id": "g55-n101",
-      "nodeBlock": 101,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 946844,
-      "geometryBlock": 57,
-      "id": "g57-n277",
-      "nodeBlock": 277,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 661586,
-      "geometryBlock": 61,
-      "id": "g61-n201",
-      "nodeBlock": 201,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 684800,
-      "geometryBlock": 66,
-      "id": "g66-n191",
-      "nodeBlock": 191,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 628816,
-      "geometryBlock": 110,
-      "id": "g110-n111",
-      "nodeBlock": 111,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 248594,
-      "geometryBlock": 112,
-      "id": "g112-n113",
-      "nodeBlock": 113,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 651580,
-      "geometryBlock": 114,
-      "id": "g114-n115",
-      "nodeBlock": 115,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 347906,
-      "geometryBlock": 136,
-      "id": "g136-n137",
-      "nodeBlock": 137,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 384806,
-      "geometryBlock": 152,
-      "id": "g152-n153",
-      "nodeBlock": 153,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 716118,
-      "geometryBlock": 156,
-      "id": "g156-n157",
-      "nodeBlock": 157,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 695892,
-      "geometryBlock": 164,
-      "id": "g164-n165",
-      "nodeBlock": 165,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 536524,
-      "geometryBlock": 170,
-      "id": "g170-n171",
-      "nodeBlock": 171,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 472676,
-      "geometryBlock": 174,
-      "id": "g174-n175",
-      "nodeBlock": 175,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 597252,
-      "geometryBlock": 178,
-      "id": "g178-n179",
-      "nodeBlock": 179,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 321588,
-      "geometryBlock": 186,
-      "id": "g186-n187",
-      "nodeBlock": 187,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 537236,
-      "geometryBlock": 196,
-      "id": "g196-n197",
-      "nodeBlock": 197,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 532820,
-      "geometryBlock": 220,
-      "id": "g220-n221",
-      "nodeBlock": 221,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 552172,
-      "geometryBlock": 226,
-      "id": "g226-n227",
-      "nodeBlock": 227,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 522292,
-      "geometryBlock": 228,
-      "id": "g228-n229",
-      "nodeBlock": 229,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 680108,
-      "geometryBlock": 232,
-      "id": "g232-n233",
-      "nodeBlock": 233,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 511784,
-      "geometryBlock": 246,
-      "id": "g246-n247",
-      "nodeBlock": 247,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 414560,
-      "geometryBlock": 252,
-      "id": "g252-n253",
-      "nodeBlock": 253,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_la_observatory/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": null,
-     "playableDistanceItems": [
-      "slice-package",
-      "texture-bindings",
-      "render-package",
-      "layout",
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_la_observatory; registry ids are amboy, gracia, longbeach, river",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "Hollywood Hills",
-   "cityKey": "CRN_LA_OBSERVATORY",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 1061,
-    "collisionTriangles": 111496,
-    "collisionVertices": 59247,
-    "drawTriangles": 145090,
-    "draws": 1201,
-    "instanceDescriptionsSkipped": 0,
-    "sectionsProbed": 53,
-    "sectionsSupported": 23,
-    "sectionsUnsupported": 30,
-    "textureBlobs": 97,
-    "textureSources": 98
-   },
-   "distanceRank": 5,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 264458,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "race",
-   "level": "usa_la_observatory",
-   "paths": {
-    "collisionM": 562.311,
-    "drawCoveredM": 562.352380466,
-    "packageKind": "draw-covered-measured",
-    "packageM": 562.352380466,
-    "recoveredM": null,
-    "samples": 2341
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
   },
   {
    "blocker": {
@@ -565,7 +292,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_la_downtown; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for usa_la_downtown; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -917,7 +644,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for jpn_mharuna; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for jpn_mharuna; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1005,7 +732,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1173,7 +900,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1453,7 +1180,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for spa_barcelona_oval; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for spa_barcelona_oval; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1621,7 +1348,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_ny_dumbo; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for usa_ny_dumbo; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1717,7 +1444,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2045,7 +1772,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_sausalito; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for usa_sanfran_sausalito; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2157,7 +1884,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for jpn_tokyo_shutoko; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for jpn_tokyo_shutoko; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2285,7 +2012,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_amboy_multiplayer; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for usa_amboy_multiplayer; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2364,7 +2091,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_la_downtown_multiplayer; registry ids are amboy, gracia, longbeach, river",
+     "detail": "MAP_IDS has no entry for usa_la_downtown_multiplayer; registry ids are amboy, gracia, longbeach, observatory, river",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -2837,7 +2564,7 @@
    "sha256": "124f01c0013a4578e2229016b0d1f8d82bfd850bb3bcaa597573f1afbadd733b"
   },
   "batchSummary": {
-   "contentSha256": "b1cee9c72162dcabbf2854f118068585779cbbf7a030443d5d2c121e1667e442",
+   "contentSha256": "684786d55509ca8e1d74daece05547fd6c695e5e71555126b1a492c6cb02641a",
    "path": "_work/map-batch/batch-summary.json",
    "pin": "content",
    "volatileFields": [
@@ -2854,9 +2581,9 @@
    ]
   },
   "blockedInventory": {
-   "bytes": 62095,
+   "bytes": 61919,
    "path": "_work/map-pipeline/blocked/inventory-19.json",
-   "sha256": "20abd968eb9a09e624270029acfe5649a2acd39e81ac4e159965d5283f4467d7"
+   "sha256": "f54b08e8ef50537d95de06d1fbab725c88756189651b7886112598b464ede6ec"
   },
   "inventory": {
    "bytes": 159627,
@@ -2869,9 +2596,9 @@
    "sha256": "5eea94a1b538ed1d3f1634a6394a8d288412009715c1632daa3012e0382617d2"
   },
   "mapRegistry": {
-   "bytes": 14695,
+   "bytes": 17557,
    "path": "probes/e1-drive/web/map-registry.js",
-   "sha256": "4e6413e68939734b1d813a255b52fbfcafc9e2b0fc2a744a55a1df1e1a0d45c8"
+   "sha256": "73907fbfcb61616458a0b818affccd0a4a9574f7ac24942e485da93100aa42cb"
   },
   "maps": {
    "bytes": 205652,
@@ -2881,7 +2608,6 @@
  },
  "summary": {
   "blocked": [
-   "usa_la_observatory",
    "usa_la_downtown",
    "jpn_mharuna",
    "usa_sanfran_russianhill",
@@ -2898,13 +2624,14 @@
    "spa_barcelona_bowl_multiplayer"
   ],
   "counts": {
-   "blocked": 15,
-   "playable": 4,
+   "blocked": 14,
+   "playable": 5,
    "unsupported": 0
   },
   "levelCount": 19,
   "playable": [
    "usa_la_longbeachdocks",
+   "usa_la_observatory",
    "spa_barcelona_gracia",
    "usa_amboy",
    "usa_la_river"

@@ -87,7 +87,7 @@ const LINK = [
   '-O2', '-fno-fast-math', '-ffp-contract=off',
   '-sMODULARIZE=1', '-sEXPORT_ES6=1', '-sENVIRONMENT=node,web',
   '-sALLOW_MEMORY_GROWTH=1', '-sINITIAL_MEMORY=268435456',
-  '-sMAXIMUM_MEMORY=536870912', '-sSTACK_SIZE=8388608', '--no-entry',
+  '-sMAXIMUM_MEMORY=1073741824', '-sSTACK_SIZE=8388608', '--no-entry',
   '-sERROR_ON_UNDEFINED_SYMBOLS=1',
   '-sEXPORTED_FUNCTIONS=' + EXPORTS.join(','),
   '-sEXPORTED_RUNTIME_METHODS=UTF8ToString,HEAPU8,HEAPF32,HEAPU32'
@@ -192,3 +192,4 @@ if (hashA !== hashB) {
   console.error('the wasm build is not deterministic');
   process.exitCode = 1;
 }
+

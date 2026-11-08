@@ -148,12 +148,13 @@ def main(argv=None):
     check("inventory.json has 19 levels", len(src["inventory"]["levels"]) == 19)
     check("localization has 19 city rows", len(src["cities"]) == 19,
           str(len(src["cities"])))
-    check("registry ids are river/amboy/gracia/longbeach",
-          set(src["registry"]["mapIds"]) == {"river", "amboy", "gracia", "longbeach"},
+    check("registry ids are river/amboy/gracia/longbeach/observatory",
+          set(src["registry"]["mapIds"]) == {"river", "amboy", "gracia", "longbeach", "observatory"},
           str(src["registry"]["mapIds"]))
-    check("registry maps four levels",
+    check("registry maps five levels",
           set(src["registry"]["byLevel"]) ==
-          {"usa_la_river", "usa_amboy", "spa_barcelona_gracia", "usa_la_longbeachdocks"},
+          {"usa_la_river", "usa_amboy", "spa_barcelona_gracia", "usa_la_longbeachdocks",
+           "usa_la_observatory"},
           str(sorted(src["registry"]["byLevel"])))
     check("unsupported rows, if any, carry a blocker",
           all(row.get("blocker") for row in rows
@@ -703,3 +704,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

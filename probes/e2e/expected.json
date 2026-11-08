@@ -59,6 +59,15 @@
       "checkpoints": 2,
       "layoutHash": "sha256:4449ed75b1344e29a3d5b8c920a412d54a57eb14bfabdc9bca6ab66ce2fc8366",
       "docRef": "docs/work/analysis/longbeach-path.md (785.823230 m collision path)"
+    },
+    "observatory": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "observatory",
+      "timeSeconds": 81.516667,
+      "timeToleranceSeconds": 2.0,
+      "checkpoints": 2,
+      "layoutHash": "sha256:168c7dba2fb2123dea8fed4a8e0a645616be8886557d0714f672ddb9d4e0ddbc",
+      "docRef": "docs/work/analysis/observatory-downtown-packages.md (536.621709 m collision path)"
     }
   },
   "mp": {

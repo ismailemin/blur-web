@@ -86,6 +86,7 @@ INTEGRATED = {
     "usa_amboy": "amboy",
     "spa_barcelona_gracia": "gracia",
     "usa_la_longbeachdocks": "longbeach",
+    "usa_la_observatory": "observatory",
 }
 
 MIN_COVERED_PATH_M = 25.0
@@ -1695,3 +1696,5 @@ def build_all(*, textures: bool = True, log=print) -> dict:
     BATCH.mkdir(parents=True, exist_ok=True)
     write_json(BATCH / "batch-summary.json", summary)
     return summary
+
+

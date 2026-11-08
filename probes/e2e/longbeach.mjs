@@ -47,3 +47,41 @@ export async function soloLongbeach(ctx) {
   ctx.evidence.finish = done;
 }
 
+
+// `solo-observatory`: the fifth playable map. The course is the committed
+// collision-derived path (536.621709 m); the draw path crosses tighter pinches
+// than the car can drive.
+export async function soloObservatory(ctx) {
+  const anchor = ctx.anchors.observatory;
+  const url = ctx.base + '/?map=observatory&script=sprint&car=' +
+    encodeURIComponent(anchor.slug) + '&audio=0';
+  const page = await ctx.openPage('observatory');
+  await page.navigate(url);
+  const running = await waitProbe(ctx, page, (probe) => probe.consumer === 'running' && probe.engineTick >= 2,
+    { timeoutMs: 120000, label: 'observatory running' });
+  await ctx.shot(page, 'start');
+
+  ctx.A.check('observatory: URL is the requested scripted sprint', running.url === url, running.url);
+  ctx.A.check('observatory: map is observatory', running.map?.id === 'observatory', ctx.fmt(running.map));
+  ctx.A.check('observatory: course is observatory', running.sprint?.courseId === anchor.courseId,
+    running.sprint?.courseId);
+  ctx.A.check('observatory: layout hash is the committed collision path',
+    running.sprintLayoutHash === anchor.layoutHash,
+    running.sprintLayoutHash + ' vs ' + anchor.layoutHash);
+
+  const done = await waitProbe(ctx, page, (probe) => probe.sprintResult !== null,
+    { timeoutMs: 240000, label: 'observatory finish' });
+  await ctx.shot(page, 'finish');
+  const result = done.sprintResult;
+  ctx.A.check('observatory: finish time is ' + anchor.timeSeconds + ' s',
+    Math.abs(result.timeSeconds - anchor.timeSeconds) <= anchor.timeToleranceSeconds,
+    'expected ' + anchor.timeSeconds + ' ± ' + anchor.timeToleranceSeconds + ', got ' + result.timeSeconds);
+  ctx.A.check('observatory: two checkpoints were passed', result.checkpoints === anchor.checkpoints,
+    'got ' + result.checkpoints);
+  ctx.A.check('observatory: no respawn', result.respawns === 0, 'respawns ' + result.respawns);
+  ctx.A.check('observatory: results overlay is visible', done.overlays.resultsHidden === false,
+    ctx.fmt(done.overlays));
+  ctx.A.check('observatory: no console error', page.messages.filter((m) => m.type === 'error').length === 0,
+    ctx.fmt(page.messages.slice(-4)));
+  ctx.evidence.finish = done;
+}

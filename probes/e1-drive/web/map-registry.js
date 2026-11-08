@@ -14,7 +14,7 @@
 export const MAP_DEFAULT = 'river';
 
 /** Map ids accepted by `?map=`. */
-export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach']);
+export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach', 'observatory']);
 
 export const MAPS = Object.freeze({
   river: Object.freeze({
@@ -268,7 +268,65 @@ export const MAPS = Object.freeze({
       layoutBytes: 388000,
       physicsBytes: 2214990
     })
-  })
+  }),
+
+  observatory: Object.freeze({
+    id: 'observatory',
+    label: 'Hollywood Hills',
+    level: 'usa_la_observatory',
+    kind: 'map-package',
+    geometryUrl: '/_work/e1-drive/observatory/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/usa_la_observatory/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/observatory/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.observatory',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:483a35bdbd019bee0dab2ec805224f39de80cce5d2930fde0be6a99f104d75fe',
+      mapContentHash: 'sha256:c9820ee9fcc74d5a013fc9de13211e629f42104821aafb589da6dcc604056064',
+      layoutFileSha256: 'sha256:3bc626b448c233a4d1263a322b2d2d86ff8802f6606eab8e614555b4fe2e1054',
+      layoutContentHash: 'sha256:168c7dba2fb2123dea8fed4a8e0a645616be8886557d0714f672ddb9d4e0ddbc',
+      renderFileSha256: 'sha256:2bb867bfd74b2a8bb8d9f1e2d2b83c7cac28eef5987a75edde5908eb265b9564',
+      renderContentHash: 'sha256:2bb867bfd74b2a8bb8d9f1e2d2b83c7cac28eef5987a75edde5908eb265b9564',
+      sliceFileSha256: 'sha256:15566ff24ae1ce55e70b52361ba43a2e2cc525d80ddc4030eda5546c48a2fabd',
+      sliceContentHash: 'sha256:15566ff24ae1ce55e70b52361ba43a2e2cc525d80ddc4030eda5546c48a2fabd',
+      physicsFileSha256: 'sha256:070874eedc63eac99f9a586b3581c2b8c9d396a433b7ee0bc4e3e16663c034d6',
+      physicsBytes: 4715868,
+      draws: 1061,
+      drawTriangles: 124430,
+      textures: 97,
+      textureBytes: 1588288,
+      vertices: 178083,
+      indices: 435270,
+      decalDraws: 89,
+      diagnosticDraws: 51,
+      blockedDraws: 140,
+      unsupportedSections: 30,
+      instanceDescriptions: 0,
+      collisionTriangles: 111496,
+      pathLengthMetres: 536.621709,
+      checkpointArcs: Object.freeze([178.809347, 357.8057]),
+      sampleCount: 2161,
+      renderLabel: 'observatory-direct-draws',
+      courseId: 'observatory'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:c9820ee9fcc74d5a013fc9de13211e629f42104821aafb589da6dcc604056064',
+      layoutHash: 'sha256:168c7dba2fb2123dea8fed4a8e0a645616be8886557d0714f672ddb9d4e0ddbc',
+      physicsHash: 'sha256:070874eedc63eac99f9a586b3581c2b8c9d396a433b7ee0bc4e3e16663c034d6',
+      packageFileSha256: 'sha256:483a35bdbd019bee0dab2ec805224f39de80cce5d2930fde0be6a99f104d75fe',
+      layoutFileSha256: 'sha256:3bc626b448c233a4d1263a322b2d2d86ff8802f6606eab8e614555b4fe2e1054',
+      physicsFileSha256: 'sha256:070874eedc63eac99f9a586b3581c2b8c9d396a433b7ee0bc4e3e16663c034d6',
+      packageBytes: 22941483,
+      layoutBytes: 270484,
+      physicsBytes: 4715868
+    })
+  }),
 });
 
 /** Resolve a `?map=` value, defaulting to River and rejecting unknown ids. */
@@ -289,5 +347,9 @@ export function mpPinsForMap(value) {
   if (!MAP_IDS.includes(value)) return null;
   return MAPS[value].mpPins ?? null;
 }
+
+
+
+
 
 

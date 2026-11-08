@@ -1326,13 +1326,13 @@ function rosterCases() {
     }
   });
   cases.push({
-    id: 'roster.committed-25', group: 'roster', input: 'roster · _work/e1-drive/cars.json', stage: 'loadRoster (committed)',
-    description: 'the committed roster is a PASS document with the full 25-car field set', expected: 'accept', impact: 0,
+    id: 'roster.committed-57', group: 'roster', input: 'roster · _work/e1-drive/cars.json', stage: 'loadRoster (committed)',
+    description: 'the committed roster is a PASS document with the full 57-car field set', expected: 'accept', impact: 0,
     run: () => {
       const roster = readCommittedJson(REAL_PATHS.roster);
       if (roster.kind !== 'e1-drive.car-roster' || roster.status !== 'PASS' ||
-          !Array.isArray(roster.roster?.cars) || roster.roster.cars.length !== 25) {
-        throw new Error('committed roster is not the 25-car PASS document');
+          !Array.isArray(roster.roster?.cars) || roster.roster.cars.length !== 57) {
+        throw new Error('committed roster is not the 57-car PASS document');
       }
     }
   });
@@ -1780,3 +1780,4 @@ export function buildCases() {
 }
 
 export { allCases };
+

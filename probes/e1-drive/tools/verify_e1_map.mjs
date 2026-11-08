@@ -50,11 +50,13 @@ mkdirSync(OUT, { recursive: true });
 mkdirSync(LOGS, { recursive: true });
 
 // ---------------------------------------------------------------- 1. builder
-const builder = spawnSync(process.execPath,
-  [path.join(ROOT, 'probes/e1-drive/tools/build_map_' + MAP_ID + '.mjs'), '--check'], {
-    cwd: ROOT, encoding: 'utf8'
-  });
-check('build_map_' + MAP_ID + '.mjs --check reproduces the generated map + layout', builder.status === 0,
+const perMapBuilder = path.join(ROOT, 'probes/e1-drive/tools/build_map_' + MAP_ID + '.mjs');
+const builder = existsSync(perMapBuilder)
+  ? spawnSync(process.execPath, [perMapBuilder, '--check'], { cwd: ROOT, encoding: 'utf8' })
+  : spawnSync(process.execPath,
+    [path.join(ROOT, 'probes/e1-drive/tools/build_map_batch.mjs'), '--check', '--map', MAP_ID],
+    { cwd: ROOT, encoding: 'utf8' });
+check('the map builder --check reproduces the generated map + layout', builder.status === 0,
   (builder.stdout + builder.stderr).trim().slice(0, 600));
 if (builder.status !== 0) throw new Error('map artifacts are stale or hand-edited:\n' + builder.stdout + builder.stderr);
 
@@ -123,20 +125,30 @@ check('engine ground probe matches the measured spawn',
   String(info.groundY));
 
 // ---------------------------------------------------------------- 4. settle
-const sliceSettle = readJson('_work/map-slice/' + MAP_ID + '/physics-settle.json');
+// A map-slice package carries a committed 61-tick settle sequence. A map-batch
+// package does not, so the settle is still measured (finite, contacts) but the
+// committed-hash comparison is recorded as not applicable.
+const settlePath = path.join(ROOT, '_work/map-slice/' + MAP_ID + '/physics-settle.json');
+const sliceSettle = existsSync(settlePath) ? readJson('_work/map-slice/' + MAP_ID + '/physics-settle.json') : null;
 const settleTicks = [{ tick: 0, stateHash: hashOf(tick0), state: tick0 }];
 for (let tick = 1; tick <= 60; tick++) {
   if (!module._e1_step()) throw new Error('e1_step failed at settle tick ' + tick);
   const state = JSON.parse(module.UTF8ToString(module._e1_get_state()));
   settleTicks.push({ tick, stateHash: hashOf(state), state });
 }
-const settleMismatch = settleTicks.find((row, index) => row.stateHash !== sliceSettle.ticks[index]?.stateHash);
-check('physics settle matches the committed 61/61 state hashes', !settleMismatch,
-  settleMismatch ? `tick ${settleMismatch.tick}: ${settleMismatch.stateHash} vs ${sliceSettle.ticks[settleMismatch.tick]?.stateHash}` : '');
 const settleSequence = 'sha256:' + createHash('sha256')
   .update(settleTicks.map((row) => row.stateHash).join('\n')).digest('hex');
-check('settle sequence hash is the committed ' + MAP.label + ' sequence', settleSequence === sliceSettle.summary.stateSequenceHash,
-  settleSequence);
+let settleMismatch = null;
+if (sliceSettle) {
+  settleMismatch = settleTicks.find((row, index) => row.stateHash !== sliceSettle.ticks[index]?.stateHash);
+  check('physics settle matches the committed 61/61 state hashes', !settleMismatch,
+    settleMismatch ? `tick ${settleMismatch.tick}: ${settleMismatch.stateHash} vs ${sliceSettle.ticks[settleMismatch.tick]?.stateHash}` : '');
+  check('settle sequence hash is the committed ' + MAP.label + ' sequence', settleSequence === sliceSettle.summary.stateSequenceHash,
+    settleSequence);
+} else {
+  check('settle sequence is recorded (no committed map-slice settle for this package)',
+    settleTicks.length === 61, 'not-committed');
+}
 check('settle keeps 4/4 wheel contacts on 61/61 ticks',
   settleTicks.every((row) => row.state.finite === 1 && row.state.anyContact === 1 &&
     row.state.contacts.reduce((sum, value) => sum + Number(value), 0) === 4));
