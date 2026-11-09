@@ -46,21 +46,30 @@ that line as the course source:
   * the segment is resampled at 0.25 m and every sample is checked against
     the P48 passable raster and the car half-width lateral band. If the
     racing line itself is band-clear, it is the path. If not, a station may
-    move along its own normal to a band-clear position in the declared
-    +/-12 m respawn band, searched at 0.25 m. The detour must be continuous
-    (consecutive detour points at most 0.5 m apart) and must return to the
-    racing line when it becomes clear. A deterministic second-order dynamic
-    program minimises total lateral deviation plus 8x the lateral change, so
-    the detour neither zigzags nor lingers. A station with no band-clear
-    lateral position in the window is a typed blocker with its exact
-    coordinate; a station that no continuous detour can reach is a typed
-    blocker with its exact coordinate.
+    move along its own normal to a band-clear position in a bounded window,
+    searched at 0.25 m. Two tiers are tried in order: `band` (the declared
+    +/-12 m respawn band) and `wide` (+/-24 m, a new course, only attempted
+    when the band tier has a station with no band-clear lateral position or
+    no continuous detour). The detour must be continuous (consecutive detour
+    points at most 0.5 m apart) and must return to the racing line when it
+    becomes clear. A deterministic second-order dynamic program minimises
+    total lateral deviation plus 8x the lateral change, so the detour neither
+    zigzags nor lingers. A station with no band-clear lateral position in the
+    tier window is a typed blocker with its exact coordinate; a station that
+    no continuous detour can reach is a typed blocker with its exact
+    coordinate. A level is a path only when the whole detoured line is
+    band-clear and continuous.
+  * when no racing line passes within 25 m of the committed spawn, the
+    nearest band-clear point on the line is measured as a snap candidate. A
+    snap farther than 25 m keeps the level blocked with the snap distance and
+    the candidate pose recorded.
 
 No coordinate is invented: the path is the decoded `.aid` racing line or a
-lateral shift along its own normal inside the declared +/-12 m respawn band,
-and every emitted sample is on the P48 passable raster with a passable car
-band. The path is the retail AI racing line projected onto collision; it is
-not a retail start line and it is not a driven lap.
+lateral shift along its own normal inside the attempted detour tier window
+(band +/-12 m, wide +/-24 m), and every emitted sample is on the P48 passable
+raster with a passable car band. The path is the retail AI racing line
+projected onto collision; it is not a retail start line and it is not a driven
+lap.
 
 Run:
 
@@ -174,8 +183,15 @@ MAX_SPAWN_OFFSET_M = 25.0          # 6 retail 4 m route steps
 GATE_HALF_WIDTH = 4.0              # 8 m requested gate line
 GATE_LINE_FRACTION_MIN = 0.5
 BAND_HALF_WIDTH = 6.0              # page validator's declared 6 m band
-CORRIDOR_HALF_WIDTH = 12.0         # declared respawn band; also the detour window
-DETOUR_SEARCH_M = CORRIDOR_HALF_WIDTH  # bounded lateral detour window
+CORRIDOR_HALF_WIDTH = 12.0         # declared respawn band
+# Detour tiers, tried in order. The first tier that yields a fully band-clear,
+# continuous line wins; the wider tier is only attempted when the narrower one
+# has a station with no band-clear lateral position (or no continuous detour).
+DETOUR_TIERS = (
+    ("band", CORRIDOR_HALF_WIDTH),  # the declared +/-12 m respawn band
+    ("wide", 24.0),                 # a NEW course: twice the declared band
+)
+DETOUR_SEARCH_M = CORRIDOR_HALF_WIDTH  # default (band) window
 DETOUR_STEP_M = 0.25               # lateral search step
 DETOUR_MAX_JUMP_M = 0.5            # continuity bound between consecutive samples
 DETOUR_SMOOTHNESS = 8.0            # cost per metre of lateral change (anti-zigzag)
@@ -344,18 +360,19 @@ def resample_with_frame(points, widths, start_arc, end_arc, closed):
     return stations, length
 
 
-def lateral_band_clear(base, xs, zs, x, z, tx, tz, half_width=HALF_WIDTH):
+def lateral_band_clear(base, xs, zs, x, z, tx, tz, half_width=HALF_WIDTH,
+                       search_m=DETOUR_SEARCH_M):
     """Band clearance at every lateral offset in the detour window.
 
-    Returns `(offsets, clear)`: the 0.25 m offsets from -12 m to +12 m and a
-    boolean per offset. The band is evaluated with the station tangent, the
-    racing-line frame in which the lateral detour is searched. This is the
+    Returns `(offsets, clear)`: the 0.25 m offsets from -search_m to +search_m
+    and a boolean per offset. The band is evaluated with the station tangent,
+    the racing-line frame in which the lateral detour is searched. This is the
     same 11-station 0.25 m band the single-point `band_passable` test uses,
     computed once per station with a sliding window.
     """
     nz, nx = base.shape
     nxv, nzv = -tz, tx
-    steps = int(round(DETOUR_SEARCH_M / DETOUR_STEP_M))
+    steps = int(round(search_m / DETOUR_STEP_M))
     band_steps = int(round(half_width / SAMPLE_STEP))
     fine = np.arange(-steps - band_steps, steps + band_steps + 1) * DETOUR_STEP_M
     px = x + nxv * fine
@@ -372,7 +389,15 @@ def lateral_band_clear(base, xs, zs, x, z, tx, tz, half_width=HALF_WIDTH):
     return offsets, clear
 
 
-def project_stations(base, xs, zs, stations):
+def window_phrase(tier, search_m):
+    """The exact window wording, so the band tier keeps its committed text."""
+    if tier == "band":
+        return "the declared +/-%.0f m respawn band" % search_m
+    return ("the +/-%.0f m wide detour window (a new course, not the declared "
+            "+/-%.0f m respawn band)" % (search_m, CORRIDOR_HALF_WIDTH))
+
+
+def project_stations(base, xs, zs, stations, tier="band", search_m=DETOUR_SEARCH_M):
     """Return (points, offsets, detours) or raise AidBlocked with the station.
 
     Detour rule (documented in README.md):
@@ -380,7 +405,8 @@ def project_stations(base, xs, zs, stations):
       * the racing line is used unchanged when every station's car half-width
         band is clear;
       * otherwise a station may move along its own normal to a band-clear
-        position inside the declared +/-12 m respawn band, searched at 0.25 m;
+        position inside the tier window (band: the declared +/-12 m respawn
+        band; wide: +/-24 m, a new course), searched at 0.25 m;
       * consecutive detour points are at most 0.5 m apart;
       * the line returns to the racing line (offset 0) as soon as continuity
         allows; the dynamic program minimises total lateral deviation plus
@@ -394,16 +420,18 @@ def project_stations(base, xs, zs, stations):
     cannot see that tangent and produces a zigzag whose rotated band fails.
     """
     count = len(stations)
-    steps = int(round(DETOUR_SEARCH_M / DETOUR_STEP_M))
+    steps = int(round(search_m / DETOUR_STEP_M))
     offsets = np.arange(-steps, steps + 1) * DETOUR_STEP_M
     k_count = len(offsets)
+    phrase = window_phrase(tier, search_m)
 
     # Per-station band in the racing-line frame: the no-detour test and the
     # racing-clear short circuit.
     valid = []
     racing_clear = []
     for (x, z, tx, tz, _width) in stations:
-        _offsets, clear = lateral_band_clear(base, xs, zs, x, z, tx, tz)
+        _offsets, clear = lateral_band_clear(base, xs, zs, x, z, tx, tz,
+                                             search_m=search_m)
         valid.append(clear)
         racing_clear.append(bool(clear[steps]))
 
@@ -418,13 +446,14 @@ def project_stations(base, xs, zs, stations):
             "x": num(x, 6),
             "z": num(z, 6),
             "widthMetres": num(width, 3),
-            "detourSearchMetres": num(DETOUR_SEARCH_M, 3),
+            "detourTier": tier,
+            "detourSearchMetres": num(search_m, 3),
             "blockedStations": len(bad),
             "reason": ("the retail racing line has no car-half-width (%.3f m) "
-                       "band-clear lateral position within the declared +/-%.0f m "
-                       "respawn band at station %d of %d (%.3f, %.3f); %d stations "
+                       "band-clear lateral position within %s at station "
+                       "%d of %d (%.3f, %.3f); %d stations "
                        "have no band-clear position"
-                       % (HALF_WIDTH, DETOUR_SEARCH_M, index, count, x, z,
+                       % (HALF_WIDTH, phrase, index, count, x, z,
                           len(bad))),
         })
 
@@ -453,12 +482,13 @@ def project_stations(base, xs, zs, stations):
             "stationCount": count,
             "x": num(x, 6),
             "z": num(z, 6),
-            "detourSearchMetres": num(DETOUR_SEARCH_M, 3),
+            "detourTier": tier,
+            "detourSearchMetres": num(search_m, 3),
             "detourMaxJumpMetres": num(DETOUR_MAX_JUMP_M, 3),
             "reason": ("no continuous band-clear detour sequence reaches station "
-                       "%d of %d (%.3f, %.3f) inside the declared +/-%.0f m respawn "
-                       "band with the %.1f m continuity bound"
-                       % (index, count, x, z, DETOUR_SEARCH_M,
+                       "%d of %d (%.3f, %.3f) inside %s with the %.1f m "
+                       "continuity bound"
+                       % (index, count, x, z, phrase,
                           DETOUR_MAX_JUMP_M)),
         })
 
@@ -535,8 +565,7 @@ def project_stations(base, xs, zs, stations):
         x, z, _tx, _tz, _width = stations[i]
         reason = (
             "the racing point is not car-half-width clear; the detour is the "
-            "nearest continuous band-clear lateral position in the declared "
-            "+/-12 m respawn band"
+            "nearest continuous band-clear lateral position in %s" % phrase
             if not racing_clear[i] else
             "continuity ramp to or from an adjacent detour station; the racing "
             "point itself is band-clear")
@@ -561,6 +590,116 @@ def final_band_failures(base, xs, zs, points):
         if not band_passable(base, xs, zs, x, z, tx / norm, tz / norm):
             failures.append((index, x, z))
     return failures
+
+
+def tier_attempt(tier, search_m, record):
+    """One tier's typed result, kept even when a later tier is tried."""
+    return {
+        "tier": tier,
+        "searchMetres": num(search_m, 3),
+        "stage": record.get("stage"),
+        "stationIndex": record.get("stationIndex"),
+        "stationCount": record.get("stationCount"),
+        "x": record.get("x"),
+        "z": record.get("z"),
+        "blockedStations": (record.get("blockedStations")
+                            if record.get("blockedStations") is not None
+                            else record.get("blockedSamples")),
+        "reason": record.get("reason"),
+    }
+
+
+def project_with_tiers(base, xs, zs, stations):
+    """Try each detour tier in order; return the first fully clear projection.
+
+    Returns `dict(points, offsets, detours, tier, searchMetres, attempts)`.
+    Raises the widest tier's AidBlocked with every attempt attached when no
+    tier yields a fully band-clear, continuous line.
+    """
+    attempts = []
+    last = None
+    for tier, search_m in DETOUR_TIERS:
+        try:
+            points, offsets, detours = project_stations(
+                base, xs, zs, stations, tier, search_m)
+        except AidBlocked as exc:
+            attempts.append(tier_attempt(tier, search_m, exc.record))
+            last = exc
+            continue
+        failures = final_band_failures(base, xs, zs, points)
+        if failures:
+            index, x, z = failures[0]
+            exc = AidBlocked({
+                "stage": "resampled-band",
+                "stationIndex": int(index),
+                "stationCount": len(points),
+                "x": num(x, 6),
+                "z": num(z, 6),
+                "detourTier": tier,
+                "detourSearchMetres": num(search_m, 3),
+                "blockedSamples": len(failures),
+                "reason": ("the detoured racing-line path fails the car half-width "
+                           "(%.3f m) lateral band at %d of %d resampled samples; "
+                           "first at station %d (%.3f, %.3f) in the %s tier"
+                           % (HALF_WIDTH, len(failures), len(points), index, x, z,
+                              tier)),
+            })
+            attempts.append(tier_attempt(tier, search_m, exc.record))
+            last = exc
+            continue
+        return dict(points=points, offsets=offsets, detours=detours,
+                    tier=tier, searchMetres=search_m, attempts=attempts)
+    last.record["detourTierAttempts"] = attempts
+    last.record["detourTier"] = attempts[-1]["tier"]
+    last.record["detourSearchMetres"] = attempts[-1]["searchMetres"]
+    raise last
+
+
+def loop_stations(points, widths):
+    """0.25 m stations over the whole closed racing line (arc 0 .. total)."""
+    arc = arc_table(points)
+    total = arc[-1]
+    stations = []
+    s = 0.0
+    while s < total - 1e-9:
+        index = int(np.searchsorted(arc, s)) - 1
+        index = max(0, min(len(points) - 2, index))
+        span = arc[index + 1] - arc[index]
+        t = (s - arc[index]) / span if span > 0 else 0.0
+        a, b = points[index], points[index + 1]
+        x = a[0] + (b[0] - a[0]) * t
+        z = a[1] + (b[1] - a[1]) * t
+        dx, dz = b[0] - a[0], b[1] - a[1]
+        norm = math.hypot(dx, dz) or 1.0
+        stations.append((x, z, dx / norm, dz / norm, float(widths[index]), s))
+        s += SAMPLE_STEP
+    return stations, total
+
+
+def nearest_band_clear(base, H, xs, zs, points, widths, x, z):
+    """Nearest band-clear 0.25 m station on the whole closed racing line.
+
+    The band is tested with the same 0.5 m central-difference tangent the
+    final path validation uses, so a snap candidate is a point the path rule
+    would accept.
+    """
+    stations, total = loop_stations(points, widths)
+    count = len(stations)
+    best = None
+    for index, (sx, sz, _tx, _tz, _width, arc) in enumerate(stations):
+        a = stations[(index - 1) % count]
+        b = stations[(index + 1) % count]
+        tx, tz = b[0] - a[0], b[1] - a[1]
+        norm = math.hypot(tx, tz) or 1.0
+        if not band_passable(base, xs, zs, sx, sz, tx / norm, tz / norm):
+            continue
+        distance = math.hypot(sx - x, sz - z)
+        if best is None or distance < best["metres"]:
+            i, j = cell_of(sx, sz, xs, zs)
+            best = dict(x=sx, z=sz, metres=distance, arc=arc,
+                        heading=math.atan2(tx / norm, tz / norm),
+                        ground=float(H[j, i]))
+    return best, total
 
 
 # --------------------------------------------------------------------------
@@ -735,8 +874,12 @@ def build_document(cfg, batch_pkg, grid_path, base, H, xs, zs, chosen, built):
     length = arc[-1]
     gates = build_gates(cfg, batch_pkg, base, H, xs, zs, samples_xy, arc, ground)
 
-    spawn = batch_pkg["spawn"]["layout"]["spawn"]
+    spawn = built["spawn"]
+    committed_spawn = built["committed_spawn"]
     finish = batch_pkg["path"]["end"]
+    tier = built["tier"]
+    search_m = built["search_metres"]
+    phrase = window_phrase(tier, search_m)
     start_gate = gates[0]
     finish_gate = gates[3]
     if abs(start_gate["x"] - samples_xy[0][0]) > 1e-6 or \
@@ -929,23 +1072,23 @@ def build_document(cfg, batch_pkg, grid_path, base, H, xs, zs, chosen, built):
             "projectionRule": ("the racing line is used unchanged when its car "
                                "half-width band is passable; otherwise a station "
                                "moves along its own normal to a band-clear "
-                               "position inside the declared +/-%.0f m respawn "
-                               "band (%.2f m steps) by a deterministic second-order "
+                               "position inside %s (%.2f m steps) by a "
+                               "deterministic second-order "
                                "dynamic program; consecutive detour points are at "
                                "most %.1f m apart and the line returns to the "
                                "racing line when it becomes clear"
-                               % (DETOUR_SEARCH_M, DETOUR_STEP_M,
+                               % (phrase, DETOUR_STEP_M,
                                   DETOUR_MAX_JUMP_M)),
             "detourRule": ("bounded lateral detour: a station whose racing point "
                            "is not car-half-width clear moves along its own normal "
                            "to the nearest continuous band-clear position inside "
-                           "the declared +/-%.0f m respawn band; the detour is "
+                           "%s; the detour is "
                            "continuous (<= %.1f m between consecutive samples) and "
                            "returns to the racing line when the racing point "
                            "becomes clear; every detour point is validated with the "
                            "line's own local tangent"
-                           % (DETOUR_SEARCH_M, DETOUR_MAX_JUMP_M)),
-            "detourSearchMetres": num(DETOUR_SEARCH_M, 3),
+                           % (phrase, DETOUR_MAX_JUMP_M)),
+            "detourSearchMetres": num(search_m, 3),
             "detourStepMetres": num(DETOUR_STEP_M, 3),
             "detourMaxJumpMetres": num(DETOUR_MAX_JUMP_M, 3),
             "detourStationCount": len(detours),
@@ -986,11 +1129,11 @@ def build_document(cfg, batch_pkg, grid_path, base, H, xs, zs, chosen, built):
             "aidRoute": route["name"],
             "aidWidthMinMetres": num(min(segment["width"] for segment in route["segments"]), 3),
             "aidWidthMaxMetres": num(max(segment["width"] for segment in route["segments"]), 3),
-            "lateralSearchMetres": num(DETOUR_SEARCH_M, 3),
+            "lateralSearchMetres": num(search_m, 3),
             "note": ("the .aid serialized width is the AI corridor; the path is the "
                      "racing line (line index 5) shifted along its own normal only "
-                     "when the racing line's car band is blocked, inside the "
-                     "declared +/-%.0f m respawn band" % DETOUR_SEARCH_M),
+                     "when the racing line's car band is blocked, inside %s"
+                     % phrase),
         },
         "endpoints": {
             "spawn": {
@@ -1063,6 +1206,21 @@ def build_document(cfg, batch_pkg, grid_path, base, H, xs, zs, chosen, built):
         "checkpointStationSource": ("straightest sample within +/-12 % of one-third / "
                                     "two-thirds of the measured racing-line arc"),
     }
+    # The band tier is the default and is already recorded as
+    # source.aid.detourSearchMetres = 12. A wide-tier path is a new course, so
+    # it names the tier explicitly. (Leaving the band documents byte-identical
+    # keeps the e1-drive layoutFileSha256 pins valid.)
+    if tier != "band":
+        source["aid"]["detourTier"] = tier
+        source["aid"]["detourTierAttempts"] = built["tier_attempts"]
+    if built["spawn_snap"] is not None:
+        source["spawnSnap"] = built["spawn_snap"]
+        source["endpoints"]["committedSpawn"] = {
+            "x": num(committed_spawn["x"], 6),
+            "z": num(committed_spawn["z"], 6),
+            "headingRad": num(committed_spawn["heading"], 9),
+            "groundY": num(committed_spawn["ground"], 4),
+        }
 
     # ---------------------------------------------------------------- course
     course = {
@@ -1071,8 +1229,8 @@ def build_document(cfg, batch_pkg, grid_path, base, H, xs, zs, chosen, built):
                  "at the point nearest the committed draw-path end; every 0.25 m "
                  "sample is on the P48 passable raster and its car half-width lateral "
                  "band is passable; a blocked station moves along its own normal to a "
-                 "band-clear position inside the declared +/-12 m respawn band; no "
-                 "point is invented"),
+                 "band-clear position inside %s; no "
+                 "point is invented" % phrase),
         "name": cfg["course_name"],
         "spawn": {
             "x": start_gate["x"],
@@ -1106,16 +1264,16 @@ def build_document(cfg, batch_pkg, grid_path, base, H, xs, zs, chosen, built):
             "stations": len(detours),
             "runs": detour_runs,
             "maxLateralOffsetMetres": num(detour_max, 4),
-            "searchMetres": num(DETOUR_SEARCH_M, 3),
+            "searchMetres": num(search_m, 3),
             "stepMetres": num(DETOUR_STEP_M, 3),
             "maxJumpMetres": num(DETOUR_MAX_JUMP_M, 3),
             "rule": ("a station whose racing point is not car-half-width clear "
                      "moves along its own normal to the nearest continuous "
-                     "band-clear position inside the declared +/-%.0f m respawn "
-                     "band; consecutive detour points are at most %.1f m apart; "
+                     "band-clear position inside %s; consecutive detour "
+                     "points are at most %.1f m apart; "
                      "the line returns to the racing line when the racing point "
                      "becomes clear"
-                     % (DETOUR_SEARCH_M, DETOUR_MAX_JUMP_M)),
+                     % (phrase, DETOUR_MAX_JUMP_M)),
         },
         "span": {
             "startArc": 0,
@@ -1241,10 +1399,10 @@ def build_document(cfg, batch_pkg, grid_path, base, H, xs, zs, chosen, built):
                  "at every 0.25 m sample; there is no isotropic erosion margin"
                  % HALF_WIDTH),
                 ("%d of %d samples are detoured up to %.3f m along the racing-line "
-                 "normal inside the declared +/-%.0f m respawn band; the detour is "
+                 "normal inside %s; the detour is "
                  "continuous (<= %.1f m between consecutive samples) and returns to "
                  "the racing line when the racing point becomes clear"
-                 % (len(detours), len(samples), detour_max, DETOUR_SEARCH_M,
+                 % (len(detours), len(samples), detour_max, phrase,
                     DETOUR_MAX_JUMP_M)),
                 ("the 6 m band is the page validator's declared controller/respawn "
                  "band; the measured respawn corridor is %.1f m"
@@ -1295,67 +1453,106 @@ def build_level(cfg, data, entries, routes):
     batch_pkg = batch.load_batch(cfg, log=lambda *_args: None)
     grid = np.load(ROOT / cfg["grid"])
     base, H, xs, zs = grid["base"], grid["height"], grid["xs"], grid["zs"]
-    spawn = batch_pkg["spawn"]["layout"]["spawn"]
+    committed_spawn = batch_pkg["spawn"]["layout"]["spawn"]
+    spawn = committed_spawn
     finish = batch_pkg["path"]["end"]
     cfg["_spawn"] = (float(spawn["x"]), float(spawn["z"]))
 
     chosen = choose_racing_line(cfg, data, entries, routes)
     if chosen is None:
+        prefix = ("\\gamedata\\levels\\%s\\" % cfg["level"]).lower()
+        directory = sorted(entry["path"] for key, entry in entries.items()
+                           if key.startswith(prefix))
+        aid_files = level_aid_entries(entries, cfg["level"])
+        if not aid_files:
+            reason = ("no .aid file exists under \\gamedata\\levels\\%s\\; the "
+                      "level directory ships %d file%s (%s)"
+                      % (cfg["level"], len(directory),
+                         "" if len(directory) == 1 else "s",
+                         ", ".join(directory) if directory else "none"))
+        else:
+            reason = ("no .aid file with a closed non-logic racing line at least "
+                      "%.0f m long exists under \\gamedata\\levels\\%s\\"
+                      % (MIN_LOOP_M, cfg["level"]))
         raise AidBlocked({
             "stage": "aid-missing",
-            "reason": ("no .aid file with a closed non-logic racing line at least "
-                       "%.0f m long exists under \\gamedata\\levels\\%s\\"
-                       % (MIN_LOOP_M, cfg["level"])),
+            "aidEntriesFound": len(aid_files),
+            "levelDirectoryEntries": directory,
+            "reason": reason,
         })
+
+    widths = [segment["width"] for segment in chosen["route"]["segments"]]
+    spawn_snap = None
     if chosen["spawnDistance"] > MAX_SPAWN_OFFSET_M:
         nearest = nearest_on_polyline(chosen["points"], spawn["x"], spawn["z"])
-        arc = arc_table(chosen["points"])
         index = nearest["segment"]
         t = nearest["t"]
         px = chosen["points"][index][0] + (chosen["points"][index + 1][0]
                                            - chosen["points"][index][0]) * t
         pz = chosen["points"][index][1] + (chosen["points"][index + 1][1]
                                            - chosen["points"][index][1]) * t
-        raise AidBlocked({
-            "stage": "spawn-match",
-            "aid": chosen,
-            "x": num(px, 6),
-            "z": num(pz, 6),
-            "spawnDistanceMetres": num(chosen["spawnDistance"], 4),
-            "maxSpawnOffsetMetres": MAX_SPAWN_OFFSET_M,
-            "reason": ("no retail .aid racing line passes within %.0f m of the "
-                       "committed spawn; the nearest is %s route %d at %.3f m "
-                       "(nearest point %.3f, %.3f)"
-                       % (MAX_SPAWN_OFFSET_M, chosen["route"]["name"],
-                          chosen["route"]["index"], chosen["spawnDistance"], px, pz)),
-        })
+        snap, _loop_length = nearest_band_clear(
+            base, H, xs, zs, chosen["points"], widths, spawn["x"], spawn["z"])
+        spawn_snap = {
+            "attempted": True,
+            "limitMetres": num(MAX_SPAWN_OFFSET_M, 3),
+            "nearestRacingLinePoint": {
+                "x": num(px, 6),
+                "z": num(pz, 6),
+                "metres": num(chosen["spawnDistance"], 4),
+            },
+            "nearestBandClearPoint": (None if snap is None else {
+                "x": num(snap["x"], 6),
+                "z": num(snap["z"], 6),
+                "metres": num(snap["metres"], 4),
+                "arc": num(snap["arc"], 6),
+                "headingRad": num(snap["heading"], 9),
+                "groundY": num(snap["ground"], 4),
+            }),
+            "withinLimit": bool(snap is not None
+                                and snap["metres"] <= MAX_SPAWN_OFFSET_M),
+        }
+        if not spawn_snap["withinLimit"]:
+            snap_text = ("no band-clear point on the line" if snap is None else
+                         "the nearest band-clear point on that line is %.3f m away"
+                         % snap["metres"])
+            raise AidBlocked({
+                "stage": "spawn-match",
+                "aid": chosen,
+                "x": num(px, 6),
+                "z": num(pz, 6),
+                "spawnDistanceMetres": num(chosen["spawnDistance"], 4),
+                "maxSpawnOffsetMetres": MAX_SPAWN_OFFSET_M,
+                "spawnSnap": spawn_snap,
+                "reason": ("no retail .aid racing line passes within %.0f m of the "
+                           "committed spawn; the nearest is %s route %d at %.3f m "
+                           "(nearest point %.3f, %.3f); %s, beyond the %.0f m "
+                           "snap limit"
+                           % (MAX_SPAWN_OFFSET_M, chosen["route"]["name"],
+                              chosen["route"]["index"], chosen["spawnDistance"],
+                              px, pz, snap_text, MAX_SPAWN_OFFSET_M)),
+            })
+        # The snap is inside the match limit: build from the snapped pose.
+        spawn = {"x": snap["x"], "z": snap["z"], "heading": snap["heading"],
+                 "ground": snap["ground"]}
+        cfg["_spawn"] = (spawn["x"], spawn["z"])
+        chosen = choose_racing_line(cfg, data, entries, routes)
+        widths = [segment["width"] for segment in chosen["route"]["segments"]]
 
     finish_nearest = nearest_on_polyline(chosen["points"], finish["x"], finish["z"])
     stations, length = resample_with_frame(
-        chosen["points"],
-        [segment["width"] for segment in chosen["route"]["segments"]],
-        chosen["spawnArc"], finish_nearest["arc"], closed=True)
+        chosen["points"], widths, chosen["spawnArc"], finish_nearest["arc"],
+        closed=True)
     try:
-        points, offsets, detours = project_stations(base, xs, zs, stations)
+        projected = project_with_tiers(base, xs, zs, stations)
     except AidBlocked as exc:
         exc.record.setdefault("aid", chosen)
+        if spawn_snap is not None:
+            exc.record.setdefault("spawnSnap", spawn_snap)
         raise
-    failures = final_band_failures(base, xs, zs, points)
-    if failures:
-        index, x, z = failures[0]
-        raise AidBlocked({
-            "stage": "resampled-band",
-            "aid": chosen,
-            "stationIndex": int(index),
-            "stationCount": len(points),
-            "x": num(x, 6),
-            "z": num(z, 6),
-            "blockedSamples": len(failures),
-            "reason": ("the detoured racing-line path fails the car half-width "
-                       "(%.3f m) lateral band at %d of %d resampled samples; first "
-                       "at station %d (%.3f, %.3f)"
-                       % (HALF_WIDTH, len(failures), len(points), index, x, z)),
-        })
+    points = projected["points"]
+    offsets = projected["offsets"]
+    detours = projected["detours"]
 
     arc = arc_table(points)
     ground = []
@@ -1372,7 +1569,13 @@ def build_level(cfg, data, entries, routes):
                  spawn_distance=chosen["spawnDistance"],
                  finish_distance=finish_nearest["distance"],
                  path_start_distance=path_start_distance,
-                 path_finish_distance=path_finish_distance)
+                 path_finish_distance=path_finish_distance,
+                 tier=projected["tier"],
+                 search_metres=projected["searchMetres"],
+                 tier_attempts=projected["attempts"],
+                 spawn_snap=spawn_snap,
+                 spawn=spawn,
+                 committed_spawn=committed_spawn)
     doc = build_document(cfg, batch_pkg, ROOT / cfg["grid"], base, H, xs, zs,
                          chosen, built)
     return doc, chosen
@@ -1397,6 +1600,7 @@ def blocker_record(cfg, exc):
             "loopLengthMetres": num(chosen["length"], 6),
             "spawnProjectionMetres": num(chosen["spawnDistance"], 4),
         }
+    attempts = record.get("detourTierAttempts", [])
     return {
         "level": cfg["level"],
         "mapId": cfg["map_id"],
@@ -1405,6 +1609,8 @@ def blocker_record(cfg, exc):
         "samples": 0,
         "gateArcs": [],
         "aid": aid_block,
+        "detourTier": record.get("detourTier"),
+        "detourSearchMetres": record.get("detourSearchMetres"),
         "blocker": {
             "stage": record.get("stage"),
             "x": record.get("x"),
@@ -1413,10 +1619,15 @@ def blocker_record(cfg, exc):
             "stationCount": record.get("stationCount"),
             "spawnDistanceMetres": record.get("spawnDistanceMetres"),
             "maxSpawnOffsetMetres": record.get("maxSpawnOffsetMetres"),
+            "detourTier": record.get("detourTier"),
             "detourSearchMetres": record.get("detourSearchMetres"),
             "detourMaxJumpMetres": record.get("detourMaxJumpMetres"),
             "blockedStations": record.get("blockedStations"),
             "blockedSamples": record.get("blockedSamples"),
+            "aidEntriesFound": record.get("aidEntriesFound"),
+            "levelDirectoryEntries": record.get("levelDirectoryEntries"),
+            "spawnSnap": record.get("spawnSnap"),
+            "detourTierAttempts": attempts,
         },
         "reason": record["reason"],
         "pathFile": None,
@@ -1425,9 +1636,18 @@ def blocker_record(cfg, exc):
     }
 
 
+def tier_from_search(search_m):
+    """The tier name for a recorded window width (12 m -> band, 24 m -> wide)."""
+    for tier, value in DETOUR_TIERS:
+        if abs(value - search_m) < 1e-9:
+            return tier
+    return None
+
+
 def summary_entry(cfg, doc, chosen, path_file):
     text = json.dumps(doc, indent=1, ensure_ascii=False) + "\n"
     encoded = text.encode("utf-8")
+    tier = tier_from_search(doc["course"]["detour"]["searchMetres"])
     return {
         "level": cfg["level"],
         "mapId": cfg["map_id"],
@@ -1450,14 +1670,17 @@ def summary_entry(cfg, doc, chosen, path_file):
             "finishProjectionMetres": num(doc["source"]["aid"]["finishProjectionMetres"], 4),
         },
         "reason": ("the retail racing line is car-half-width clear on this segment "
-                   "after %d detour stations (max %.3f m); the path starts at the "
-                   "point nearest the committed spawn and ends at the point nearest "
-                   "the committed draw-path end"
+                   "after %d detour stations (max %.3f m) in the %s tier; the path "
+                   "starts at the point nearest the committed spawn and ends at the "
+                   "point nearest the committed draw-path end"
                    % (doc["course"]["detour"]["stations"],
-                      doc["course"]["detour"]["maxLateralOffsetMetres"])),
+                      doc["course"]["detour"]["maxLateralOffsetMetres"],
+                      tier)),
         "detours": doc["course"]["detour"]["stations"],
         "detourRuns": doc["course"]["detour"]["runs"],
         "maxLateralOffsetMetres": doc["course"]["detour"]["maxLateralOffsetMetres"],
+        "detourTier": tier,
+        "detourSearchMetres": doc["course"]["detour"]["searchMetres"],
         "pathFile": path_file,
         "pathFileSha256": "sha256:" + hashlib.sha256(encoded).hexdigest(),
         "pathContentHash": doc["hash"],
@@ -1466,7 +1689,7 @@ def summary_entry(cfg, doc, chosen, path_file):
 
 def build_summary(entries):
     return {
-        "schema": "blur.map-laps-aid.aid-paths/2",
+        "schema": "blur.map-laps-aid.aid-paths/3",
         "source": {
             "builder": "probes/map-laps-aid/tools/build_aid_paths.py",
             "aidDecoder": "probes/course/tools/aid_decode.py",
@@ -1476,13 +1699,21 @@ def build_summary(entries):
                             "LevelState.cpp:298"),
             "pak": PAK_RELATIVE,
             "routes": ROUTES_RELATIVE,
-            "detourRule": ("a station whose racing point is not car-half-width clear "
-                           "moves along its own normal to the nearest continuous "
-                           "band-clear position inside the declared +/-%.0f m respawn "
-                           "band (%.2f m steps); consecutive detour points are at most "
-                           "%.1f m apart; the line returns to the racing line when the "
-                           "racing point becomes clear"
-                           % (DETOUR_SEARCH_M, DETOUR_STEP_M, DETOUR_MAX_JUMP_M)),
+            "detourTiers": [
+                {"tier": tier, "searchMetres": num(search_m, 3)}
+                for tier, search_m in DETOUR_TIERS
+            ],
+            "detourRule": ("tiers are tried in order: 'band' is the declared "
+                           "+/-12 m respawn band; 'wide' is a +/-24 m window, a new "
+                           "course, and is only attempted when the band tier has a "
+                           "station with no band-clear lateral position (or no "
+                           "continuous detour). A tier succeeds only when the whole "
+                           "detoured line is car-half-width clear and continuous "
+                           "(<= 0.5 m between consecutive samples); a station whose "
+                           "racing point is not clear moves along its own normal to "
+                           "the nearest continuous band-clear position in the tier "
+                           "window (0.25 m steps) and the line returns to the racing "
+                           "line when the racing point becomes clear"),
             "note": ("lengths are the committed path documents; blocked reasons are "
                      "the builder's typed records, never paraphrased"),
         },
@@ -1533,6 +1764,16 @@ def main(argv=None):
                 "mapId": row["mapId"],
                 "verdict": "blocked",
                 "stage": row["blocker"]["stage"],
+                "detourTier": row["detourTier"],
+                "detourSearchMetres": row["detourSearchMetres"],
+                "tierAttempts": [
+                    {"tier": attempt["tier"],
+                     "searchMetres": attempt["searchMetres"],
+                     "stage": attempt["stage"],
+                     "blockedStations": attempt["blockedStations"],
+                     "stationIndex": attempt["stationIndex"]}
+                    for attempt in row["blocker"]["detourTierAttempts"]
+                ],
                 "reason": row["reason"],
             }, indent=1))
             continue

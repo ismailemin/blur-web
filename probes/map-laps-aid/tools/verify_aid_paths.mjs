@@ -15,11 +15,15 @@
 //   * every detour record is checked against the racing point and the path
 //     sample: band clearance, lateral offset, continuity (<= 0.5 m) and the
 //     return to the racing line;
+//   * the detour tier is checked against its window: `band` is the declared
+//     +/-12 m respawn band, `wide` is +/-24 m (a new course). A path is only
+//     accepted when the whole detoured line is band-clear and continuous;
 //   * the gates are checked for order, arcs, the +/-12 % checkpoint window,
 //     the 1 m approach side and the gate-line passability;
 //   * every blocked verdict is re-derived from its witness: the spawn match
-//     distance, the station with no band-clear lateral position in the
-//     declared +/-12 m detour window, or the detour-dp station.
+//     distance and its band-clear snap candidate, the station with no
+//     band-clear lateral position at each attempted tier, or the detour-dp
+//     station.
 //
 // The `.aid` decoder and pak reader mirror
 // probes/powerups/tools/build_pickup_routes.mjs (read-only reference); the
@@ -42,13 +46,20 @@ const SAMPLE_STEP = 0.25;
 const HALF_WIDTH = 1.138;
 const MIN_LOOP_M = 300;
 const MAX_SPAWN_OFFSET_M = 25;
-const DETOUR_SEARCH_M = 12;
+const DETOUR_TIERS = [
+  { tier: 'band', searchMetres: 12 },
+  { tier: 'wide', searchMetres: 24 },
+];
 const DETOUR_STEP_M = 0.25;
 const DETOUR_MAX_JUMP_M = 0.5;
 const RACING_LINE = 5;
 const GATE_HALF_WIDTH = 4.0;
 const GATE_LINE_FRACTION_MIN = 0.5;
 const TANGENT_WINDOW = 5.0;
+
+function tierFor(searchMetres) {
+  return DETOUR_TIERS.find((entry) => Math.abs(entry.searchMetres - searchMetres) < 1e-9) || null;
+}
 
 const checks = [];
 const failures = [];
@@ -345,6 +356,51 @@ function bandPassable(raster, x, z, tx, tz, halfWidth = HALF_WIDTH) {
   return true;
 }
 
+// The car-half-width band at every 0.25 m lateral offset in the tier window,
+// in the racing-line frame. Same sliding window as the builder's
+// lateral_band_clear. Returns one byte per offset (-searchM .. +searchM).
+function bandClearWindow(raster, x, z, tx, tz, searchMetres) {
+  const steps = Math.round(searchMetres / DETOUR_STEP_M);
+  const bandSteps = Math.round(HALF_WIDTH / SAMPLE_STEP);
+  const nx = -tz;
+  const nz = tx;
+  const total = 2 * (steps + bandSteps) + 1;
+  const ok = new Uint8Array(total);
+  for (let k = 0; k < total; k++) {
+    const d = (k - steps - bandSteps) * DETOUR_STEP_M;
+    ok[k] = passable(raster, x + nx * d, z + nz * d) ? 1 : 0;
+  }
+  const window = 2 * bandSteps + 1;
+  const clear = new Uint8Array(2 * steps + 1);
+  let sum = 0;
+  for (let w = 0; w < window; w++) sum += ok[w];
+  clear[0] = sum === window ? 1 : 0;
+  for (let k = 1; k <= 2 * steps; k++) {
+    sum += ok[k + window - 1] - ok[k - 1];
+    clear[k] = sum === window ? 1 : 0;
+  }
+  return clear;
+}
+
+// Count the stations with no band-clear lateral position at a tier window and
+// record the first one. This is the builder's typed blocker, re-derived.
+function tierStats(raster, stations, searchMetres) {
+  let blocked = 0;
+  let first = null;
+  for (let index = 0; index < stations.length; index++) {
+    const station = stations[index];
+    const clear = bandClearWindow(raster, station.x, station.z,
+      station.tx, station.tz, searchMetres);
+    let any = false;
+    for (let k = 0; k < clear.length; k++) if (clear[k]) { any = true; break; }
+    if (!any) {
+      blocked += 1;
+      if (first === null) first = index;
+    }
+  }
+  return { blocked, first };
+}
+
 function arcTable(points) {
   const arc = [0];
   for (let index = 0; index < points.length - 1; index++) {
@@ -398,6 +454,54 @@ function resampleWithFrame(points, widths, startArc, endArc, closed) {
     s += SAMPLE_STEP;
   }
   return { stations, length };
+}
+
+// 0.25 m stations over the whole closed racing line (arc 0 .. total), the
+// same sampler the builder uses for the spawn-snap candidate.
+function resampleLoop(points, widths) {
+  const arc = arcTable(points);
+  const total = arc[arc.length - 1];
+  const stations = [];
+  let s = 0;
+  while (s < total - 1e-9) {
+    let index = 0;
+    while (index < arc.length - 2 && arc[index + 1] < s) index++;
+    const span = arc[index + 1] - arc[index];
+    const t = span > 0 ? (s - arc[index]) / span : 0;
+    const a = points[index];
+    const b = points[index + 1];
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const norm = Math.hypot(dx, dz) || 1;
+    stations.push({
+      x: a[0] + dx * t, z: a[1] + dz * t, tx: dx / norm, tz: dz / norm, arc: s,
+    });
+    s += SAMPLE_STEP;
+  }
+  return { stations, total };
+}
+
+// Nearest band-clear point on the closed line, tested with the 0.5 m
+// central-difference tangent the path validation uses.
+function nearestBandClear(raster, points, widths, x, z) {
+  const { stations, total } = resampleLoop(points, widths);
+  const count = stations.length;
+  let best = null;
+  for (let index = 0; index < count; index++) {
+    const station = stations[index];
+    const a = stations[(index - 1 + count) % count];
+    const b = stations[(index + 1) % count];
+    const tx = b.x - a.x;
+    const tz = b.z - a.z;
+    const norm = Math.hypot(tx, tz) || 1;
+    if (!bandPassable(raster, station.x, station.z, tx / norm, tz / norm)) continue;
+    const metres = Math.hypot(station.x - x, station.z - z);
+    if (best === null || metres < best.metres) {
+      best = { x: station.x, z: station.z, metres, arc: station.arc,
+        tx: tx / norm, tz: tz / norm };
+    }
+  }
+  return { best, total };
 }
 
 // ---------------------------------------------------------------- gates
@@ -490,11 +594,16 @@ function main() {
   const pakIndex = readPakIndex(pakBuffer);
   const routes = JSON.parse(readFileSync(path.join(ROOT, ROUTES_RELATIVE), 'utf8'));
 
-  check('summary schema', summary.schema === 'blur.map-laps-aid.aid-paths/2');
+  check('summary schema', summary.schema === 'blur.map-laps-aid.aid-paths/3');
   check('summary level count', summary.levels.length === 7, 'got ' + summary.levels.length);
   const counts = summary.summary.counts;
   check('summary path count', counts.path === summary.levels.filter((row) => row.verdict === 'path').length);
   check('summary blocked count', counts.blocked === summary.levels.filter((row) => row.verdict === 'blocked').length);
+  check('summary detour tiers',
+    Array.isArray(summary.source.detourTiers) && summary.source.detourTiers.length === DETOUR_TIERS.length
+      && summary.source.detourTiers.every((entry, index) =>
+        entry.tier === DETOUR_TIERS[index].tier
+        && entry.searchMetres === DETOUR_TIERS[index].searchMetres));
 
   const rasterCache = new Map();
   function rasterFor(mapId) {
@@ -530,6 +639,20 @@ function main() {
         'expected no .aid, found ' + aidEntries.map((entry) => entry.path).join(', '));
       check(level + ': summary aid null', row.aid === null);
       check(level + ': blocker reason', typeof row.reason === 'string' && row.reason.length > 0);
+      check(level + ': recorded aid entry count', row.blocker.aidEntriesFound === aidEntries.length,
+        row.blocker.aidEntriesFound + ' vs ' + aidEntries.length);
+      const directory = [...pakIndex.entries.values()]
+        .filter((entry) => entry.path.toLowerCase().startsWith(prefix.toLowerCase()))
+        .map((entry) => entry.path)
+        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      check(level + ': recorded level directory',
+        Array.isArray(row.blocker.levelDirectoryEntries)
+          && row.blocker.levelDirectoryEntries.length === directory.length
+          && row.blocker.levelDirectoryEntries.every((value, index) => value === directory[index]),
+        JSON.stringify(row.blocker.levelDirectoryEntries) + ' vs ' + JSON.stringify(directory));
+      check(level + ': no detour tier attempted',
+        row.detourTier === null && Array.isArray(row.blocker.detourTierAttempts)
+          && row.blocker.detourTierAttempts.length === 0);
       continue;
     }
 
@@ -655,8 +778,23 @@ function main() {
         doc.source.aid.detourStationCount === detourStations.length);
       check(level + ': source detour runs',
         typeof doc.source.aid.detourRunCount === 'number');
-      check(level + ': detour search window',
-        doc.source.aid.detourSearchMetres === DETOUR_SEARCH_M);
+
+      // ---------------------------------------------------------------- tier
+      const tier = tierFor(row.detourSearchMetres);
+      check(level + ': summary detour tier', tier !== null, String(row.detourTier));
+      check(level + ': summary tier name', tier !== null && row.detourTier === tier.tier,
+        row.detourTier + ' vs ' + (tier ? tier.tier : 'unknown'));
+      check(level + ': path detour window matches the tier',
+        tier !== null && doc.source.aid.detourSearchMetres === tier.searchMetres,
+        doc.source.aid.detourSearchMetres + ' vs ' + (tier ? tier.searchMetres : 'unknown'));
+      check(level + ': course detour window matches the tier',
+        tier !== null && doc.course.detour.searchMetres === tier.searchMetres);
+      check(level + ': band tier is the default',
+        row.detourTier !== 'band' || doc.source.aid.detourTier === undefined,
+        'band paths record the tier as detourSearchMetres = 12');
+      check(level + ': wide tier is named in the path document',
+        row.detourTier !== 'wide' || doc.source.aid.detourTier === 'wide',
+        String(doc.source.aid.detourTier));
       check(level + ': detour step',
         doc.source.aid.detourStepMetres === DETOUR_STEP_M);
       check(level + ': detour continuity bound',
@@ -667,6 +805,12 @@ function main() {
       check(level + ': detour records count',
         Array.isArray(doc.source.aid.detours)
           && doc.source.aid.detours.length === detourStations.length);
+      check(level + ': every lateral offset inside the tier window',
+        tier !== null && lateralOffsets.every((value) =>
+          Math.abs(value) <= tier.searchMetres + 1e-6),
+        'max ' + Math.max(...lateralOffsets.map((value) => Math.abs(value))));
+      check(level + ': max lateral offset inside the tier window',
+        tier !== null && Math.abs(row.maxLateralOffsetMetres) <= tier.searchMetres + 1e-6);
 
       // Re-derive the 0.25 m stations from the pak.
       const finishNearest = nearestOnPolyline(chosen.points, pathDoc.end.x, pathDoc.end.z);
@@ -712,7 +856,7 @@ function main() {
           && Math.abs(record.detourPoint.z - sample.z) < 1e-6
           && Math.abs(record.lateralOffset - lateralOffsets[index]) < 1e-6
           && Math.abs(record.lateralOffset - signed) < 1e-3
-          && Math.abs(record.lateralOffset) <= DETOUR_SEARCH_M + 1e-6
+          && Math.abs(record.lateralOffset) <= tier.searchMetres + 1e-6
           && reasonText.length > 0
           && reasonOk;
         if (!ok) {
@@ -897,6 +1041,32 @@ function main() {
       check(level + ': recorded nearest point',
         Math.abs(row.blocker.x - x) < 0.01 && Math.abs(row.blocker.z - z) < 0.01,
         row.blocker.x + ',' + row.blocker.z + ' vs ' + x + ',' + z);
+
+      // Re-derive the nearest band-clear point on the whole racing line.
+      const snap = row.blocker.spawnSnap;
+      check(level + ': spawn snap recorded',
+        snap && snap.attempted === true && snap.limitMetres === MAX_SPAWN_OFFSET_M);
+      const widths = chosen.route.segments.map((segment) => segment.width);
+      const { best } = nearestBandClear(raster, chosen.points, widths, spawn.x, spawn.z);
+      check(level + ': a band-clear snap candidate exists', best !== null);
+      if (best && snap && snap.nearestBandClearPoint) {
+        const point = snap.nearestBandClearPoint;
+        check(level + ': snap distance',
+          Math.abs(point.metres - best.metres) < 0.01,
+          point.metres + ' vs ' + best.metres);
+        check(level + ': snap point',
+          Math.abs(point.x - best.x) < 0.01 && Math.abs(point.z - best.z) < 0.01,
+          point.x + ',' + point.z + ' vs ' + best.x + ',' + best.z);
+        check(level + ': snap heading',
+          Math.abs(point.headingRad - Math.atan2(best.tx, best.tz)) < 1e-3,
+          point.headingRad + ' vs ' + Math.atan2(best.tx, best.tz));
+        check(level + ': snap exceeds the match limit',
+          best.metres > MAX_SPAWN_OFFSET_M, best.metres + ' <= ' + MAX_SPAWN_OFFSET_M);
+        check(level + ': snap is not accepted', snap.withinLimit === false);
+      }
+      check(level + ': no detour tier attempted',
+        row.detourTier === null && Array.isArray(row.blocker.detourTierAttempts)
+          && row.blocker.detourTierAttempts.length === 0);
       continue;
     }
 
@@ -905,6 +1075,48 @@ function main() {
       const widths = chosen.route.segments.map((segment) => segment.width);
       const { stations } = resampleWithFrame(chosen.points, widths, chosen.spawnArc,
         finishNearest.arc, true);
+
+      const attempts = row.blocker.detourTierAttempts;
+      check(level + ': tier attempts recorded',
+        Array.isArray(attempts) && attempts.length >= 1);
+      check(level + ': tier attempts follow the tier table',
+        Array.isArray(attempts) && attempts.every((attempt, index) =>
+          DETOUR_TIERS[index]
+            && attempt.tier === DETOUR_TIERS[index].tier
+            && attempt.searchMetres === DETOUR_TIERS[index].searchMetres));
+      check(level + ': band tier is attempted first',
+        Array.isArray(attempts) && attempts.length >= 1 && attempts[0].tier === 'band');
+      const widest = Array.isArray(attempts) && attempts.length > 0
+        ? attempts[attempts.length - 1] : null;
+      check(level + ': recorded blocker is the widest tier',
+        widest !== null && row.detourTier === widest.tier
+          && row.detourSearchMetres === widest.searchMetres,
+        row.detourTier + ' vs ' + (widest ? widest.tier : 'none'));
+      check(level + ': blocker tier fields agree',
+        widest !== null && row.blocker.detourTier === widest.tier
+          && row.blocker.detourSearchMetres === widest.searchMetres);
+
+      // Re-derive every attempted tier: the full undetourable count and the
+      // first station. This is the builder's typed blocker, not a paraphrase.
+      for (const attempt of (Array.isArray(attempts) ? attempts : [])) {
+        const stats = tierStats(raster, stations, attempt.searchMetres);
+        check(level + ': ' + attempt.tier + ' blocked station count',
+          attempt.blockedStations === stats.blocked,
+          attempt.blockedStations + ' vs ' + stats.blocked);
+        check(level + ': ' + attempt.tier + ' first blocked station',
+          attempt.stationIndex === stats.first,
+          attempt.stationIndex + ' vs ' + stats.first);
+        check(level + ': ' + attempt.tier + ' blocker stage',
+          attempt.stage === 'no-band-clear-lateral', String(attempt.stage));
+        if (stats.first !== null) {
+          const first = stations[stats.first];
+          check(level + ': ' + attempt.tier + ' first station coordinate',
+            Math.abs(attempt.x - first.x) < 0.01
+              && Math.abs(attempt.z - first.z) < 0.01,
+            attempt.x + ',' + attempt.z + ' vs ' + first.x + ',' + first.z);
+        }
+      }
+
       check(level + ': recorded station index in range',
         row.blocker.stationIndex >= 0 && row.blocker.stationIndex < stations.length);
       const station = stations[row.blocker.stationIndex];
@@ -913,18 +1125,18 @@ function main() {
         row.blocker.x + ',' + row.blocker.z + ' vs ' + station.x + ',' + station.z);
       check(level + ': racing line band fails at the witness',
         !bandPassable(raster, station.x, station.z, station.tx, station.tz));
-      const steps = Math.floor(DETOUR_SEARCH_M / DETOUR_STEP_M + 1e-9);
-      let anyClear = false;
-      for (let k = -steps; k <= steps; k++) {
-        const d = k * DETOUR_STEP_M;
-        const x = station.x - station.tz * d;
-        const z = station.z + station.tx * d;
-        if (bandPassable(raster, x, z, station.tx, station.tz)) { anyClear = true; break; }
-      }
-      check(level + ': no band-clear lateral at the witness', !anyClear);
       check(level + ': detour search window recorded',
-        row.blocker.detourSearchMetres === DETOUR_SEARCH_M,
-        row.blocker.detourSearchMetres + ' vs ' + DETOUR_SEARCH_M);
+        widest !== null && row.blocker.detourSearchMetres === widest.searchMetres
+          && tierFor(row.blocker.detourSearchMetres) !== null,
+        row.blocker.detourSearchMetres + ' vs ' + (widest ? widest.searchMetres : 'none'));
+      const clear = bandClearWindow(raster, station.x, station.z,
+        station.tx, station.tz, row.blocker.detourSearchMetres);
+      check(level + ': no band-clear lateral at the witness',
+        !clear.some((value) => value === 1));
+      check(level + ': wide tier is only tried after the band tier fails',
+        widest === null || widest.tier !== 'wide'
+          || (attempts[0].stage === 'no-band-clear-lateral'
+            || attempts[0].stage === 'detour-dp'));
       continue;
     }
 
@@ -940,19 +1152,15 @@ function main() {
         Math.abs(row.blocker.x - station.x) < 0.01
           && Math.abs(row.blocker.z - station.z) < 0.01,
         row.blocker.x + ',' + row.blocker.z + ' vs ' + station.x + ',' + station.z);
-      const steps = Math.floor(DETOUR_SEARCH_M / DETOUR_STEP_M + 1e-9);
-      let anyClear = false;
-      for (let k = -steps; k <= steps; k++) {
-        const d = k * DETOUR_STEP_M;
-        if (bandPassable(raster, station.x - station.tz * d,
-          station.z + station.tx * d, station.tx, station.tz)) {
-          anyClear = true;
-          break;
-        }
-      }
-      check(level + ': detour-dp station has a band-clear lateral', anyClear);
+      const clear = bandClearWindow(raster, station.x, station.z,
+        station.tx, station.tz, row.blocker.detourSearchMetres);
+      check(level + ': detour-dp station has a band-clear lateral',
+        clear.some((value) => value === 1));
       check(level + ': detour-dp continuity bound',
         row.blocker.detourMaxJumpMetres === DETOUR_MAX_JUMP_M);
+      check(level + ': detour-dp tier recorded',
+        tierFor(row.blocker.detourSearchMetres) !== null
+          && row.detourTier === tierFor(row.blocker.detourSearchMetres).tier);
       continue;
     }
 
