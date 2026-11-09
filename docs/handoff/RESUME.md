@@ -12,6 +12,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Haritalar** | **13/19 oynanabilir**: river, amboy, gracia, longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**. |
 | **Araçlar** | **61/62** sürüş diliminde. Yalnızca `defaultcar` desteklenmiyor (gövde modeli yok). |
 | **Lightmap** | **11 haritada render'da** (river hariç). Amboy: **83 doku, 1173/1301 draw**. Dumbo 115 doku/1615 draw, Downtown MP 49 doku/207 draw. |
+| **Işık düzeltmesi** | Lightmap'siz draw'lar artık **ambient** ile aydınlanıyor; River/Gracia/Longbeach'in `SunColour=[0,0,0]` olması onları siyah bırakıyordu, düzeltildi. |
 | **Araç materyali** | Retail **boya** ve **ışık rengi** render'da. Corvette: `Canal_Blue` `[0.0252, 0.3712, 0.8228]`, 10 boya draw'ı; far/stop/sinyal kapakları retail `emissive` rengiyle. |
 | **Ses** | 23 olaylı retail kataloğu sayfaya bağlı. |
 | **HUD** | Hız göstergesi, vites, sıra/tur, güç yuvası, hasar/kalkan, geri sayım; 19/19 test. |
