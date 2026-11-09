@@ -57,7 +57,9 @@ const READ_PROBE = `(() => {
       hudText: el('hud')?.textContent ?? null,
       countdownHidden: el('countdown')?.hidden ?? null,
       countdownText: el('countdown')?.textContent ?? null,
-      eventText: el('event')?.textContent ?? null
+      eventText: el('event')?.textContent ?? null,
+      powerupHudHidden: el('powerup-hud')?.hidden ?? null,
+      powerupHudText: el('powerup-hud')?.textContent ?? null
     }
   };
 })()`;
@@ -721,6 +723,101 @@ export async function mpGracia(ctx) {
     guestCar: expected.guestCar,
     guestPace: expected.guestPace
   });
+}
+
+/**
+ * `mp-powerups`: the host enables the power-up slice (`&powerups=1`) and the
+ * room carries the flag to the guest. The scenario asserts the committed type
+ * set, the placed pickups, the HUD and a clean console on both pages.
+ *
+ * It deliberately does not assert a finish tick/time: a boost or a mine wreck
+ * legitimately changes the race, so the sprint anchors do not apply. The race is
+ * started and driven for a bounded window; the evidence is the power-up state.
+ */
+export async function mpPowerups(ctx) {
+  const mapId = 'river';
+  ctx.evidence.mapId = mapId;
+  const expected = { ...ctx.anchors.mp.river, hostCar: ctx.anchors.cars.default };
+  const roomBaseline = ctx.roomServer?.stats?.() ?? null;
+  const room = await openRoom(ctx, {
+    mapId,
+    hostCar: expected.hostCar,
+    guestCar: expected.guestCar,
+    guestPace: expected.guestPace,
+    hostExtra: '&powerups=1'
+  });
+  ctx.evidence.room = { code: room.code, hostUrl: room.hostUrl, guestUrl: room.guestUrl };
+  assertLobby(ctx, room, { mapId, hostCar: expected.hostCar, guestCar: expected.guestCar });
+
+  const hostConsoleFrom = room.host.messages.length;
+  const guestConsoleFrom = room.guest.messages.length;
+  await startRoomRace(ctx, room, { timeoutMs: 60000 });
+
+  const hostPower = await waitMp(ctx, room.host, (probe) =>
+    probe.mp.powerups?.enabled === true &&
+    probe.mp.powerups.phase === 'running' &&
+    probe.mp.powerups.pickupCount > 0,
+  { timeoutMs: 90000, label: 'host power-up world' });
+  const guestPower = await waitMp(ctx, room.guest, (probe) =>
+    probe.mp.powerups?.enabled === true,
+  { timeoutMs: 90000, label: 'guest power-up slice' });
+
+  const host = hostPower.mp.powerups;
+  const guest = guestPower.mp.powerups;
+  ctx.A.check('mp-powerups: host enabled the slice', host.enabled === true, host.enabled);
+  ctx.A.check('mp-powerups: the host power-up world is running', host.phase === 'running', host.phase);
+  ctx.A.check('mp-powerups: the committed eight types are exposed',
+    Array.isArray(host.types) && host.types.length === 8, host.types);
+  ctx.A.check('mp-powerups: the host placed pickups on the measured course',
+    host.pickupCount > 0, host.pickupCount);
+  ctx.A.check('mp-powerups: the placed pickups cover several types',
+    Array.isArray(host.pickupTypes) && host.pickupTypes.length >= 2, host.pickupTypes);
+  ctx.A.check('mp-powerups: the placement names its source',
+    host.placementSource === 'retail-arc-fraction-remap' ||
+      host.placementSource === 'provisional-measured-arc', host.placementSource);
+  ctx.A.check('mp-powerups: the placement block is labelled',
+    host.placement && typeof host.placement.mode === 'string', host.placement?.mode);
+  ctx.A.check('mp-powerups: the PWR1 manifest is pinned on the host',
+    typeof host.manifestHash === 'string' && host.manifestHash.length > 0, host.manifestHash);
+  ctx.A.check('mp-powerups: only SuperShield is deferred',
+    host.deferred && Object.keys(host.deferred).length === 1 && 'SuperShield' in host.deferred,
+    host.deferred);
+  ctx.A.check('mp-powerups: the room flag enabled the slice on the guest',
+    guest.enabled === true, guest.enabled);
+  ctx.A.check('mp-powerups: the guest sees the same type set',
+    JSON.stringify(guest.types) === JSON.stringify(host.types), ctx.fmt({ host: host.types, guest: guest.types }));
+  ctx.A.check('mp-powerups: the power-up HUD is visible on the host',
+    hostPower.overlays.powerupHudHidden === false, hostPower.overlays.powerupHudHidden);
+  ctx.A.check('mp-powerups: the HUD names the power-up types',
+    /POWER-UPS/.test(hostPower.overlays.powerupHudText ?? ''), hostPower.overlays.powerupHudText);
+
+  await ctx.shot(room.host, 'powerups-host');
+  await ctx.shot(room.guest, 'powerups-guest');
+
+  // The race must still complete with one shared result. A boost or a wreck may
+  // change the time, so only the shared-result invariants are asserted here.
+  const hostFinish = await waitMp(ctx, room.host, (probe) => probe.mp.result !== null,
+    { timeoutMs: 240000, label: 'host power-up finish' });
+  const guestFinish = await waitMp(ctx, room.guest, (probe) => probe.mp.result !== null,
+    { timeoutMs: 240000, label: 'guest power-up finish' });
+  ctx.A.check('mp-powerups: both pages reached the shared result',
+    hostFinish.mp.phase === 'finished' && guestFinish.mp.phase === 'finished',
+    ctx.fmt({ host: hostFinish.mp.phase, guest: guestFinish.mp.phase }));
+  ctx.A.check('mp-powerups: host and guest render the same result hash',
+    hostFinish.mp.result.hash === guestFinish.mp.result.hash,
+    hostFinish.mp.result.hash + ' / ' + guestFinish.mp.result.hash);
+  ctx.A.check('mp-powerups: every result row finished (no DNF)',
+    hostFinish.mp.result.rows.every((row) => row.status === 'finished'),
+    ctx.fmt(hostFinish.mp.result.rows.map((row) => [row.playerId, row.status])));
+  ctx.A.check('mp-powerups: the power-up state survived the race',
+    hostFinish.mp.powerups?.enabled === true && hostFinish.mp.powerups.pickupCount > 0,
+    ctx.fmt({ enabled: hostFinish.mp.powerups?.enabled, pickups: hostFinish.mp.powerups?.pickupCount }));
+
+  assertRoomStats(ctx, room, roomBaseline);
+  assertSilent(ctx, room.host, hostConsoleFrom, 'powerups-host');
+  assertSilent(ctx, room.guest, guestConsoleFrom, 'powerups-guest');
+  ctx.evidence.host = hostPower;
+  ctx.evidence.guest = guestPower;
 }
 
 /**

@@ -6491,6 +6491,12 @@ function mpPowerupCapture() {
     lastEventSeq: powerupModel ? powerupModel.events.length : (powerupView?.lastEventSeq ?? 0),
     lastBatchSeq: powerupView?.lastBatchSeq ?? powerupBroadcastSeq,
     counts: hud?.counts ?? state.powerups.counts,
+    // The placed-pickup evidence the e2e gate asserts: the host snapshot's
+    // pickup list, reduced to a count and the distinct types.
+    pickupCount: Array.isArray(hud?.pickups) ? hud.pickups.length : 0,
+    pickupTypes: Array.isArray(hud?.pickups)
+      ? [...new Set(hud.pickups.map((pickup) => pickup.type))].sort() : [],
+    mineCount: Array.isArray(hud?.mines) ? hud.mines.length : 0,
     feed: hud?.feed ?? [],
     local: hud?.local ?? null,
     remote: hud?.remote ?? null,
