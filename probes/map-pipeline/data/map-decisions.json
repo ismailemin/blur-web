@@ -1,5 +1,5 @@
 {
- "canonicalSha256": "18c5dd5391200d3a66ccfe66fa416da1495c6184ac60e932cf4f16ccfbc95b45",
+ "canonicalSha256": "96dce9ec9f23128caa30728d78c8f230cc352d6356e4be501508cf1e7e36abad",
  "generatedBy": "probes/map-pipeline/tools/build_map_decisions.py",
  "levels": [
   {
@@ -1547,7 +1547,7 @@
    "sha256": "124f01c0013a4578e2229016b0d1f8d82bfd850bb3bcaa597573f1afbadd733b"
   },
   "batchSummary": {
-   "contentSha256": "ab892912ca91aa0b1a1edc1c7df80acd2902921309d1b9252707b9b0c272a6bd",
+   "contentSha256": "0f736508251153738731ca5012a4d9f80cdbda938eb8e90b8750fa1dd129029f",
    "path": "_work/map-batch/batch-summary.json",
    "pin": "content",
    "volatileFields": [
@@ -1566,7 +1566,7 @@
   "blockedInventory": {
    "bytes": 60471,
    "path": "_work/map-pipeline/blocked/inventory-19.json",
-   "sha256": "412215e42f10b1bef5bccdd7c99841325328d0d2d7755ac07b0b3c337c3451b4"
+   "sha256": "0766964761c979254cf97128a8fd6a6c62a5ed6d895d00ac210f519663257550"
   },
   "inventory": {
    "bytes": 159627,
@@ -1581,7 +1581,7 @@
   "mapRegistry": {
    "bytes": 40158,
    "path": "probes/e1-drive/web/map-registry.js",
-   "sha256": "3681101996abe951fc37f9d39874354141d21659c0d74ef5a0f9f91dbc598f70"
+   "sha256": "17abd5c78a1547c5d2c05d0e87f028cbc50aa0d46ecbe315e1e1c9e532c1e938"
   },
   "maps": {
    "bytes": 205652,

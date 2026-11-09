@@ -400,10 +400,12 @@ export function createSession(geometry, tick0, options = {}) {
   // committed table; an unknown slug leaves the diagnostic albedo in place and
   // records the typed reason instead of guessing a colour.
   let paintColour = null;
+  let emissiveColour = null;
   let paintSource = null;
   try {
     const material = materialsFor(body.slug);
     paintColour = material.baseColour.slice(0, 3);
+    emissiveColour = Array.isArray(material.emissive) ? material.emissive.slice(0, 3) : null;
     paintSource = material.source?.paintJob ?? 'probes/car-materials';
   } catch (error) {
     paintSource = 'unavailable: ' + (error.message ?? String(error));
@@ -421,9 +423,13 @@ export function createSession(geometry, tick0, options = {}) {
     // lookup uses the decoded paint ramp colour instead of the diagnostic
     // albedo. Every other class keeps its committed diagnostic albedo.
     let albedo = draw.albedo;
+    const spin = Array.isArray(draw.albedo) ? (draw.albedo[3] ?? 0) : 0;
     if (draw.textureBinding?.status === 'runtimePaintLookup' && paintColour) {
-      albedo = [paintColour[0], paintColour[1], paintColour[2],
-        Array.isArray(draw.albedo) ? (draw.albedo[3] ?? 0) : 0];
+      albedo = [paintColour[0], paintColour[1], paintColour[2], spin];
+    } else if (draw.textureBinding?.status === 'runtimeLightBlend' && emissiveColour) {
+      // The light covers carry no albedo texture; the decoded retail emissive
+      // tint is their colour. It is a linear XtRgb value, not a guess.
+      albedo = [emissiveColour[0], emissiveColour[1], emissiveColour[2], spin];
     }
     return {
       ...rest,
