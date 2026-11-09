@@ -1176,6 +1176,23 @@ function loadLevelInspectSection(spec) {
 // The 46-section measurement artifact is loaded once and pinned by the hash the
 // track-coverage analysis recorded. A different file is a hard failure: the
 // sections below must not silently consume a regenerated or hand-edited map.
+// The decoded retail lightmap for the River track visual. The per-draw
+// `g_tLightmap` name is resolved by the map-batch producer (the same material
+// resolver) and the UV is the reader's F16_4 TEXCOORD0.zw stream.
+const TRACK_LIGHTMAP = {
+  draws: '_work/map-batch/usa_la_river/draws.json',
+  lighting: 'probes/lighting/data/runtime-lighting.json',
+  url: (name) => '/_work/lighting/river/lightmap/' + name + '.rgba'
+};
+function trackSectionId(section) {
+  return section.sourceKind === 'track-coverage'
+    ? section.sectionKey
+    : 'g' + section.geometryBlock + '-n' + section.nodeBlock;
+}
+function trackProbeStage(section) {
+  return path.join(ROOT, '_work/map-pipeline/probes',
+    'usa_la_river-' + trackSectionId(section), 'native.json');
+}
 let trackCoverageSource = null;
 function loadTrackCoverageDocument() {
   if (trackCoverageSource) return trackCoverageSource;
@@ -1237,6 +1254,20 @@ function loadTrackVisualSection(spec) {
 }
 
 const trackSections = TRACK_VISUAL_SECTIONS.map(loadTrackVisualSection);
+
+// The per-draw lightmap name and the decoded texture identity. The map-batch
+// producer resolves the material `g_tLightmap` field with the same rule the
+// renderer uses; the lighting table records the dimensions and the RGBA hash.
+const trackLightmapDraws = JSON.parse(readFileSync(path.join(ROOT, TRACK_LIGHTMAP.draws), 'utf8'));
+const trackLightmapNameByKey = new Map();
+for (const draw of trackLightmapDraws.draws) {
+  if (draw.lightmapName) {
+    trackLightmapNameByKey.set(draw.sectionId + ':' + draw.sectionDrawIndex, draw.lightmapName);
+  }
+}
+const riverLighting = JSON.parse(readFileSync(path.join(ROOT, TRACK_LIGHTMAP.lighting), 'utf8'));
+const riverLightmapTable = riverLighting.maps.river.lightmap;
+const riverLightmapByName = new Map(riverLightmapTable.textures.map((texture) => [texture.name, texture]));
 
 // The committed level_inspect reference and the track-coverage map are two
 // independent readers of the same source. For the one section that has both
@@ -1500,6 +1531,7 @@ if (levelBindable.reduce((sum, entry) => sum + entry.binding.triangleCount, 0) !
 
 const trackPositions = [];
 const trackIndices = [];
+const trackLightmapUv = [];
 const trackDraws = [];
 const trackSectionRecords = [];
 let trackVertexBase = 0;
@@ -1509,6 +1541,20 @@ for (const section of trackSections) {
   const doc = section.doc;
   for (const value of doc.positions) trackPositions.push(value);
   for (const value of doc.indices) trackIndices.push(value + trackVertexBase);
+  // The reader's F16_4 TEXCOORD0.zw stream for this exact section. A section
+  // without it is a hard failure, never a zero-filled guess.
+  const nativePath = trackProbeStage(section);
+  if (!existsSync(nativePath)) {
+    throw new Error(section.key + ': missing lightmap UV probe ' + path.relative(ROOT, nativePath));
+  }
+  const native = JSON.parse(readFileSync(nativePath, 'utf8'));
+  const lightmapUv = native.lightmapUv;
+  const sectionVertexCount = doc.positions.length / 3;
+  if (!Array.isArray(lightmapUv) || lightmapUv.length !== sectionVertexCount * 2) {
+    throw new Error(section.key + ': lightmap UV stream is missing or does not match ' +
+      sectionVertexCount + ' vertices');
+  }
+  for (const value of lightmapUv) trackLightmapUv.push(value);
 
   const drawStartCount = trackDraws.length;
   let sectionDrawIndex = 0;
@@ -1530,6 +1576,9 @@ for (const section of trackSections) {
     if (binding.textureId !== null && !texture) {
       throw new Error(section.key + ': draw ' + sectionDrawIndex + ' names unknown texture ' + binding.textureId);
     }
+    const lightmapName = trackLightmapNameByKey.get(trackSectionId(section) + ':' + sectionDrawIndex) ?? null;
+    const lightmapUrl = lightmapName && riverLightmapByName.has(lightmapName)
+      ? TRACK_LIGHTMAP.url(lightmapName) : null;
     sectionDrawIndex++;
     let minIndex = Infinity;
     let maxIndex = -Infinity;
@@ -1563,6 +1612,8 @@ for (const section of trackSections) {
         : 'asset-reader direct draw: no static albedo texture is bound (' + binding.bindingStatus + ': ' +
           binding.bindingReason + '); the draw keeps its source index range and the diagnostic albedo',
       textureId: texture ? texture.id : null,
+      lightmapName,
+      lightmapUrl,
       textureBinding: {
         status: binding.bindingStatus,
         reason: binding.bindingReason,
@@ -1640,6 +1691,9 @@ for (const section of trackSections) {
   trackIndexBase += doc.indices.length;
 }
 
+if (trackLightmapUv.length !== (trackPositions.length / 3) * 2) {
+  throw new Error('track lightmap UV count ' + trackLightmapUv.length + ' != merged vertex count * 2');
+}
 const trackMin = [Infinity, Infinity, Infinity];
 const trackMax = [-Infinity, -Infinity, -Infinity];
 for (let index = 0; index < trackPositions.length; index += 3) {
@@ -1675,6 +1729,19 @@ const trackVisualMesh = {
       aggregate: textureManifest.pins.uvAggregate
     }
   },
+  lightmapUv: {
+    storage: 'base64-float32le',
+    components: 2,
+    vertexCount: trackPositions.length / 3,
+    values: trackLightmapUv.length,
+    bytes: trackLightmapUv.length * 4,
+    data: Buffer.from(new Float32Array(trackLightmapUv).buffer).toString('base64'),
+    source: {
+      reader: 'level_inspect F16_4 TEXCOORD0.zw lightmapUv stream',
+      provenance: 'the committed map-pipeline probe native.json lightmapUv for each track section; zero where the UV0 type is not F16_4',
+      sections: trackSections.length
+    }
+  },
   coordinateSpace: 'world',
   source: {
     tool: 'level_inspect (committed direct-draw references)',
@@ -1705,6 +1772,27 @@ const trackVisual = {
     'are merged with the instructed block88/node283 section, each at its source world position with its own ' +
     'draw ranges; block88/node283 lies three kilometres from the course and cannot cover it'
 };
+
+// The distinct decoded lightmap textures the track draws reference.
+const trackLightmapNames = [...new Set(trackDraws.map((draw) => draw.lightmapName).filter(Boolean))].sort();
+const trackLightmaps = trackLightmapNames.map((name) => {
+  const texture = riverLightmapByName.get(name);
+  if (!texture) throw new Error('track lightmap ' + name + ' is not in the committed lighting table');
+  return {
+    name,
+    width: texture.width,
+    height: texture.height,
+    format: texture.format,
+    formatName: texture.formatName,
+    sha256: texture.sha256,
+    decodedRgbaSha256: texture.decodedRgbaSha256,
+    bytes: texture.decodedRgbaBytes,
+    url: TRACK_LIGHTMAP.url(name),
+    source: 'probes/lighting/data/runtime-lighting.json'
+  };
+});
+trackVisual.lightmaps = trackLightmaps;
+trackVisual.lightmapDraws = trackDraws.filter((draw) => draw.lightmapUrl !== null).length;
 
 // Collision triangles that have no committed real render geometry above them are
 // kept as an explicitly labelled physics fallback. The test is data-derived: a
@@ -1870,6 +1958,7 @@ const geometry = {
   // valid for the unchanged sprint geometry. The P73b pack is validated by its
   // own manifest pin and checks, not by a version bump.
   version: 6,
+  lightmaps: trackLightmaps,
   source: {
     packet: path.relative(ROOT, SOURCE).split(path.sep).join('/'),
     packetVersion: packet.version,

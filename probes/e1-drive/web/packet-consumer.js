@@ -475,6 +475,10 @@ export class PacketConsumer {
     this.buffers = [];
     this.textures = [];
     this.textureGroups = new Map();
+    // The lightmap textures are also in `this.textures`; their bind groups must
+    // be cleared too, or the next load reuses a destroyed texture.
+    this.lightmapGroups = new Map();
+    this.lightmapTextures = new Map();
     this.device = null;
     this.orbit = null;
     this.usePacketCamera = true;
@@ -783,6 +787,8 @@ export class PacketConsumer {
     }
     this.textures = [];
     this.textureGroups = new Map();
+    this.lightmapGroups = new Map();
+    this.lightmapTextures = new Map();
     this.meshes = new Map();
     this.meshBounds = null;
     this.draws = [];

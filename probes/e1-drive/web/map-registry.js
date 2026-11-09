@@ -43,13 +43,13 @@ export const MAPS = Object.freeze({
     // 310 m layout and the Level.levelphysics file. The combined debug geometry
     // is not part of the wire identity.
     mpPins: Object.freeze({
-      packageHash: 'sha256:b4d78d965120cf09898e74180f01becc1a942db2350a9a755f33e104a54dde4b',
+      packageHash: 'sha256:8651bbbedc31f7f154288ffcb5b41aa3c0b58110bc0782d913aaae703f34cc74',
       layoutHash: 'sha256:9240e9c136059ccd209992999b8570860f99f1bedd4b4ec9ff0a56d5cf8cad53',
       physicsHash: 'sha256:1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28',
-      packageFileSha256: 'sha256:b4d78d965120cf09898e74180f01becc1a942db2350a9a755f33e104a54dde4b',
+      packageFileSha256: 'sha256:8651bbbedc31f7f154288ffcb5b41aa3c0b58110bc0782d913aaae703f34cc74',
       layoutFileSha256: 'sha256:516647664f7ff3590db457f8685a3d4308b030b86fbf962f0e9bfa708da89e49',
       physicsFileSha256: 'sha256:1e678b2dff61b6d3a3d5d95a5160c3f713290251667cb27c55e262175efe4e28',
-      packageBytes: 9665887,
+      packageBytes: 10767743,
       layoutBytes: 386521,
       physicsBytes: 1945409
     })
