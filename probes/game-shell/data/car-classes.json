@@ -9,7 +9,7 @@
   },
   "counts": {
     "A": 5,
-    "B": 40,
+    "B": 42,
     "C": 14,
     "unclassified": 0
   },
@@ -72,7 +72,9 @@
     "ford-gt-stock": "B",
     "dodge-vipergtsr-stock": "B",
     "ratrod-na-stock": "B",
-    "toyota-supra-smooth": "B"
+    "toyota-supra-smooth": "B",
+    "hummer-h2-rat": "B",
+    "ford-supervan-stock": "B"
   },
   "provenance": {
     "corvette-zr1-stock": "roster.selection: the first five are the T-007 reference anchors",
@@ -133,7 +135,9 @@
     "ford-gt-stock": "vehicle-batch/spec/cars.json: record 73 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
     "dodge-vipergtsr-stock": "vehicle-batch/spec/cars.json: record 78 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
     "ratrod-na-stock": "vehicle-batch/spec/cars.json: record 38 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
-    "toyota-supra-smooth": "vehicle-batch/spec/cars.json: record 79 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step"
+    "toyota-supra-smooth": "vehicle-batch/spec/cars.json: record 79 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
+    "hummer-h2-rat": "vehicle-batch/spec/cars.json: record 58 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step",
+    "ford-supervan-stock": "vehicle-batch/spec/cars.json: record 67 class B - model, fields, scene and part layer present; needs extraction + vehicle-specific material step"
   },
   "unclassified": {}
 }

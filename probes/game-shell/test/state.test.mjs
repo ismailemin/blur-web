@@ -29,10 +29,10 @@ import { dataset, makeState, walkTo } from './fixtures.mjs';
 
 const data = dataset();
 
-test('roster normalisation covers all 59 cars with real fields and data classes', () => {
+test('roster normalisation covers all 61 cars with real fields and data classes', () => {
   const cars = normalizeCars(data.roster, data.classes.classes);
-  assert.equal(cars.length, 59);
-  assert.equal(new Set(cars.map((car) => car.slug)).size, 59);
+  assert.equal(cars.length, 61);
+  assert.equal(new Set(cars.map((car) => car.slug)).size, 61);
   const counts = { A: 0, B: 0, C: 0, unclassified: 0 };
   for (const car of cars) {
     assert.ok(CAR_CLASSES.includes(car.carClass), car.slug + ' class');
@@ -43,7 +43,7 @@ test('roster normalisation covers all 59 cars with real fields and data classes'
     assert.equal(car.icon, 'not-decoded');
     assert.equal(car.layoutParsed, true, car.slug + ' layout');
   }
-  assert.deepEqual(counts, { A: 5, B: 40, C: 14, unclassified: 0 });
+  assert.deepEqual(counts, { A: 5, B: 42, C: 14, unclassified: 0 });
   assert.deepEqual(data.classes.counts, counts);
 });
 
@@ -68,10 +68,10 @@ test('the generated cars.json record shape is normalised without losing identity
 
 test('map registry binds every registered map and its real course support', () => {
   const state = makeState();
-  assert.equal(state.maps.length, 11);
+  assert.equal(state.maps.length, 13);
   assert.deepEqual(state.maps.map((map) => map.id),
     ['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
-      'highrise', 'shutoko', 'oval', 'amboy-mp']);
+      'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp']);
   const river = state.maps.find((map) => map.id === 'river');
   const amboy = state.maps.find((map) => map.id === 'amboy');
   const gracia = state.maps.find((map) => map.id === 'gracia');
@@ -83,6 +83,8 @@ test('map registry binds every registered map and its real course support', () =
   const shutoko = state.maps.find((map) => map.id === 'shutoko');
   const oval = state.maps.find((map) => map.id === 'oval');
   const amboyMp = state.maps.find((map) => map.id === 'amboy-mp');
+  const dumbo = state.maps.find((map) => map.id === 'dumbo');
+  const downtownMp = state.maps.find((map) => map.id === 'downtown-mp');
   assert.deepEqual(river.courses, ['310', 'short', 'lap', 'free']);
   assert.deepEqual(amboy.courses, ['310', 'lap']);
   assert.deepEqual(gracia.courses, ['310']);
@@ -105,8 +107,10 @@ test('map registry binds every registered map and its real course support', () =
   assert.equal(measuredLength(shutoko, 'sprint').text, '279.005 m');
   assert.equal(measuredLength(oval, 'sprint').text, '753.021 m');
   assert.equal(measuredLength(amboyMp, 'sprint').text, '122.294 m');
+  assert.equal(measuredLength(dumbo, 'sprint').text, '361.999 m');
+  assert.equal(measuredLength(downtownMp, 'sprint').text, '86.453 m');
   assert.equal(measuredLength(river, 'free').text, '7,702.25 m2 basin');
-  for (const map of [longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboyMp]) {
+  for (const map of [longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboyMp, dumbo, downtownMp]) {
     assert.equal(mapSupportsMode(map, 'sprint'), true, map.id);
     assert.equal(mapSupportsMode(map, 'multiplayer'), true, map.id);
     assert.equal(mapSupportsMode(map, 'lap'), false, map.id);
@@ -216,15 +220,15 @@ test('back navigation follows the documented targets', () => {
 
 test('filters and sorting are deterministic and cover the whole roster', () => {
   const state = makeState({ screen: 'car-select', mode: 'sprint' });
-  assert.equal(filterCars(state.cars, state.filters).length, 59);
+  assert.equal(filterCars(state.cars, state.filters).length, 61);
   assert.equal(filterCars(state.cars, { query: 'corvette' }).length, 4);
   assert.equal(filterCars(state.cars, { carClass: 'A' }).length, 5);
-  assert.equal(filterCars(state.cars, { carClass: 'B' }).length, 40);
+  assert.equal(filterCars(state.cars, { carClass: 'B' }).length, 42);
   assert.equal(filterCars(state.cars, { carClass: 'C' }).length, 14);
   assert.equal(filterCars(state.cars, { carClass: 'unclassified' }).length, 0);
-  assert.equal(filterCars(state.cars, { drivetrain: 'AWD' }).length, 14);
+  assert.equal(filterCars(state.cars, { drivetrain: 'AWD' }).length, 15);
   assert.equal(filterCars(state.cars, { drivetrain: 'FWD' }).length, 4);
-  assert.equal(filterCars(state.cars, { drivetrain: 'RWD' }).length, 41);
+  assert.equal(filterCars(state.cars, { drivetrain: 'RWD' }).length, 42);
   const byMass = filterCars(state.cars, { sort: 'mass' });
   assert.equal(byMass[0].slug, 'volkswagen-beetle-offroad');
   assert.equal(byMass[0].massKg, 660);
@@ -429,13 +433,13 @@ test('every screen maps to a deterministic URL route', () => {
 });
 
 test('grid navigation and gamepad intents are edge-triggered', () => {
-  assert.equal(nextGridIndex(0, 59, 'ArrowRight', 7), 1);
-  assert.equal(nextGridIndex(0, 59, 'ArrowDown', 7), 7);
-  assert.equal(nextGridIndex(6, 59, 'ArrowRight', 7), 7);
-  assert.equal(nextGridIndex(0, 59, 'ArrowLeft', 7), 0);
-  assert.equal(nextGridIndex(56, 59, 'ArrowDown', 7), 56);
-  assert.equal(nextGridIndex(3, 59, 'Home', 7), 0);
-  assert.equal(nextGridIndex(3, 59, 'End', 7), 58);
+  assert.equal(nextGridIndex(0, 61, 'ArrowRight', 7), 1);
+  assert.equal(nextGridIndex(0, 61, 'ArrowDown', 7), 7);
+  assert.equal(nextGridIndex(6, 61, 'ArrowRight', 7), 7);
+  assert.equal(nextGridIndex(0, 61, 'ArrowLeft', 7), 0);
+  assert.equal(nextGridIndex(56, 61, 'ArrowDown', 7), 56);
+  assert.equal(nextGridIndex(3, 61, 'Home', 7), 0);
+  assert.equal(nextGridIndex(3, 61, 'End', 7), 60);
   const buttons = (pressed) => pressed.map((value) => ({ pressed: value }));
   assert.equal(gamepadIntent(buttons([true, false]), [], { buttons: [false, false], axes: [] }), 'confirm');
   assert.equal(gamepadIntent(buttons([true, false]), [], { buttons: [true, false], axes: [] }), null);

@@ -4,7 +4,7 @@
 //                                                  [--edge <msedge.exe>]
 //
 // Loads `/probes/game-shell/demo.html`, waits for the committed data to mount,
-// then captures the main menu, the 59-car grid and the 11-map grid at 1600x900.
+// then captures the main menu, the 61-car grid and the 13-map grid at 1600x900.
 // It records every console message and fails when the page logs an error or a
 // warning, when the car/map counts are wrong, or when a screenshot is missing.
 //
@@ -170,9 +170,9 @@ try {
 
   const booted = await waitFor(
     "window.__gameShell && window.__gameShell.getState().screen === 'main-menu' && " +
-    'window.__gameShell.getState().cars.length === 59 && window.__gameShell.getState().maps.length === 11'
+    'window.__gameShell.getState().cars.length === 61 && window.__gameShell.getState().maps.length === 13'
   );
-  check('boot reaches main-menu with 59 cars and 11 maps', booted);
+  check('boot reaches main-menu with 61 cars and 13 maps', booted);
   if (!booted) throw new Error('shell did not boot: ' + JSON.stringify(messages.slice(-5)));
 
   const counts = await evaluate(`(() => {
@@ -185,7 +185,7 @@ try {
       footer: document.querySelector('.gs-footer-meta')?.textContent ?? null
     };
   })()`);
-  check('footer names 59 cars and 11 maps', /59 cars\s+\/\s+11 maps/.test(counts.footer ?? ''), counts.footer);
+  check('footer names 61 cars and 13 maps', /61 cars\s+\/\s+13 maps/.test(counts.footer ?? ''), counts.footer);
   const mainMenu = await shot('shell-main-menu.png');
 
   await evaluate("document.querySelector('[data-focus=\"play\"]').click()");
@@ -209,13 +209,13 @@ try {
       heading: document.querySelector('.gs-screen-head')?.textContent ?? null
     };
   })()`);
-  check('car grid renders 59 tiles', carGrid.tiles === 59, carGrid.tiles);
+  check('car grid renders 61 tiles', carGrid.tiles === 61, carGrid.tiles);
   check('car grid advertises 7 columns', carGrid.columns === '7', carGrid.columns);
   check('car grid lays out 7 tiles per row', carGrid.firstRow === 7, carGrid.firstRow);
   check('car tiles keep a readable width', carGrid.minTileWidth >= 100, carGrid.minTileWidth);
   check('car screen has no horizontal overflow', carGrid.scrollWidth <= carGrid.innerWidth + 1,
     carGrid.scrollWidth + ' > ' + carGrid.innerWidth);
-  check('car heading names 59 cars', /All 59 committed roster cars/.test(carGrid.heading ?? ''), carGrid.heading);
+  check('car heading names 61 cars', /All 61 committed roster cars/.test(carGrid.heading ?? ''), carGrid.heading);
   const carSelect = await shot('shell-car-select.png');
 
   await evaluate("document.querySelector('[data-focus=\"car-next\"]').click()");
@@ -233,7 +233,11 @@ try {
       innerWidth: window.innerWidth
     };
   })()`);
-  check('map grid renders 11 cards', mapGrid.cards === 11, mapGrid.cards);
+  check('map grid renders 13 cards', mapGrid.cards === 13, mapGrid.cards);
+  check('map grid lists the two new maps', ['dumbo', 'downtown-mp'].every((id) => mapGrid.ids.includes(id)),
+    mapGrid.ids);
+  check('every map card shows a measured length',
+    mapGrid.lengths.every((text) => /^\d[\d,]*\.\d{3} m$/.test(text ?? '')), mapGrid.lengths);
   check('map grid lays out 3 cards per row', mapGrid.firstRow === 3, mapGrid.firstRow);
   check('map screen has no horizontal overflow', mapGrid.scrollWidth <= mapGrid.innerWidth + 1,
     mapGrid.scrollWidth + ' > ' + mapGrid.innerWidth);

@@ -39,6 +39,12 @@
     },
     "amboy-mp": {
       "310": "probes/e1-drive/web/map-registry.js MAPS['amboy-mp'].pins.pathLengthMetres (122.293808 m); _work/e1-drive/amboy-mp/layout.json course.span.lengthMetres agrees; probes/map-laps/data/amboy-mp-path.json agrees"
+    },
+    "dumbo": {
+      "310": "_work/e1-drive/dumbo/layout.json course.span.lengthMetres (361.999436 m); probes/map-laps-aid/data/dumbo-aid-path.json agrees; probes/e1-drive/web/map-registry.js MAPS.dumbo.pins.pathLengthMetres agrees"
+    },
+    "downtown-mp": {
+      "310": "_work/e1-drive/downtown-mp/layout.json course.span.lengthMetres (86.452776 m); probes/map-laps-aid/data/downtown-mp-aid-path.json agrees; probes/e1-drive/web/map-registry.js MAPS['downtown-mp'].pins.pathLengthMetres agrees"
     }
   },
   "maps": {
@@ -78,6 +84,12 @@
     },
     "amboy-mp": {
       "310": 122.293808
+    },
+    "dumbo": {
+      "310": 361.999436
+    },
+    "downtown-mp": {
+      "310": 86.452776
     }
   },
   "gates": {
@@ -135,6 +147,16 @@
       "source": "_work/e1-drive/amboy-mp/layout.json gates (310 m point-to-point)",
       "checkpointArcs": [26.551563, 66.991298],
       "finishArc": 122.293808
+    },
+    "dumbo": {
+      "source": "_work/e1-drive/dumbo/layout.json gates (310 m point-to-point); probes/map-laps-aid/data/dumbo-aid-path.json agrees",
+      "checkpointArcs": [160.749632, 199.999614],
+      "finishArc": 361.999436
+    },
+    "downtown-mp": {
+      "source": "_work/e1-drive/downtown-mp/layout.json gates (310 m point-to-point); probes/map-laps-aid/data/downtown-mp-aid-path.json agrees",
+      "checkpointArcs": [27.10202, 66.218505],
+      "finishArc": 86.452776
     }
   }
 }

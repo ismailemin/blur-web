@@ -1,8 +1,8 @@
 // Standalone shell demo.
 //
 // Data is read from the committed files at request time; nothing is copied:
-//   /probes/e1-drive/cars/roster.json        (59 committed roster cars)
-//   /probes/e1-drive/web/map-registry.js     (11 registered maps)
+//   /probes/e1-drive/cars/roster.json        (61 committed roster cars)
+//   /probes/e1-drive/web/map-registry.js     (13 registered maps)
 //   ./data/car-classes.json                  (generated from the roster)
 //   ./data/course-measurements.json          (measured lengths, sourced)
 //
