@@ -1,12 +1,12 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 8 Kasım 2026 (gece, geç)
+**Güncelleme:** 10 Kasım 2026
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
 tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 13 harita**;
-lightmap 11/13 haritada render'da.
-**Son commit'ler:** `873184f` Amboy lightmap + 61 araç, `4c6ea8b` kayıt,
-`1a50930` map-slice lightmap, `a463175` 11 harita ışığı,
-`16f7580` hummer + supervan, `81a9f84` menü 59/11.
+lightmap 11/13 haritada render'da; kurs minimap'i ve 8 tipli güçlendirme E2E'si
+bağlı.
+**Son commit'ler:** `f6f2ead` kayıt, `a32db5d` menüde her haritada güçlendirme,
+`340e651` güçlendirme E2E'si, `a52ad26` 11/13 lightmap, `91d9628` River lightmap.
 **Bu oturumun kaydı:** [`docs/work/logs/2026-11-08-mp-eight.md`](../work/logs/2026-11-08-mp-eight.md)
 
 ## Şu an neredeyiz? (kısa özet)
@@ -18,60 +18,49 @@ lightmap 11/13 haritada render'da.
   sonuç tablosu** üretiliyor. `mp-eight` E2E **95/95 PASS**; oda istatistiği
   `connections:8, roomsCreated:1, roomsFinished:1, maxPlayersSeen:8,
   protocolErrors:0`.
-- **Menü kabuğu:** boş URL menüyü açar (57 araç, 7 harita, mod/araç/harita
+- **Menü kabuğu:** boş URL menüyü açar (**61 araç, 13 harita**, mod/araç/harita
   seçimi, lobi); her yarış parametresi menüyü atlar. `?join=1` misafir akışı.
-  Başsız Edge: 0 konsol hatası.
-- **Araçlar:** sürüş diliminde **61 araç** (25 → 57 → 59 → 61). Yeni
-  `hummer-h2-rat` (tekerlek parçaları `DefaultElement` altında; köşe eleman
-  matrisiyle kanıtlandı) ve `ford-supervan-stock` (`E_Brake_Caliper_*` ad
-  varyantı + parent zarfı). Yalnızca `defaultcar` desteklenmiyor (gövde modeli
-  yok).
-- **Amboy 3 tur:** `?map=amboy&course=lap` → 3 tur, 0 respawn, ~112 s.
-- **Haritalar 4→11:** Long Beach, Hollywood Hills, LA Downtown, Mount Haruna,
-  Highrise, Tokyo Shutoko, Barcelona Oval, Amboy MP. Hepsi 0 respawn ve
-  0 konsol hatası; her biri `verify_e1_map` 22–23/23 ve kendi e2e senaryosu 12/12.
+  Başsız Edge: 0 konsol hatası; `capture-shell` 61/13.
+- **Araçlar:** sürüş diliminde **61 araç**. Yalnızca `defaultcar` desteklenmiyor
+  (gövde modeli yok; `DefaultCar` fizik yedeği).
+- **Haritalar 13/19:** river, amboy, gracia, longbeach, observatory, downtown,
+  mharuna, highrise, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**.
+  Hepsi 0 respawn ve 0 konsol hatası; her biri `verify_e1_map` 22–23/23 ve kendi
+  e2e senaryosu 12/12.
 - **Kapı kuralı:** geniş collision parkurları için `course.gateRule:
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
   nitro, shock, barge, kalkan, tamir, bitiş, geri sayım, wreck).
-- **Işık:** retail ambient + **gerçek lightmap** render'da. **13/13 oynanabilir
+- **Işık:** retail ambient + **gerçek lightmap** render'da. **11/13 oynanabilir
   haritada** lightmap var (downtown/highrise tipli `unsupported`). Amboy:
-  **83 doku, 1173/1301 draw**; River: **38 doku, 383/394 track draw**.
+  **83 doku, 1173/1301 draw**; River: **38 doku, 383/394 track draw**;
+  Dumbo 115/1615, Downtown MP 49/207.
 - **Araç materyali:** retail **boya** ve **ışık rengi** render'da (Corvette
   `Canal_Blue`, 10 boya draw'ı).
-- **Multiplayer:** yeni haritalarda da çalışıyor (Oval, Amboy MP; 2 oyuncu,
-  0 hata). Amboy'da `?powerups=1` ile **82 pickup, 8 tip**, 0 hata.
+- **Kurs minimap'i:** `probes/e1-drive/web/minimap.js` — yalnız
+  `layout.course.samples` + `layout.gates` noktalarından; River 416 nokta,
+  Amboy 458 nokta; 32/32 test, kapıda `minimap` adımı.
+- **Güçlendirme:** 8 tip (Bomb/Shield/Repair/Nitrous/Shock/Blindfire/Shunt/
+  Barge); yalnız SuperShield ertelendi (tek oyunculu PickupType). `mp-powerups`
+  E2E **45/45**: River'da host **54 retail pickup**, guest aynı 8 tip, 0 konsol.
+  Amboy'da 82 pickup doğrulandı; menü artık her haritada açıyor.
+- **Multiplayer:** 13 haritanın tamamı lobide seçilebilir; 2 oyunculu + 0–3 AI.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
-- **Amboy/Gracia power-up:** retail yerleşim bağlı — Amboy **82**, Gracia **59**
-  pickup, misafir hepsini alıyor; oda bayrağıyla `?powerups=1` gerekmiyor.
-- **2 oyunculu + AI:** `mp-two` 52/52, `mp-ai` 71/71.
-- **Taşınabilir kapı:** `verify_asset_probe --skip-build` **84/84**,
-  `check_e1_poc` **23/23**.
-- **Tüm probe doğrulayıcıları yeşil:** race-rules 249/249, map-pipeline 930/930
-  + kararlar 2062/2062, map-batch 1450/1450, instances 510/510,
-  net-prediction 357/357, robustness 171/171, map-laps 114/114 + Gracia 83/83,
-  map-props 259/259, powerups 7828/7828 + rotalar 1610/1610, lighting 973/973,
-  car-materials 3505/3505, HUD 12 test.
-- **Runtime modülleri hazır:** ışık, araç materyali, HUD (`?hud=retail` ile
-  bağlı), pickup rotası, 19 harita kararı.
-
-**Paralel dalga (tamamlandı):** harita yolları (`map-laps`, `map-laps-aid`),
-lightmap decode (`lighting`), fiziksel pickup iz düşümü (`powerups`,
-`powerups-aid`), araçlar (`vehicle-batch`), HUD (`hud-ui`), ses kataloğu
-(`audio`), yeni haritalarda AI (`ai-driver`), menü (`game-shell`).
+- **Taşınabilir kapı:** `verify_asset_probe --skip-build` **98/98**.
+- **E2E:** **18 senaryo**; son toplu koşu 17/17 (479/479) + `mp-powerups` 45/45.
 
 **Sıradaki (öncelik sırası) — ayrıntı [`RESUME.md`](RESUME.md):**
 
-1. `verify_asset_probe --skip-build` kapısını yeşile al (`gate-full17.log`).
-2. Menüyü 61 araç / 13 haritaya çek (`probes/game-shell`).
-3. River lightmap'i (`build_geometry.mjs` tek-harita yolu).
-4. Dumbo / Downtown MP lightmap decode (`probes/lighting`).
-5. Kalan 6 harita tipli blocker (hackney, brighton, sausalito, russianhill,
-   bowl, showroom).
-6. `defaultcar` (gövde modeli yok) tipli `unsupported`.
-7. Retail pickup fiziksel yerleşimi (Amboy 2/82, Gracia 2/59, River 0/54).
-8. Retail 1:1 parite (kullanıcıdan referans kare), internet deploy
+1. Kalan 5 harita: `.aid` hattı ±24 m ve 1,68 m bantta sığmıyor (hackney 219,
+   brighton 6, sausalito 6.972 istasyon; russianhill 175 m uzak; bowl `.aid`
+   yok). Collision-raster parkuru deneniyor; `showroom` yarış haritası değil.
+2. Downtown / highrise lightmap: kısmi set (102 / 77 doku çözüldü, tek
+   referans tipli `unsupported`).
+3. Retail pickup fiziksel yerleşimi (Amboy 2/82, Gracia 2/59, River 0/54) —
+   oyun retail yay-kesri yeniden eşlemesini kullanıyor.
+4. Retail 1:1 parite (kullanıcıdan referans kare), internet deploy
    (kullanıcıdan VPS/domain/TLS).
+
 
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)
 
