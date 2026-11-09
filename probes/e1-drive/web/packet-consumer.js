@@ -146,9 +146,12 @@ fn linearToSrgb(value: vec3f) -> vec3f {
       radiance = c * c * base;
     }
   } else {
-    // Diagnostic lambert + ambient term for a draw with no decoded lightmap.
-    let brightness = scene.lighting.y + (1.0 - scene.lighting.y) * lambert;
-    radiance = scene.lightColour.rgb * scene.lightColour.a * base * brightness;
+    // Diagnostic term for a draw with no decoded lightmap: the committed
+    // ambient/sky colour at the ambient scalar plus the live sun, if any. A
+    // baked map (sun colour [0,0,0]) is then lit by its ambient, not black.
+    let ambientTerm = scene.ambient.rgb * scene.lighting.y;
+    let sunTerm = scene.lightColour.rgb * scene.lightColour.a * lambert;
+    radiance = (ambientTerm + sunTerm) * base;
   }
   // Diagnostic spin marker: a band fixed in element-local space. It is not a
   // material; it makes the wheel rotation visible on rotationally symmetric
