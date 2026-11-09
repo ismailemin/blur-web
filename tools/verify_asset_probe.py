@@ -106,6 +106,7 @@ def main():
         # nineteen-level decision table and the Gracia no-lap decision.
         ('lighting-runtime',['node','probes/lighting/tools/verify_runtime_lighting.mjs']),
         ('lighting-lightmap',['node','probes/lighting/tools/verify_lightmap.mjs']),
+        ('lighting-lightmap-runtime',['node','probes/lighting/tools/verify_lightmap_runtime.mjs']),
         ('audio-runtime',['node','probes/audio/tools/verify_runtime_audio.mjs']),
         ('car-materials-runtime',['node','probes/car-materials/tools/verify_runtime_materials.mjs']),
         ('hud-ui',['node','--test','probes/hud-ui/test/']),
@@ -113,6 +114,8 @@ def main():
         ('map-laps-gracia-nolap',['node','probes/map-laps/tools/verify_gracia_no_lap.mjs']),
         ('powerups-pickup-routes',['node','probes/powerups/tools/verify_pickup_routes.mjs']),
         ('powerups-retail-placement',['node','probes/powerups/tools/verify_retail_placement.mjs']),
+        ('powerups-aid',['node','probes/powerups-aid/tools/verify_physical_placement.mjs']),
+        ('map-laps-aid',['node','probes/map-laps-aid/tools/verify_aid_paths.mjs']),
         ('vehicle-batch-roster',[sys.executable,'probes/vehicle-batch/tools/verify_batch_roster.py']),
     ])
     results=[]
