@@ -24,6 +24,20 @@ html, body {
   cursor: grab;
 }
 
+/* Course minimap: a 2D projection of the committed course polyline. It is
+   drawn from layout.course.samples and layout.gates only. */
+#minimap {
+  position: fixed;
+  right: 12px;
+  bottom: 88px;
+  width: 220px;
+  height: 220px;
+  border: 1px solid rgba(111, 195, 232, 0.35);
+  border-radius: 6px;
+  background: rgba(8, 14, 20, 0.82);
+}
+#minimap[hidden] { display: none; }
+
 #hud {
   position: fixed;
   top: 12px;

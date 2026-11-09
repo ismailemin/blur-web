@@ -96,8 +96,11 @@ import {
 // real gesture calls `ensureStarted()`.
 import { createEngineAudio } from '/audio/engine-audio.js';
 import { mountRetailHud, retailHudRequested } from './hud-mount.js';
+import { createMinimap } from './minimap.js';
 const RETAIL_HUD = retailHudRequested();
 let retailHud = null;
+// The course minimap model, rebuilt when a layout loads (see publishMinimap).
+let minimapModel = null;
 const params = new URLSearchParams(location.search);
 const SCRIPT_PARAM = params.get('script');
 const TELEMETRY = params.get('telemetry') === '1';
@@ -501,6 +504,7 @@ const state = {
   packetNodes: 0,
   wheelNodes: 0,
   trackVisual: null,
+  minimap: null,
   map: null,
   mapCounts: null,
   trackDraws: 0,
@@ -746,12 +750,33 @@ function ghostSummary() {
   };
 }
 
+/**
+ * Redraw the course minimap from the committed course polyline and the live
+ * car/remote positions. Presentation only: the projection is a pure function of
+ * the layout, and a layout without a polyline leaves the canvas hidden.
+ */
+function publishMinimap() {
+  if (!minimapModel) return;
+  const rows = state.mp?.remotes;
+  const list = Array.isArray(rows) ? rows : (rows ? Object.values(rows) : []);
+  const remotes = [];
+  for (const row of list) {
+    const position = row?.position;
+    if (Array.isArray(position) && Number.isFinite(position[0]) && Number.isFinite(position[2])) {
+      remotes.push({ x: position[0], z: position[2] });
+    }
+  }
+  minimapModel.update({ position: state.position, remotes });
+  state.minimap = { ...minimapModel.stats, remotes: remotes.length };
+}
+
 function publish() {
   document.documentElement.dataset.driveState = state.consumer;
   document.documentElement.dataset.holdReached = String(state.holdReached);
   if (state.sprint) document.documentElement.dataset.sprint = state.sprint.phase;
   if (state.telemetry) document.documentElement.dataset.telemetry = state.telemetry.ready ? 'ready' : 'running';
   state.ghost = ghostSummary();
+  publishMinimap();
   state.chunk = {
     indexSha256: chunkDocuments.indexSha256 ?? null,
     level: chunkDocuments.levelBytes
@@ -2758,6 +2783,14 @@ async function loadEngine(carOverride = null) {
       countdownTicks: layout.countdown.ticks,
       rules: layout.rules
     };
+    // Course minimap: a 2D projection of the committed course polyline. It is
+    // built once per loaded layout from `layout.course.samples` and
+    // `layout.gates`; `publish()` redraws it each frame. A layout without a
+    // usable polyline keeps the canvas hidden instead of drawing a guess.
+    const minimapCanvas = document.getElementById('minimap');
+    minimapModel = createMinimap(minimapCanvas, layout);
+    if (minimapCanvas) minimapCanvas.hidden = minimapModel === null;
+    state.minimap = minimapModel ? { ...minimapModel.stats, remotes: 0 } : null;
     // Visible-prop layer (P74 V2). The 310 m sprint binds the base V2 manifest
     // with the roadside profile (553 of 651 colliders: the four measured on-course
     // arcs stay excluded), the lap binds the same manifest all-visible (651) and

@@ -54,6 +54,7 @@ def main():
         ('supershield-rules',['node','probes/powerups/rules/supershield.test.mjs']),
         ('projectile-rules',['node','probes/powerups/rules/projectiles.test.mjs']),
         ('boost-model',['node','probes/e1-drive/tools/boost_model_tests.mjs']),
+        ('minimap',['node','probes/e1-drive/tools/minimap_tests.mjs']),
         ('amboy-map',['node','probes/e1-drive/tools/verify_e1_map.mjs']),
         ('gracia-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','gracia']),
         ('longbeach-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','longbeach']),
