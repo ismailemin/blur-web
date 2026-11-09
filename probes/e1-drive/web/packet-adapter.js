@@ -33,6 +33,9 @@ import { MATRIX_CONVENTION, cameraFromOrbit, transformPoint } from './packet-cam
 import { PACKET_KIND, PACKET_VERSION, hashOf, packetHash } from './packet-hash.js';
 import { buildOccluder } from './camera-occlusion.js';
 import { TICK_HZ } from './drive-script.js';
+// The decoded retail car material table (paint, glass, emissive, alloy). Every
+// value is copied from the retail XT records by probes/car-materials.
+import { materialsFor } from '../../car-materials/runtime-materials.mjs';
 
 export const CAR_NODE_ID = 'e1.car.body';
 export const WHEELS_RENDERED = true;
@@ -393,6 +396,19 @@ export function createSession(geometry, tick0, options = {}) {
   const carMeshId = body.meshId;
   if (!carMeshId) throw new Error('geometry body has no mesh id');
 
+  // The decoded retail paint colour for this car. `materialsFor` is the
+  // committed table; an unknown slug leaves the diagnostic albedo in place and
+  // records the typed reason instead of guessing a colour.
+  let paintColour = null;
+  let paintSource = null;
+  try {
+    const material = materialsFor(body.slug);
+    paintColour = material.baseColour.slice(0, 3);
+    paintSource = material.source?.paintJob ?? 'probes/car-materials';
+  } catch (error) {
+    paintSource = 'unavailable: ' + (error.message ?? String(error));
+  }
+
   // Draws keep their manifest ranges and gain the wheel node that moves them.
   // Wheel draws sit on their group's rest-pose translation so their static
   // (tick-0) world matrix is already correct before any update.
@@ -401,8 +417,17 @@ export function createSession(geometry, tick0, options = {}) {
     const corner = typeof draw.renderPartId === 'string' && draw.renderPartId.startsWith('wheel.')
       ? draw.renderPartId.slice('wheel.'.length) : null;
     const world = corner ? multiplyMat4(reference, wheelByCorner.get(corner).matrixColumnMajor) : reference;
+    // The retail paint lookup: a draw whose material is the runtime paint
+    // lookup uses the decoded paint ramp colour instead of the diagnostic
+    // albedo. Every other class keeps its committed diagnostic albedo.
+    let albedo = draw.albedo;
+    if (draw.textureBinding?.status === 'runtimePaintLookup' && paintColour) {
+      albedo = [paintColour[0], paintColour[1], paintColour[2],
+        Array.isArray(draw.albedo) ? (draw.albedo[3] ?? 0) : 0];
+    }
     return {
       ...rest,
+      albedo,
       world,
       worldKind: 'packet-transform',
       bounds: boundsUnderMatrix(localBounds, world)
@@ -587,6 +612,11 @@ export function createSession(geometry, tick0, options = {}) {
     lights: [geometry.light],
     meshes,
     materials: geometry.materials,
+    carPaint: {
+      colour: paintColour,
+      source: paintSource,
+      paintDraws: carDraws.filter((draw) => draw.textureBinding?.status === 'runtimePaintLookup').length
+    },
     textures: packetTextures,
     texturePack: geometry.texturePack,
     lightmaps: Array.isArray(geometry.lightmaps) ? geometry.lightmaps : [],
