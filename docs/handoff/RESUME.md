@@ -11,12 +11,14 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 |---|---|
 | **Haritalar** | **13/19 oynanabilir**: river, amboy, gracia, longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**. |
 | **Araçlar** | **61/62** sürüş diliminde. Yalnızca `defaultcar` desteklenmiyor (gövde modeli yok). |
-| **Lightmap** | **9 haritada render'da** (river, amboy, gracia, longbeach, observatory, mharuna, shutoko, oval, amboy-mp). Amboy vitrini: **83 doku, 1173/1301 draw lightmap'li, 0 hata/uyarı**. |
+| **Lightmap** | **11 haritada render'da** (river hariç: amboy, gracia, longbeach, observatory, mharuna, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**). Amboy vitrini: **83 doku, 1173/1301 draw lightmap'li, 0 hata/uyarı**. Dumbo 115 doku/1615 draw, Downtown MP 49 doku/207 draw. |
 | **Ses** | 23 olaylı retail kataloğu sayfaya bağlı. |
 | **HUD** | Hız göstergesi, vites, sıra/tur, güç yuvası, hasar/kalkan, geri sayım; 19/19 test. |
+| **Menü** | **61 araç / 13 harita**, 42/42 test, başsız Edge 0 konsol hatası. |
 | **Multiplayer** | 8 oyunculu oda (`mp-eight` 95/95); Amboy'da `?powerups=1` ile 82 pickup / 8 tip. |
-| **E2E** | 17 senaryo; her biri tek başına yeşil. Son toplu koşuda `solo-dumbo`/`solo-downtown-mp` sunucu ölünce `ERR_CONNECTION_REFUSED` aldı; sunucu açıkken **12/12** geçti. |
-| **Kapı** | **`verify_asset_probe --skip-build` 95/95 PASS** (`gate-full17.log`, exit 0). `vehicle-batch-roster` 61/61. |
+| **AI** | 8 haritada 61 araç × 2 profil = **976 koşu**, 946 temiz, 30 bildirilmiş limit, 0 beklenmeyen; `verify-maps` **32/32**. Dumbo/Downtown MP 122/122 temiz. |
+| **E2E** | **17/17 senaryo, 479/479 assertion** (dumbo ve downtown-mp dahil). |
+| **Kapı** | `verify_asset_probe --skip-build` **95+3 adım**; `gate-full18.log` doğrulama için koşuyor. |
 
 ## Son commit'ler
 
@@ -51,33 +53,28 @@ node probes/e2e/run.mjs --scenarios solo-dumbo,solo-downtown-mp --base http://12
 
 ## Sıradaki işler (öncelik sırası)
 
-1. **Kapı yeşil** (`gate-full17.log`, 95/95). Yeni bir değişiklikten sonra
-   yeniden koş; kırmızı çıkarsa büyük olasılıkla "stale pin"dir; ilgili
-   üreticiyi çalıştır (`docs/work/verification/refresh-work-artifacts.md`).
-2. **Menüyü 61 araç / 13 haritaya çek.** `probes/game-shell` hâlâ 59/11
-   verisiyle; `car-classes.json` ve `course-measurements.json` güncellenmeli,
-   `capture-shell.mjs` beklentileri 61/13 olmalı.
-3. **River lightmap'i.** River `kind: 'single-map'` ve `build_geometry.mjs`
-   yolunu kullanıyor; `mesh.lightmapUv` + `draw.lightmapUrl` oraya eklenmeli.
-4. **Dumbo / Downtown MP lightmap'i.** `probes/lighting` 9 haritayı çözüyor;
-   bu iki seviye `LIGHTMAP_MAPS` dışında. `lighting_data.py` `SPAWN_TABLE`'a
-   eklenip manifest + export yenilenmeli, sonra `build_e1_package.py`
-   `LIGHTMAP_MAPS`'e eklenmeli.
-5. **Kalan 6 harita (tipli blocker).**
-   - `uk_london_hackney`: `.aid` hattı 222/10.012 istasyonda bant dışı.
-   - `uk_brighton`: 952/8.662.
-   - `usa_sanfran_sausalito`: 7.909/18.196.
-   - `usa_sanfran_russianhill`: spawn'a 25 m içinde `.aid` hattı yok.
+1. **Kapıyı doğrula** (`gate-full18.log`). Yeni eklenen `map-laps-aid`,
+   `powerups-aid` ve `lighting-lightmap-runtime` adımları dahil.
+2. **River lightmap'i.** River `kind: 'single-map'` ve `build_geometry.mjs`
+   yolunu kullanıyor; track görseli `_work/level-candidates/.../reference.json`
+   üzerinden geliyor ve orada `lightmapUv` yok. `mesh.lightmapUv` +
+   `draw.lightmapUrl` bu yola eklenmeli.
+3. **Kalan 5 harita (tipli blocker).** `.aid` hattı ±24 m detour ile bile
+   araç bandına (2,276 m) sığmıyor:
+   - `uk_london_hackney`: 221 istasyon (ilk 2.890/10.012, (-227.278106, -133.764788)).
+   - `uk_brighton`: ±24 m'de 24 istasyon (ilk 670/8.662, (84.516652, -185.448468)).
+   - `usa_sanfran_sausalito`: 7.024 istasyon (ilk 4/18.196, (709.521209, -1434.502293)).
+   - `usa_sanfran_russianhill`: en yakın hat 175,14 m; snap limiti 25 m.
    - `spa_barcelona_bowl_multiplayer`: `.aid` dosyası yok.
-   - `showroom`: yarış haritası değil.
-   Bunlar gerçek veri sınırları; spawn/finish yeniden seçimi veya daha geniş
-   koridor bir tasarım kararıdır, uydurma değil.
-6. **`defaultcar`**: gövde modeli yok; tipli `unsupported` kalmalı.
-7. **Retail pickup fiziksel yerleşimi.** `probes/powerups-aid`: Amboy 2/82,
+   `showroom` yarış haritası değil. Bunlar gerçek koridor genişliği sınırları;
+   daha dar bir araç bandı (ör. gerçek araç genişliği) bir tasarım kararıdır,
+   uydurma değil.
+4. **`defaultcar`**: gövde modeli yok; tipli `unsupported` kalmalı.
+5. **Retail pickup fiziksel yerleşimi.** `probes/powerups-aid`: Amboy 2/82,
    Gracia 2/59, River 0/54 (retail hat ölçülen parkurdan uzak). Kalanlar
    `off-course`; fiziksel iddia yok.
-8. **İnternet deploy.** `docs/` altındaki deploy paketi hazır; kullanıcıdan
-   VPS/domain/TLS bekliyor.
+6. **İnternet deploy.** Deploy paketi hazır; kullanıcıdan VPS/domain/TLS
+   bekliyor. Retail 1:1 parite için kullanıcıdan referans kareleri.
 
 ## Bu oturumda düzeltilen gerçek hatalar (tekrar etmemek için)
 
