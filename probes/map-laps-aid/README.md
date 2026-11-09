@@ -460,3 +460,26 @@ Current result:
 ```text
 317/317 checks passed
 ```
+
+
+## Raster course to E1 layout (status: not yet drivable)
+
+	ools/build_raster_layout.mjs converts a committed raster course into the
+e1-drive.sprint layout the page consumes (data/<map>-raster-layout.json).
+It is verified to build and the packages build from it, but the course is
+**not yet drivable** by the scripted sprint controller:
+
+| map | loop | draw coverage of the loop | scripted sprint |
+| --- | ---: | ---: | --- |
+| russianhill | 382.315 m | 82.8% | respawn outside-corridor at tick ~1458 |
+| hackney | 5,185.102 m | 48.1% | not run |
+| brighton | 10,864.527 m | 38.6% | not run |
+| sausalito | 2,802.765 m | 100% | not run |
+| bowl | 1,112.810 m | 0% | no draw geometry under the loop |
+
+The traced loop is a grid staircase on the 0.5 m passable raster; a centred
+moving average over +/- 2 stations is applied in the layout, but the result is
+still tighter than the controller can follow. The next step is a curvature-
+limited centreline (a smoothed spline with a documented minimum radius), not a
+hand-placed point. The .aid verdicts are unchanged and the five levels stay
+locked in id-paths.json.
