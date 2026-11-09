@@ -1,5 +1,5 @@
 {
- "schema": "blur.map-laps-aid.aid-paths/3",
+ "schema": "blur.map-laps-aid.aid-paths/4",
  "source": {
   "builder": "probes/map-laps-aid/tools/build_aid_paths.py",
   "aidDecoder": "probes/course/tools/aid_decode.py",
@@ -10,14 +10,30 @@
   "detourTiers": [
    {
     "tier": "band",
-    "searchMetres": 12
+    "searchMetres": 12,
+    "bandMetres": 2.276,
+    "marginMetres": 0.3,
+    "bandStepMetres": 0.25,
+    "reason": "the documented car envelope (1.676 m) plus the 0.30 m safety margin on each side"
    },
    {
     "tier": "wide",
-    "searchMetres": 24
+    "searchMetres": 24,
+    "bandMetres": 2.276,
+    "marginMetres": 0.3,
+    "bandStepMetres": 0.25,
+    "reason": "the documented car envelope (1.676 m) plus the 0.30 m safety margin on each side, in a wider +/-24 m window (a new course)"
+   },
+   {
+    "tier": "narrow",
+    "searchMetres": 24,
+    "bandMetres": 1.68,
+    "marginMetres": 0,
+    "bandStepMetres": 0.21,
+    "reason": "the documented maximum car width with no safety margin; a design choice, not a recovered retail hull"
    }
   ],
-  "detourRule": "tiers are tried in order: 'band' is the declared +/-12 m respawn band; 'wide' is a +/-24 m window, a new course, and is only attempted when the band tier has a station with no band-clear lateral position (or no continuous detour). A tier succeeds only when the whole detoured line is car-half-width clear and continuous (<= 0.5 m between consecutive samples); a station whose racing point is not clear moves along its own normal to the nearest continuous band-clear position in the tier window (0.25 m steps) and the line returns to the racing line when the racing point becomes clear",
+  "detourRule": "tiers are tried in order: 'band' is the declared +/-12 m respawn band with the 2.276 m band (1.676 m car + 0.30 m margin per side); 'wide' is a +/-24 m window with the same band (a new course); 'narrow' is the +/-24 m window with the 1.680 m band (the documented car width, no safety margin; a design choice, not a recovered retail hull). A later tier is only attempted when the previous one has a station with no band-clear lateral position (or no continuous detour). A tier succeeds only when the whole detoured line is band-clear and continuous (<= 0.5 m between consecutive samples); a station whose racing point is not clear moves along its own normal to the nearest continuous band-clear position in the tier window (0.25 m steps) and the line returns to the racing line when the racing point becomes clear",
   "note": "lengths are the committed path documents; blocked reasons are the builder's typed records, never paraphrased"
  },
  "scope": {
@@ -41,6 +57,8 @@
    "aid": null,
    "detourTier": null,
    "detourSearchMetres": null,
+   "bandMetres": null,
+   "marginMetres": null,
    "blocker": {
     "stage": "aid-missing",
     "x": null,
@@ -51,6 +69,8 @@
     "maxSpawnOffsetMetres": null,
     "detourTier": null,
     "detourSearchMetres": null,
+    "bandMetres": null,
+    "marginMetres": null,
     "detourMaxJumpMetres": null,
     "blockedStations": null,
     "blockedSamples": null,
@@ -85,20 +105,24 @@
     "loopLengthMetres": 3080.569126,
     "spawnProjectionMetres": 10.5291
    },
-   "detourTier": "wide",
+   "detourTier": "narrow",
    "detourSearchMetres": 24,
+   "bandMetres": 1.68,
+   "marginMetres": 0,
    "blocker": {
     "stage": "no-band-clear-lateral",
-    "x": 84.516652,
-    "z": -185.448468,
-    "stationIndex": 670,
+    "x": 84.692995,
+    "z": -185.625677,
+    "stationIndex": 671,
     "stationCount": 8662,
     "spawnDistanceMetres": null,
     "maxSpawnOffsetMetres": null,
-    "detourTier": "wide",
+    "detourTier": "narrow",
     "detourSearchMetres": 24,
+    "bandMetres": 1.68,
+    "marginMetres": 0,
     "detourMaxJumpMetres": null,
-    "blockedStations": 24,
+    "blockedStations": 6,
     "blockedSamples": null,
     "aidEntriesFound": null,
     "levelDirectoryEntries": null,
@@ -107,28 +131,45 @@
      {
       "tier": "band",
       "searchMetres": 12,
+      "bandMetres": 2.276,
+      "marginMetres": 0.3,
       "stage": "no-band-clear-lateral",
       "stationIndex": 609,
       "stationCount": 8662,
       "x": 73.591833,
       "z": -174.809792,
       "blockedStations": 810,
-      "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the declared +/-12 m respawn band at station 609 of 8662 (73.592, -174.810); 810 stations have no band-clear position"
+      "reason": "the retail racing line has no 2.276 m band-clear lateral position within the declared +/-12 m respawn band at station 609 of 8662 (73.592, -174.810); 810 stations have no band-clear position"
      },
      {
       "tier": "wide",
       "searchMetres": 24,
+      "bandMetres": 2.276,
+      "marginMetres": 0.3,
       "stage": "no-band-clear-lateral",
       "stationIndex": 670,
       "stationCount": 8662,
       "x": 84.516652,
       "z": -185.448468,
       "blockedStations": 24,
-      "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 670 of 8662 (84.517, -185.448); 24 stations have no band-clear position"
+      "reason": "the retail racing line has no 2.276 m band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 670 of 8662 (84.517, -185.448); 24 stations have no band-clear position"
+     },
+     {
+      "tier": "narrow",
+      "searchMetres": 24,
+      "bandMetres": 1.68,
+      "marginMetres": 0,
+      "stage": "no-band-clear-lateral",
+      "stationIndex": 671,
+      "stationCount": 8662,
+      "x": 84.692995,
+      "z": -185.625677,
+      "blockedStations": 6,
+      "reason": "the retail racing line has no 1.680 m band-clear lateral position within the +/-24 m wide detour window with the 1.68 m band (no safety margin) at station 671 of 8662 (84.693, -185.626); 6 stations have no band-clear position"
      }
     ]
    },
-   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 670 of 8662 (84.517, -185.448); 24 stations have no band-clear position",
+   "reason": "the retail racing line has no 1.680 m band-clear lateral position within the +/-24 m wide detour window with the 1.68 m band (no safety margin) at station 671 of 8662 (84.693, -185.626); 6 stations have no band-clear position",
    "pathFile": null,
    "pathFileSha256": null,
    "pathContentHash": null
@@ -158,12 +199,14 @@
     "spawnProjectionMetres": 1.1894,
     "finishProjectionMetres": 0.0975
    },
-   "reason": "the retail racing line is car-half-width clear on this segment after 231 detour stations (max 9.500 m) in the band tier; the path starts at the point nearest the committed spawn and ends at the point nearest the committed draw-path end",
+   "reason": "the retail racing line is band-clear on this segment after 231 detour stations (max 9.500 m) in the band tier (2.276 m band); the path starts at the point nearest the committed spawn and ends at the point nearest the committed draw-path end",
    "detours": 231,
    "detourRuns": 1,
    "maxLateralOffsetMetres": 9.5,
    "detourTier": "band",
    "detourSearchMetres": 12,
+   "bandMetres": 2.276,
+   "marginMetres": 0.3,
    "pathFile": "probes/map-laps-aid/data/downtown-mp-aid-path.json",
    "pathFileSha256": "sha256:5aa5f4522759130c08ed4a35300e0d3709afd8777ddc9f21e2194f177ce0c25b",
    "pathContentHash": "sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779"
@@ -193,12 +236,14 @@
     "spawnProjectionMetres": 11.2225,
     "finishProjectionMetres": 399.3514
    },
-   "reason": "the retail racing line is car-half-width clear on this segment after 0 detour stations (max 0.000 m) in the band tier; the path starts at the point nearest the committed spawn and ends at the point nearest the committed draw-path end",
+   "reason": "the retail racing line is band-clear on this segment after 0 detour stations (max 0.000 m) in the band tier (2.276 m band); the path starts at the point nearest the committed spawn and ends at the point nearest the committed draw-path end",
    "detours": 0,
    "detourRuns": 0,
    "maxLateralOffsetMetres": 0,
    "detourTier": "band",
    "detourSearchMetres": 12,
+   "bandMetres": 2.276,
+   "marginMetres": 0.3,
    "pathFile": "probes/map-laps-aid/data/dumbo-aid-path.json",
    "pathFileSha256": "sha256:6f9b500f43b6a6537ca42f0ef200e19e172d8e3310451c64630ccb55e1f20f86",
    "pathContentHash": "sha256:526736bf09cb7b168a2cd12685859eb2386a215c904fe852f2dba403254f2bf3"
@@ -222,8 +267,10 @@
     "loopLengthMetres": 2949.954423,
     "spawnProjectionMetres": 10.0334
    },
-   "detourTier": "wide",
+   "detourTier": "narrow",
    "detourSearchMetres": 24,
+   "bandMetres": 1.68,
+   "marginMetres": 0,
    "blocker": {
     "stage": "no-band-clear-lateral",
     "x": -227.278106,
@@ -232,10 +279,12 @@
     "stationCount": 10012,
     "spawnDistanceMetres": null,
     "maxSpawnOffsetMetres": null,
-    "detourTier": "wide",
+    "detourTier": "narrow",
     "detourSearchMetres": 24,
+    "bandMetres": 1.68,
+    "marginMetres": 0,
     "detourMaxJumpMetres": null,
-    "blockedStations": 221,
+    "blockedStations": 219,
     "blockedSamples": null,
     "aidEntriesFound": null,
     "levelDirectoryEntries": null,
@@ -244,28 +293,45 @@
      {
       "tier": "band",
       "searchMetres": 12,
+      "bandMetres": 2.276,
+      "marginMetres": 0.3,
       "stage": "no-band-clear-lateral",
       "stationIndex": 2890,
       "stationCount": 10012,
       "x": -227.278106,
       "z": -133.764788,
       "blockedStations": 221,
-      "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the declared +/-12 m respawn band at station 2890 of 10012 (-227.278, -133.765); 221 stations have no band-clear position"
+      "reason": "the retail racing line has no 2.276 m band-clear lateral position within the declared +/-12 m respawn band at station 2890 of 10012 (-227.278, -133.765); 221 stations have no band-clear position"
      },
      {
       "tier": "wide",
       "searchMetres": 24,
+      "bandMetres": 2.276,
+      "marginMetres": 0.3,
       "stage": "no-band-clear-lateral",
       "stationIndex": 2890,
       "stationCount": 10012,
       "x": -227.278106,
       "z": -133.764788,
       "blockedStations": 221,
-      "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 2890 of 10012 (-227.278, -133.765); 221 stations have no band-clear position"
+      "reason": "the retail racing line has no 2.276 m band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 2890 of 10012 (-227.278, -133.765); 221 stations have no band-clear position"
+     },
+     {
+      "tier": "narrow",
+      "searchMetres": 24,
+      "bandMetres": 1.68,
+      "marginMetres": 0,
+      "stage": "no-band-clear-lateral",
+      "stationIndex": 2890,
+      "stationCount": 10012,
+      "x": -227.278106,
+      "z": -133.764788,
+      "blockedStations": 219,
+      "reason": "the retail racing line has no 1.680 m band-clear lateral position within the +/-24 m wide detour window with the 1.68 m band (no safety margin) at station 2890 of 10012 (-227.278, -133.765); 219 stations have no band-clear position"
      }
     ]
    },
-   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 2890 of 10012 (-227.278, -133.765); 221 stations have no band-clear position",
+   "reason": "the retail racing line has no 1.680 m band-clear lateral position within the +/-24 m wide detour window with the 1.68 m band (no safety margin) at station 2890 of 10012 (-227.278, -133.765); 219 stations have no band-clear position",
    "pathFile": null,
    "pathFileSha256": null,
    "pathContentHash": null
@@ -291,6 +357,8 @@
    },
    "detourTier": null,
    "detourSearchMetres": null,
+   "bandMetres": null,
+   "marginMetres": null,
    "blocker": {
     "stage": "spawn-match",
     "x": -48.467753,
@@ -301,6 +369,8 @@
     "maxSpawnOffsetMetres": 25.0,
     "detourTier": null,
     "detourSearchMetres": null,
+    "bandMetres": null,
+    "marginMetres": null,
     "detourMaxJumpMetres": null,
     "blockedStations": null,
     "blockedSamples": null,
@@ -350,20 +420,24 @@
     "loopLengthMetres": 5460.802028,
     "spawnProjectionMetres": 10.0695
    },
-   "detourTier": "wide",
+   "detourTier": "narrow",
    "detourSearchMetres": 24,
+   "bandMetres": 1.68,
+   "marginMetres": 0,
    "blocker": {
     "stage": "no-band-clear-lateral",
-    "x": 709.521209,
-    "z": -1434.502293,
-    "stationIndex": 4,
+    "x": 709.746329,
+    "z": -1434.611018,
+    "stationIndex": 5,
     "stationCount": 18196,
     "spawnDistanceMetres": null,
     "maxSpawnOffsetMetres": null,
-    "detourTier": "wide",
+    "detourTier": "narrow",
     "detourSearchMetres": 24,
+    "bandMetres": 1.68,
+    "marginMetres": 0,
     "detourMaxJumpMetres": null,
-    "blockedStations": 7024,
+    "blockedStations": 6972,
     "blockedSamples": null,
     "aidEntriesFound": null,
     "levelDirectoryEntries": null,
@@ -372,28 +446,45 @@
      {
       "tier": "band",
       "searchMetres": 12,
+      "bandMetres": 2.276,
+      "marginMetres": 0.3,
       "stage": "no-band-clear-lateral",
       "stationIndex": 4,
       "stationCount": 18196,
       "x": 709.521209,
       "z": -1434.502293,
       "blockedStations": 7799,
-      "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the declared +/-12 m respawn band at station 4 of 18196 (709.521, -1434.502); 7799 stations have no band-clear position"
+      "reason": "the retail racing line has no 2.276 m band-clear lateral position within the declared +/-12 m respawn band at station 4 of 18196 (709.521, -1434.502); 7799 stations have no band-clear position"
      },
      {
       "tier": "wide",
       "searchMetres": 24,
+      "bandMetres": 2.276,
+      "marginMetres": 0.3,
       "stage": "no-band-clear-lateral",
       "stationIndex": 4,
       "stationCount": 18196,
       "x": 709.521209,
       "z": -1434.502293,
       "blockedStations": 7024,
-      "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 4 of 18196 (709.521, -1434.502); 7024 stations have no band-clear position"
+      "reason": "the retail racing line has no 2.276 m band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 4 of 18196 (709.521, -1434.502); 7024 stations have no band-clear position"
+     },
+     {
+      "tier": "narrow",
+      "searchMetres": 24,
+      "bandMetres": 1.68,
+      "marginMetres": 0,
+      "stage": "no-band-clear-lateral",
+      "stationIndex": 5,
+      "stationCount": 18196,
+      "x": 709.746329,
+      "z": -1434.611018,
+      "blockedStations": 6972,
+      "reason": "the retail racing line has no 1.680 m band-clear lateral position within the +/-24 m wide detour window with the 1.68 m band (no safety margin) at station 5 of 18196 (709.746, -1434.611); 6972 stations have no band-clear position"
      }
     ]
    },
-   "reason": "the retail racing line has no car-half-width (1.138 m) band-clear lateral position within the +/-24 m wide detour window (a new course, not the declared +/-12 m respawn band) at station 4 of 18196 (709.521, -1434.502); 7024 stations have no band-clear position",
+   "reason": "the retail racing line has no 1.680 m band-clear lateral position within the +/-24 m wide detour window with the 1.68 m band (no safety margin) at station 5 of 18196 (709.746, -1434.611); 6972 stations have no band-clear position",
    "pathFile": null,
    "pathFileSha256": null,
    "pathContentHash": null

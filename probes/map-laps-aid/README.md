@@ -37,27 +37,34 @@ Determinism: two consecutive `build_aid_paths.py` runs produce byte-identical
 
 ## Detour tiers
 
-A station whose racing point is not car-half-width (1.138 m) clear may move
-along its own normal to a band-clear position. Two bounded windows are tried in
-order:
+A station whose racing point is not band-clear may move along its own normal to
+a band-clear position. Three bounded tiers are tried in order:
 
-| tier | window | meaning |
-| --- | ---: | --- |
-| `band` | ±12 m | the declared respawn band (`CORRIDOR_HALF_WIDTH`); tried first |
-| `wide` | ±24 m | **a new course**, twice the declared band; tried only when `band` fails |
+| tier | window | band | margin | meaning |
+| --- | ---: | ---: | ---: | --- |
+| `band` | ±12 m | 2.276 m | 0.30 m | the declared respawn band (`CORRIDOR_HALF_WIDTH`); tried first |
+| `wide` | ±24 m | 2.276 m | 0.30 m | **a new course**, twice the declared band; tried only when `band` fails |
+| `narrow` | ±24 m | 1.680 m | 0 | **a new course** with the documented maximum car width and **no safety margin**; tried only when `wide` fails |
+
+The `narrow` band is exactly 1.68 m: half-width 0.84 m sampled at 0.21 m
+(9 samples, outermost at ±0.84 m). It is the documented maximum car width with
+no safety margin — a design choice, not a recovered retail hull. The committed
+`CAR_WIDTH` constant is 1.676 m; the tier records the documented 1.68 m value.
 
 A tier is accepted only when the **whole** detoured line is band-clear and
 continuous (consecutive samples at most 0.5 m apart) and returns to the racing
-line when the racing point becomes clear. The `wide` tier is never a substitute
-for a `band` result: it is attempted only after `band` has a station with no
-band-clear lateral position (or no continuous detour). A level is `path` only
-when one tier passes end to end; otherwise it stays `blocked` with the first
-station that cannot be detoured at the widest attempted tier.
+line when the racing point becomes clear. A later tier is never a substitute
+for an earlier one: it is attempted only after the previous tier has a station
+with no band-clear lateral position (or no continuous detour). A level is
+`path` only when one tier passes end to end; otherwise it stays `blocked` with
+the first station that cannot be detoured at the last attempted tier.
 
 The path document records the tier bound as `source.aid.detourSearchMetres`
-(12 or 24). A `wide` path additionally records `source.aid.detourTier: "wide"`
-and the failed `band` attempt in `source.aid.detourTierAttempts`. The `band`
-tier is the default and is not named in the document; this keeps the two
+(12 or 24). A `wide` or `narrow` path additionally records
+`source.aid.detourTier`, `source.aid.bandMetres`, `source.aid.marginMetres`,
+`source.aid.detourTierReason`, the failed attempts in
+`source.aid.detourTierAttempts`, and a `source.clearance.band` object. The
+`band` tier is the default and is not named in the document; this keeps the two
 committed band documents byte-identical to the versions pinned by
 `probes/e1-drive/web/map-registry.js` (`layoutFileSha256`).
 
@@ -65,35 +72,42 @@ committed band documents byte-identical to the versions pinned by
 
 | level | mapId | verdict | tier tried | `.aid` file / record | length | detour stations (max offset) | blocker |
 | --- | --- | --- | --- | --- | ---: | --- | --- |
-| `usa_ny_dumbo` | `dumbo` | **path** | `band` | `usa_ny_dumbo_2.aid`, `MainLoop` route 2, record `2270742337` | 361.999436 m | 0 (0 m) | — |
-| `usa_la_downtown_multiplayer` | `downtown-mp` | **path** | `band` | `usa_la_downtown_multiplayer_figureof8.aid`, `Mainracing` route 0, record `4228808123` | 86.452776 m | 231 (9.5 m) | — |
-| `uk_london_hackney` | `hackney` | blocked | `band` → `wide` | `uk_london_hackney_4.aid`, `MainLoop` route 1, record `1602485103` | — | — | 221 stations have no band-clear lateral even at ±24 m; first at station 2,890/10,012, racing point **(-227.278106, -133.764788)** |
-| `uk_brighton` | `brighton` | blocked | `band` → `wide` | `uk_brighton_2.aid`, `MainLoop` route 3, record `2322912142` | — | — | `band`: 810 stations, first at 609 **(73.591833, -174.809792)**; `wide`: 24 stations, first at 670 **(84.516652, -185.448468)** |
-| `usa_sanfran_sausalito` | `sausalito` | blocked | `band` → `wide` | `usa_sanfran_sausalito_1.aid`, `MainLoop` route 5, record `1501209191` | — | — | `band`: 7,799 stations; `wide`: 7,024 stations; first at station 4/18,196, racing point **(709.521209, -1434.502293)** |
-| `usa_sanfran_russianhill` | `russianhill` | blocked | none | `usa_sanfran_russianhill_1.aid`, `MainLoop` route 0, record `2877899465` | — | — | no racing line within 25 m of the spawn; nearest point **(-48.467753, 322.743199)** at **175.140 m**; nearest band-clear point **(-49.698497, 323.774200)** at **175.147 m**, beyond the 25 m snap limit |
+| `usa_ny_dumbo` | `dumbo` | **path** | `band` (2.276 m) | `usa_ny_dumbo_2.aid`, `MainLoop` route 2, record `2270742337` | 361.999436 m | 0 (0 m) | — |
+| `usa_la_downtown_multiplayer` | `downtown-mp` | **path** | `band` (2.276 m) | `usa_la_downtown_multiplayer_figureof8.aid`, `Mainracing` route 0, record `4228808123` | 86.452776 m | 231 (9.5 m) | — |
+| `uk_london_hackney` | `hackney` | blocked | `band` → `wide` → `narrow` (1.68 m) | `uk_london_hackney_4.aid`, `MainLoop` route 1, record `1602485103` | — | — | `band`: 221; `wide`: 221; `narrow`: 219 stations; first narrow at station 2,890/10,012, racing point **(-227.278106, -133.764788)** |
+| `uk_brighton` | `brighton` | blocked | `band` → `wide` → `narrow` (1.68 m) | `uk_brighton_2.aid`, `MainLoop` route 3, record `2322912142` | — | — | `band`: 810, first 609 **(73.591833, -174.809792)**; `wide`: 24, first 670 **(84.516652, -185.448468)**; `narrow`: 6, first 671 **(84.692995, -185.625677)** |
+| `usa_sanfran_sausalito` | `sausalito` | blocked | `band` → `wide` → `narrow` (1.68 m) | `usa_sanfran_sausalito_1.aid`, `MainLoop` route 5, record `1501209191` | — | — | `band`: 7,799; `wide`: 7,024; `narrow`: 6,972 stations; first narrow at station 5/18,196, racing point **(709.746329, -1434.611018)** |
+| `usa_sanfran_russianhill` | `russianhill` | blocked | none (spawn match) | `usa_sanfran_russianhill_1.aid`, `MainLoop` route 0, record `2877899465` | — | — | no racing line within 25 m of the spawn; nearest point **(-48.467753, 322.743199)** at **175.140 m**; nearest band-clear point **(-49.698497, 323.774200)** at **175.147 m**, beyond the 25 m snap limit |
 | `spa_barcelona_bowl_multiplayer` | `bowl` | blocked | none | none | — | — | no `.aid` file exists under `\gamedata\levels\spa_barcelona_bowl_multiplayer\`; the directory ships only `actorpack.xt` |
 
 Two levels are paths: **`dumbo`** (the racing line itself is clear) and
 **`downtown-mp`** (231 of its 334 stations detour, up to 9.5 m, inside the
-declared ±12 m band). The wide tier was attempted on the three
-`no-band-clear-lateral` levels and did not make any of them a path.
+declared ±12 m band). The `wide` and `narrow` tiers were attempted on the three
+`no-band-clear-lateral` levels; neither made any of them a path.
 
-### Wide-tier outcome, per level
+### Tier outcome, per level
 
-The wide tier is a real search, not a formality: on `brighton` it resolves 786
-of the 810 band-tier blockers (station 609 gains 21 clear offsets at −24.00 …
-−19.00 m). It still cannot finish the line.
+The wider tiers are real searches, not formalities: on `brighton` the wide tier
+resolves 786 of the 810 band-tier blockers (station 609 gains 21 clear offsets
+at −24.00 … −19.00 m), and the narrow tier resolves 18 of the remaining 24.
+Neither can finish the line.
 
-| level | band (±12 m) undetourable | wide (±24 m) undetourable | first wide station | wide result |
-| --- | ---: | ---: | --- | --- |
-| `hackney` | 221 in 3 runs (longest 103) | 221 in 3 runs (longest 103) | 2,890 (-227.278106, -133.764788) | no gain; the same stations are blocked |
-| `brighton` | 810 in 16 runs (longest 206) | 24 in 5 runs (longest 14) | 670 (84.516652, -185.448468) | 786 resolved, 24 remain |
-| `sausalito` | 7,799 in 24 runs (longest 2,060) | 7,024 in 24 runs (longest 1,878) | 4 (709.521209, -1434.502293) | 775 resolved, 7,024 remain |
+| level | band (±12 m, 2.276 m) | wide (±24 m, 2.276 m) | narrow (±24 m, 1.68 m) | first narrow station |
+| --- | ---: | ---: | ---: | --- |
+| `hackney` | 221 in 3 runs (longest 103) | 221 in 3 runs (longest 103) | 219 in 3 runs (longest 102) | 2,890 (-227.278106, -133.764788) |
+| `brighton` | 810 in 16 runs (longest 206) | 24 in 5 runs (longest 14) | 6 in 2 runs (longest 4) | 671 (84.692995, -185.625677) |
+| `sausalito` | 7,799 in 24 runs (longest 2,060) | 7,024 in 24 runs (longest 1,878) | 6,972 in 28 runs (longest 1,878) | 5 (709.746329, -1434.611018) |
 
-The first blockers are inside the P48 raster (not a coverage hole): passable
-ground is 0.5–7.4 m away, but no 2.276 m car band fits perpendicular to the
-racing line anywhere in the window. These are data limits of the committed
-collision slice, not extraction failures.
+The first narrow-tier blockers are still inside the P48 raster (not a coverage
+hole): passable ground is 0.5–7.4 m away, but no 1.68 m band fits perpendicular
+to the racing line anywhere in the ±24 m window at those stations. These are
+data limits of the committed collision slice, not extraction failures.
+
+For `russianhill` the narrow tier is not reached: the spawn-match rule fails
+first (the line is 175.140 m from the committed spawn). As a diagnostic, the
+1.68 m band on that line still has 5,416 undetourable stations in 32 runs, the
+first at station 1,628 **(212.172739, 11.903677)** — so even a successful snap
+would not have produced a path.
 
 ### `dumbo`
 
@@ -166,14 +180,17 @@ lap.
 4. **Project onto P48 with a bounded lateral detour, in tiers.** The segment is
    resampled at 0.25 m. Each station is checked against
    `_work/map-laps/<mapId>/grid.npz` `base` (the same P48 passable raster the
-   existing builder uses) and the car half-width (1.138 m) lateral band. The
-   detour rule is:
+   existing builder uses) and the tier's car band. The detour rule is:
 
    - if every station's racing point is band-clear, the racing line is the
      path (no detour);
    - otherwise a station whose racing point is not band-clear may move along
      its own normal to a band-clear position inside the tier window (`band`
-     ±12 m, then `wide` ±24 m), searched at **0.25 m**;
+     ±12 m, then `wide` ±24 m, then `narrow` ±24 m), searched at **0.25 m**;
+   - the band is 2.276 m (1.676 m car + 0.30 m margin per side) for `band` and
+     `wide`, and 1.680 m (the documented car width, no margin) for `narrow`.
+     The narrow band is sampled at 0.21 m so its outermost samples are exactly
+     ±0.84 m;
    - the detour is **continuous**: consecutive detour points are at most
      **0.5 m** apart (with 0.25 m stations this is at most one 0.25 m lateral
      step);
@@ -196,9 +213,9 @@ lap.
    A station with no band-clear position anywhere in the tier window is a
    typed blocker (`no-band-clear-lateral`) with its exact coordinate. A station
    that no continuous detour can reach is a typed blocker (`detour-dp`) with its
-   exact coordinate. The band tier is tried first; the wide tier is tried only
-   after it fails, and both attempts are recorded in
-   `blocker.detourTierAttempts`.
+   exact coordinate. The tiers are tried in order; a later tier is attempted
+   only after the previous one fails, and every attempt is recorded in
+   `blocker.detourTierAttempts` with its band and margin.
 5. **Snap the spawn (only when the line is out of match range).** If no racing
    line passes within 25 m of the committed spawn, the builder measures the
    nearest band-clear 0.25 m station on the whole closed line, using the same
@@ -222,33 +239,38 @@ passable car band. The detour is a geometric lane shift, not a driven line.
 
 The retail racing line is an AI route, not a collision-clear surface. On these
 levels the P48 raster (0.5 m cells, 2.5 cm step limit, 0.5 m wall dilation) is
-narrower than the 2.276 m car band at the recorded stations, even after the
-±24 m wide search, or the line leaves the spawn's connected passable component
-entirely. The blockers are witnesses, not guesses:
+narrower than even the 1.68 m no-margin band at the recorded stations, even
+after the ±24 m search, or the line leaves the spawn's connected passable
+component entirely. The blockers are witnesses, not guesses:
 
-- `hackney`: 221 stations have no band-clear lateral position in either window
-  (the wide tier gains nothing). The first is station 2,890 at
+- `hackney`: 219 stations have no 1.68 m band-clear lateral position in the
+  ±24 m window (221 at 2.276 m). The first is station 2,890 at
   **(-227.278106, -133.764788)**.
-- `brighton`: the wide tier resolves 786 of the 810 band-tier blockers, but 24
-  stations remain in 5 short runs. The first wide-tier blocker is station 670
-  at **(84.516652, -185.448468)**; the band-tier first is station 609 at
+- `brighton`: the wide tier resolves 786 of the 810 band-tier blockers and the
+  narrow tier resolves 18 of the remaining 24, but 6 stations remain in 2 short
+  runs. The first narrow-tier blocker is station 671 at
+  **(84.692995, -185.625677)**; the band-tier first is station 609 at
   **(73.591833, -174.809792)**.
-- `sausalito`: 7,024 stations remain undetourable at ±24 m (from 7,799 at
-  ±12 m), including the first station 4 at **(709.521209, -1434.502293)**.
+- `sausalito`: 6,972 stations remain undetourable at 1.68 m (from 7,799 at
+  2.276 m), including the first station 5 at **(709.746329, -1434.611018)**.
   The line is blocked for most of the 4,548.891 m segment.
 - `russianhill`: the only shipped `MainLoop` passes 175.140 m from the
   committed spawn, beyond the 25 m (six 4 m route steps) match limit. The
   nearest band-clear point on that line is 175.147 m away at
   **(-49.698497, 323.774200)**, so the snap is also beyond the limit. The
-  route record for the spawn's route number has no shipped `.aid`.
+  route record for the spawn's route number has no shipped `.aid`. The 1.68 m
+  band would not have helped either: its first undetourable station is 1,628 at
+  **(212.172739, 11.903677)**.
 - `bowl`: the level directory ships no `.aid` at all; its only entry is
   `actorpack.xt`.
 
 These are data limits of the committed collision slice, not extraction
 failures. A different spawn/finish pose, a wider raster rule or decoded
-instanced/fluid collision would be needed. The wide tier is deliberately capped
-at ±24 m: beyond that it would stop being a bounded detour of the retail line
-and become an unrelated course.
+instanced/fluid collision would be needed. The detour window is deliberately
+capped at ±24 m: beyond that it would stop being a bounded detour of the retail
+line and become an unrelated course. The `narrow` tier deliberately drops the
+0.30 m safety margin; it is the documented car width, not a recovered retail
+hull, and it is the smallest band this probe will test.
 
 ## Scope labels
 
@@ -274,7 +296,7 @@ detour of up to 9.5 m; it is still a data layout, not a driven racing line.
 | --- | ---: | --- |
 | `probes/map-laps-aid/data/dumbo-aid-path.json` | 197,466 | `6f9b500f43b6a6537ca42f0ef200e19e172d8e3310451c64630ccb55e1f20f86` |
 | `probes/map-laps-aid/data/downtown-mp-aid-path.json` | 148,900 | `5aa5f4522759130c08ed4a35300e0d3709afd8777ddc9f21e2194f177ce0c25b` |
-| `probes/map-laps-aid/data/aid-paths.json` | 14,946 | `9eb658d9cff4c57cfcb0f8c4309e0c9b14dbe34a3df93e6f88ab5702013f027c` |
+| `probes/map-laps-aid/data/aid-paths.json` | 18,232 | `249c378f4845690f9f2c545c683ed7994e84423a70c1ebdeabc107f29229ffd1` |
 
 Content hashes (canonical JSON, excluding `hash`):
 
@@ -284,7 +306,7 @@ Content hashes (canonical JSON, excluding `hash`):
   `sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779`
 
 The two path documents are unchanged from the previous revision (same bytes and
-hashes); only `aid-paths.json` gained the tier fields. This keeps the
+hashes); only `aid-paths.json` gained the `narrow` tier fields. This keeps the
 `probes/e1-drive` `layoutFileSha256` pins valid.
 
 ## Verifier
@@ -295,10 +317,12 @@ hashes); only `aid-paths.json` gained the tier fields. This keeps the
   pak and compares it with the recorded route;
 - the `.aid` record identity (pak path, route name/index, record id, route
   number, sha256) against `routes.json` and the pak;
-- every path sample against the P48 `base` raster and the car half-width band;
-- the detour tier: the summary tier name and window, the path document's
-  `detourSearchMetres`, the `wide` tier name when used, and that every lateral
-  offset stays inside the tier window;
+- every path sample against the P48 `base` raster and the tier's band
+  (2.276 m for `band`/`wide`, 1.680 m sampled at 0.21 m for `narrow`);
+- the detour tier: the summary tier name, window, band and margin; the path
+  document's `detourSearchMetres`, `detourTier`, `bandMetres`, `marginMetres`
+  and `clearance.band`; and that every lateral offset stays inside the tier
+  window;
 - every detour record: the racing point, the detour point, the lateral offset,
   the band clearance in both frames, the 0.5 m continuity bound, the return to
   the racing line (a detour run is bounded by zero-offset samples, starts and
@@ -307,13 +331,13 @@ hashes); only `aid-paths.json` gained the tier fields. This keeps the
 - the gate order, arcs, ±12 % checkpoint window, 1 m approach side and gate-line
   passability;
 - every blocked witness: the spawn match distance and its band-clear snap
-  candidate, the per-tier undetourable station counts and first stations, or
-  the `detour-dp` station;
+  candidate, the per-tier undetourable station counts and first stations (with
+  each tier's band and margin), or the `detour-dp` station;
 - the `bowl` directory: no `.aid` entry and the exact recorded directory
   contents.
 
 Current result:
 
 ```text
-281/281 checks passed
+317/317 checks passed
 ```
