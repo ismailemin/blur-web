@@ -3195,7 +3195,10 @@ async function startTimeline(tick0, {
       aiSlots,
       perPlayerCar: true
     };
-    state.mp.remotes = { ...session.packet.diagnostics.extras.remotes };
+    // The remote *slot* configuration is not the peer list: `state.mp.remotes`
+    // stays the array of human peers (set by the M4 remote loop), so the capture
+    // surface and the HUD never see a config object where they expect rows.
+    state.mp.remoteSlots = { ...session.packet.diagnostics.extras.remotes };
   }
   state.cameraOverride = Object.keys(CAMERA_OVERRIDE).length ? { ...CAMERA_OVERRIDE } : null;
   const partsInfo = session.packet.diagnostics.extras.parts;
@@ -6777,7 +6780,7 @@ function mpCaptureSnapshot() {
       finish: mp.remote.finish ?? null
     },
     // Every human peer (M4): id, slot, car, latest snapshot tick and display pose.
-    remotes: (mp.remotes ?? []).map((row) => ({
+    remotes: (Array.isArray(mp.remotes) ? mp.remotes : []).map((row) => ({
       id: row.id, name: row.name, slot: row.slot, car: row.car ?? null,
       connected: row.connected !== false, latestTick: row.latestTick ?? null,
       position: row.position ?? null, distance: row.distance ?? null,

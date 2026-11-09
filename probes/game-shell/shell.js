@@ -903,9 +903,12 @@ export function mount(host, options = {}) {
     ]);
 
     // Power-ups
+    // Every map runs the slice: the three maps with retail placement (River,
+    // Amboy, Gracia) use it, the rest fall back to the labelled provisional
+    // arcs. Only the host configures it.
     const powerupReason = state.mp.role !== 'host'
       ? 'power-ups are host-configured'
-      : state.mp.mapId !== 'river' ? 'power-ups are River-only in this gate; ' + (map?.label ?? state.mp.mapId) + ' has no placed pickups' : null;
+      : null;
     const powerupRow = h(doc, 'div', { class: 'gs-toggle-row' }, [
       h(doc, 'label', { class: 'gs-check' }, [
         h(doc, 'input', {
@@ -915,7 +918,7 @@ export function mount(host, options = {}) {
           dataset: { focus: 'powerups' },
           on: { change: (event) => controller.setPowerups(event.target.checked) }
         }),
-        h(doc, 'span', { text: 'Power-ups (Mine / Shield / Repair / Nitro / Shock)' })
+        h(doc, 'span', { text: 'Power-ups (Bomb / Shield / Repair / Nitro / Shock / Blindfire / Shunt / Barge)' })
       ]),
       powerupReason ? h(doc, 'span', { class: 'gs-field-note is-invalid', text: powerupReason }) : null
     ]);

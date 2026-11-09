@@ -330,6 +330,32 @@ test('Gracia refuses the Dodge AI with the exact ai-spawn-unsupported reason', (
   assert.match(gate.reason, /front axle is unloaded/);
 });
 
+test('power-ups can be enabled on any map, not only River', () => {
+  for (const mapId of ['river', 'amboy', 'gracia', 'dumbo', 'downtown-mp']) {
+    const state = makeState({
+      screen: 'lobby',
+      mode: 'multiplayer',
+      carSlug: 'corvette-zr1-stock',
+      mapId,
+      mp: { role: 'host', roomCode: 'KRP3Q', verified: true }
+    });
+    const next = reduce(state, { type: 'mp/set-powerups', enabled: true, now: 1000 });
+    assert.equal(next.mp.powerups, true, mapId);
+    assert.equal(next.notice, null, mapId);
+    const off = reduce(next, { type: 'mp/set-powerups', enabled: false, now: 1000 });
+    assert.equal(off.mp.powerups, false, mapId);
+  }
+  // A guest still cannot configure it.
+  const guest = makeState({
+    screen: 'lobby',
+    mode: 'multiplayer',
+    mapId: 'amboy',
+    mp: { role: 'guest', roomCode: 'KRP3Q', verified: true }
+  });
+  const refused = reduce(guest, { type: 'mp/set-powerups', enabled: true, now: 1000 });
+  assert.equal(refused.notice.code, ERROR.HOST_ONLY);
+});
+
 test('AI count, profile and room-code validators are explicit', () => {
   let state = makeState({ screen: 'lobby', mode: 'multiplayer', mapId: 'river' });
   const badCount = reduce(state, { type: 'mp/set-ai', count: AI_MAX + 1 });

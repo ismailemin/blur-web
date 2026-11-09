@@ -1162,12 +1162,9 @@ export function reduce(state, action = {}) {
     case 'mp/set-powerups': {
       if (state.screen !== 'lobby') return state;
       if (state.mp.role !== 'host') return withNotice(state, ERROR.HOST_ONLY, 'power-ups are host-configured');
+      // Every map runs the slice: River/Amboy/Gracia use the retail placement,
+      // the other maps use the labelled provisional arcs. No map is refused.
       const enabled = action.enabled === true;
-      if (enabled && state.mp.mapId !== 'river') {
-        const map = findMap(state, state.mp.mapId);
-        return withNotice(state, ERROR.POWERUPS_RIVER_ONLY,
-          'power-ups are River-only in this gate; ' + (map?.label ?? state.mp.mapId) + ' has no placed pickups');
-      }
       return clearNotice(state, {
         mp: {
           ...state.mp,
