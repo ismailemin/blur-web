@@ -3,7 +3,7 @@
 // probes/lighting/tools/runtime_lighting_module.template.mjs and
 // probes/lighting/data/runtime-lighting.json. Do not edit by hand.
 //
-// Browser-importable runtime lighting for the 11 playable maps.
+// Browser-importable runtime lighting for the 13 playable maps.
 //
 // Contract:
 //   import { LIGHTING_SCHEMA, LIGHTING_MAPS, lightingFor, lightmapTexture }
@@ -27,8 +27,8 @@
 // `sun.colour` is `SunColour.rgb` and `sky.colour` is `SkyColour.rgb`, the
 // values that rule multiplies. `sun.lightObjectColour` is the serialized
 // `C_Light` colour, which the runtime shader does not read. `sun.intensity` is
-// that light object's colour alpha (1.0 on all four maps) and is reported, not
-// applied: the retail shader does not scale `SunColour` by it.
+// that light object's colour alpha (1.0 on every map that serializes a sun) and
+// is reported, not applied: the retail shader does not scale `SunColour` by it.
 //
 // The `lightmap` block is the decoded static-world lightmap set: every
 // `g_tLightmap` texture of the level, mip 0 decoded from its DXT5/BC3 blob,
@@ -75,7 +75,7 @@ export const LIGHTING_MAPS = Object.freeze(Object.keys(DATA.maps));
 /**
  * Return the committed runtime lighting for one map.
  *
- * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'} mapId
+ * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'|'dumbo'|'downtown-mp'} mapId
  * @returns {{schema:string, mapId:string, level:string, city:string,
  *   manifest:{path:string, schema:string, bytes:number, sha256:string},
  *   sun:null|{direction:number[], colour:number[], intensity:number,
@@ -120,7 +120,7 @@ export function lightingFor(mapId) {
 /**
  * Return one decoded lightmap texture entry for a map.
  *
- * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'} mapId
+ * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'|'dumbo'|'downtown-mp'} mapId
  * @param {string} textureName retail `g_tLightmap` texture name, e.g.
  *   `'lightmap_main_000-a'`
  * @returns {{name:string, width:number, height:number, format:number,

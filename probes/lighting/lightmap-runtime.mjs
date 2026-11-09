@@ -188,7 +188,7 @@ const CACHE = new Map();
 /**
  * Return the exported lightmap set for one map.
  *
- * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'} mapId
+ * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'|'dumbo'|'downtown-mp'} mapId
  * @returns {{mapId:string, count:number, uvSet:'luxlightmap',
  *   shader:{uvSource:string, sunSky:string, rgbNormalisedGamma:string},
  *   textures:Array<{name:string, width:number, height:number, url:string,
@@ -208,7 +208,7 @@ export function lightmapSetFor(mapId) {
  * Return one exported lightmap texture record, or `null` when the name is not
  * in the map's set.
  *
- * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'} mapId
+ * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'|'dumbo'|'downtown-mp'} mapId
  * @param {string} name retail `g_tLightmap` texture name
  * @returns {{name:string, width:number, height:number, url:string, bytes:number,
  *   sha256:string}|null}
@@ -224,7 +224,7 @@ export function lightmapTextureFor(mapId, name) {
  * Return the committed lightmap shader rule for one map, verbatim from the
  * runtime table.
  *
- * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'} mapId
+ * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'|'dumbo'|'downtown-mp'} mapId
  * @returns {{uvSource:string, sunSky:string, rgbNormalisedGamma:string}}
  * @throws {LightmapRuntimeError} for an invalid or unknown map id.
  */

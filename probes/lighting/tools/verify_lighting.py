@@ -27,7 +27,7 @@ import lightmap_data as LM  # noqa: E402
 ROOT = LD.ROOT
 OUT_DIR = ROOT / "_work/lighting"
 SHORTS = [LD.SPAWN_TABLE[level]["short"] for level in LD.SPAWN_TABLE]
-# The four maps that were the committed reference before the 11-map extension.
+# The four maps that were the committed reference before the 13-map extension.
 # A few checks pin their observed values; the other maps are checked against
 # their own serialized data instead.
 REFERENCE_SHORTS = ["river", "amboy", "gracia", "longbeach"]
@@ -659,7 +659,7 @@ def verify_global() -> None:
           unsupported_lightmaps == ["downtown", "highrise"],
           str(unsupported_lightmaps))
     check("sunless map set matches the committed typed set",
-          sunless == ["downtown", "highrise"], str(sunless))
+          sunless == ["downtown", "dumbo", "highrise"], str(sunless))
 
 
 def main() -> int:

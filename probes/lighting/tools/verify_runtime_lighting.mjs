@@ -5,7 +5,7 @@
 //
 // Re-derives every value from `_work/lighting/<map>.json` without importing the
 // builder, then checks:
-//   * all four maps against their manifest (exact equality, no rounding);
+//   * every map against its manifest (exact equality, no rounding);
 //   * every number in the table maps to a manifest field (no invented values);
 //   * unit length of every direction the manifest declares as a direction;
 //   * the +Y ambient basis and the SH * BakedColour product;
@@ -35,7 +35,8 @@ const MANIFEST_SCHEMA = 'blur-lighting/1';
 const INDEX_SCHEMA = 'blur-lighting-index/1';
 const MAP_ORDER = [
   'river', 'amboy', 'gracia', 'longbeach',
-  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp'
+  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp',
+  'dumbo', 'downtown-mp'
 ];
 const MISSING_CODES = new Set(['not-serialized', 'not-decoded']);
 const MISSING_FIELDS = [

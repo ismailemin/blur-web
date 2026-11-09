@@ -1,9 +1,9 @@
 # probes/lighting
 
-Retail per-level lighting recovery for the eleven playable maps (`river`,
+Retail per-level lighting recovery for the thirteen playable maps (`river`,
 `amboy`, `gracia`, `longbeach`, `observatory`, `downtown`, `mharuna`,
-`highrise`, `shutoko`, `oval`, `amboy-mp`) and the browser-importable runtime
-table derived from it.
+`highrise`, `shutoko`, `oval`, `amboy-mp`, `dumbo`, `downtown-mp`) and the
+browser-importable runtime table derived from it.
 
 Every number in this probe is traceable to a retail byte stream (offset recorded
 in the manifest) or to an upstream shader/engine constant (`file:line` recorded).
@@ -16,12 +16,12 @@ Nothing is guessed, scaled or interpolated.
 | `tools/lighting_data.py` | Read-only recovery from `Level.levelrender` (`Lights`, `LS`, Scene declarations), `Level.levelstream` (normal bytes) and `cache/gamedata.pak` (`amax.bin` `City.EnvironmentSettings`). |
 | `tools/lightmap_data.py` | Read-only decode of the static-world lightmap set: scans `Level.levelstream` LOD0 resource-block textures, resolves material `g_tLightmap` through the RenderList texture-source list, extracts each PC TextureDesc + DXT5/BC3 blob and decodes mip 0 with the committed `texture_inspect` decoder. |
 | `tools/build_manifest.py` | Writes the per-map manifests `_work/lighting/<map>.json` and `_work/lighting/index.json` (schema `blur-lighting/1`), including the `lightmap` block. |
-| `tools/verify_lighting.py` | 18,429-check manifest verifier (provenance, ranges, unit consistency, byte re-derivation, lightmap source re-derivation, typed unsupported records, determinism). |
+| `tools/verify_lighting.py` | 22,415-check manifest verifier (provenance, ranges, unit consistency, byte re-derivation, lightmap source re-derivation, typed unsupported records, determinism). |
 | `tools/build_runtime_lighting.mjs` | Deterministic builder for the committed browser table. Copies values verbatim; never rounds or scales. |
 | `tools/runtime_lighting_module.template.mjs` | Module template used by the builder. |
 | `data/runtime-lighting.json` | Committed runtime table (schema `blur.lighting-runtime/1`). |
 | `runtime-lighting.mjs` | Generated browser module. Do not edit by hand. |
-| `tools/verify_runtime_lighting.mjs` | 33,376-check runtime table verifier (lighting + lightmap, typed null sun/lightmap handling). |
+| `tools/verify_runtime_lighting.mjs` | 41,930-check runtime table verifier (lighting + lightmap, typed null sun/lightmap handling). |
 | `tools/lightmap_reference.py` | Independent lightmap reference: re-scans the retail bytes and re-decodes every lightmap without importing the manifest builder. |
 | `tools/verify_lightmap.mjs` | Lightmap verifier: compares the reference to the manifest and runtime table, checks the `g_tLightmap` reference set, and checks two reference builds are byte-identical. |
 | `tools/export_lightmap_rgba.py` | Deterministic exporter: writes each decoded mip-0 RGBA8 buffer to `_work/lighting/<map>/lightmap/<name>.rgba` plus a per-map `index.json`. |
@@ -46,7 +46,7 @@ import {
 LIGHTING_SCHEMA; // 'blur.lighting-runtime/1'
 LIGHTING_MAPS;   // ['river', 'amboy', 'gracia', 'longbeach', 'observatory',
                  //  'downtown', 'mharuna', 'highrise', 'shutoko', 'oval',
-                 //  'amboy-mp'] (frozen, build order)
+                 //  'amboy-mp', 'dumbo', 'downtown-mp'] (frozen, build order)
 
 const lighting = lightingFor('river');
 const lightmap = lighting.lightmap;             // decoded set, or null
@@ -149,7 +149,8 @@ import {
 LIGHTMAP_RUNTIME_SCHEMA; // 'blur.lightmap-runtime/1'
 LIGHTMAP_MAPS;           // ['river', 'amboy', 'gracia', 'longbeach', 'observatory',
                          //  'downtown', 'mharuna', 'highrise', 'shutoko', 'oval',
-                         //  'amboy-mp'] (frozen; downtown/highrise have no set)
+                         //  'amboy-mp', 'dumbo', 'downtown-mp'] (frozen;
+                         //  downtown/highrise have no set)
 
 const set = lightmapSetFor('river');
 // {
@@ -190,28 +191,28 @@ The resolver does not pick one, apply it, generate mips, or bind a sampler.
   (`C_LightList::GetSunDirection` returns matrix row Z, `LightList.cpp:90-98`).
 - `sun.colour` is `LightingInfo.SunColour.rgb`, the value the retail diffuse
   term multiplies (`shader/common/Lighting.h:153-165`). It is `[0,0,0]` on
-  `river`, `gracia`, `longbeach`, `observatory` and `oval`, which bake the sun
-  into lightmaps and light samples; `amboy`, `mharuna`, `shutoko` and
-  `amboy-mp` author a live sun colour. A consumer must not substitute a white
-  sun for the zero-colour maps. The decoded `lightmap` set is the baked term
-  those maps rely on; bind it through the material's `g_tLightmap` name instead
-  of inventing a directional sun. `sun` is `null` on `downtown` and `highrise`,
-  which serialize no directional sun at all (their `LightingInfo.SunColour` is
-  also zero).
+  `river`, `gracia`, `longbeach`, `observatory`, `oval` and `downtown-mp`,
+  which bake the sun into lightmaps and light samples; `amboy`, `mharuna`,
+  `shutoko` and `amboy-mp` author a live sun colour. A consumer must not
+  substitute a white sun for the zero-colour maps. The decoded `lightmap` set
+  is the baked term those maps rely on; bind it through the material's
+  `g_tLightmap` name instead of inventing a directional sun. `sun` is `null` on
+  `downtown`, `highrise` and `dumbo`, which serialize no directional sun at all
+  (their `LightingInfo.SunColour` is also zero).
 - `sun.intensity` is the serialized `C_Light` colour alpha (`1.0` on every map
   that serializes a sun). The retail shader does not scale `SunColour` by it; it
   is reported, not applied.
 - `sun.lightObjectColour` is the serialized `C_Light` colour (`[1,1,1]` on every
   map that serializes a sun). The runtime shader does not read it; it is kept
   for traceability.
-- `sky.colour` is `LightingInfo.SkyColour.rgb`. It is `[0,0,0]` on `gracia` and
-  `oval`.
+- `sky.colour` is `LightingInfo.SkyColour.rgb`. It is `[0,0,0]` on `gracia`,
+  `oval` and `downtown-mp`.
 - `sky.dome.intensity` is `skySettings.intensity`, which scales the sky dome
   texture, not the diffuse `sky.colour` term.
 - `ambient.upNormalAmbientScaled` is the baked ambient term for an up-facing
   normal (`SH(+Y) * BakedColour`); `ambient.sh` is the raw 12-coefficient RGBSH
   sample so a consumer can evaluate any normal.
-- `fog` is `null` only when the level authors no fog record; all eleven maps
+- `fog` is `null` only when the level authors no fog record; all thirteen maps
   serialize one.
 - `lightmap` is the decoded static-world lightmap set, not a single atlas. Every
   texture is a levelstream LOD0 resource-block texture bound by at least one
@@ -246,9 +247,9 @@ The resolver does not pick one, apply it, generate mips, or bind a sampler.
 Values the retail data does not serialize are absent from the returned object
 and listed in `missing` as `{ code, field, reason }`. `field` is the absent
 dotted path; `code` is `not-serialized` or `not-decoded`. Current entries, per
-map (`ambient.lightmap` is conditional: absent on the nine decoded maps and
-present on `downtown`/`highrise`; `sun` is present only on `downtown` and
-`highrise`, which serialize no directional sun):
+map (`ambient.lightmap` is conditional: absent on the eleven decoded maps and
+present on `downtown`/`highrise`; `sun` is present only on `downtown`,
+`highrise` and `dumbo`, which serialize no directional sun):
 
 | `field` | `code` | Why |
 | --- | --- | --- |
@@ -257,7 +258,7 @@ present on `downtown`/`highrise`; `sun` is present only on `downtown` and
 | `sky.occlusion` | `not-serialized` | `m_fSkyOcclusion` is per-vertex/per-material. |
 | `ambient.perInstanceInterpolation` | `not-serialized` | One probe at the measured spawn; the engine interpolates the nearest light sample per instance. |
 | `sky.domePixels` | `not-decoded` | The dome texture path is serialized; its pixels are not decoded here. |
-| `sun` | `not-serialized` | `C_LightList` `hasSun=0` on `downtown`/`highrise`; the code-only fallback direction (`LightList.cpp:97`) is not substituted. |
+| `sun` | `not-serialized` | `C_LightList` `hasSun=0` on `downtown`/`highrise`/`dumbo`; the code-only fallback direction (`LightList.cpp:97`) is not substituted. |
 
 `ambient.lightmap` (`not-decoded`) is kept only when a level's lightmap set
 could not be decoded. The builder records the exact stream record and byte
@@ -282,12 +283,16 @@ Sun colour is `LightingInfo.SunColour.rgb`; ambient is
 | `shutoko` | `[0.353553, 0.707107, 0.612372]` | `[1, 1, 1]` | `[0.030533, 0.044205, 0.058563]` | `[1, 1, 1]` | `0.00025` |
 | `oval` | `[0.000000, 0.258819, 0.965926]` | `[0, 0, 0]` | `[0.273651, 0.258270, 0.236572]` | `[0, 0, 0]` | `0.001` |
 | `amboy-mp` | `[-0.334546, 0.207912, -0.919158]` | `[1, 1, 1]` | `[0.177612, 0.123734, 0.149323]` | `[1, 1, 1]` | `0.001` |
+| `dumbo` | `—` (`hasSun=0`) | `—` | `[0.100113, 0.125519, 0.157379]` | `[1, 1, 1]` | `0.0002` |
+| `downtown-mp` | `[0.338691, 0.139173, -0.930548]` | `[0, 0, 0]` | `[0.143646, 0.150421, 0.137878]` | `[0, 0, 0]` | `0.00015` |
 
 `sun.intensity` is `1.0` and `sun.lightObjectColour` is `[1, 1, 1]` on every map
-that serializes a sun. `downtown` and `highrise` serialize no directional sun
-(`C_LightList` `hasSun=0`), so `sun` is `null` and the manifest carries a typed
-`sunUnsupported` record; the code-only fallback direction (`LightList.cpp:97`)
-is not substituted. Exact values (not the 6-decimal display above) are in
+that serializes a sun. `downtown`, `highrise` and `dumbo` serialize no
+directional sun (`C_LightList` `hasSun=0`), so `sun` is `null` and the manifest
+carries a typed `sunUnsupported` record; the code-only fallback direction
+(`LightList.cpp:97`) is not substituted. `downtown-mp` serializes a directional
+sun but its `SunColour` is zero, so the direct sun is baked into its lightmaps
+and light samples. Exact values (not the 6-decimal display above) are in
 `data/runtime-lighting.json` and `runtime-lighting.mjs`.
 
 ### Lightmaps (decoded mip 0)
@@ -307,6 +312,8 @@ Every texture is DXT5/BC3 (`format` `894720068`); `bytes` is the sum of the
 | `shutoko` | 104 | 102 × 256x256, 2 × 512x512 | 7,342,944 | `8c7df050230a55b095d09ad621f53fa4a2f925be1566639187b70fc34be92321` | `43f87ec2653e5e5b7c3f2424a05f382200035dc2197420d697b6bfded632b635` |
 | `oval` | 114 | 113 × 256x256, 1 × 512x512 | 7,736,440 | `9420d372815cf75f34be741180ebb9caec2011b9d0ff5d7127a9c1e8ead75905` | `172c6c50adbc59371a7b0e63145a6c423422c56fce75ee3cb39d0bca1c550405` |
 | `amboy-mp` | 37 | 36 × 256x256, 1 × 512x512 | 2,688,012 | `6c2f7e32653d0e076cc2148939b672c7e6467d25710b331a5f9c54e7e9d3f527` | `c5a20523d26e610d7599fee7cc9d53e22275f76c5a00d15d6d5316c7f819ebb0` |
+| `dumbo` | 161 | 140 × 256x256, 21 × 512x512 | 16,060,828 | `159ad56258ab8ea534f09cf8255abd9a2b2fa251005c13e82fc9b0bd5a201b20` | `cecb595c241dfbf1dc4e37152253759f888bc7384bda9929b84526e791b69959` |
+| `downtown-mp` | 83 | 79 × 256x256, 4 × 512x512 | 6,490,388 | `d63f07b1f0e9ab41f09b1396c4dd8be403b766d9cf4a716790b5abca37334dec` | `fb3eadfba2db8d757970e4a0a6e99835a8b0d3a8c0a271956b8ee28b589b64b2` |
 
 `downtown` and `highrise` do **not** have a decoded set. Their manifests decode
 the `lightmap_*` subset (102 textures / 7,736,104 bytes and 77 textures /
@@ -317,7 +324,7 @@ sets `lightmap: null` and the exporter writes no files for them. See
 
 ### Unsupported maps
 
-Two maps carry typed `unsupported` records; nothing is substituted.
+Three maps carry typed `unsupported` records; nothing is substituted.
 
 | map | field | typed record | exact source |
 | --- | --- | --- | --- |
@@ -325,12 +332,15 @@ Two maps carry typed `unsupported` records; nothing is substituted.
 | `downtown` | `lightmap` | `g_tLightmap resolves to a non-lightmap texture` | `DefaultColour`, block 1073 / index 3, material `FlashingNeon_LN_NV.fx`, stream record 126 at offset 9,684,992 (102,400 B). |
 | `highrise` | `sun` | `not-serialized` | `Level.levelrender` `Lights` block, `hasSun=0`; `sunUnsupported` records block offset 1,152,778 / 203,060 B. The `LightList.cpp:97` fallback is not substituted. |
 | `highrise` | `lightmap` | `texture block/index not found in the LOD0 scan` | `g_tLightmap` key `[215, 0]`, stream record 28 at offset 288,768; no LOD0 texture with that block/index exists. |
+| `dumbo` | `sun` | `not-serialized` | `Level.levelrender` `Lights` block, `hasSun=0`; `sunUnsupported` records block offset 4,828,715 / 676,628 B. The `LightList.cpp:97` fallback is not substituted. |
 
-The manifest keeps the decoded `lightmap_*` subset and its hashes, but
-`lightmap.decoded` is `false`; the runtime table has `sun: null`,
-`lightmap: null`, and `ambient.lightmap` in `missing`. The exporter prints
-`unsupported: runtime table has no decoded lightmap set` and writes no
-`.rgba`/`index.json` for those maps.
+For `downtown` and `highrise` the manifest keeps the decoded `lightmap_*`
+subset and its hashes, but `lightmap.decoded` is `false`; the runtime table has
+`sun: null`, `lightmap: null`, and `ambient.lightmap` in `missing`. The exporter
+prints `unsupported: runtime table has no decoded lightmap set` and writes no
+`.rgba`/`index.json` for those maps. `dumbo` has a decoded lightmap set; only
+its `sun` is `null`, so its runtime entry keeps `lightmap` and the exporter
+writes its pixels.
 
 The per-texture names, dimensions, source block/index, stream record offsets,
 blob sha256 and decoded RGBA sha256 are in each manifest's `lightmap.textures`
@@ -362,10 +372,12 @@ and identical `index.json` bytes.
 | `shutoko` | 104 | 104 | 28,835,840 |
 | `oval` | 114 | 114 | 30,670,848 |
 | `amboy-mp` | 37 | 37 | 10,485,760 |
+| `dumbo` | 161 | 161 | 58,720,256 |
+| `downtown-mp` | 83 | 83 | 24,903,680 |
 | `downtown` | — | — | unsupported (no decoded set) |
 | `highrise` | — | — | unsupported (no decoded set) |
 
-925 files, 271,581,184 bytes in total across the nine decoded maps.
+1,169 files, 355,205,120 bytes in total across the eleven decoded maps.
 
 ### `.rgba` byte contract
 
@@ -444,23 +456,23 @@ with `python tools/verify_asset_probe.py` (or reuse an existing
 ```powershell
 # 1. Rebuild the manifests from retail data (writes _work/lighting/).
 python probes/lighting/tools/build_manifest.py
-python probes/lighting/tools/verify_lighting.py          # expect 18429/18429
+python probes/lighting/tools/verify_lighting.py          # expect 22415/22415
 
 # 2. Rebuild the committed runtime table and verify it.
 node probes/lighting/tools/build_runtime_lighting.mjs
-node probes/lighting/tools/verify_runtime_lighting.mjs   # expect 33376/33376
+node probes/lighting/tools/verify_runtime_lighting.mjs   # expect 41930/41930
 
 # 3. Independently re-derive and verify the lightmap set.
-python probes/lighting/tools/lightmap_reference.py --levels river,amboy,gracia,longbeach,observatory,downtown,mharuna,highrise,shutoko,oval,amboy-mp
-node probes/lighting/tools/verify_lightmap.mjs           # expect 21889/21889, two builds identical
+python probes/lighting/tools/lightmap_reference.py --levels river,amboy,gracia,longbeach,observatory,downtown,mharuna,highrise,shutoko,oval,amboy-mp,dumbo,downtown-mp
+node probes/lighting/tools/verify_lightmap.mjs           # expect 26867/26867, two builds identical
 
 # 4. Export the decoded mip-0 RGBA8 pixels and verify the renderer resolver.
 python probes/lighting/tools/export_lightmap_rgba.py     # writes _work/lighting/<map>/lightmap/
-node probes/lighting/tools/verify_lightmap_runtime.mjs   # expect 12336/12336
+node probes/lighting/tools/verify_lightmap_runtime.mjs   # expect 15572/15572
 ```
 
-`export_lightmap_rgba.py` exports the nine maps with a decoded set and prints a
-typed `unsupported` line for `downtown` and `highrise`; it never writes a
+`export_lightmap_rgba.py` exports the eleven maps with a decoded set and prints
+a typed `unsupported` line for `downtown` and `highrise`; it never writes a
 placeholder. `--maps river --out-root <dir>` exports a subset to another root;
 `--quiet` suppresses the per-map summary. The output is byte-deterministic and
 the index is independent of the root.
@@ -494,12 +506,13 @@ The runtime and lightmap verifiers are not yet wired into
 ## Scope and limits
 
 - One ambient probe per map, at the measured spawn. The four original maps use
-  `_work/map-slice/*-render/render.json` `layout.spawn`; the seven added maps
+  `_work/map-slice/*-render/render.json` `layout.spawn`; the nine added maps
   use `_work/e1-drive/<map>/layout.json` `course.spawn.x/z` plus
-  `course.spawnGroundY` (committed source `probes/map-laps/data/<map>-path.json`).
-  The engine interpolates the nearest light sample per model instance; that
-  interpolation is not serialized.
-- The lightmap block is `decoded: true` for nine maps: every `g_tLightmap`
+  `course.spawnGroundY` (committed source `probes/map-laps/data/<map>-path.json`
+  for the seven earlier maps and `probes/map-laps-aid/data/<map>-aid-path.json`
+  for `dumbo`/`downtown-mp`). The engine interpolates the nearest light sample
+  per model instance; that interpolation is not serialized.
+- The lightmap block is `decoded: true` for eleven maps: every `g_tLightmap`
   texture's mip 0 is decoded and hashed. It is a **texture-set** term, not a
   single atlas. `width`/`height` are `null` when the set mixes dimensions; use
   `dimensions` and the per-texture entries. `downtown` and `highrise` are
@@ -527,7 +540,7 @@ The runtime and lightmap verifiers are not yet wired into
 - Emissive and light-blend states are per-material; only the per-level
   `EmissiveColour` scale is recovered by the manifest (and is not part of the
   runtime table).
-- The runtime table covers all eleven playable maps. A map whose
+- The runtime table covers all thirteen playable maps. A map whose
   `C_LightList` has `hasSun=0` has `sun: null`; a map whose `g_tLightmap` set is
   unclean has `lightmap: null`. Both are listed in `missing` with a typed code;
   the builder never substitutes a fallback sun or a placeholder texture.

@@ -76,7 +76,7 @@ SPAWN_TABLE = {
         "spawn": (-519.0, -0.098, 111.0),
         "spawnSource": "_work/map-slice/longbeach-render/render.json layout.spawn",
     },
-    # The seven remaining playable maps. ``layout.json`` stores the horizontal
+    # The nine remaining playable maps. ``layout.json`` stores the horizontal
     # spawn as ``course.spawn.x`` / ``course.spawn.z`` and the ground height as
     # ``course.spawnGroundY`` (also ``course.start.groundY``); the tuple below is
     # (x, spawnGroundY, z). The committed source of the _work copy is the
@@ -143,6 +143,24 @@ SPAWN_TABLE = {
                        "course.spawn.z=-5, course.spawnGroundY=1.7573 "
                        "(course.start.groundY); committed source "
                        "probes/map-laps/data/amboy-mp-path.json",
+    },
+    "usa_ny_dumbo": {
+        "short": "dumbo",
+        "city": "USA_NY_Dumbo",
+        "spawn": (764.351338, 3.5, 237.848484),
+        "spawnSource": "_work/e1-drive/dumbo/layout.json course.spawn.x=764.351338, "
+                       "course.spawn.z=237.848484, course.spawnGroundY=3.5 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps-aid/data/dumbo-aid-path.json",
+    },
+    "usa_la_downtown_multiplayer": {
+        "short": "downtown-mp",
+        "city": "USA_LA_Downtown_Multiplayer",
+        "spawn": (250.895368, 0.0, -141.559127),
+        "spawnSource": "_work/e1-drive/downtown-mp/layout.json course.spawn.x=250.895368, "
+                       "course.spawn.z=-141.559127, course.spawnGroundY=0 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps-aid/data/downtown-mp-aid-path.json",
     },
 }
 

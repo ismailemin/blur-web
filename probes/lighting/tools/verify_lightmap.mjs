@@ -30,7 +30,8 @@ const PYTHON = process.env.PYTHON || 'python';
 const REFERENCE = path.join(HERE, 'lightmap_reference.py');
 const MAP_ORDER = [
   'river', 'amboy', 'gracia', 'longbeach',
-  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp'
+  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp',
+  'dumbo', 'downtown-mp'
 ];
 const SCHEMA = 'blur-lighting-lightmap-reference/1';
 const FORMAT = 894720068;

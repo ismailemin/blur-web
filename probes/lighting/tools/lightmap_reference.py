@@ -43,6 +43,8 @@ LEVEL_IDS = {
     "shutoko": "jpn_tokyo_shutoko",
     "oval": "spa_barcelona_oval",
     "amboy-mp": "usa_amboy_multiplayer",
+    "dumbo": "usa_ny_dumbo",
+    "downtown-mp": "usa_la_downtown_multiplayer",
 }
 FORMAT_NAMES = {
     0x31545844: "DXT1/BC1",
@@ -403,7 +405,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--levels",
                         default="river,amboy,gracia,longbeach,observatory,downtown,"
-                                "mharuna,highrise,shutoko,oval,amboy-mp")
+                                "mharuna,highrise,shutoko,oval,amboy-mp,dumbo,"
+                                "downtown-mp")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
     shorts = [name.strip() for name in args.levels.split(",") if name.strip()]

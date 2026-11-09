@@ -5,7 +5,7 @@
 //   node probes/lighting/tools/build_runtime_lighting.mjs --out <json> --module-out <mjs>
 //
 // Inputs (read-only, from `_work/`, gitignored build artifacts):
-//   _work/lighting/index.json       blur-lighting-index/1 (four built maps)
+//   _work/lighting/index.json       blur-lighting-index/1 (every built map)
 //   _work/lighting/<short>.json     blur-lighting/1 per-map manifest
 //
 // Outputs (committed):
@@ -39,7 +39,8 @@ const INDEX_SCHEMA = 'blur-lighting-index/1';
 // key, so the order is pinned here and checked against the index key set.
 const MAP_ORDER = [
   'river', 'amboy', 'gracia', 'longbeach',
-  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp'
+  'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp',
+  'dumbo', 'downtown-mp'
 ];
 
 // Fields the retail data does not serialize. `field` must be absent from the
@@ -442,7 +443,7 @@ function buildDocument() {
     kind: 'blur.lighting-runtime',
     version: 1,
     generatedBy: 'probes/lighting/tools/build_runtime_lighting.mjs',
-    scope: 'Retail per-level lighting for the 11 playable maps, copied verbatim from the ' +
+    scope: 'Retail per-level lighting for the 13 playable maps, copied verbatim from the ' +
       'committed lighting manifests. Nothing is scaled, rounded or interpolated; values the ' +
       'retail data does not serialize are absent and listed in `missing`. A map whose ' +
       'C_LightList hasSun=0 has `sun: null` (the code-only fallback is not substituted). The ' +
