@@ -11,14 +11,15 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 |---|---|
 | **Haritalar** | **13/19 oynanabilir**: river, amboy, gracia, longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**. |
 | **Araçlar** | **61/62** sürüş diliminde. Yalnızca `defaultcar` desteklenmiyor (gövde modeli yok). |
-| **Lightmap** | **11 haritada render'da** (river hariç: amboy, gracia, longbeach, observatory, mharuna, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**). Amboy vitrini: **83 doku, 1173/1301 draw lightmap'li, 0 hata/uyarı**. Dumbo 115 doku/1615 draw, Downtown MP 49 doku/207 draw. |
+| **Lightmap** | **11 haritada render'da** (river hariç). Amboy: **83 doku, 1173/1301 draw**. Dumbo 115 doku/1615 draw, Downtown MP 49 doku/207 draw. |
+| **Araç materyali** | Retail **boya** ve **ışık rengi** render'da. Corvette: `Canal_Blue` `[0.0252, 0.3712, 0.8228]`, 10 boya draw'ı; far/stop/sinyal kapakları retail `emissive` rengiyle. |
 | **Ses** | 23 olaylı retail kataloğu sayfaya bağlı. |
 | **HUD** | Hız göstergesi, vites, sıra/tur, güç yuvası, hasar/kalkan, geri sayım; 19/19 test. |
 | **Menü** | **61 araç / 13 harita**, 42/42 test, başsız Edge 0 konsol hatası. |
 | **Multiplayer** | 8 oyunculu oda (`mp-eight` 95/95); Amboy'da `?powerups=1` ile 82 pickup / 8 tip. |
 | **AI** | 8 haritada 61 araç × 2 profil = **976 koşu**, 946 temiz, 30 bildirilmiş limit, 0 beklenmeyen; `verify-maps` **32/32**. Dumbo/Downtown MP 122/122 temiz. |
 | **E2E** | **17/17 senaryo, 479/479 assertion** (dumbo ve downtown-mp dahil). |
-| **Kapı** | `verify_asset_probe --skip-build` **95+3 adım**; `gate-full18.log` doğrulama için koşuyor. |
+| **Kapı** | **`verify_asset_probe --skip-build` 98/98 PASS** (`gate-full20.log`, exit 0). |
 
 ## Son commit'ler
 
