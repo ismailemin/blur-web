@@ -6,13 +6,16 @@
 //   observatory  usa_la_observatory     536.622 m
 //   downtown     usa_la_downtown        153.861 m
 //   mharuna      jpn_mharuna            309.170 m
+//   dumbo        usa_ny_dumbo           361.999 m
+//   downtown-mp  usa_la_downtown_multiplayer 86.453 m
 //
 // Reads read-only:
 //
 //   _work/e1-drive/module/e1_drive.mjs + .wasm + build.json
-//   _work/e1-drive/cars.json and every roster car's .fields   (57 cars)
+//   _work/e1-drive/cars.json and every roster car's .fields   (61 cars)
 //   _work/e1-drive/<map>/layout.json                          (E1 layout)
 //   probes/map-laps/data/<map>-path.json                      (committed path)
+//   probes/map-laps-aid/data/<map>-aid-path.json              (aid committed path)
 //   game-data/Blur/levels/<level>/Level.levelphysics
 //   _work/e1-drive/map-<map>-run.json                         (committed follower)
 //
@@ -48,7 +51,8 @@ const OUT = path.join(ROOT, '_work/ai-driver');
 const E1 = path.join(ROOT, '_work/e1-drive');
 const MODULE = path.join(E1, 'module/e1_drive.mjs');
 const BUILD = path.join(E1, 'module/build.json');
-const MAP_IDS = ['amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna'];
+const MAP_IDS = ['amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
+  'dumbo', 'downtown-mp'];
 const POST_FINISH_TICKS = 120;
 
 // `maxRaceTicks` is a DNF bound, not a speed target: it is roughly twice the
@@ -95,6 +99,23 @@ const MAPS = {
     levelPath: path.join(ROOT, 'game-data/Blur/levels/jpn_mharuna/Level.levelphysics'),
     maxRaceTicks: 6000,
     committedRunPath: path.join(E1, 'map-mharuna-run.json')
+  },
+  // Dumbo and Downtown MP have no `probes/map-laps` path: their committed
+  // collision-clear path is the map-laps-aid aid path, which is copied verbatim
+  // into the E1 layout. The aid path is the committed path authority here.
+  dumbo: {
+    layoutPath: path.join(E1, 'dumbo/layout.json'),
+    committedPathPath: path.join(ROOT, 'probes/map-laps-aid/data/dumbo-aid-path.json'),
+    levelPath: path.join(ROOT, 'game-data/Blur/levels/usa_ny_dumbo/Level.levelphysics'),
+    maxRaceTicks: 4000,
+    committedRunPath: path.join(E1, 'map-dumbo-run.json')
+  },
+  'downtown-mp': {
+    layoutPath: path.join(E1, 'downtown-mp/layout.json'),
+    committedPathPath: path.join(ROOT, 'probes/map-laps-aid/data/downtown-mp-aid-path.json'),
+    levelPath: path.join(ROOT, 'game-data/Blur/levels/usa_la_downtown_multiplayer/Level.levelphysics'),
+    maxRaceTicks: 2000,
+    committedRunPath: path.join(E1, 'map-downtown-mp-run.json')
   }
 };
 

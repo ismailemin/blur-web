@@ -7,7 +7,7 @@ harnesses that drive the real `e1_drive` wasm vehicle:
 |---|---|
 | `ai-driver.mjs` | pure AI driver: `createAiDriver({layout, profile})`, `step(state)`, `observe(state, raceTick)`, `prime`/`reprime`, control tables, skill profiles, canonical JSON/SHA-256 helpers |
 | `run.mjs` / `verify.mjs` | River 310 m sprint + loop-01 three-lap matrix (57 cars × 4 profiles) |
-| `run-maps.mjs` / `verify-maps.mjs` | measured point-to-point map matrix (57 cars × 2 profiles × 6 maps) |
+| `run-maps.mjs` / `verify-maps.mjs` | measured point-to-point map matrix (61 cars × 2 profiles × 8 maps) |
 | `run-powerups.mjs` / `verify-powerups.mjs` | power-up policy, usage and determinism evidence |
 | `race-controller.mjs` / `racing-line.mjs` | racing-line generator and race controller used by `run-racing.mjs` |
 
@@ -15,10 +15,10 @@ The driver has no clock, no `Math.random`, no `Date.now`, no
 `performance.now` and no timer. Every recorded value is a pure function of the
 committed layout, the car's `.fields` and the integer race tick.
 
-## Measured map matrix (six maps)
+## Measured map matrix (eight maps)
 
 `run-maps.mjs` drives every roster car with the `reference` (1.00) and
-`standard` (0.95) speed profiles on six committed collision-clear paths:
+`standard` (0.95) speed profiles on eight committed collision-clear paths:
 
 | `mapId` | Level | Length | E1 layout | Committed path |
 |---|---|---|---|---|
@@ -28,10 +28,15 @@ committed layout, the car's `.fields` and the integer race tick.
 | `observatory` | `usa_la_observatory` | 536.622 m | `_work/e1-drive/observatory/layout.json` | `probes/map-laps/data/observatory-path.json` |
 | `downtown` | `usa_la_downtown` | 153.861 m | `_work/e1-drive/downtown/layout.json` | `probes/map-laps/data/downtown-path.json` |
 | `mharuna` | `jpn_mharuna` | 309.170 m | `_work/e1-drive/mharuna/layout.json` | `probes/map-laps/data/mharuna-path.json` |
+| `dumbo` | `usa_ny_dumbo` | 361.999 m | `_work/e1-drive/dumbo/layout.json` | `probes/map-laps-aid/data/dumbo-aid-path.json` |
+| `downtown-mp` | `usa_la_downtown_multiplayer` | 86.453 m | `_work/e1-drive/downtown-mp/layout.json` | `probes/map-laps-aid/data/downtown-mp-aid-path.json` |
 
 The E1 layout is the run authority. Before a run starts, `run-maps.mjs` checks
 that its canonical hash and its sample/gate polylines still equal the committed
 collision path; a stale layout is a hard error, not a silent substitution.
+Dumbo and Downtown MP have no `probes/map-laps` path: their committed path is
+the map-laps-aid aid path, which the E1 map-batch builder copies verbatim into
+the layout (hash, samples and gates are identical).
 
 ### Ground hint
 
@@ -44,7 +49,8 @@ pose, respawn rebuild and replay):
   applied (Mount Haruna: 1064.4312);
 - when it is inside the column, the sentinel is set so the committed
   fixed-column result is preserved bit for bit. The committed Amboy/Gracia
-  follower runs were recorded with that column.
+  follower runs were recorded with that column. Dumbo (3.5) and Downtown MP (0)
+  are inside the column, so their hint is recorded but not applied.
 
 Each map records `groundHint: { value, applied, reason }`; a layout without a
 finite `course.spawnGroundY` is a hard error. The verifier recomputes the
@@ -100,25 +106,27 @@ control tables differ:
 - `amboy` / `gracia` were produced by the measured `AMBOY_CONTROL`
   (top speed ~13 m/s). The tuned matrix differs only on Amboy by the documented
   **3.466667 s** (`minSpeed` 5 → 3.5 m/s); Gracia matches exactly.
-- The four new maps were produced by the sprint follower (recorded top speed
-  ~24.7 m/s). The AI matrix uses the measured `MAP_CONTROL` (12 m/s cruise), so
-  the times are recorded but marked `comparable: false`. The verifier asserts
-  this provenance from the committed run's own top speed rather than assuming
-  it.
+- The six new maps were produced by the sprint follower. Five record a top
+  speed of ~24.7 m/s; Downtown MP is only 86 m and its committed sprint run
+  tops out at 17.58 m/s. The AI matrix uses the measured `MAP_CONTROL` (12 m/s
+  cruise), so the times are recorded but marked `comparable: false`. The
+  verifier derives this provenance from the committed run's own top speed:
+  a sprint-control run must exceed `cruiseSpeed × 1.2` (14.4 m/s) **and** every
+  measured-control committed top speed (13.0773659 m/s on Amboy), rather than
+  the previous hard-coded 20 m/s. The bound is data-derived, not assumed.
 
 ## Commands
 
 ```powershell
 # Map matrix, run twice so results-maps.previous.json is a real previous run
-node probes/ai-driver/run-maps.mjs
-node probes/ai-driver/run-maps.mjs
+node probes/ai-driver/run-maps.mjs --roster _work/ai-driver/cars-61.json
+node probes/ai-driver/run-maps.mjs --roster _work/ai-driver/cars-61.json
 node probes/ai-driver/verify-maps.mjs
 
-# Same, with the 57-car roster pinned while another task extends the shared
-# _work/e1-drive/cars.json:
-node probes/ai-driver/run-maps.mjs --roster _work/ai-driver/cars-57.json
-node probes/ai-driver/run-maps.mjs --roster _work/ai-driver/cars-57.json
-node probes/ai-driver/verify-maps.mjs
+# The 61-car roster is pinned to _work/ai-driver/cars-61.json, a byte copy of
+# the shared _work/e1-drive/cars.json taken for this evidence. The default
+# --roster is still the shared file; the pin keeps the two runs comparable if
+# another task edits the shared roster.
 
 # River 310 m + loop-01 matrix, run twice
 node probes/ai-driver/run.mjs
@@ -132,10 +140,10 @@ node probes/ai-driver/verify-powerups.mjs
 ```
 
 Useful filters for local inspection (they change the recorded selection; the
-verifier gate expects the full six-map, full-roster selection):
+verifier gate expects the full eight-map, full 61-car selection):
 
 ```powershell
-node probes/ai-driver/run-maps.mjs --maps longbeach,mharuna --cars corvette-zr1-stock --profiles reference
+node probes/ai-driver/run-maps.mjs --maps longbeach,mharuna,dumbo --cars corvette-zr1-stock --profiles reference
 node probes/ai-driver/run-maps.mjs --skip-races --skip-replay
 ```
 
@@ -151,46 +159,70 @@ node probes/ai-driver/run-maps.mjs --skip-races --skip-replay
 - zero NaN ticks, per-tick replay equality and canonical state hashes;
 - clean runs keep wheel contact and stay inside the declared corridor;
 - the ground hint equals each layout's `spawnGroundY` (Mount Haruna 1064.4312);
+- Dumbo and Downtown MP run the committed aid path (`-aid-path.json`), with the
+  documented length, 4 gates / 2 checkpoints and one run per car/profile;
+- the roster is the pinned 61-car `_work/ai-driver/cars-61.json` and matches the
+  recorded selection, including `ratrod-na-stock`, `toyota-supra-smooth`,
+  `hummer-h2-rat` and `ford-supervan-stock`;
 - every map has a 2–4 AI race, deterministic across two fresh instance sets,
   with a full replay;
 - the two process-separated result files are byte-identical and every finish
-  time/state hash is identical between them.
+  time, lateral/contact metric, replay flag and state hash is identical between
+  them.
 
 It writes `_work/ai-driver/verify-maps.json` and exits non-zero on any failure.
 
-## Measured result (57-car roster, six maps)
+## Measured result (61-car roster, eight maps)
 
-Two process-separated runs with `--roster _work/ai-driver/cars-57.json` produced
-byte-identical `results-maps.json` files:
+Two process-separated runs with `--roster _work/ai-driver/cars-61.json` produced
+byte-identical `results-maps.json` files
+(`sha256:b10399af3843d1691030f95cfa8ec717433b17fb1da252f6bb2d5f630f0c0772`):
 
 | map | runs | clean | declared | DNF |
 |---|---|---|---|---|
-| `amboy` | 114 | 110 | 4 | 1 |
-| `gracia` | 114 | 94 | 20 | 10 |
-| `longbeach` | 114 | 114 | 0 | 0 |
-| `observatory` | 114 | 114 | 0 | 0 |
-| `downtown` | 114 | 114 | 0 | 0 |
-| `mharuna` | 114 | 114 | 0 | 0 |
-| **total** | **684** | **660** | **24** | **11** |
+| `amboy` | 122 | 116 | 6 | 3 |
+| `gracia` | 122 | 98 | 24 | 12 |
+| `longbeach` | 122 | 122 | 0 | 0 |
+| `observatory` | 122 | 122 | 0 | 0 |
+| `downtown` | 122 | 122 | 0 | 0 |
+| `mharuna` | 122 | 122 | 0 | 0 |
+| `dumbo` | 122 | 122 | 0 | 0 |
+| `downtown-mp` | 122 | 122 | 0 | 0 |
+| **total** | **976** | **946** | **30** | **15** |
 
-The four new maps are fully clean for the whole roster. The 24 declared limits
-are on Amboy (4) and Gracia (20) and are listed in `knownLimits` with the car,
-the profile, the cause, the arc reached and the respawn reasons. The causes are
-`spawn-no-launch`, `spawn-airborne-respawn-loop`,
-`spawn-airborne-recovered`, `below-ground-dnf` and
-`recovered-with-respawns`.
+Dumbo and Downtown MP are fully clean for the whole 61-car roster on both
+profiles. The 30 declared limits are on Amboy (6) and Gracia (24) and are listed
+in `knownLimits` with the car, the profile, the cause, the arc reached and the
+respawn reasons:
 
-The shared `_work/e1-drive/cars.json` grew from 57 to 59 cars while this
-evidence was being produced (another task added `ratrod-na-stock` and
-`toyota-supra-smooth`). `_work/ai-driver/cars-57.json` is the pinned 57-car
-snapshot used for the two runs, so the matrix is reproducible independently of
-later roster edits.
+| cause | count | where |
+|---|---|---|
+| `spawn-airborne-recovered` | 12 | Gracia, one spawn respawn then a finish |
+| `spawn-airborne-respawn-loop` | 6 | Gracia, airborne respawns at arc < 2 m, no finish |
+| `spawn-no-launch` | 6 | Gracia, never moved 2 m off the start line |
+| `recovered-with-respawns` | 3 | Amboy, one respawn then a finish |
+| `below-ground-dnf` | 3 | Amboy, chassis fell below ground, no finish |
+
+The four cars added since the 57-car snapshot are `ratrod-na-stock`,
+`toyota-supra-smooth`, `hummer-h2-rat` and `ford-supervan-stock`.
+`ratrod-na-stock` and `toyota-supra-smooth` are clean on every map;
+`hummer-h2-rat` is a declared limit on Amboy (`below-ground-dnf`, both
+profiles) and Gracia (`spawn-airborne-recovered`, both profiles);
+`ford-supervan-stock` is a declared limit on Gracia (`spawn-no-launch`, both
+profiles). No car is dropped.
+
+`_work/ai-driver/cars-61.json` is a byte copy of the shared
+`_work/e1-drive/cars.json` taken for this evidence. The default `--roster` is
+still the shared file; the pin keeps the two runs comparable if another task
+edits the shared roster. `_work/ai-driver/cars-57.json` is the previous pinned
+snapshot, kept as history.
 
 ## Evidence
 
 - `_work/ai-driver/results-maps.json` — current run
 - `_work/ai-driver/results-maps.previous.json` — previous process-separated run
 - `_work/ai-driver/verify-maps.json` — verifier report
-- `_work/logs/ai-driver-maps-run*.log` — run logs
+- `_work/ai-driver/cars-61.json` — pinned 61-car roster
+- `_work/logs/ai-driver-maps-61car-run1.log`, `…-run2.log` — run logs
 
 The analysis document is `docs/work/analysis/ai-driver.md`.

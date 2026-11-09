@@ -59,8 +59,9 @@ const mapInputs = results.inputs?.maps ?? {};
 
 check('M01', 'results kind/version', results.kind === 'blur.ai-driver-map-results' &&
   results.version === 1, `${results.kind} v${results.version}`);
-const EXPECTED_MAPS = ['amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna'];
-check('M02', 'driver kind/version, measured-path control table and the six measured maps',
+const EXPECTED_MAPS = ['amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
+  'dumbo', 'downtown-mp'];
+check('M02', 'driver kind/version, measured-path control table and the eight measured maps',
   results.driver?.kind === 'blur.ai-driver' && results.driver?.version === 1 &&
   results.driver?.mapControl?.cruiseSpeed === 12 &&
   results.driver?.mapControl?.purePursuit === true &&
@@ -214,6 +215,14 @@ const measuredControlRows = committedRows.filter((row) =>
   row.mapId === 'amboy' || row.mapId === 'gracia');
 const sprintControlRows = committedRows.filter((row) =>
   row.mapId !== 'amboy' && row.mapId !== 'gracia');
+// Provenance is derived from each committed run's own recorded top speed: a
+// sprint-control run must beat the measured control's cruise class *and* every
+// measured-control committed top speed. The previous hard-coded 20 m/s assumed
+// every sprint run reached the sprint cruise; Downtown MP is only 86 m and its
+// committed sprint run tops out at 17.58 m/s, still well above the measured
+// control's 13.08 m/s. The bound is derived from the recorded data, not assumed.
+const measuredCommittedTopSpeed = measuredControlRows.reduce((max, row) =>
+  Number.isFinite(row.committed?.maxSpeedMps) ? Math.max(max, row.committed.maxSpeedMps) : max, 0);
 const maxDifference = measuredControlRows.reduce((max, row) =>
   row.differenceSeconds === null ? max : Math.max(max, Math.abs(row.differenceSeconds)), 0);
 check('M16', 'measured-control maps reproduce the documented committed difference; sprint-control maps are marked non-comparable',
@@ -228,13 +237,14 @@ check('M16', 'measured-control maps reproduce the documented committed differenc
   sprintControlRows.every((row) => row.comparable === false &&
     row.committedControlClass === 'sprint' &&
     row.committed.maxSpeedMps > results.driver.mapControl.cruiseSpeed * 1.2 &&
-    row.committed.maxSpeedMps > 20),
+    row.committed.maxSpeedMps > measuredCommittedTopSpeed),
   measuredControlRows.map((row) =>
     `${row.mapId}: ${row.ai?.timeSeconds} vs ${row.committed?.timeSeconds} (${row.differenceSeconds})`).join('; ') +
   `; sprint-control: ` + sprintControlRows.map((row) =>
     `${row.mapId}: ${row.ai?.timeSeconds} vs ${row.committed?.timeSeconds} ` +
     `(committed top ${row.committed?.maxSpeedMps} m/s, comparable ${row.comparable})`).join('; ') +
-  `; max measured |difference| = ${maxDifference.toFixed(6)} s`);
+  `; max measured |difference| = ${maxDifference.toFixed(6)} s; ` +
+  `measured-control committed top speed = ${measuredCommittedTopSpeed} m/s`);
 const exactAnchorRows = anchorRuns.filter((run) =>
   run.mapId === 'amboy' || run.mapId === 'gracia');
 const sprintAnchorRows = anchorRuns.filter((run) =>
@@ -384,12 +394,15 @@ for (const run of runs) {
   if (previous.status !== run.status ||
       previous.timeSeconds !== run.timeSeconds ||
       previous.respawns !== run.respawns ||
+      previous.maxLateralMetres !== run.maxLateralMetres ||
+      previous.contactTicks !== run.contactTicks ||
+      previous.replay?.matchedEveryTick !== run.replay?.matchedEveryTick ||
       previous.stateSequenceHash !== run.stateSequenceHash ||
       previous.finishStateSequenceHash !== run.finishStateSequenceHash) {
     driftedRuns += 1;
   }
 }
-check('M27', 'finish times and state hashes are identical across two process-separated runs',
+check('M27', 'finish times, lateral/contact metrics, replay and state hashes are identical across two process-separated runs',
   previousExists && missingPreviousRuns === 0 && driftedRuns === 0 &&
   runs.length === (previousResults?.runs ?? []).length,
   previousExists
@@ -411,6 +424,69 @@ const perMap = selectedMaps.map((mapId) => {
 check('M28', 'every map has one run per car/profile and every run is clean or declared',
   perMap.every((row) => row.runs === row.expected && row.clean + row.declared === row.runs),
   perMap.map((row) => `${row.mapId}:${row.clean} clean + ${row.declared} declared / ${row.runs}`).join('; '));
+
+// ---------------------------------------------------------------------------
+// 61-car roster pin and the two aid-path maps (Dumbo, Downtown MP).
+// ---------------------------------------------------------------------------
+
+const PINNED_ROSTER = path.join(OUT, 'cars-61.json');
+const pinnedRoster = exists(PINNED_ROSTER) ? readJson(PINNED_ROSTER) : null;
+const pinnedSlugs = (pinnedRoster?.roster?.cars ?? []).map((car) => car.slug);
+const recordedRoster = results.inputs?.roster ?? {};
+const recordedSlugs = (recordedRoster.cars ?? []).map((car) => car.slug);
+const pinnedRosterPath = path.relative(ROOT, PINNED_ROSTER).split(path.sep).join('/');
+check('M29', 'the 61-car roster is pinned to _work/ai-driver/cars-61.json and matches the recorded selection',
+  selectedCars.length === 61 &&
+  recordedRoster.selected === 61 &&
+  pinnedSlugs.length === 61 &&
+  new Set(pinnedSlugs).size === 61 &&
+  JSON.stringify(pinnedSlugs) === JSON.stringify(selectedCars) &&
+  JSON.stringify(recordedSlugs) === JSON.stringify(selectedCars) &&
+  ['hummer-h2-rat', 'ford-supervan-stock', 'ratrod-na-stock', 'toyota-supra-smooth']
+    .every((slug) => selectedCars.includes(slug)),
+  `selected ${selectedCars.length}; pinned ${pinnedSlugs.length} (${pinnedRosterPath}); ` +
+  `roster ${recordedRoster.path}`);
+
+// The two new maps have no `probes/map-laps` path: their committed collision
+// path is the map-laps-aid aid path, copied verbatim into the E1 layout. The
+// verifier re-reads the layout and the recorded committed path rather than
+// trusting the runner's own summary.
+const NEW_MAPS = { dumbo: 361.999436, 'downtown-mp': 86.452776 };
+const newMapRows = Object.entries(NEW_MAPS).map(([mapId, length]) => {
+  const info = mapInputs[mapId];
+  const layout = info ? readJson(path.join(ROOT, info.layoutPath)) : null;
+  const committedPath = info?.committedPath ?? null;
+  const aidPath = committedPath?.path ?? '';
+  const gates = Array.isArray(layout?.gates) ? layout.gates : [];
+  const checkpoints = gates.filter((gate) => gate.kind === 'checkpoint').length;
+  const mapRuns = runs.filter((run) => run.mapId === mapId);
+  const mapClean = mapRuns.filter((run) => run.clean === true).length;
+  const mapDeclared = mapRuns.filter((run) =>
+    !run.clean && knownKey.has(`${run.courseId}|${run.profile}|${run.car}`)).length;
+  const ok = Boolean(info) &&
+    info.summary?.lengthMetres === length &&
+    info.summary?.finishArc === length &&
+    info.summary?.corridorHalfWidthMetres === 12 &&
+    committedPath !== null &&
+    aidPath.startsWith('probes/map-laps-aid/data/') &&
+    aidPath.endsWith('-aid-path.json') &&
+    committedPath.hash === info.summary?.hash &&
+    checkpoints === 2 &&
+    gates.length === 4 &&
+    mapRuns.length === selectedCars.length * selectedProfiles.length &&
+    mapClean + mapDeclared === mapRuns.length;
+  return {
+    mapId, ok, lengthMetres: info?.summary?.lengthMetres, finishArc: info?.summary?.finishArc,
+    corridorHalfWidthMetres: info?.summary?.corridorHalfWidthMetres,
+    committedPath: aidPath, committedPathHash: committedPath?.hash ?? null,
+    gates: gates.length, checkpoints, runs: mapRuns.length, clean: mapClean, declared: mapDeclared
+  };
+});
+check('M30', 'Dumbo and Downtown MP run the committed aid path with the documented length, gates and full run accounting',
+  newMapRows.every((row) => row.ok),
+  newMapRows.map((row) => `${row.mapId}: ${row.lengthMetres} m finish ${row.finishArc} m, ` +
+    `${row.gates} gates/${row.checkpoints} cp, ${row.clean} clean + ${row.declared} declared / ${row.runs}, ` +
+    `${row.committedPath}`).join('; '));
 
 const failed = checks.filter((item) => !item.ok);
 const report = {
@@ -437,6 +513,13 @@ const report = {
     cars: selectedCars.length,
     profiles: selectedProfiles,
     controlMode: results.driver?.controlMode,
+    roster: {
+      path: recordedRoster.path,
+      selected: selectedCars.length,
+      pinned: pinnedRosterPath,
+      pinnedCars: pinnedSlugs.length
+    },
+    newMaps: newMapRows,
     runs: runs.length,
     finished: runs.filter((run) => run.status === 'finished').length,
     clean: runs.filter((run) => run.clean).length,

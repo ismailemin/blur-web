@@ -19,11 +19,11 @@
 //     lateral term at low speed), three forward crossings of the start/finish
 //     line, then the post-finish brake.
 //   * measured point-to-point map paths (`courseId` in `MEASURED_MAP_IDS`:
-//     amboy, gracia, longbeach, observatory, downtown, mharuna): the committed
-//     M3 `AMBOY_CONTROL` policy (12 m/s cruise, short pure pursuit, 2.5 m/s^2
-//     lateral acceleration, 10 m/s finish cap). The maps' declared 6 m band is
-//     a rule/respawn band, not a road width, so it is not used as a narrower
-//     speed cap.
+//     amboy, gracia, longbeach, observatory, downtown, mharuna, dumbo,
+//     downtown-mp): the committed M3 `AMBOY_CONTROL` policy (12 m/s cruise,
+//     short pure pursuit, 2.5 m/s^2 lateral acceleration, 10 m/s finish cap).
+//     The maps' declared 6 m band is a rule/respawn band, not a road width, so
+//     it is not used as a narrower speed cap.
 //
 // The controller constants are the committed e1-drive follower constants
 // (`probes/e1-drive/web/sprint-script.js`, read-only reference). The skill
@@ -47,7 +47,8 @@ export const DRIVER_VERSION = 1;
  * prefix or a missing control table.
  */
 export const MEASURED_MAP_IDS = Object.freeze([
-  'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna'
+  'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
+  'dumbo', 'downtown-mp'
 ]);
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
