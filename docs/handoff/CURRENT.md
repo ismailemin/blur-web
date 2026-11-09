@@ -34,9 +34,11 @@ lightmap 9 haritada render'da.
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
   nitro, shock, barge, kalkan, tamir, bitiş, geri sayım, wreck).
-- **Işık:** retail ambient + **gerçek lightmap** render'da. Amboy vitrini:
-  **83 lightmap dokusu, 1173/1301 draw lightmap'li, 0 hata/uyarı**. 9 haritada
-  çözüldü; river tek-harita yolunda, downtown/highrise tipli `unsupported`.
+- **Işık:** retail ambient + **gerçek lightmap** render'da. **13/13 oynanabilir
+  haritada** lightmap var (downtown/highrise tipli `unsupported`). Amboy:
+  **83 doku, 1173/1301 draw**; River: **38 doku, 383/394 track draw**.
+- **Araç materyali:** retail **boya** ve **ışık rengi** render'da (Corvette
+  `Canal_Blue`, 10 boya draw'ı).
 - **Multiplayer:** yeni haritalarda da çalışıyor (Oval, Amboy MP; 2 oyuncu,
   0 hata). Amboy'da `?powerups=1` ile **82 pickup, 8 tip**, 0 hata.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.

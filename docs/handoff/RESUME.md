@@ -11,7 +11,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 |---|---|
 | **Haritalar** | **13/19 oynanabilir**: river, amboy, gracia, longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**. |
 | **Araçlar** | **61/62** sürüş diliminde. Yalnızca `defaultcar` desteklenmiyor (gövde modeli yok). |
-| **Lightmap** | **11 haritada render'da** (river hariç). Amboy: **83 doku, 1173/1301 draw**. Dumbo 115 doku/1615 draw, Downtown MP 49 doku/207 draw. |
+| **Lightmap** | **13/13 oynanabilir haritada render'da** (downtown ve highrise tipli `unsupported` olduğu için onlarda yok). Amboy: **83 doku, 1173/1301 draw**. River: **38 doku, 383/394 track draw**. Dumbo 115 doku/1615 draw, Downtown MP 49 doku/207 draw. |
 | **Işık düzeltmesi** | Lightmap'siz draw'lar artık **ambient** ile aydınlanıyor; River/Gracia/Longbeach'in `SunColour=[0,0,0]` olması onları siyah bırakıyordu, düzeltildi. |
 | **Araç materyali** | Retail **boya** ve **ışık rengi** render'da. Corvette: `Canal_Blue` `[0.0252, 0.3712, 0.8228]`, 10 boya draw'ı; far/stop/sinyal kapakları retail `emissive` rengiyle. |
 | **Ses** | 23 olaylı retail kataloğu sayfaya bağlı. |
@@ -57,12 +57,10 @@ node probes/e2e/run.mjs --scenarios solo-dumbo,solo-downtown-mp --base http://12
 
 1. **Kapıyı doğrula** (`gate-full18.log`). Yeni eklenen `map-laps-aid`,
    `powerups-aid` ve `lighting-lightmap-runtime` adımları dahil.
-2. **River lightmap'i.** River `kind: 'single-map'` ve `build_geometry.mjs`
-   yolunu kullanıyor; track görseli `_work/level-candidates/.../reference.json`
-   üzerinden geliyor ve orada `lightmapUv` yok. `mesh.lightmapUv` +
-   `draw.lightmapUrl` bu yola eklenmeli.
-3. **Kalan 5 harita (tipli blocker).** `.aid` hattı ±24 m detour ile bile
-   araç bandına (2,276 m) sığmıyor:
+2. **River lightmap'i bağlı** (38 doku, 383/394 track draw). Kalan tek
+   harita-seviyesi iş yok; 5 harita veri sınırı.
+3. **Kalan 5 harita (tipli blocker).** `.aid` hattı ±24 m detour ve 1,68 m
+   bantla bile araç bandına sığmıyor:
    - `uk_london_hackney`: 221 istasyon (ilk 2.890/10.012, (-227.278106, -133.764788)).
    - `uk_brighton`: ±24 m'de 24 istasyon (ilk 670/8.662, (84.516652, -185.448468)).
    - `usa_sanfran_sausalito`: 7.024 istasyon (ilk 4/18.196, (709.521209, -1434.502293)).
