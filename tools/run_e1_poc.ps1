@@ -1,6 +1,7 @@
 param(
     [int]$Port = 8801,
     [int]$RoomPort = 8811,
+    [string]$HostAddress = '127.0.0.1',
     [switch]$KeepStale
 )
 
@@ -69,4 +70,4 @@ Write-Host "MP guest     ->  ${base}?mp=1&room=<CODE>"
 Write-Host "Room service ->  ws://127.0.0.1:$RoomPort/ws"
 Write-Host 'Stop with Ctrl+C (or tools/stop_e1_poc.ps1).'
 Write-Host ''
-& $node (Join-Path $root 'probes/e1-drive/tools/serve.mjs') --port $Port --with-room --room-port $RoomPort
+& $node (Join-Path $root 'probes/e1-drive/tools/serve.mjs') --port $Port --with-room --room-port $RoomPort --host $HostAddress

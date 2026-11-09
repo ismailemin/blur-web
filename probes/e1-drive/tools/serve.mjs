@@ -263,7 +263,7 @@ function safeJoin(base, relative) {
   return resolved === base || resolved.startsWith(base + path.sep) ? resolved : null;
 }
 
-export function startServer({ port = 8801 } = {}) {
+export function startServer({ port = 8801, host = '127.0.0.1' } = {}) {
   const relay = createPowerupRelay();
   const aiRelay = createMpAiRelay();
   const server = createServer(async (request, response) => {
@@ -404,9 +404,20 @@ export function startServer({ port = 8801 } = {}) {
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(port, host, () => {
       const actualPort = server.address().port;
-      resolve({ server, origin: 'http://127.0.0.1:' + actualPort, port: actualPort, relay, aiRelay });
+      // `0.0.0.0` is a bind address, not a navigable origin: the local origin
+      // stays 127.0.0.1 and `lanOrigin` is the wildcard the caller prints.
+      const localHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host;
+      resolve({
+        server,
+        host,
+        origin: 'http://' + localHost + ':' + actualPort,
+        lanOrigin: host === '0.0.0.0' || host === '::' ? 'http://<this-machine-ip>:' + actualPort : null,
+        port: actualPort,
+        relay,
+        aiRelay
+      });
     });
   });
 }
@@ -417,12 +428,17 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const port = Number(index >= 0 ? args[index + 1] : 8801);
   const roomIndex = args.indexOf('--room-port');
   const roomPort = Number(roomIndex >= 0 ? args[roomIndex + 1] : 8811);
-  const { origin } = await startServer({ port });
+  // `--host 0.0.0.0` binds both servers to every interface so a second device
+  // on the same network can join. The default stays loopback.
+  const hostIndex = args.indexOf('--host');
+  const host = hostIndex >= 0 ? args[hostIndex + 1] : '127.0.0.1';
+  const { origin, lanOrigin } = await startServer({ port, host });
   let room = null;
   if (args.includes('--with-room')) {
     const { startRoomServer } = await import('../../net-mvp/server.mjs');
     room = await startRoomServer({
       port: roomPort,
+      host,
       log: (event) => console.log('[net-mvp]', JSON.stringify(event))
     });
     console.log('room service:        ' + room.wsUrl + ' (unchanged probes/net-mvp/server.mjs)');
@@ -435,7 +451,20 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   console.log('multiplayer host: ' + origin + '/?mp=1&host=1&script=sprint' +
     ' (lobby shows the allocated room code)');
   console.log('multiplayer guest: ' + origin + '/?mp=1&room=CODE&script=sprint');
-  console.log('multiplayer power-ups: append &powerups=1 to either URL (Mine/Shield/Repair slice)');
+  console.log('multiplayer power-ups: append &powerups=1 to either URL (8 types)');
+  if (lanOrigin) {
+    // Print the machine's IPv4 addresses so a second device on the same network
+    // can open the page and reach the room service without any TLS or VPS.
+    const { networkInterfaces } = await import('node:os');
+    const addresses = Object.values(networkInterfaces()).flat()
+      .filter((entry) => entry && entry.family === 'IPv4' && !entry.internal)
+      .map((entry) => entry.address);
+    for (const address of addresses) {
+      console.log('LAN (this network):  http://' + address + ':' + port +
+        '/  - the page derives the room URL from its own hostname (ws://' + address + ':' + roomPort + '/ws)');
+    }
+    if (addresses.length === 0) console.log('LAN: no non-loopback IPv4 address found');
+  }
   if (room) {
     const closeRoom = room.close;
     const shut = async () => { try { await closeRoom(); } catch {} process.exit(0); };
