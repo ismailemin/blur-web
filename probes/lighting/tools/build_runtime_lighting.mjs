@@ -230,6 +230,33 @@ function optionalNumber(value, label) {
   return number(value, label);
 }
 
+function optionalText(value, label) {
+  if (value === null || value === undefined) return null;
+  return text(value, label);
+}
+
+// A g_tLightmap reference key is a (block, index) pair.
+function optionalKey(value, label) {
+  if (value === null || value === undefined) return null;
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw new Error(label + ' is not a (block, index) pair: ' + JSON.stringify(value));
+  }
+  return value.map((entry, index) => number(entry, label + '[' + index + ']'));
+}
+
+// Byte position of an unsupported reference: a flat record of finite numbers.
+function numericRecord(value, label) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(label + ' is not an object: ' + JSON.stringify(value));
+  }
+  const out = {};
+  for (const key of Object.keys(value).sort()) {
+    out[key] = number(value[key], label + '.' + key);
+  }
+  return out;
+}
+
 function buildLightmap(manifest, short) {
   const lightmap = manifest.lightmap;
   if (!lightmap) {
@@ -301,9 +328,51 @@ function buildLightmap(manifest, short) {
   if (number(lightmap.bytes, 'lightmap.bytes') !== totalBytes) {
     throw new Error(short + ': lightmap.bytes does not equal the texture byte sum');
   }
+
+  // `decoded` (the lightmap_* texture set decoded) and `complete` (every
+  // g_tLightmap reference resolved to one of them) are separate facts. A
+  // decoded-but-incomplete set is copied with `complete: false`, `partial: true`
+  // and its typed per-reference `unsupported` entries; nothing is dropped.
+  if (typeof lightmap.complete !== 'boolean') {
+    throw new Error(short + ': lightmap.complete is not a boolean');
+  }
+  const complete = lightmap.complete;
+  const unsupported = lightmap.unsupported;
+  if (!Array.isArray(unsupported)) {
+    throw new Error(short + ': lightmap.unsupported is not a list');
+  }
+  if (complete !== (unsupported.length === 0)) {
+    throw new Error(short + ': lightmap.complete ' + complete +
+      ' disagrees with ' + unsupported.length + ' typed unsupported reference(s)');
+  }
+  if (complete && lightmap.partial !== undefined) {
+    throw new Error(short + ': a complete lightmap set must not carry partial:true');
+  }
+  if (!complete && lightmap.partial !== true) {
+    throw new Error(short + ': an incomplete lightmap set must carry partial:true');
+  }
+  const unsupportedReferences = number(lightmap.unsupportedReferences,
+    'lightmap.unsupportedReferences');
+  const unsupportedCount = unsupported.reduce((sum, entry) =>
+    sum + (entry.count === undefined ? 1 : number(entry.count, 'lightmap.unsupported.count')), 0);
+  if (unsupportedReferences !== unsupportedCount) {
+    throw new Error(short + ': lightmap.unsupportedReferences ' + unsupportedReferences +
+      ' does not equal the typed entry count ' + unsupportedCount);
+  }
+  const projectedUnsupported = unsupported.map((entry) => ({
+    name: optionalText(entry.name, 'lightmap.unsupported.name'),
+    key: optionalKey(entry.key, 'lightmap.unsupported.key'),
+    count: number(entry.count === undefined ? 1 : entry.count, 'lightmap.unsupported.count'),
+    reason: text(entry.reason, 'lightmap.unsupported.reason'),
+    bytePosition: numericRecord(entry.bytePosition, 'lightmap.unsupported.bytePosition')
+  }));
+
   return {
     kind: 'texture-set',
     decoded: true,
+    complete,
+    ...(lightmap.partial === true ? { partial: true } : {}),
+    unsupportedReferences,
     uvSet: text(lightmap.uvSet, 'lightmap.uvSet'),
     format: number(lightmap.format, 'lightmap.format'),
     formatName: text(lightmap.formatName, 'lightmap.formatName'),
@@ -321,6 +390,7 @@ function buildLightmap(manifest, short) {
         'lightmap.provenance.shaderTerms.rgbNormalisedGamma')
     },
     textures: projected,
+    unsupported: projectedUnsupported,
     source: text(lightmap.source, 'lightmap.source')
   };
 }
@@ -448,8 +518,11 @@ function buildDocument() {
       'retail data does not serialize are absent and listed in `missing`. A map whose ' +
       'C_LightList hasSun=0 has `sun: null` (the code-only fallback is not substituted). The ' +
       '`lightmap` block is the decoded g_tLightmap DXT5/BC3 texture set (mip 0) with ' +
-      'per-texture identity and hashes; it is not a pixel payload, and it is null when the ' +
-      'full g_tLightmap set is unsupported (see the manifest `lightmap.unsupported`).',
+      'per-texture identity and hashes; it is not a pixel payload. `lightmap.complete` is ' +
+      'false on downtown and highrise: the decoded textures are real, and the one ' +
+      'g_tLightmap reference outside the set is listed in `lightmap.unsupported` with its ' +
+      'material, stream record and byte position (`partial: true`). A draw that binds such a ' +
+      'reference has no lightmap and must use its ambient term.',
     retailRule: 'diffuse = ((baked * BakedColour) + SkyColour*skyOcc*saturate(n.y*0.5+0.5) + ' +
       'SunColour*saturate(dot(n,sunDir))*sunOcc) * albedo * diffuseIntensity ' +
       '(shader/common/Lighting.h:153-165)',

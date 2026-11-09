@@ -20,7 +20,8 @@
 //   } from './probes/lighting/lightmap-runtime.mjs';
 //
 //   const set = lightmapSetFor('river');
-//   // { mapId, count, uvSet: 'luxlightmap', shader, textures: [...] }
+//   // { mapId, count, complete, partial, unsupportedReferences, uvSet:
+//   //   'luxlightmap', shader, textures: [...], unsupported: [...] }
 //   const texture = lightmapTextureFor('river', 'lightmap_main_000-a');
 //   // { name, width, height, url, bytes, sha256 } or null
 //   const shader = lightmapShaderFor('river');
@@ -42,6 +43,11 @@
 //     that draws a subset still needs the per-material `g_tLightmap` name.
 //   - the lightmap UV is `TEXCOORD0.zw` (`uvSet: 'luxlightmap'`); this module
 //     does not supply or fabricate a UV stream.
+//   - `complete: false` / `partial: true` means the decoded texture set is real
+//     but one or more `g_tLightmap` references resolve outside it. Those
+//     references are listed in `unsupported` (name, key, count, reason,
+//     bytePosition) and have no texture here: a draw that binds one must use its
+//     ambient term. `unsupportedReferences` is the number of such references.
 //
 // Returned objects are deep-frozen. `lightmapSetFor` throws a
 // `LightmapRuntimeError` with `code === 'invalid-map-id'`, `'unknown-map'` or
@@ -58,9 +64,11 @@ export const LIGHTMAP_URL_PREFIX = '/_work/lighting';
 /** Lightmap UV set name (TEXCOORD0.zw, shader/common/Parameters.h:11). */
 export const LIGHTMAP_UV_SET = 'luxlightmap';
 
-/** Map ids with a committed runtime entry, in manifest build order. Some maps
- * have no decoded lightmap set; `lightmapSetFor` throws `lightmap-unavailable`
- * for those instead of returning a placeholder. */
+/** Map ids with a committed runtime entry, in manifest build order. Every map
+ * has a decoded lightmap set; `downtown` and `highrise` are partial
+ * (`complete: false`) and list their unsupported `g_tLightmap` references.
+ * `lightmapSetFor` throws `lightmap-unavailable` for a map with no decoded set
+ * instead of returning a placeholder. */
 export const LIGHTMAP_MAPS = LIGHTING_MAPS;
 
 /**
@@ -97,6 +105,14 @@ function requireCount(value, label) {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
     throw new LightmapRuntimeError('invalid-texture-record',
       'lightmap-runtime: ' + label + ' is not a positive integer');
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, label) {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new LightmapRuntimeError('invalid-texture-record',
+      'lightmap-runtime: ' + label + ' is not a non-negative integer');
   }
   return value;
 }
@@ -157,6 +173,21 @@ function buildTexture(mapId, texture) {
   };
 }
 
+function buildUnsupported(mapId, lightmap) {
+  const rows = lightmap.unsupported;
+  if (!Array.isArray(rows)) {
+    throw new LightmapRuntimeError('invalid-texture-record',
+      'lightmap-runtime: ' + mapId + ' lightmap.unsupported is not a list');
+  }
+  return rows.map((row) => ({
+    name: row.name ?? null,
+    key: row.key ?? null,
+    count: requireCount(row.count, mapId + ' lightmap.unsupported.count'),
+    reason: requireString(row.reason, mapId + ' lightmap.unsupported.reason'),
+    bytePosition: row.bytePosition ?? null
+  }));
+}
+
 function buildSet(mapId) {
   const lightmap = mapLighting(mapId).lightmap;
   if (!lightmap || lightmap.decoded !== true) {
@@ -174,12 +205,32 @@ function buildSet(mapId) {
       'lightmap-runtime: ' + mapId + ' lightmap.count ' + lightmap.count +
       ' does not equal the texture list length ' + textures.length);
   }
+  const unsupported = buildUnsupported(mapId, lightmap);
+  const complete = lightmap.complete === true;
+  if (complete !== (unsupported.length === 0)) {
+    throw new LightmapRuntimeError('invalid-texture-record',
+      'lightmap-runtime: ' + mapId + ' lightmap.complete ' + complete +
+      ' disagrees with ' + unsupported.length + ' unsupported reference(s)');
+  }
+  const unsupportedReferences = requireNonNegativeInteger(lightmap.unsupportedReferences,
+    mapId + ' lightmap.unsupportedReferences');
+  const expectedReferences = unsupported.reduce((sum, row) => sum + row.count, 0);
+  if (unsupportedReferences !== expectedReferences) {
+    throw new LightmapRuntimeError('invalid-texture-record',
+      'lightmap-runtime: ' + mapId + ' lightmap.unsupportedReferences ' +
+      unsupportedReferences + ' does not equal the typed reference count ' +
+      expectedReferences);
+  }
   return deepFreeze({
     mapId,
     count: textures.length,
+    complete,
+    partial: lightmap.partial === true,
+    unsupportedReferences,
     uvSet: LIGHTMAP_UV_SET,
     shader: buildShader(mapId, lightmap),
-    textures
+    textures,
+    unsupported
   });
 }
 
@@ -189,10 +240,13 @@ const CACHE = new Map();
  * Return the exported lightmap set for one map.
  *
  * @param {'river'|'amboy'|'gracia'|'longbeach'|'observatory'|'downtown'|'mharuna'|'highrise'|'shutoko'|'oval'|'amboy-mp'|'dumbo'|'downtown-mp'} mapId
- * @returns {{mapId:string, count:number, uvSet:'luxlightmap',
+ * @returns {{mapId:string, count:number, complete:boolean, partial:boolean,
+ *   unsupportedReferences:number, uvSet:'luxlightmap',
  *   shader:{uvSource:string, sunSky:string, rgbNormalisedGamma:string},
  *   textures:Array<{name:string, width:number, height:number, url:string,
- *     bytes:number, sha256:string}>}}
+ *     bytes:number, sha256:string}>,
+ *   unsupported:Array<{name:string|null, key:number[]|null, count:number,
+ *     reason:string, bytePosition:Object|null}>}}
  * @throws {LightmapRuntimeError} `invalid-map-id`, `unknown-map` or
  *   `lightmap-unavailable`.
  */

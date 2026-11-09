@@ -349,26 +349,41 @@ def build_reference(short: str) -> dict:
             },
         })
     entries.sort(key=lambda entry: entry["name"])
-    unsupported = [
-        {
+    # Same per-reference rule as the manifest: unresolved keys first (sorted by
+    # key), then non-lightmap names. `decoded` is the texture set, `complete` is
+    # the reference set.
+    unsupported = []
+    for entry in sorted(scan["unresolved"], key=lambda item: item["key"]):
+        record_index = entry["records"][0] if entry["records"] else None
+        unsupported.append({
             "name": None,
             "key": entry["key"],
+            "count": entry["count"],
             "reason": entry["reason"],
-        }
-        for entry in scan["unresolved"]
-    ] + [
-        {
+            "bytePosition": {
+                "recordIndex": record_index,
+                "streamRecordOffset": (scan["records"][record_index]["offset"]
+                                       if record_index is not None else None),
+            },
+        })
+    for name in scan["otherNames"]:
+        info = scan["names"][name]
+        record_index = info["records"][0] if info["records"] else None
+        unsupported.append({
             "name": name,
+            "key": [info["row"]["block"], info["row"]["index"]],
+            "count": info["count"],
             "reason": "g_tLightmap resolves to a non-lightmap texture",
-        }
-        for name in scan["otherNames"]
-    ]
-    unsupported.sort(key=lambda entry: (
-        entry["name"] is not None,
-        entry["name"] or "",
-        entry.get("key") or [],
-    ))
-    decoded = bool(entries) and not unsupported
+            "bytePosition": {
+                "recordIndex": record_index,
+                "streamRecordOffset": (scan["records"][record_index]["offset"]
+                                       if record_index is not None else None),
+                "block": info["row"]["block"],
+                "index": info["row"]["index"],
+            },
+        })
+    decoded = bool(entries) and len(entries) == len(scan["lightmapNames"])
+    complete = decoded and not unsupported
     dimensions = Counter("%dx%d" % (entry["width"], entry["height"]) for entry in entries)
     formats = Counter(entry["format"] for entry in entries)
     return {
@@ -384,6 +399,9 @@ def build_reference(short: str) -> dict:
         "lightmap": {
             "kind": "texture-set",
             "decoded": decoded,
+            "complete": complete,
+            **({"partial": True} if decoded and not complete else {}),
+            "unsupportedReferences": sum(entry["count"] for entry in unsupported),
             "uvSet": "luxlightmap",
             "format": next(iter(formats)) if len(formats) == 1 else None,
             "formatName": (FORMAT_NAMES[next(iter(formats))]

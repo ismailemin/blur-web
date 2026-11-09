@@ -164,6 +164,34 @@ for (const mapId of maps) {
   equal(prefix + 'index sourceFormatName', index.sourceFormatName, runtimeLightmap.formatName);
   equal(prefix + 'index count', index.count, runtimeLightmap.count);
   equal(prefix + 'index count equals texture list length', index.count, index.textures.length);
+  check(prefix + 'index complete is a boolean', typeof index.complete === 'boolean',
+    index.complete);
+  equal(prefix + 'index complete', index.complete, runtimeLightmap.complete);
+  equal(prefix + 'index partial flag', index.partial === true,
+    runtimeLightmap.partial === true);
+  equal(prefix + 'index unsupportedReferences', index.unsupportedReferences,
+    runtimeLightmap.unsupportedReferences);
+  equal(prefix + 'index unsupported entries', index.unsupported,
+    runtimeLightmap.unsupported);
+  check(prefix + 'index complete matches the unsupported list',
+    index.complete === (index.unsupported.length === 0), index.unsupported);
+  if (!index.complete) {
+    check(prefix + 'partial export is labelled partial', index.partial === true);
+    check(prefix + 'partial export keeps its decoded textures',
+      index.count > 0 && index.bytes > 0, [index.count, index.bytes]);
+    check(prefix + 'partial export unsupportedReferences is positive',
+      index.unsupportedReferences >= 1, index.unsupportedReferences);
+    for (const row of index.unsupported) {
+      const label = row.name ?? JSON.stringify(row.key);
+      check(prefix + 'unsupported reference has a reason: ' + label,
+        typeof row.reason === 'string' && row.reason.trim().length > 0, row.reason);
+      check(prefix + 'unsupported reference has a byte position: ' + label,
+        row.bytePosition !== null && typeof row.bytePosition === 'object',
+        row.bytePosition);
+      check(prefix + 'unsupported reference count is positive: ' + label,
+        Number.isInteger(row.count) && row.count >= 1, row.count);
+    }
+  }
   equal(prefix + 'index dimensions', index.dimensions, runtimeLightmap.dimensions);
   equal(prefix + 'index set sha256 equals the runtime decodedRgbaSha256',
     index.sha256, runtimeLightmap.decodedRgbaSha256);
@@ -227,6 +255,9 @@ for (const mapId of maps) {
   const expectedSet = {
     mapId,
     count: index.count,
+    complete: index.complete,
+    partial: index.partial === true,
+    unsupportedReferences: index.unsupportedReferences,
     uvSet: UV_SET,
     shader,
     textures: index.textures.map((texture) => ({
@@ -236,7 +267,8 @@ for (const mapId of maps) {
       url: URL_PREFIX + '/' + mapId + '/lightmap/' + texture.name + '.rgba',
       bytes: texture.bytes,
       sha256: texture.sha256
-    }))
+    })),
+    unsupported: index.unsupported
   };
   const set = module.lightmapSetFor(mapId);
   equal(prefix + 'module set matches the index', set, expectedSet);

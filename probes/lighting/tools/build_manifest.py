@@ -464,7 +464,7 @@ def build_level(level: str) -> dict:
         },
         "limits": [
             "One ambient probe at the measured spawn; the real engine interpolates the nearest light sample per model instance (0.2 lerp per frame).",
-            "The lightmap block decodes every g_tLightmap texture to mip-0 RGBA and records its identity, dimensions, format and hashes. It does not apply the sampler, mip chain, sRGB/colour transform or the per-material lightmap shader term; the renderer must do that from the recorded uvSet and shaderTerms.",
+            "The lightmap block decodes every g_tLightmap texture to mip-0 RGBA and records its identity, dimensions, format and hashes. It does not apply the sampler, mip chain, sRGB/colour transform or the per-material lightmap shader term; the renderer must do that from the recorded uvSet and shaderTerms. A set can be decoded but not complete (downtown, highrise): one g_tLightmap reference resolves outside the decoded lightmap_* set, so the block records complete:false, partial:true and a typed unsupported entry, and a draw that binds that reference has no lightmap and must use its ambient term.",
             "The lightmap set is the full level, not just the measured map-slice; a renderer that draws a subset still needs the per-material g_tLightmap name from the material binding.",
             "The per-vertex vehicle ambient (COLOR stream, U8_4N) is recorded as a stream, not evaluated; its exact bake basis is not recovered.",
             "No shadow-map, cascade, bias or PCF parameter exists in the data: retail cars use a projected drop shadow.",

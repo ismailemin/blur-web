@@ -18,8 +18,12 @@ resource-block texture.  This module:
 4. returns a deterministic ``lightmap`` block for the manifest.
 
 Nothing is guessed.  A texture that the decoder rejects is reported as
-``unsupported`` with its stream record and byte offsets; the block then records
-``decoded: false`` and the caller keeps the ``ambient.lightmap`` missing entry.
+``unsupported`` with its stream record and byte offsets and the block records
+``decoded: false``.  A ``g_tLightmap`` reference that resolves outside the
+decoded ``lightmap_*`` set is reported per reference in ``unsupported``; the
+block then keeps ``decoded: true`` with ``complete: false`` and ``partial:
+true``, so the decoded textures stay usable while the one unbound reference is
+labelled instead of being dropped or replaced by a placeholder.
 
 Upstream citations (read-only reference checkout, ``upstream/BlurRebuilt``):
 
@@ -569,8 +573,19 @@ def build_lightmap_block(level: str, temp_dir: Path | None = None) -> dict:
         })
 
     entries.sort(key=lambda entry: entry["name"])
-    decoded = (bool(entries) and not unsupported
-               and len(entries) == len(scan["referencedLightmaps"]))
+    # Two separate facts, deliberately not collapsed into one flag:
+    #   decoded   every lightmap_* texture of the set decoded and matched its
+    #             descriptor (the texture set itself is complete);
+    #   complete  every g_tLightmap reference resolved to one of those decoded
+    #             textures, i.e. `unsupported` is empty.
+    # A set can be decoded but not complete (downtown, highrise): the decoded
+    # lightmap_* textures are real, hashed and exported, and the reference
+    # outside the set stays a typed `unsupported` entry with its material,
+    # stream record and byte position. It is never dropped and never replaced
+    # by a placeholder texture.
+    decoded = bool(entries) and len(entries) == len(scan["referencedLightmaps"])
+    complete = decoded and not unsupported
+    unsupported_references = sum(entry.get("count") or 1 for entry in unsupported)
     dimensions = Counter("%dx%d" % (entry["width"], entry["height"]) for entry in entries)
     formats = Counter(entry["format"] for entry in entries)
     total_bytes = sum(entry["bytes"] for entry in entries)
@@ -592,10 +607,18 @@ def build_lightmap_block(level: str, temp_dir: Path | None = None) -> dict:
             "setHashRule": SET_HASH_RULE,
             "referenceRule": "every lightmap_* texture is referenced by at least one "
                              "material g_tLightmap field; a reference outside that set is "
-                             "reported as unresolved, never dropped",
+                             "reported as unresolved, never dropped. `decoded` means every "
+                             "lightmap_* texture decoded and matched its descriptor; "
+                             "`complete` means every g_tLightmap reference resolved to one of "
+                             "them. `decoded` with `complete:false` is a partial set: the "
+                             "decoded textures are real, the typed `unsupported` references "
+                             "are not bound",
         },
         "kind": "texture-set",
         "decoded": decoded,
+        "complete": complete,
+        **({"partial": True} if decoded and not complete else {}),
+        "unsupportedReferences": unsupported_references,
         "uvSet": UV_SET,
         "format": next(iter(formats)) if len(formats) == 1 else None,
         "formatName": (FORMAT_NAMES[next(iter(formats))]
@@ -623,6 +646,12 @@ def build_lightmap_block(level: str, temp_dir: Path | None = None) -> dict:
         "source": ("manifest lightmap set for %s: %d DXT5/BC3 textures, %d bytes, "
                    "decoded mip 0 from %s" % (level, len(entries), total_bytes,
                                               scan["streamPath"]))
+                  if complete else
+                  ("manifest partial lightmap set for %s: %d decoded DXT5/BC3 textures, "
+                   "%d bytes, decoded mip 0 from %s; %d g_tLightmap reference(s) outside "
+                   "the decoded set are typed in `unsupported`"
+                   % (level, len(entries), total_bytes, scan["streamPath"],
+                      unsupported_references))
                   if decoded else
                   ("manifest lightmap set for %s: %d decoded DXT5/BC3 textures, %d bytes; "
                    "the full g_tLightmap set is unsupported (%d typed entries), see "

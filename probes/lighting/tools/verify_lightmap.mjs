@@ -166,6 +166,11 @@ for (const short of options.levels) {
   // -- set shape ---------------------------------------------------------
   equal(prefix + 'lightmap kind', lightmap.kind, referenceLightmap.kind);
   equal(prefix + 'lightmap decoded', lightmap.decoded, referenceLightmap.decoded);
+  equal(prefix + 'lightmap complete', lightmap.complete, referenceLightmap.complete);
+  equal(prefix + 'lightmap partial flag', lightmap.partial === true,
+    referenceLightmap.partial === true);
+  equal(prefix + 'lightmap unsupportedReferences', lightmap.unsupportedReferences,
+    referenceLightmap.unsupportedReferences);
   equal(prefix + 'lightmap uvSet', lightmap.uvSet, referenceLightmap.uvSet);
   equal(prefix + 'lightmap format', lightmap.format, referenceLightmap.format);
   equal(prefix + 'lightmap formatName', lightmap.formatName, referenceLightmap.formatName);
@@ -185,23 +190,32 @@ for (const short of options.levels) {
     lightmap.decoded === referenceLightmap.decoded, lightmap.decoded);
   check(prefix + 'lightmap unsupported is a list', Array.isArray(lightmap.unsupported),
     lightmap.unsupported);
-  if (lightmap.decoded) {
-    check(prefix + 'decoded lightmap has no unsupported entries',
+  if (lightmap.complete) {
+    check(prefix + 'complete lightmap has no unsupported entries',
       lightmap.unsupported.length === 0, lightmap.unsupported);
   } else {
-    check(prefix + 'unsupported lightmap has typed entries',
+    check(prefix + 'incomplete lightmap has typed entries',
       lightmap.unsupported.length > 0, lightmap.unsupported);
   }
   equal(prefix + 'lightmap unsupported names',
     lightmap.unsupported.map((entry) => entry.name ?? null),
     referenceLightmap.unsupported.map((entry) => entry.name ?? null));
+  equal(prefix + 'lightmap unsupported keys',
+    lightmap.unsupported.map((entry) => entry.key ?? null),
+    referenceLightmap.unsupported.map((entry) => entry.key ?? null));
+  equal(prefix + 'lightmap unsupported counts',
+    lightmap.unsupported.map((entry) => entry.count ?? 1),
+    referenceLightmap.unsupported.map((entry) => entry.count ?? 1));
   equal(prefix + 'lightmap unsupported reasons',
     lightmap.unsupported.map((entry) => entry.reason),
     referenceLightmap.unsupported.map((entry) => entry.reason));
+  equal(prefix + 'lightmap unsupported byte positions',
+    lightmap.unsupported.map((entry) => entry.bytePosition ?? null),
+    referenceLightmap.unsupported.map((entry) => entry.bytePosition ?? null));
   check(prefix + 'lightmap byte total equals the texture sum',
     lightmap.bytes === lightmap.textures.reduce((sum, texture) => sum + texture.bytes, 0),
     lightmap.bytes);
-  if (lightmap.decoded) {
+  if (lightmap.complete) {
     check(prefix + 'lightmap reference set is clean',
       lightmap.referenceSummary.unresolved.length === 0 &&
       lightmap.referenceSummary.unreferencedNamePrefixLightmaps.length === 0 &&
@@ -209,10 +223,12 @@ for (const short of options.levels) {
       lightmap.referenceSummary.referencedNonLightmaps.length === 0,
       lightmap.referenceSummary);
   } else {
-    check(prefix + 'unsupported lightmap records the unclean reference set',
+    check(prefix + 'incomplete lightmap records the unclean reference set',
       lightmap.referenceSummary.unresolved.length > 0 ||
       lightmap.referenceSummary.referencedNonLightmaps.length > 0,
       lightmap.referenceSummary);
+    check(prefix + 'incomplete lightmap is decoded with textures',
+      lightmap.decoded === true && lightmap.textures.length > 0, lightmap.decoded);
   }
 
   // -- per texture -------------------------------------------------------
@@ -276,6 +292,19 @@ for (const short of options.levels) {
   if (!runtimeLightmap) continue;
   equal(prefix + 'runtime lightmap kind', runtimeLightmap.kind, lightmap.kind);
   equal(prefix + 'runtime lightmap decoded', runtimeLightmap.decoded, lightmap.decoded);
+  equal(prefix + 'runtime lightmap complete', runtimeLightmap.complete, lightmap.complete);
+  equal(prefix + 'runtime lightmap partial flag', runtimeLightmap.partial === true,
+    lightmap.partial === true);
+  equal(prefix + 'runtime lightmap unsupportedReferences',
+    runtimeLightmap.unsupportedReferences, lightmap.unsupportedReferences);
+  equal(prefix + 'runtime lightmap unsupported entries', runtimeLightmap.unsupported,
+    lightmap.unsupported.map((entry) => ({
+      name: entry.name ?? null,
+      key: entry.key ?? null,
+      count: entry.count ?? 1,
+      reason: entry.reason,
+      bytePosition: entry.bytePosition ?? null
+    })));
   equal(prefix + 'runtime lightmap uvSet', runtimeLightmap.uvSet, lightmap.uvSet);
   equal(prefix + 'runtime lightmap format', runtimeLightmap.format, lightmap.format);
   equal(prefix + 'runtime lightmap formatName', runtimeLightmap.formatName,

@@ -81,8 +81,11 @@ def verify_lightmap_block(short: str, doc: dict, level: str) -> None:
     check("%s lightmap kind is texture-set" % short,
           lightmap["kind"] == "texture-set", lightmap["kind"])
     decoded = lightmap["decoded"] is True
+    complete = lightmap.get("complete")
     check("%s lightmap decoded flag is boolean" % short,
           isinstance(lightmap["decoded"], bool), lightmap["decoded"])
+    check("%s lightmap complete flag is boolean" % short,
+          isinstance(complete, bool), complete)
     check("%s lightmap uvSet is luxlightmap" % short,
           lightmap["uvSet"] == "luxlightmap", lightmap["uvSet"])
     check("%s lightmap format is DXT5/BC3" % short,
@@ -116,11 +119,23 @@ def verify_lightmap_block(short: str, doc: dict, level: str) -> None:
     unsupported = lightmap["unsupported"]
     check("%s lightmap unsupported is a list" % short, isinstance(unsupported, list),
           type(unsupported).__name__)
-    if decoded:
-        check("%s lightmap unsupported list is empty when decoded" % short,
+    check("%s lightmap complete matches the unsupported list" % short,
+          isinstance(unsupported, list) and complete == (unsupported == []),
+          "%r with %d typed entries" % (complete, len(unsupported or [])))
+    check("%s lightmap partial flag matches decoded and complete" % short,
+          (lightmap.get("partial") is True) == (decoded and complete is False),
+          "%r / decoded %r / complete %r"
+          % (lightmap.get("partial"), decoded, complete))
+    check("%s lightmap unsupportedReferences counts the typed references" % short,
+          lightmap.get("unsupportedReferences") ==
+          sum(entry.get("count", 1) for entry in (unsupported or [])),
+          "%r vs %r" % (lightmap.get("unsupportedReferences"),
+                        sum(entry.get("count", 1) for entry in (unsupported or []))))
+    if complete:
+        check("%s lightmap unsupported list is empty when complete" % short,
               unsupported == [], str(unsupported)[:200])
     else:
-        check("%s unsupported lightmap has typed entries" % short,
+        check("%s incomplete lightmap has typed entries" % short,
               isinstance(unsupported, list) and len(unsupported) > 0,
               str(unsupported)[:200])
         for entry in unsupported:
@@ -131,12 +146,21 @@ def verify_lightmap_block(short: str, doc: dict, level: str) -> None:
             check("%s unsupported lightmap entry has a source location: %s" % (short, label),
                   isinstance(entry.get("bytePosition"), dict) or
                   isinstance(entry.get("source"), dict), str(entry)[:200])
+            check("%s unsupported lightmap entry has a reference count: %s" % (short, label),
+                  isinstance(entry.get("count"), int) and entry["count"] >= 1,
+                  str(entry.get("count")))
+            check("%s unsupported lightmap entry has a key or a name: %s" % (short, label),
+                  isinstance(entry.get("key"), list) or isinstance(entry.get("name"), str),
+                  str(entry)[:160])
 
     scan = LM.scan_level(level)
     referenced = scan["referencedLightmaps"]
     check("%s lightmap names equal the g_tLightmap reference set" % short,
           set(names) == set(referenced),
           "manifest %d, source %d" % (len(names), len(referenced)))
+    check("%s decoded lightmap set is the full lightmap_* texture set" % short,
+          (not decoded) or len(textures) == len(referenced),
+          "manifest %d, source %d" % (len(textures), len(referenced)))
     check("%s lightmap has no unreferenced lightmap_* textures" % short,
           scan["unreferencedNamePrefixLightmaps"] == [],
           str(scan["unreferencedNamePrefixLightmaps"])[:200])
@@ -157,7 +181,7 @@ def verify_lightmap_block(short: str, doc: dict, level: str) -> None:
           nonlight_names <= unsupported_names,
           "non-lightmap %r, unsupported %r" % (sorted(nonlight_names),
                                               sorted(unsupported_names)))
-    if decoded:
+    if complete:
         check("%s lightmap has no unresolved g_tLightmap references" % short,
               scan["unresolvedReferences"] == [], str(scan["unresolvedReferences"])[:200])
         check("%s lightmap has no referenced non-lightmap textures" % short,
@@ -637,27 +661,40 @@ def verify_global() -> None:
           len({docs[short]["source"]["environment"]["amaxSha256"] for short in SHORTS}) == 1, "")
 
     # Typed unsupported records: a map with no directional sun or an unclean
-    # g_tLightmap reference set must say so, never fall back silently.
+    # g_tLightmap reference set must say so, never fall back silently. A decoded
+    # but incomplete lightmap set keeps its textures and labels the references
+    # outside it (`complete:false`, `partial:true`, typed `unsupported`).
     sunless = sorted(short for short in SHORTS if docs[short]["sun"] is None)
-    unsupported_lightmaps = sorted(short for short in SHORTS
-                                   if docs[short]["lightmap"]["decoded"] is not True)
+    undecoded_lightmaps = sorted(short for short in SHORTS
+                                 if docs[short]["lightmap"]["decoded"] is not True)
+    incomplete_lightmaps = sorted(short for short in SHORTS
+                                  if docs[short]["lightmap"].get("complete") is not True)
     for short in sunless:
         record = docs[short].get("sunUnsupported")
         check("%s sunless map carries a typed sunUnsupported record" % short,
               isinstance(record, dict) and record.get("field") == "sun"
               and record.get("hasSun") is False, str(record)[:200])
-    for short in unsupported_lightmaps:
+    for short in incomplete_lightmaps:
         lightmap = docs[short]["lightmap"]
-        check("%s unsupported lightmap carries typed entries" % short,
+        check("%s incomplete lightmap is decoded" % short,
+              lightmap.get("decoded") is True, str(lightmap.get("decoded")))
+        check("%s incomplete lightmap carries typed entries" % short,
               isinstance(lightmap.get("unsupported"), list)
               and len(lightmap["unsupported"]) > 0,
               str(lightmap.get("unsupported"))[:200])
-        check("%s unsupported lightmap records the unclean reference set" % short,
+        check("%s incomplete lightmap is labelled partial" % short,
+              lightmap.get("partial") is True, str(lightmap.get("partial")))
+        check("%s incomplete lightmap records the unclean reference set" % short,
               bool(lightmap["referenceSummary"]["unresolved"]) or
               bool(lightmap["referenceSummary"]["referencedNonLightmaps"]), "")
-    check("unsupported lightmap set matches the committed typed set",
-          unsupported_lightmaps == ["downtown", "highrise"],
-          str(unsupported_lightmaps))
+        check("%s incomplete lightmap keeps its decoded textures" % short,
+              lightmap["count"] > 0 and lightmap["bytes"] > 0,
+              "%r / %r" % (lightmap["count"], lightmap["bytes"]))
+    check("every spawn-table map has a decoded lightmap set",
+          undecoded_lightmaps == [], str(undecoded_lightmaps))
+    check("incomplete lightmap set matches the committed typed set",
+          incomplete_lightmaps == ["downtown", "highrise"],
+          str(incomplete_lightmaps))
     check("sunless map set matches the committed typed set",
           sunless == ["downtown", "dumbo", "highrise"], str(sunless))
 

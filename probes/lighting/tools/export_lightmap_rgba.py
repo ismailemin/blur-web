@@ -16,7 +16,12 @@ whichever root is used.
 The export is byte-deterministic: sorted keys, fixed separators, no timestamps,
 no floating point.  A decode error, a descriptor mismatch or a disagreement with
 the committed runtime table aborts the run before the index is written; no
-placeholder, white texture or partial set is ever emitted.
+placeholder or white texture is ever emitted.  A ``g_tLightmap`` reference that
+resolves outside the decoded ``lightmap_*`` set does not abort the export: it is
+recorded per reference in ``index.json`` ``unsupported`` (name, key, count,
+reason, bytePosition) and the set is labelled ``complete: false`` /
+``partial: true``.  The decoded textures are real, so they are exported; the
+unbound reference is left for the renderer's ambient fallback.
 
 Run:
   python probes/lighting/tools/export_lightmap_rgba.py
@@ -95,9 +100,11 @@ def load_runtime_lightmap(map_id: str) -> dict | None:
 
     The table is the committed contract the renderer already consumes; the
     export must agree with it or fail, never diverge silently.  A map whose
-    manifest records a typed ``unsupported`` lightmap set has ``lightmap: null``
-    in the table; this function returns ``None`` for it and the caller skips the
-    export instead of writing a placeholder.
+    manifest records a lightmap set that did not decode at all has
+    ``lightmap: null`` in the table; this function returns ``None`` for it and
+    the caller skips the export instead of writing a placeholder.  A decoded but
+    incomplete set (``complete: false``) is returned: its textures are exported
+    and its typed ``unsupported`` references are recorded in the index.
     """
     if not RUNTIME_TABLE.exists():
         raise FileNotFoundError(
@@ -113,31 +120,62 @@ def load_runtime_lightmap(map_id: str) -> dict | None:
     return lightmap
 
 
-def decode_map(map_id: str, temp_dir: Path) -> tuple[list[dict], list[tuple[str, bytes]]]:
+def decode_map(map_id: str, temp_dir: Path) -> tuple[list[dict], list[tuple[str, bytes]], list[dict]]:
     """Decode every referenced lightmap texture of one map.
 
-    Returns the index entries (without ``file``) and the pixel buffers.  Any
-    descriptor mismatch, decode error or unresolved reference raises.
+    Returns ``(entries, pixels, unsupported)``.  A ``g_tLightmap`` reference
+    that resolves outside the decoded ``lightmap_*`` set is recorded as a typed
+    ``unsupported`` entry (name, key, count, reason, bytePosition) and does not
+    abort the export: the decoded textures are real and the reference is
+    labelled, not dropped and not replaced by a placeholder.  A descriptor
+    mismatch, a decode error or a hash mismatch still raises.
     """
     level = LEVEL_IDS[map_id]
     scan = LM.scan_level(level)
-    if scan["unresolvedReferences"]:
-        raise ValueError("%s: unresolved g_tLightmap references: %r"
-                         % (map_id, scan["unresolvedReferences"]))
     if scan["unreferencedNamePrefixLightmaps"]:
         raise ValueError("%s: lightmap_* textures with no g_tLightmap reference: %r"
                          % (map_id, scan["unreferencedNamePrefixLightmaps"]))
     if scan["referencedLightmapsMissingFromNamePrefix"]:
         raise ValueError("%s: g_tLightmap names outside the lightmap_* prefix: %r"
                          % (map_id, scan["referencedLightmapsMissingFromNamePrefix"]))
-    if scan["referencedNonLightmaps"]:
-        raise ValueError("%s: g_tLightmap resolves to non-lightmap textures: %r"
-                         % (map_id, scan["referencedNonLightmaps"]))
 
     folder = LM.LEVELS_DIR / level
     stream_path = folder / "Level.levelstream"
     render = (folder / "Level.levelrender").read_bytes()
     records = LM.car.render_layout(render, "level")["scene"]["stream"]["chunks"]
+
+    # Per-reference unsupported records, in the same shape and order as the
+    # manifest lightmap block: unresolved keys first, then non-lightmap names.
+    unsupported: list[dict] = []
+    for unresolved in scan["unresolvedReferences"]:
+        offsets = unresolved.get("recordOffsets") or []
+        record_index = (unresolved.get("records") or [None])[0]
+        unsupported.append({
+            "name": None,
+            "key": unresolved["key"],
+            "count": unresolved["count"],
+            "reason": unresolved["reason"],
+            "bytePosition": {
+                "recordIndex": record_index,
+                "streamRecordOffset": offsets[0] if offsets else None,
+            },
+        })
+    for name in scan["referencedNonLightmaps"]:
+        reference = scan["references"][name]
+        record_index = reference["records"][0] if reference["records"] else None
+        unsupported.append({
+            "name": name,
+            "key": [reference["block"], reference["index"]],
+            "count": reference["count"],
+            "reason": "g_tLightmap resolves to a non-lightmap texture",
+            "bytePosition": {
+                "recordIndex": record_index,
+                "streamRecordOffset": (records[record_index]["offset"]
+                                       if record_index is not None else None),
+                "block": reference["block"],
+                "index": reference["index"],
+            },
+        })
 
     entries: list[dict] = []
     pixels: list[tuple[str, bytes]] = []
@@ -212,10 +250,22 @@ def decode_map(map_id: str, temp_dir: Path) -> tuple[list[dict], list[tuple[str,
 
     entries.sort(key=lambda entry: entry["name"])
     pixels.sort(key=lambda item: item[0])
-    return entries, pixels
+    return entries, pixels, unsupported
 
 
-def check_runtime(map_id: str, entries: list[dict], lightmap: dict) -> None:
+def unsupported_projection(entry: dict) -> dict:
+    """The per-reference fields the export and the runtime table must agree on."""
+    return {
+        "name": entry.get("name"),
+        "key": entry.get("key"),
+        "count": entry.get("count", 1),
+        "reason": entry.get("reason"),
+        "bytePosition": entry.get("bytePosition"),
+    }
+
+
+def check_runtime(map_id: str, entries: list[dict], lightmap: dict,
+                  unsupported: list[dict]) -> None:
     """Require the export to agree with the committed runtime table."""
     if lightmap.get("uvSet") != UV_SET:
         raise ValueError("%s: runtime uvSet %r, expected %r"
@@ -248,14 +298,46 @@ def check_runtime(map_id: str, entries: list[dict], lightmap: dict) -> None:
         raise ValueError("%s: runtime set hash differs from the export; rebuild the "
                          "manifests and the runtime table" % map_id)
 
+    # `decoded` (the texture set) and `complete` (every g_tLightmap reference
+    # resolved) are separate: a partial set exports its real textures and keeps
+    # its typed per-reference unsupported entries.
+    complete = lightmap.get("complete")
+    if not isinstance(complete, bool):
+        raise ValueError("%s: runtime lightmap.complete is not a boolean" % map_id)
+    if complete != (not unsupported):
+        raise ValueError("%s: runtime lightmap.complete %r disagrees with %d decoded "
+                         "unsupported reference(s)" % (map_id, complete, len(unsupported)))
+    partial = lightmap.get("partial")
+    if complete and partial is not None:
+        raise ValueError("%s: complete runtime lightmap carries partial:%r"
+                         % (map_id, partial))
+    if not complete and partial is not True:
+        raise ValueError("%s: incomplete runtime lightmap is not labelled partial:%r"
+                         % (map_id, partial))
+    expected_references = sum(entry.get("count", 1) for entry in unsupported)
+    if lightmap.get("unsupportedReferences") != expected_references:
+        raise ValueError("%s: runtime lightmap.unsupportedReferences %r differs from the "
+                         "decoded reference count %d"
+                         % (map_id, lightmap.get("unsupportedReferences"),
+                            expected_references))
+    runtime_unsupported = lightmap.get("unsupported")
+    if not isinstance(runtime_unsupported, list):
+        raise ValueError("%s: runtime lightmap.unsupported is not a list" % map_id)
+    if (json.dumps([unsupported_projection(entry) for entry in runtime_unsupported],
+                   sort_keys=True, separators=(",", ":"))
+            != json.dumps([unsupported_projection(entry) for entry in unsupported],
+                          sort_keys=True, separators=(",", ":"))):
+        raise ValueError("%s: runtime lightmap.unsupported differs from the decoded "
+                         "references; rebuild the manifests and the runtime table" % map_id)
+
 
 def export_map(map_id: str, out_root: Path) -> dict | None:
     lightmap = load_runtime_lightmap(map_id)
     if lightmap is None:
         return None
     with tempfile.TemporaryDirectory(prefix="lightmap-export-") as temp:
-        entries, pixels = decode_map(map_id, Path(temp))
-    check_runtime(map_id, entries, lightmap)
+        entries, pixels, unsupported = decode_map(map_id, Path(temp))
+    check_runtime(map_id, entries, lightmap, unsupported)
 
     target = out_root / map_id / "lightmap"
     target.mkdir(parents=True, exist_ok=True)
@@ -269,6 +351,7 @@ def export_map(map_id: str, out_root: Path) -> dict | None:
             stale.unlink()
 
     dimensions = Counter("%dx%d" % (entry["width"], entry["height"]) for entry in entries)
+    complete = lightmap["complete"] is True
     index = {
         "schema": SCHEMA,
         "kind": KIND,
@@ -280,6 +363,9 @@ def export_map(map_id: str, out_root: Path) -> dict | None:
         "sourceFormatName": lightmap["formatName"],
         "mipLevel": MIP_LEVEL,
         "colorTransformApplied": False,
+        "complete": complete,
+        **({"partial": True} if lightmap.get("partial") is True else {}),
+        "unsupportedReferences": lightmap["unsupportedReferences"],
         "count": len(entries),
         "width": entries[0]["width"] if entries and len(dimensions) == 1 else None,
         "height": entries[0]["height"] if entries and len(dimensions) == 1 else None,
@@ -291,10 +377,15 @@ def export_map(map_id: str, out_root: Path) -> dict | None:
             {**entry, "file": "%s/lightmap/%s.rgba" % (map_id, entry["name"])}
             for entry in entries
         ],
+        "unsupported": unsupported,
         "source": "mip-0 RGBA8 decoded from the %d DXT5/BC3 g_tLightmap textures of %s "
                   "(Level.levelstream) with probes/asset-reader texture_inspect; "
                   "no mip chain, no sRGB/colour transform, no shader term applied"
-                  % (len(entries), LEVEL_IDS[map_id]),
+                  % (len(entries), LEVEL_IDS[map_id])
+                  + ("" if complete else
+                     "; partial set: %d g_tLightmap reference(s) outside the decoded "
+                     "textures are typed in `unsupported` and are not bound"
+                     % lightmap["unsupportedReferences"]),
     }
     payload = canonical(index)
     (target / "index.json").write_bytes(payload)
@@ -338,8 +429,11 @@ def main(argv: list[str] | None = None) -> int:
                       % map_id)
             continue
         if not args.quiet:
-            print("%-10s %3d textures %10d B  sha256 %s"
-                  % (map_id, index["count"], index["bytes"], index["sha256"]))
+            print("%-10s %3d textures %10d B  %s  sha256 %s"
+                  % (map_id, index["count"], index["bytes"],
+                     "complete  " if index["complete"]
+                     else "partial(%d)" % index["unsupportedReferences"],
+                     index["sha256"]))
     return 0
 
 

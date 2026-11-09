@@ -460,6 +460,23 @@ for (const short of MAP_ORDER) {
       Boolean(manifestLightmap) && manifestLightmap.decoded === true);
     equal(prefix + 'lightmap kind', lightmap.kind, 'texture-set');
     equal(prefix + 'lightmap decoded', lightmap.decoded, true);
+    check(prefix + 'lightmap complete is a boolean', typeof lightmap.complete === 'boolean',
+      lightmap.complete);
+    equal(prefix + 'lightmap complete', lightmap.complete, manifestLightmap.complete);
+    equal(prefix + 'lightmap partial flag', lightmap.partial === true,
+      manifestLightmap.partial === true);
+    equal(prefix + 'lightmap unsupportedReferences', lightmap.unsupportedReferences,
+      manifestLightmap.unsupportedReferences);
+    check(prefix + 'lightmap complete matches the unsupported list',
+      lightmap.complete === (lightmap.unsupported.length === 0), lightmap.unsupported);
+    equal(prefix + 'lightmap unsupported reference entries', lightmap.unsupported,
+      (manifestLightmap.unsupported ?? []).map((row) => ({
+        name: row.name ?? null,
+        key: row.key ?? null,
+        count: row.count ?? 1,
+        reason: row.reason,
+        bytePosition: row.bytePosition ?? null
+      })));
     equal(prefix + 'lightmap uvSet', lightmap.uvSet, 'luxlightmap');
     equal(prefix + 'lightmap format', lightmap.format, manifestLightmap.format);
     equal(prefix + 'lightmap formatName', lightmap.formatName, manifestLightmap.formatName);
@@ -525,13 +542,38 @@ for (const short of MAP_ORDER) {
         texture.source.block >= 0 && texture.source.index >= 0);
     }
     equal(prefix + 'lightmap bytes equal the texture byte sum', lightmap.bytes, lightmapBytes);
-    check(prefix + 'manifest lightmap has no unsupported textures',
-      Array.isArray(manifestLightmap.unsupported) && manifestLightmap.unsupported.length === 0);
-    check(prefix + 'manifest lightmap reference set is clean',
-      manifestLightmap.referenceSummary.unresolved.length === 0 &&
-      manifestLightmap.referenceSummary.unreferencedNamePrefixLightmaps.length === 0 &&
-      manifestLightmap.referenceSummary.referencedLightmapsMissingFromNamePrefix.length === 0 &&
-      manifestLightmap.referenceSummary.referencedNonLightmaps.length === 0);
+    if (lightmap.complete) {
+      check(prefix + 'complete lightmap has no unsupported references',
+        lightmap.unsupported.length === 0, lightmap.unsupported);
+      check(prefix + 'complete lightmap reference set is clean',
+        manifestLightmap.referenceSummary.unresolved.length === 0 &&
+        manifestLightmap.referenceSummary.unreferencedNamePrefixLightmaps.length === 0 &&
+        manifestLightmap.referenceSummary.referencedLightmapsMissingFromNamePrefix.length === 0 &&
+        manifestLightmap.referenceSummary.referencedNonLightmaps.length === 0);
+    } else {
+      check(prefix + 'partial lightmap is labelled partial', lightmap.partial === true);
+      check(prefix + 'partial lightmap keeps its decoded textures',
+        lightmap.textures.length > 0 && lightmap.bytes > 0,
+        [lightmap.textures.length, lightmap.bytes]);
+      check(prefix + 'partial lightmap records the unclean reference set',
+        manifestLightmap.referenceSummary.unresolved.length > 0 ||
+        manifestLightmap.referenceSummary.referencedNonLightmaps.length > 0,
+        manifestLightmap.referenceSummary);
+      check(prefix + 'partial lightmap unsupportedReferences is positive',
+        lightmap.unsupportedReferences >= 1, lightmap.unsupportedReferences);
+      for (const row of lightmap.unsupported) {
+        const label = row.name ?? JSON.stringify(row.key);
+        check(prefix + 'unsupported reference has a reason: ' + label,
+          typeof row.reason === 'string' && row.reason.trim().length > 0, row.reason);
+        check(prefix + 'unsupported reference has a byte position: ' + label,
+          row.bytePosition !== null && typeof row.bytePosition === 'object',
+          row.bytePosition);
+        check(prefix + 'unsupported reference count is positive: ' + label,
+          Number.isInteger(row.count) && row.count >= 1, row.count);
+        check(prefix + 'unsupported reference has a key or a name: ' + label,
+          Array.isArray(row.key) || typeof row.name === 'string', row);
+      }
+    }
   }
 
   // -- missing -----------------------------------------------------------

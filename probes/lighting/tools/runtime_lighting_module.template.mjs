@@ -38,6 +38,14 @@
 // decode terms (`SunSkyLightmap` and `RGBLightmapNormalisedGamma`). A renderer
 // binds `lightmap.textures[name]` for the material's `g_tLightmap` name.
 //
+// `lightmap.decoded` (every lightmap_* texture decoded) and
+// `lightmap.complete` (every g_tLightmap reference resolved to one of them) are
+// separate. `downtown` and `highrise` are decoded but not complete: they carry
+// `complete:false`, `partial:true`, `unsupportedReferences` and a typed
+// `unsupported` list (name, key, count, reason, bytePosition). A draw whose
+// `g_tLightmap` name is in that list has no lightmap and must use its ambient
+// term; no placeholder texture is provided.
+//
 // Returned objects are deep-frozen. `lightingFor` throws a `LightingError`
 // with `code === 'unknown-map'` for an unknown id and `code ===
 // 'invalid-map-id'` for a non-string id. `lightmapTexture` additionally throws
@@ -89,7 +97,8 @@ export const LIGHTING_MAPS = Object.freeze(Object.keys(DATA.maps));
  *       pointPosition:number[], spawn:number[], distance:number, searchRadius:number}},
  *   fog:null|{colour:number[], depth:{density:number, nearDistance:number, scale:number},
  *     height:{height:number, density:number, falloff:number, scale:number}},
- *   lightmap:null|{kind:'texture-set', decoded:true, uvSet:string,
+ *   lightmap:null|{kind:'texture-set', decoded:true, complete:boolean,
+ *     partial:boolean, unsupportedReferences:number, uvSet:string,
  *     format:number, formatName:string, count:number, width:number|null,
  *     height:number|null, dimensions:Object<string, number>, bytes:number,
  *     sha256:string, decodedRgbaSha256:string,
@@ -97,7 +106,9 @@ export const LIGHTING_MAPS = Object.freeze(Object.keys(DATA.maps));
  *     textures:Array<{name:string, width:number, height:number, format:number,
  *       formatName:string, levels:number, bytes:number, payloadBytes:number,
  *       sha256:string, decodedRgbaBytes:number, decodedRgbaSha256:string,
- *       referenceCount:number, source:Object}>},
+ *       referenceCount:number, source:Object}>,
+ *     unsupported:Array<{name:string|null, key:number[]|null, count:number,
+ *       reason:string, bytePosition:Object|null}>},
  *   missing:Array<{code:string, field:string, reason:string}>,
  *   source:string}}
  * @throws {LightingError} `invalid-map-id` for a non-string id, `unknown-map`
