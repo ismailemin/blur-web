@@ -272,6 +272,125 @@ line and become an unrelated course. The `narrow` tier deliberately drops the
 0.30 m safety margin; it is the documented car width, not a recovered retail
 hull, and it is the smallest band this probe will test.
 
+## Collision-raster project course
+
+The `.aid` verdicts above are unchanged. The five `blocked` levels also have an
+independent **project course** derived from the committed P48 passable raster,
+not from the retail racing line. It is a project course, not retail data:
+`courseSource` is `collision-raster-project-course` and `retailLineUsed` is
+`false`.
+
+```powershell
+# Build the five raster-course documents.
+python probes/map-laps-aid/tools/build_raster_course.py
+
+# Compare the generated documents with the committed files.
+python probes/map-laps-aid/tools/build_raster_course.py --check
+
+# Independent verifier: re-derives the erosion, component, clearance,
+# passability, closure and length from the committed raster.
+node probes/map-laps-aid/tools/verify_raster_course.mjs
+```
+
+### Rule
+
+The course is the **outer boundary of the clearance-eroded passable component
+that contains the committed spawn**:
+
+1. Load `_work/map-laps/<mapId>/grid.npz` (`base`, `height`, `xs`, `zs`) and
+   the committed spawn in `_work/map-batch/<level>/spawn.json`
+   (`layout.spawn`).
+2. Erode `base` by **2 8-connected layers**. A retained cell has every cell
+   within Chebyshev distance 2 passable, so the nearest blocked cell is at
+   least **1.5 m** away. The raster border is treated as blocked.
+3. Label the eroded mask and take the 8-connected component containing the
+   spawn cell, or the component of the nearest eroded cell when the spawn cell
+   is eroded. The snap is capped at **25 m** and recorded.
+4. Trace the outer boundary of that component with an 8-connected Moore
+   boundary trace and map the contour to the eroded foreground cells.
+5. Resample the closed ring at **0.25 m**, rotate it so station 0 is the
+   station nearest the committed spawn, and validate every station:
+   - on the P48 passable raster;
+   - on the eroded mask;
+   - the **1.68 m car band** is passable perpendicular to the station's
+     central-difference tangent (half-width 0.84 m, 0.21 m steps, 9 samples);
+   - the closed loop is continuous (station spacing ≤ 0.5 m, including the
+     closing seam).
+
+The 1.68 m band is the documented maximum car width (1.676 m) with no safety
+margin, the same `narrow` band the `.aid` probe tests. The 2.276 m band
+(1.676 m car + 0.30 m margin per side) is a stronger clearance; it needs a
+3-cell erosion and selects a smaller component, so this builder deliberately
+uses the documented minimum car band.
+
+No point is hand-placed and no corridor is invented. Every station is on the
+committed P48 passable raster and on the eroded component boundary. The course
+is a **project course**, not retail data; it is a data layout, not a driven
+lap.
+
+### Result
+
+| level | mapId | verdict | loop length | stations | clearance | spawn projection | component cells |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `uk_london_hackney` | `hackney` | **course** | 5,185.101941 m | 21,361 | 1.68 m | 0.3727 m | 115,111 |
+| `uk_brighton` | `brighton` | **course** | 10,864.527376 m | 44,381 | 1.68 m | 22.5499 m | 416,280 |
+| `usa_sanfran_sausalito` | `sausalito` | **course** | 2,802.765115 m | 11,343 | 1.68 m | 1.0000 m | 447,809 |
+| `usa_sanfran_russianhill` | `russianhill` | **course** | 382.315040 m | 1,578 | 1.68 m | 4.4721 m | 9,582 |
+| `spa_barcelona_bowl_multiplayer` | `bowl` | **course** | 1,112.809704 m | 4,507 | 1.68 m | 2.0000 m | 63,513 |
+
+All five levels have a closed band-clear loop. No level is blocked by the
+raster course. The station count is the number of distinct 0.25 m stations;
+the loop closes through the last-to-first seam (≤ 0.25 m), which is included
+in the loop length. The spawn projection is the distance from the committed
+spawn to station 0 (the nearest loop station); the spawn is recorded, not
+moved.
+
+The `brighton` loop is the outer boundary of the eroded component containing
+the spawn (416,280 cells) and is 10.9 km long; the `russianhill` loop is the
+outer boundary of a 9,582-cell component and is 382 m long. These lengths are
+the raster boundary lengths, not a driven racing line.
+
+### Files
+
+| file | bytes | sha256 | content hash |
+| --- | ---: | --- | --- |
+| `probes/map-laps-aid/data/hackney-raster-course.json` | 2,039,776 | `7ce8491edfc923c175f52d032f45bf1595a827477ab4307c3351981b71766b23` | `sha256:e17d2b4a11e936c33c97f61803b92f9d5a7be3447e40457075b07ced59aa9f04` |
+| `probes/map-laps-aid/data/brighton-raster-course.json` | 4,077,110 | `666164da10a868c5f4c1ac36c2fc480765b15bf38d8bfa54ce198686f76b4d0a` | `sha256:e784b9a89bb11a96900c1ec35255ea22ed903228f83e075431eb6d1682e2e9a5` |
+| `probes/map-laps-aid/data/sausalito-raster-course.json` | 1,050,845 | `c59f5af1c4688fe57be599fe213791ce60e61d8cd4589f258dc2d721fa2495c1` | `sha256:9fbe00eb7f2b639cde5467a9467fdb186ffc1310250fbbd11f12dcb9e4161a39` |
+| `probes/map-laps-aid/data/russianhill-raster-course.json` | 146,065 | `adbbec155bc04b0caf62ba3c4142a4bc04f9c98828db63e0ec63f522b062a1e0` | `sha256:b6d958820dac4000e4126752bae1c81575d111961261a97ec73b682c1bcbb40b` |
+| `probes/map-laps-aid/data/bowl-raster-course.json` | 410,788 | `66c3d2384b4555795c29404eb0dc7b73678134f9a03c8bea9fcafe1ceda09594` | `sha256:93d357c3d1c8cf478ac06ff33442bbf9bfe5f6e79c0177b0b7cf1dc394809b76` |
+
+### Verifier
+
+`verify_raster_course.mjs` re-derives from the committed raster and spawn
+document only:
+
+- the raster and spawn file hashes;
+- the 2-cell 8-connected erosion of the passable raster;
+- the eroded component containing the committed spawn (or the nearest eroded
+  cell within 25 m), its cell count, area and bounding box;
+- every station: on the passable raster, on the eroded mask, inside the
+  component, and with a passable 1.68 m car band perpendicular to the
+  station's central-difference tangent;
+- the closure (the last-to-first seam is ≤ 0.5 m), the station spacing, the
+  loop length and the arcs;
+- the start (station 0 is the station nearest the committed spawn) and the
+  recorded spawn projection distance;
+- the ground height at every station and the minimum raster clearance;
+- the document's canonical hash and the recorded algorithm parameters.
+
+Current result:
+
+```text
+365/365 checks passed
+```
+
+The `.aid` verifier is unchanged and still passes:
+
+```text
+317/317 checks passed
+```
+
 ## Scope labels
 
 The path document carries:
