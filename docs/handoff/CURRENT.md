@@ -57,7 +57,12 @@ bağlı.
 - **Multiplayer:** 13 haritanın tamamı lobide seçilebilir; 2 oyunculu + 0–3 AI.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Taşınabilir kapı:** `verify_asset_probe --skip-build` **98/98**.
-- **E2E:** **19 senaryo**; `solo-sausalito` 12/12, `mp-powerups` 45/45.
+- **E2E:** **21 senaryo**; `solo-sausalito` 12/12, `mp-powerups` 45/45,
+  `solo-checkpoint` 13/13, `mp-destruction` 33/33.
+- **Modlar:** `?mode=checkpoint` (40 s banka, +16 s/checkpoint, 20/10/0 s
+  madalya) ve `?mode=destruction` (MP, 180 s, wreck 5, rakip ×2,
+  intihar −1; hasar düşük/yüksek ayrımı tipli `unsupported`).
+  `probes/e1-drive/web/race-modes.js`, 30/30 test, kapıda `race-modes` adımı.
 
 **Sıradaki (öncelik sırası) — ayrıntı [`RESUME.md`](RESUME.md):**
 

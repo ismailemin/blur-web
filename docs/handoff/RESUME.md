@@ -19,7 +19,8 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Menü** | **61 araç / 13 harita**, 42/42 test, başsız Edge 0 konsol hatası. |
 | **Multiplayer** | 8 oyunculu oda (`mp-eight` 95/95); Amboy'da `?powerups=1` ile 82 pickup / 8 tip. |
 | **AI** | 8 haritada 61 araç × 2 profil = **976 koşu**, 946 temiz, 30 bildirilmiş limit, 0 beklenmeyen; `verify-maps` **32/32**. Dumbo/Downtown MP 122/122 temiz. |
-| **E2E** | **19/19 senaryo** (minimap, `mp-powerups` ve `solo-sausalito` 12/12 dahil). |
+| **E2E** | **21/21 senaryo** (minimap, `mp-powerups`, `solo-sausalito`, `solo-checkpoint` 13/13 ve `mp-destruction` 33/33 dahil). |
+| **Modlar** | `?mode=checkpoint` (tek oyunculu zaman bankası: 40 s başlangıç, checkpoint başına +16 s, altın/gümüş/bronz 20/10/0 s) ve `?mode=destruction` (MP Motor Mash: 180 s, wreck 5, rakip ×2, intihar −1; hasar düşük/yüksek ayrımı tipli `unsupported`). |
 | **Kapı** | **`verify_asset_probe --skip-build` 99/99 PASS** (`gate-full23.log`, exit 0). |
 | **LAN** | `serve.mjs --host 0.0.0.0` (ve `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm arayüzlere bağlıyor; ikinci cihaz VPS/TLS olmadan katılabiliyor. |
 | **Minimap** | `probes/e1-drive/web/minimap.js` — yalnız kurs noktalarından; 32/32 test. |
@@ -59,7 +60,10 @@ node probes/e2e/run.mjs --scenarios solo-dumbo,solo-downtown-mp --base http://12
 ## Sıradaki işler (öncelik sırası)
 
 1. **Kapıyı doğrula** (`gate-full24.log`).
-2. **Kalan 5 seviye — tipli veri sınırları.** Retail `.aid` hattı
+2. **Menü modları.** Menüde sprint/lap/free/multiplayer var; checkpoint ve
+   destruction şu an yalnız URL parametresiyle (`?mode=`). Menüye eklenmesi
+   `probes/game-shell` işi.
+3. **Kalan 5 seviye — tipli veri sınırları.** Retail `.aid` hattı
    collision geometrisi olmayan hücrelerden geçiyor (`base=false`, `wall=false`,
    bileşen 0): hackney `(-227.278106, -133.764788)`, brighton
    `(84.692995, -185.625677)`, sausalito `(709.746329, -1434.611018)`. Bu
