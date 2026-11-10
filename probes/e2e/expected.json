@@ -147,7 +147,7 @@
       "timeSeconds": 45.817,
       "timeToleranceSeconds": 1.5,
       "checkpoints": 2,
-      "layoutHash": "sha256:7362714fdcbaf2bb1b80cb7241fcfe2bdbe6562fc1e18b0226652ef21fae7702",
+      "layoutHash": "sha256:7f8344b0ce5feaa126bc37a26a3b44079a3bd0667c35f3509b0a22a4fba916a1",
       "docRef": "probes/map-laps-aid/data/sausalito-raster-layout.json (222.286304 m collision-raster ring)"
     }
   },
