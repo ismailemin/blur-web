@@ -76,6 +76,9 @@ const EDGE = findBrowser(option('--edge', null));
 const RETRIES = Math.max(0, Number(option('--retries', '1')));
 const SPRINT_RUNS = Math.max(1, Number(option('--sprint-runs', '2')));
 const VERBOSE = flag('--verbose');
+// `--ignore-cert` lets the harness drive a local TLS proxy with a development
+// certificate; it is never used for a production origin.
+const IGNORE_CERT = flag('--ignore-cert');
 
 const SCENARIOS = {
   'solo-sprint': { group: 'default', timeout: 180000, run: soloSprint },
@@ -332,6 +335,9 @@ async function startServers(selected) {
   if (BASE) {
     const parsed = new URL(BASE);
     if (!/^https?:$/.test(parsed.protocol)) throw new Error('--base must be an http(s) URL');
+    // A local TLS proxy uses a development certificate; `--ignore-cert` also
+    // relaxes this one reachability fetch (never a production origin).
+    if (IGNORE_CERT) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
     const response = await fetch(new URL('/', BASE)).catch((error) => {
       throw new Error('--base is not reachable: ' + error.message);
     });
@@ -442,7 +448,8 @@ async function runAttempt(id, attempt, definition, shared) {
       executable: EDGE,
       profileDir: path.join(PROFILES, id + '-attempt' + attempt + '-' + runId),
       viewport: VIEWPORT,
-      debugPort: 0
+      debugPort: 0,
+      extraArgs: IGNORE_CERT ? ['--ignore-certificate-errors'] : []
     });
     await withTimeout(Promise.resolve().then(() => definition.run(ctx)),
       definition.timeout, id + ' scenario timeout');

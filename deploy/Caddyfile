@@ -1,0 +1,45 @@
+# Blur Web — Caddy reverse proxy for the public host
+#
+# One hostname serves both the page and the WebSocket room:
+#
+#   https://play.example.com/      -> 127.0.0.1:8801  (the page server)
+#   wss://play.example.com/ws      -> 127.0.0.1:8811  (the room service)
+#
+# Caddy obtains and renews the certificate automatically, so the only inputs are
+# the hostname and its DNS record.
+#
+# Usage on the VPS:
+#   caddy run --config deploy/Caddyfile
+#
+# Replace `play.example.com` with the real hostname. The game process itself is
+# started by `tools/deploy_local.ps1 -Bind 127.0.0.1` (or the equivalent
+# `node probes/e1-drive/tools/serve.mjs --host 127.0.0.1 --with-room`).
+
+play.example.com {
+	encode zstd gzip
+
+	# The room service is a raw RFC 6455 WebSocket server on /ws.
+	@room path /ws
+	handle @room {
+		reverse_proxy 127.0.0.1:8811 {
+			# Long-lived sockets: no read timeout.
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+
+	# Everything else is the page server (HTML, JS modules, _work assets).
+	handle {
+		reverse_proxy 127.0.0.1:8801 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+}

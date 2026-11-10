@@ -7,3 +7,5 @@ downloads/
 *.dll
 __pycache__/
 probes/asset-reader/web/generated/
+# Local development certificate for tools/tls-proxy.mjs (never committed)
+deploy/local-dev.pfx
