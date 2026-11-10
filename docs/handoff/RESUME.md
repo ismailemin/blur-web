@@ -19,8 +19,9 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Menü** | **61 araç / 13 harita**, 42/42 test, başsız Edge 0 konsol hatası. |
 | **Multiplayer** | 8 oyunculu oda (`mp-eight` 95/95); Amboy'da `?powerups=1` ile 82 pickup / 8 tip. |
 | **AI** | 8 haritada 61 araç × 2 profil = **976 koşu**, 946 temiz, 30 bildirilmiş limit, 0 beklenmeyen; `verify-maps` **32/32**. Dumbo/Downtown MP 122/122 temiz. |
-| **E2E** | **22/22 senaryo** (minimap, `mp-powerups`, `solo-sausalito`, `solo-checkpoint`, `mp-destruction` ve menüden başlatan `menu-modes` 13/13 dahil). |
-| **Menü modları** | Mod listesi **5**: sprint, lap, free, **checkpoint**, multiplayer. Lobide maç modu **Race / Destruction** (yalnız host; Destruction power-up'ı zorlar). Menü testleri **44/44**. |
+| **E2E** | **24/24 senaryo** (minimap, `mp-powerups`, `solo-sausalito`, `solo-checkpoint`, `mp-destruction` ve menüden başlatan `menu-modes` 13/13 dahil). |
+| **Menü modları** | Mod listesi **5**: sprint, lap, free, checkpoint, multiplayer. Lobide maç modu **4**: **Race / Destruction / Points / Elimination** (yalnız host). Destruction ve Points power-up'ı zorlar; Elimination'ın periyodu/kriteri etiketli proje seçimi. Menü testleri **44/44**. |
+| **Yarış modları** | `?mode=checkpoint` (40 s banka), `destruction` (180 s, wreck 5), `points` (180 s, 19 etiketli puan satırı; 7 etiketsiz satır tipli `unsupported`), `elimination` (30 s periyot, son kalan kazanır; geçici). `race_modes_tests` **46/46**. |
 | **Modlar** | `?mode=checkpoint` (tek oyunculu zaman bankası: 40 s başlangıç, checkpoint başına +16 s, altın/gümüş/bronz 20/10/0 s) ve `?mode=destruction` (MP Motor Mash: 180 s, wreck 5, rakip ×2, intihar −1; hasar düşük/yüksek ayrımı tipli `unsupported`). |
 | **Kapı** | **`verify_asset_probe --skip-build` 99/99 PASS** (`gate-full23.log`, exit 0). |
 | **LAN** | `serve.mjs --host 0.0.0.0` (ve `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm arayüzlere bağlıyor; ikinci cihaz VPS/TLS olmadan katılabiliyor. |
