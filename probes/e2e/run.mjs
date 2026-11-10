@@ -41,6 +41,7 @@ import {
   mpAmboy,
   mpEight,
   mpGracia,
+  mpBossBattle,
   mpDestruction,
   mpElimination,
   mpPoints,
@@ -95,6 +96,7 @@ const SCENARIOS = {
   'menu-modes': { group: 'fast', timeout: 180000, run: menuModes },
   'mp-points': { group: 'slow', timeout: 420000, run: mpPoints },
   'mp-elimination': { group: 'slow', timeout: 420000, run: mpElimination },
+  'mp-boss-battle': { group: 'slow', timeout: 420000, run: mpBossBattle },
   'mp-amboy': { group: 'slow', timeout: 600000, run: mpAmboy },
   'mp-eight': { group: 'slow', timeout: 600000, run: mpEight },
   'solo-longbeach': { group: 'slow', timeout: 300000, run: soloLongbeach },
@@ -111,7 +113,7 @@ const SCENARIOS = {
 };
 const DEFAULT_SCENARIOS = ['solo-sprint', 'solo-lap', 'solo-free', 'mp-two'];
 const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix', 'mp-eight'];
-const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy', 'mp-eight', 'mp-powerups', 'mp-destruction', 'mp-points', 'mp-elimination']);
+const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy', 'mp-eight', 'mp-powerups', 'mp-destruction', 'mp-points', 'mp-elimination', 'mp-boss-battle']);
 const MAP_SCENARIOS = new Set(['mp-amboy', 'mp-gracia', 'mode-matrix']);
 
 const runId = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);

@@ -98,9 +98,9 @@ import { createEngineAudio } from '/audio/engine-audio.js';
 import { mountRetailHud, retailHudRequested } from './hud-mount.js';
 import { createMinimap } from './minimap.js';
 import {
-  CHECKPOINT_MODE, DESTRUCTION_MODE, ELIMINATION_MODE, POINTS_MODE,
-  checkpointState, createDestructionScoreboard, createEliminationTracker, createPointsScoreboard,
-  raceModeFor
+  BOSS_BATTLE_MODE, CHECKPOINT_MODE, DESTRUCTION_MODE, ELIMINATION_MODE, POINTS_MODE,
+  checkpointState, createBossBattleTracker, createDestructionScoreboard, createEliminationTracker,
+  createPointsScoreboard, raceModeFor
 } from './race-modes.js';
 const RETAIL_HUD = retailHudRequested();
 let retailHud = null;
@@ -111,6 +111,7 @@ let minimapModel = null;
 let destructionScoreboard = null;
 let pointsScoreboard = null;
 let eliminationTracker = null;
+let bossBattleTracker = null;
 let raceModeEventCursor = 0;
 let raceModeLastTick = 0;
 const params = new URLSearchParams(location.search);
@@ -325,6 +326,12 @@ if ((RACE_MODE_ID === POINTS_MODE.id || RACE_MODE_ID === ELIMINATION_MODE.id) &&
 }
 if (RACE_MODE_ID === POINTS_MODE.id && params.get('powerups') !== '1') {
   throw new Error('?mode=points scores power-up events; add &powerups=1');
+}
+if (RACE_MODE_ID === BOSS_BATTLE_MODE.id && !MP) {
+  throw new Error('?mode=boss-battle is a multiplayer event mode; add ?mp=1&host=1 or ?mp=1&room=CODE');
+}
+if (RACE_MODE_ID === BOSS_BATTLE_MODE.id && MP_HOST && !(Number(params.get('ai') ?? 0) >= 1)) {
+  throw new Error('?mode=boss-battle needs at least one host AI as the boss; add &ai=1');
 }
 // usa_amboy / spa_barcelona_gracia (M3 map packages) are point-to-point maps.
 // They run solo through `?map=` and the online room through `map` selection.
@@ -878,6 +885,51 @@ function publishRaceMode() {
     state.raceMode = eliminationTracker.tick(dt);
     return;
   }
+  if (RACE_MODE_ID === BOSS_BATTLE_MODE.id) {
+    // The host's AI cars are the opponents: the last AI is the boss, the rest
+    // are minders. The gap is the local arc minus the target's arc.
+    const sims = state.mp?.ai?.hostSim?.sims ?? null;
+    if (!Array.isArray(sims)) {
+      // The guest never simulates the AI, so it cannot compute the gap: it shows
+      // the labelled host-authoritative view instead of a guessed state.
+      state.raceMode = MP_HOST ? null : {
+        schema: BOSS_BATTLE_MODE.schema,
+        mode: BOSS_BATTLE_MODE.id,
+        stage: 'host-authoritative',
+        minders: null,
+        wreckedMinders: null,
+        gapMetres: null,
+        distanceFromMinders: BOSS_BATTLE_MODE.distanceFromMinders,
+        distanceFromBoss: BOSS_BATTLE_MODE.distanceFromBoss,
+        outcome: null,
+        finished: false,
+        reachability: { ...BOSS_BATTLE_MODE.reachability }
+      };
+      return;
+    }
+    const aiIds = [];
+    for (const sim of sims) {
+      if (sim?.id) aiIds.push(sim.id);
+    }
+    const bossId = aiIds.length ? aiIds[aiIds.length - 1] : null;
+    const minderIds = aiIds.slice(0, Math.max(0, aiIds.length - 1));
+    if (!bossBattleTracker || bossBattleTracker.snapshot().minders !== minderIds.length) {
+      bossBattleTracker = createBossBattleTracker({
+        participants: [mpNet?.playerId, ...aiIds].filter(Boolean),
+        minderIds,
+        bossId
+      });
+    }
+    const localArc = state.sprint?.arc ?? 0;
+    bossBattleTracker.setArc(mpNet?.playerId, localArc);
+    const arcOf = (id) => sims.find((sim) => sim.id === id)?.arc ?? 0;
+    const targetArc = bossBattleTracker.snapshot().stage === 'minders' && minderIds.length
+      ? Math.min(...minderIds.map(arcOf))
+      : arcOf(bossId);
+    bossBattleTracker.gap(mpNet?.playerId, localArc - (Number.isFinite(targetArc) ? targetArc : 0));
+    state.raceMode = bossBattleTracker.snapshot();
+    return;
+  }
   if (RACE_MODE_ID === DESTRUCTION_MODE.id) {
     if (!destructionScoreboard) {
       const participants = [];
@@ -958,6 +1010,15 @@ function publish() {
         mode.checkpointsPassed + ' of ' + (mode.totalCheckpoints ?? '?') + ' checkpoints' +
         (mode.expired ? ' - TIME EXPIRED' : '') +
         (mode.medal ? ' - medal ' + mode.medal : '')]);
+    } else if (mode.mode === BOSS_BATTLE_MODE.id) {
+      const detail = mode.stage === 'minders'
+        ? mode.wreckedMinders + ' of ' + mode.minders + ' minders wrecked'
+        : mode.stage === 'boss'
+          ? 'boss gap ' + (Number.isFinite(mode.gapMetres) ? mode.gapMetres.toFixed(1) : '-') +
+            ' m of ' + mode.distanceFromBoss + ' m'
+          : 'the host owns the boss state';
+      rows.push(['boss battle', 'stage ' + mode.stage + ' / ' + detail +
+        (mode.outcome ? ' / ' + mode.outcome : '')]);
     } else if (mode.mode === POINTS_MODE.id) {
       const leader = mode.rows[0];
       rows.push(['points', 'time left ' + mode.timeLeftSeconds.toFixed(1) + ' s / ' +

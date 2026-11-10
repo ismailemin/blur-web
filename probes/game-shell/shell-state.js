@@ -98,9 +98,17 @@ export const MATCH_MODES = Object.freeze({
     tagline: 'Last one standing (provisional 30 s period)',
     description: 'The last-ranked racer is eliminated every 30 s; the last one standing wins. The period and criterion are a labelled project choice (not serialized for an event).',
     powerups: false
+  }),
+  'boss-battle': Object.freeze({
+    id: 'boss-battle',
+    label: 'Boss Battle',
+    tagline: 'Wreck the minders, then beat the boss',
+    description: 'Two stages from AmaxRaceModeBossBattle: wreck every minder (or stay 500 m ahead for 5 s), then stay 150 m ahead of the boss. Needs at least one host AI; the wreck path is not reachable because AI cars do not use power-ups.',
+    powerups: true,
+    requiresAi: 1
   })
 });
-export const MATCH_MODE_ORDER = Object.freeze(['race', 'destruction', 'points', 'elimination']);
+export const MATCH_MODE_ORDER = Object.freeze(['race', 'destruction', 'points', 'elimination', 'boss-battle']);
 
 export const COURSE_LABELS = Object.freeze({
   310: '310 m sprint',
@@ -686,6 +694,15 @@ export function startRejection(state) {
     }
     if (!connected.every((player) => player.ready)) {
       return { ok: false, code: ERROR.START_REJECTED, reason: 'start needs every connected player ready' };
+    }
+    const matchMode = MATCH_MODES[state.mp.matchMode] ?? MATCH_MODES.race;
+    if (matchMode.requiresAi && aiCount < matchMode.requiresAi) {
+      return {
+        ok: false,
+        code: ERROR.START_REJECTED,
+        reason: matchMode.label + ' needs at least ' + matchMode.requiresAi +
+          ' host AI (the boss is an AI car)'
+      };
     }
     if (!state.mp.verified) {
       return { ok: false, code: ERROR.MAP_UNVERIFIED, reason: 'start needs this page to verify the room map first' };
@@ -1363,6 +1380,9 @@ export function engineQueryFor(config) {
       query.powerups = '1';
     } else if (config.mp.matchMode === 'elimination') {
       query.mode = 'elimination';
+    } else if (config.mp.matchMode === 'boss-battle') {
+      query.mode = 'boss-battle';
+      query.powerups = '1';
     }
   }
   return query;

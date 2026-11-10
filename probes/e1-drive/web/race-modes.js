@@ -207,6 +207,127 @@ export function createEliminationTracker({ participants = [], periodSeconds = EL
   };
 }
 
+
+/**
+ * Boss Battle. The committed fields are `AmaxRaceModeBossBattle`
+ * (singleplayer.bin, `singlePlayer/events[5]/modeVars`):
+ *   distanceFromMinders 500 m, timeInFrontOfMinders 5 s,
+ *   distanceFromBoss 150 m, timeInFrontOfBoss 0 s,
+ *   wreckMindersToWin true, wreckBossToWin false.
+ *
+ * Two stages: wreck every minder (or stay 500 m ahead for 5 s) to reach the
+ * boss, then stay 150 m ahead of the boss (0 s, so one tick) to win; falling
+ * 150 m behind the boss loses.
+ *
+ * Two reachability limits are labelled, not hidden:
+ *   * the page's AI cars do not use power-ups, so the wreck path cannot be
+ *     exercised there;
+ *   * the 500 m minder gap is longer than the 310 m measured course, so the
+ *     gap path needs a longer course (Amboy, 2,060.595 m).
+ */
+export const BOSS_BATTLE_MODE = Object.freeze({
+  schema: 'e1-drive.boss-battle-mode/1',
+  id: 'boss-battle',
+  label: 'Boss Battle',
+  distanceFromMinders: 500,
+  timeInFrontOfMindersSeconds: 5,
+  distanceFromBoss: 150,
+  timeInFrontOfBossSeconds: 0,
+  wreckMindersToWin: true,
+  wreckBossToWin: false,
+  minParticipants: 2,
+  reachability: Object.freeze({
+    wreckPath: 'not reachable in the page: AI cars do not use power-ups, so no minder can be wrecked',
+    gapPath: 'the 500 m minder gap is longer than the 310 m measured course; it needs a longer course (Amboy, 2,060.595 m)'
+  }),
+  source: 'singleplayer.bin AmaxRaceModeBossBattle (singlePlayer/events[5]/modeVars)'
+});
+
+/**
+ * Boss Battle tracker. `minderIds` are the opponents that must be wrecked (or
+ * left 500 m behind); `bossId` is the target of the second stage.
+ */
+export function createBossBattleTracker({
+  participants = [],
+  minderIds = [],
+  bossId = null,
+  config = BOSS_BATTLE_MODE
+} = {}) {
+  const rows = new Map();
+  for (const entry of participants) {
+    const id = typeof entry === 'string' ? entry : entry?.id;
+    if (typeof id === 'string' && id.length) rows.set(id, { id, arc: 0, aheadTicks: 0, behindTicks: 0 });
+  }
+  const minders = new Set(minderIds);
+  // With no minder the first stage is already the boss.
+  let stage = minders.size === 0 ? 'boss' : 'minders';
+  let wreckedMinders = 0;
+  let outcome = null;
+  let gapMetres = 0;
+  return {
+    schema: BOSS_BATTLE_MODE.schema,
+    mode: BOSS_BATTLE_MODE.id,
+    setArc(id, arc) {
+      const row = rows.get(id);
+      if (row && Number.isFinite(arc)) row.arc = arc;
+    },
+    wreck(targetId) {
+      if (outcome) return this.snapshot();
+      if (targetId === bossId) {
+        if (config.wreckBossToWin) outcome = 'won';
+        return this.snapshot();
+      }
+      if (minders.has(targetId)) {
+        wreckedMinders += 1;
+        if (config.wreckMindersToWin && wreckedMinders >= minders.size) stage = 'boss';
+      }
+      return this.snapshot();
+    },
+    /** `metres` = how far the leading player is ahead of the stage target. */
+    gap(playerId, metres) {
+      if (outcome) return this.snapshot();
+      gapMetres = Number.isFinite(metres) ? metres : 0;
+      const row = rows.get(playerId);
+      if (!row) return this.snapshot();
+      if (stage === 'minders') {
+        if (gapMetres >= config.distanceFromMinders) {
+          row.aheadTicks += 1;
+          if (row.aheadTicks >= config.timeInFrontOfMindersSeconds * 60) stage = 'boss';
+        } else {
+          row.aheadTicks = 0;
+        }
+        return this.snapshot();
+      }
+      if (gapMetres >= config.distanceFromBoss) {
+        row.aheadTicks += 1;
+        if (row.aheadTicks >= config.timeInFrontOfBossSeconds * 60) outcome = 'won';
+      } else if (gapMetres <= -config.distanceFromBoss) {
+        row.behindTicks += 1;
+        if (row.behindTicks >= Math.max(1, config.timeInFrontOfBossSeconds * 60)) outcome = 'lost';
+      } else {
+        row.aheadTicks = 0;
+        row.behindTicks = 0;
+      }
+      return this.snapshot();
+    },
+    snapshot() {
+      return {
+        schema: BOSS_BATTLE_MODE.schema,
+        mode: BOSS_BATTLE_MODE.id,
+        stage,
+        minders: minders.size,
+        wreckedMinders,
+        gapMetres: round3(gapMetres),
+        distanceFromMinders: config.distanceFromMinders,
+        distanceFromBoss: config.distanceFromBoss,
+        outcome,
+        finished: outcome !== null,
+        reachability: { ...config.reachability }
+      };
+    }
+  };
+}
+
 const round3 = (value) => Math.round(value * 1e3) / 1e3;
 
 /**
@@ -323,6 +444,7 @@ export function raceModeFor(value) {
   if (value === DESTRUCTION_MODE.id) return DESTRUCTION_MODE.id;
   if (value === POINTS_MODE.id) return POINTS_MODE.id;
   if (value === ELIMINATION_MODE.id) return ELIMINATION_MODE.id;
-  throw new Error('mode must be sprint, checkpoint, destruction, points or elimination (got ' +
+  if (value === BOSS_BATTLE_MODE.id) return BOSS_BATTLE_MODE.id;
+  throw new Error('mode must be sprint, checkpoint, destruction, points, elimination or boss-battle (got ' +
     JSON.stringify(value) + ')');
 }

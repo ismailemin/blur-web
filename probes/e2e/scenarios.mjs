@@ -1438,13 +1438,14 @@ export async function menuModes(ctx) {
     };
   })()`);
   await ctx.shot(page, 'menu-destruction');
-  ctx.A.check('menu-modes: the lobby offers the four match modes', lobby.segmented === 4, lobby.segmented);
+  ctx.A.check('menu-modes: the lobby offers the five match modes', lobby.segmented === 5, lobby.segmented);
   ctx.A.check('menu-modes: the lobby starts on Race', lobby.matchModeBefore === 'race', lobby.matchModeBefore);
   ctx.A.check('menu-modes: Destruction is selectable from the lobby',
     lobby.matchMode === 'destruction', lobby.matchMode);
   ctx.A.check('menu-modes: Destruction forces the power-up slice', lobby.powerups === true, lobby.powerups);
-  ctx.A.check('menu-modes: the lobby labels are Race / Destruction / Points / Elimination',
-    JSON.stringify(lobby.labels) === JSON.stringify(['Race', 'Destruction', 'Points', 'Elimination']),
+  ctx.A.check('menu-modes: the lobby labels are Race / Destruction / Points / Elimination / Boss Battle',
+    JSON.stringify(lobby.labels) ===
+      JSON.stringify(['Race', 'Destruction', 'Points', 'Elimination', 'Boss Battle']),
     ctx.fmt(lobby.labels));
   ctx.A.check('menu-modes: no console error',
     page.messages.filter((m) => m.type === 'error').length === 0,
@@ -1558,6 +1559,65 @@ export async function mpElimination(ctx) {
   await ctx.shot(room.guest, 'elimination-guest');
   assertSilent(ctx, room.host, hostConsoleFrom, 'elimination-host');
   assertSilent(ctx, room.guest, guestConsoleFrom, 'elimination-guest');
+  ctx.evidence.host = hostMode;
+  ctx.evidence.guest = guestMode;
+}
+
+/**
+ * `mp-boss-battle`: the Boss Battle mode. One host AI is the boss (no minder), so
+ * the stage starts at the boss; the committed AmaxRaceModeBossBattle fields and
+ * the two labelled reachability limits are asserted. The gap path needs a longer
+ * course and the wreck path needs AI power-ups, so the scenario does not wait
+ * for an outcome.
+ */
+export async function mpBossBattle(ctx) {
+  const mapId = 'river';
+  ctx.evidence.mapId = mapId;
+  const expected = { ...ctx.anchors.mp.river, hostCar: ctx.anchors.cars.default };
+  const room = await openRoom(ctx, {
+    mapId,
+    hostCar: expected.hostCar,
+    guestCar: expected.guestCar,
+    guestPace: expected.guestPace,
+    hostExtra: '&mode=boss-battle&powerups=1&ai=1',
+    guestExtra: '&mode=boss-battle&powerups=1',
+    expectAi: 1
+  });
+  ctx.evidence.room = { code: room.code, hostUrl: room.hostUrl, guestUrl: room.guestUrl };
+  assertLobby(ctx, room, { mapId, hostCar: expected.hostCar, guestCar: expected.guestCar, expectAi: 1 });
+  const hostConsoleFrom = room.host.messages.length;
+  const guestConsoleFrom = room.guest.messages.length;
+  await startRoomRace(ctx, room, { timeoutMs: 60000, expectAi: 1 });
+
+  const hostMode = await waitMp(ctx, room.host, (probe) =>
+    probe.mp.phase === 'running' && probe.raceMode?.mode === 'boss-battle',
+  { timeoutMs: 90000, label: 'host boss-battle mode' });
+  const guestMode = await waitMp(ctx, room.guest, (probe) =>
+    probe.mp.phase === 'running' && probe.raceMode?.mode === 'boss-battle',
+  { timeoutMs: 90000, label: 'guest boss-battle mode' });
+
+  ctx.A.check('mp-boss-battle: the host runs the boss-battle mode',
+    hostMode.raceMode.mode === 'boss-battle', hostMode.raceMode.mode);
+  ctx.A.check('mp-boss-battle: the guest runs the boss-battle mode',
+    guestMode.raceMode.mode === 'boss-battle', guestMode.raceMode.mode);
+  ctx.A.check('mp-boss-battle: the committed AmaxRaceModeBossBattle fields are applied',
+    hostMode.raceMode.distanceFromMinders === 500 && hostMode.raceMode.distanceFromBoss === 150,
+    ctx.fmt({ minders: hostMode.raceMode.distanceFromMinders, boss: hostMode.raceMode.distanceFromBoss }));
+  ctx.A.check('mp-boss-battle: one AI with no minder starts at the boss stage',
+    hostMode.raceMode.stage === 'boss' && hostMode.raceMode.minders === 0,
+    ctx.fmt({ stage: hostMode.raceMode.stage, minders: hostMode.raceMode.minders }));
+  ctx.A.check('mp-boss-battle: both reachability limits are labelled',
+    /not reachable/.test(hostMode.raceMode.reachability?.wreckPath ?? '') &&
+      /500 m/.test(hostMode.raceMode.reachability?.gapPath ?? ''),
+    ctx.fmt(hostMode.raceMode.reachability));
+  ctx.A.check('mp-boss-battle: the HUD names the stage and the boss gap',
+    /boss battle.*stage boss.*boss gap/.test(hostMode.overlays.hudText ?? ''),
+    hostMode.overlays.hudText);
+
+  await ctx.shot(room.host, 'boss-host');
+  await ctx.shot(room.guest, 'boss-guest');
+  assertSilent(ctx, room.host, hostConsoleFrom, 'boss-host');
+  assertSilent(ctx, room.guest, guestConsoleFrom, 'boss-guest');
   ctx.evidence.host = hostMode;
   ctx.evidence.guest = guestMode;
 }

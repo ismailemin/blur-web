@@ -378,9 +378,9 @@ test('checkpoint is a selectable solo mode and destruction is a lobby match mode
   });
   const refused = reduce(guest, { type: 'mp/set-match-mode', matchMode: 'destruction', now: 1000 });
   assert.equal(refused.notice.code, ERROR.HOST_ONLY);
-  const bogus = reduce(lobby, { type: 'mp/set-match-mode', matchMode: 'boss-battle', now: 1000 });
+  const bogus = reduce(lobby, { type: 'mp/set-match-mode', matchMode: 'skirmish', now: 1000 });
   assert.equal(bogus.notice.code, ERROR.NOT_READY);
-  assert.match(bogus.notice.message, /race, destruction/);
+  assert.match(bogus.notice.message, /race, destruction, points, elimination, boss-battle/);
 });
 
 test('power-ups can be enabled on any map, not only River', () => {

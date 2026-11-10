@@ -20,9 +20,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  CHECKPOINT_MODE, DESTRUCTION_MODE, ELIMINATION_MODE, POINTS_MODE,
-  checkpointState, createDestructionScoreboard, createEliminationTracker, createPointsScoreboard,
-  raceModeFor
+  BOSS_BATTLE_MODE, CHECKPOINT_MODE, DESTRUCTION_MODE, ELIMINATION_MODE, POINTS_MODE,
+  checkpointState, createBossBattleTracker, createDestructionScoreboard, createEliminationTracker,
+  createPointsScoreboard, raceModeFor
 } from '../web/race-modes.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -180,14 +180,56 @@ check('elimination: the next last-ranked racer is eliminated',
   eliminationSnapshot);
 check('elimination: the winner is the last one standing', eliminationSnapshot.finished === true);
 
+// --------------------------------------------------------------- boss battle
+check('boss-battle: the committed AmaxRaceModeBossBattle fields are applied',
+  BOSS_BATTLE_MODE.distanceFromMinders === 500 && BOSS_BATTLE_MODE.timeInFrontOfMindersSeconds === 5 &&
+    BOSS_BATTLE_MODE.distanceFromBoss === 150 && BOSS_BATTLE_MODE.timeInFrontOfBossSeconds === 0 &&
+    BOSS_BATTLE_MODE.wreckMindersToWin === true && BOSS_BATTLE_MODE.wreckBossToWin === false,
+  BOSS_BATTLE_MODE);
+check('boss-battle: both reachability limits are labelled',
+  /not reachable/.test(BOSS_BATTLE_MODE.reachability.wreckPath) &&
+    /500 m/.test(BOSS_BATTLE_MODE.reachability.gapPath),
+  BOSS_BATTLE_MODE.reachability);
+
+const bossWreck = createBossBattleTracker({ participants: ['p1', 'ai-1', 'ai-2'], minderIds: ['ai-1'], bossId: 'ai-2' });
+check('boss-battle: the first stage is the minders', bossWreck.snapshot().stage === 'minders',
+  bossWreck.snapshot().stage);
+bossWreck.wreck('ai-1');
+check('boss-battle: wrecking every minder advances to the boss',
+  bossWreck.snapshot().stage === 'boss', bossWreck.snapshot());
+bossWreck.wreck('ai-2');
+check('boss-battle: wrecking the boss does not win (wreckBossToWin false)',
+  bossWreck.snapshot().outcome === null, bossWreck.snapshot());
+
+const bossGap = createBossBattleTracker({ participants: ['p1', 'ai-1'], minderIds: [], bossId: 'ai-1' });
+check('boss-battle: no minder means the boss stage from the start',
+  bossGap.snapshot().stage === 'boss', bossGap.snapshot().stage);
+bossGap.gap('p1', 100);
+check('boss-battle: a 100 m gap is below the 150 m win',
+  bossGap.snapshot().outcome === null, bossGap.snapshot().outcome);
+bossGap.gap('p1', 150);
+check('boss-battle: a 150 m gap wins at the committed 0 s',
+  bossGap.snapshot().outcome === 'won', bossGap.snapshot().outcome);
+
+const bossLose = createBossBattleTracker({ participants: ['p1', 'ai-1'], minderIds: [], bossId: 'ai-1' });
+bossLose.gap('p1', -150);
+check('boss-battle: falling 150 m behind the boss loses',
+  bossLose.snapshot().outcome === 'lost', bossLose.snapshot().outcome);
+
+const bossMinderGap = createBossBattleTracker({ participants: ['p1', 'ai-1', 'ai-2'], minderIds: ['ai-1'], bossId: 'ai-2' });
+for (let tick = 0; tick < 5 * 60; tick++) bossMinderGap.gap('p1', 500);
+check('boss-battle: 500 m ahead for 5 s advances to the boss',
+  bossMinderGap.snapshot().stage === 'boss', bossMinderGap.snapshot());
+
 // ------------------------------------------------------------------- mode id
 check('mode: sprint maps to the default', raceModeFor('sprint') === null);
 check('mode: checkpoint is accepted', raceModeFor('checkpoint') === 'checkpoint');
 check('mode: destruction is accepted', raceModeFor('destruction') === 'destruction');
 check('mode: points is accepted', raceModeFor('points') === 'points');
 check('mode: elimination is accepted', raceModeFor('elimination') === 'elimination');
+check('mode: boss-battle is accepted', raceModeFor('boss-battle') === 'boss-battle');
 let rejected = false;
-try { raceModeFor('boss-battle'); } catch { rejected = true; }
+try { raceModeFor('skirmish'); } catch { rejected = true; }
 check('mode: an unknown mode is rejected', rejected);
 
 const report = {
