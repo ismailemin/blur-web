@@ -809,8 +809,8 @@ export const MAPS = Object.freeze({
     propLayer: false,
     ghost: false,
     pins: Object.freeze({
-      mapFileSha256: 'sha256:305453fe3c489431cb6815ce95aded370bbee2e6c340f646cb986a481cece2df',
-      mapContentHash: 'sha256:e92501d670f29bad6e21168a5e2a6d3f0af26e6fe86da95e199ce1d5e6c282e4',
+      mapFileSha256: 'sha256:80994449a508fab19e80a3e00a32b77c0afbc667df81c444e538f580dada3cff',
+      mapContentHash: 'sha256:93184b57cf5bc1d6c4b41e778004c54829e405ca0a83b6a79e9a075bb162dba7',
       layoutFileSha256: 'sha256:856696934054e96a21028ecf1c8d9b0f4e22b10c4b04953c6864d3cc34ce875b',
       layoutContentHash: 'sha256:7f8344b0ce5feaa126bc37a26a3b44079a3bd0667c35f3509b0a22a4fba916a1',
       renderFileSha256: 'sha256:5267ef0e9f244c2e13a159fe257cf014e030fc6c7fb65601860023312fe2b3bd',
@@ -838,13 +838,13 @@ export const MAPS = Object.freeze({
       courseId: 'sausalito'
     }),
     mpPins: Object.freeze({
-      packageHash: 'sha256:e92501d670f29bad6e21168a5e2a6d3f0af26e6fe86da95e199ce1d5e6c282e4',
+      packageHash: 'sha256:93184b57cf5bc1d6c4b41e778004c54829e405ca0a83b6a79e9a075bb162dba7',
       layoutHash: 'sha256:7f8344b0ce5feaa126bc37a26a3b44079a3bd0667c35f3509b0a22a4fba916a1',
       physicsHash: 'sha256:d4e1074b8f83b924af92060b18e9ca3e36ad48e10e0276a2b7f70c5cdc7b7c65',
-      packageFileSha256: 'sha256:305453fe3c489431cb6815ce95aded370bbee2e6c340f646cb986a481cece2df',
+      packageFileSha256: 'sha256:80994449a508fab19e80a3e00a32b77c0afbc667df81c444e538f580dada3cff',
       layoutFileSha256: 'sha256:9380d30b558f175fee29b8f6a7a8d68fd0556815f7f0d55fadef179ba2b4bb9f',
       physicsFileSha256: 'sha256:d4e1074b8f83b924af92060b18e9ca3e36ad48e10e0276a2b7f70c5cdc7b7c65',
-      packageBytes: 68034309,
+      packageBytes: 68151174,
       layoutBytes: 156839,
       physicsBytes: 5836796
     })

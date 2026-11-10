@@ -60,7 +60,7 @@ ROOT = Path(__file__).resolve().parents[3]
 # by URL. Only the four maps the lighting probe decoded have a set.
 LIGHTMAP_MAPS = {"river", "amboy", "gracia", "longbeach", "observatory",
                  "mharuna", "shutoko", "oval", "amboy-mp", "dumbo", "downtown-mp",
-                 "downtown", "highrise"}
+                 "downtown", "highrise", "sausalito"}
 LIGHTMAP_URL = "/_work/lighting/%s/lightmap/%s.rgba"
 
 MAP_BUILDS = {

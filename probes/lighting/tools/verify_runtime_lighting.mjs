@@ -36,7 +36,7 @@ const INDEX_SCHEMA = 'blur-lighting-index/1';
 const MAP_ORDER = [
   'river', 'amboy', 'gracia', 'longbeach',
   'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp',
-  'dumbo', 'downtown-mp'
+  'dumbo', 'downtown-mp', 'sausalito'
 ];
 const MISSING_CODES = new Set(['not-serialized', 'not-decoded']);
 const MISSING_FIELDS = [

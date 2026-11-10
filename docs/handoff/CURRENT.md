@@ -37,10 +37,10 @@ bağlı.
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
   nitro, shock, barge, kalkan, tamir, bitiş, geri sayım, wreck).
-- **Işık:** retail ambient + **gerçek lightmap** render'da. **13/13 oynanabilir
-  haritada** lightmap var. Downtown **86 doku / 1279 draw**, Highrise
-  **22 / 69** (kısmi set, tek tipli `unsupported` referans); Amboy 83/1173,
-  River 38/383, Dumbo 115/1615, Downtown MP 49/207.
+- **Işık:** retail ambient + **gerçek lightmap** render'da. **14/14 oynanabilir
+  haritada** lightmap var. Sausalito **100 doku / 1347 draw**; Downtown
+  **86 / 1279**, Highrise **22 / 69** (kısmi set, tek tipli `unsupported`
+  referans); Amboy 83/1173, River 38/383, Dumbo 115/1615, Downtown MP 49/207.
 - **Araç materyali:** retail **boya** ve **ışık rengi** render'da (Corvette
   `Canal_Blue`, 10 boya draw'ı).
 - **Kurs minimap'i:** `probes/e1-drive/web/minimap.js` — yalnız

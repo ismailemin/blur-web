@@ -11,7 +11,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 |---|---|
 | **Haritalar** | **14/19 oynanabilir**: river, amboy, gracia, longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, dumbo, downtown-mp, **sausalito** (222,286 m collision-raster halkası, min yarıçap 5,75 m, %100 çizim kapsaması). |
 | **Araçlar** | **61/62** sürüş diliminde. Yalnızca `defaultcar` desteklenmiyor (gövde modeli yok). |
-| **Lightmap** | **13/13 oynanabilir haritada render'da**. Downtown **86 doku / 1279 draw**, Highrise **22 / 69** (kısmi set: her birinde tek tipli `unsupported` referans, o draw'lar ambient terimle). Amboy 83/1173, River 38/383, Dumbo 115/1615, Downtown MP 49/207. |
+| **Lightmap** | **14/14 oynanabilir haritada render'da**. Sausalito **100 doku / 1347 draw**; Downtown 86/1279, Highrise 22/69 (kısmi set: tek tipli `unsupported` referans, o draw'lar ambient terimle). Amboy 83/1173, River 38/383, Dumbo 115/1615, Downtown MP 49/207. |
 | **Işık düzeltmesi** | Lightmap'siz draw'lar artık **ambient** ile aydınlanıyor; River/Gracia/Longbeach'in `SunColour=[0,0,0]` olması onları siyah bırakıyordu, düzeltildi. |
 | **Araç materyali** | Retail **boya** ve **ışık rengi** render'da. Corvette: `Canal_Blue` `[0.0252, 0.3712, 0.8228]`, 10 boya draw'ı; far/stop/sinyal kapakları retail `emissive` rengiyle. |
 | **Ses** | 23 olaylı retail kataloğu sayfaya bağlı. |

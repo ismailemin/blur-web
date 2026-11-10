@@ -162,6 +162,15 @@ SPAWN_TABLE = {
                        "(course.start.groundY); committed source "
                        "probes/map-laps-aid/data/downtown-mp-aid-path.json",
     },
+    "usa_sanfran_sausalito": {
+        "short": "sausalito",
+        "city": "USA_SanFran_Sausalito",
+        "spawn": (508.0, -77.436005, -1425.018271),
+        "spawnSource": "_work/e1-drive/sausalito/layout.json course.spawn.x=508, "
+                       "course.spawn.z=-1425.018271, course.spawnGroundY=-77.436005 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps-aid/data/sausalito-raster-layout.json",
+    },
 }
 
 LIGHT_TYPE_NAMES = {

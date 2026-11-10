@@ -67,10 +67,11 @@ LEVEL_IDS = {
     "amboy-mp": "usa_amboy_multiplayer",
     "dumbo": "usa_ny_dumbo",
     "downtown-mp": "usa_la_downtown_multiplayer",
+    "sausalito": "usa_sanfran_sausalito",
 }
 MAP_ORDER = ["river", "amboy", "gracia", "longbeach", "observatory", "downtown",
              "mharuna", "highrise", "shutoko", "oval", "amboy-mp", "dumbo",
-             "downtown-mp"]
+             "downtown-mp", "sausalito"]
 
 SET_HASH_RULE = ("sha256 over canonical JSON of the per-texture (name, decodedRgbaSha256) "
                  "pairs sorted by name; canonical JSON is sort_keys=True, "
@@ -397,7 +398,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--out-root", type=Path, default=DEFAULT_OUT_ROOT,
                         help="export root (default: _work/lighting)")
     parser.add_argument("--maps", default=",".join(MAP_ORDER),
-                        help="comma-separated map ids (default: all 13)")
+                        help="comma-separated map ids (default: all 14)")
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_args(argv)
 

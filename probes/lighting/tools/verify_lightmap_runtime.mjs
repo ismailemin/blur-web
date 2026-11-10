@@ -38,7 +38,7 @@ const MODULE_PATH = path.join(ROOT, 'probes/lighting/lightmap-runtime.mjs');
 const MAP_ORDER = [
   'river', 'amboy', 'gracia', 'longbeach',
   'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp',
-  'dumbo', 'downtown-mp'
+  'dumbo', 'downtown-mp', 'sausalito'
 ];
 const EXPORT_SCHEMA = 'blur.lightmap-rgba/1';
 const RUNTIME_SCHEMA = 'blur.lightmap-runtime/1';

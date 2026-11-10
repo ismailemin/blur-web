@@ -40,7 +40,7 @@ const INDEX_SCHEMA = 'blur-lighting-index/1';
 const MAP_ORDER = [
   'river', 'amboy', 'gracia', 'longbeach',
   'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp',
-  'dumbo', 'downtown-mp'
+  'dumbo', 'downtown-mp', 'sausalito'
 ];
 
 // Fields the retail data does not serialize. `field` must be absent from the
