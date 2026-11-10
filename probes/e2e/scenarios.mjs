@@ -33,6 +33,7 @@ const READ_PROBE = `(() => {
     map: p?.map ?? null,
     mapCounts: p?.mapCounts ?? null,
     sprint: p?.sprint ?? null,
+    raceMode: p?.raceMode ?? null,
     sprintResult: p?.sprintResult ?? null,
     sprintCourseId: p?.sprintCourseId ?? null,
     sprintLayoutHash: p?.sprintLayoutHash ?? null,
@@ -358,6 +359,7 @@ async function openRoom(ctx, {
   hostCar,
   guestCar,
   hostExtra = '',
+  guestExtra = '',
   guestPace,
   expectAi = 0
 }) {
@@ -375,7 +377,7 @@ async function openRoom(ctx, {
 
   const guest = await ctx.openPage('guest');
   const guestUrl = ctx.base + '/?mp=1&room=' + encodeURIComponent(code ?? '') + '&script=sprint&car=' +
-    encodeURIComponent(guestCar) + '&mpPace=' + guestPace + '&name=Guest' + roomQuery;
+    encodeURIComponent(guestCar) + '&mpPace=' + guestPace + '&name=Guest' + guestExtra + roomQuery;
   await guest.navigate(guestUrl);
   const guestLobby = await waitMp(ctx, guest, (probe) =>
     probe.mp.phase === 'lobby' && probe.mp.engineReady === true &&
@@ -1197,3 +1199,119 @@ export async function mpEight(ctx) {
 }
 
 
+
+
+// ------------------------------------------------------------------ race modes
+
+/**
+ * solo-checkpoint: the single-player time-bank mode on the 310 m River
+ * sprint. The committed values are singleplayer.bin AmaxRaceModeCheckpointVars:
+ * initialTime 40 s, +16 s per checkpoint, gold/silver/bronze 20/10/0 s.
+ */
+export async function soloCheckpoint(ctx) {
+  const url = ctx.base + '/?map=river&script=sprint&mode=checkpoint&car=' +
+    encodeURIComponent(ctx.anchors.cars.default) + '&audio=0';
+  const page = await ctx.openPage('checkpoint');
+  await page.navigate(url);
+  const running = await waitProbe(ctx, page,
+    (probe) => probe.consumer === 'running' && probe.engineTick >= 2,
+    { timeoutMs: 120000, label: 'checkpoint running' });
+  await ctx.shot(page, 'start');
+  ctx.A.check('checkpoint: URL is the checkpoint sprint', running.url === url, running.url);
+  ctx.A.check('checkpoint: the mode is checkpoint', running.raceMode?.mode === 'checkpoint',
+    ctx.fmt(running.raceMode));
+  ctx.A.check('checkpoint: the time bank starts from the committed 40 s',
+    running.raceMode?.timeLeftSeconds <= 40 && running.raceMode?.timeLeftSeconds > 30,
+    running.raceMode?.timeLeftSeconds);
+  ctx.A.check('checkpoint: the HUD names the time bank and the checkpoint count',
+    /time left .* s \/ \d+ of \d+ checkpoints/.test(running.overlays.hudText ?? ''),
+    running.overlays.hudText);
+
+  const done = await waitProbe(ctx, page, (probe) => probe.sprintResult !== null,
+    { timeoutMs: 240000, label: 'checkpoint finish' });
+  await ctx.shot(page, 'finish');
+  const mode = done.raceMode;
+  ctx.A.check('checkpoint: the run finished with the mode state', mode?.finished === true,
+    ctx.fmt(mode));
+  ctx.A.check('checkpoint: both checkpoints paid their committed 16 s',
+    mode?.awardedSeconds === 32, mode?.awardedSeconds);
+  ctx.A.check('checkpoint: the medal is the committed remaining-time threshold',
+    ['gold', 'silver', 'bronze'].includes(mode?.medal), mode?.medal);
+  ctx.A.check('checkpoint: the remaining time is non-negative',
+    typeof mode?.timeLeftSeconds === 'number' && mode.timeLeftSeconds >= 0, mode?.timeLeftSeconds);
+  ctx.A.check('checkpoint: the results panel names the medal',
+    new RegExp(mode?.medal ?? 'no-medal').test(done.overlays.resultsBest ?? ''),
+    done.overlays.resultsBest);
+  ctx.A.check('checkpoint: no console error',
+    page.messages.filter((m) => m.type === 'error').length === 0,
+    ctx.fmt(page.messages.slice(-4)));
+  ctx.evidence.finish = done;
+}
+
+/**
+ * mp-destruction: the multiplayer Motor Mash mode. Both pages select it and
+ * the host scores from the typed wreck events. The round is 180 s
+ * (MultiplayerRace.time), so the scenario asserts the running state, the
+ * committed scoring table and a counting timer rather than waiting 3 minutes.
+ */
+export async function mpDestruction(ctx) {
+  const mapId = 'river';
+  ctx.evidence.mapId = mapId;
+  const expected = { ...ctx.anchors.mp.river, hostCar: ctx.anchors.cars.default };
+  const roomBaseline = ctx.roomServer?.stats?.() ?? null;
+  const room = await openRoom(ctx, {
+    mapId,
+    hostCar: expected.hostCar,
+    guestCar: expected.guestCar,
+    guestPace: expected.guestPace,
+    hostExtra: '&mode=destruction&powerups=1',
+    guestExtra: '&mode=destruction&powerups=1'
+  });
+  ctx.evidence.room = { code: room.code, hostUrl: room.hostUrl, guestUrl: room.guestUrl };
+  assertLobby(ctx, room, { mapId, hostCar: expected.hostCar, guestCar: expected.guestCar });
+
+  const hostConsoleFrom = room.host.messages.length;
+  const guestConsoleFrom = room.guest.messages.length;
+  await startRoomRace(ctx, room, { timeoutMs: 60000 });
+
+  const hostMode = await waitMp(ctx, room.host, (probe) =>
+    probe.mp.phase === 'running' && probe.raceMode?.mode === 'destruction' &&
+    probe.raceMode.timeLeftSeconds < 180,
+  { timeoutMs: 90000, label: 'host destruction mode' });
+  const guestMode = await waitMp(ctx, room.guest, (probe) =>
+    probe.mp.phase === 'running' && probe.raceMode?.mode === 'destruction',
+  { timeoutMs: 90000, label: 'guest destruction mode' });
+
+  ctx.A.check('mp-destruction: the host runs the destruction mode',
+    hostMode.raceMode.mode === 'destruction', hostMode.raceMode.mode);
+  ctx.A.check('mp-destruction: the guest runs the destruction mode',
+    guestMode.raceMode.mode === 'destruction', guestMode.raceMode.mode);
+  ctx.A.check('mp-destruction: the round timer is the committed 180 s',
+    hostMode.raceMode.timeLimitSeconds === 180, hostMode.raceMode.timeLimitSeconds);
+  ctx.A.check('mp-destruction: the timer counts down',
+    hostMode.raceMode.timeLeftSeconds < 180 && hostMode.raceMode.timeLeftSeconds > 150,
+    hostMode.raceMode.timeLeftSeconds);
+  ctx.A.check('mp-destruction: the scoring table is the committed Motor Mash table',
+    hostMode.raceMode.scoring.wreck === 5 && hostMode.raceMode.scoring.suicide === 1 &&
+      hostMode.raceMode.scoring.rivalDamageMultiplier === 2,
+    ctx.fmt(hostMode.raceMode.scoring));
+  ctx.A.check('mp-destruction: the damage split is a typed unsupported entry',
+    hostMode.raceMode.damageScoring?.status === 'unsupported' &&
+      /threshold/.test(hostMode.raceMode.damageScoring?.reason ?? ''),
+    ctx.fmt(hostMode.raceMode.damageScoring));
+  ctx.A.check('mp-destruction: the HUD names the timer and the wreck points',
+    /destruction.*time left .* s.*wreck 5 pts/.test(hostMode.overlays.hudText ?? ''),
+    hostMode.overlays.hudText);
+
+  await ctx.shot(room.host, 'destruction-host');
+  await ctx.shot(room.guest, 'destruction-guest');
+  // The round is 180 s; the scenario asserts the running mode, not a finished
+  // room. The room is still one live room with two connected players.
+  ctx.A.check('mp-destruction: the room is still one live two-player room',
+    hostMode.mp.players?.length === 2 && guestMode.mp.players?.length === 2,
+    ctx.fmt({ host: hostMode.mp.players?.length, guest: guestMode.mp.players?.length }));
+  assertSilent(ctx, room.host, hostConsoleFrom, 'destruction-host');
+  assertSilent(ctx, room.guest, guestConsoleFrom, 'destruction-guest');
+  ctx.evidence.host = hostMode;
+  ctx.evidence.guest = guestMode;
+}

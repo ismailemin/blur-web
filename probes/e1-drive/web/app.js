@@ -97,10 +97,18 @@ import {
 import { createEngineAudio } from '/audio/engine-audio.js';
 import { mountRetailHud, retailHudRequested } from './hud-mount.js';
 import { createMinimap } from './minimap.js';
+import {
+  CHECKPOINT_MODE, DESTRUCTION_MODE, checkpointState, createDestructionScoreboard, raceModeFor
+} from './race-modes.js';
 const RETAIL_HUD = retailHudRequested();
 let retailHud = null;
 // The course minimap model, rebuilt when a layout loads (see publishMinimap).
 let minimapModel = null;
+// Race-mode state: the destruction scoreboard and the last power-up event
+// cursor. The checkpoint mode is a pure function of the sprint snapshot.
+let destructionScoreboard = null;
+let raceModeEventCursor = 0;
+let raceModeLastTick = 0;
 const params = new URLSearchParams(location.search);
 const SCRIPT_PARAM = params.get('script');
 const TELEMETRY = params.get('telemetry') === '1';
@@ -293,6 +301,20 @@ if (MP && params.has('powerups') && params.get('powerups') !== '0' && params.get
 }
 if (!MP && params.get('powerups') === '1') {
   throw new Error('?powerups=1 is the online race slice; add ?mp=1&host=1 or ?mp=1&room=CODE');
+}
+// Race modes. `checkpoint` is the single-player time-bank mode (singleplayer.bin
+// AmaxRaceModeCheckpointVars); `destruction` is the multiplayer Motor Mash mode
+// (multiplayer.bin MultiplayerConfig.motormashScoringValues) and needs damage,
+// so it requires the power-up slice. Anything else is a typed rejection.
+const RACE_MODE_ID = raceModeFor(params.get('mode'));
+if (RACE_MODE_ID === CHECKPOINT_MODE.id && MP) {
+  throw new Error('?mode=checkpoint is the single-player time-bank mode; drop ?mp=1');
+}
+if (RACE_MODE_ID === DESTRUCTION_MODE.id && !MP) {
+  throw new Error('?mode=destruction is the multiplayer Motor Mash mode; add ?mp=1&host=1 or ?mp=1&room=CODE');
+}
+if (RACE_MODE_ID === DESTRUCTION_MODE.id && params.get('powerups') !== '1') {
+  throw new Error('?mode=destruction scores wrecks; add &powerups=1');
 }
 // usa_amboy / spa_barcelona_gracia (M3 map packages) are point-to-point maps.
 // They run solo through `?map=` and the online room through `map` selection.
@@ -505,6 +527,7 @@ const state = {
   wheelNodes: 0,
   trackVisual: null,
   minimap: null,
+  raceMode: null,
   map: null,
   mapCounts: null,
   trackDraws: 0,
@@ -770,6 +793,56 @@ function publishMinimap() {
   state.minimap = { ...minimapModel.stats, remotes: remotes.length };
 }
 
+/**
+ * Publish the selected race mode. Checkpoint is a pure function of the sprint
+ * snapshot; destruction consumes the host's typed power-up events (wrecked and
+ * suicide) and keeps the committed Motor Mash score. Presentation only: the
+ * engine, the rules and the network are untouched.
+ */
+function publishRaceMode() {
+  if (!RACE_MODE_ID) return;
+  if (RACE_MODE_ID === CHECKPOINT_MODE.id) {
+    const sprint = state.sprint;
+    if (!sprint) { state.raceMode = null; return; }
+    state.raceMode = {
+      ...checkpointState({
+        elapsedSeconds: sprint.elapsedSeconds ?? 0,
+        checkpointsPassed: sprint.checkpointsPassed ?? 0,
+        finished: sprint.finished === true,
+        finishTimeSeconds: sprint.finishTimeSeconds ?? null
+      }),
+      totalCheckpoints: sprint.totalCheckpoints ?? null
+    };
+    return;
+  }
+  if (RACE_MODE_ID === DESTRUCTION_MODE.id) {
+    if (!destructionScoreboard) {
+      const participants = [];
+      if (mpNet?.playerId) participants.push(mpNet.playerId);
+      for (const row of Array.isArray(state.mp?.remotes) ? state.mp.remotes : []) {
+        if (row?.id) participants.push(row.id);
+      }
+      destructionScoreboard = createDestructionScoreboard({ participants });
+    }
+    const tick = state.engineTick + mpEngineTickOffset;
+    const dt = raceModeLastTick ? Math.max(0, (tick - raceModeLastTick) / 60) : 0;
+    raceModeLastTick = tick;
+    const events = powerupModel ? powerupModel.events : (state.powerups?.events ?? []);
+    for (; raceModeEventCursor < events.length; raceModeEventCursor++) {
+      const event = events[raceModeEventCursor];
+      if (event?.type === 'wrecked') {
+        destructionScoreboard.ingest({
+          type: 'wreck',
+          actorId: typeof event.source === 'string' ? event.source : null,
+          targetId: event.targetId ?? null,
+          rival: event.source !== event.targetId
+        });
+      }
+    }
+    state.raceMode = destructionScoreboard.tick(dt);
+  }
+}
+
 function publish() {
   document.documentElement.dataset.driveState = state.consumer;
   document.documentElement.dataset.holdReached = String(state.holdReached);
@@ -777,6 +850,7 @@ function publish() {
   if (state.telemetry) document.documentElement.dataset.telemetry = state.telemetry.ready ? 'ready' : 'running';
   state.ghost = ghostSummary();
   publishMinimap();
+  publishRaceMode();
   state.chunk = {
     indexSha256: chunkDocuments.indexSha256 ?? null,
     level: chunkDocuments.levelBytes
@@ -814,6 +888,20 @@ function publish() {
       : 'loading'],
     ['audio', audioHudValue()]
   ];
+  if (state.raceMode) {
+    const mode = state.raceMode;
+    if (mode.mode === CHECKPOINT_MODE.id) {
+      rows.push(['checkpoint', 'time left ' + mode.timeLeftSeconds.toFixed(3) + ' s / ' +
+        mode.checkpointsPassed + ' of ' + (mode.totalCheckpoints ?? '?') + ' checkpoints' +
+        (mode.expired ? ' - TIME EXPIRED' : '') +
+        (mode.medal ? ' - medal ' + mode.medal : '')]);
+    } else if (mode.mode === DESTRUCTION_MODE.id) {
+      const leader = mode.rows[0];
+      rows.push(['destruction', 'time left ' + mode.timeLeftSeconds.toFixed(1) + ' s / ' +
+        (leader ? leader.id + ' ' + leader.score + ' pts' : 'no score yet') +
+        ' / wreck ' + mode.scoring.wreck + ' pts']);
+    }
+  }
   if (MAP_IS_PACKAGE && state.map) {
     const counts = state.map.counts ?? {};
     rows.push(['map', (state.map.label ?? MAP.label).toUpperCase() + ' · ' + state.map.level + ' measured path ' +
@@ -1101,6 +1189,11 @@ function publishSprintOverlays() {  const ghostTag = document.getElementById('gh
     }
   } else {
     results.hidden = true;
+  }
+  if (!results.hidden && state.raceMode?.mode === CHECKPOINT_MODE.id) {
+    document.getElementById('results-best').textContent +=
+      ' - ' + (state.raceMode.medal ?? 'no medal') +
+      ' (' + state.raceMode.timeLeftSeconds.toFixed(3) + ' s left of the time bank)';
   }
 }
 
