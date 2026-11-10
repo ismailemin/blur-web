@@ -76,3 +76,29 @@ C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/pyt
 
 `build_wide_raster.py` writes `_work/map-laps/<map>/grid-wide.npz`; the file is
 not committed and is not used by any producer.
+
+
+## Engine check of the retail line (the last attempt)
+
+The raster is only a proxy. `probes/map-laps-aid/tools/build_aid_line_course.py`
+emits the committed retail `.aid` line as a course with the band check NOT
+applied (`courseSource: "retail-aid-line-unverified"`, `bandVerified: false`), so
+the engine decides. The line was integrated for hackney (2,949.698 m, 11,800
+stations) and `verify_e1_map --map hackney` was run:
+
+```text
+failures:
+  the scripted sprint reaches the finish: respawn at tick 12668: outside-corridor
+  both checkpoints are crossed in order: undefined
+  the run has 0 respawns: {"tick":12668,"reasons":["outside-corridor"]}
+sprint: maxSpeedMps 10.346, maxLateralMetres 2.428, checkpoints [], finish null
+```
+
+The scripted controller drove 12,668 ticks (211 s) at up to 10.3 m/s with a
+2.43 m maximum lateral, crossed **no checkpoint**, and left the declared 6 m
+band. The retail line is therefore not drivable by the committed controller
+within the 20,000-tick budget, so hackney stays blocked and the integration was
+reverted (registry, `MAP_BUILDS`, `build_map_batch.mjs`).
+
+This is the final typed blocker for the map set: the five levels are not
+drivable from the committed collision data with the committed controller.

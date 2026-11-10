@@ -141,12 +141,13 @@ function nearestStation(course, arc) {
 }
 
 export function buildLayout(mapId) {
-  // Prefer the ring centreline when it exists: the boundary course is not
-  // drivable on these levels, the widest-ring centreline is.
+  // Prefer the ring centreline, then the engine-verified retail line, then the
+  // boundary course: the boundary course is not drivable on these levels.
   const centrelinePath = path.join(DATA, mapId + '-centreline.json');
-  const coursePath = existsSync(centrelinePath)
-    ? centrelinePath
-    : path.join(DATA, mapId + '-raster-course.json');
+  const aidLinePath = path.join(DATA, mapId + '-aid-line.json');
+  const coursePath = existsSync(centrelinePath) ? centrelinePath
+    : existsSync(aidLinePath) ? aidLinePath
+      : path.join(DATA, mapId + '-raster-course.json');
   const courseBytes = readFileSync(coursePath);
   const doc = JSON.parse(courseBytes.toString('utf8'));
   if (doc.kind !== 'blur.map-laps-aid.raster-course') {
