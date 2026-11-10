@@ -91,6 +91,28 @@ bağlı.
    (kullanıcıdan VPS/domain/TLS).
 
 
+## Açık görsel/oynanış sorunları (11 Kasım 2026)
+
+Kullanıcı geri bildirimi: "Blur'a benzemiyor, haritadan düşüyorum, out of
+boundaries diyor". Ölçülen nedenler:
+
+1. **River paketi boş:** yalnız **22 level prop + 394 track draw** çiziyor;
+   şehir yok. Amboy **1.201 draw / 269.300 üçgen** ile tam şehir. Varsayılan
+   harita River olduğu için ilk izlenim "boşlukta yol".
+2. **310 m hattı yolun kenarında:** arc 150'de passable aralık **-14 m … +2 m**
+   (hat sağ kenara yakın); +2 m'den sonra yükseklik düşüyor, ~+9,8 m'de
+   `height=nan` (boşluk). Off-road = zemin yok, araç düşüyor.
+3. **Re-centre denemesi başarısız:** `probes/e1-drive/tools/recentre_layout.py`
+   hattı simetrik yapıyor (325,818 m) ama scripted denetleyici 104–114 m'de
+   takılıyor (8–9 respawn). Uygulanmadı, geri alındı.
+
+**Bu turda düzeltilen:** committed **sis** (etiketli proje yaklaşımı) ve insan
+sürüşü toleransı (8 m bant, zıplama teleport değil).
+
+**Sıradaki (bu sorunlar için):** (a) River için tam şehir paketi üret
+(map-batch), (b) medial-axis tabanlı hat yeniden merkezleme, (c) varsayılan
+haritayı Amboy yap.
+
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)
 
 **Aşama:** Aşama 5 (tek oyunculu E1 PoC) — 310 m sprint, **loop-01 3 tur**, **free-roam**, 5 dokulu araç, ghost, **motor sesi**, tarayıcıda test edilebilir.
