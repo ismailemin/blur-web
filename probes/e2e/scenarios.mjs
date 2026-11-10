@@ -768,8 +768,9 @@ export async function mpPowerups(ctx) {
   const guest = guestPower.mp.powerups;
   ctx.A.check('mp-powerups: host enabled the slice', host.enabled === true, host.enabled);
   ctx.A.check('mp-powerups: the host power-up world is running', host.phase === 'running', host.phase);
-  ctx.A.check('mp-powerups: the committed eight types are exposed',
-    Array.isArray(host.types) && host.types.length === 8, host.types);
+  ctx.A.check('mp-powerups: the committed types plus the SuperShield extension are exposed',
+    Array.isArray(host.types) && host.types.length === 9 && host.types.includes('SuperShield'),
+    host.types);
   ctx.A.check('mp-powerups: the host placed pickups on the measured course',
     host.pickupCount > 0, host.pickupCount);
   ctx.A.check('mp-powerups: the placed pickups cover several types',
@@ -781,9 +782,8 @@ export async function mpPowerups(ctx) {
     host.placement && typeof host.placement.mode === 'string', host.placement?.mode);
   ctx.A.check('mp-powerups: the PWR1 manifest is pinned on the host',
     typeof host.manifestHash === 'string' && host.manifestHash.length > 0, host.manifestHash);
-  ctx.A.check('mp-powerups: only SuperShield is deferred',
-    host.deferred && Object.keys(host.deferred).length === 1 && 'SuperShield' in host.deferred,
-    host.deferred);
+  ctx.A.check('mp-powerups: nothing is deferred',
+    host.deferred && Object.keys(host.deferred).length === 0, host.deferred);
   ctx.A.check('mp-powerups: the room flag enabled the slice on the guest',
     guest.enabled === true, guest.enabled);
   ctx.A.check('mp-powerups: the guest sees the same type set',
@@ -792,6 +792,30 @@ export async function mpPowerups(ctx) {
     hostPower.overlays.powerupHudHidden === false, hostPower.overlays.powerupHudHidden);
   ctx.A.check('mp-powerups: the HUD names the power-up types',
     /POWER-UPS/.test(hostPower.overlays.powerupHudText ?? ''), hostPower.overlays.powerupHudText);
+
+  // SuperShield is a labelled project extension: grant it to the host, use it,
+  // and assert the committed effect fields and the HUD label.
+  const superShield = await room.host.evaluate(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    window.__powerups.grant('SuperShield');
+    await wait(150);
+    window.__powerups.use();
+    await wait(400);
+    const state = window.__powerups.state();
+    return {
+      shield: state.shield,
+      labels: state.labels,
+      hud: document.getElementById('powerup-hud')?.textContent ?? ''
+    };
+  })()`);
+  ctx.A.check('mp-powerups: SuperShield activates on the host',
+    superShield.shield?.kind === 'superShield', ctx.fmt(superShield.shield));
+  ctx.A.check('mp-powerups: SuperShield carries the committed 50-point shield capacity',
+    superShield.shield?.capacity === 50 && superShield.shield?.maxCapacity === 50,
+    ctx.fmt(superShield.shield));
+  ctx.A.check('mp-powerups: the HUD shows an active shield with its remaining time',
+    /shield\s*\d+\s*\/\s*\d+\s*[^0-9]*\d+\.\d+\s*s/i.test(superShield.hud),
+    superShield.hud.slice(0, 240));
 
   await ctx.shot(room.host, 'powerups-host');
   await ctx.shot(room.guest, 'powerups-guest');

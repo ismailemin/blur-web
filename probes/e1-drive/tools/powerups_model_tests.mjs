@@ -20,8 +20,8 @@ import { createWorld } from '../../powerups/rules/engine.js';
 import { createProjectileModel } from '../../powerups/rules/projectiles.js';
 import {
   POWERUP_DEFERRED, POWERUP_PLACEMENT_ARCS, POWERUP_PLACEMENT_TYPES, POWERUP_PROJECTILE_TYPES,
-  POWERUP_PROVISIONAL_SHUNT_IMPULSE_NS, POWERUP_SLICE_TYPES, POWERUP_TARGET_RADIUS_M,
-  createPowerupModel, provisionalPickupPlan
+  POWERUP_PROJECT_EXTENSIONS, POWERUP_PROVISIONAL_SHUNT_IMPULSE_NS, POWERUP_SLICE_TYPES, POWERUP_TARGET_RADIUS_M,
+  createPowerupModel, provisionalPickupPlan, shieldFor
 } from '../web/powerups.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -85,17 +85,19 @@ const respawnTarget = (playerId) => ({
 // ---------------------------------------------------------------- manifest/data
 check('manifest exposes the 11 PickupType entities', manifest.entities.length === 11, manifest.entities.length);
 check('manifest hash is present', typeof manifest.hashes?.manifestContent === 'string', manifest.hashes?.manifestContent);
-check('integrated slice is exactly the eight core types',
+check('integrated slice is the eight core types plus the SuperShield extension',
   JSON.stringify(POWERUP_SLICE_TYPES) === JSON.stringify([
-    'Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Blindfire', 'Shunt', 'Barge'
+    'Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Blindfire', 'Shunt', 'Barge',
+    'SuperShield'
   ]), POWERUP_SLICE_TYPES.join(','));
 check('Blindfire, Shunt and Barge are the projectile types',
   JSON.stringify(POWERUP_PROJECTILE_TYPES) === JSON.stringify(['Blindfire', 'Shunt', 'Barge']),
   POWERUP_PROJECTILE_TYPES.join(','));
-check('only SuperShield remains deferred, with a typed reason',
-  typeof POWERUP_DEFERRED.SuperShield === 'string' && POWERUP_DEFERRED.SuperShield.length > 20 &&
-  !('Shunt' in POWERUP_DEFERRED) && !('Blindfire' in POWERUP_DEFERRED) && !('Barge' in POWERUP_DEFERRED),
-  JSON.stringify(Object.keys(POWERUP_DEFERRED)));
+check('nothing is deferred; SuperShield is a labelled project extension',
+  Object.keys(POWERUP_DEFERRED).length === 0 &&
+  typeof POWERUP_PROJECT_EXTENSIONS.SuperShield === 'string' &&
+  POWERUP_PROJECT_EXTENSIONS.SuperShield.length > 20,
+  JSON.stringify({ deferred: Object.keys(POWERUP_DEFERRED), extensions: Object.keys(POWERUP_PROJECT_EXTENSIONS) }));
 
 const catalog = makeModel().catalog;
 const bomb = catalog.entities.get('Bomb').levels.Normal.values;
@@ -634,6 +636,27 @@ check('provisional plan uses measured samples (arc/position match)',
   const b = run();
   check('same command sequence yields the same snapshot', a === b,
     'sha256:' + createHash('sha256').update(a).digest('hex'));
+}
+
+// ------------------------------------------------------------- SuperShield
+{
+  const model = makeModel();
+  addPair(model, { p1: { x: 20, y: 0, z: 0 }, p2: { x: 0.5, y: 0, z: 0 } });
+  model.grantItem('p1', 'SuperShield');
+  const events = model.requestUse('p1', { position: { x: 0, y: 0, z: 0 } });
+  const activation = eventOf(events, 'super-shield-activated');
+  check('SuperShield activates from the slice', Boolean(activation),
+    events.map((event) => event.type).join(','));
+  const effect = activation?.effect ?? null;
+  check('SuperShield carries the committed duration and ram damage',
+    effect && near(effect.expiresAt, 10, 0.01) && near(effect.damagePointsOnImpact, 100),
+    JSON.stringify({ expiresAt: effect?.expiresAt, ram: effect?.damagePointsOnImpact }));
+  check('SuperShield carries the committed mass and boost fields',
+    effect && near(effect.increasedMass, 10000) && near(effect.nitroTargetSpeedInMPH, 50),
+    JSON.stringify({ mass: effect?.increasedMass, mph: effect?.nitroTargetSpeedInMPH }));
+  check('SuperShield is the superShield effect kind', effect?.kind === 'superShield', effect?.kind);
+  check('the local shield lookup finds the SuperShield effect',
+    shieldFor({ effects: { [effect.id]: effect } }, 'p1')?.kind === 'superShield');
 }
 
 // --------------------------------------------------------------------------- report

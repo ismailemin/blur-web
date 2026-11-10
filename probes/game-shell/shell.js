@@ -920,7 +920,7 @@ export function mount(host, options = {}) {
           dataset: { focus: 'powerups' },
           on: { change: (event) => controller.setPowerups(event.target.checked) }
         }),
-        h(doc, 'span', { text: 'Power-ups (Bomb / Shield / Repair / Nitro / Shock / Blindfire / Shunt / Barge)' })
+        h(doc, 'span', { text: 'Power-ups (Bomb / Shield / Repair / Nitro / Shock / Blindfire / Shunt / Barge / SuperShield)' })
       ]),
       powerupReason ? h(doc, 'span', { class: 'gs-field-note is-invalid', text: powerupReason }) : null
     ]);

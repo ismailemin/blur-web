@@ -26,7 +26,12 @@ import {
 
 export const POWERUP_SCHEMA = 'e1-drive.powerups/1';
 export const POWERUP_SLICE_TYPES = Object.freeze([
-  'Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Blindfire', 'Shunt', 'Barge'
+  'Bomb', 'Shield', 'Repair', 'Nitrous', 'Shock', 'Blindfire', 'Shunt', 'Barge',
+  // SuperShield is a single-player-only PickupType in the retail data (no
+  // multiplayer flag). It is integrated as a labelled project extension so the
+  // full 11-entity catalog is playable; the rules engine already carries every
+  // committed field (10 s, 100 ram damage, 10,000 kg, 50 mph boost).
+  'SuperShield'
 ]);
 export const POWERUP_PROJECTILE_TYPES = Object.freeze(['Blindfire', 'Shunt', 'Barge']);
 export const POWERUP_SLICE_LABELS = Object.freeze({
@@ -37,14 +42,15 @@ export const POWERUP_SLICE_LABELS = Object.freeze({
   Shock: 'SHOCK',
   Blindfire: 'BLINDFIRE',
   Shunt: 'SHUNT',
-  Barge: 'BARGE'
+  Barge: 'BARGE',
+  SuperShield: 'SUPER SHIELD'
 });
 
-// A collection of *provable* reasons, not a roadmap promise. Only SuperShield
-// remains outside the slice; Blindfire/Shunt/Barge are driven by the PWR4
-// projectile model (recovered XT values + typed runtime-only fields).
-export const POWERUP_DEFERRED = Object.freeze({
-  SuperShield: 'single-player-only PickupType (no multiplayer flag); its boost/mass fields need the same missing physics hook.'
+// Nothing is deferred any more. SuperShield is a labelled project extension,
+// not a retail multiplayer pickup; the reason is kept so the source is explicit.
+export const POWERUP_DEFERRED = Object.freeze({});
+export const POWERUP_PROJECT_EXTENSIONS = Object.freeze({
+  SuperShield: 'single-player-only PickupType (no multiplayer flag); integrated as a project extension with the committed AmaxEvent fields (10 s, 100 ram damage, 10,000 kg, 50 mph boost)'
 });
 
 // Documented project car envelope, not a recovered retail hull. Source:
