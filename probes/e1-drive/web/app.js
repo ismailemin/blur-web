@@ -457,6 +457,31 @@ async function lightingAgreement(packetLight, mapId) {
     skyColour: sky,
     status: lightingApplied === false ? 'pending-scene' : 'applied'
   };
+  // The committed EnvironmentSettings::FogEnvSettings block. The engine's fog
+  // shader is compiled and not in the source tree, so the renderer applies a
+  // labelled project approximation; the values are the committed ones.
+  let fogApplied = null;
+  if (table.fog && consumer && typeof consumer.setFog === 'function') {
+    fogApplied = consumer.setFog({
+      colour: table.fog.colour,
+      depthDensity: table.fog.depth?.density,
+      depthNearDistance: table.fog.depth?.nearDistance,
+      height: table.fog.height?.height,
+      heightDensity: table.fog.height?.density,
+      heightFalloff: table.fog.height?.falloff
+    });
+  }
+  state.fogApplied = table.fog
+    ? {
+      status: fogApplied === false ? 'pending-scene' : 'applied',
+      colour: table.fog.colour,
+      depthDensity: table.fog.depth?.density ?? null,
+      heightDensity: table.fog.height?.density ?? null,
+      heightFalloff: table.fog.height?.falloff ?? null,
+      mode: 'project-approximation-exponential-squared',
+      source: 'probes/lighting/data/runtime-lighting.json fog (committed EnvironmentSettings::FogEnvSettings)'
+    }
+    : null;
   return {
     mapId,
     source: 'packet',
@@ -2973,7 +2998,15 @@ async function loadEngine(carOverride = null) {
       if (!checked.ok) throw new Error('sprint layout rejected: ' + checked.errors.join('; '));
     }
     if (!COLLISION_PROBE) sprintRules = createSprintRules(layout, {
-      shortCourseController: car?.shortCourseController ?? null
+      shortCourseController: car?.shortCourseController ?? null,
+      // The scripted sprint and the AI keep the declared 6 m controller band.
+      // A human gets 2 m more (8 m total) so a small shoulder excursion is not
+      // an instant teleport, while the respawn still fires before the road's
+      // void edge (measured at ~9.8 m on the 310 m River line). Labelled play
+      // tuning, not a road-width claim.
+      respawnOutsideBandMarginMetres: SCRIPTED_SPRINT ? null : 2,
+      // A human jump is not a fall; the below-ground rule stays the detector.
+      respawnAirborneTicks: SCRIPTED_SPRINT ? null : 600
     });
     COURSE_LENGTH_METRES = layout?.course?.span?.lengthMetres ??
       layout?.course?.lap?.lengthMetres ??

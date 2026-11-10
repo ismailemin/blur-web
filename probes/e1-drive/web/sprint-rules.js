@@ -169,10 +169,20 @@ export function freeGroundAt(layout, position) {
   return grid.heights[iz * grid.columns + ix];
 }
 
-/** Why a position is off the measured course, or null when it is on it. */
-export function outsideCourseReason(position, layout) {
+/**
+ * Why a position is off the measured course, or null when it is on it.
+ *
+ * `bandMarginMetres` overrides `rules.respawn.outsideBandMarginMetres`. The
+ * declared 6 m band is the *controller* band used by the scripted sprint and
+ * the AI; a human driver gets a wider leash so a shoulder excursion is not an
+ * instant teleport. The override is a labelled play-tuning choice, not a
+ * road-width claim.
+ */
+export function outsideCourseReason(position, layout, bandMarginMetres = null) {
   const span = layout.course.span;
-  const respawn = layout.rules.respawn;
+  const respawn = Number.isFinite(bandMarginMetres)
+    ? { ...layout.rules.respawn, outsideBandMarginMetres: bandMarginMetres }
+    : layout.rules.respawn;
   if (isFreeLayout(layout)) {
     const bounds = layout.course.bounds;
     const margin = layout.course.containment?.marginMetres ?? 0;
@@ -444,8 +454,13 @@ export class SprintRules {
         state.position[1] < localGround - respawn.fallBelowGroundMetres) {
       reasons.push('below-ground');
     }
-    if (this.airborneTicks >= respawn.airborneTicks) reasons.push('airborne');
-    const outside = outsideCourseReason(state.position ?? [0, 0, 0], this.layout);
+    // A human jump is not a fall: the airborne limit is raised for keyboard
+    // play and the `below-ground` rule above stays the real fall detector.
+    const airborneLimit = Number.isFinite(this.options.respawnAirborneTicks)
+      ? this.options.respawnAirborneTicks : respawn.airborneTicks;
+    if (this.airborneTicks >= airborneLimit) reasons.push('airborne');
+    const outside = outsideCourseReason(state.position ?? [0, 0, 0], this.layout,
+      this.options.respawnOutsideBandMarginMetres ?? null);
     if (outside) reasons.push(typeof outside === 'string' ? outside : outside.reason);
     return reasons.length ? { reasons } : null;
   }
@@ -740,8 +755,13 @@ export class LapRules {
         state.position[1] < localGround - respawn.fallBelowGroundMetres) {
       reasons.push('below-ground');
     }
-    if (this.airborneTicks >= respawn.airborneTicks) reasons.push('airborne');
-    const outside = outsideCourseReason(state.position ?? [0, 0, 0], this.layout);
+    // A human jump is not a fall: the airborne limit is raised for keyboard
+    // play and the `below-ground` rule above stays the real fall detector.
+    const airborneLimit = Number.isFinite(this.options.respawnAirborneTicks)
+      ? this.options.respawnAirborneTicks : respawn.airborneTicks;
+    if (this.airborneTicks >= airborneLimit) reasons.push('airborne');
+    const outside = outsideCourseReason(state.position ?? [0, 0, 0], this.layout,
+      this.options.respawnOutsideBandMarginMetres ?? null);
     if (outside) reasons.push(typeof outside === 'string' ? outside : outside.reason);
     return reasons.length ? { reasons } : null;
   }
@@ -965,7 +985,8 @@ export class FreeRoamRules {
       reasons.push('below-ground');
     }
     if (this.airborneTicks >= containment.airborneTicks) reasons.push('airborne');
-    const outside = outsideCourseReason(state.position ?? [0, 0, 0], this.layout);
+    const outside = outsideCourseReason(state.position ?? [0, 0, 0], this.layout,
+      this.options.respawnOutsideBandMarginMetres ?? null);
     if (outside) reasons.push(typeof outside === 'string' ? outside : outside.reason);
     return reasons.length ? { reasons } : null;
   }

@@ -67,6 +67,14 @@ struct Scene {
   lightColour: vec4f,
   ambient: vec4f,
   lighting: vec4f,
+  // Committed EnvironmentSettings::FogEnvSettings values. The engine applies
+  // fog in the deferred prepass with a compiled shader that is not in the
+  // source tree, so the term below is a labelled project approximation of the
+  // exponential-squared depth fog and the exponential height fog; the values
+  // (colour, densities, height, falloff, near) are the committed ones.
+  fog: vec4f,        // rgb = fog colour, a = depth density
+  fogHeight: vec4f,  // x = height, y = falloff, z = height density, w = depth near
+  camera: vec4f,     // xyz = camera position, w = fog enabled
 };
 @group(0) @binding(0) var<uniform> draw: DrawUniforms;
 @group(1) @binding(0) var<uniform> scene: Scene;
@@ -185,6 +193,14 @@ struct Scene {
   lightDirection: vec4f,
   lightColour: vec4f,
   ambient: vec4f,
+  // Committed EnvironmentSettings::FogEnvSettings values. The engine applies
+  // fog in the deferred prepass with a compiled shader that is not in the
+  // source tree, so the term below is a labelled project approximation of the
+  // exponential-squared depth fog and the exponential height fog; the values
+  // (colour, densities, height, falloff, near) are the committed ones.
+  fog: vec4f,        // rgb = fog colour, a = depth density
+  fogHeight: vec4f,  // x = height, y = falloff, z = height density, w = depth near
+  camera: vec4f,     // xyz = camera position, w = fog enabled
 };
 @group(0) @binding(0) var<uniform> draw: DrawUniforms;
 @group(1) @binding(0) var<uniform> scene: Scene;
@@ -632,7 +648,7 @@ export class PacketConsumer {
       }]
     });
     const sceneLayout = this.device.createBindGroupLayout({
-      entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 64 } }]
+      entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 112 } }]
     });
     const textureLayout = this.device.createBindGroupLayout({
       entries: [
@@ -1083,8 +1099,12 @@ export class PacketConsumer {
     sceneBytes.set([sunColour[0], sunColour[1], sunColour[2], sunIntensity], 4);
     sceneBytes.set([skyColour[0], skyColour[1], skyColour[2], 0], 8);
     sceneBytes.set([0, Number.isFinite(this.pendingAmbient) ? this.pendingAmbient : 0.16, 0, 0], 12);
-    this.sceneBuffer = this.device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    this.device.queue.writeBuffer(this.sceneBuffer, 0, sceneBytes);
+    // 7 vec4: sun direction, sun colour, sky colour, lighting, fog, fog height,
+    // camera. The camera and the fog flag are rewritten every frame.
+    this.sceneValues = new Float32Array(28);
+    this.sceneValues.set(sceneBytes, 0);
+    this.sceneBuffer = this.device.createBuffer({ size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.device.queue.writeBuffer(this.sceneBuffer, 0, this.sceneValues);
     if (Number.isFinite(this.pendingAmbient)) {
       this.stats.ambient = this.pendingAmbient;
       this.stats.ambientSource = 'retail-upNormalAmbientScaled-luminance';
@@ -1093,7 +1113,7 @@ export class PacketConsumer {
     this.stats.buffersCreated++;
     this.sceneBindGroup = this.device.createBindGroup({
       layout: this.sceneLayout,
-      entries: [{ binding: 0, resource: { buffer: this.sceneBuffer, offset: 0, size: 64 } }]
+      entries: [{ binding: 0, resource: { buffer: this.sceneBuffer, offset: 0, size: 112 } }]
     });
 
     this.draws = packet.draws.map((draw) => ({ ...draw, mesh: this.meshes.get(draw.meshId) }));
@@ -1537,24 +1557,49 @@ export class PacketConsumer {
     if (Number.isInteger(mode) && mode >= 0 && mode <= 2) this.lightmapMode = mode;
     this.stats.lightmapMode = this.lightmapMode ?? 0;
     this.stats.lightingSource = 'retail-runtime-lighting';
-    if (!this.sceneBuffer) return false;
+    if (!this.sceneBuffer || !this.sceneValues) return false;
     if (this.pendingSunDirection) {
-      this.device.queue.writeBuffer(this.sceneBuffer, 0,
-        new Float32Array([...this.pendingSunDirection, 0]));
+      this.sceneValues.set([...this.pendingSunDirection, 0], 0);
     }
     if (this.pendingSunColour) {
-      this.device.queue.writeBuffer(this.sceneBuffer, 16,
-        new Float32Array([...this.pendingSunColour, 1]));
+      this.sceneValues.set([...this.pendingSunColour, 1], 4);
     }
     if (this.pendingSkyColour) {
-      this.device.queue.writeBuffer(this.sceneBuffer, 32,
-        new Float32Array([...this.pendingSkyColour, 0]));
+      this.sceneValues.set([...this.pendingSkyColour, 0], 8);
     }
     if (Number.isFinite(this.pendingAmbient)) {
-      this.device.queue.writeBuffer(this.sceneBuffer, 52,
-        new Float32Array([this.pendingAmbient]));
+      this.sceneValues[13] = this.pendingAmbient;
       this.stats.ambient = this.pendingAmbient;
     }
+    this.device.queue.writeBuffer(this.sceneBuffer, 0, this.sceneValues);
+    return true;
+  }
+
+  /**
+   * Committed `EnvironmentSettings::FogEnvSettings` values. The exact engine fog
+   * shader is compiled and not in the source tree, so the renderer applies a
+   * labelled project approximation (exponential-squared depth fog + exponential
+   * height fog); the values are the committed ones.
+   */
+  setFog({ colour, depthDensity, depthNearDistance, height, heightDensity, heightFalloff } = {}) {
+    const finite = (value, fallback = 0) => (Number.isFinite(value) ? value : fallback);
+    this.fog = {
+      colour: Array.isArray(colour) && colour.length >= 3
+        ? [colour[0], colour[1], colour[2]] : [0, 0, 0],
+      depthDensity: Math.max(0, finite(depthDensity)),
+      depthNearDistance: Math.max(0, finite(depthNearDistance)),
+      height: finite(height),
+      heightDensity: Math.max(0, finite(heightDensity)),
+      heightFalloff: Math.max(0, finite(heightFalloff)),
+      enabled: Math.max(0, finite(depthDensity)) > 0 || Math.max(0, finite(heightDensity)) > 0
+    };
+    this.stats.fog = { ...this.fog };
+    if (!this.sceneValues) return false;
+    this.sceneValues.set([...this.fog.colour, this.fog.depthDensity], 16);
+    this.sceneValues.set([this.fog.height, this.fog.heightFalloff, this.fog.heightDensity,
+      this.fog.depthNearDistance], 20);
+    this.sceneValues[27] = this.fog.enabled ? 1 : 0;
+    this.device.queue.writeBuffer(this.sceneBuffer, 0, this.sceneValues);
     return true;
   }
 
@@ -1622,6 +1667,19 @@ export class PacketConsumer {
     };
   }
 
+  /** The camera position from a column-major view matrix (inverse translation). */
+  cameraEye(view) {
+    const r0 = [view[0], view[4], view[8]];
+    const r1 = [view[1], view[5], view[9]];
+    const r2 = [view[2], view[6], view[10]];
+    const t0 = view[12], t1 = view[13], t2 = view[14];
+    return [
+      -(r0[0] * t0 + r0[1] * t1 + r0[2] * t2),
+      -(r1[0] * t0 + r1[1] * t1 + r1[2] * t2),
+      -(r2[0] * t0 + r2[1] * t1 + r2[2] * t2)
+    ];
+  }
+
   /** Resolve the render state for a fractional tick. Pure: no GPU calls. */
   resolveFrame(cursor) {
     const clampCursor = Math.max(0, Math.min(this.lastTick, cursor));
@@ -1634,6 +1692,7 @@ export class PacketConsumer {
         view: Float32Array.from(this.packet.camera.view),
         projection: Float32Array.from(this.packet.camera.projection),
         worlds: this.draws.map((draw) => Float32Array.from(draw.world)),
+        eye: this.cameraEye(this.packet.camera.view),
         tickHash: null
       };
     }
@@ -1663,6 +1722,7 @@ export class PacketConsumer {
       tickCeil: ceil,
       view: camera.view,
       projection: camera.projection,
+      eye: this.cameraEye(camera.view),
       worlds,
       tickHash: a.hash
     };
@@ -1715,6 +1775,13 @@ export class PacketConsumer {
       this.depth = this.device.createTexture({ size: [width, height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
     }
 
+    if (this.sceneBuffer && this.sceneValues) {
+      const eye = Array.isArray(frame.eye) ? frame.eye : [0, 0, 0];
+      this.sceneValues[24] = eye[0];
+      this.sceneValues[25] = eye[1];
+      this.sceneValues[26] = eye[2];
+      this.device.queue.writeBuffer(this.sceneBuffer, 0, this.sceneValues);
+    }
     const viewProjection = multiply(frame.projection, frame.view);
     const ghostFrames = this.ghostEnabled
       ? this.ghostFrames.map((entry) => entry ?? null)
