@@ -1,5 +1,5 @@
 {
- "canonicalSha256": "bac4ac5e2c5c5f1ccdcf5c4423d60f9f2774b6ac596ced4177476f11057a34ef",
+ "canonicalSha256": "dd1a9a884d91c0d5a939cd6d0c4d973965532fe1d7de8ac5835a71f930b7d808",
  "generatedBy": "probes/map-pipeline/tools/build_map_decisions.py",
  "levels": [
   {
@@ -474,6 +474,53 @@
   },
   {
    "blocker": null,
+   "city": "SanFran Sausalito",
+   "cityKey": "CRN_SANFRAN_SAUSALITO",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 1356,
+    "collisionTriangles": 93591,
+    "collisionVertices": 51216,
+    "drawTriangles": 452148,
+    "draws": 1683,
+    "instanceDescriptionsSkipped": 2603,
+    "sectionsProbed": 96,
+    "sectionsSupported": 65,
+    "sectionsUnsupported": 31,
+    "textureBlobs": 209,
+    "textureSources": 210
+   },
+   "distanceRank": 11,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 353860,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "sausalito",
+    "playableDistanceItems": [],
+    "registryMapId": "sausalito",
+    "reportGrade": "playable",
+    "reportMapId": "sausalito"
+   },
+   "kind": "race",
+   "level": "usa_sanfran_sausalito",
+   "paths": {
+    "collisionM": 3985.569,
+    "drawCoveredM": 1046.773736704,
+    "packageKind": "draw-covered-measured",
+    "packageM": 1046.773736704,
+    "recoveredM": null,
+    "samples": 4313
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
+  {
+   "blocker": null,
    "city": "Tokyo Shutoko",
    "cityKey": "CRN_TOKYO_SHUTOKO",
    "citySource": "docs/work/analysis/localization.md#3.2",
@@ -490,7 +537,7 @@
     "textureBlobs": 1086,
     "textureSources": 1100
    },
-   "distanceRank": 11,
+   "distanceRank": 12,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 58547,
@@ -537,7 +584,7 @@
     "textureBlobs": 37,
     "textureSources": 38
    },
-   "distanceRank": 12,
+   "distanceRank": 13,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 201895,
@@ -584,7 +631,7 @@
     "textureBlobs": 121,
     "textureSources": 123
    },
-   "distanceRank": 13,
+   "distanceRank": 14,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 234932,
@@ -644,7 +691,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
+     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -665,7 +712,7 @@
     "textureBlobs": 824,
     "textureSources": 840
    },
-   "distanceRank": 14,
+   "distanceRank": 15,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 334440,
@@ -812,7 +859,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
+     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -833,7 +880,7 @@
     "textureBlobs": 877,
     "textureSources": 878
    },
-   "distanceRank": 15,
+   "distanceRank": 16,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 181782,
@@ -908,7 +955,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
+     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -929,7 +976,7 @@
     "textureBlobs": 667,
     "textureSources": 673
    },
-   "distanceRank": 16,
+   "distanceRank": 17,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 145578,
@@ -961,334 +1008,6 @@
     "packageM": 975.011326757,
     "recoveredM": null,
     "samples": 4051
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
-  },
-  {
-   "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 1125372,
-      "geometryBlock": 50,
-      "id": "g50-n300",
-      "nodeBlock": 300,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 867662,
-      "geometryBlock": 53,
-      "id": "g53-n274",
-      "nodeBlock": 274,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 831100,
-      "geometryBlock": 56,
-      "id": "g56-n282",
-      "nodeBlock": 282,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 1025664,
-      "geometryBlock": 66,
-      "id": "g66-n240",
-      "nodeBlock": 240,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 835162,
-      "geometryBlock": 73,
-      "id": "g73-n246",
-      "nodeBlock": 246,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 867500,
-      "geometryBlock": 85,
-      "id": "g85-n286",
-      "nodeBlock": 286,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 842048,
-      "geometryBlock": 86,
-      "id": "g86-n264",
-      "nodeBlock": 264,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 1080814,
-      "geometryBlock": 92,
-      "id": "g92-n258",
-      "nodeBlock": 258,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 964794,
-      "geometryBlock": 102,
-      "id": "g102-n368",
-      "nodeBlock": 368,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 572400,
-      "geometryBlock": 107,
-      "id": "g107-n348",
-      "nodeBlock": 348,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 494648,
-      "geometryBlock": 116,
-      "id": "g116-n318",
-      "nodeBlock": 318,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 749398,
-      "geometryBlock": 118,
-      "id": "g118-n360",
-      "nodeBlock": 360,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 838194,
-      "geometryBlock": 127,
-      "id": "g127-n344",
-      "nodeBlock": 344,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 565420,
-      "geometryBlock": 129,
-      "id": "g129-n326",
-      "nodeBlock": 326,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 589436,
-      "geometryBlock": 134,
-      "id": "g134-n296",
-      "nodeBlock": 296,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 921012,
-      "geometryBlock": 147,
-      "id": "g147-n304",
-      "nodeBlock": 304,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 490030,
-      "geometryBlock": 155,
-      "id": "g155-n396",
-      "nodeBlock": 396,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 652026,
-      "geometryBlock": 162,
-      "id": "g162-n326",
-      "nodeBlock": 326,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 500376,
-      "geometryBlock": 169,
-      "id": "g169-n338",
-      "nodeBlock": 338,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 592782,
-      "geometryBlock": 171,
-      "id": "g171-n398",
-      "nodeBlock": 398,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 592362,
-      "geometryBlock": 179,
-      "id": "g179-n370",
-      "nodeBlock": 370,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 487768,
-      "geometryBlock": 180,
-      "id": "g180-n324",
-      "nodeBlock": 324,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 443804,
-      "geometryBlock": 183,
-      "id": "g183-n360",
-      "nodeBlock": 360,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 4412,
-      "geometryBlock": 207,
-      "id": "g207-n208",
-      "nodeBlock": 208,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 746126,
-      "geometryBlock": 271,
-      "id": "g271-n272",
-      "nodeBlock": 272,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 594940,
-      "geometryBlock": 287,
-      "id": "g287-n288",
-      "nodeBlock": 288,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 726892,
-      "geometryBlock": 327,
-      "id": "g327-n328",
-      "nodeBlock": 328,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 674012,
-      "geometryBlock": 329,
-      "id": "g329-n330",
-      "nodeBlock": 330,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 353886,
-      "geometryBlock": 331,
-      "id": "g331-n332",
-      "nodeBlock": 332,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 517016,
-      "geometryBlock": 337,
-      "id": "g337-n338",
-      "nodeBlock": 338,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 414518,
-      "geometryBlock": 347,
-      "id": "g347-n348",
-      "nodeBlock": 348,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_sausalito/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": null,
-     "playableDistanceItems": [
-      "slice-package",
-      "texture-bindings",
-      "render-package",
-      "layout",
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_sausalito; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, shutoko",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "SanFran Sausalito",
-   "cityKey": "CRN_SANFRAN_SAUSALITO",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 1356,
-    "collisionTriangles": 93591,
-    "collisionVertices": 51216,
-    "drawTriangles": 452148,
-    "draws": 1683,
-    "instanceDescriptionsSkipped": 2603,
-    "sectionsProbed": 96,
-    "sectionsSupported": 65,
-    "sectionsUnsupported": 31,
-    "textureBlobs": 209,
-    "textureSources": 210
-   },
-   "distanceRank": 17,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 353860,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "race",
-   "level": "usa_sanfran_sausalito",
-   "paths": {
-    "collisionM": 3985.569,
-    "drawCoveredM": 1046.773736704,
-    "packageKind": "draw-covered-measured",
-    "packageM": 1046.773736704,
-    "recoveredM": null,
-    "samples": 4313
    },
    "verdict": "blocked",
    "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
@@ -1547,7 +1266,7 @@
    "sha256": "124f01c0013a4578e2229016b0d1f8d82bfd850bb3bcaa597573f1afbadd733b"
   },
   "batchSummary": {
-   "contentSha256": "aa913d8d21a4821a3f6f3969b9b9937fef7636b2d160e5060dad5b4c56c41877",
+   "contentSha256": "e84d4f1787b6b77df5aea65464f129f004a11844080d3bdb765a91cd5c34cdca",
    "path": "_work/map-batch/batch-summary.json",
    "pin": "content",
    "volatileFields": [
@@ -1564,9 +1283,9 @@
    ]
   },
   "blockedInventory": {
-   "bytes": 60471,
+   "bytes": 60293,
    "path": "_work/map-pipeline/blocked/inventory-19.json",
-   "sha256": "716369a3d84ed1926a126db7c7c40d9fc1e06ef4dbbe54dc69a37efc8a482200"
+   "sha256": "bb619ad0a331c7d88c4f068569ff83747abaee30fd98b7f66a5d1dbe89c98bec"
   },
   "inventory": {
    "bytes": 159627,
@@ -1579,9 +1298,9 @@
    "sha256": "5eea94a1b538ed1d3f1634a6394a8d288412009715c1632daa3012e0382617d2"
   },
   "mapRegistry": {
-   "bytes": 40159,
+   "bytes": 43009,
    "path": "probes/e1-drive/web/map-registry.js",
-   "sha256": "0eef190c15f0c33b74764ff508b46ba63f23ea34e2567a63a7715a56cf05e631"
+   "sha256": "4b1f311667184944c0b4846a3fe86ef1fd5907525a0365101d10848743b90302"
   },
   "maps": {
    "bytes": 205652,
@@ -1594,13 +1313,12 @@
    "usa_sanfran_russianhill",
    "uk_london_hackney",
    "uk_brighton",
-   "usa_sanfran_sausalito",
    "showroom",
    "spa_barcelona_bowl_multiplayer"
   ],
   "counts": {
-   "blocked": 6,
-   "playable": 13,
+   "blocked": 5,
+   "playable": 14,
    "unsupported": 0
   },
   "levelCount": 19,
@@ -1615,6 +1333,7 @@
    "usa_la_river",
    "spa_barcelona_oval",
    "usa_ny_dumbo",
+   "usa_sanfran_sausalito",
    "jpn_tokyo_shutoko",
    "usa_amboy_multiplayer",
    "usa_la_downtown_multiplayer"

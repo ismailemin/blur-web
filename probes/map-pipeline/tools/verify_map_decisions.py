@@ -150,7 +150,7 @@ def main(argv=None):
           str(len(src["cities"])))
     check("registry ids are river/amboy/gracia/longbeach/observatory",
           set(src["registry"]["mapIds"]) == {"river", "amboy", "gracia", "longbeach", "observatory", "downtown", "mharuna",
-           "highrise", "shutoko", "oval", "amboy-mp", "dumbo", "downtown-mp"},
+           "highrise", "shutoko", "oval", "amboy-mp", "dumbo", "downtown-mp", "sausalito"},
           str(src["registry"]["mapIds"]))
     check("registry maps five levels",
           set(src["registry"]["byLevel"]) ==
@@ -158,7 +158,8 @@ def main(argv=None):
            "usa_la_observatory", "usa_la_downtown", "jpn_mharuna",
            "usa_la_multiplayer_highrise", "jpn_tokyo_shutoko",
            "spa_barcelona_oval", "usa_amboy_multiplayer",
-           "usa_ny_dumbo", "usa_la_downtown_multiplayer"},
+           "usa_ny_dumbo", "usa_la_downtown_multiplayer",
+           "usa_sanfran_sausalito"},
           str(sorted(src["registry"]["byLevel"])))
     check("unsupported rows, if any, carry a blocker",
           all(row.get("blocker") for row in rows

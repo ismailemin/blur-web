@@ -23,10 +23,16 @@ bağlı.
   Başsız Edge: 0 konsol hatası; `capture-shell` 61/13.
 - **Araçlar:** sürüş diliminde **61 araç**. Yalnızca `defaultcar` desteklenmiyor
   (gövde modeli yok; `DefaultCar` fizik yedeği).
-- **Haritalar 13/19:** river, amboy, gracia, longbeach, observatory, downtown,
-  mharuna, highrise, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**.
-  Hepsi 0 respawn ve 0 konsol hatası; her biri `verify_e1_map` 22–23/23 ve kendi
-  e2e senaryosu 12/12.
+- **Haritalar 14/19:** river, amboy, gracia, longbeach, observatory, downtown,
+  mharuna, highrise, shutoko, oval, amboy-mp, dumbo, downtown-mp, **sausalito**
+  (222,286 m collision-raster halkası, min yarıçap 5,75 m, 18,5 m açıklık,
+  %100 çizim kapsaması). Hepsi 0 respawn ve 0 konsol hatası; her biri
+  `verify_e1_map` ve kendi e2e senaryosu 12/12.
+- **Kalan 5 seviye — tipli veri sınırı:** retail `.aid` hattı collision
+  geometrisi olmayan hücrelerden geçiyor (`base=false`, `wall=false`).
+  En geniş halka yöntemiyle: bowl/brighton halkaları **%0 çizim** (görünmez),
+  hackney min yarıçap **3,69 m** < 3,79 m tam kilit, russianhill bileşeni
+  hiçbir eşikte delik içermiyor. Uydurulmuş parkur yok.
 - **Kapı kuralı:** geniş collision parkurları için `course.gateRule:
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
@@ -51,7 +57,7 @@ bağlı.
 - **Multiplayer:** 13 haritanın tamamı lobide seçilebilir; 2 oyunculu + 0–3 AI.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Taşınabilir kapı:** `verify_asset_probe --skip-build` **98/98**.
-- **E2E:** **18 senaryo**; son toplu koşu 17/17 (479/479) + `mp-powerups` 45/45.
+- **E2E:** **19 senaryo**; `solo-sausalito` 12/12, `mp-powerups` 45/45.
 
 **Sıradaki (öncelik sırası) — ayrıntı [`RESUME.md`](RESUME.md):**
 

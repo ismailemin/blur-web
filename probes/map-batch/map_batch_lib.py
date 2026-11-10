@@ -95,6 +95,7 @@ INTEGRATED = {
     "usa_amboy_multiplayer": "amboy-mp",
     "usa_ny_dumbo": "dumbo",
     "usa_la_downtown_multiplayer": "downtown-mp",
+    "usa_sanfran_sausalito": "sausalito",
 }
 
 MIN_COVERED_PATH_M = 25.0

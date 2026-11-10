@@ -9,7 +9,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 
 | Alan | Durum |
 |---|---|
-| **Haritalar** | **13/19 oynanabilir**: river, amboy, gracia, longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**. |
+| **Haritalar** | **14/19 oynanabilir**: river, amboy, gracia, longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, dumbo, downtown-mp, **sausalito** (222,286 m collision-raster halkası, min yarıçap 5,75 m, %100 çizim kapsaması). |
 | **Araçlar** | **61/62** sürüş diliminde. Yalnızca `defaultcar` desteklenmiyor (gövde modeli yok). |
 | **Lightmap** | **13/13 oynanabilir haritada render'da**. Downtown **86 doku / 1279 draw**, Highrise **22 / 69** (kısmi set: her birinde tek tipli `unsupported` referans, o draw'lar ambient terimle). Amboy 83/1173, River 38/383, Dumbo 115/1615, Downtown MP 49/207. |
 | **Işık düzeltmesi** | Lightmap'siz draw'lar artık **ambient** ile aydınlanıyor; River/Gracia/Longbeach'in `SunColour=[0,0,0]` olması onları siyah bırakıyordu, düzeltildi. |
@@ -19,7 +19,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Menü** | **61 araç / 13 harita**, 42/42 test, başsız Edge 0 konsol hatası. |
 | **Multiplayer** | 8 oyunculu oda (`mp-eight` 95/95); Amboy'da `?powerups=1` ile 82 pickup / 8 tip. |
 | **AI** | 8 haritada 61 araç × 2 profil = **976 koşu**, 946 temiz, 30 bildirilmiş limit, 0 beklenmeyen; `verify-maps` **32/32**. Dumbo/Downtown MP 122/122 temiz. |
-| **E2E** | **18/18 senaryo, 524/524 assertion** (minimap ve `mp-powerups` dahil). |
+| **E2E** | **19/19 senaryo** (minimap, `mp-powerups` ve `solo-sausalito` 12/12 dahil). |
 | **Kapı** | **`verify_asset_probe --skip-build` 99/99 PASS** (`gate-full23.log`, exit 0). |
 | **LAN** | `serve.mjs --host 0.0.0.0` (ve `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm arayüzlere bağlıyor; ikinci cihaz VPS/TLS olmadan katılabiliyor. |
 | **Minimap** | `probes/e1-drive/web/minimap.js` — yalnız kurs noktalarından; 32/32 test. |
@@ -59,15 +59,19 @@ node probes/e2e/run.mjs --scenarios solo-dumbo,solo-downtown-mp --base http://12
 ## Sıradaki işler (öncelik sırası)
 
 1. **Kapıyı doğrula** (`gate-full24.log`).
-2. **Raster parkurlar (5 seviye).** Collision rasterında kapalı halkalar
-   bulundu (russianhill 382,315 m, bowl 1.112,810 m, sausalito 2.802,765 m,
-   hackney 5.185,102 m, brighton 10.864,527 m; 365/365 doğrulayıcı). Çizim
-   kapsaması: sausalito %100, russianhill %82,8, hackney %48,1, brighton %38,6,
-   bowl %0. `build_raster_layout.mjs` layout'u üretiyor ve paketler kuruluyor,
-   ama scripted sprint `outside-corridor` ile respawn ediyor (russianhill tick
-   ~1458). Sonraki adım: **eğrilik sınırlı merkez çizgisi** (belgelenmiş
-   minimum yarıçap), sonra registry'ye alma. Bu yüzden 4 harita registry'de
-   değil; MAP_BUILDS/config geri alındı.
+2. **Kalan 5 seviye — tipli veri sınırları.** Retail `.aid` hattı
+   collision geometrisi olmayan hücrelerden geçiyor (`base=false`, `wall=false`,
+   bileşen 0): hackney `(-227.278106, -133.764788)`, brighton
+   `(84.692995, -185.625677)`, sausalito `(709.746329, -1434.611018)`. Bu
+   yüzden "en geniş halka" yöntemi kullanıldı (`build_raster_centreline.py`):
+   - **sausalito**: 222,286 m halka, min yarıçap 5,75 m, %100 çizim → **entegre**.
+   - **bowl**: 252,767 m halka, min yarıçap 6,75 m ama **%0 çizim** → görünmez.
+   - **brighton**: 105,660 m halka, min yarıçap 5,48 m, **%0 çizim** → görünmez.
+   - **hackney**: 348,835 m halka, min yarıçap 3,69 m < 3,79 m tam kilit dönüş
+     yarıçapı → sürülemez.
+   - **russianhill**: 9.582 hücreli bileşen hiçbir eşikte delik içermiyor →
+     halka yok.
+   Bunlar veri sınırı; uydurulmuş bir parkur eklenmedi.
 3. **`.aid` hattı** ±24 m detour ve 1,68 m bantla bile araç bandına sığmıyor:
    - `uk_london_hackney`: 221 istasyon (ilk 2.890/10.012, (-227.278106, -133.764788)).
    - `uk_brighton`: ±24 m'de 24 istasyon (ilk 670/8.662, (84.516652, -185.448468)).

@@ -48,7 +48,8 @@ PLAYABLE = {"usa_la_river", "usa_amboy", "spa_barcelona_gracia", "usa_la_longbea
             "usa_la_observatory", "usa_la_downtown", "jpn_mharuna",
             "usa_la_multiplayer_highrise", "jpn_tokyo_shutoko",
             "spa_barcelona_oval", "usa_amboy_multiplayer",
-            "usa_ny_dumbo", "usa_la_downtown_multiplayer"}
+            "usa_ny_dumbo", "usa_la_downtown_multiplayer",
+            "usa_sanfran_sausalito"}
 
 
 def sha256(path: Path) -> str:
