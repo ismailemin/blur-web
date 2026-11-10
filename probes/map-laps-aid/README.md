@@ -507,3 +507,27 @@ still tighter than the controller can follow. The next step is a curvature-
 limited centreline (a smoothed spline with a documented minimum radius), not a
 hand-placed point. The .aid verdicts are unchanged and the five levels stay
 locked in id-paths.json.
+
+
+## Why the five levels stay blocked: the raster step limit
+
+The P48 passable raster rejects a cell when the height step to a neighbour
+exceeds `min(STEP_LIMIT, GRADE_LIMIT * CELL)` = **0.025 m** (5 % at 0.5 m cells).
+`tools/probe_step_limit.py` measures that step along the committed retail
+`.aid` line:
+
+| level | stations | over 0.025 m | p50 | p90 | p99 | max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| hackney | 756 | 20.8 % | 0.0078 | 0.0522 | 0.0726 | 0.0773 m |
+| brighton | 785 | 23.2 % | 0.0104 | 0.0423 | 0.0721 | 0.1611 m |
+| sausalito | 1,396 | 38.5 % | 0.0041 | 0.1040 | 0.1768 | 28.0818 m |
+| russianhill | 692 | 74.3 % | 0.0503 | 0.1118 | 0.1515 | 0.1762 m |
+
+`tools/build_wide_raster.py` rebuilds the raster with a documented wider rule
+(`STEP_LIMIT_WIDE = 0.20 m`, below the 0.356 m Corvette wheel radius). It makes
+**every cell of the grid passable** (2,747,539 cells) on all five levels: the
+0.025 m limit is the road/terrain discriminator, not a safety margin. A course
+built on the wide raster would be a course over hillsides, so it is rejected.
+
+The five levels therefore stay typed blockers with the measurements above.
+Full write-up: `docs/work/verification/raster-passability-limit.md`.
