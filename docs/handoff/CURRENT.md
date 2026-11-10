@@ -66,12 +66,13 @@ bağlı.
 - **Multiplayer:** 13 haritanın tamamı lobide seçilebilir; 2 oyunculu + 0–3 AI.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Taşınabilir kapı:** `verify_asset_probe --skip-build` **98/98**.
-- **E2E:** **24 senaryo**; `solo-sausalito` 12/12, `mp-powerups` 45/45,
+- **E2E:** **25 senaryo**; `solo-sausalito` 12/12, `mp-powerups` 45/45,
   `solo-checkpoint` 13/13, `mp-destruction` 33/33, `menu-modes` 13/13.
 - **Menü modları:** 5 mod (sprint, lap, free, checkpoint, multiplayer);
-  lobide **4 maç modu** (Race / Destruction / Points / Elimination, host).
-  Destruction ve Points power-up'ı zorlar; Elimination geçici (30 s).
-  Menü testleri 44/44, `race_modes_tests` 46/46.
+  lobide **5 maç modu** (Race / Destruction / Points / Elimination / Boss Battle,
+  host). Boss Battle `AmaxRaceModeBossBattle` alanlarını kullanır (500 m/5 s
+  minder, 150 m/0 s boss); iki erişim sınırı etiketli (AI power-up kullanmıyor,
+  500 m > 310 m kurs). Menü testleri 44/44, `race_modes_tests` 57/57.
 - **Modlar:** `?mode=checkpoint` (40 s banka, +16 s/checkpoint, 20/10/0 s
   madalya) ve `?mode=destruction` (MP, 180 s, wreck 5, rakip ×2,
   intihar −1; hasar düşük/yüksek ayrımı tipli `unsupported`).
