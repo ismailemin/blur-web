@@ -25,7 +25,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Kapı** | **`verify_asset_probe --skip-build` 99/99 PASS** (`gate-full23.log`, exit 0). |
 | **LAN** | `serve.mjs --host 0.0.0.0` (ve `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm arayüzlere bağlıyor; ikinci cihaz VPS/TLS olmadan katılabiliyor. |
 | **Minimap** | `probes/e1-drive/web/minimap.js` — yalnız kurs noktalarından; 32/32 test. |
-| **Güçlendirme** | 8 tip; `mp-powerups` 45/45 (River 54 retail pickup, guest aynı set, 0 konsol). Menü her haritada açıyor. |
+| **Güçlendirme** | **9 tip**: 8 retail + **SuperShield** (etiketli proje uzantısı; tek oyunculu PickupType, `POWERUP_DEFERRED` boş). `mp-powerups` **48/48** (River 54 retail pickup, SuperShield aktivasyonu 50 puan kapasite + HUD, guest aynı set, 0 konsol). Model testleri **112/112**. |
 
 ## Son commit'ler
 

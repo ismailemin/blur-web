@@ -51,9 +51,12 @@ bağlı.
   `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm
   arayüzlere bağlıyor; makine IP'si yazdırılıyor. İkinci cihaz VPS/TLS
   olmadan aynı ağdan katılabiliyor (kanıt: `http://192.168.1.37:8899/` → 200).
-- **Güçlendirme:** 8 tip (Bomb/Shield/Repair/Nitrous/Shock/Blindfire/Shunt/
-  Barge); yalnız SuperShield ertelendi (tek oyunculu PickupType). `mp-powerups`
-  E2E **45/45**: River'da host **54 retail pickup**, guest aynı 8 tip, 0 konsol.
+- **Güçlendirme:** **9 tip** (Bomb/Shield/Repair/Nitrous/Shock/Blindfire/
+  Shunt/Barge + **SuperShield**). SuperShield etiketli proje uzantısı
+  (tek oyunculu PickupType; `POWERUP_DEFERRED` boş, `POWERUP_PROJECT_EXTENSIONS`
+  kaydı var). `mp-powerups` E2E **48/48**: River'da host 54 retail pickup,
+  SuperShield aktivasyonu 50 puan kapasite + HUD, guest aynı set, 0 konsol.
+  Model testleri **112/112**.
   Amboy'da 82 pickup doğrulandı; menü artık her haritada açıyor.
 - **Multiplayer:** 13 haritanın tamamı lobide seçilebilir; 2 oyunculu + 0–3 AI.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
