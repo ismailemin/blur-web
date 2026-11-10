@@ -16,14 +16,13 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Araç materyali** | Retail **boya** ve **ışık rengi** render'da. Corvette: `Canal_Blue` `[0.0252, 0.3712, 0.8228]`, 10 boya draw'ı; far/stop/sinyal kapakları retail `emissive` rengiyle. |
 | **Ses** | 23 olaylı retail kataloğu sayfaya bağlı. |
 | **HUD** | Hız göstergesi, vites, sıra/tur, güç yuvası, hasar/kalkan, geri sayım; 19/19 test. |
-| **Menü** | **61 araç / 13 harita**, 42/42 test, başsız Edge 0 konsol hatası. |
+| **Menü** | **61 araç / 14 harita**, 44/44 test, başsız Edge 0 konsol hatası. |
 | **Multiplayer** | 8 oyunculu oda (`mp-eight` 95/95); Amboy'da `?powerups=1` ile 82 pickup / 8 tip. |
 | **AI** | 8 haritada 61 araç × 2 profil = **976 koşu**, 946 temiz, 30 bildirilmiş limit, 0 beklenmeyen; `verify-maps` **32/32**. Dumbo/Downtown MP 122/122 temiz. |
 | **E2E** | **25/25 senaryo** (minimap, `mp-powerups`, `solo-sausalito`, `solo-checkpoint`, `mp-destruction` ve menüden başlatan `menu-modes` 13/13 dahil). |
 | **Menü modları** | Mod listesi **5**: sprint, lap, free, checkpoint, multiplayer. Lobide maç modu **5**: **Race / Destruction / Points / Elimination / Boss Battle** (yalnız host). Destruction, Points ve Boss Battle power-up'ı zorlar; Boss Battle en az 1 host AI ister. Menü testleri **44/44**. |
 | **Yarış modları** | `?mode=checkpoint` (40 s banka), `destruction` (180 s, wreck 5), `points` (180 s, 19 etiketli puan satırı; 7 etiketsiz satır tipli `unsupported`), `elimination` (30 s periyot, son kalan kazanır; geçici), `boss-battle` (AmaxRaceModeBossBattle: 500 m/5 s minder, 150 m/0 s boss, wreckMindersToWin true, wreckBossToWin false). Boss Battle'ın iki erişim sınırı etiketli: AI power-up kullanmıyor (wreck yolu) ve 500 m > 310 m kurs (gap yolu). `race_modes_tests` **57/57**. |
-| **Modlar** | `?mode=checkpoint` (tek oyunculu zaman bankası: 40 s başlangıç, checkpoint başına +16 s, altın/gümüş/bronz 20/10/0 s) ve `?mode=destruction` (MP Motor Mash: 180 s, wreck 5, rakip ×2, intihar −1; hasar düşük/yüksek ayrımı tipli `unsupported`). |
-| **Kapı** | **`verify_asset_probe --skip-build` 99/99 PASS** (`gate-full23.log`, exit 0). |
+| **Kapı** | **`verify_asset_probe --skip-build` 100/100 PASS** (`gate-full39.log`, exit 0). |
 | **LAN** | `serve.mjs --host 0.0.0.0` (ve `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm arayüzlere bağlıyor; ikinci cihaz VPS/TLS olmadan katılabiliyor. |
 | **İnternet yolu** | `deploy/Caddyfile` + `deploy/nginx.conf` (TLS, `/ws` → 8811, gerisi → 8801), `tools/tls-proxy.mjs` (yerel TLS proxy), `tools/deploy_local.ps1` (tek komut), `tools/verify_proxy.ps1` (kendi kendini doğrulama). **Kanıt:** iki sayfa `https://localhost:8443/` + `wss://localhost:8443/ws` üzerinden yarışı bitirdi, `mp-two` **49/49**. Yalnız **VPS + domain + DNS + sertifika** girdileri eksik. |
 | **Minimap** | `probes/e1-drive/web/minimap.js` — yalnız kurs noktalarından; 32/32 test. |
