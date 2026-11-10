@@ -170,9 +170,9 @@ try {
 
   const booted = await waitFor(
     "window.__gameShell && window.__gameShell.getState().screen === 'main-menu' && " +
-    'window.__gameShell.getState().cars.length === 61 && window.__gameShell.getState().maps.length === 13'
+    'window.__gameShell.getState().cars.length === 61 && window.__gameShell.getState().maps.length === 14'
   );
-  check('boot reaches main-menu with 61 cars and 13 maps', booted);
+  check('boot reaches main-menu with 61 cars and 14 maps', booted);
   if (!booted) throw new Error('shell did not boot: ' + JSON.stringify(messages.slice(-5)));
 
   const counts = await evaluate(`(() => {
@@ -185,7 +185,7 @@ try {
       footer: document.querySelector('.gs-footer-meta')?.textContent ?? null
     };
   })()`);
-  check('footer names 61 cars and 13 maps', /61 cars\s+\/\s+13 maps/.test(counts.footer ?? ''), counts.footer);
+  check('footer names 61 cars and 14 maps', /61 cars\s+\/\s+14 maps/.test(counts.footer ?? ''), counts.footer);
   const mainMenu = await shot('shell-main-menu.png');
 
   await evaluate("document.querySelector('[data-focus=\"play\"]').click()");
@@ -233,7 +233,7 @@ try {
       innerWidth: window.innerWidth
     };
   })()`);
-  check('map grid renders 13 cards', mapGrid.cards === 13, mapGrid.cards);
+  check('map grid renders 14 cards', mapGrid.cards === 14, mapGrid.cards);
   check('map grid lists the two new maps', ['dumbo', 'downtown-mp'].every((id) => mapGrid.ids.includes(id)),
     mapGrid.ids);
   check('every map card shows a measured length',

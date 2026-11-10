@@ -86,10 +86,10 @@ test('every registered course has a measured value and every map is measured', (
   }
 });
 
-test('the registry exposes exactly the thirteen MP-capable maps', () => {
+test('the registry exposes exactly the fourteen MP-capable maps', () => {
   const data = dataset();
   assert.deepEqual([...MAP_IDS], ['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
-    'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp']);
+    'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp', 'sausalito']);
   assert.deepEqual([...MP_MAP_IDS], [...MAP_IDS]);
   for (const id of MAP_IDS) {
     const map = data.maps[id];
@@ -109,7 +109,7 @@ test('measurement and class documents carry source provenance', () => {
   assert.match(measurements.source.river.freeAreaM2, /T-007-free-roam/);
   assert.match(measurements.source.amboy.lap, /amboy-loop01-lap/);
   for (const id of ['longbeach', 'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval', 'amboy-mp',
-    'dumbo', 'downtown-mp']) {
+    'dumbo', 'downtown-mp', 'sausalito']) {
     assert.match(measurements.source[id]['310'], new RegExp(id + '/layout\\.json'), id + ' source');
   }
   assert.equal(classes.source.roster, 'probes/e1-drive/cars/roster.json');

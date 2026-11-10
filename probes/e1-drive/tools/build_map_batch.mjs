@@ -86,6 +86,12 @@ const MAPS = Object.freeze({
     level: 'usa_la_downtown_multiplayer',
     outDir: '_work/e1-drive/downtown-mp',
     layout: 'probes/map-laps-aid/data/downtown-mp-aid-path.json'
+  }),
+  sausalito: Object.freeze({
+    id: 'sausalito',
+    level: 'usa_sanfran_sausalito',
+    outDir: '_work/e1-drive/sausalito',
+    layout: 'probes/map-laps-aid/data/sausalito-raster-layout.json'
   })
 });
 

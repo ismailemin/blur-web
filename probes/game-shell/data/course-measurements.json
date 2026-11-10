@@ -45,6 +45,9 @@
     },
     "downtown-mp": {
       "310": "_work/e1-drive/downtown-mp/layout.json course.span.lengthMetres (86.452776 m); probes/map-laps-aid/data/downtown-mp-aid-path.json agrees; probes/e1-drive/web/map-registry.js MAPS['downtown-mp'].pins.pathLengthMetres agrees"
+    },
+    "sausalito": {
+      "310": "_work/e1-drive/sausalito/layout.json course.span.lengthMetres (222.286304 m); probes/map-laps-aid/data/sausalito-raster-layout.json agrees; probes/e1-drive/web/map-registry.js MAPS.sausalito.pins.pathLengthMetres agrees"
     }
   },
   "maps": {
@@ -90,73 +93,121 @@
     },
     "downtown-mp": {
       "310": 86.452776
+    },
+    "sausalito": {
+      "310": 222.286304
     }
   },
   "gates": {
     "river": {
       "source": "_work/e1-drive/sprint.json gates (310 m sprint; finish is measuredEnd - 10 m)",
-      "checkpointArcs": [100.107736, 200.074803],
+      "checkpointArcs": [
+        100.107736,
+        200.074803
+      ],
       "finishArc": 300.159666
     },
     "amboy": {
       "source": "_work/e1-drive/amboy/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [686.862337, 1373.667341],
+      "checkpointArcs": [
+        686.862337,
+        1373.667341
+      ],
       "finishArc": 2060.595408
     },
     "gracia": {
       "source": "_work/e1-drive/gracia/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [208.343387, 416.652048],
+      "checkpointArcs": [
+        208.343387,
+        416.652048
+      ],
       "finishArc": 624.913781
     },
     "longbeach": {
       "source": "_work/e1-drive/longbeach/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [262.055868, 523.76805],
+      "checkpointArcs": [
+        262.055868,
+        523.76805
+      ],
       "finishArc": 785.82323
     },
     "observatory": {
       "source": "_work/e1-drive/observatory/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [114.838678, 308.628092],
+      "checkpointArcs": [
+        114.838678,
+        308.628092
+      ],
       "finishArc": 536.621709
     },
     "downtown": {
       "source": "_work/e1-drive/downtown/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [32.931883, 84.117373],
+      "checkpointArcs": [
+        32.931883,
+        84.117373
+      ],
       "finishArc": 153.860674
     },
     "mharuna": {
       "source": "_work/e1-drive/mharuna/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [67.304498, 171.944569],
+      "checkpointArcs": [
+        67.304498,
+        171.944569
+      ],
       "finishArc": 309.170196
     },
     "highrise": {
       "source": "_work/e1-drive/highrise/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [6.457107, 8.207107],
+      "checkpointArcs": [
+        6.457107,
+        8.207107
+      ],
       "finishArc": 14.26866
     },
     "shutoko": {
       "source": "_work/e1-drive/shutoko/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [62.633926, 152.974197],
+      "checkpointArcs": [
+        62.633926,
+        152.974197
+      ],
       "finishArc": 279.005135
     },
     "oval": {
       "source": "_work/e1-drive/oval/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [160.668873, 411.801432],
+      "checkpointArcs": [
+        160.668873,
+        411.801432
+      ],
       "finishArc": 753.021127
     },
     "amboy-mp": {
       "source": "_work/e1-drive/amboy-mp/layout.json gates (310 m point-to-point)",
-      "checkpointArcs": [26.551563, 66.991298],
+      "checkpointArcs": [
+        26.551563,
+        66.991298
+      ],
       "finishArc": 122.293808
     },
     "dumbo": {
       "source": "_work/e1-drive/dumbo/layout.json gates (310 m point-to-point); probes/map-laps-aid/data/dumbo-aid-path.json agrees",
-      "checkpointArcs": [160.749632, 199.999614],
+      "checkpointArcs": [
+        160.749632,
+        199.999614
+      ],
       "finishArc": 361.999436
     },
     "downtown-mp": {
       "source": "_work/e1-drive/downtown-mp/layout.json gates (310 m point-to-point); probes/map-laps-aid/data/downtown-mp-aid-path.json agrees",
-      "checkpointArcs": [27.10202, 66.218505],
+      "checkpointArcs": [
+        27.10202,
+        66.218505
+      ],
       "finishArc": 86.452776
-    }
+    },
+    "sausalito": [
+      0,
+      74.216849,
+      148.29564,
+      222.036304
+    ]
   }
 }

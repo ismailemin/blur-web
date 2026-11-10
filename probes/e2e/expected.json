@@ -140,6 +140,15 @@
       "checkpoints": 2,
       "layoutHash": "sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779",
       "docRef": "probes/map-laps-aid/data/downtown-mp-aid-path.json (86.452776 m retail AI racing line with a bounded detour)"
+    },
+    "sausalito": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "sausalito",
+      "timeSeconds": 45.817,
+      "timeToleranceSeconds": 1.5,
+      "checkpoints": 2,
+      "layoutHash": "sha256:7362714fdcbaf2bb1b80cb7241fcfe2bdbe6562fc1e18b0226652ef21fae7702",
+      "docRef": "probes/map-laps-aid/data/sausalito-raster-layout.json (222.286304 m collision-raster ring)"
     }
   },
   "mp": {

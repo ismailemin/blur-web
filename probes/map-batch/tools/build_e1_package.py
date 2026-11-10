@@ -316,6 +316,38 @@ MAP_BUILDS = {
             "spawn, checkpoints and finish are the retail AI racing line with a bounded lateral detour, not the committed draw path",
         ],
     ),
+    # ---------------------------------------------------------- raster ring
+    # The retail `.aid` line crosses cells with no collision geometry, so the
+    # course is the widest ring inside the passable component (a labelled
+    # project course). The counts are the committed batch report/blockers.
+    "sausalito": dict(
+        id="sausalito",
+        level="usa_sanfran_sausalito",
+        batch="_work/map-batch/usa_sanfran_sausalito",
+        out_dir="_work/e1-drive/sausalito",
+        layout="probes/map-laps-aid/data/sausalito-raster-layout.json",
+        physics="game-data/Blur/levels/usa_sanfran_sausalito/Level.levelphysics",
+        mesh_id="sausalito.direct",
+        render_label="sausalito-direct-draws",
+        package_label="usa_sanfran_sausalito",
+        course_name="usa_sanfran_sausalito collision-raster ring course",
+        decal_status="blocked-effect-not-static-albedo",
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-decoder-size-limit",
+                             "blocked-no-static-albedo"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=2603,
+        instance_sections=8,
+        unsupported_sections=31,
+        map_limits=[
+            "direct LOD0 draws only; 31 unsupported sections and 2,603 instance descriptions in 8 sections are not applied",
+            "103 effect draws and 224 diagnostic draws (175 alpha-rule, 42 decoder-size, 7 no static albedo) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "the course is the widest ring inside the passable collision component, not the retail AI racing line",
+        ],
+    ),
 }
 
 

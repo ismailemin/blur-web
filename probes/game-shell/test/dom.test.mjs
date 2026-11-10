@@ -44,7 +44,7 @@ test('car grid renders every roster car with real fields and an explicit icon pl
   }
   assert.equal(host.querySelector('[data-focus="car-search"]').value, '');
   assert.match(host.querySelector('.gs-screen-head').textContent, /All 61 committed roster cars/);
-  assert.match(host.querySelector('.gs-footer-meta').textContent, /61 cars\s+\/\s+13 maps/);
+  assert.match(host.querySelector('.gs-footer-meta').textContent, /61 cars\s+\/\s+14 maps/);
   shell.destroy();
 });
 
@@ -79,10 +79,10 @@ test('mode and car navigation reaches map select and all thirteen maps are enabl
   assert.equal(shell.getState().carSlug, 'audi-r8v10-stock');
   host.querySelector('[data-focus="car-next"]').click();
   assert.equal(shell.getState().screen, 'map-select');
-  assert.equal(host.querySelectorAll('.gs-map-card').length, 13);
+  assert.equal(host.querySelectorAll('.gs-map-card').length, 14);
   assert.equal(host.querySelector('[data-grid="maps"]').dataset.gridColumns, '3');
   for (const id of ['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
-    'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp']) {
+    'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp', 'sausalito']) {
     assert.equal(host.querySelector('[data-focus="map-' + id + '"]').disabled, false, id);
   }
   host.querySelector('[data-focus="map-amboy"]').click();
@@ -91,17 +91,17 @@ test('mode and car navigation reaches map select and all thirteen maps are enabl
   shell.destroy();
 });
 
-test('lap mode enables River and Amboy and disables the eleven sprint-only maps with reasons', () => {
+test('lap mode enables River and Amboy and disables the twelve sprint-only maps with reasons', () => {
   const { shell, host } = mountShell({ screen: 'map-select', mode: 'lap', carSlug: 'corvette-zr1-stock', mapId: 'river' });
-  assert.equal(host.querySelectorAll('.gs-map-card').length, 13);
+  assert.equal(host.querySelectorAll('.gs-map-card').length, 14);
   assert.equal(host.querySelector('[data-focus="map-river"]').disabled, false);
   assert.equal(host.querySelector('[data-focus="map-amboy"]').disabled, false);
   for (const id of ['gracia', 'longbeach', 'observatory', 'downtown', 'mharuna', 'highrise', 'shutoko', 'oval',
-    'amboy-mp', 'dumbo', 'downtown-mp']) {
+    'amboy-mp', 'dumbo', 'downtown-mp', 'sausalito']) {
     assert.equal(host.querySelector('[data-focus="map-' + id + '"]').disabled, true, id);
   }
   const reasons = host.querySelectorAll('.gs-disabled-reason');
-  assert.equal(reasons.length, 11);
+  assert.equal(reasons.length, 12);
   assert.match(reasons[0].textContent, /Unavailable:/);
   assert.match(reasons[0].textContent, /lists courses \[310\]/);
   assert.match(reasons[0].textContent, /no 3-lap loop layout/);

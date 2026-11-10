@@ -141,7 +141,12 @@ function nearestStation(course, arc) {
 }
 
 export function buildLayout(mapId) {
-  const coursePath = path.join(DATA, mapId + '-raster-course.json');
+  // Prefer the ring centreline when it exists: the boundary course is not
+  // drivable on these levels, the widest-ring centreline is.
+  const centrelinePath = path.join(DATA, mapId + '-centreline.json');
+  const coursePath = existsSync(centrelinePath)
+    ? centrelinePath
+    : path.join(DATA, mapId + '-raster-course.json');
   const courseBytes = readFileSync(coursePath);
   const doc = JSON.parse(courseBytes.toString('utf8'));
   if (doc.kind !== 'blur.map-laps-aid.raster-course') {
@@ -197,9 +202,13 @@ export function buildLayout(mapId) {
     startGate,
     gateFromStation(smoothCourse, checkpoint1, { id: 'checkpoint-1', kind: 'checkpoint', index: 1 }),
     gateFromStation(smoothCourse, checkpoint2, { id: 'checkpoint-2', kind: 'checkpoint', index: 2 }),
-    gateFromStation(smoothCourse, stations.length, { id: 'finish', kind: 'finish', index: 3 })
+    // The loop closes on the start, so a finish gate at arc == length would be
+    // unreachable: the nearest-sample progress wraps to 0 there. The finish sits
+    // on the last station, one sample step before the start.
+    gateFromStation(smoothCourse, stations.length - 1, { id: 'finish', kind: 'finish', index: 3 })
   ];
-  gates[3].arc = round6(length);
+  const finishArc = round6(length - course.sampleStepMetres);
+  gates[3].arc = finishArc;
 
   const body = {
     kind: 'e1-drive.sprint',
@@ -216,7 +225,7 @@ export function buildLayout(mapId) {
       note: 'closed collision-raster project course; not the retail AI racing line and not a retail start line'
     },
     source: {
-      rasterCourse: 'probes/map-laps-aid/data/' + mapId + '-raster-course.json',
+      rasterCourse: path.relative(ROOT, coursePath).split(path.sep).join('/'),
       rasterCourseSha256: hashOf(doc),
       rasterCourseFileSha256: sha256File(courseBytes),
       level: doc.level,
@@ -248,7 +257,7 @@ export function buildLayout(mapId) {
       finish: { x: start.x, z: start.z },
       measuredEnd: { x: start.x, z: start.z },
       lengthMetres: length,
-      finishArc: length,
+      finishArc: finishArc,
       sampleStepMetres: course.sampleStepMetres,
       sampleCount: samples.length,
       gateRule: 'arc-progression',
@@ -258,7 +267,7 @@ export function buildLayout(mapId) {
       controlProfile: 'tight-pursuit',
       span: {
         startArc: 0,
-        finishArc: length,
+        finishArc: finishArc,
         lengthMetres: length,
         measuredLengthMetres: length,
         note: 'arcs are measured along the closed collision-raster loop; the loop length is the course authority'

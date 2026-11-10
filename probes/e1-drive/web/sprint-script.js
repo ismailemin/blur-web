@@ -255,6 +255,41 @@ export const AMBOY_CONTROL = Object.freeze({
   lapLookaheadMax: 6
 });
 
+/**
+ * Controller for a closed collision-raster ring course. These rings are traced
+ * on the passable raster and are tighter than a measured map path (Sausalito is
+ * a 222 m ring with a 5.7 m minimum radius), so the scripted test controller
+ * cruises slower and looks ahead less. Controller choice only: the engine
+ * physics and the course are untouched.
+ */
+export const TIGHT_CONTROL = Object.freeze({
+  cruiseSpeed: 9,
+  headingLookahead: 6,
+  steerGain: 3.5,
+  steerRatePerTick: 0.08,
+  speedSteerCeiling: 3,
+  lateralGain: 2.0,
+  yawDamping: 0.8,
+  narrowBandMetres: 0,
+  narrowSpeed: 6,
+  minSpeed: 4,
+  launchHeadingError: 0.5,
+  launchSpeed: 4,
+  launchArcMetres: 12,
+  brakeGain: 0.6,
+  throttleDeadband: 0.6,
+  anticipationSeconds: 1.8,
+  anticipationMetres: 14,
+  lateralAccel: 1.2,
+  finishSpeed: 8,
+  finishSlowdownMetres: 12,
+  purePursuit: true,
+  lapPurePursuit: false,
+  lapLookaheadBase: 2.0,
+  lapLookaheadSpeed: 0.2,
+  lapLookaheadMax: 5
+});
+
 const wrapArc = (arc, length) => {
   let value = arc % length;
   if (value < 0) value += length;
@@ -479,8 +514,10 @@ export function sprintScriptInput(rules, state, constants = null) {
   }
   if (!state) throw new Error('the scripted long-course sprint needs the engine state');
   if (rules.phase !== 'running') return rules.gateInput(SPRINT_DESIRED_INPUT);
-  const packageControl = rules.layout?.courseId === 'amboy' || rules.layout?.courseId === 'gracia'
-    ? AMBOY_CONTROL : null;
+  const tightCourse = rules.layout?.course?.controlProfile === 'tight-pursuit';
+  const packageControl = tightCourse ? TIGHT_CONTROL
+    : (rules.layout?.courseId === 'amboy' || rules.layout?.courseId === 'gracia'
+      ? AMBOY_CONTROL : null);
   // The M1/M3 capture pace scales the speed targets only (never physics). River
   // receives the already-scaled constants from app.js; package maps select the
   // measured-path controller here, so apply the same diagnostic scaling.

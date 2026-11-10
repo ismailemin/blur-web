@@ -15,7 +15,8 @@ export const MAP_DEFAULT = 'river';
 
 /** Map ids accepted by `?map=`. */
 export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
-  'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp']);
+  'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp',
+  'sausalito']);
 
 export const MAPS = Object.freeze({
   river: Object.freeze({
@@ -790,7 +791,64 @@ export const MAPS = Object.freeze({
       layoutBytes: 148900,
       physicsBytes: 513843
     })
-  })
+  }),
+  'sausalito': Object.freeze({
+    id: 'sausalito',
+    label: 'Sausalito',
+    level: 'usa_sanfran_sausalito',
+    kind: 'map-package',
+    geometryUrl: '/_work/e1-drive/sausalito/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/usa_sanfran_sausalito/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/sausalito/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.sausalito',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:51f68a4a418139670cf8a2c96f6db3bbc9964f5d8c9c08fd0ee634af0b84d044',
+      mapContentHash: 'sha256:1f4fcca43a49aa9dfe11265f6db80f4967d6c1428ca3e014eb28de6654a68511',
+      layoutFileSha256: 'sha256:7fb673f59bb453c927cf82c18808422df81c3d5811929a61aeb8dd1c2de7063c',
+      layoutContentHash: 'sha256:7362714fdcbaf2bb1b80cb7241fcfe2bdbe6562fc1e18b0226652ef21fae7702',
+      renderFileSha256: 'sha256:9963910200c0f8d0c34b644c7702a9b1fa82efae1ec8fda528c5d6fa8c6f87e9',
+      renderContentHash: 'sha256:9963910200c0f8d0c34b644c7702a9b1fa82efae1ec8fda528c5d6fa8c6f87e9',
+      sliceFileSha256: 'sha256:af92bd7b8932dee92ef0406aa1efa741fa59a7092335f4d9ca4bbcb262014da2',
+      sliceContentHash: 'sha256:af92bd7b8932dee92ef0406aa1efa741fa59a7092335f4d9ca4bbcb262014da2',
+      physicsFileSha256: 'sha256:d4e1074b8f83b924af92060b18e9ca3e36ad48e10e0276a2b7f70c5cdc7b7c65',
+      physicsBytes: 5836796,
+      draws: 1356,
+      drawTriangles: 388497,
+      textures: 209,
+      textureBytes: 2518080,
+      vertices: 645975,
+      indices: 1356444,
+      decalDraws: 103,
+      diagnosticDraws: 224,
+      blockedDraws: 327,
+      unsupportedSections: 31,
+      instanceDescriptions: 2603,
+      collisionTriangles: 93591,
+      pathLengthMetres: 222.286304,
+      checkpointArcs: Object.freeze([74.216849, 148.29564]),
+      sampleCount: 986,
+      renderLabel: 'sausalito-direct-draws',
+      courseId: 'sausalito'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:1f4fcca43a49aa9dfe11265f6db80f4967d6c1428ca3e014eb28de6654a68511',
+      layoutHash: 'sha256:7362714fdcbaf2bb1b80cb7241fcfe2bdbe6562fc1e18b0226652ef21fae7702',
+      physicsHash: 'sha256:d4e1074b8f83b924af92060b18e9ca3e36ad48e10e0276a2b7f70c5cdc7b7c65',
+      packageFileSha256: 'sha256:51f68a4a418139670cf8a2c96f6db3bbc9964f5d8c9c08fd0ee634af0b84d044',
+      layoutFileSha256: 'sha256:9380d30b558f175fee29b8f6a7a8d68fd0556815f7f0d55fadef179ba2b4bb9f',
+      physicsFileSha256: 'sha256:d4e1074b8f83b924af92060b18e9ca3e36ad48e10e0276a2b7f70c5cdc7b7c65',
+      packageBytes: 68034309,
+      layoutBytes: 156839,
+      physicsBytes: 5836796
+    })
+  }),
 });
 
 /** Resolve a `?map=` value, defaulting to River and rejecting unknown ids. */
