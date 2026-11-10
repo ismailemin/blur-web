@@ -39,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const WEB = path.join(ROOT, 'probes/e1-drive/web');
+const E1_DRIVE = path.join(ROOT, 'probes/e1-drive');
 const WORK = path.join(ROOT, '_work/e1-drive');
 const GHOSTS = path.join(ROOT, 'probes/e1-drive/ghosts');
 const PROP = path.join(ROOT, 'probes/prop-collision');
@@ -369,8 +370,17 @@ export function startServer({ port = 8801, host = '127.0.0.1' } = {}) {
       if (relative.endsWith('.mjs')) file = safeJoin(RACE_RULES, relative);
     } else if (pathname.startsWith('/game-shell/')) {
       const relative = pathname.slice('/game-shell/'.length);
-      if (relative.endsWith('.js') || relative.endsWith('.css') || relative.endsWith('.json')) {
+      if (relative.endsWith('.js') || relative.endsWith('.css') || relative.endsWith('.json') ||
+          relative.endsWith('.html')) {
         file = safeJoin(GAME_SHELL, relative);
+      }
+    } else if (pathname.startsWith('/probes/e1-drive/')) {
+      // The standalone game-shell demo imports the real map registry and reads
+      // the committed car roster by their repository paths; serve that one
+      // probe read-only.
+      const relative = pathname.slice('/probes/e1-drive/'.length);
+      if (relative.endsWith('.js') || relative.endsWith('.mjs') || relative.endsWith('.json')) {
+        file = safeJoin(E1_DRIVE, relative);
       }
     } else if (pathname.startsWith('/map-laps/')) {
       const relative = pathname.slice('/map-laps/'.length);

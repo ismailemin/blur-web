@@ -16,6 +16,8 @@ import {
   CAR_CLASSES,
   DEFAULT_LOADING_TIMEOUT_MS,
   ERROR,
+  MATCH_MODE_ORDER,
+  MATCH_MODES,
   MODE_ORDER,
   MODES,
   ROOM_ALPHABET,
@@ -923,8 +925,30 @@ export function mount(host, options = {}) {
       powerupReason ? h(doc, 'span', { class: 'gs-field-note is-invalid', text: powerupReason }) : null
     ]);
 
+    // Match mode: Race (measured sprint) or Destruction (Motor Mash). Both are
+    // committed retail modes; Destruction forces the power-up slice because its
+    // score comes from wrecks.
+    const matchModeReason = state.mp.role !== 'host' ? 'the match mode is host-configured' : null;
+    const matchModeRow = h(doc, 'div', { class: 'gs-toggle-row' }, [
+      h(doc, 'span', { class: 'gs-field-label', text: 'Match mode' }),
+      h(doc, 'div', { class: 'gs-segmented', dataset: { focus: 'match-mode' } },
+        MATCH_MODE_ORDER.map((id) => h(doc, 'button', {
+          type: 'button',
+          class: 'gs-segment' + (state.mp.matchMode === id ? ' is-active' : ''),
+          text: MATCH_MODES[id].label,
+          disabled: Boolean(matchModeReason),
+          dataset: { focus: 'match-mode-' + id, matchMode: id },
+          on: { click: () => controller.setMatchMode(id) }
+        }))),
+      h(doc, 'span', {
+        class: 'gs-field-note',
+        text: MATCH_MODES[state.mp.matchMode]?.tagline ?? ''
+      }),
+      matchModeReason ? h(doc, 'span', { class: 'gs-field-note is-invalid', text: matchModeReason }) : null
+    ]);
+
     section.appendChild(h(doc, 'div', { class: 'gs-lobby-grid' }, [
-      h(doc, 'div', { class: 'gs-lobby-col' }, [playersPanel, readyRow, powerupRow]),
+      h(doc, 'div', { class: 'gs-lobby-col' }, [playersPanel, readyRow, matchModeRow, powerupRow]),
       h(doc, 'div', { class: 'gs-lobby-col' }, [renderAiPanel(), renderLobbyMapPanel()])
     ]));
 
@@ -1427,6 +1451,7 @@ export function mount(host, options = {}) {
     setAiCar: (index, slug) => { dispatch({ type: 'mp/set-ai-car', index, slug }); },
     setAiProfile: (index, profile) => { dispatch({ type: 'mp/set-ai-profile', index, profile }); },
     setPowerups: (enabled) => { dispatch({ type: 'mp/set-powerups', enabled }); },
+    setMatchMode: (matchMode) => { dispatch({ type: 'mp/set-match-mode', matchMode }); },
     setMp: (patch = {}) => {
       if (!patch || typeof patch !== 'object') return;
       if ('role' in patch) controller.setRole(patch.role);

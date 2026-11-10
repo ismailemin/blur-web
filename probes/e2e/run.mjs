@@ -36,6 +36,7 @@ import { CdpBrowser, findBrowser, sleep } from './cdp.mjs';
 import {
   assertSilent,
   modeMatrix,
+  menuModes,
   mpAi,
   mpAmboy,
   mpEight,
@@ -86,6 +87,7 @@ const SCENARIOS = {
   'mp-powerups': { group: 'slow', timeout: 420000, run: mpPowerups },
   'solo-checkpoint': { group: 'slow', timeout: 300000, run: soloCheckpoint },
   'mp-destruction': { group: 'slow', timeout: 420000, run: mpDestruction },
+  'menu-modes': { group: 'fast', timeout: 180000, run: menuModes },
   'mp-amboy': { group: 'slow', timeout: 600000, run: mpAmboy },
   'mp-eight': { group: 'slow', timeout: 600000, run: mpEight },
   'solo-longbeach': { group: 'slow', timeout: 300000, run: soloLongbeach },

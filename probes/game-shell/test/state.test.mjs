@@ -4,9 +4,12 @@ import {
   AI_MAX,
   CAR_CLASSES,
   ERROR,
+  MATCH_MODES,
   MODE_ORDER,
+  MODES,
   SCREENS,
   TRANSITIONS,
+  buildConfig,
   canTransition,
   configSignature,
   createShellState,
@@ -328,6 +331,56 @@ test('Gracia refuses the Dodge AI with the exact ai-spawn-unsupported reason', (
   assert.equal(gate.code, ERROR.AI_UNSUPPORTED);
   assert.match(gate.reason, /ai-spawn-unsupported/);
   assert.match(gate.reason, /front axle is unloaded/);
+});
+
+test('checkpoint is a selectable solo mode and destruction is a lobby match mode', () => {
+  // Checkpoint: a solo mode on the measured 310 m course, every map supports it.
+  assert.deepEqual([...MODE_ORDER], ['sprint', 'lap', 'free', 'checkpoint', 'multiplayer']);
+  const solo = makeState({ screen: 'map-select', mode: 'checkpoint', mapId: 'river' });
+  assert.equal(mapSupportsMode(solo.maps.find((map) => map.id === 'river'), 'checkpoint'), true);
+  assert.equal(mapSupportsMode(solo.maps.find((map) => map.id === 'sausalito'), 'checkpoint'), true);
+  assert.equal(MODES.checkpoint.course, '310');
+  assert.equal(startRejection(solo).ok, true);
+  const checkpointQuery = engineQueryFor(buildConfig(solo));
+  assert.equal(checkpointQuery.mode, 'checkpoint');
+  assert.equal(checkpointQuery.course, '310');
+
+  // Destruction: a multiplayer match mode that forces the power-up slice.
+  let lobby = makeState({
+    screen: 'lobby',
+    mode: 'multiplayer',
+    carSlug: 'corvette-zr1-stock',
+    mapId: 'river',
+    mp: { role: 'host', roomCode: 'KRP3Q', verified: true }
+  });
+  assert.equal(lobby.mp.matchMode, 'race');
+  lobby = reduce(lobby, { type: 'mp/set-match-mode', matchMode: 'destruction', now: 1000 });
+  assert.equal(lobby.mp.matchMode, 'destruction');
+  assert.equal(lobby.mp.powerups, true, 'destruction forces power-ups');
+  const config = buildConfig(lobby);
+  assert.equal(config.mp.matchMode, 'destruction');
+  const query = engineQueryFor(config);
+  assert.equal(query.mode, 'destruction');
+  assert.equal(query.powerups, '1');
+
+  // Race keeps the plain sprint URL.
+  const race = reduce(lobby, { type: 'mp/set-match-mode', matchMode: 'race', now: 1000 });
+  assert.equal(race.mp.matchMode, 'race');
+  const raceQuery = engineQueryFor(buildConfig(race));
+  assert.equal(raceQuery.mode, undefined);
+
+  // A guest cannot set it, and an unknown mode is a typed notice.
+  const guest = makeState({
+    screen: 'lobby',
+    mode: 'multiplayer',
+    mapId: 'river',
+    mp: { role: 'guest', roomCode: 'KRP3Q', verified: true }
+  });
+  const refused = reduce(guest, { type: 'mp/set-match-mode', matchMode: 'destruction', now: 1000 });
+  assert.equal(refused.notice.code, ERROR.HOST_ONLY);
+  const bogus = reduce(lobby, { type: 'mp/set-match-mode', matchMode: 'boss-battle', now: 1000 });
+  assert.equal(bogus.notice.code, ERROR.NOT_READY);
+  assert.match(bogus.notice.message, /race, destruction/);
 });
 
 test('power-ups can be enabled on any map, not only River', () => {

@@ -734,6 +734,20 @@ button:disabled { cursor: not-allowed; }
 .gs-role-panel .gs-panel-title { margin: 0; }
 .gs-role-toggle { display: flex; gap: 8px; }
 .gs-room-input { width: 180px; letter-spacing: 0.18em; font-family: var(--mono); text-transform: uppercase; }
+.gs-field-label { color: var(--dim); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.gs-segmented { display: inline-flex; gap: 4px; }
+.gs-segment {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.gs-segment.is-active { border-color: var(--accent); color: var(--accent); }
+.gs-segment:disabled { opacity: 0.5; cursor: not-allowed; }
 .gs-field-note { margin: 0; color: var(--dim); font-size: 11px; }
 .gs-field-note.is-invalid { color: #e9a8a8; }
 

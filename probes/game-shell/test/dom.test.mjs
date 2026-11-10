@@ -67,12 +67,12 @@ test('search and filters update the tile count and restore input focus', () => {
   shell.destroy();
 });
 
-test('mode and car navigation reaches map select and all thirteen maps are enabled for sprint', () => {
+test('mode and car navigation reaches map select and all fourteen maps are enabled for sprint', () => {
   const { shell, host } = mountShell({ screen: 'main-menu' });
   assert.equal(host.querySelectorAll('.gs-mode-card').length, 0);
   host.querySelector('[data-focus="play"]').click();
   assert.equal(shell.getState().screen, 'mode-select');
-  assert.equal(host.querySelectorAll('.gs-mode-card').length, 4);
+  assert.equal(host.querySelectorAll('.gs-mode-card').length, 5);
   host.querySelector('[data-focus="mode-sprint"]').click();
   assert.equal(shell.getState().screen, 'car-select');
   host.querySelector('[data-car-slug="audi-r8v10-stock"]').click();
@@ -226,7 +226,7 @@ test('Gracia Dodge AI row shows ai-spawn-unsupported before start', () => {
 test('focus is trapped, arrow keys rove the grid, Escape goes back', () => {
   const { shell, host, document } = mountShell({ screen: 'mode-select' });
   const cards = host.querySelectorAll('.gs-mode-card');
-  assert.equal(cards.length, 4);
+  assert.equal(cards.length, 5);
   cards[cards.length - 1].focus();
   host.querySelector('.gs-app') ?? null;
   const root = host.querySelector('.gs-app') ?? host.firstChild;

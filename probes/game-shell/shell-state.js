@@ -45,6 +45,13 @@ export const MODES = Object.freeze({
     tagline: 'No gates, no timer',
     description: 'The 7,702.25 m2 P65/P68 spawn basin. No checkpoints, finish or lap. River only.'
   }),
+  checkpoint: Object.freeze({
+    id: 'checkpoint',
+    label: 'Checkpoint',
+    course: '310',
+    tagline: 'Beat the time bank',
+    description: 'Single-player time attack on any measured 310 m path: a 40 s bank, +16 s per checkpoint, gold/silver/bronze at 20/10/0 s remaining.'
+  }),
   multiplayer: Object.freeze({
     id: 'multiplayer',
     label: 'Multiplayer',
@@ -54,8 +61,32 @@ export const MODES = Object.freeze({
   })
 });
 
-export const MODE_ORDER = Object.freeze(['sprint', 'lap', 'free', 'multiplayer']);
+export const MODE_ORDER = Object.freeze(['sprint', 'lap', 'free', 'checkpoint', 'multiplayer']);
 export const MODE_IDS = MODE_ORDER;
+
+/**
+ * Multiplayer event modes. `race` is the measured sprint; `destruction` is the
+ * Motor Mash round (180 s, wreck 5 points, rival x2) and therefore requires the
+ * power-up slice. Both are committed retail modes; the values live in
+ * probes/e1-drive/web/race-modes.js.
+ */
+export const MATCH_MODES = Object.freeze({
+  race: Object.freeze({
+    id: 'race',
+    label: 'Race',
+    tagline: 'Measured sprint, first to the finish',
+    description: 'The room map\'s measured 310 m sprint with the shared result table.',
+    powerups: false
+  }),
+  destruction: Object.freeze({
+    id: 'destruction',
+    label: 'Destruction',
+    tagline: 'Motor Mash: 180 s, wreck points',
+    description: 'A 180 s round scored by wrecks (5 points, rival x2, suicide -1). Requires power-ups; the low/high damage split is a typed unsupported entry.',
+    powerups: true
+  })
+});
+export const MATCH_MODE_ORDER = Object.freeze(['race', 'destruction']);
 
 export const COURSE_LABELS = Object.freeze({
   310: '310 m sprint',
@@ -475,6 +506,7 @@ export function createShellState(options = {}) {
       mapId: mpMapId,
       verified: initial.mp?.verified !== false,
       powerups: initial.mp?.powerups === true,
+      matchMode: MATCH_MODES[initial.mp?.matchMode] ? initial.mp.matchMode : 'race',
       error: null,
       status: initial.mp?.status ?? ''
     },
@@ -563,6 +595,7 @@ export function buildConfig(state) {
       aiCars: state.mp.ai.rows.map((row) => row.car),
       aiProfiles: state.mp.ai.rows.map((row) => row.profile),
       powerups: state.mp.powerups,
+      matchMode: state.mp.matchMode,
       mapId: map?.id ?? null
     };
   }
@@ -581,6 +614,7 @@ export function configSignature(config) {
     config.mp?.aiCount ?? '',
     (config.mp?.aiCars ?? []).join(','),
     (config.mp?.aiProfiles ?? []).join(','),
+    config.mp?.matchMode ?? '',
     config.mp?.powerups ? 'powerups' : ''
   ].join('|');
 }
@@ -1159,6 +1193,26 @@ export function reduce(state, action = {}) {
       });
     }
 
+    case 'mp/set-match-mode': {
+      if (state.screen !== 'lobby') return state;
+      if (state.mp.role !== 'host') return withNotice(state, ERROR.HOST_ONLY, 'the match mode is host-configured');
+      const matchMode = MATCH_MODES[action.matchMode] ? action.matchMode : null;
+      if (!matchMode) {
+        return withNotice(state, ERROR.NOT_READY,
+          'match mode must be one of ' + MATCH_MODE_ORDER.join(', '));
+      }
+      const forcedPowerups = MATCH_MODES[matchMode].powerups ? true : state.mp.powerups;
+      return clearNotice(state, {
+        mp: {
+          ...state.mp,
+          matchMode,
+          powerups: forcedPowerups,
+          ready: false,
+          players: state.mp.players.map((player) => ({ ...player, ready: false }))
+        }
+      });
+    }
+
     case 'mp/set-powerups': {
       if (state.screen !== 'lobby') return state;
       if (state.mp.role !== 'host') return withNotice(state, ERROR.HOST_ONLY, 'power-ups are host-configured');
@@ -1275,6 +1329,8 @@ export function engineQueryFor(config) {
   if (config.carSlug) query.car = config.carSlug;
   if (config.mapId) query.map = config.mapId;
   if (config.course) query.course = config.course;
+  // The single-player checkpoint mode is a URL mode, not a course.
+  if (config.mode === 'checkpoint') query.mode = 'checkpoint';
   if (config.mode === 'multiplayer' && config.mp) {
     query.mp = '1';
     if (config.mp.role === 'host') query.host = '1';
@@ -1285,6 +1341,10 @@ export function engineQueryFor(config) {
       query.aiProfiles = config.mp.aiProfiles.join(',');
     }
     if (config.mp.powerups) query.powerups = '1';
+    if (config.mp.matchMode === 'destruction') {
+      query.mode = 'destruction';
+      query.powerups = '1';
+    }
   }
   return query;
 }

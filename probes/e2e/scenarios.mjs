@@ -1315,3 +1315,111 @@ export async function mpDestruction(ctx) {
   ctx.evidence.host = hostMode;
   ctx.evidence.guest = guestMode;
 }
+
+/**
+ * `menu-modes`: the menu shell offers Checkpoint as a solo mode and Destruction
+ * as a multiplayer match mode, and the launch URL carries the right parameters.
+ * It drives the real shell page (no engine) and asserts the synced URL query.
+ */
+export async function menuModes(ctx) {
+  const url = ctx.base + '/game-shell/demo.html';
+  const page = await ctx.openPage('menu');
+  await page.navigate(url);
+  const booted = await page.evaluate(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (window.__gameShell && document.querySelector('[data-focus="play"]')) return true;
+      await wait(200);
+    }
+    return false;
+  })()`);
+  ctx.A.check('menu-modes: the shell boots to the main menu', booted === true, booted);
+
+  const modes = await page.evaluate(`(async () => {
+    const shell = window.__gameShell;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const click = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) throw new Error('missing ' + selector);
+      node.click();
+    };
+    click('[data-focus="play"]');
+    await wait(80);
+    const cards = [...document.querySelectorAll('.gs-mode-card')].map((n) => n.dataset.focus);
+    click('[data-focus="mode-checkpoint"]');
+    await wait(80);
+    click('[data-car-slug="corvette-zr1-stock"]');
+    await wait(80);
+    click('[data-focus="car-next"]');
+    await wait(80);
+    click('[data-focus="map-river"]');
+    await wait(80);
+    click('[data-focus="map-action"]');
+    await wait(200);
+    return {
+      cards,
+      screen: shell.getState().screen,
+      config: shell.getState().lastConfig,
+      search: location.search
+    };
+  })()`);
+  await ctx.shot(page, 'menu-checkpoint');
+  ctx.A.check('menu-modes: the mode list offers five modes including checkpoint',
+    Array.isArray(modes.cards) && modes.cards.length === 5 &&
+      modes.cards.includes('mode-checkpoint'), ctx.fmt(modes.cards));
+  ctx.A.check('menu-modes: checkpoint starts from the menu', modes.screen === 'loading', modes.screen);
+  ctx.A.check('menu-modes: the launch config is the checkpoint mode',
+    modes.config?.mode === 'checkpoint' && modes.config?.course === '310', ctx.fmt(modes.config));
+  ctx.A.check('menu-modes: the synced URL carries mode=checkpoint',
+    /(?:^|&)mode=checkpoint(?:&|$)/.test(modes.search.replace(/^\?/, '')), modes.search);
+
+  const lobby = await page.evaluate(`(async () => {
+    const shell = window.__gameShell;
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const click = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) throw new Error('missing ' + selector);
+      node.click();
+    };
+    // Back from loading to the menu (loading -> map-select -> car-select ->
+    // mode-select -> main-menu).
+    for (let step = 0; step < 5 && !document.querySelector('[data-focus="play"]'); step++) {
+      shell.dispatch({ type: 'back' });
+      await wait(80);
+    }
+    click('[data-focus="play"]');
+    await wait(80);
+    click('[data-focus="mode-multiplayer"]');
+    await wait(80);
+    click('[data-car-slug="corvette-zr1-stock"]');
+    await wait(80);
+    click('[data-focus="car-next"]');
+    await wait(80);
+    click('[data-focus="map-river"]');
+    await wait(80);
+    click('[data-focus="map-action"]');
+    await wait(200);
+    const before = shell.getState();
+    const segmented = document.querySelectorAll('[data-focus="match-mode"] .gs-segment').length;
+    click('[data-focus="match-mode-destruction"]');
+    await wait(120);
+    const after = shell.getState();
+    return {
+      screen: after.screen,
+      segmented,
+      matchModeBefore: before.mp.matchMode,
+      matchMode: after.mp.matchMode,
+      powerups: after.mp.powerups
+    };
+  })()`);
+  await ctx.shot(page, 'menu-destruction');
+  ctx.A.check('menu-modes: the lobby offers the two match modes', lobby.segmented === 2, lobby.segmented);
+  ctx.A.check('menu-modes: the lobby starts on Race', lobby.matchModeBefore === 'race', lobby.matchModeBefore);
+  ctx.A.check('menu-modes: Destruction is selectable from the lobby',
+    lobby.matchMode === 'destruction', lobby.matchMode);
+  ctx.A.check('menu-modes: Destruction forces the power-up slice', lobby.powerups === true, lobby.powerups);
+  ctx.A.check('menu-modes: no console error',
+    page.messages.filter((m) => m.type === 'error').length === 0,
+    ctx.fmt(page.messages.slice(-4)));
+  ctx.evidence.menu = { modes, lobby };
+}
