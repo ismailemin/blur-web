@@ -463,6 +463,18 @@ function selfPlayer(carSlug, role, name = 'You') {
   };
 }
 
+/**
+ * The first-played map is the fullest city package (Amboy: 1,201 opaque draws),
+ * not River (22 level props + 394 track draws). River stays in the list; this
+ * only preselects a map that looks like a city on first play.
+ */
+export const DEFAULT_MAP_ID = 'amboy';
+
+function defaultMapId(maps) {
+  if (maps.some((map) => map.id === DEFAULT_MAP_ID)) return DEFAULT_MAP_ID;
+  return maps[0]?.id ?? null;
+}
+
 function normalizePlayers(players, fallback) {
   const list = Array.isArray(players) ? players : [];
   const normalised = list.map((player, index) => ({
@@ -486,14 +498,16 @@ export function createShellState(options = {}) {
   const defaultValue = cars.find((car) => car.slug === initial.defaultCarSlug)?.slug ?? cars[0]?.slug ?? null;
   const carSlug = cars.some((car) => car.slug === initial.carSlug) ? initial.carSlug : defaultValue;
   const mode = MODES[initial.mode] ? initial.mode : null;
-  const mapId = maps.some((map) => map.id === initial.mapId) ? initial.mapId : null;
+  const mapId = maps.some((map) => map.id === initial.mapId) ? initial.mapId
+    : defaultMapId(maps);
   const screen = SCREENS.includes(initial.screen) ? initial.screen : 'main-menu';
   const role = initial.mp?.role === 'guest' ? 'guest' : 'host';
   const roomCodeRaw = typeof initial.mp?.roomCode === 'string' ? initial.mp.roomCode : '';
   const roomCode = normalizeRoomCode(roomCodeRaw) ?? roomCodeRaw.trim().toUpperCase();
   const mpMapId = maps.some((map) => map.id === (initial.mp?.mapId ?? mapId))
     ? (initial.mp?.mapId ?? mapId)
-    : (maps.find((map) => map.multiplayer)?.id ?? null);
+    : (maps.find((map) => map.id === DEFAULT_MAP_ID && map.multiplayer)?.id
+      ?? maps.find((map) => map.multiplayer)?.id ?? null);
   const players = normalizePlayers(initial.mp?.players, selfPlayer(carSlug, role));
   const ai = normalizeAi(initial.mp?.ai, cars, carSlug, mpMapId);
 
@@ -808,7 +822,7 @@ export function reduce(state, action = {}) {
       const carSlug = cars.some((car) => car.slug === state.carSlug)
         ? state.carSlug
         : (cars[0]?.slug ?? null);
-      const mapId = maps.some((map) => map.id === state.mapId) ? state.mapId : null;
+      const mapId = maps.some((map) => map.id === state.mapId) ? state.mapId : defaultMapId(maps);
       const mpMapId = maps.some((map) => map.id === state.mp.mapId) ? state.mp.mapId : mapId;
       return bump(state, {
         cars,
