@@ -11,7 +11,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 |---|---|
 | **Haritalar** | **13/19 oynanabilir**: river, amboy, gracia, longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, **dumbo**, **downtown-mp**. |
 | **Araçlar** | **61/62** sürüş diliminde. Yalnızca `defaultcar` desteklenmiyor (gövde modeli yok). |
-| **Lightmap** | **11/13 oynanabilir haritada render'da** (downtown ve highrise tipli `unsupported` olduğu için onlarda yok). Amboy: **83 doku, 1173/1301 draw**. River: **38 doku, 383/394 track draw**. Dumbo 115 doku/1615 draw, Downtown MP 49 doku/207 draw. |
+| **Lightmap** | **13/13 oynanabilir haritada render'da**. Downtown **86 doku / 1279 draw**, Highrise **22 / 69** (kısmi set: her birinde tek tipli `unsupported` referans, o draw'lar ambient terimle). Amboy 83/1173, River 38/383, Dumbo 115/1615, Downtown MP 49/207. |
 | **Işık düzeltmesi** | Lightmap'siz draw'lar artık **ambient** ile aydınlanıyor; River/Gracia/Longbeach'in `SunColour=[0,0,0]` olması onları siyah bırakıyordu, düzeltildi. |
 | **Araç materyali** | Retail **boya** ve **ışık rengi** render'da. Corvette: `Canal_Blue` `[0.0252, 0.3712, 0.8228]`, 10 boya draw'ı; far/stop/sinyal kapakları retail `emissive` rengiyle. |
 | **Ses** | 23 olaylı retail kataloğu sayfaya bağlı. |
@@ -19,8 +19,11 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Menü** | **61 araç / 13 harita**, 42/42 test, başsız Edge 0 konsol hatası. |
 | **Multiplayer** | 8 oyunculu oda (`mp-eight` 95/95); Amboy'da `?powerups=1` ile 82 pickup / 8 tip. |
 | **AI** | 8 haritada 61 araç × 2 profil = **976 koşu**, 946 temiz, 30 bildirilmiş limit, 0 beklenmeyen; `verify-maps` **32/32**. Dumbo/Downtown MP 122/122 temiz. |
-| **E2E** | **17/17 senaryo, 479/479 assertion** (dumbo ve downtown-mp dahil). |
-| **Kapı** | **`verify_asset_probe --skip-build` 98/98 PASS** (`gate-full20.log`, exit 0). |
+| **E2E** | **18/18 senaryo, 524/524 assertion** (minimap ve `mp-powerups` dahil). |
+| **Kapı** | **`verify_asset_probe --skip-build` 99/99 PASS** (`gate-full23.log`, exit 0). |
+| **LAN** | `serve.mjs --host 0.0.0.0` (ve `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm arayüzlere bağlıyor; ikinci cihaz VPS/TLS olmadan katılabiliyor. |
+| **Minimap** | `probes/e1-drive/web/minimap.js` — yalnız kurs noktalarından; 32/32 test. |
+| **Güçlendirme** | 8 tip; `mp-powerups` 45/45 (River 54 retail pickup, guest aynı set, 0 konsol). Menü her haritada açıyor. |
 
 ## Son commit'ler
 
@@ -55,12 +58,17 @@ node probes/e2e/run.mjs --scenarios solo-dumbo,solo-downtown-mp --base http://12
 
 ## Sıradaki işler (öncelik sırası)
 
-1. **Kapıyı doğrula** (`gate-full18.log`). Yeni eklenen `map-laps-aid`,
-   `powerups-aid` ve `lighting-lightmap-runtime` adımları dahil.
-2. **River lightmap'i bağlı** (38 doku, 383/394 track draw). Kalan tek
-   harita-seviyesi iş yok; 5 harita veri sınırı.
-3. **Kalan 5 harita (tipli blocker).** `.aid` hattı ±24 m detour ve 1,68 m
-   bantla bile araç bandına sığmıyor:
+1. **Kapıyı doğrula** (`gate-full24.log`).
+2. **Raster parkurlar (5 seviye).** Collision rasterında kapalı halkalar
+   bulundu (russianhill 382,315 m, bowl 1.112,810 m, sausalito 2.802,765 m,
+   hackney 5.185,102 m, brighton 10.864,527 m; 365/365 doğrulayıcı). Çizim
+   kapsaması: sausalito %100, russianhill %82,8, hackney %48,1, brighton %38,6,
+   bowl %0. `build_raster_layout.mjs` layout'u üretiyor ve paketler kuruluyor,
+   ama scripted sprint `outside-corridor` ile respawn ediyor (russianhill tick
+   ~1458). Sonraki adım: **eğrilik sınırlı merkez çizgisi** (belgelenmiş
+   minimum yarıçap), sonra registry'ye alma. Bu yüzden 4 harita registry'de
+   değil; MAP_BUILDS/config geri alındı.
+3. **`.aid` hattı** ±24 m detour ve 1,68 m bantla bile araç bandına sığmıyor:
    - `uk_london_hackney`: 221 istasyon (ilk 2.890/10.012, (-227.278106, -133.764788)).
    - `uk_brighton`: ±24 m'de 24 istasyon (ilk 670/8.662, (84.516652, -185.448468)).
    - `usa_sanfran_sausalito`: 7.024 istasyon (ilk 4/18.196, (709.521209, -1434.502293)).

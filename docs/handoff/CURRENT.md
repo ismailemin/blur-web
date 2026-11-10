@@ -31,15 +31,19 @@ bağlı.
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
   nitro, shock, barge, kalkan, tamir, bitiş, geri sayım, wreck).
-- **Işık:** retail ambient + **gerçek lightmap** render'da. **11/13 oynanabilir
-  haritada** lightmap var (downtown/highrise tipli `unsupported`). Amboy:
-  **83 doku, 1173/1301 draw**; River: **38 doku, 383/394 track draw**;
-  Dumbo 115/1615, Downtown MP 49/207.
+- **Işık:** retail ambient + **gerçek lightmap** render'da. **13/13 oynanabilir
+  haritada** lightmap var. Downtown **86 doku / 1279 draw**, Highrise
+  **22 / 69** (kısmi set, tek tipli `unsupported` referans); Amboy 83/1173,
+  River 38/383, Dumbo 115/1615, Downtown MP 49/207.
 - **Araç materyali:** retail **boya** ve **ışık rengi** render'da (Corvette
   `Canal_Blue`, 10 boya draw'ı).
 - **Kurs minimap'i:** `probes/e1-drive/web/minimap.js` — yalnız
   `layout.course.samples` + `layout.gates` noktalarından; River 416 nokta,
   Amboy 458 nokta; 32/32 test, kapıda `minimap` adımı.
+- **LAN oynanabilir:** `serve.mjs --host 0.0.0.0` (ve
+  `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm
+  arayüzlere bağlıyor; makine IP'si yazdırılıyor. İkinci cihaz VPS/TLS
+  olmadan aynı ağdan katılabiliyor (kanıt: `http://192.168.1.37:8899/` → 200).
 - **Güçlendirme:** 8 tip (Bomb/Shield/Repair/Nitrous/Shock/Blindfire/Shunt/
   Barge); yalnız SuperShield ertelendi (tek oyunculu PickupType). `mp-powerups`
   E2E **45/45**: River'da host **54 retail pickup**, guest aynı 8 tip, 0 konsol.
