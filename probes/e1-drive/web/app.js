@@ -98,7 +98,9 @@ import { createEngineAudio } from '/audio/engine-audio.js';
 import { mountRetailHud, retailHudRequested } from './hud-mount.js';
 import { createMinimap } from './minimap.js';
 import {
-  CHECKPOINT_MODE, DESTRUCTION_MODE, checkpointState, createDestructionScoreboard, raceModeFor
+  CHECKPOINT_MODE, DESTRUCTION_MODE, ELIMINATION_MODE, POINTS_MODE,
+  checkpointState, createDestructionScoreboard, createEliminationTracker, createPointsScoreboard,
+  raceModeFor
 } from './race-modes.js';
 const RETAIL_HUD = retailHudRequested();
 let retailHud = null;
@@ -107,6 +109,8 @@ let minimapModel = null;
 // Race-mode state: the destruction scoreboard and the last power-up event
 // cursor. The checkpoint mode is a pure function of the sprint snapshot.
 let destructionScoreboard = null;
+let pointsScoreboard = null;
+let eliminationTracker = null;
 let raceModeEventCursor = 0;
 let raceModeLastTick = 0;
 const params = new URLSearchParams(location.search);
@@ -315,6 +319,12 @@ if (RACE_MODE_ID === DESTRUCTION_MODE.id && !MP) {
 }
 if (RACE_MODE_ID === DESTRUCTION_MODE.id && params.get('powerups') !== '1') {
   throw new Error('?mode=destruction scores wrecks; add &powerups=1');
+}
+if ((RACE_MODE_ID === POINTS_MODE.id || RACE_MODE_ID === ELIMINATION_MODE.id) && !MP) {
+  throw new Error('?mode=' + RACE_MODE_ID + ' is a multiplayer event mode; add ?mp=1&host=1 or ?mp=1&room=CODE');
+}
+if (RACE_MODE_ID === POINTS_MODE.id && params.get('powerups') !== '1') {
+  throw new Error('?mode=points scores power-up events; add &powerups=1');
 }
 // usa_amboy / spa_barcelona_gracia (M3 map packages) are point-to-point maps.
 // They run solo through `?map=` and the online room through `map` selection.
@@ -815,6 +825,59 @@ function publishRaceMode() {
     };
     return;
   }
+  if (RACE_MODE_ID === POINTS_MODE.id) {
+    if (!pointsScoreboard) {
+      const participants = [];
+      if (mpNet?.playerId) participants.push(mpNet.playerId);
+      for (const row of Array.isArray(state.mp?.remotes) ? state.mp.remotes : []) {
+        if (row?.id) participants.push(row.id);
+      }
+      pointsScoreboard = createPointsScoreboard({ participants });
+    }
+    const tick = state.engineTick + mpEngineTickOffset;
+    const dt = raceModeLastTick ? Math.max(0, (tick - raceModeLastTick) / 60) : 0;
+    raceModeLastTick = tick;
+    const events = powerupModel ? powerupModel.events : (state.powerups?.events ?? []);
+    const POINT_EVENTS = {
+      'shunt-hit': 'Shunt',
+      'shock-activated': 'Shock',
+      'barge-activated': 'Barge',
+      'mine-detonated': 'Bomb'
+    };
+    for (; raceModeEventCursor < events.length; raceModeEventCursor++) {
+      const event = events[raceModeEventCursor];
+      const name = POINT_EVENTS[event?.type];
+      if (name) {
+        pointsScoreboard.ingest({ event: name, actorId: event.playerId ?? event.ownerId ?? null });
+      }
+    }
+    state.raceMode = pointsScoreboard.tick(dt);
+    return;
+  }
+  if (RACE_MODE_ID === ELIMINATION_MODE.id) {
+    // The room roster is the authoritative participant list; the remote display
+    // list is only a fallback before the roster arrives.
+    const participants = [];
+    for (const player of Array.isArray(state.mp?.players) ? state.mp.players : []) {
+      if (player?.id) participants.push(player.id);
+    }
+    if (!participants.length && mpNet?.playerId) participants.push(mpNet.playerId);
+    // The roster can arrive after the first frame; rebuild the tracker while
+    // its row set differs so every participant is ranked from the start.
+    if (!eliminationTracker || eliminationTracker.snapshot().rows.length !== participants.length) {
+      eliminationTracker = createEliminationTracker({ participants });
+    }
+    const tick = state.engineTick + mpEngineTickOffset;
+    const dt = raceModeLastTick ? Math.max(0, (tick - raceModeLastTick) / 60) : 0;
+    raceModeLastTick = tick;
+    // Ranking value: the measured arc (higher = further round the course).
+    if (mpNet?.playerId) eliminationTracker.setProgress(mpNet.playerId, state.sprint?.arc ?? 0);
+    for (const row of Array.isArray(state.mp?.remotes) ? state.mp.remotes : []) {
+      if (row?.id) eliminationTracker.setProgress(row.id, row.arc ?? 0);
+    }
+    state.raceMode = eliminationTracker.tick(dt);
+    return;
+  }
   if (RACE_MODE_ID === DESTRUCTION_MODE.id) {
     if (!destructionScoreboard) {
       const participants = [];
@@ -895,6 +958,16 @@ function publish() {
         mode.checkpointsPassed + ' of ' + (mode.totalCheckpoints ?? '?') + ' checkpoints' +
         (mode.expired ? ' - TIME EXPIRED' : '') +
         (mode.medal ? ' - medal ' + mode.medal : '')]);
+    } else if (mode.mode === POINTS_MODE.id) {
+      const leader = mode.rows[0];
+      rows.push(['points', 'time left ' + mode.timeLeftSeconds.toFixed(1) + ' s / ' +
+        (leader ? leader.id + ' ' + leader.score + ' pts' : 'no score yet') +
+        ' / ' + Object.keys(mode.scoring).length + ' labelled scoring rows']);
+    } else if (mode.mode === ELIMINATION_MODE.id) {
+      rows.push(['elimination', mode.activeCount + ' active / next elimination in ' +
+        mode.nextEliminationInSeconds.toFixed(1) + ' s' +
+        (mode.winner ? ' / winner ' + mode.winner : '') +
+        ' / provisional ' + mode.periodSeconds + ' s period']);
     } else if (mode.mode === DESTRUCTION_MODE.id) {
       const leader = mode.rows[0];
       rows.push(['destruction', 'time left ' + mode.timeLeftSeconds.toFixed(1) + ' s / ' +

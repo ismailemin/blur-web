@@ -84,9 +84,23 @@ export const MATCH_MODES = Object.freeze({
     tagline: 'Motor Mash: 180 s, wreck points',
     description: 'A 180 s round scored by wrecks (5 points, rival x2, suicide -1). Requires power-ups; the low/high damage split is a typed unsupported entry.',
     powerups: true
+  }),
+  points: Object.freeze({
+    id: 'points',
+    label: 'Points',
+    tagline: 'Fan score from the 26-rule table',
+    description: 'A 180 s round scored from the committed MultiplayerConfig.scoring table (19 labelled rows). Requires power-ups; the 7 unlabelled rows are a typed unsupported entry.',
+    powerups: true
+  }),
+  elimination: Object.freeze({
+    id: 'elimination',
+    label: 'Elimination',
+    tagline: 'Last one standing (provisional 30 s period)',
+    description: 'The last-ranked racer is eliminated every 30 s; the last one standing wins. The period and criterion are a labelled project choice (not serialized for an event).',
+    powerups: false
   })
 });
-export const MATCH_MODE_ORDER = Object.freeze(['race', 'destruction']);
+export const MATCH_MODE_ORDER = Object.freeze(['race', 'destruction', 'points', 'elimination']);
 
 export const COURSE_LABELS = Object.freeze({
   310: '310 m sprint',
@@ -1344,6 +1358,11 @@ export function engineQueryFor(config) {
     if (config.mp.matchMode === 'destruction') {
       query.mode = 'destruction';
       query.powerups = '1';
+    } else if (config.mp.matchMode === 'points') {
+      query.mode = 'points';
+      query.powerups = '1';
+    } else if (config.mp.matchMode === 'elimination') {
+      query.mode = 'elimination';
     }
   }
   return query;

@@ -1433,17 +1433,131 @@ export async function menuModes(ctx) {
       segmented,
       matchModeBefore: before.mp.matchMode,
       matchMode: after.mp.matchMode,
-      powerups: after.mp.powerups
+      powerups: after.mp.powerups,
+      labels: [...document.querySelectorAll('[data-focus="match-mode"] .gs-segment')].map((n) => n.textContent)
     };
   })()`);
   await ctx.shot(page, 'menu-destruction');
-  ctx.A.check('menu-modes: the lobby offers the two match modes', lobby.segmented === 2, lobby.segmented);
+  ctx.A.check('menu-modes: the lobby offers the four match modes', lobby.segmented === 4, lobby.segmented);
   ctx.A.check('menu-modes: the lobby starts on Race', lobby.matchModeBefore === 'race', lobby.matchModeBefore);
   ctx.A.check('menu-modes: Destruction is selectable from the lobby',
     lobby.matchMode === 'destruction', lobby.matchMode);
   ctx.A.check('menu-modes: Destruction forces the power-up slice', lobby.powerups === true, lobby.powerups);
+  ctx.A.check('menu-modes: the lobby labels are Race / Destruction / Points / Elimination',
+    JSON.stringify(lobby.labels) === JSON.stringify(['Race', 'Destruction', 'Points', 'Elimination']),
+    ctx.fmt(lobby.labels));
   ctx.A.check('menu-modes: no console error',
     page.messages.filter((m) => m.type === 'error').length === 0,
     ctx.fmt(page.messages.slice(-4)));
   ctx.evidence.menu = { modes, lobby };
+}
+
+/**
+ * `mp-points`: the committed Points mode. Both pages select it; the host scores
+ * from the labelled MultiplayerConfig.scoring rows and the 7 unlabelled rows are
+ * a typed unsupported entry. The round is the labelled provisional 180 s.
+ */
+export async function mpPoints(ctx) {
+  const mapId = 'river';
+  ctx.evidence.mapId = mapId;
+  const expected = { ...ctx.anchors.mp.river, hostCar: ctx.anchors.cars.default };
+  const room = await openRoom(ctx, {
+    mapId,
+    hostCar: expected.hostCar,
+    guestCar: expected.guestCar,
+    guestPace: expected.guestPace,
+    hostExtra: '&mode=points&powerups=1',
+    guestExtra: '&mode=points&powerups=1'
+  });
+  ctx.evidence.room = { code: room.code, hostUrl: room.hostUrl, guestUrl: room.guestUrl };
+  assertLobby(ctx, room, { mapId, hostCar: expected.hostCar, guestCar: expected.guestCar });
+  const hostConsoleFrom = room.host.messages.length;
+  const guestConsoleFrom = room.guest.messages.length;
+  await startRoomRace(ctx, room, { timeoutMs: 60000 });
+
+  const hostMode = await waitMp(ctx, room.host, (probe) =>
+    probe.mp.phase === 'running' && probe.raceMode?.mode === 'points' &&
+    probe.raceMode.timeLeftSeconds < 180,
+  { timeoutMs: 90000, label: 'host points mode' });
+  const guestMode = await waitMp(ctx, room.guest, (probe) =>
+    probe.mp.phase === 'running' && probe.raceMode?.mode === 'points',
+  { timeoutMs: 90000, label: 'guest points mode' });
+
+  ctx.A.check('mp-points: the host runs the points mode', hostMode.raceMode.mode === 'points',
+    hostMode.raceMode.mode);
+  ctx.A.check('mp-points: the guest runs the points mode', guestMode.raceMode.mode === 'points',
+    guestMode.raceMode.mode);
+  ctx.A.check('mp-points: the round timer is the labelled provisional 180 s',
+    hostMode.raceMode.timeLimitSeconds === 180 && hostMode.raceMode.timeLeftSeconds < 180,
+    hostMode.raceMode.timeLeftSeconds);
+  ctx.A.check('mp-points: the labelled scoring table is the committed one',
+    hostMode.raceMode.scoring.Shunt === 1 && hostMode.raceMode.scoring.BatteringRam === 3 &&
+      Object.keys(hostMode.raceMode.scoring).length === 16,
+    ctx.fmt(hostMode.raceMode.scoring));
+  ctx.A.check('mp-points: the 7 unlabelled rows are a typed unsupported entry',
+    hostMode.raceMode.unlabelledRows?.count === 7 &&
+      hostMode.raceMode.unlabelledRows?.status === 'unsupported',
+    ctx.fmt(hostMode.raceMode.unlabelledRows));
+  ctx.A.check('mp-points: the HUD names the timer and the labelled row count',
+    /points.*time left .* s.*labelled scoring rows/.test(hostMode.overlays.hudText ?? ''),
+    hostMode.overlays.hudText);
+
+  await ctx.shot(room.host, 'points-host');
+  await ctx.shot(room.guest, 'points-guest');
+  assertSilent(ctx, room.host, hostConsoleFrom, 'points-host');
+  assertSilent(ctx, room.guest, guestConsoleFrom, 'points-guest');
+  ctx.evidence.host = hostMode;
+  ctx.evidence.guest = guestMode;
+}
+
+/**
+ * `mp-elimination`: the Elimination mode. The period and criterion are a
+ * labelled project choice (not serialized for an event), so the scenario
+ * asserts the provisional labels and the active counter, not a finished round.
+ */
+export async function mpElimination(ctx) {
+  const mapId = 'river';
+  ctx.evidence.mapId = mapId;
+  const expected = { ...ctx.anchors.mp.river, hostCar: ctx.anchors.cars.default };
+  const room = await openRoom(ctx, {
+    mapId,
+    hostCar: expected.hostCar,
+    guestCar: expected.guestCar,
+    guestPace: expected.guestPace,
+    hostExtra: '&mode=elimination',
+    guestExtra: '&mode=elimination'
+  });
+  ctx.evidence.room = { code: room.code, hostUrl: room.hostUrl, guestUrl: room.guestUrl };
+  assertLobby(ctx, room, { mapId, hostCar: expected.hostCar, guestCar: expected.guestCar });
+  const hostConsoleFrom = room.host.messages.length;
+  const guestConsoleFrom = room.guest.messages.length;
+  await startRoomRace(ctx, room, { timeoutMs: 60000 });
+
+  const hostMode = await waitMp(ctx, room.host, (probe) =>
+    probe.mp.phase === 'running' && probe.raceMode?.mode === 'elimination',
+  { timeoutMs: 90000, label: 'host elimination mode' });
+  const guestMode = await waitMp(ctx, room.guest, (probe) =>
+    probe.mp.phase === 'running' && probe.raceMode?.mode === 'elimination',
+  { timeoutMs: 90000, label: 'guest elimination mode' });
+
+  ctx.A.check('mp-elimination: the host runs the elimination mode',
+    hostMode.raceMode.mode === 'elimination', hostMode.raceMode.mode);
+  ctx.A.check('mp-elimination: the guest runs the elimination mode',
+    guestMode.raceMode.mode === 'elimination', guestMode.raceMode.mode);
+  ctx.A.check('mp-elimination: the period and criterion are labelled provisional',
+    hostMode.raceMode.provisional === true && hostMode.raceMode.periodSeconds === 30 &&
+      /not serialized/.test(hostMode.raceMode.reason ?? ''),
+    ctx.fmt({ provisional: hostMode.raceMode.provisional, period: hostMode.raceMode.periodSeconds }));
+  ctx.A.check('mp-elimination: both participants start active',
+    hostMode.raceMode.activeCount === 2, hostMode.raceMode.activeCount);
+  ctx.A.check('mp-elimination: the HUD names the active count and the next elimination',
+    /elimination.*active.*next elimination in .* s/.test(hostMode.overlays.hudText ?? ''),
+    hostMode.overlays.hudText);
+
+  await ctx.shot(room.host, 'elimination-host');
+  await ctx.shot(room.guest, 'elimination-guest');
+  assertSilent(ctx, room.host, hostConsoleFrom, 'elimination-host');
+  assertSilent(ctx, room.guest, guestConsoleFrom, 'elimination-guest');
+  ctx.evidence.host = hostMode;
+  ctx.evidence.guest = guestMode;
 }

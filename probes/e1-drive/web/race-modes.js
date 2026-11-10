@@ -44,6 +44,169 @@ export const DESTRUCTION_MODE = Object.freeze({
   source: 'multiplayer.bin MultiplayerConfig.motormashScoringValues; MultiplayerRace.time = 180 s (31/31 rows)'
 });
 
+
+/**
+ * Points (multiplayer fan score). The committed scoring table is
+ * `MultiplayerConfig.scoring` (26 rows, 1-25 points). Seven of the 26 rows carry
+ * no serialized `ScoringEvent` label, so they are a typed unsupported entry
+ * rather than a guessed mapping. No shipped `MultiplayerRace` row gives this
+ * mode a time limit; 180 s is the shipped destruction round length, used as a
+ * labelled provisional period.
+ */
+export const POINTS_MODE = Object.freeze({
+  schema: 'e1-drive.points-mode/1',
+  id: 'points',
+  label: 'Points',
+  timeLimitSeconds: 180,
+  timeLimitSource: 'provisional: no shipped MultiplayerRace row for points; 180 s is the shipped destruction round length',
+  minParticipants: 2,
+  scoring: Object.freeze({
+    Shunt: 1, Shock: 1, Barge: 1, Bomb: 1,
+    Level2Shunt: 2, Level2Shock: 2, Level2Barge: 2, Level2Bomb: 2, DoubleBarge: 2,
+    Drifting: 1, Air: 1, ShuntOvertake: 1, NitrousOvertake: 1, ShockOvertake: 1,
+    SkillShotNitrous: 1, BatteringRam: 3
+  }),
+  unlabelledRows: Object.freeze({
+    count: 7,
+    status: 'unsupported',
+    reason: '7 of the 26 MultiplayerConfig.scoring rows carry no serialized ScoringEvent label; their event is not guessed'
+  }),
+  source: 'multiplayer.bin MultiplayerConfig.scoring (26 rows); the labelled 19 rows are applied'
+});
+
+/**
+ * Elimination. The period and the criterion are provisional: the retail source
+ * uses `LevelState.mTimeLimit` and `E_EliminationType`, and no shipped
+ * `MultiplayerRace` row serializes either for an event. The tracker eliminates
+ * the last-ranked participant every `periodSeconds` and the last one standing
+ * wins.
+ */
+export const ELIMINATION_MODE = Object.freeze({
+  schema: 'e1-drive.elimination-mode/1',
+  id: 'elimination',
+  label: 'Elimination',
+  periodSeconds: 30,
+  criterion: 'last-place',
+  minParticipants: 2,
+  provisional: true,
+  reason: 'the period and criterion are not serialized for an event (LevelState.mTimeLimit / E_EliminationType); 30 s and last-place are a labelled project choice',
+  source: 'RaceModeMultiplayerElimination.cpp; no shipped MultiplayerRace row'
+});
+
+/** Points scoreboard: one row per participant, scored from typed events. */
+export function createPointsScoreboard({ participants = [], timeLimitSeconds = POINTS_MODE.timeLimitSeconds } = {}) {
+  const rows = new Map();
+  for (const entry of participants) {
+    const id = typeof entry === 'string' ? entry : entry?.id;
+    if (typeof id === 'string' && id.length) rows.set(id, { id, score: 0, events: 0 });
+  }
+  let elapsedSeconds = 0;
+  const log = [];
+  const row = (id) => {
+    if (!rows.has(id)) rows.set(id, { id, score: 0, events: 0 });
+    return rows.get(id);
+  };
+  return {
+    schema: POINTS_MODE.schema,
+    mode: POINTS_MODE.id,
+    timeLimitSeconds,
+    tick(dtSeconds) {
+      const dt = Number.isFinite(dtSeconds) && dtSeconds > 0 ? dtSeconds : 0;
+      elapsedSeconds += dt;
+      return this.snapshot();
+    },
+    /** `{ event: 'Shunt' | 'Shock' | 'Barge' | 'Bomb', actorId }`. */
+    ingest(event) {
+      if (!event || typeof event !== 'object' || typeof event.actorId !== 'string') return this.snapshot();
+      const points = POINTS_MODE.scoring[event.event];
+      if (!Number.isFinite(points)) return this.snapshot();
+      const actor = row(event.actorId);
+      actor.score += points;
+      actor.events += 1;
+      log.push({ event: event.event, actorId: event.actorId, points });
+      return this.snapshot();
+    },
+    snapshot() {
+      const sorted = [...rows.values()]
+        .map((entry) => ({ ...entry }))
+        .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      return {
+        schema: POINTS_MODE.schema,
+        mode: POINTS_MODE.id,
+        timeLimitSeconds,
+        timeLeftSeconds: round3(Math.max(0, timeLimitSeconds - elapsedSeconds)),
+        elapsedSeconds: round3(elapsedSeconds),
+        finished: elapsedSeconds >= timeLimitSeconds,
+        rows: sorted,
+        events: log.slice(),
+        scoring: { ...POINTS_MODE.scoring },
+        unlabelledRows: { ...POINTS_MODE.unlabelledRows }
+      };
+    }
+  };
+}
+
+/**
+ * Elimination tracker. `progress` is the caller's ranking value (higher is
+ * better, e.g. the measured arc); every `periodSeconds` the lowest value is
+ * eliminated. The last participant standing wins.
+ */
+export function createEliminationTracker({ participants = [], periodSeconds = ELIMINATION_MODE.periodSeconds } = {}) {
+  const rows = new Map();
+  for (const entry of participants) {
+    const id = typeof entry === 'string' ? entry : entry?.id;
+    if (typeof id === 'string' && id.length) rows.set(id, { id, progress: 0, eliminated: false, order: null });
+  }
+  const order = [];
+  let elapsedSeconds = 0;
+  let nextAt = periodSeconds;
+  let winner = null;
+  return {
+    schema: ELIMINATION_MODE.schema,
+    mode: ELIMINATION_MODE.id,
+    periodSeconds,
+    setProgress(id, progress) {
+      const row = rows.get(id);
+      if (row && !row.eliminated && Number.isFinite(progress)) row.progress = progress;
+    },
+    tick(dtSeconds) {
+      const dt = Number.isFinite(dtSeconds) && dtSeconds > 0 ? dtSeconds : 0;
+      elapsedSeconds += dt;
+      while (elapsedSeconds >= nextAt) {
+        nextAt += periodSeconds;
+        const active = [...rows.values()].filter((row) => !row.eliminated);
+        if (active.length <= 1) break;
+        active.sort((a, b) => a.progress - b.progress || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        const victim = active[0];
+        victim.eliminated = true;
+        victim.order = order.length + 1;
+        order.push(victim.id);
+      }
+      const active = [...rows.values()].filter((row) => !row.eliminated);
+      if (active.length === 1) winner = active[0].id;
+      return this.snapshot();
+    },
+    snapshot() {
+      const list = [...rows.values()].map((row) => ({ ...row }));
+      const active = list.filter((row) => !row.eliminated);
+      return {
+        schema: ELIMINATION_MODE.schema,
+        mode: ELIMINATION_MODE.id,
+        periodSeconds,
+        elapsedSeconds: round3(elapsedSeconds),
+        nextEliminationInSeconds: round3(Math.max(0, nextAt - elapsedSeconds)),
+        activeCount: active.length,
+        finished: winner !== null,
+        winner,
+        order: order.slice(),
+        rows: list,
+        provisional: ELIMINATION_MODE.provisional,
+        reason: ELIMINATION_MODE.reason
+      };
+    }
+  };
+}
+
 const round3 = (value) => Math.round(value * 1e3) / 1e3;
 
 /**
@@ -158,5 +321,8 @@ export function raceModeFor(value) {
   if (value === 'sprint') return null;
   if (value === CHECKPOINT_MODE.id) return CHECKPOINT_MODE.id;
   if (value === DESTRUCTION_MODE.id) return DESTRUCTION_MODE.id;
-  throw new Error('mode must be sprint, checkpoint or destruction (got ' + JSON.stringify(value) + ')');
+  if (value === POINTS_MODE.id) return POINTS_MODE.id;
+  if (value === ELIMINATION_MODE.id) return ELIMINATION_MODE.id;
+  throw new Error('mode must be sprint, checkpoint, destruction, points or elimination (got ' +
+    JSON.stringify(value) + ')');
 }

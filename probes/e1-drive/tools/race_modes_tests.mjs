@@ -20,7 +20,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  CHECKPOINT_MODE, DESTRUCTION_MODE, checkpointState, createDestructionScoreboard, raceModeFor
+  CHECKPOINT_MODE, DESTRUCTION_MODE, ELIMINATION_MODE, POINTS_MODE,
+  checkpointState, createDestructionScoreboard, createEliminationTracker, createPointsScoreboard,
+  raceModeFor
 } from '../web/race-modes.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -121,12 +123,71 @@ snapshot = board.snapshot();
 check('destruction: the round finishes at the time limit',
   snapshot.finished === true && snapshot.timeLeftSeconds === 0, snapshot);
 
+// -------------------------------------------------------------------- points
+check('points: the round length is the labelled provisional 180 s',
+  POINTS_MODE.timeLimitSeconds === 180 && /provisional/.test(POINTS_MODE.timeLimitSource),
+  POINTS_MODE.timeLimitSource);
+check('points: the labelled scoring rows are the committed values',
+  POINTS_MODE.scoring.Shunt === 1 && POINTS_MODE.scoring.Bomb === 1 &&
+    POINTS_MODE.scoring.BatteringRam === 3 && POINTS_MODE.scoring.Level2Shunt === 2,
+  POINTS_MODE.scoring);
+check('points: the 7 unlabelled rows are a typed unsupported entry',
+  POINTS_MODE.unlabelledRows.count === 7 && POINTS_MODE.unlabelledRows.status === 'unsupported',
+  POINTS_MODE.unlabelledRows);
+
+const points = createPointsScoreboard({ participants: ['host', 'guest'] });
+let pointsSnapshot = points.snapshot();
+check('points: both participants start at 0', pointsSnapshot.rows.length === 2 &&
+  pointsSnapshot.rows.every((row) => row.score === 0), pointsSnapshot.rows);
+points.ingest({ event: 'Shunt', actorId: 'host' });
+points.ingest({ event: 'Bomb', actorId: 'host' });
+points.ingest({ event: 'BatteringRam', actorId: 'guest' });
+pointsSnapshot = points.snapshot();
+check('points: Shunt + Bomb score 2', pointsSnapshot.rows.find((row) => row.id === 'host').score === 2,
+  pointsSnapshot.rows);
+check('points: BatteringRam scores the committed 3',
+  pointsSnapshot.rows.find((row) => row.id === 'guest').score === 3, pointsSnapshot.rows);
+check('points: the leader is the higher score', pointsSnapshot.rows[0].id === 'guest',
+  pointsSnapshot.rows);
+check('points: an unknown event scores nothing', (() => {
+  const before = points.snapshot().rows.reduce((sum, row) => sum + row.score, 0);
+  points.ingest({ event: 'NotARow', actorId: 'host' });
+  return points.snapshot().rows.reduce((sum, row) => sum + row.score, 0) === before;
+})());
+points.tick(200);
+check('points: the round finishes at the time limit', points.snapshot().finished === true);
+
+// --------------------------------------------------------------- elimination
+check('elimination: the period and criterion are provisional',
+  ELIMINATION_MODE.provisional === true && ELIMINATION_MODE.periodSeconds === 30 &&
+    ELIMINATION_MODE.criterion === 'last-place' && /not serialized/.test(ELIMINATION_MODE.reason),
+  ELIMINATION_MODE);
+
+const elimination = createEliminationTracker({ participants: ['host', 'guest', 'third'] });
+elimination.setProgress('host', 100);
+elimination.setProgress('guest', 50);
+elimination.setProgress('third', 10);
+let eliminationSnapshot = elimination.tick(0);
+check('elimination: three participants start active', eliminationSnapshot.activeCount === 3,
+  eliminationSnapshot.activeCount);
+eliminationSnapshot = elimination.tick(30);
+check('elimination: the last-ranked racer is eliminated after one period',
+  eliminationSnapshot.activeCount === 2 && eliminationSnapshot.order[0] === 'third',
+  eliminationSnapshot.order);
+eliminationSnapshot = elimination.tick(30);
+check('elimination: the next last-ranked racer is eliminated',
+  eliminationSnapshot.activeCount === 1 && eliminationSnapshot.winner === 'host',
+  eliminationSnapshot);
+check('elimination: the winner is the last one standing', eliminationSnapshot.finished === true);
+
 // ------------------------------------------------------------------- mode id
 check('mode: sprint maps to the default', raceModeFor('sprint') === null);
 check('mode: checkpoint is accepted', raceModeFor('checkpoint') === 'checkpoint');
 check('mode: destruction is accepted', raceModeFor('destruction') === 'destruction');
+check('mode: points is accepted', raceModeFor('points') === 'points');
+check('mode: elimination is accepted', raceModeFor('elimination') === 'elimination');
 let rejected = false;
-try { raceModeFor('elimination'); } catch { rejected = true; }
+try { raceModeFor('boss-battle'); } catch { rejected = true; }
 check('mode: an unknown mode is rejected', rejected);
 
 const report = {
