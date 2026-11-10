@@ -21,12 +21,28 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **AI** | 8 haritada 61 araç × 2 profil = **976 koşu**, 946 temiz, 30 bildirilmiş limit, 0 beklenmeyen; `verify-maps` **32/32**. Dumbo/Downtown MP 122/122 temiz. |
 | **E2E** | **25/25 senaryo** (minimap, `mp-powerups`, `solo-sausalito`, `solo-checkpoint`, `mp-destruction` ve menüden başlatan `menu-modes` 13/13 dahil). |
 | **Menü modları** | Mod listesi **5**: sprint, lap, free, checkpoint, multiplayer. Lobide maç modu **5**: **Race / Destruction / Points / Elimination / Boss Battle** (yalnız host). Destruction, Points ve Boss Battle power-up'ı zorlar; Boss Battle en az 1 host AI ister. Menü testleri **44/44**. |
-| **Yarış modları** | `?mode=checkpoint` (40 s banka), `destruction` (180 s, wreck 5), `points` (180 s, 19 etiketli puan satırı; 7 etiketsiz satır tipli `unsupported`), `elimination` (30 s periyot, son kalan kazanır; geçici), `boss-battle` (AmaxRaceModeBossBattle: 500 m/5 s minder, 150 m/0 s boss, wreckMindersToWin true, wreckBossToWin false). Boss Battle'ın iki erişim sınırı etiketli: AI power-up kullanmıyor (wreck yolu) ve 500 m > 310 m kurs (gap yolu). `race_modes_tests` **57/57**. |
+| **Yarış modları** | `?mode=checkpoint` (40 s banka), `destruction` (180 s, wreck 5), `points` (committed 720 s `max_race_timer_time`, 19 etiketli puan satırı + 20..1 pozisyon puanı; 7 boş `ScoringEvent` satırı tipli `unsupported`), `elimination` (30 s periyot, son kalan kazanır; geçici), `boss-battle` (AmaxRaceModeBossBattle: 500 m/5 s minder, 150 m/0 s boss, wreckMindersToWin true, wreckBossToWin false). Boss Battle'ın iki erişim sınırı etiketli: AI power-up kullanmıyor (wreck yolu) ve 500 m > 310 m kurs (gap yolu). `race_modes_tests` **57/57**. |
 | **Kapı** | **`verify_asset_probe --skip-build` 100/100 PASS** (`gate-full39.log`, exit 0). |
 | **LAN** | `serve.mjs --host 0.0.0.0` (ve `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm arayüzlere bağlıyor; ikinci cihaz VPS/TLS olmadan katılabiliyor. |
 | **İnternet yolu** | `deploy/Caddyfile` + `deploy/nginx.conf` (TLS, `/ws` → 8811, gerisi → 8801), `tools/tls-proxy.mjs` (yerel TLS proxy), `tools/deploy_local.ps1` (tek komut), `tools/verify_proxy.ps1` (kendi kendini doğrulama). **Kanıt:** iki sayfa `https://localhost:8443/` + `wss://localhost:8443/ws` üzerinden yarışı bitirdi, `mp-two` **49/49**. Yalnız **VPS + domain + DNS + sertifika** girdileri eksik. |
 | **Minimap** | `probes/e1-drive/web/minimap.js` — yalnız kurs noktalarından; 32/32 test. |
 | **Güçlendirme** | **9 tip**: 8 retail + **SuperShield** (etiketli proje uzantısı; tek oyunculu PickupType, `POWERUP_DEFERRED` boş). `mp-powerups` **48/48** (River 54 retail pickup, SuperShield aktivasyonu 50 puan kapasite + HUD, guest aynı set, 0 konsol). Model testleri **112/112**. |
+
+## Kullanıcıdan beklenen (tek engel)
+
+İnternet üzerinden oyun için **yalnız altyapı girdileri** eksik; kod ve
+doğrulama hazır (`docs/work/verification/internet-deploy.md`):
+
+| Girdi | Örnek / not |
+|---|---|
+| **VPS** | 1 vCPU / 1 GB, Ubuntu 22.04+ (veya eşdeğeri) |
+| **Domain** | örn. `play.example.com` |
+| **DNS** | `play.example.com A <vps-ip>` |
+| **Sertifika** | Caddy otomatik alır; nginx için `certbot --nginx -d play.example.com` |
+| **Firewall** | yalnız TCP 443; 8801/8811 loopback'te kalır |
+
+Bunlar gelince: `node probes/e1-drive/tools/serve.mjs --port 8801 --with-room
+--room-port 8811 --host 127.0.0.1` + `caddy run --config deploy/Caddyfile`.
 
 ## Son commit'ler
 
