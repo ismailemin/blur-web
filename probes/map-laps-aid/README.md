@@ -462,7 +462,31 @@ Current result:
 ```
 
 
-## Raster course to E1 layout (status: not yet drivable)
+## Raster ring centreline (`build_raster_centreline.py`)
+
+The boundary course above is not drivable: it hugs the edge of a plaza and turns
+through the full component width. `tools/build_raster_centreline.py` finds the
+**widest ring** inside the component instead: the largest Chebyshev distance `t`
+for which the passable component still encloses a hole, then the hole's boundary
+(the ring road around that island). The ring is smoothed with the widest window
+that keeps every station on a passable cell.
+
+| level | ring | min radius | clearance | draw coverage of the ring | verdict |
+| --- | ---: | ---: | ---: | ---: | --- |
+| sausalito | 222.286 m | 5.75 m | 18.5 m | **100%** | **integrated (14th map)** |
+| bowl | 252.767 m | 6.75 m | 15.0 m | 0% | blocked: no draw geometry under the ring |
+| brighton | 105.660 m | 5.48 m | 6.5 m | 0% | blocked: no draw geometry under the ring |
+| hackney | 348.835 m | 3.69 m | 4.5 m | n/a | blocked: 3.69 m < the 3.79 m full-lock turning circle |
+| russianhill | - | - | - | - | blocked: the 9,582-cell component encloses no hole at any threshold |
+
+The retail `.aid` line cannot be used for these levels either: the failing
+stations are cells with **no collision geometry at all** (`base=false`,
+`wall=false`, component 0), e.g. hackney `(-227.278106, -133.764788)`, brighton
+`(84.692995, -185.625677)`, sausalito `(709.746329, -1434.611018)`. The retail
+line crosses areas the level's `Level.levelphysics` does not cover, so a car
+would have no ground there. That is a data limit, not a course-building one.
+
+## Raster course to E1 layout (boundary course: not drivable)
 
 	ools/build_raster_layout.mjs converts a committed raster course into the
 e1-drive.sprint layout the page consumes (data/<map>-raster-layout.json).
