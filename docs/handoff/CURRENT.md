@@ -51,6 +51,11 @@ bağlı.
   `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm
   arayüzlere bağlıyor; makine IP'si yazdırılıyor. İkinci cihaz VPS/TLS
   olmadan aynı ağdan katılabiliyor (kanıt: `http://192.168.1.37:8899/` → 200).
+- **İnternet yolu (yerelde doğrulandı):** `deploy/Caddyfile`,
+  `deploy/nginx.conf`, `tools/tls-proxy.mjs`, `tools/deploy_local.ps1`,
+  `tools/verify_proxy.ps1`. İki sayfa `https://localhost:8443/` +
+  `wss://localhost:8443/ws` üzerinden yarışı bitirdi (`mp-two` 49/49).
+  Eksik yalnız kullanıcı girdileri: VPS, domain, DNS, sertifika, 443.
 - **Güçlendirme:** **9 tip** (Bomb/Shield/Repair/Nitrous/Shock/Blindfire/
   Shunt/Barge + **SuperShield**). SuperShield etiketli proje uzantısı
   (tek oyunculu PickupType; `POWERUP_DEFERRED` boş, `POWERUP_PROJECT_EXTENSIONS`

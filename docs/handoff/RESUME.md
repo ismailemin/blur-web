@@ -25,6 +25,7 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Modlar** | `?mode=checkpoint` (tek oyunculu zaman bankası: 40 s başlangıç, checkpoint başına +16 s, altın/gümüş/bronz 20/10/0 s) ve `?mode=destruction` (MP Motor Mash: 180 s, wreck 5, rakip ×2, intihar −1; hasar düşük/yüksek ayrımı tipli `unsupported`). |
 | **Kapı** | **`verify_asset_probe --skip-build` 99/99 PASS** (`gate-full23.log`, exit 0). |
 | **LAN** | `serve.mjs --host 0.0.0.0` (ve `run_e1_poc.ps1 -HostAddress 0.0.0.0`) hem sayfayı hem oda servisini tüm arayüzlere bağlıyor; ikinci cihaz VPS/TLS olmadan katılabiliyor. |
+| **İnternet yolu** | `deploy/Caddyfile` + `deploy/nginx.conf` (TLS, `/ws` → 8811, gerisi → 8801), `tools/tls-proxy.mjs` (yerel TLS proxy), `tools/deploy_local.ps1` (tek komut), `tools/verify_proxy.ps1` (kendi kendini doğrulama). **Kanıt:** iki sayfa `https://localhost:8443/` + `wss://localhost:8443/ws` üzerinden yarışı bitirdi, `mp-two` **49/49**. Yalnız **VPS + domain + DNS + sertifika** girdileri eksik. |
 | **Minimap** | `probes/e1-drive/web/minimap.js` — yalnız kurs noktalarından; 32/32 test. |
 | **Güçlendirme** | **9 tip**: 8 retail + **SuperShield** (etiketli proje uzantısı; tek oyunculu PickupType, `POWERUP_DEFERRED` boş). `mp-powerups` **48/48** (River 54 retail pickup, SuperShield aktivasyonu 50 puan kapasite + HUD, guest aynı set, 0 konsol). Model testleri **112/112**. |
 
@@ -95,8 +96,13 @@ node probes/e2e/run.mjs --scenarios solo-dumbo,solo-downtown-mp --base http://12
 5. **Retail pickup fiziksel yerleşimi.** `probes/powerups-aid`: Amboy 2/82,
    Gracia 2/59, River 0/54 (retail hat ölçülen parkurdan uzak). Kalanlar
    `off-course`; fiziksel iddia yok.
-6. **İnternet deploy.** Deploy paketi hazır; kullanıcıdan VPS/domain/TLS
-   bekliyor. Retail 1:1 parite için kullanıcıdan referans kareleri.
+6. **İnternet deploy — yalnız girdiler eksik.** Yol yerelde doğrulandı
+   (`docs/work/verification/internet-deploy.md`). Kullanıcıdan gerekenler:
+   **host** (VPS, 1 vCPU/1 GB yeter), **domain** (`play.example.com`),
+   **DNS A/AAAA kaydı**, **sertifika** (Caddy otomatik / nginx+certbot),
+   **443 firewall**. Bunlar gelince iki komut: `serve.mjs --host 127.0.0.1`
+   ve `caddy run --config deploy/Caddyfile`. Retail 1:1 parite için
+   kullanıcıdan referans kareleri.
 
 ## Bu oturumda düzeltilen gerçek hatalar (tekrar etmemek için)
 
