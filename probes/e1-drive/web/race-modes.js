@@ -57,9 +57,16 @@ export const POINTS_MODE = Object.freeze({
   schema: 'e1-drive.points-mode/1',
   id: 'points',
   label: 'Points',
-  timeLimitSeconds: 180,
-  timeLimitSource: 'provisional: no shipped MultiplayerRace row for points; 180 s is the shipped destruction round length',
+  // `MultiplayerConfig.customRaceTimeout.max_race_timer_time = 720 s` is the
+  // committed maximum race timer. Points has no shipped per-mode
+  // `MultiplayerRace` row, so this committed cap is used instead of borrowing
+  // the destruction round.
+  timeLimitSeconds: 720,
+  timeLimitSource: 'MultiplayerConfig.customRaceTimeout.max_race_timer_time = 720 s (committed maximum race timer; points has no shipped per-mode row)',
   minParticipants: 2,
+  // Committed finishing-position points: 20 down to 1 for P1..P20.
+  positionPoints: Object.freeze([20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]),
+  positionPointsSource: 'MultiplayerConfig.racePositionPoints (20..1, 20 entries)',
   scoring: Object.freeze({
     Shunt: 1, Shock: 1, Barge: 1, Bomb: 1,
     Level2Shunt: 2, Level2Shock: 2, Level2Barge: 2, Level2Bomb: 2, DoubleBarge: 2,
@@ -69,7 +76,7 @@ export const POINTS_MODE = Object.freeze({
   unlabelledRows: Object.freeze({
     count: 7,
     status: 'unsupported',
-    reason: '7 of the 26 MultiplayerConfig.scoring rows carry no serialized ScoringEvent label; their event is not guessed'
+    reason: '7 of the 26 MultiplayerConfig.scoring rows decode with an empty ScoringEvent object (no label and no labelIndex at all); their event is not guessed'
   }),
   source: 'multiplayer.bin MultiplayerConfig.scoring (26 rows); the labelled 19 rows are applied'
 });
@@ -89,7 +96,7 @@ export const ELIMINATION_MODE = Object.freeze({
   criterion: 'last-place',
   minParticipants: 2,
   provisional: true,
-  reason: 'the period and criterion are not serialized for an event (LevelState.mTimeLimit / E_EliminationType); 30 s and last-place are a labelled project choice',
+  reason: 'the period and criterion are not serialized: all 439 MultiplayerRace rows are racing/hardcore/destruction (no elimination row), the period multipliers 2.0/1.0/1/1 are RaceModeMultiplayerElimination.cpp:36-39 source defaults, and E_EliminationType is a runtime-only custom-race setting; 30 s and last-place are a labelled project choice',
   source: 'RaceModeMultiplayerElimination.cpp; no shipped MultiplayerRace row'
 });
 

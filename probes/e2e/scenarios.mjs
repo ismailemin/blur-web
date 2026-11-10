@@ -1478,7 +1478,7 @@ export async function mpPoints(ctx) {
 
   const hostMode = await waitMp(ctx, room.host, (probe) =>
     probe.mp.phase === 'running' && probe.raceMode?.mode === 'points' &&
-    probe.raceMode.timeLeftSeconds < 180,
+    probe.raceMode.timeLeftSeconds < 720,
   { timeoutMs: 90000, label: 'host points mode' });
   const guestMode = await waitMp(ctx, room.guest, (probe) =>
     probe.mp.phase === 'running' && probe.raceMode?.mode === 'points',
@@ -1488,8 +1488,8 @@ export async function mpPoints(ctx) {
     hostMode.raceMode.mode);
   ctx.A.check('mp-points: the guest runs the points mode', guestMode.raceMode.mode === 'points',
     guestMode.raceMode.mode);
-  ctx.A.check('mp-points: the round timer is the labelled provisional 180 s',
-    hostMode.raceMode.timeLimitSeconds === 180 && hostMode.raceMode.timeLeftSeconds < 180,
+  ctx.A.check('mp-points: the round timer is the committed 720 s maximum race timer',
+    hostMode.raceMode.timeLimitSeconds === 720 && hostMode.raceMode.timeLeftSeconds < 720,
     hostMode.raceMode.timeLeftSeconds);
   ctx.A.check('mp-points: the labelled scoring table is the committed one',
     hostMode.raceMode.scoring.Shunt === 1 && hostMode.raceMode.scoring.BatteringRam === 3 &&

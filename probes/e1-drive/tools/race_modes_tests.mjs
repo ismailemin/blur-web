@@ -124,16 +124,20 @@ check('destruction: the round finishes at the time limit',
   snapshot.finished === true && snapshot.timeLeftSeconds === 0, snapshot);
 
 // -------------------------------------------------------------------- points
-check('points: the round length is the labelled provisional 180 s',
-  POINTS_MODE.timeLimitSeconds === 180 && /provisional/.test(POINTS_MODE.timeLimitSource),
+check('points: the round length is the committed 720 s maximum race timer',
+  POINTS_MODE.timeLimitSeconds === 720 && /max_race_timer_time/.test(POINTS_MODE.timeLimitSource),
   POINTS_MODE.timeLimitSource);
 check('points: the labelled scoring rows are the committed values',
   POINTS_MODE.scoring.Shunt === 1 && POINTS_MODE.scoring.Bomb === 1 &&
     POINTS_MODE.scoring.BatteringRam === 3 && POINTS_MODE.scoring.Level2Shunt === 2,
   POINTS_MODE.scoring);
-check('points: the 7 unlabelled rows are a typed unsupported entry',
-  POINTS_MODE.unlabelledRows.count === 7 && POINTS_MODE.unlabelledRows.status === 'unsupported',
+check('points: the 7 empty ScoringEvent rows are a typed unsupported entry',
+  POINTS_MODE.unlabelledRows.count === 7 && POINTS_MODE.unlabelledRows.status === 'unsupported' &&
+    /empty ScoringEvent/.test(POINTS_MODE.unlabelledRows.reason),
   POINTS_MODE.unlabelledRows);
+check('points: the committed position points are 20..1',
+  POINTS_MODE.positionPoints.length === 20 && POINTS_MODE.positionPoints[0] === 20 &&
+    POINTS_MODE.positionPoints[19] === 1, POINTS_MODE.positionPoints);
 
 const points = createPointsScoreboard({ participants: ['host', 'guest'] });
 let pointsSnapshot = points.snapshot();
@@ -154,7 +158,7 @@ check('points: an unknown event scores nothing', (() => {
   points.ingest({ event: 'NotARow', actorId: 'host' });
   return points.snapshot().rows.reduce((sum, row) => sum + row.score, 0) === before;
 })());
-points.tick(200);
+points.tick(800);
 check('points: the round finishes at the time limit', points.snapshot().finished === true);
 
 // --------------------------------------------------------------- elimination
