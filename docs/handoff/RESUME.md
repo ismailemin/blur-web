@@ -61,7 +61,14 @@ node probes/e2e/run.mjs --scenarios solo-dumbo,solo-downtown-mp --base http://12
 ## Sıradaki işler (öncelik sırası)
 
 1. **Kapıyı doğrula** (`gate-full24.log`).
-2. **Kalan 5 seviye — tipli veri sınırları.** Retail `.aid` hattı
+2. **Kalan 5 seviye — kapanmış tipli veri sınırı.** P48 geçiş kuralı
+   (`min(0.05, 0.05*0.5) = 0.025 m`) retail hattın 0,077–0,176 m adımlarını
+   reddediyor; kuralı 0,20 m'ye genişletmek **tüm ızgarayı** geçiriyor
+   (2.747.539 hücre = %100), yani yol/arazi ayrımını yok ediyor. Son deneme:
+   hackney retail hattı bant kontrolü olmadan layout'a çevrildi ve motor
+   koşturuldu — 12.668 tick (211 s), **0 checkpoint**, `outside-corridor`.
+   Ayrıntı: `docs/work/verification/raster-passability-limit.md`.
+3. **Kalan 5 seviye — eski not (üstteki madde geçerli).** Retail `.aid` hattı
    collision geometrisi olmayan hücrelerden geçiyor (`base=false`, `wall=false`,
    bileşen 0): hackney `(-227.278106, -133.764788)`, brighton
    `(84.692995, -185.625677)`, sausalito `(709.746329, -1434.611018)`. Bu

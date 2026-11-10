@@ -28,11 +28,12 @@ bağlı.
   (222,286 m collision-raster halkası, min yarıçap 5,75 m, 18,5 m açıklık,
   %100 çizim kapsaması). Hepsi 0 respawn ve 0 konsol hatası; her biri
   `verify_e1_map` ve kendi e2e senaryosu 12/12.
-- **Kalan 5 seviye — tipli veri sınırı:** retail `.aid` hattı collision
-  geometrisi olmayan hücrelerden geçiyor (`base=false`, `wall=false`).
-  En geniş halka yöntemiyle: bowl/brighton halkaları **%0 çizim** (görünmez),
-  hackney min yarıçap **3,69 m** < 3,79 m tam kilit, russianhill bileşeni
-  hiçbir eşikte delik içermiyor. Uydurulmuş parkur yok.
+- **Kalan 5 seviye — kapanmış tipli veri sınırı:** P48 geçiş kuralı
+  (`0.025 m`) retail hattın 0,077–0,176 m adımlarını reddediyor; kuralı
+  0,20 m'ye genişletmek **tüm ızgarayı** geçiriyor (2.747.539 hücre = %100),
+  yani yol/arazi ayrımı kalmıyor. Hackney retail hattı motorla denendi:
+  12.668 tick, **0 checkpoint**, `outside-corridor`. Kanıt:
+  `docs/work/verification/raster-passability-limit.md`.
 - **Kapı kuralı:** geniş collision parkurları için `course.gateRule:
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
