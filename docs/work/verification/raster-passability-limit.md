@@ -102,3 +102,42 @@ reverted (registry, `MAP_BUILDS`, `build_map_batch.mjs`).
 
 This is the final typed blocker for the map set: the five levels are not
 drivable from the committed collision data with the committed controller.
+
+## Update (12 November 2026): three of the five are open
+
+Hackney, Russian Hill and Brighton are now playable from their draw-covered
+component paths (see [`covered-path-band.md`](covered-path-band.md)). The two
+that remain are blocked on data, not on the controller:
+
+### `spa_barcelona_bowl_multiplayer` — invisible and not drivable
+
+The batch package has a 406.889 m collision path and 119 bindable draws
+(20,646 triangles), but **no draw triangle covers the driving surface**:
+
+| measurement | value |
+| --- | --- |
+| draw-covered passable cells | **0** (`drawCovered.available: false`) |
+| nearest draw vertex to the path start (49, 445) | **38.33 m** |
+| nearest draw vertex to the path end (22, 373) | **38.10 m** |
+| collision path, 0.25 m band-clear | **50.1 %** |
+| AI driver (`reference`, Corvette) | **DNF, 18 respawns**, lateral 7.06 m |
+
+So a course there would be driven on an invisible floor, and the collision ring
+is not band-clear anyway. Both reasons are independent; neither can be fixed by
+a different course derivation.
+
+### `showroom` — not a race map
+
+`map-pipeline` records blocker code `showroom-mode`; there is no sprint course
+to derive.
+
+### `defaultcar` — no body model
+
+`probes/vehicle-batch/spec/cars.json` records `body: null` with
+`bodyReason.code = no-body-model`: the expected `\models\vehicles\defaultcar.model`
+is missing, no `AmaxVehicle` identity resolves to record 8 / id 515172551, and
+the nearest pak model is the **78,602-byte placeholder**
+`\models\vehicles\default.model` (median real body 4,615,848 bytes) which is not
+referenced as a DefaultCar body. DefaultCar is the engine's physics fallback
+(`LevelState.cpp:407`), not a car body. Substituting the placeholder would be an
+invented car, so the roster stays at 61 drivable cars.

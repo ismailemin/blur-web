@@ -1,3 +1,9 @@
+## 12 Kasım 2026 — bowl ve defaultcar engelleri ölçüldü (17/19, 61/62)
+
+- **bowl iki bağımsız nedenle kapalı:** sürüş yüzeyi committed draw setinde yok (yola en yakın draw vertex **38,33 m**, `coveredPassableCells: 0`) → kurs görünmez olurdu; collision halkası %50,1 bant-temiz, AI **18 respawn ile DNF**.
+- **defaultcar:** `body: null`, `no-body-model`; en yakın pak modeli 78.602 baytlık yer tutucu (gerçek gövde medyanı 4.615.848 bayt) ve DefaultCar gövdesi olarak referanslı değil. Yer tutucu uydurma olur; kadro 61/62.
+- **Sonuç:** kalan iki engel de yeni veri gerektiriyor (kod değil). Ayrıntı: `docs/work/verification/raster-passability-limit.md` §Update.
+
 ## 11 Kasım 2026 — russianhill + brighton açıldı (17/19)
 
 - **Haritalar 15 → 17:** russianhill (draw-covered bileşen yolu, **180,253 m**; spawn bileşenin ilk istasyonu, committed spawn 175 m uzakta) ve brighton (**ikinci** bileşen, **191,975 m**; arc 195-210'daki 3 m çıkıntıdan önce kesildi). `solo-russianhill` 12/12 (12,9 s), `solo-brighton` 12/12 (18,5 s), `verify_e1_map` 22/22.

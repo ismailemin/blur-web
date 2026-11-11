@@ -54,10 +54,18 @@ node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
   hattın 0,077–0,176 m adımlarını reddediyor; kuralı 0,20 m'ye genişletmek
   **tüm ızgarayı** geçiriyor (2.747.539 hücre = %100), yani yol/arazi ayrımı
   kalmıyor. Hackney, russianhill ve brighton draw-covered bileşen yoluyla
-  **açıldı**. Kalanlar: **bowl** (draw-covered yol yok, %0 çizim kapsaması) ve
-  **showroom** (yarış haritası değil). Kanıt:
+  **açıldı**. **bowl** iki bağımsız nedenle kapalı: (a) sürüş yüzeyi committed
+  draw setinde yok (yola en yakın draw vertex **38,33 m**, %0 çizim kapsaması) —
+  kurs görünmez olurdu; (b) collision halkası %50,1 bant-temiz, AI **18 respawn
+  ile DNF**. **showroom** yarış haritası değil (`showroom-mode`). Kanıt:
   `docs/work/verification/raster-passability-limit.md` ve
   `docs/work/verification/covered-path-band.md`.
+- **`defaultcar` — gövde modeli yok:** `body: null`,
+  `bodyReason.code = no-body-model`; beklenen `\models\vehicles\defaultcar.model`
+  yok, record 8 / id 515172551 için `AmaxVehicle` kimliği çözülmüyor. En yakın
+  pak modeli **78.602 baytlık yer tutucu** `\models\vehicles\default.model`
+  (gerçek gövde medyanı 4.615.848 bayt) ve DefaultCar gövdesi olarak referanslı
+  değil. Yer tutucuyu koymak uydurma araba olur; kadro **61/62** kalıyor.
 - **Kapı kuralı:** geniş collision parkurları için `course.gateRule:
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
