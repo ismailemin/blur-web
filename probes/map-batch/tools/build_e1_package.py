@@ -377,6 +377,63 @@ MAP_BUILDS = {
             "no decoded lightmap set exists for this level: every draw uses the ambient term",
         ],
     ),
+    "russianhill": dict(
+        id="russianhill",
+        level="usa_sanfran_russianhill",
+        batch="_work/map-batch/usa_sanfran_russianhill",
+        out_dir="_work/e1-drive/russianhill",
+        layout="probes/map-laps-aid/data/russianhill-covered-path.json",
+        physics="game-data/Blur/levels/usa_sanfran_russianhill/Level.levelphysics",
+        mesh_id="russianhill.direct",
+        render_label="russianhill-direct-draws",
+        package_label="usa_sanfran_russianhill",
+        course_name="usa_sanfran_russianhill draw-covered path",
+        decal_status="blocked-effect-not-static-albedo",
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-runtime-albedo-parameter"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=2209,
+        instance_sections=7,
+        unsupported_sections=1,
+        map_limits=[
+            "direct LOD0 draws only; 1 unsupported section and 2,209 instance descriptions in 7 sections are not applied",
+            "72 effect draws and 212 diagnostic draws (209 alpha-rule, 3 runtime-albedo) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "the course is the draw-covered component path (180.253 m); the spawn is its first station, not the committed spawn (175 m away)",
+            "no decoded lightmap set exists for this level: every draw uses the ambient term",
+        ],
+    ),
+    "brighton": dict(
+        id="brighton",
+        level="uk_brighton",
+        batch="_work/map-batch/uk_brighton",
+        out_dir="_work/e1-drive/brighton",
+        layout="probes/map-laps-aid/data/brighton-covered-path.json",
+        physics="game-data/Blur/levels/uk_brighton/Level.levelphysics",
+        mesh_id="brighton.direct",
+        render_label="brighton-direct-draws",
+        package_label="uk_brighton",
+        course_name="uk_brighton draw-covered component 1 path",
+        decal_status="blocked-effect-not-static-albedo",
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-missing-texture-source",
+                             "blocked-no-static-albedo"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=5137,
+        instance_sections=27,
+        unsupported_sections=2,
+        map_limits=[
+            "direct LOD0 draws only; 2 unsupported sections and 5,137 instance descriptions in 27 sections are not applied",
+            "378 effect draws and 155 diagnostic draws (152 alpha-rule, 1 missing texture source, 2 no static albedo) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "the course is the draw-covered component 1 path (460.580 m); the largest component's diameter zig-zags in its first 109 m and the controller leaves the corridor there",
+            "no decoded lightmap set exists for this level: every draw uses the ambient term",
+        ],
+    ),
 }
 
 

@@ -71,11 +71,11 @@ test('the generated cars.json record shape is normalised without losing identity
 
 test('map registry binds every registered map and its real course support', () => {
   const state = makeState();
-  assert.equal(state.maps.length, 15);
+  assert.equal(state.maps.length, 17);
   assert.deepEqual(state.maps.map((map) => map.id),
     ['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
       'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp', 'sausalito',
-      'hackney']);
+      'hackney', 'brighton', 'russianhill']);
   const river = state.maps.find((map) => map.id === 'river');
   const amboy = state.maps.find((map) => map.id === 'amboy');
   const gracia = state.maps.find((map) => map.id === 'gracia');

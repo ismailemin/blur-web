@@ -15,8 +15,8 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Sprint** | Corvette **14,600 s / tick 966**, 0 respawn, 2/2 checkpoint; `solo-sprint` **39/39**; `race-rules` **67/67**. |
 | **Kapılar** | `a/b` çizgisi teğetten yeniden kuruluyor; bitiş measuredEnd - 10 m; River'da `gateRule: "arc-progression"`. |
 | **Doğrulama** | `verify_e1_map` 10/10; `ai-driver` 27/27 (eski layout satırları `staleLayout` ile atlanıyor). |
-| **Haritalar** | **15/19.** Hackney draw-covered bileşen yoluyla açıldı: 639,752 m (arc 660'taki ~4 m hairpin'den önce kesildi), 2.636 örnek, `solo-hackney` 12/12, scripted sprint 221,5 s. |
-| **Açık takip** | brighton (covered yol %78,5 bant-temiz, 0,0436 m adım; motor 27 respawn ile DNF), russianhill (spawn 175 m uzak), bowl (covered yol yok), showroom (yarış haritası değil). |
+| **Haritalar** | **17/19.** hackney (639,752 m, arc 660 hairpin'inden önce), russianhill (180,253 m, covered bileşenin ilk istasyonu) ve brighton (ikinci bileşen, 191,975 m, arc 195-210'daki 3 m çıkıntıdan önce) draw-covered yolundan açıldı. `solo-hackney` 12/12, `solo-russianhill` 12/12, `solo-brighton` 12/12. |
+| **Açık takip** | **bowl** (draw-covered yol yok, %0 çizim kapsaması) ve **showroom** (yarış haritası değil) — tipli veri sınırı. |
 
 ## 9 Kasım 2026 durumu (tarihsel)
 

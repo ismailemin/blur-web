@@ -2,9 +2,9 @@
 
 **Güncelleme:** 11 Kasım 2026
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
-tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 15 harita**;
-lightmap 14 haritada render'da (hackney'de decoded set yok, ambient);
-kurs minimap'i ve 9 tipli güçlendirme
+tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 17 harita**;
+lightmap 14 haritada render'da (hackney/russianhill/brighton'da decoded set yok,
+ambient); kurs minimap'i ve 9 tipli güçlendirme
 E2E'si bağlı. Varsayılan harita **Amboy** (tam şehir).
 **Son commit'ler:** `a420726` River hattı merkezlendi + düşme düzeltildi,
 `8f1179c` varsayılan harita Amboy, `321043d` ölçülen görsel sorunlar kaydı.
@@ -42,20 +42,20 @@ node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
   Başsız Edge: 0 konsol hatası; `capture-shell` 61/13.
 - **Araçlar:** sürüş diliminde **61 araç**. Yalnızca `defaultcar` desteklenmiyor
   (gövde modeli yok; `DefaultCar` fizik yedeği).
-- **Haritalar 15/19:** river, amboy, gracia, longbeach, observatory, downtown,
+- **Haritalar 17/19:** river, amboy, gracia, longbeach, observatory, downtown,
   mharuna, highrise, shutoko, oval, amboy-mp, dumbo, downtown-mp, **sausalito**
   (222,286 m collision-raster halkası, min yarıçap 5,75 m, 18,5 m açıklık,
-  %100 çizim kapsaması) ve **hackney** (draw-covered bileşen yolu, 639,75 m'de
-  kesilmiş; tam jeodezik arc 660'ta ~4 m hairpin içeriyor). Hepsi 0 respawn ve
-  0 konsol hatası; her biri `verify_e1_map` ve kendi e2e senaryosu 12/12
-  (longbeach 13/13).
-- **Kalan 4 seviye — tipli veri sınırı:** P48 geçiş kuralı (`0.025 m`) retail
+  %100 çizim kapsaması), **hackney** (draw-covered bileşen yolu, 639,75 m'de
+  kesilmiş; arc 660'ta ~4 m hairpin), **russianhill** (180,25 m; spawn covered
+  bileşenin ilk istasyonu) ve **brighton** (ikinci bileşen, 191,98 m'de
+  kesilmiş; arc 195-210'da 3 m çıkıntı). Hepsi 0 respawn ve 0 konsol hatası;
+  her biri `verify_e1_map` ve kendi e2e senaryosu 12/12 (longbeach 13/13).
+- **Kalan 2 seviye — tipli veri sınırı:** P48 geçiş kuralı (`0.025 m`) retail
   hattın 0,077–0,176 m adımlarını reddediyor; kuralı 0,20 m'ye genişletmek
   **tüm ızgarayı** geçiriyor (2.747.539 hücre = %100), yani yol/arazi ayrımı
-  kalmıyor. Hackney bu turda draw-covered bileşen yoluyla **açıldı** (640 m'de
-  kesildi). Kalanlar: brighton (covered yol %78,5 bant-temiz, 0,0436 m adım;
-  motor 27 respawn ile DNF), russianhill (spawn covered bileşenden 175 m uzak),
-  bowl (covered yol yok), showroom (yarış haritası değil). Kanıt:
+  kalmıyor. Hackney, russianhill ve brighton draw-covered bileşen yoluyla
+  **açıldı**. Kalanlar: **bowl** (draw-covered yol yok, %0 çizim kapsaması) ve
+  **showroom** (yarış haritası değil). Kanıt:
   `docs/work/verification/raster-passability-limit.md` ve
   `docs/work/verification/covered-path-band.md`.
 - **Kapı kuralı:** geniş collision parkurları için `course.gateRule:
@@ -144,11 +144,11 @@ boundaries diyor". Ölçülen nedenler ve durum:
    `gateRule: "arc-progression"` eklendi.
 
 **Doğrulama:** `solo-sprint` 39/39 (Corvette **14,600 s / tick 966**, 0
-respawn), `race-rules` 67/67, 11/11 `verify_e1_map` (hackney dahil), **tam e2e
-29/29 senaryo / 928/928 assertion** (`_work/logs/e2e-full-hackney.log`, exit 0)
-ve **`verify_asset_probe --skip-build` 101/101** (`gate-full57.log`, exit 0).
-MP çapaları yeni hatla yeniden ölçüldü (River host 14,617 s / guest 15,850 s;
-AI odası sırası değişti).
+respawn), `race-rules` 67/67, 13/13 `verify_e1_map` (hackney, russianhill,
+brighton dahil), **tam e2e 31/31 senaryo / 952/952 assertion**
+(`_work/logs/e2e-full-17maps.log`, exit 0) ve **`verify_asset_probe --skip-build`
+103/103** (`gate-full62.log`, exit 0). MP çapaları yeni hatla yeniden ölçüldü
+(River host 14,617 s / guest 15,850 s; AI odası sırası değişti).
 
 **Kalan iş:** `measure_ground_edge.py` çıktısı artık **yol üreticilerinin
 kendisinden** geliyor (`build_batch_paths.py`, `build_aid_paths.py`,

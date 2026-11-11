@@ -49,7 +49,8 @@ PLAYABLE = {"usa_la_river", "usa_amboy", "spa_barcelona_gracia", "usa_la_longbea
             "usa_la_multiplayer_highrise", "jpn_tokyo_shutoko",
             "spa_barcelona_oval", "usa_amboy_multiplayer",
             "usa_ny_dumbo", "usa_la_downtown_multiplayer",
-            "usa_sanfran_sausalito", "uk_london_hackney"}
+            "usa_sanfran_sausalito", "uk_london_hackney",
+            "usa_sanfran_russianhill", "uk_brighton"}
 
 
 def sha256(path: Path) -> str:
@@ -102,7 +103,8 @@ def main(argv=None):
     check("playable set is river/amboy/gracia",
           set(doc["summary"]["playableToday"]) == PLAYABLE,
           str(doc["summary"]["playableToday"]))
-    check("nextThree has three entries", len(doc["nextThree"]) == 3)
+    check("nextThree has up to three entries",
+          len(doc["nextThree"]) == min(3, len(rows) - len(PLAYABLE)))
     # The next three are the highest-ranked rows that are not playable today.
     blocked_ranked = [row["level"] for row in sorted(rows, key=lambda row: row["distanceRank"])
                       if row["level"] not in PLAYABLE]

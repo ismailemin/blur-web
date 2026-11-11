@@ -101,6 +101,22 @@ const MAPS = Object.freeze({
     level: 'uk_london_hackney',
     outDir: '_work/e1-drive/hackney',
     layout: 'probes/map-laps-aid/data/hackney-covered-path.json'
+  }),
+  // Russian Hill's committed spawn is 175 m from the draw-covered component;
+  // the course spawns at the component path's first station instead.
+  russianhill: Object.freeze({
+    id: 'russianhill',
+    level: 'usa_sanfran_russianhill',
+    outDir: '_work/e1-drive/russianhill',
+    layout: 'probes/map-laps-aid/data/russianhill-covered-path.json'
+  }),
+  // The largest brighton component's diameter zig-zags in its first 109 m; the
+  // second component is a 460 m road the controller drives cleanly.
+  brighton: Object.freeze({
+    id: 'brighton',
+    level: 'uk_brighton',
+    outDir: '_work/e1-drive/brighton',
+    layout: 'probes/map-laps-aid/data/brighton-covered-path.json'
   })
 });
 

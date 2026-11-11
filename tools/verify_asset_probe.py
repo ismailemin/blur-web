@@ -67,6 +67,8 @@ def main():
         ('oval-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','oval']),
         ('amboy-mp-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','amboy-mp']),
         ('hackney-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','hackney']),
+        ('russianhill-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','russianhill']),
+        ('brighton-map',['node','probes/e1-drive/tools/verify_e1_map.mjs','--map','brighton']),
         ('longbeach-path',['node','probes/map-laps/tools/verify_longbeach_path.mjs']),
         ('vehicle-pipeline',[sys.executable,'probes/vehicle-pipeline/tools/verify_vehicle_pipeline.py']),
         ('vehicle-c-aliases',[sys.executable,'probes/vehicle-pipeline/tools/verify_c_aliases.py']),

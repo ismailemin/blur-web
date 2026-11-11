@@ -1,5 +1,5 @@
 {
- "canonicalSha256": "e5b38facdb1e14096fad3dea52ac321e12ae29e10a1632860dc49c2192008057",
+ "canonicalSha256": "34362a9f11f6e2c93484d45a014a77a499b61eaf860faa80bb7e321b48821975",
  "generatedBy": "probes/map-pipeline/tools/build_map_decisions.py",
  "levels": [
   {
@@ -333,6 +333,53 @@
   },
   {
    "blocker": null,
+   "city": "SanFran Russian Hill",
+   "cityKey": "CRN_SANFRAN_RUSSIANHILL",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 1204,
+    "collisionTriangles": 32709,
+    "collisionVertices": 17649,
+    "drawTriangles": 255430,
+    "draws": 1488,
+    "instanceDescriptionsSkipped": 2209,
+    "sectionsProbed": 42,
+    "sectionsSupported": 41,
+    "sectionsUnsupported": 1,
+    "textureBlobs": 824,
+    "textureSources": 840
+   },
+   "distanceRank": 8,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 334440,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "russianhill",
+    "playableDistanceItems": [],
+    "registryMapId": "russianhill",
+    "reportGrade": "playable",
+    "reportMapId": "russianhill"
+   },
+   "kind": "race",
+   "level": "usa_sanfran_russianhill",
+   "paths": {
+    "collisionM": 275.22,
+    "drawCoveredM": 186.793939239,
+    "packageKind": "draw-covered-measured",
+    "packageM": 186.793939239,
+    "recoveredM": null,
+    "samples": 777
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
+  {
+   "blocker": null,
    "city": "LA River",
    "cityKey": "CRN_LA_RIVER",
    "citySource": "docs/work/analysis/localization.md#3.2",
@@ -349,7 +396,7 @@
     "textureBlobs": 300,
     "textureSources": 300
    },
-   "distanceRank": 8,
+   "distanceRank": 9,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 279165,
@@ -396,7 +443,7 @@
     "textureBlobs": 877,
     "textureSources": 878
    },
-   "distanceRank": 9,
+   "distanceRank": 10,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 181782,
@@ -443,7 +490,7 @@
     "textureBlobs": 218,
     "textureSources": 219
    },
-   "distanceRank": 10,
+   "distanceRank": 11,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 119326,
@@ -490,7 +537,7 @@
     "textureBlobs": 1023,
     "textureSources": 1031
    },
-   "distanceRank": 11,
+   "distanceRank": 12,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 312233,
@@ -521,6 +568,53 @@
   },
   {
    "blocker": null,
+   "city": "Brighton",
+   "cityKey": "CRN_BRIGHTON",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 1512,
+    "collisionTriangles": 86528,
+    "collisionVertices": 48727,
+    "drawTriangles": 441204,
+    "draws": 2045,
+    "instanceDescriptionsSkipped": 5137,
+    "sectionsProbed": 84,
+    "sectionsSupported": 82,
+    "sectionsUnsupported": 2,
+    "textureBlobs": 667,
+    "textureSources": 673
+   },
+   "distanceRank": 13,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 145578,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "brighton",
+    "playableDistanceItems": [],
+    "registryMapId": "brighton",
+    "reportGrade": "playable",
+    "reportMapId": "brighton"
+   },
+   "kind": "race",
+   "level": "uk_brighton",
+   "paths": {
+    "collisionM": 2007.868,
+    "drawCoveredM": 975.011326757,
+    "packageKind": "draw-covered-measured",
+    "packageM": 975.011326757,
+    "recoveredM": null,
+    "samples": 4051
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
+  {
+   "blocker": null,
    "city": "SanFran Sausalito",
    "cityKey": "CRN_SANFRAN_SAUSALITO",
    "citySource": "docs/work/analysis/localization.md#3.2",
@@ -537,7 +631,7 @@
     "textureBlobs": 209,
     "textureSources": 210
    },
-   "distanceRank": 12,
+   "distanceRank": 14,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 353860,
@@ -584,7 +678,7 @@
     "textureBlobs": 1086,
     "textureSources": 1100
    },
-   "distanceRank": 13,
+   "distanceRank": 15,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 58547,
@@ -631,7 +725,7 @@
     "textureBlobs": 37,
     "textureSources": 38
    },
-   "distanceRank": 14,
+   "distanceRank": 16,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 201895,
@@ -678,7 +772,7 @@
     "textureBlobs": 121,
     "textureSources": 123
    },
-   "distanceRank": 15,
+   "distanceRank": 17,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 234932,
@@ -706,190 +800,6 @@
    },
    "verdict": "playable",
    "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
-  },
-  {
-   "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 344974,
-      "geometryBlock": 242,
-      "id": "g242-n243",
-      "nodeBlock": 243,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/usa_sanfran_russianhill/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": null,
-     "playableDistanceItems": [
-      "slice-package",
-      "texture-bindings",
-      "render-package",
-      "layout",
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, hackney, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "SanFran Russian Hill",
-   "cityKey": "CRN_SANFRAN_RUSSIANHILL",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 1204,
-    "collisionTriangles": 32709,
-    "collisionVertices": 17649,
-    "drawTriangles": 255430,
-    "draws": 1488,
-    "instanceDescriptionsSkipped": 2209,
-    "sectionsProbed": 42,
-    "sectionsSupported": 41,
-    "sectionsUnsupported": 1,
-    "textureBlobs": 824,
-    "textureSources": 840
-   },
-   "distanceRank": 16,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 334440,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "race",
-   "level": "usa_sanfran_russianhill",
-   "paths": {
-    "collisionM": 275.22,
-    "drawCoveredM": 186.793939239,
-    "packageKind": "draw-covered-measured",
-    "packageM": 186.793939239,
-    "recoveredM": null,
-    "samples": 777
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
-  },
-  {
-   "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 11300,
-      "geometryBlock": 316,
-      "id": "g316-n317",
-      "nodeBlock": 317,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_brighton/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 13488,
-      "geometryBlock": 352,
-      "id": "g352-n353",
-      "nodeBlock": 353,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_brighton/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": null,
-     "playableDistanceItems": [
-      "slice-package",
-      "texture-bindings",
-      "render-package",
-      "layout",
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, hackney, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "Brighton",
-   "cityKey": "CRN_BRIGHTON",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 1512,
-    "collisionTriangles": 86528,
-    "collisionVertices": 48727,
-    "drawTriangles": 441204,
-    "draws": 2045,
-    "instanceDescriptionsSkipped": 5137,
-    "sectionsProbed": 84,
-    "sectionsSupported": 82,
-    "sectionsUnsupported": 2,
-    "textureBlobs": 667,
-    "textureSources": 673
-   },
-   "distanceRank": 17,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 145578,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "race",
-   "level": "uk_brighton",
-   "paths": {
-    "collisionM": 2007.868,
-    "drawCoveredM": 975.011326757,
-    "packageKind": "draw-covered-measured",
-    "packageM": 975.011326757,
-    "recoveredM": null,
-    "samples": 4051
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
   },
   {
    "blocker": {
@@ -1145,7 +1055,7 @@
    "sha256": "124f01c0013a4578e2229016b0d1f8d82bfd850bb3bcaa597573f1afbadd733b"
   },
   "batchSummary": {
-   "contentSha256": "b1a0dd76e790d74cd9163358b50c8b4d5af9a6a3bffb5a7f465e77666383a09c",
+   "contentSha256": "55e23333e3092bfe00174fe83e66d5aaa55129ec5ab97d01ab6518e3f325ad49",
    "path": "_work/map-batch/batch-summary.json",
    "pin": "content",
    "volatileFields": [
@@ -1162,9 +1072,9 @@
    ]
   },
   "blockedInventory": {
-   "bytes": 60102,
+   "bytes": 59727,
    "path": "_work/map-pipeline/blocked/inventory-19.json",
-   "sha256": "c624a7c8dfa53fa21b0ac08ea6e69cda8f824603db01c019f7dc0cded82236c4"
+   "sha256": "14dd40e8801e743d9d44e7f814179fa9db88d933fe5279cd031526dbe1b7616f"
   },
   "inventory": {
    "bytes": 159627,
@@ -1177,9 +1087,9 @@
    "sha256": "5eea94a1b538ed1d3f1634a6394a8d288412009715c1632daa3012e0382617d2"
   },
   "mapRegistry": {
-   "bytes": 46066,
+   "bytes": 52028,
    "path": "probes/e1-drive/web/map-registry.js",
-   "sha256": "411c63c3d4c230ac1d6e4c149e18b23e83b11401975bf0e20df1c615fb02c457"
+   "sha256": "1dbab2af00686bc8046bb7499978b7655969659f21525ac9d8ca96f4507bcb82"
   },
   "maps": {
    "bytes": 205652,
@@ -1189,14 +1099,12 @@
  },
  "summary": {
   "blocked": [
-   "usa_sanfran_russianhill",
-   "uk_brighton",
    "showroom",
    "spa_barcelona_bowl_multiplayer"
   ],
   "counts": {
-   "blocked": 4,
-   "playable": 15,
+   "blocked": 2,
+   "playable": 17,
    "unsupported": 0
   },
   "levelCount": 19,
@@ -1208,10 +1116,12 @@
    "usa_la_downtown",
    "usa_amboy",
    "jpn_mharuna",
+   "usa_sanfran_russianhill",
    "usa_la_river",
    "uk_london_hackney",
    "spa_barcelona_oval",
    "usa_ny_dumbo",
+   "uk_brighton",
    "usa_sanfran_sausalito",
    "jpn_tokyo_shutoko",
    "usa_amboy_multiplayer",

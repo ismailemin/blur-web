@@ -158,6 +158,24 @@
       "checkpoints": 2,
       "layoutHash": "sha256:e15c038439bb4ce9480da99d2ccc60dce2e94d8924273ae5820283fdc0b6141f",
       "docRef": "draw-covered component path truncated at 640 m (docs/work/verification/covered-path-band.md)"
+    },
+    "russianhill": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "russianhill",
+      "timeSeconds": 12.866667,
+      "timeToleranceSeconds": 1.0,
+      "checkpoints": 2,
+      "layoutHash": "sha256:7c6f0551e6cd9d365ae3af0aaecd8382c27b1fc0a3b582cb31e5bf2d64dad409",
+      "docRef": "draw-covered component path (docs/work/verification/covered-path-band.md)"
+    },
+    "brighton": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "brighton",
+      "timeSeconds": 18.466667,
+      "timeToleranceSeconds": 1.0,
+      "checkpoints": 2,
+      "layoutHash": "sha256:43a19bec3f26c54720690dd642034765fbb9894e9c2425210a54de175707fdcd",
+      "docRef": "draw-covered component 1 path truncated at 192 m before the 3 m ledge (docs/work/verification/covered-path-band.md)"
     }
   },
   "mp": {

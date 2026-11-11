@@ -1,3 +1,10 @@
+## 11 Kasım 2026 — russianhill + brighton açıldı (17/19)
+
+- **Haritalar 15 → 17:** russianhill (draw-covered bileşen yolu, **180,253 m**; spawn bileşenin ilk istasyonu, committed spawn 175 m uzakta) ve brighton (**ikinci** bileşen, **191,975 m**; arc 195-210'daki 3 m çıkıntıdan önce kesildi). `solo-russianhill` 12/12 (12,9 s), `solo-brighton` 12/12 (18,5 s), `verify_e1_map` 22/22.
+- **Brighton'ın ilk bileşeni reddedildi:** 460 m'lik yol arc 195-210'da 3 m'lik bir çıkıntıya giriyor; scripted denetleyici ~3 m geniş sürdüğü için respawn oluyor (27 respawn). İkinci bileşen temiz.
+- **Yeni araç:** `probes/map-laps-aid/tools/covered_component_path.py` (N. bileşenin jeodezik çapı) ve `build_covered_course.py --centre-edge` (yolu ölçülen zemin kenarına ortalar).
+- **Kapılar:** `verify_asset_probe --skip-build` **103/103** (russianhill + brighton adımları), `verify_blocked` 930/930, `verify_map_decisions` 1463/1463, shell 44/44, batch kararları **19 seviye / 17 oynanabilir / 2 blocked**.
+
 ## 11 Kasım 2026 — hackney açıldı (15/19), zemin kenarı üreticilerde
 
 - **Haritalar 14 → 15:** hackney, draw-covered bileşen jeodezik yoluyla açıldı. Tam yol arc 660'ta ~4 m hairpin içeriyor (committed denetleyici döndemiyor); kurs **639,752 m**'de kesildi. `solo-hackney` **12/12**, scripted sprint 221,5 s, 2/2 checkpoint. `verify_e1_map --map hackney` 22/22.

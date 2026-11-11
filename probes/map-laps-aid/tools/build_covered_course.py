@@ -76,10 +76,10 @@ def tangents(line):
     return out
 
 
-def build(map_id, truncate, out_path, smooth=6):
+def build(map_id, truncate, out_path, smooth=6, path_file=None, centre_edge=False):
     level, grid_rel = LEVELS[map_id]
-    covered = json.loads((ROOT / ("_work/map-pipeline/covered/%s-path.json" % level))
-                         .read_text(encoding="utf-8"))
+    source_path = path_file or ("_work/map-pipeline/covered/%s-path.json" % level)
+    covered = json.loads((ROOT / source_path).read_text(encoding="utf-8"))
     line = resample([(p["x"], p["z"]) for p in covered["samples"]], STEP)
     grid = np.load(ROOT / grid_rel)
     base, H, xs, zs = grid["base"], grid["height"], grid["xs"], grid["zs"]
@@ -127,6 +127,58 @@ def build(map_id, truncate, out_path, smooth=6):
         tx, tz = dirs[index]
         nx, nz = -tz, tx
         points.append((x + nx * offsets[index], z + nz * offsets[index]))
+
+    # Centre the line on the measured ground edge. The band detour only moves a
+    # station when the car does not fit; a station can carry the band while
+    # sitting 3 m from a ledge, and the scripted controller drives wide. The
+    # shift balances the distance to the void on both sides, clamped to +/-6 m
+    # and relaxed, then the band check is re-applied.
+    if centre_edge:
+        def void_distance(x, z, nx, nz, sign):
+            step = 0
+            while step * CELL < 24.0:
+                step += 1
+                offset = sign * step * CELL
+                i = int(round((x + nx * offset - xs[0]) / CELL))
+                j = int(round((z + nz * offset - zs[0]) / CELL))
+                inside = 0 <= j < H.shape[0] and 0 <= i < H.shape[1]
+                if not inside or not np.isfinite(H[j, i]):
+                    return offset
+            return None
+
+        edge_shift = []
+        for index, (x, z) in enumerate(points):
+            tx, tz = dirs[index]
+            nx, nz = -tz, tx
+            left = void_distance(x, z, nx, nz, 1.0)
+            right = void_distance(x, z, nx, nz, -1.0)
+            # +n is the left normal: a positive shift moves the line left.
+            # No void on the left means there is room there, so the line moves
+            # left; no void on the right moves it right.
+            # Target a 6 m clearance on the near side: the respawn band is
+            # `min(void) - 3`, so 6 m gives a 3 m band, wide enough for the
+            # scripted controller (which drives up to ~3 m off the line).
+            if left is None and right is None:
+                edge_shift.append(0.0)
+            elif left is None:
+                edge_shift.append(min(6.0, max(0.0, abs(right) - 6.0)))
+            elif right is None:
+                edge_shift.append(-min(6.0, max(0.0, abs(left) - 6.0)))
+            else:
+                edge_shift.append(max(-6.0, min(6.0, (abs(left) - abs(right)) / 2.0)))
+        for _ in range(200):
+            previous = edge_shift
+            edge_shift = previous[:]
+            for index in range(len(edge_shift)):
+                a = previous[max(0, index - 1)]
+                b = previous[min(len(edge_shift) - 1, index + 1)]
+                edge_shift[index] = 0.25 * a + 0.5 * previous[index] + 0.25 * b
+        for index, (x, z) in enumerate(points):
+            tx, tz = dirs[index]
+            nx, nz = -tz, tx
+            shifted = (x + nx * edge_shift[index], z + nz * edge_shift[index])
+            if band_passable(base, xs, zs, shifted[0], shifted[1], tx, tz):
+                points[index] = shifted
 
     # The covered path is a 1 m grid geodesic: its corners are sharper than a
     # driven racing line. Relax the polyline, but keep every smoothed point only
@@ -259,7 +311,7 @@ def build(map_id, truncate, out_path, smooth=6):
                 "path": "_work/map-batch/%s/collision.json" % level,
                 "contentHash": "sha256:" + _sha256(ROOT / ("_work/map-batch/%s/collision.json" % level)),
             },
-            "coveredPath": "_work/map-pipeline/covered/%s-path.json" % level,
+            "coveredPath": source_path,
             "raster": grid_rel,
             "spawnSource": "the covered path's first station (not the committed spawn)",
             "truncateArc": num(truncate),
@@ -344,10 +396,13 @@ def main():
     ap.add_argument("--truncate", type=float, default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--smooth", type=int, default=6)
+    ap.add_argument("--path", default=None, help="covered path document")
+    ap.add_argument("--centre-edge", action="store_true",
+                    help="centre the line on the measured ground edge")
     args = ap.parse_args()
     out = Path(args.out) if args.out else (
         ROOT / ("probes/map-laps-aid/data/%s-covered-path.json" % args.map))
-    build(args.map, args.truncate, out, args.smooth)
+    build(args.map, args.truncate, out, args.smooth, args.path, args.centre_edge)
 
 
 if __name__ == "__main__":

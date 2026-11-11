@@ -110,7 +110,9 @@ const SCENARIOS = {
   'solo-dumbo': { group: 'slow', timeout: 300000, run: soloMapScenario('dumbo') },
   'solo-downtown-mp': { group: 'slow', timeout: 300000, run: soloMapScenario('downtown-mp') },
   'solo-sausalito': { group: 'slow', timeout: 300000, run: soloMapScenario('sausalito') },
-  'solo-hackney': { group: 'slow', timeout: 420000, run: soloMapScenario('hackney') }
+  'solo-hackney': { group: 'slow', timeout: 420000, run: soloMapScenario('hackney') },
+  'solo-russianhill': { group: 'slow', timeout: 300000, run: soloMapScenario('russianhill') },
+  'solo-brighton': { group: 'slow', timeout: 300000, run: soloMapScenario('brighton') }
 };
 const DEFAULT_SCENARIOS = ['solo-sprint', 'solo-lap', 'solo-free', 'mp-two'];
 const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix', 'mp-eight'];
@@ -268,6 +270,8 @@ function loadAnchors() {
     'downtown-mp': { ...expected.solo['downtown-mp'] },
     sausalito: { ...expected.solo.sausalito },
     hackney: { ...expected.solo.hackney },
+    russianhill: { ...expected.solo.russianhill },
+    brighton: { ...expected.solo.brighton },
     mp: expected.mp,
     mpAi: expected.mpAi
   };

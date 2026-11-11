@@ -61,12 +61,17 @@ and `showroom` is not a race map.
 
 ## Result
 
-Hackney's covered path is the best source found so far (95.4 % band-clear). The
-engine check drives it for 654 m with 0 respawns and 2/2 checkpoints, then stops
-at a hairpin the committed controller cannot follow. **Truncating the course at
-640 m — before the hairpin — makes it playable**: the committed scripted sprint
-finishes in 221.5 s with 2/2 checkpoints, and hackney is now the fifteenth
-playable map (`?map=hackney`).
+Three of the five blocked levels are now playable from their draw-covered
+component paths:
+
+| level | course | scripted sprint | note |
+| --- | ---: | --- | --- |
+| `uk_london_hackney` | 639.752 m | 221.5 s, 2/2 checkpoints | truncated before a ~4 m hairpin at arc 660 |
+| `usa_sanfran_russianhill` | 180.253 m | 12.9 s, 2/2 checkpoints | spawns at the component's first station (the committed spawn is 175 m away) |
+| `uk_brighton` | 191.975 m | 18.5 s, 2/2 checkpoints | second component, truncated before a 3 m ledge at arc 195-210 |
+
+`spa_barcelona_bowl_multiplayer` has no covered path and `showroom` is not a race
+map, so the map set stands at **17/19**.
 
 ## Engine check of the covered path (the attempt)
 

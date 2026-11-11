@@ -16,7 +16,7 @@ export const MAP_DEFAULT = 'river';
 /** Map ids accepted by `?map=`. */
 export const MAP_IDS = Object.freeze(['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
   'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp',
-  'sausalito', 'hackney']);
+  'sausalito', 'hackney', 'russianhill', 'brighton']);
 
 export const MAPS = Object.freeze({
   river: Object.freeze({
@@ -907,6 +907,124 @@ export const MAPS = Object.freeze({
       packageBytes: 81776873,
       layoutBytes: 423794,
       physicsBytes: 4158979
+    })
+  }),
+  russianhill: Object.freeze({
+    id: 'russianhill',
+    label: 'Russian Hill',
+    level: 'usa_sanfran_russianhill',
+    kind: 'map-package',
+    // Russian Hill's committed spawn is 175 m from the draw-covered
+    // component; the course spawns at the component path's first station.
+    geometryUrl: '/_work/e1-drive/russianhill/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/usa_sanfran_russianhill/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/russianhill/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.russianhill',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:9d95af951f1c02b85f4d5a47b593166c6ec2e28f5b8e76e0ba6144f14268e3eb',
+      mapContentHash: 'sha256:b87d0e700f0762f4ba4ddfa44253e5cc379c3657e40b5ce2a3b38989dd90f1fc',
+      layoutFileSha256: 'sha256:dcc607e30b97c65c9579092df461128d4619709fa6556ce8956a23256d146360',
+      layoutContentHash: 'sha256:7c6f0551e6cd9d365ae3af0aaecd8382c27b1fc0a3b582cb31e5bf2d64dad409',
+      renderFileSha256: 'sha256:9197a3167836a11366567e029ac690edacd1bf0662561a4ebb00f4083caa8361',
+      renderContentHash: 'sha256:9197a3167836a11366567e029ac690edacd1bf0662561a4ebb00f4083caa8361',
+      sliceFileSha256: 'sha256:9f63f2f2eaf6d4019d1f0091536c6041f778f591acd694964748c4affaf746fd',
+      sliceContentHash: 'sha256:9f63f2f2eaf6d4019d1f0091536c6041f778f591acd694964748c4affaf746fd',
+      physicsFileSha256: 'sha256:35d414925567731f95dea1ef72598be41c2484c630ca3b83cb3b72d9d736504a',
+      physicsBytes: 1513282,
+      draws: 1204,
+      drawTriangles: 202664,
+      textures: 824,
+      textureBytes: 3123264,
+      vertices: 387506,
+      indices: 766290,
+      decalDraws: 72,
+      diagnosticDraws: 212,
+      blockedDraws: 284,
+      unsupportedSections: 1,
+      instanceDescriptions: 2209,
+      collisionTriangles: 32709,
+      pathLengthMetres: 180.253029,
+      checkpointArcs: Object.freeze([67.196332, 128.332901]),
+      sampleCount: 777,
+      renderLabel: 'russianhill-direct-draws',
+      courseId: 'russianhill'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:b87d0e700f0762f4ba4ddfa44253e5cc379c3657e40b5ce2a3b38989dd90f1fc',
+      layoutHash: 'sha256:7c6f0551e6cd9d365ae3af0aaecd8382c27b1fc0a3b582cb31e5bf2d64dad409',
+      physicsHash: 'sha256:35d414925567731f95dea1ef72598be41c2484c630ca3b83cb3b72d9d736504a',
+      packageFileSha256: 'sha256:9d95af951f1c02b85f4d5a47b593166c6ec2e28f5b8e76e0ba6144f14268e3eb',
+      layoutFileSha256: 'sha256:dcc607e30b97c65c9579092df461128d4619709fa6556ce8956a23256d146360',
+      physicsFileSha256: 'sha256:35d414925567731f95dea1ef72598be41c2484c630ca3b83cb3b72d9d736504a',
+      packageBytes: 42402553,
+      layoutBytes: 128000,
+      physicsBytes: 1513282
+    })
+  }),
+  brighton: Object.freeze({
+    id: 'brighton',
+    label: 'Brighton',
+    level: 'uk_brighton',
+    kind: 'map-package',
+    // The largest brighton component's diameter zig-zags in its first
+    // 109 m; the course is the second component's 460 m path.
+    geometryUrl: '/_work/e1-drive/brighton/map.json',
+    baseGeometryUrl: '/_work/e1-drive/base.geometry.json',
+    carIndexUrl: '/_work/e1-drive/car-bodies.index.json',
+    physicsUrl: '/map-data/uk_brighton/Level.levelphysics',
+    spawnUrl: null,
+    layoutUrl: '/_work/e1-drive/brighton/layout.json',
+    bestKey: 'e1-drive.sprint.best.v3.brighton',
+    courses: Object.freeze(['310']),
+    multiplayer: true,
+    propLayer: false,
+    ghost: false,
+    pins: Object.freeze({
+      mapFileSha256: 'sha256:80debf53a54dffc58f6f2dc2e10a48ed89f993b7d2de6b099e82051567d721fe',
+      mapContentHash: 'sha256:ff409a6d307b23b10c1e3563f50f97af10f7c8d0b97d58bf64d3b9ac59a81d65',
+      layoutFileSha256: 'sha256:9afb98009071bd05316fdef5ac94fc4809ce06929a9e26d7432734c15ea43ed8',
+      layoutContentHash: 'sha256:43a19bec3f26c54720690dd642034765fbb9894e9c2425210a54de175707fdcd',
+      renderFileSha256: 'sha256:ccac85044e4b2a6d67f8271ac13759248084e8fe9af947abcf00e1bc59b13687',
+      renderContentHash: 'sha256:ccac85044e4b2a6d67f8271ac13759248084e8fe9af947abcf00e1bc59b13687',
+      sliceFileSha256: 'sha256:c521b846e727e56eb1062098cc2f905ec1ec557a8c1cb13438295079679d2b61',
+      sliceContentHash: 'sha256:c521b846e727e56eb1062098cc2f905ec1ec557a8c1cb13438295079679d2b61',
+      physicsFileSha256: 'sha256:147c362a98c9db90f2272e6f7834911eac0e265949bff840f520e5b690846e89',
+      physicsBytes: 5595906,
+      draws: 1512,
+      drawTriangles: 323658,
+      textures: 667,
+      textureBytes: 4387200,
+      vertices: 592711,
+      indices: 1323612,
+      decalDraws: 378,
+      diagnosticDraws: 155,
+      blockedDraws: 533,
+      unsupportedSections: 2,
+      instanceDescriptions: 5137,
+      collisionTriangles: 86528,
+      pathLengthMetres: 191.975168,
+      checkpointArcs: Object.freeze([52.374543, 118.504956]),
+      sampleCount: 777,
+      renderLabel: 'brighton-direct-draws',
+      courseId: 'brighton'
+    }),
+    mpPins: Object.freeze({
+      packageHash: 'sha256:ff409a6d307b23b10c1e3563f50f97af10f7c8d0b97d58bf64d3b9ac59a81d65',
+      layoutHash: 'sha256:43a19bec3f26c54720690dd642034765fbb9894e9c2425210a54de175707fdcd',
+      physicsHash: 'sha256:147c362a98c9db90f2272e6f7834911eac0e265949bff840f520e5b690846e89',
+      packageFileSha256: 'sha256:80debf53a54dffc58f6f2dc2e10a48ed89f993b7d2de6b099e82051567d721fe',
+      layoutFileSha256: 'sha256:9afb98009071bd05316fdef5ac94fc4809ce06929a9e26d7432734c15ea43ed8',
+      physicsFileSha256: 'sha256:147c362a98c9db90f2272e6f7834911eac0e265949bff840f520e5b690846e89',
+      packageBytes: 66742780,
+      layoutBytes: 129796,
+      physicsBytes: 5595906
     })
   }),
 });

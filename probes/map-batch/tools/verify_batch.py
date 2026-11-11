@@ -1923,6 +1923,8 @@ def verify_batch(rep: Report, results: dict) -> None:
         "usa_la_downtown_multiplayer": "downtown-mp",
         "usa_sanfran_sausalito": "sausalito",
         "uk_london_hackney": "hackney",
+        "usa_sanfran_russianhill": "russianhill",
+        "uk_brighton": "brighton",
         },
         "registry/integrated",
         "parsed %d map records from %s" % (len(integrated),
