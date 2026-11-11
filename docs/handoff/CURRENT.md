@@ -142,10 +142,16 @@ respawn), `race-rules` 67/67, 10/10 `verify_e1_map`, **tam e2e 28/28 senaryo /
 MP çapaları yeni hatla yeniden ölçüldü (River host 14,617 s / guest 15,850 s;
 AI odası sırası değişti).
 
-**Kalan iş:** `measure_ground_edge.py` çıktısını `map_package_builder.mjs`
-içinden üretmek (şu an builder layout.json'u bayt bayt doğruluyor, elle eklenen
-alan reddediliyor) ve yalnız tek katmanlı rasterli haritalarda uygulamak.
-Shutoko/Oval/Highrise çok katlı: raster "zemin yok" hücresi başka bir kat.
+**Kalan iş:** `measure_ground_edge.py` çıktısı artık **yol üreticilerinin
+kendisinden** geliyor (`build_batch_paths.py`, `build_aid_paths.py`,
+`build_longbeach_path.py`, `recentre_layout.py`), yani paket yeniden üretilince
+koruma kaybolmuyor. 10 haritada etkin; Shutoko/Oval/Highrise çok katlı olduğu
+için `ground_edge=False` ile tipli olarak kapalı. Sıradaki: kapalı haritalar
+için **draw-covered yol** dersini denemek — ölçüm
+[`covered-path-band.md`](../work/verification/covered-path-band.md): hackney
+covered yolu 0.25 m'de **%95,4 bant-temiz** (max hücre adımı 0,020 m < 0,025 m
+sınırı), yani detour'lu bir kursla açılabilir; brighton %78,5 (0,0436 m adım),
+russianhill %65,5. Bu bir oynanabilirlik iddiası değil, ölçülmüş bir ipucu.
 
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)
 

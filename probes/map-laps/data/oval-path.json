@@ -47,7 +47,7 @@
   "textures": {
    "path": "_work/map-batch/spa_barcelona_oval/textures/index.json",
    "bytes": 269297,
-   "sha256": "sha256:32b1f34d88f439c287559100c71741e152ebdf6f4eb38f9d7713f891b8d6205b"
+   "sha256": "sha256:f93dc76eeb32d04889f8ab465d8b57f4805ee9c16b992c9c76df7cd31c42df54"
   },
   "spawnDocument": {
    "path": "_work/map-batch/spa_barcelona_oval/spawn.json",
@@ -21403,6 +21403,10 @@
     "covered": null
    }
   ],
+  "groundEdge": {
+   "enabled": false,
+   "reason": "the height raster is single-layer but this level has more than one deck; a cell with no up-facing surface is another level, not a fall edge (the guard confined the car and the solo scenario timed out)"
+  },
   "gateRule": "arc-progression"
  },
  "gates": [
@@ -21649,5 +21653,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:051109571da870b75bbaac5648c789a45060c129f6e33f9233b598a7e02060a3"
+ "hash": "sha256:b56bb79c48c0dcb3029c0c3a956e1d7890d816da67b2509d1c08c2160bba1785"
 }

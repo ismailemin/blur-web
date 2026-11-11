@@ -102,6 +102,7 @@ import longbeach_path_common as lb  # noqa: E402  (read-only reuse)
 from map_laps_common import (  # noqa: E402
     CELL, SURFACE_MIN_NY, STEP_LIMIT, GRADE_LIMIT, WALL_DILATE,
     CAR_LENGTH, CAR_WIDTH, SAFETY_MARGIN, HALF_LENGTH, HALF_WIDTH, NEED_WIDTH,
+    ground_edge_rows,
 )
 import build_batch_paths as batch  # noqa: E402  (read-only reuse of the gate rule)
 
@@ -1433,6 +1434,43 @@ def build_document(cfg, batch_pkg, grid_path, base, H, xs, zs, chosen, built):
         "samples": samples,
         "gateRule": "arc-progression",
     }
+
+    # Measured ground edge: where the P48 height raster has no drivable surface.
+    # The page respawns at min(declared band, this edge) + margin, so a human
+    # cannot reach the void. Maps whose raster has more than one deck opt out
+    # with `ground_edge=False` and keep the declared band.
+    if cfg.get("ground_edge", True):
+        edge_rows = [
+            {
+                "arc": num(row["arc"], 6),
+                "respawnHalfWidthMetres": num(row["respawnHalfWidthMetres"], 3),
+                "voidLeftMetres": num(row["voidLeftMetres"], 3),
+                "voidRightMetres": num(row["voidRightMetres"], 3),
+            }
+            for row in ground_edge_rows(samples, H, xs, zs, CELL)
+        ]
+        course["groundEdge"] = {
+            "rule": ("per-arc half-width from the nearest ground edge (P48 height "
+                     "raster, no surface = void), inset by 3 m and clamped to "
+                     "2..12 m; the page respawns at min(declared band, this edge)"),
+            "halfWidthMetres": num(min(row["respawnHalfWidthMetres"]
+                                       for row in edge_rows), 3),
+            "rows": edge_rows,
+            "source": {
+                "raster": cfg["grid"],
+                "scanHalfMetres": num(24.0),
+                "insetMetres": num(3.0),
+                "declaredBandMetres": num(CORRIDOR_HALF_WIDTH, 3),
+                "note": ("measured ground edge, not a declared lane; the scripted "
+                         "sprint keeps the declared band"),
+            },
+        }
+    else:
+        course["groundEdge"] = {
+            "enabled": False,
+            "reason": cfg.get("ground_edge_reason",
+                              "not emitted for this map"),
+        }
 
     doc = {
         "kind": "e1-drive.sprint",

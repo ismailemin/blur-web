@@ -47,7 +47,7 @@
   "textures": {
    "path": "_work/map-batch/jpn_tokyo_shutoko/textures/index.json",
    "bytes": 1336482,
-   "sha256": "sha256:d1e61c2906668655b62ec223aef7c0673ad5d2e70148581d076c6145f8c3fc43"
+   "sha256": "sha256:2e3342fd7bc9f8970e5d4c90b23bf1de8feddabd9d266fc5da110d89b001af2d"
   },
   "spawnDocument": {
    "path": "_work/map-batch/jpn_tokyo_shutoko/spawn.json",
@@ -8180,6 +8180,10 @@
     "covered": null
    }
   ],
+  "groundEdge": {
+   "enabled": false,
+   "reason": "the height raster is single-layer but this level has more than one deck; a cell with no up-facing surface is another level, not a fall edge (the guard confined the car and the solo scenario timed out)"
+  },
   "gateRule": "arc-progression"
  },
  "gates": [
@@ -8427,5 +8431,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:32429da2f0a105ff1aabd3dceea7d6598b44108b3dad0b670ab5b770a6736fe4"
+ "hash": "sha256:c842e62ee6ad915a9538e39ed5c77abe3381ee349c1c0649fcaac0487aba24b4"
 }

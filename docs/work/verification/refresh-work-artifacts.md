@@ -29,25 +29,27 @@ node probes/powerups-aid/tools/build_physical_placement.mjs
 # 2. Nineteen-level batch (pins the registry map set and the probe docs)
 & $py probes/map-batch/build_map.py --all
 
-# 3. Measured ground edge (`course.groundEdge`) — River only for now.
-#     The map-package builder owns `<map>/layout.json` and `--check` compares
-#     its bytes, so a hand-added field makes `verify_e1_map` fail. River's
-#     `_work/e1-drive/sprint.json` is produced by `build_sprint.mjs` and is not
-#     byte-checked the same way, so the re-centre tool writes the field there.
+# 2b. Measured ground edge (`course.groundEdge`) is now emitted by the path
+#     producers themselves, so it survives a rebuild:
+#       probes/map-laps/tools/build_batch_paths.py        (observatory, downtown,
+#                                                          mharuna, amboy-mp, ...)
+#       probes/map-laps-aid/tools/build_aid_paths.py      (dumbo, downtown-mp, ...)
+#       probes/map-laps/tools/build_longbeach_path.py     (longbeach)
+#       probes/e1-drive/tools/recentre_layout.py          (river, 310 m)
+#     Re-run those producers after any collision/raster change, then rebuild the
+#     packages with `build_map_batch.mjs --map <id>` and re-pin with
+#     `probes/e1-drive/tools/repin_map_layout.py <ids>`.
 #
-#     `probes/e1-drive/tools/measure_ground_edge.py` exists for the package
-#     maps, but it is NOT wired into `map_package_builder.mjs` yet. Applying it
-#     by hand was tried and reverted: the builder rejected the edited layout,
-#     and on multi-deck maps (Shutoko, Oval, Highrise) the single-layer height
-#     raster reports another deck as "no ground" and the guard confined the car
-#     (their solo scenarios timed out). Follow-up: emit the field from the
-#     builder, and only for maps whose raster is a single deck.
-#
-# 4. Map pipeline: blocked inventory pins map-registry.js bytes; the decision
+#     Shutoko, Oval and Highrise opt out (`ground_edge=False`): their height
+#     raster is single-layer but the level has more than one deck, so a cell
+#     with no up-facing surface is another level, not a fall edge. Applying the
+#     guard there confined the car and the solo scenarios timed out.
+
+# 3. Map pipeline: blocked inventory pins map-registry.js bytes; the decision
 #    table pins the blocked inventory AND the batch summary, so it runs last.
 & $py probes/map-pipeline/tools/blocked_inventory.py
 
-# 4b. Decision table (pins blocked inventory + batch summary + registry)
+# 3b. Decision table (pins blocked inventory + batch summary + registry)
 & $py probes/map-pipeline/tools/build_map_decisions.py
 
 # 4. Lighting and car materials

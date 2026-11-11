@@ -57,7 +57,7 @@
       "timeSeconds": 57.066667,
       "timeToleranceSeconds": 1.5,
       "checkpoints": 2,
-      "layoutHash": "sha256:539142093d6e1e8196eb6ca5ab5a962e0e3843158ac9c58dec040248a582ca69",
+      "layoutHash": "sha256:3a9b53a36edc47c36a733e7a7b0335962bc9acd74dc962667d0550f0af22881a",
       "docRef": "docs/work/analysis/longbeach-path.md (785.823230 m collision path)"
     },
     "observatory": {
@@ -66,7 +66,7 @@
       "timeSeconds": 34.2,
       "timeToleranceSeconds": 2.0,
       "checkpoints": 2,
-      "layoutHash": "sha256:30b3867cd9367a50b4209841e9fcfa4f33bed757695b15bc8b1e3b1df6c94b61",
+      "layoutHash": "sha256:f6c85bc4b2f6d01c13bcf1d3b881569b6afe7d2da8611e27b39b2bf3a5abcefe",
       "docRef": "docs/work/analysis/observatory-downtown-packages.md (536.621709 m collision path)"
     },
     "downtown": {
@@ -75,7 +75,7 @@
       "timeSeconds": 12.833333,
       "timeToleranceSeconds": 1.0,
       "checkpoints": 2,
-      "layoutHash": "sha256:fd1df25f4ae7cbd8a679c21cbbe34ce62d4ab9f9d90355104e1f4c3b790b69a5",
+      "layoutHash": "sha256:e35831bc8ced1ce1641bb3b42b95059a41988c688087ad1bbdbeb3a6b7e6fff9",
       "docRef": "docs/work/analysis/observatory-downtown-packages.md (153.860674 m collision path)"
     },
     "mharuna": {
@@ -84,7 +84,7 @@
       "timeSeconds": 18.833333,
       "timeToleranceSeconds": 1.5,
       "checkpoints": 2,
-      "layoutHash": "sha256:91b6db19d7e42247dc79fac770c6c367f54577fcd9c73597ca915b39d7107f07",
+      "layoutHash": "sha256:0e56fdb624d18dafc7df634c2e70fda77fbc568abfccabbb744e58779960f8a7",
       "docRef": "docs/work/analysis/mharuna-package.md (309.170196 m collision path, Y 1064)"
     },
     "highrise": {
@@ -93,7 +93,7 @@
       "timeSeconds": 3.45,
       "timeToleranceSeconds": 1.0,
       "checkpoints": 2,
-      "layoutHash": "sha256:bc0c69187d2c4048d1e8dc65bdfbe4dd822b7cbe49ce28dbb167cdc115746a5a",
+      "layoutHash": "sha256:012a6a3978f9ad9d4a0a9ee93bd3bf15a41217ddb395a489265e166a57f4322f",
       "docRef": "docs/work/analysis/remaining-maps.md (14.268660 m collision path)"
     },
     "shutoko": {
@@ -102,7 +102,7 @@
       "timeSeconds": 21.833333,
       "timeToleranceSeconds": 1.5,
       "checkpoints": 2,
-      "layoutHash": "sha256:32429da2f0a105ff1aabd3dceea7d6598b44108b3dad0b670ab5b770a6736fe4",
+      "layoutHash": "sha256:c842e62ee6ad915a9538e39ed5c77abe3381ee349c1c0649fcaac0487aba24b4",
       "docRef": "docs/work/analysis/remaining-maps.md (279.005135 m collision path)"
     },
     "oval": {
@@ -111,7 +111,7 @@
       "timeSeconds": 39.516667,
       "timeToleranceSeconds": 2.0,
       "checkpoints": 2,
-      "layoutHash": "sha256:051109571da870b75bbaac5648c789a45060c129f6e33f9233b598a7e02060a3",
+      "layoutHash": "sha256:b56bb79c48c0dcb3029c0c3a956e1d7890d816da67b2509d1c08c2160bba1785",
       "docRef": "docs/work/analysis/remaining-maps.md (753.021127 m collision path)"
     },
     "amboy-mp": {
@@ -120,7 +120,7 @@
       "timeSeconds": 13.533333,
       "timeToleranceSeconds": 1.5,
       "checkpoints": 2,
-      "layoutHash": "sha256:372a222388f1e5e60a11fdf66d0742f4dadde0daf4597b5f12adbd12b077fef5",
+      "layoutHash": "sha256:a9095c9c5d5b68f35aebcef237b2883a9aa8cb29c94886df75d7e3bff098b4da",
       "docRef": "docs/work/analysis/remaining-maps.md (122.293808 m collision path)"
     },
     "dumbo": {
@@ -129,7 +129,7 @@
       "timeSeconds": 16.75,
       "timeToleranceSeconds": 1.5,
       "checkpoints": 2,
-      "layoutHash": "sha256:526736bf09cb7b168a2cd12685859eb2386a215c904fe852f2dba403254f2bf3",
+      "layoutHash": "sha256:c3d7f6b173aea082b5dc57cf77a0dd16f03892d70a0aab98d7afff918fe5f12b",
       "docRef": "probes/map-laps-aid/data/dumbo-aid-path.json (361.999436 m retail AI racing line)"
     },
     "downtown-mp": {
@@ -138,7 +138,7 @@
       "timeSeconds": 7.95,
       "timeToleranceSeconds": 1.5,
       "checkpoints": 2,
-      "layoutHash": "sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779",
+      "layoutHash": "sha256:2e8296f2571b3c98da2195a350d80324d73b8a0a2b7fd30190107edf8b123ca0",
       "docRef": "probes/map-laps-aid/data/downtown-mp-aid-path.json (86.452776 m retail AI racing line with a bounded detour)"
     },
     "sausalito": {

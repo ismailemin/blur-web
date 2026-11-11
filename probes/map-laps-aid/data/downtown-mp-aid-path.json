@@ -5990,7 +5990,530 @@
     "covered": null
    }
   ],
-  "gateRule": "arc-progression"
+  "gateRule": "arc-progression",
+  "groundEdge": {
+   "rule": "per-arc half-width from the nearest ground edge (P48 height raster, no surface = void), inset by 3 m and clamped to 2..12 m; the page respawns at min(declared band, this edge)",
+   "halfWidthMetres": 7,
+   "rows": [
+    {
+     "arc": 0,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 1,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 2,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17
+    },
+    {
+     "arc": 3,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 3.999964,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17
+    },
+    {
+     "arc": 4.999964,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 5.999964,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 6.999964,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 7.99888,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 8.99888,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18.5,
+     "voidRightMetres": 17
+    },
+    {
+     "arc": 9.99888,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17
+    },
+    {
+     "arc": 10.99888,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18.5,
+     "voidRightMetres": 17
+    },
+    {
+     "arc": 11.998627,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17
+    },
+    {
+     "arc": 12.998627,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18.5,
+     "voidRightMetres": 17
+    },
+    {
+     "arc": 13.998627,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 14.998627,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 15.998502,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 16.998502,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17
+    },
+    {
+     "arc": 17.998502,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 18.998502,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 19.998498,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 20.998498,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 21.998498,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 22.998498,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 23.998466,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 24.998466,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 26.10202,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 27.10202,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 28.076993,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 29.076993,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 30.180546,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 31.180546,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 32.244406,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 18,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 33.244406,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 34.244406,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 35.244406,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 36.291549,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 37.291549,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 38.291549,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 39.291549,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 40.242904,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 41.242904,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 42.242904,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 43.242904,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 44.289242,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 45.289242,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 46.289242,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 47.289242,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 48.354485,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 49.354485,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 50.354485,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 51.354485,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 52.293498,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 53.293498,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 54.293498,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 55.397051,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 56.331081,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 57.331081,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 58.331081,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 59.331081,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 60.274023,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 61.274023,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 62.274023,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 63.274023,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 64.218505,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 65.218505,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 66.218505,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 67.218505,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 68.166751,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 69.166751,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 17.5
+    },
+    {
+     "arc": 70.166751,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 71.166751,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 72.124144,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 17.5,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 73.227698,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": 21,
+     "voidRightMetres": 21
+    },
+    {
+     "arc": 74.641911,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 76.056125,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 77.404767,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": 22.5
+    },
+    {
+     "arc": 78.818981,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": 20
+    },
+    {
+     "arc": 80.233194,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": 18
+    },
+    {
+     "arc": 81.647408,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": 16.5
+    },
+    {
+     "arc": 82.892116,
+     "respawnHalfWidthMetres": 11,
+     "voidLeftMetres": null,
+     "voidRightMetres": 14
+    },
+    {
+     "arc": 84.202776,
+     "respawnHalfWidthMetres": 7.5,
+     "voidLeftMetres": null,
+     "voidRightMetres": 10.5
+    },
+    {
+     "arc": 85.202776,
+     "respawnHalfWidthMetres": 7,
+     "voidLeftMetres": null,
+     "voidRightMetres": 10
+    },
+    {
+     "arc": 86.202776,
+     "respawnHalfWidthMetres": 7,
+     "voidLeftMetres": null,
+     "voidRightMetres": 10
+    },
+    {
+     "arc": 86.452776,
+     "respawnHalfWidthMetres": 7,
+     "voidLeftMetres": null,
+     "voidRightMetres": 10
+    }
+   ],
+   "source": {
+    "raster": "_work/map-laps/downtown-mp/grid.npz",
+    "scanHalfMetres": 24,
+    "insetMetres": 3,
+    "declaredBandMetres": 12,
+    "note": "measured ground edge, not a declared lane; the scripted sprint keeps the declared band"
+   }
+  }
  },
  "gates": [
   {
@@ -6238,5 +6761,5 @@
    "a driven or AI-simulated check of the detour line; the detour is a geometric lateral shift inside the declared respawn band, not a driven racing line"
   ]
  },
- "hash": "sha256:d0a109d8a48bf59d5d756a3488c912f2b8c68bf6336bf7271001a83179816779"
+ "hash": "sha256:2e8296f2571b3c98da2195a350d80324d73b8a0a2b7fd30190107edf8b123ca0"
 }

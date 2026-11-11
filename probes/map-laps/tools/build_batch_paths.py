@@ -58,7 +58,7 @@ sys.path.insert(0, str(ROOT / "probes/map-pipeline/tools"))
 from map_laps_common import (  # noqa: E402
     CELL, SURFACE_MIN_NY, STEP_LIMIT, GRADE_LIMIT, WALL_DILATE,
     CAR_LENGTH, CAR_WIDTH, SAFETY_MARGIN, HALF_LENGTH, HALF_WIDTH,
-    build_raster, erode, label_components,
+    build_raster, erode, label_components, ground_edge_rows,
 )
 import longbeach_path_common as lb  # noqa: E402  (read-only reuse)
 
@@ -125,6 +125,8 @@ LEVELS = {
         grid="_work/map-laps/highrise/grid.npz",
         course_name="usa_la_multiplayer_highrise collision-clear path",
         gate_rule="arc-progression",
+        ground_edge=False,
+        ground_edge_reason=("the height raster is single-layer but this level has more than one deck; a cell with no up-facing surface is another level, not a fall edge (the guard confined the car and the solo scenario timed out)"),
     ),
     "shutoko": dict(
         map_id="shutoko",
@@ -135,6 +137,8 @@ LEVELS = {
         grid="_work/map-laps/shutoko/grid.npz",
         course_name="jpn_tokyo_shutoko collision-clear path",
         gate_rule="arc-progression",
+        ground_edge=False,
+        ground_edge_reason=("the height raster is single-layer but this level has more than one deck; a cell with no up-facing surface is another level, not a fall edge (the guard confined the car and the solo scenario timed out)"),
     ),
     "brighton": dict(
         map_id="brighton",
@@ -178,6 +182,8 @@ LEVELS = {
         grid="_work/map-laps/oval/grid.npz",
         course_name="spa_barcelona_oval collision-clear path",
         gate_rule="arc-progression",
+        ground_edge=False,
+        ground_edge_reason=("the height raster is single-layer but this level has more than one deck; a cell with no up-facing surface is another level, not a fall edge (the guard confined the car and the solo scenario timed out)"),
     ),
     "amboy-mp": dict(
         map_id="amboy-mp",
@@ -1308,6 +1314,44 @@ def build_document(cfg, batch, grid_path, R, built, log=print):
         },
         "samples": samples,
     }
+    # Measured ground edge: where the P48 height raster has no drivable surface.
+    # The page respawns at min(declared band, this edge) + margin, so a human
+    # cannot reach the void. Maps whose raster has more than one deck (a "no
+    # ground" cell is another level, not a fall edge) opt out with
+    # `ground_edge=False` and keep the declared band.
+    if cfg.get("ground_edge", True):
+        edge_rows = [
+            {
+                "arc": num(row["arc"], 6),
+                "respawnHalfWidthMetres": num(row["respawnHalfWidthMetres"], 3),
+                "voidLeftMetres": num(row["voidLeftMetres"], 3),
+                "voidRightMetres": num(row["voidRightMetres"], 3),
+            }
+            for row in ground_edge_rows(samples, H, xs, zs, CELL)
+        ]
+        course["groundEdge"] = {
+            "rule": ("per-arc half-width from the nearest ground edge (P48 height "
+                     "raster, no surface = void), inset by 3 m and clamped to "
+                     "2..12 m; the page respawns at min(declared band, this edge)"),
+            "halfWidthMetres": num(min(row["respawnHalfWidthMetres"]
+                                       for row in edge_rows), 3),
+            "rows": edge_rows,
+            "source": {
+                "raster": cfg["grid"],
+                "scanHalfMetres": num(24.0),
+                "insetMetres": num(3.0),
+                "declaredBandMetres": num(CORRIDOR_HALF_WIDTH, 3),
+                "note": ("measured ground edge, not a declared lane; the scripted "
+                         "sprint keeps the declared band"),
+            },
+        }
+    else:
+        course["groundEdge"] = {
+            "enabled": False,
+            "reason": cfg.get("ground_edge_reason",
+                              "not emitted for this map"),
+        }
+
     # A wide collision course can let the driven line pass a gate's arc without
     # intersecting its line segment. Only the maps that need it declare the
     # documented arc-progression gate rule.

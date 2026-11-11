@@ -47,7 +47,7 @@
   "textures": {
    "path": "_work/map-batch/usa_la_multiplayer_highrise/textures/index.json",
    "bytes": 68429,
-   "sha256": "sha256:53c0d89fb4dc3cee0caa9630f484bf0b1d2b5fd88c5486c915e56f28162c4175"
+   "sha256": "sha256:67ad458f5cb01810c4b2f31354d12c82a590764083339f4e209aef22088b9d11"
   },
   "spawnDocument": {
    "path": "_work/map-batch/usa_la_multiplayer_highrise/spawn.json",
@@ -690,6 +690,10 @@
     "covered": null
    }
   ],
+  "groundEdge": {
+   "enabled": false,
+   "reason": "the height raster is single-layer but this level has more than one deck; a cell with no up-facing surface is another level, not a fall edge (the guard confined the car and the solo scenario timed out)"
+  },
   "gateRule": "arc-progression"
  },
  "gates": [
@@ -936,5 +940,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:bc0c69187d2c4048d1e8dc65bdfbe4dd822b7cbe49ce28dbb167cdc115746a5a"
+ "hash": "sha256:012a6a3978f9ad9d4a0a9ee93bd3bf15a41217ddb395a489265e166a57f4322f"
 }

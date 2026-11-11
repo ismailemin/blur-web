@@ -456,6 +456,92 @@ def flat_band_width(samples, base, xs, zs, cell, reach=20.0):
     return worst, worst_at
 
 
+# --------------------------------------------------------------------------
+# measured ground edge (respawn safety net)
+# --------------------------------------------------------------------------
+
+GROUND_EDGE_SCAN_HALF_METRES = 24.0
+GROUND_EDGE_INSET_METRES = 3.0
+GROUND_EDGE_MIN_METRES = 2.0
+GROUND_EDGE_MAX_METRES = 12.0
+
+
+def height_at(H, xs, zs, cell, x, z):
+    """Bilinear ground height at (x, z), or None where the raster has no surface."""
+    fx = (x - xs[0]) / cell
+    fz = (z - zs[0]) / cell
+    i = int(math.floor(fx))
+    j = int(math.floor(fz))
+    if not (0 <= j < H.shape[0] - 1 and 0 <= i < H.shape[1] - 1):
+        return None
+    tx = fx - i
+    tz = fz - j
+    total = 0.0
+    weight = 0.0
+    for value, w in ((H[j, i], (1 - tx) * (1 - tz)),
+                     (H[j, i + 1], tx * (1 - tz)),
+                     (H[j + 1, i], (1 - tx) * tz),
+                     (H[j + 1, i + 1], tx * tz)):
+        if np.isfinite(value):
+            total += float(value) * w
+            weight += w
+    if weight <= 0:
+        return None
+    return total / weight
+
+
+def ground_edge_rows(samples, H, xs, zs, cell=CELL, stride=4,
+                     scan_half=GROUND_EDGE_SCAN_HALF_METRES,
+                     inset=GROUND_EDGE_INSET_METRES,
+                     minimum=GROUND_EDGE_MIN_METRES,
+                     maximum=GROUND_EDGE_MAX_METRES):
+    """Per-arc distance to the nearest cell without a drivable surface.
+
+    `H` is the P48 height raster (NaN where no up-facing triangle covers the
+    cell). The declared respawn band is a rule; this measured edge is where the
+    ground actually ends, so the page can respawn at
+    `min(declared band, measured edge) + margin` and never reach the void.
+
+    Rows are emitted every `stride` samples (about one metre) because the band
+    is smooth; a 0.25 m row per sample would triple the layout for no gain.
+    """
+    rows = []
+    last = len(samples) - 1
+    for index, sample in enumerate(samples):
+        if index % stride and index != last:
+            continue
+        a = samples[max(0, index - 4)]
+        b = samples[min(last, index + 4)]
+        tx, tz = b["x"] - a["x"], b["z"] - a["z"]
+        length = math.hypot(tx, tz)
+        if length <= 0:
+            continue
+        nx, nz = -tz / length, tx / length
+        edges = []
+        for sign in (1.0, -1.0):
+            edge = None
+            step = 0
+            while step * cell < scan_half:
+                step += 1
+                offset = sign * step * cell
+                height = height_at(H, xs, zs, cell,
+                                   sample["x"] + nx * offset,
+                                   sample["z"] + nz * offset)
+                if height is None:
+                    edge = offset
+                    break
+            edges.append(edge)
+        sides = [abs(value) for value in edges if value is not None]
+        band = min(min(sides) - inset, maximum) if sides else maximum
+        rows.append({
+            "arc": sample["arc"],
+            "respawnHalfWidthMetres": max(minimum, band),
+            "voidLeftMetres": None if edges[0] is None else abs(edges[0]),
+            "voidRightMetres": None if edges[1] is None else abs(edges[1]),
+        })
+    return rows
+
+
 def path_component(path_doc, lab, xs, zs, cell):
     """Labels of every path sample plus the component holding the majority."""
     pts = [(p["x"], p["z"]) for p in path_doc["samples"]]

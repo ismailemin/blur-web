@@ -40,6 +40,7 @@ from longbeach_path_common import (  # noqa: E402
     CELL, HALF_WIDTH, HALF_LENGTH, CAR_LENGTH, CAR_WIDTH, SAFETY_MARGIN,
     load_json, file_sha256, canonical_hash, num, cell_of, build_path,
 )
+from map_laps_common import ground_edge_rows, CELL as _GE_CELL  # noqa: E402
 
 DEFAULT_OUT = ROOT / OUT_PATH
 
@@ -470,6 +471,31 @@ def main(argv=None):
                      "does not apply to this line"),
         },
         "samples": samples,
+    }
+    edge_rows = [
+        {
+            "arc": num(row["arc"], 6),
+            "respawnHalfWidthMetres": num(row["respawnHalfWidthMetres"], 3),
+            "voidLeftMetres": num(row["voidLeftMetres"], 3),
+            "voidRightMetres": num(row["voidRightMetres"], 3),
+        }
+        for row in ground_edge_rows(samples, H, xs, zs, _GE_CELL)
+    ]
+    course["groundEdge"] = {
+        "rule": ("per-arc half-width from the nearest ground edge (P48 height "
+                 "raster, no surface = void), inset by 3 m and clamped to "
+                 "2..12 m; the page respawns at min(declared band, this edge)"),
+        "halfWidthMetres": num(min(row["respawnHalfWidthMetres"]
+                                   for row in edge_rows), 3),
+        "rows": edge_rows,
+        "source": {
+            "raster": "_work/map-laps/longbeach/grid.npz",
+            "scanHalfMetres": num(24.0),
+            "insetMetres": num(3.0),
+            "declaredBandMetres": num(CORRIDOR_HALF_WIDTH, 3),
+            "note": ("measured ground edge, not a declared lane; the scripted "
+                     "sprint keeps the declared band"),
+        },
     }
 
     # ---------------------------------------------------------------- document

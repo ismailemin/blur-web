@@ -47,7 +47,7 @@
   "textures": {
    "path": "_work/map-batch/usa_amboy_multiplayer/textures/index.json",
    "bytes": 47987,
-   "sha256": "sha256:e0e97e60bece6b84576013a842c3308f0a19b3f1cf71aba565e3050bfee6da63"
+   "sha256": "sha256:974d2af40d1f97adbdee29bda769cff9400f9ff78753497d012d21b667bf0983"
   },
   "spawnDocument": {
    "path": "_work/map-batch/usa_amboy_multiplayer/spawn.json",
@@ -3741,7 +3741,770 @@
     "groundY": 1.6152,
     "covered": null
    }
-  ]
+  ],
+  "groundEdge": {
+   "rule": "per-arc half-width from the nearest ground edge (P48 height raster, no surface = void), inset by 3 m and clamped to 2..12 m; the page respawns at min(declared band, this edge)",
+   "halfWidthMetres": 12,
+   "rows": [
+    {
+     "arc": 0,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 0.903508,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 1.831139,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 2.830233,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 3.829026,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 4.827819,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 5.826612,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 6.825405,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 7.824198,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 8.82299,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 9.821783,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 10.820576,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 11.819369,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 12.818162,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 13.816955,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 14.815747,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 15.81454,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 16.813333,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 17.812126,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 18.810919,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 19.809712,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 20.808504,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 21.807297,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 22.80609,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 23.804883,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 24.803676,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 25.802469,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 26.801261,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 27.800054,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 28.798847,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 29.79764,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 30.796433,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 31.795226,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 32.794018,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 33.792811,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 34.791604,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 35.790397,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 36.78919,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 37.787983,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 38.786775,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 39.785568,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 40.784361,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 41.783154,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 42.770365,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 43.757575,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 44.744786,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 45.731997,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 46.719208,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 47.706419,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 48.69363,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 49.68084,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 50.668051,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 51.655262,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 52.642473,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 53.629684,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 54.616894,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 55.604105,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 56.591316,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 57.578527,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 58.565738,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 59.56254,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 60.56254,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 61.56254,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 62.552363,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 63.538793,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 64.525223,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 65.511653,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 66.498083,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 67.484512,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 68.470942,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 69.457372,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 70.443802,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 71.430232,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 72.373041,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 73.339338,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 74.329123,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 75.318908,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 76.308693,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 77.298478,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 78.288263,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 79.278048,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 80.267833,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 81.257618,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 82.247403,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 83.237188,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 84.226973,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 85.216758,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 86.206543,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 87.196328,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 88.186113,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 89.175898,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 90.165683,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 91.155468,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 92.145253,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 93.135038,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 94.124823,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 95.116338,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 96.113046,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 97.109753,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 98.106461,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 99.103168,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 100.099876,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 101.096583,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 102.093291,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 103.089998,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 104.086706,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 104.988094,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 105.889481,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 106.88037,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 107.871258,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 108.862146,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 109.853034,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 110.843922,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 111.834811,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 112.825699,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 113.816587,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 114.807475,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 115.798363,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 116.793808,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 117.793808,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 118.793808,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 119.793808,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 120.793808,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 121.793808,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    },
+    {
+     "arc": 122.293808,
+     "respawnHalfWidthMetres": 12,
+     "voidLeftMetres": null,
+     "voidRightMetres": null
+    }
+   ],
+   "source": {
+    "raster": "_work/map-laps/amboy-mp/grid.npz",
+    "scanHalfMetres": 24,
+    "insetMetres": 3,
+    "declaredBandMetres": 12,
+    "note": "measured ground edge, not a declared lane; the scripted sprint keeps the declared band"
+   }
+  }
  },
  "gates": [
   {
@@ -3989,5 +4752,5 @@
    "retail start-line / route record for the map"
   ]
  },
- "hash": "sha256:372a222388f1e5e60a11fdf66d0742f4dadde0daf4597b5f12adbd12b077fef5"
+ "hash": "sha256:a9095c9c5d5b68f35aebcef237b2883a9aa8cb29c94886df75d7e3bff098b4da"
 }
