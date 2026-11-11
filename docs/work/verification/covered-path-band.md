@@ -59,12 +59,37 @@ and `showroom` is not a race map.
   component; the covered path would have to become the spawn, not the committed
   pose.
 
-## Next step (not done)
+## Result
 
-Build a course document from the hackney covered path with the tiered lateral
-detour, wire it through `build_map_batch.mjs`, and run `verify_e1_map --map
-hackney` (engine sprint). If the scripted controller finishes with 0 respawns,
-hackney becomes the fifteenth playable map; otherwise the failure is recorded as
-the next typed blocker with the exact tick and reason.
+Hackney's covered path is the best source found so far (95.4 % band-clear), and
+the engine check below drives it for 654 m with 0 respawns and 2/2 checkpoints,
+but the path contains a hairpin the committed controller cannot follow. The
+measurement does **not** claim hackney is playable today.
 
-This measurement does **not** claim hackney is playable today.
+## Engine check of the covered path (the attempt)
+
+`_work/build_hackney_covered.py` resampled the hackney covered path to 0.25 m,
+detoured every station that did not carry the band to the nearest band-clear
+lateral offset inside ±12 m, relaxed the offset field, and wrote a sprint layout
+(780.355 m, 3,161 samples, 95.2 % band-clear, `course.groundEdge` min 5.50 m).
+The committed AI driver (`reference` profile, Corvette ZR1) was run on it with
+the same harness the map suite uses:
+
+| run | result | respawns | checkpoints | stop |
+| --- | --- | ---: | ---: | --- |
+| raw covered path | DNF | 1 (`outside-corridor`, lateral 7.02 m > 7 m) | 1 / 2 | arc 462 of 780 |
+| 6 smoothing passes, band-clamped | **DNF** | **0** | **2 / 2** | arc 654 of 770 |
+
+The smoothed line is driven cleanly for 654 m at up to 24.7 m/s with all four
+wheels in contact and no respawn, then the car stops. The line has a **hairpin**
+at arc ≈ 660: the samples go `(-192.55, 423.75) → (-192.45, 419.72) →
+(-195.46, 418.87) → (-197.10, 422.25)`, i.e. the path turns back on itself
+inside about 4 m. The committed controller cannot follow that radius and holds
+the car stationary (min speed 0.0009 m/s) for the rest of the 20,000-tick budget.
+
+So the covered path is a **better** source than the retail `.aid` line (which
+failed with a respawn and zero checkpoints), but it is still not a playable
+course: the geodesic contains a hairpin the controller cannot drive. Unblocking
+hackney needs either a course that avoids the hairpin (a different component
+path) or a controller that can take a 4 m radius — both are new work, not a
+re-run of an existing producer.
