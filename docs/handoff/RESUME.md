@@ -1,11 +1,23 @@
-# RESUME — 9 Kasım 2026, bilgisayar kapanmadan önceki durum
+# RESUME — 11 Kasım 2026, River hattı merkezlendi ve düşme düzeltildi
 
 Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 [`CURRENT.md`](CURRENT.md), sonra bu dosya okunmalı. Ayrıntılı oturum kaydı:
 [`docs/work/logs/2026-11-08-mp-eight.md`](../work/logs/2026-11-08-mp-eight.md)
-(§25–§32).
+(§25–§60).
 
-## Nerede kaldık (özet)
+## Bu turda (11 Kasım 2026)
+
+| Alan | Durum |
+|---|---|
+| **Varsayılan harita** | **Amboy** (`DEFAULT_MAP_ID`), River değil. Shell demosu: `defaultMapId: "amboy"`, 0 konsol hatası, 44/44 test. |
+| **River hattı** | Yeniden merkezlendi: **313,387 m**, 961/1245 örnek (max 5,23 m). Arc 150 aralığı **-8…+7 m** (eskiden -14…+2). |
+| **Düşme** | Yeni `course.groundEdge`: respawn `min(bant, ölçülen zemin kenarı)`. River'da en kötü pay **1,75 m**; `below-ground` respawn'ı yok. |
+| **Sprint** | Corvette **14,600 s / tick 966**, 0 respawn, 2/2 checkpoint; `solo-sprint` **39/39**; `race-rules` **67/67**. |
+| **Kapılar** | `a/b` çizgisi teğetten yeniden kuruluyor; bitiş measuredEnd - 10 m; River'da `gateRule: "arc-progression"`. |
+| **Doğrulama** | `verify_e1_map` 10/10; `ai-driver` 27/27 (eski layout satırları `staleLayout` ile atlanıyor). |
+| **Açık takip** | `measure_ground_edge.py` çıktısını `map_package_builder.mjs` içinden üretmek (builder layout.json'u bayt bayt doğruluyor). Shutoko/Oval/Highrise çok katlı raster: guard uygulanmıyor. |
+
+## 9 Kasım 2026 durumu (tarihsel)
 
 | Alan | Durum |
 |---|---|

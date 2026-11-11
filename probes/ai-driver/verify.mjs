@@ -149,21 +149,28 @@ check('V15', 'all state-sequence hashes are canonical sha256 values', badHash ==
 const committed = Array.isArray(results.committedComparison) ? results.committedComparison : [];
 const referenceRuns = runs.filter((run) => run.profile === 'reference');
 const committedRows = committed.filter((row) => row.courseId === '310m' || row.courseId === 'lap');
+// Rows measured on a different layout are labelled stale and kept out of the
+// time comparison: the course changed, so the old follower time is not a
+// reference for the current road.
+const committedCurrent = committedRows.filter((row) => row.staleLayout !== true);
+const committedStale = committedRows.filter((row) => row.staleLayout === true);
 const committedPresent = committedRows.length > 0 &&
   committedRows.every((row) => row.committed && row.ai?.timeSeconds !== null);
-const maxDifference = committedRows.reduce((max, row) =>
+const maxDifference = committedCurrent.reduce((max, row) =>
   row.differenceSeconds === null ? max : Math.max(max, Math.abs(row.differenceSeconds)), 0);
-const committedRowsWithReference = committedRows.filter((row) => row.committed);
+const committedRowsWithReference = committedCurrent.filter((row) => row.committed);
 const committedMissing = committedRows.filter((row) => !row.committed);
 check('V16', 'every car/course with a committed follower time was compared',
   committedRowsWithReference.length > 0 &&
   committedRowsWithReference.every((row) => row.ai?.timeSeconds !== null),
-  `${committedRowsWithReference.length}/${committedRows.length} present` +
+  `${committedRowsWithReference.length}/${committedCurrent.length} present` +
+  (committedStale.length ? `, ${committedStale.length} stale-layout rows skipped` : '') +
   (committedMissing.length ? `; no committed reference: ` +
     committedMissing.map((row) => `${row.car}/${row.courseId}`).join(', ') : ''));
 check('V17', 'AI reference times stay within 50 ms of the committed follower',
   committedRowsWithReference.length > 0 && maxDifference <= 0.05,
-  `max |difference| = ${maxDifference.toFixed(6)} s over ${committedRowsWithReference.length} rows`);
+  `max |difference| = ${maxDifference.toFixed(6)} s over ${committedRowsWithReference.length} rows` +
+  (committedStale.length ? ` (${committedStale.length} stale-layout rows skipped)` : ''));
 
 // ---------------------------------------------------------------------------
 // Skill profiles.

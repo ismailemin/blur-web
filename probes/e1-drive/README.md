@@ -1068,6 +1068,14 @@ to match.
 Measured scripted sprints on the default course (`_work/e1-drive/run.json` →
 `sprint.cars`):
 
+**Superseded 2026-11-11.** The table below was measured on the pre-recentre
+310.395 m line. The line was then re-centred on the measured passable interval
+(`probes/e1-drive/tools/recentre_layout.py`), which moved 961 of 1,245 samples
+(max 5.23 m) and made the course 313.387 m. The current committed anchor is the
+Corvette ZR1 at **14.600 s / tick 966** (`probes/e2e/expected.json` →
+`solo.sprint`, asserted by `solo-sprint` 39/39). The other four rows were not
+re-measured after the change and must not be quoted as current.
+
 | car | finish | tick | checkpoint 1 | checkpoint 2 | max speed | max lateral | state sequence hash |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | Corvette ZR1 | **14.650 s** | 969 | 5.700 s | 9.950 s | 24.73 m/s | 0.59 m | `da7e14f1…f9a553` |

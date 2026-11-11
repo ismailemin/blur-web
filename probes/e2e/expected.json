@@ -23,11 +23,11 @@
     "sprint": {
       "slug": "corvette-zr1-stock",
       "courseId": "310m",
-      "timeSeconds": 14.65,
-      "tick": 969,
+      "timeSeconds": 14.6,
+      "tick": 966,
       "timeToleranceSeconds": 0.001,
       "checkpoints": 2,
-      "docRef": "README Â§Sprint rules, table row Corvette ZR1 (14.650 s / tick 969)"
+      "docRef": "probes/e1-drive/README.md §Sprint rules, table row Corvette ZR1 (14.600 s / tick 966 on the re-centred 313.387 m line)"
     },
     "lap": {
       "slug": "corvette-zr1-stock",
@@ -160,18 +160,18 @@
       "rows": [
         {
           "role": "host",
-          "tick": 970,
-          "timeSeconds": 14.666667,
+          "tick": 967,
+          "timeSeconds": 14.616667,
           "position": 1
         },
         {
           "role": "guest",
-          "tick": 1042,
-          "timeSeconds": 15.866667,
+          "tick": 1041,
+          "timeSeconds": 15.85,
           "position": 2
         }
       ],
-      "docRef": "T-007-chunking Â§MP: host Corvette 14.667 s, guest Audi 15.867 s (per-player car physics after M1.1). T-007-multiplayer's 1074/16.400 s row is the pre-chunking same-physics measurement."
+      "docRef": "re-measured 2026-11-11 on the re-centred 313.387 m River line (host Corvette 14.617 s, guest Audi 15.850 s)"
     },
     "amboy": {
       "mapId": "amboy",
@@ -187,12 +187,12 @@
         },
         {
           "role": "guest",
-          "tick": 14684,
-          "timeSeconds": 243.233333,
+          "tick": 14105,
+          "timeSeconds": 233.583333,
           "position": 2
         }
       ],
-      "docRef": "T-007-mp-ai Â§4 (measured table, Amboy)"
+      "docRef": "re-measured 2026-11-11 (guest Audi 233.583 s); host row unchanged"
     },
     "gracia": {
       "mapId": "gracia",
@@ -208,12 +208,12 @@
         },
         {
           "role": "guest",
-          "tick": 4253,
-          "timeSeconds": 69.383333,
+          "tick": 4142,
+          "timeSeconds": 67.533333,
           "position": 2
         }
       ],
-      "docRef": "T-007-mp-ai Â§4 (measured table, Gracia)"
+      "docRef": "re-measured 2026-11-11 (guest Audi 67.533 s); host row unchanged"
     }
   },
   "mpAi": {
@@ -232,38 +232,39 @@
     "rows": [
       {
         "playerId": "ai-1",
-        "tick": 953,
-        "timeSeconds": 14.383333,
-        "position": 1
-      },
-      {
-        "role": "host",
-        "tick": 970,
-        "timeSeconds": 14.666667,
-        "position": 2
-      },
-      {
-        "role": "guest",
-        "tick": 1120,
-        "timeSeconds": 17.166667,
+        "tick": 1164,
+        "timeSeconds": 17.9,
         "position": 3
       },
       {
+        "role": "host",
+        "tick": 967,
+        "timeSeconds": 14.616667,
+        "position": 1
+      },
+      {
+        "role": "guest",
+        "tick": 1125,
+        "timeSeconds": 17.25,
+        "position": 2
+      },
+      {
         "playerId": "ai-2",
-        "tick": 1128,
-        "timeSeconds": 17.3,
+        "tick": 1372,
+        "timeSeconds": 21.366667,
         "position": 4
       }
     ],
-    "docRef": "T-007-mp-ai Â§4 River measured table"
+    "docRef": "re-measured 2026-11-11 on the re-centred River line"
   },
   "modeMatrix": {
     "starts": [
       {
         "id": "river-310-keyboard",
-        "url": "/?audio=0",
+        "url": "/?map=river&audio=0",
         "mapId": "river",
-        "courseId": "310m"
+        "courseId": "310m",
+        "note": "the bare URL shows the menu shell; the keyboard start names the map"
       },
       {
         "id": "river-310-script",
@@ -294,14 +295,16 @@
         "url": "/?map=gracia&script=sprint&audio=0",
         "mapId": "gracia",
         "courseId": "gracia"
+      },
+      {
+        "id": "amboy-lap",
+        "url": "/?map=amboy&course=lap&audio=0",
+        "mapId": "amboy",
+        "courseId": "lap",
+        "layoutHash": "sha256:c878ba69f959ca7b4bdbd14faf4904b896ec8ea082b261eb2627068a7f9018a4"
       }
     ],
     "rejections": [
-      {
-        "id": "amboy-lap-rejected",
-        "url": "/?map=amboy&course=lap&audio=0",
-        "match": "map=amboy runs the measured 2,060.595 m course; drop \\?course=lap"
-      },
       {
         "id": "amboy-free-rejected",
         "url": "/?map=amboy&course=free&audio=0",

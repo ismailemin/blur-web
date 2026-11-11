@@ -274,7 +274,18 @@ function loadAnchors() {
   if (existsSync(runPath)) {
     const run = JSON.parse(readFileSync(runPath, 'utf8'));
     const sprintCar = run.sprint?.cars?.find((car) => car.slug === anchors.sprint.slug);
-    if (sprintCar?.finish) {
+    // `run.json` is a local measurement artifact. A row measured on a different
+    // layout must not override the committed anchor: the course changed, so the
+    // old time describes a road that no longer ships. The skip is recorded in
+    // the report instead of being silent.
+    const sprintStale = Boolean(sprintCar?.layoutHash) &&
+      sprintCar.layoutHash !== layouts['310m'];
+    if (sprintStale) {
+      drift.push({ anchor: 'sprint', chosen: 'expected.json',
+        reason: 'run.json row was measured on a different layout',
+        runJsonLayout: sprintCar.layoutHash, currentLayout: layouts['310m'] });
+    }
+    if (sprintCar?.finish && !sprintStale) {
       if (sprintCar.finish.timeSeconds !== anchors.sprint.timeSeconds) {
         drift.push({ anchor: 'sprint.timeSeconds', expectedJson: anchors.sprint.timeSeconds,
           runJson: sprintCar.finish.timeSeconds, chosen: 'run.json' });
@@ -292,7 +303,13 @@ function loadAnchors() {
       }
     }
     const lapCar = run.sprint?.lapCourse?.cars?.find((car) => car.slug === anchors.lap.slug);
-    if (lapCar?.finish) {
+    const lapStale = Boolean(lapCar?.layoutHash) && lapCar.layoutHash !== layouts.lap;
+    if (lapStale) {
+      drift.push({ anchor: 'lap', chosen: 'expected.json',
+        reason: 'run.json row was measured on a different layout',
+        runJsonLayout: lapCar.layoutHash, currentLayout: layouts.lap });
+    }
+    if (lapCar?.finish && !lapStale) {
       if (lapCar.finish.timeSeconds !== anchors.lap.timeSeconds) {
         drift.push({ anchor: 'lap.timeSeconds', expectedJson: anchors.lap.timeSeconds,
           runJson: lapCar.finish.timeSeconds, chosen: 'run.json' });

@@ -964,9 +964,10 @@ export async function modeMatrix(ctx) {
       probe.overlays.errorText);
     ctx.A.check(entry.id + ': the WebGPU frame loop is running', probe.frames >= 1, 'frames ' + probe.frames);
     if (entry.courseId === '310m' || entry.courseId === 'lap' || entry.courseId === 'free') {
+      const expectedLayoutHash = entry.layoutHash ?? ctx.anchors.layouts[entry.courseId];
       ctx.A.check(entry.id + ': layout hash is the committed ' + entry.courseId + ' layout',
-        probe.sprintLayoutHash === ctx.anchors.layouts[entry.courseId],
-        probe.sprintLayoutHash + ' vs ' + ctx.anchors.layouts[entry.courseId]);
+        probe.sprintLayoutHash === expectedLayoutHash,
+        probe.sprintLayoutHash + ' vs ' + expectedLayoutHash);
     } else {
       ctx.A.check(entry.id + ': layout hash is a pinned sha256 value',
         /^sha256:[0-9a-f]{64}$/.test(probe.sprintLayoutHash ?? ''), probe.sprintLayoutHash);

@@ -129,6 +129,23 @@ export function bandHalfWidthAt(layout, arc) {
   return layout.course.band?.halfWidthMetres ?? 3;
 }
 
+/**
+ * Measured ground-edge half-width at an arc, or Infinity when the layout has no
+ * measured edge. The declared band is a rule; the ground edge is where the
+ * height raster has no ground at all. The respawn uses the smaller of the two,
+ * so a human cannot reach the void even where the declared band is wider than
+ * the road.
+ */
+export function groundEdgeHalfWidthAt(layout, arc) {
+  const rows = layout?.course?.groundEdge?.rows;
+  if (!Array.isArray(rows) || !rows.length) return Infinity;
+  let best = rows[0];
+  for (const row of rows) {
+    if (Math.abs(row.arc - arc) < Math.abs(best.arc - arc)) best = row;
+  }
+  return best.respawnHalfWidthMetres ?? layout.course.groundEdge.halfWidthMetres ?? Infinity;
+}
+
 /** Measured course ground height at an arc (nearest measured sample). */
 export function courseGroundAt(layout, arc) {
   const samples = layout.course.samples;
@@ -197,7 +214,8 @@ export function outsideCourseReason(position, layout, bandMarginMetres = null) {
   }
   if (isLapLayout(layout)) {
     const course = coursePosition(layout.course.samples, position);
-    const halfWidth = bandHalfWidthAt(layout, course.arc);
+    const halfWidth = Math.min(bandHalfWidthAt(layout, course.arc),
+      groundEdgeHalfWidthAt(layout, course.arc));
     if (course.distance > halfWidth + respawn.outsideBandMarginMetres) {
       return { reason: 'outside-corridor', arc: course.arc, lateral: round6(course.distance), halfWidth };
     }
@@ -211,7 +229,8 @@ export function outsideCourseReason(position, layout, bandMarginMetres = null) {
     if (course.arc > span.finishArc + respawn.overshootMarginMetres) {
       return { reason: 'past-finish-line', arc: course.arc, lateral: course.distance };
     }
-    const halfWidth = bandHalfWidthAt(layout, course.arc);
+    const halfWidth = Math.min(bandHalfWidthAt(layout, course.arc),
+      groundEdgeHalfWidthAt(layout, course.arc));
     if (course.distance > halfWidth + respawn.outsideBandMarginMetres) {
       return { reason: 'outside-corridor', arc: course.arc, lateral: round6(course.distance), halfWidth };
     }

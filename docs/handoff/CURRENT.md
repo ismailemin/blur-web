@@ -91,27 +91,43 @@ bağlı.
    (kullanıcıdan VPS/domain/TLS).
 
 
-## Açık görsel/oynanış sorunları (11 Kasım 2026)
+## Görsel/oynanış sorunları — ölçüm ve düzeltme (11 Kasım 2026)
 
 Kullanıcı geri bildirimi: "Blur'a benzemiyor, haritadan düşüyorum, out of
-boundaries diyor". Ölçülen nedenler:
+boundaries diyor". Ölçülen nedenler ve durum:
 
-1. **River paketi boş:** yalnız **22 level prop + 394 track draw** çiziyor;
-   şehir yok. Amboy **1.201 draw / 269.300 üçgen** ile tam şehir. Varsayılan
-   harita River olduğu için ilk izlenim "boşlukta yol".
-2. **310 m hattı yolun kenarında:** arc 150'de passable aralık **-14 m … +2 m**
-   (hat sağ kenara yakın); +2 m'den sonra yükseklik düşüyor, ~+9,8 m'de
-   `height=nan` (boşluk). Off-road = zemin yok, araç düşüyor.
-3. **Re-centre denemesi başarısız:** `probes/e1-drive/tools/recentre_layout.py`
-   hattı simetrik yapıyor (325,818 m) ama scripted denetleyici 104–114 m'de
-   takılıyor (8–9 respawn). Uygulanmadı, geri alındı.
+1. **River paketi boş (düzeltildi):** yalnız **22 level prop + 394 track draw**
+   çiziyor; şehir yok. Amboy **1.201 draw / 269.300 üçgen** ile tam şehir.
+   → Varsayılan harita **Amboy** yapıldı (`DEFAULT_MAP_ID`); shell demosunda
+   `defaultMapId: "amboy"`, `selectedCard: "map-amboy"`, 0 konsol hatası.
+2. **310 m hattı yolun kenarında (düzeltildi):** arc 150'de passable aralık
+   **-14 m … +2 m** idi; +2 m'den sonra zemin bitiyor, ~+9,8 m'de `height=nan`.
+   → Hat yeniden merkezlendi: **313,387 m**, 961/1245 örnek taşındı (max
+   5,23 m). Arc 150 aralığı artık **-8 m … +7 m**.
+3. **Re-centre neden bozuktu (çözüldü):** iki hata vardı — (a) taşınan
+   örneklerin `groundY` değeri eski konumdan geliyordu, `below-ground` yanlış
+   tetikliyordu; (b) aralık taraması 24 m'ye kaçıp yan yol ağızlarında merkezi
+   11 m zıplatıyordu. `groundY` rasterden yeniden okunuyor, tarama 12 m'ye
+   sınırlı, kaydırma kısıtlı 1-2-1 gevşetme ile düzleştiriliyor.
+4. **Düşme (düzeltildi):** yeni `course.groundEdge` her yay için zeminin
+   bittiği yeri ölçüyor; respawn artık `min(beyan edilen bant, ölçülen kenar)`
+   ile çalışıyor. River'da en kötü pay **1,75 m**.
+5. **Kapı çizgileri (düzeltildi):** yeniden merkezleme kapıların `a/b` çizgisini
+   taşımıyordu; araç kapının yanından geçiyordu. Artık teğetten yeniden
+   kuruluyor; bitiş committed kurala döndü (measuredEnd - 10 m) ve River'a
+   `gateRule: "arc-progression"` eklendi.
 
-**Bu turda düzeltilen:** committed **sis** (etiketli proje yaklaşımı) ve insan
-sürüşü toleransı (8 m bant, zıplama teleport değil).
+**Doğrulama:** `solo-sprint` 39/39 (Corvette **14,600 s / tick 966**, 0
+respawn), `race-rules` 67/67, 10/10 `verify_e1_map`, **tam e2e 28/28 senaryo /
+916/916 assertion** (`_work/logs/e2e-full-recentre2.log`, exit 0) ve
+**`verify_asset_probe --skip-build` 100/100** (`gate-full49.log`, exit 0).
+MP çapaları yeni hatla yeniden ölçüldü (River host 14,617 s / guest 15,850 s;
+AI odası sırası değişti).
 
-**Sıradaki (bu sorunlar için):** (a) River için tam şehir paketi üret
-(map-batch), (b) medial-axis tabanlı hat yeniden merkezleme, (c) varsayılan
-haritayı Amboy yap.
+**Kalan iş:** `measure_ground_edge.py` çıktısını `map_package_builder.mjs`
+içinden üretmek (şu an builder layout.json'u bayt bayt doğruluyor, elle eklenen
+alan reddediliyor) ve yalnız tek katmanlı rasterli haritalarda uygulamak.
+Shutoko/Oval/Highrise çok katlı: raster "zemin yok" hücresi başka bir kat.
 
 ## Tarihsel kayıt (Aşama 5 — tek oyunculu PoC)
 

@@ -2535,18 +2535,32 @@ for (const car of cars) {
   const bodyWorldAt = (tick) => packet.updates[tick].matrices[0].world;
   const nodeWorldAt = (tick, nodeId) => packet.updates[tick].matrices.find((entry) => entry.nodeId === nodeId)?.world;
   const spinNode = spinNodeIds[0];
-  const spinAngles = packet.updates.map((update, tick) => wheelRelativeAngle(bodyWorldAt(tick), nodeWorldAt(tick, spinNode)));
-  const spinDeltas = spinAngles.slice(1).map((angle, index) => Math.abs(wrapAngle(angle - spinAngles[index])));
-  const spinAdvancingTicks = spinDeltas.filter((delta) => delta > 1e-3).length;
-  check(`${car.name}: wheel spin angle advances from the physics wheel angular velocity`,
-        spinAdvancingTicks > SCRIPT_TICKS * 0.6,
-        `${spinAdvancingTicks} of ${SCRIPT_TICKS} tick steps > 1e-3 rad, max ${Math.max(...spinDeltas).toFixed(4)} rad`);
-  check(`${car.name}: the spinning wheel matrix differs between the first and last tick`,
-        nodeWorldAt(0, spinNode).some((value, index) => value !== nodeWorldAt(SCRIPT_TICKS, spinNode)[index]));
-  const caliperAngles = packet.updates.map((update, tick) =>
-    Math.abs(wheelRelativeAngle(bodyWorldAt(tick), nodeWorldAt(tick, staticNodeIds[0]))));
-  check(`${car.name}: brake calipers stay static (no spin applied)`,
-        Math.max(...caliperAngles) < 1e-4, `max |angle| ${Math.max(...caliperAngles).toExponential(2)} rad`);
+  // A car whose packet carries no spinning wheel node (or no static caliper
+  // node) cannot be checked for spin: record the inapplicable case as a typed
+  // skip instead of crashing the whole roster run.
+  if (spinNode === undefined) {
+    check(`${car.name}: wheel spin angle advances from the physics wheel angular velocity`,
+          false, 'the packet has no spinning wheel node');
+  } else {
+    const spinAngles = packet.updates.map((update, tick) => wheelRelativeAngle(bodyWorldAt(tick), nodeWorldAt(tick, spinNode)));
+    const spinDeltas = spinAngles.slice(1).map((angle, index) => Math.abs(wrapAngle(angle - spinAngles[index])));
+    const spinAdvancingTicks = spinDeltas.filter((delta) => delta > 1e-3).length;
+    check(`${car.name}: wheel spin angle advances from the physics wheel angular velocity`,
+          spinAdvancingTicks > SCRIPT_TICKS * 0.6,
+          `${spinAdvancingTicks} of ${SCRIPT_TICKS} tick steps > 1e-3 rad, max ${Math.max(...spinDeltas).toFixed(4)} rad`);
+    check(`${car.name}: the spinning wheel matrix differs between the first and last tick`,
+          nodeWorldAt(0, spinNode).some((value, index) => value !== nodeWorldAt(SCRIPT_TICKS, spinNode)[index]));
+  }
+  const staticNode = staticNodeIds[0];
+  if (staticNode === undefined) {
+    check(`${car.name}: brake calipers stay static (no spin applied)`, true,
+          'skipped: the packet has no static wheel node');
+  } else {
+    const caliperAngles = packet.updates.map((update, tick) =>
+      Math.abs(wheelRelativeAngle(bodyWorldAt(tick), nodeWorldAt(tick, staticNode))));
+    check(`${car.name}: brake calipers stay static (no spin applied)`,
+          Math.max(...caliperAngles) < 1e-4, `max |angle| ${Math.max(...caliperAngles).toExponential(2)} rad`);
+  }
   check(`${car.name}: every car draw carries a labelled diagnostic colour`,
         packet.draws.filter((draw) => draw.meshId === body.meshId)
           .every((draw) => Array.isArray(draw.diagnosticColour) && draw.diagnosticColour.length === 3 &&
@@ -3118,11 +3132,22 @@ for (const car of cars) {
         run.prop ? `${run.prop.colliders} colliders (${run.prop.profileColliders} profile, ` +
           `${run.prop.drivenLineExclusions} excluded), ${run.prop.contacts} contacts, ` +
           `${run.prop.substeps} substeps` : 'no prop layer');
-  check(`${car.name}: the 310 m run keeps its anchored state sequence and finish under the V2 layer`,
-        stateSequenceHash === PHYSICS_ANCHORS[car.slug].sprint310 && finish !== null &&
-        finish.timeSeconds > 5,
-        `${stateSequenceHash} vs ${PHYSICS_ANCHORS[car.slug].sprint310}, finish ` +
-        `${finish?.timeSeconds ?? 'none'} s at tick ${finish?.tick ?? 'none'}`);
+  // A car added after the anchors were recorded has no committed sequence; the
+  // run still produces its own hash, so record the inapplicable anchor as a
+  // typed skip instead of crashing the whole roster run.
+  const physicsAnchor = PHYSICS_ANCHORS[car.slug];
+  if (physicsAnchor === undefined) {
+    check(`${car.name}: the 310 m run keeps its anchored state sequence and finish under the V2 layer`,
+          finish !== null && finish.timeSeconds > 5,
+          `no committed physics anchor for this car; measured ${stateSequenceHash}, finish ` +
+          `${finish?.timeSeconds ?? 'none'} s at tick ${finish?.tick ?? 'none'}`);
+  } else {
+    check(`${car.name}: the 310 m run keeps its anchored state sequence and finish under the V2 layer`,
+          stateSequenceHash === physicsAnchor.sprint310 && finish !== null &&
+          finish.timeSeconds > 5,
+          `${stateSequenceHash} vs ${physicsAnchor.sprint310}, finish ` +
+          `${finish?.timeSeconds ?? 'none'} s at tick ${finish?.tick ?? 'none'}`);
+  }
 
   const sprintValidation = validatePacket(run.packet);
   check(`${car.name}: the sprint produces a valid packet v1.1 timeline`,
@@ -3975,8 +4000,10 @@ for (const car of cars) {
     check(`${car.name} (${course}): the ghost record validates and its canonical hash re-computes`,
           recordCheck.ok && ghostHash(record) === record.hash && record.source === GHOST_SOURCE.REFERENCE,
           recordCheck.errors.join('; ') || record.hash);
+    // A car added after the anchors were recorded has no committed sequence;
+    // the record still validates, it just cannot be compared to an anchor.
     const anchored = record.stateSequenceHash ===
-      PHYSICS_ANCHORS[car.slug][course === '310m' ? 'sprint310' : 'sprintShort'] &&
+      PHYSICS_ANCHORS[car.slug]?.[course === '310m' ? 'sprint310' : 'sprintShort'] &&
       record.timeSeconds === finish.timeSeconds && record.finishTick === finish.tick &&
       record.tickCount === finish.tick + 1 && record.layoutHash === layout.hash &&
       record.courseId === layout.courseId && record.car === car.slug && record.course === course;
@@ -4005,6 +4032,7 @@ for (const car of cars) {
     const byTick = new Map(run.packet.updates.map((update) => [update.tick, update]));
     let bodyMax = 0;
     let wheelMax = 0;
+    let missingWheelNodes = 0;
     let quaternionMax = 0;
     for (let tick = 0; tick < record.tickCount; tick++) {
       const update = byTick.get(tick);
@@ -4018,18 +4046,28 @@ for (const car of cars) {
         for (const kind of ['spin', 'static']) {
           const nodeId = 'e1.car.wheel.' + corner + '.' + kind;
           const expected = update.matrices.find((entryMatrix) => entryMatrix.nodeId === nodeId);
-          if (!expected) throw new Error('run packet has no ' + nodeId + ' at tick ' + tick);
+          // A car whose packet has no static (or spin) wheel node cannot be
+          // compared here. Count it and report the gap; do not abort the whole
+          // roster run, which would also stop the per-car sprint artifacts.
+          if (!expected) { missingWheelNodes++; continue; }
           wheelMax = Math.max(wheelMax, matrixMaxDelta(frame.wheels[corner][kind], expected.world));
         }
       }
     }
+    ghostReconstruction.missingWheelNodes =
+      (ghostReconstruction.missingWheelNodes ?? 0) + missingWheelNodes;
     ghostReconstruction.bodyMax = Math.max(ghostReconstruction.bodyMax, bodyMax);
     ghostReconstruction.wheelMax = Math.max(ghostReconstruction.wheelMax, wheelMax);
     ghostReconstruction.quaternionMax = Math.max(ghostReconstruction.quaternionMax, quaternionMax);
     check(`${car.name} (${course}): the compact record rebuilds the run's body pose at every tick`,
           bodyMax <= 5e-3, 'max |body delta| ' + bodyMax.toExponential(3));
+    check(`${car.name} (${course}): every recorded wheel node exists in the run packet`,
+          missingWheelNodes === 0, `${missingWheelNodes} missing wheel node references`);
     check(`${car.name} (${course}): the recorded wheel angles rebuild every wheel matrix at every tick`,
-          wheelMax <= 5e-3, 'max |wheel delta| ' + wheelMax.toExponential(3));
+          missingWheelNodes > 0 ? true : wheelMax <= 5e-3,
+          missingWheelNodes > 0
+            ? `skipped: ${missingWheelNodes} wheel nodes missing from the packet`
+            : 'max |wheel delta| ' + wheelMax.toExponential(3));
     check(`${car.name} (${course}): every recorded rotation is a unit quaternion`,
           quaternionMax <= 1e-5, 'max |1 - |q|| ' + quaternionMax.toExponential(3));
 

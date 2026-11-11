@@ -1,3 +1,12 @@
+## 11 Kasım 2026 — River hattı merkezlendi, düşme düzeltildi, varsayılan Amboy
+
+- **Varsayılan harita Amboy:** menü ilk açılışta Amboy'u seçiyor (`DEFAULT_MAP_ID`); River'ın 22 prop + 394 yol draw'ı yerine 1.201 draw / 269.300 üçgenlik şehir. Shell 44/44.
+- **River hattı yeniden merkezlendi:** 313,387 m, 961/1245 örnek taşındı (max 5,23 m). Arc 150 aralığı -14…+2 m → **-8…+7 m**. İki kök neden: bayat `groundY` ve 24 m'ye kaçan aralık taraması.
+- **Ölçülü zemin kenarı:** yeni `course.groundEdge`; respawn `min(bant, ölçülen kenar)` ile. River'da en kötü pay 1,75 m; `below-ground` respawn'ı kalmadı.
+- **Kapı çizgileri onarıldı:** `a/b` teğetten yeniden kuruluyor; bitiş measuredEnd - 10 m; River'a `gateRule: "arc-progression"`.
+- **Ölçüm:** Corvette **14,600 s / tick 966**, `solo-sprint` 39/39, `race-rules` 67/67, 10/10 `verify_e1_map`.
+- **Geri alınan:** `measure_ground_edge.py` paket haritalarına elle uygulanması builder'ın bayt denetimini düşürdü; Shutoko/Oval/Highrise çok katlı rasterde dar banda sıkıştı. Yedi harita geri alındı; takip işi builder'a entegrasyon.
+
 ## 9 Kasım 2026 — 13 harita, 61 araç, Amboy lightmap vitrini
 
 - **Haritalar 11 → 13:** Dumbo (362 m) ve Downtown MP (86,45 m) retail `.aid` yarış çizgisinden açıldı. Dumbo'da 0, Downtown MP'de 231 istasyonluk yanal detour (maks 9,5 m). Kalan 6 seviye tipli blocker: hackney, brighton, sausalito, russianhill, bowl, showroom.

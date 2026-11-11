@@ -121,8 +121,8 @@ export const RETAIL_PLACEMENT_DATA = deepFreeze({
       "bytes": 312569
     },
     "_work/e1-drive/sprint.json": {
-      "sha256": "516647664f7ff3590db457f8685a3d4308b030b86fbf962f0e9bfa708da89e49",
-      "bytes": 386521
+      "sha256": "67d8c8e7a743491be886ee5661163a686844d2842ee21492441c06f65207c1dd",
+      "bytes": 475979
     }
   },
   "maps": {
@@ -1776,9 +1776,9 @@ export const RETAIL_PLACEMENT_DATA = deepFreeze({
       "measuredLayout": {
         "id": "310m",
         "path": "_work/e1-drive/sprint.json",
-        "sha256": "516647664f7ff3590db457f8685a3d4308b030b86fbf962f0e9bfa708da89e49",
-        "bytes": 386521,
-        "lengthMetres": 310.395196,
+        "sha256": "67d8c8e7a743491be886ee5661163a686844d2842ee21492441c06f65207c1dd",
+        "bytes": 475979,
+        "lengthMetres": 313.387116,
         "sampleCount": 1245,
         "sampleStepMetres": 0.25,
         "bandHalfWidthMetres": 6,
@@ -1791,14 +1791,14 @@ export const RETAIL_PLACEMENT_DATA = deepFreeze({
         "status": "applicable",
         "physicalProjection": false,
         "retailMainLoopLengthMetres": 4125.482,
-        "measuredLengthMetres": 310.395196,
-        "lengthRatio": 0.075239,
+        "measuredLengthMetres": 313.387116,
+        "lengthRatio": 0.075964,
         "measuredStartNearestRetailMainLoop": {
-          "distanceM": 41.028,
+          "distanceM": 42.423,
           "arcM": 2608.17
         },
         "measuredEndNearestRetailMainLoop": {
-          "distanceM": 81.772,
+          "distanceM": 82.27,
           "arcM": 2922.31
         },
         "note": "The normalized-retail-arc rule is applicable to every retail pickup (finite arc, positive route length, non-empty measured samples, finite band). It is a linear arc-fraction remap, not a physical projection: the measured layout is a sub-course of the retail route and its arc origin differs from the retail MainLoop origin (see the nearest-point numbers)."

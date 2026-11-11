@@ -221,9 +221,11 @@ function main() {
     sprint.mode === 'sprint' && sprint.checkpointCount === 2 &&
     sprint.gates.map((gate) => gate.kind).join(',') === 'start,checkpoint,checkpoint,finish',
     { mode: sprint.mode, checkpointCount: sprint.checkpointCount });
+  // Re-centred on 2026-11-11: the line is 313.387116 m and the finish keeps the
+  // committed 10 m clearance (303.187344).
   check('C04', 'sprint finish arc and measured length',
-    sprint.finishArc === 300.159666 && sprint.measuredLengthMetres === 310.395196 &&
-    sprint.lengthMetres === 300.159666,
+    sprint.finishArc === 303.187344 && sprint.measuredLengthMetres === 313.387116 &&
+    sprint.lengthMetres === 303.187344,
     { finishArc: sprint.finishArc, measured: sprint.measuredLengthMetres });
   check('C05', 'lap CourseModel mode/laps/line',
     lap.mode === 'lap' && lap.laps === 3 && lap.lengthMetres === 222.040211 &&
@@ -379,9 +381,13 @@ function main() {
     { director: joinSession.director.snapshot().participants.length, progress: joinSession.progress.order });
 
   // --------------------------------------------------------- sprint progress ---
+  // The finish arc is read from the layout: the course length is a measured
+  // value, and a hard-coded "past the finish" arc silently stops crossing the
+  // line when the course changes.
+  const finishArc = sprint.finishArc;
   const ordered = runProgress(sprint, [
     stateAt(sprint, 0), stateAt(sprint, 50), stateAt(sprint, 110),
-    stateAt(sprint, 210), stateAt(sprint, 301)
+    stateAt(sprint, 210), stateAt(sprint, finishArc + 1)
   ]);
   check('P01', 'ordered checkpoint crossings count in index order',
     eventsOfType(ordered.events, PROGRESS_EVENT.CHECKPOINT).length === 2 &&
@@ -403,7 +409,7 @@ function main() {
   const skipped = runProgress(sprint, [
     stateAt(sprint, 0), stateAt(sprint, 50), stateAt(sprint, 90),
     stateAt(sprint, 210, { lateral: 80 }), stateAt(sprint, 210),
-    stateAt(sprint, 250), stateAt(sprint, 299), stateAt(sprint, 301)
+    stateAt(sprint, 250), stateAt(sprint, finishArc - 2), stateAt(sprint, finishArc + 1)
   ]);
   check('P04', 'skipping a checkpoint blocks the finish',
     skipped.participant.status === 'running' &&

@@ -85,7 +85,7 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
       "sha256": "87f8c724d596cab7b1fe414621cd950bef00a82986462bac8dc186cae949079a"
     },
     "_work/e1-drive/sprint.json": {
-      "sha256": "516647664f7ff3590db457f8685a3d4308b030b86fbf962f0e9bfa708da89e49"
+      "sha256": "67d8c8e7a743491be886ee5661163a686844d2842ee21492441c06f65207c1dd"
     },
     "_work/e1-drive/sprint-lap.json": {
       "sha256": "153717d52cd7eae1df3693636405fdf757cd14a36f2ecbbf83bd2539a2c3c460"
@@ -3469,12 +3469,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 135.845823,
-              "distance": 1156.1879,
+              "arc": 313.387116,
+              "lateral": 135.34597,
+              "distance": 1156.129231,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3501,12 +3501,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -116.861302,
-              "distance": 403.979178,
+              "arc": 313.387116,
+              "lateral": -117.361252,
+              "distance": 404.124072,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3533,12 +3533,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 18.850654,
-              "distance": 731.596489,
+              "arc": 313.387116,
+              "lateral": 18.350747,
+              "distance": 731.583748,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3565,12 +3565,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 67.761168,
-              "distance": 1266.768584,
+              "arc": 313.387116,
+              "lateral": 67.261331,
+              "distance": 1266.741908,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3597,12 +3597,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -236.096684,
-              "distance": 239.628194,
+              "arc": 313.387116,
+              "lateral": -236.596679,
+              "distance": 240.120836,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3629,12 +3629,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 243.544957,
-              "lateral": -81.647667,
-              "distance": 81.647666,
-              "segment": 976,
-              "clamped": false,
-              "groundY": 5.154113
+              "arc": 248.962622,
+              "lateral": -79.657098,
+              "distance": 79.677953,
+              "segment": 986,
+              "clamped": true,
+              "groundY": 5.190082
             },
             "lap": {
               "layout": "lap",
@@ -3661,12 +3661,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 10.158347,
-              "distance": 734.944678,
+              "arc": 313.387116,
+              "lateral": 9.658442,
+              "distance": 734.937908,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3693,12 +3693,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -150.521857,
-              "distance": 177.437099,
+              "arc": 313.387116,
+              "lateral": -151.021845,
+              "distance": 177.861436,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3725,12 +3725,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 19.722345,
-              "lateral": -299.337974,
-              "distance": 299.337974,
-              "segment": 79,
+              "arc": 20.979484,
+              "lateral": -299.345399,
+              "distance": 299.345399,
+              "segment": 83,
               "clamped": false,
-              "groundY": 5.82609
+              "groundY": 5.822827
             },
             "lap": {
               "layout": "lap",
@@ -3757,12 +3757,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -138.578607,
-              "distance": 412.19733,
+              "arc": 313.387116,
+              "lateral": -139.078558,
+              "distance": 412.365669,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3789,12 +3789,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -16.411858,
-              "distance": 734.00855,
+              "arc": 313.387116,
+              "lateral": -16.911764,
+              "distance": 734.019871,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3821,12 +3821,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 31.82105,
-              "distance": 729.091921,
+              "arc": 313.387116,
+              "lateral": 31.321144,
+              "distance": 729.070241,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3854,11 +3854,11 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
             "310m": {
               "layout": "310m",
               "arc": 0,
-              "lateral": -75.198695,
-              "distance": 112.535817,
+              "lateral": -77.014863,
+              "distance": 113.474408,
               "segment": 0,
               "clamped": true,
-              "groundY": 5.807372
+              "groundY": 5.81242
             },
             "lap": {
               "layout": "lap",
@@ -3886,11 +3886,11 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
             "310m": {
               "layout": "310m",
               "arc": 0,
-              "lateral": -86.910044,
-              "distance": 113.133616,
+              "lateral": -88.669425,
+              "distance": 114.210638,
               "segment": 0,
               "clamped": true,
-              "groundY": 5.807372
+              "groundY": 5.81242
             },
             "lap": {
               "layout": "lap",
@@ -3917,12 +3917,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -127.734858,
-              "distance": 408.025165,
+              "arc": 313.387116,
+              "lateral": -128.234809,
+              "distance": 408.181942,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3949,12 +3949,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -106.594606,
-              "distance": 400.715208,
+              "arc": 313.387116,
+              "lateral": -107.094557,
+              "distance": 400.848475,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -3981,12 +3981,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 241.820076,
-              "lateral": -93.321322,
-              "distance": 93.321322,
-              "segment": 969,
-              "clamped": false,
-              "groundY": 5.156337
+              "arc": 248.962622,
+              "lateral": -91.411788,
+              "distance": 91.414557,
+              "segment": 986,
+              "clamped": true,
+              "groundY": 5.190082
             },
             "lap": {
               "layout": "lap",
@@ -4013,12 +4013,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 224.396984,
-              "distance": 1081.433134,
+              "arc": 313.387116,
+              "lateral": 223.89712,
+              "distance": 1081.329466,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4045,12 +4045,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 211.264171,
-              "distance": 1089.516151,
+              "arc": 313.387116,
+              "lateral": 210.764308,
+              "distance": 1089.41928,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4077,12 +4077,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -151.860565,
-              "distance": 349.724098,
+              "arc": 313.387116,
+              "lateral": -152.360525,
+              "distance": 349.941477,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4109,12 +4109,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -104.887186,
-              "distance": 574.996103,
+              "arc": 313.387116,
+              "lateral": -105.387114,
+              "distance": 575.087491,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4141,12 +4141,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 127.32439,
-              "distance": 1152.052403,
+              "arc": 313.387116,
+              "lateral": 126.824537,
+              "distance": 1151.997221,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4173,12 +4173,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 254.422765,
-              "distance": 1395.945569,
+              "arc": 313.387116,
+              "lateral": 253.922941,
+              "distance": 1395.854498,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4205,9 +4205,9 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 27.275232,
-              "lateral": -283.938391,
-              "distance": 283.938391,
+              "arc": 27.340747,
+              "lateral": -283.938402,
+              "distance": 283.938403,
               "segment": 109,
               "clamped": false,
               "groundY": 5.807304
@@ -4237,12 +4237,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -210.282072,
-              "distance": 211.892954,
+              "arc": 313.387116,
+              "lateral": -210.782069,
+              "distance": 212.389158,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4269,12 +4269,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 255.093486,
-              "lateral": -72.800134,
-              "distance": 72.800134,
-              "segment": 1022,
-              "clamped": false,
-              "groundY": 5.165628
+              "arc": 249.212338,
+              "lateral": -70.865316,
+              "distance": 70.868566,
+              "segment": 987,
+              "clamped": true,
+              "groundY": 5.19013
             },
             "lap": {
               "layout": "lap",
@@ -4301,12 +4301,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 23.538895,
-              "lateral": -291.556366,
-              "distance": 291.556366,
-              "segment": 94,
+              "arc": 23.805391,
+              "lateral": -291.556926,
+              "distance": 291.556926,
+              "segment": 95,
               "clamped": false,
-              "groundY": 5.816276
+              "groundY": 5.815635
             },
             "lap": {
               "layout": "lap",
@@ -4333,12 +4333,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -228.628503,
-              "distance": 231.551349,
+              "arc": 313.387116,
+              "lateral": -229.128499,
+              "distance": 232.045046,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4365,12 +4365,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -4.798389,
-              "distance": 806.888871,
+              "arc": 313.387116,
+              "lateral": -5.298285,
+              "distance": 806.89197,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4397,12 +4397,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -201.188932,
-              "distance": 202.263995,
+              "arc": 313.387116,
+              "lateral": -201.68893,
+              "distance": 202.761342,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4429,12 +4429,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 15.84766,
-              "distance": 797.859211,
+              "arc": 313.387116,
+              "lateral": 15.347762,
+              "distance": 797.849407,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4461,12 +4461,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -192.048784,
-              "distance": 192.677056,
+              "arc": 313.387116,
+              "lateral": -192.548782,
+              "distance": 193.175427,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4494,11 +4494,11 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
             "310m": {
               "layout": "310m",
               "arc": 0,
-              "lateral": -81.118082,
-              "distance": 112.544771,
+              "lateral": -82.905547,
+              "distance": 113.556138,
               "segment": 0,
               "clamped": true,
-              "groundY": 5.807372
+              "groundY": 5.81242
             },
             "lap": {
               "layout": "lap",
@@ -4525,12 +4525,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -129.060779,
-              "distance": 590.02898,
+              "arc": 313.387116,
+              "lateral": -129.560705,
+              "distance": 590.138522,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4557,12 +4557,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -90.796287,
-              "distance": 91.271454,
+              "arc": 313.387116,
+              "lateral": -91.296286,
+              "distance": 91.768862,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4589,12 +4589,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -220.115733,
-              "distance": 222.394923,
+              "arc": 313.387116,
+              "lateral": -220.615729,
+              "distance": 222.889806,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4621,12 +4621,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 217.629783,
-              "distance": 1085.572265,
+              "arc": 313.387116,
+              "lateral": 217.129919,
+              "distance": 1085.47211,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4653,12 +4653,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 41.448761,
-              "distance": 725.768145,
+              "arc": 313.387116,
+              "lateral": 40.948854,
+              "distance": 725.739733,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4685,12 +4685,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 119.197114,
-              "distance": 1148.161418,
+              "arc": 313.387116,
+              "lateral": 118.697261,
+              "distance": 1148.109589,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4717,12 +4717,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 42.733882,
-              "distance": 942.665097,
+              "arc": 313.387116,
+              "lateral": 42.234003,
+              "distance": 942.642534,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4749,12 +4749,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 242.44745,
-              "distance": 1374.049491,
+              "arc": 313.387116,
+              "lateral": 241.947623,
+              "distance": 1373.961327,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4781,12 +4781,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -173.403614,
-              "distance": 357.02795,
+              "arc": 313.387116,
+              "lateral": -173.903574,
+              "distance": 357.271035,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4813,12 +4813,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -163.364815,
-              "distance": 353.044414,
+              "arc": 313.387116,
+              "lateral": -163.864775,
+              "distance": 353.276032,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4845,12 +4845,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -118.286911,
-              "distance": 580.505122,
+              "arc": 313.387116,
+              "lateral": -118.786838,
+              "distance": 580.607183,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4877,12 +4877,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 240.631346,
-              "lateral": -101.041708,
-              "distance": 101.041709,
-              "segment": 964,
+              "arc": 248.939114,
+              "lateral": -99.185848,
+              "distance": 99.185848,
+              "segment": 986,
               "clamped": false,
-              "groundY": 5.164031
+              "groundY": 5.190082
             },
             "lap": {
               "layout": "lap",
@@ -4909,12 +4909,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 205.617889,
-              "distance": 1093.9788,
+              "arc": 313.387116,
+              "lateral": 205.118026,
+              "distance": 1093.884905,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4941,12 +4941,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 3.240227,
-              "distance": 803.797473,
+              "arc": 313.387116,
+              "lateral": 2.74033,
+              "distance": 803.795584,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -4973,12 +4973,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 111.135153,
-              "distance": 1144.353579,
+              "arc": 313.387116,
+              "lateral": 110.635299,
+              "distance": 1144.305101,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -5005,12 +5005,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -141.797975,
-              "distance": 345.007915,
+              "arc": 313.387116,
+              "lateral": -142.297935,
+              "distance": 345.213689,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -5037,12 +5037,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 23.780634,
-              "distance": 795.388209,
+              "arc": 313.387116,
+              "lateral": 23.280736,
+              "distance": 795.373388,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -5069,12 +5069,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": -97.5801,
-              "distance": 569.113862,
+              "arc": 313.387116,
+              "lateral": -98.080028,
+              "distance": 569.199776,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -5102,11 +5102,11 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
             "310m": {
               "layout": "310m",
               "arc": 0,
-              "lateral": -69.109528,
-              "distance": 113.151957,
+              "lateral": -70.95522,
+              "distance": 114.010888,
               "segment": 0,
               "clamped": true,
-              "groundY": 5.807372
+              "groundY": 5.81242
             },
             "lap": {
               "layout": "lap",
@@ -5133,12 +5133,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 248.736697,
-              "distance": 1385.542758,
+              "arc": 313.387116,
+              "lateral": 248.236872,
+              "distance": 1385.453056,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",
@@ -5165,12 +5165,12 @@ export const RUNTIME_PLACEMENT_DATA = deepFreeze({
           "projections": {
             "310m": {
               "layout": "310m",
-              "arc": 310.395196,
-              "lateral": 236.601218,
-              "distance": 1363.377671,
+              "arc": 313.387116,
+              "lateral": 236.101391,
+              "distance": 1363.290961,
               "segment": 1243,
               "clamped": true,
-              "groundY": 5.881291
+              "groundY": 5.873312
             },
             "lap": {
               "layout": "lap",

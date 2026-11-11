@@ -449,6 +449,10 @@ function committedTimes(car) {
       timeSeconds: sprint.finish.timeSeconds,
       tick: sprint.finish.tick,
       stateSequenceHash: sprint.stateSequenceHash,
+      // The committed follower was driven on a specific layout; a row from a
+      // different layout describes a road that no longer ships and must not be
+      // compared as if it were current.
+      layoutHash: sprint.layoutHash ?? null,
       source: path.relative(ROOT, sprintPath).split(path.sep).join('/')
     } : null;
   } catch { /* missing committed run is reported by verify */ }
@@ -456,6 +460,7 @@ function committedTimes(car) {
     const lap = readJson(lapPath);
     result.lap = lap.finish ? {
       timeSeconds: lap.finish.timeSeconds,
+      layoutHash: lap.layoutHash ?? null,
       tick: lap.finish.tick,
       lapTimes: lap.finish.lapTimes ?? lap.lapTimes ?? null,
       stateSequenceHash: lap.stateSequenceHash,
@@ -549,6 +554,8 @@ for (const car of cars) {
       car: car.slug,
       courseId,
       committed: committedValue,
+      staleLayout: Boolean(committedValue?.layoutHash) &&
+        committedValue.layoutHash !== layouts[courseId].hash,
       ai: ours ? {
         status: ours.status,
         timeSeconds: oursValue,
