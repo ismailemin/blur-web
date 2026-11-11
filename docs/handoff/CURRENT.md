@@ -1,13 +1,31 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 10 Kasım 2026
+**Güncelleme:** 11 Kasım 2026
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
-tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 13 harita**;
-lightmap 11/13 haritada render'da; kurs minimap'i ve 8 tipli güçlendirme E2E'si
-bağlı.
-**Son commit'ler:** `f6f2ead` kayıt, `a32db5d` menüde her haritada güçlendirme,
-`340e651` güçlendirme E2E'si, `a52ad26` 11/13 lightmap, `91d9628` River lightmap.
+tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 14 harita**;
+lightmap 14/14 haritada render'da; kurs minimap'i ve 9 tipli güçlendirme
+E2E'si bağlı. Varsayılan harita **Amboy** (tam şehir).
+**Son commit'ler:** `a420726` River hattı merkezlendi + düşme düzeltildi,
+`8f1179c` varsayılan harita Amboy, `321043d` ölçülen görsel sorunlar kaydı.
 **Bu oturumun kaydı:** [`docs/work/logs/2026-11-08-mp-eight.md`](../work/logs/2026-11-08-mp-eight.md)
+
+## Şimdi dene (tek harita + tek araç)
+
+```powershell
+node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
+```
+
+- **Menü:** <http://127.0.0.1:8801/> — Play → Sprint → araç → harita (varsayılan
+  **Amboy**) → Start. Boş URL menüyü açar; yarış parametresi menüyü atlar.
+- **Doğrudan Amboy yarışı:**
+  <http://127.0.0.1:8801/?map=amboy&car=corvette-zr1-stock&audio=0>
+- **Doğrudan River sprint'i (yeniden merkezlenmiş hat):**
+  <http://127.0.0.1:8801/?map=river&script=sprint&car=corvette-zr1-stock&audio=0>
+- **LAN (ikinci cihaz, VPS gerekmez):**
+  `node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811 --host 0.0.0.0`
+  ve ikinci cihazda `http://<bilgisayar-ip>:8801/?join=1`.
+- **İnternet:** yalnız altyapı girdileri eksik (VPS + domain + DNS + sertifika);
+  adımlar [`docs/work/verification/internet-deploy.md`](../work/verification/internet-deploy.md).
 
 ## Şu an neredeyiz? (kısa özet)
 
