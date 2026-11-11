@@ -81,6 +81,33 @@ SPAWN_TABLE = {
     # ``course.spawnGroundY`` (also ``course.start.groundY``); the tuple below is
     # (x, spawnGroundY, z). The committed source of the _work copy is the
     # map-laps path file named in each spawnSource.
+    "uk_london_hackney": {
+        "short": "hackney",
+        "city": "UK_London_Hackney",
+        "spawn": (-611.0, -293.7257, 407.0),
+        "spawnSource": "_work/e1-drive/hackney/layout.json course.spawn.x=-611, "
+                       "course.spawn.z=407, course.spawnGroundY=-293.7257 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps-aid/data/hackney-covered-path.json",
+    },
+    "usa_sanfran_russianhill": {
+        "short": "russianhill",
+        "city": "USA_SanFran_RussianHill",
+        "spawn": (63.823223, 5.1028, 457.176777),
+        "spawnSource": "_work/e1-drive/russianhill/layout.json course.spawn.x=63.823223, "
+                       "course.spawn.z=457.176777, course.spawnGroundY=5.1028 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps-aid/data/russianhill-covered-path.json",
+    },
+    "uk_brighton": {
+        "short": "brighton",
+        "city": "UK_Brighton",
+        "spawn": (-130.30497, -6.4799, -140.69503),
+        "spawnSource": "_work/e1-drive/brighton/layout.json course.spawn.x=-130.30497, "
+                       "course.spawn.z=-140.69503, course.spawnGroundY=-6.4799 "
+                       "(course.start.groundY); committed source "
+                       "probes/map-laps-aid/data/brighton-covered-path.json",
+    },
     "usa_la_observatory": {
         "short": "observatory",
         "city": "USA_LA_Observatory",

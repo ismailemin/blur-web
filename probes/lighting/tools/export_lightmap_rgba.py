@@ -68,10 +68,13 @@ LEVEL_IDS = {
     "dumbo": "usa_ny_dumbo",
     "downtown-mp": "usa_la_downtown_multiplayer",
     "sausalito": "usa_sanfran_sausalito",
+    "hackney": "uk_london_hackney",
+    "russianhill": "usa_sanfran_russianhill",
+    "brighton": "uk_brighton",
 }
 MAP_ORDER = ["river", "amboy", "gracia", "longbeach", "observatory", "downtown",
              "mharuna", "highrise", "shutoko", "oval", "amboy-mp", "dumbo",
-             "downtown-mp", "sausalito"]
+             "downtown-mp", "sausalito", "hackney", "russianhill", "brighton"]
 
 SET_HASH_RULE = ("sha256 over canonical JSON of the per-texture (name, decodedRgbaSha256) "
                  "pairs sorted by name; canonical JSON is sort_keys=True, "

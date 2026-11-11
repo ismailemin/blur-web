@@ -1,3 +1,8 @@
+## 12 Kasım 2026 — 17/17 haritada retail lightmap
+
+- **Lightmap 14 → 17:** hackney (58 doku / 2.481 draw), russianhill (62 / 1.191) ve brighton (58 / 1.420) için retail lightmap setleri decode edildi (`export_lightmap_rgba.py --maps ...`, üçü de `complete`). `LIGHTMAP_MAPS`, runtime tablosu ve doğrulayıcı 17 haritaya çıkarıldı.
+- **Kapılar:** `verify_runtime_lighting` **60182/60182**.
+
 ## 12 Kasım 2026 — bowl ve defaultcar engelleri ölçüldü (17/19, 61/62)
 
 - **bowl iki bağımsız nedenle kapalı:** sürüş yüzeyi committed draw setinde yok (yola en yakın draw vertex **38,33 m**, `coveredPassableCells: 0`) → kurs görünmez olurdu; collision halkası %50,1 bant-temiz, AI **18 respawn ile DNF**.

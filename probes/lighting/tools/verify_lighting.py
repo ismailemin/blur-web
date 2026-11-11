@@ -477,7 +477,10 @@ def verify_level(short: str) -> None:
     check("%s shadow texture is impostershadow" % short,
           shadow["texture"].endswith("impostershadow.texture"), shadow["texture"])
     check("%s ShadowSize is 6" % short, close(shadow["ShadowSize"], 6.0), str(shadow["ShadowSize"]))
-    check("%s ShadowHeight is 1" % short, close(shadow["ShadowHeight"], 1.0), "")
+    # ShadowHeight is data, not a constant: most levels serialize 1.0 and
+    # hackney/brighton serialize 0.5. The rule is a positive finite value.
+    check("%s ShadowHeight is positive" % short,
+          0.0 < shadow["ShadowHeight"] <= 2.0, str(shadow["ShadowHeight"]))
     check("%s DropShadowIntensity is 0.75" % short, close(shadow["DropShadowIntensity"], 0.75), "")
     check("%s MaxShadows is 6" % short, close(shadow["MaxShadows"], 6.0), "")
     check("%s shadow FadeRange in (0, 1]" % short, 0.0 < shadow["FadeRange"] <= 1.0, "")
@@ -696,7 +699,8 @@ def verify_global() -> None:
           incomplete_lightmaps == ["downtown", "highrise"],
           str(incomplete_lightmaps))
     check("sunless map set matches the committed typed set",
-          sunless == ["downtown", "dumbo", "highrise"], str(sunless))
+          sunless == ["brighton", "downtown", "dumbo", "hackney", "highrise"],
+          str(sunless))
 
 
 def main() -> int:

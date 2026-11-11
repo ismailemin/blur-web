@@ -1,13 +1,12 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 11 Kasım 2026
+**Güncelleme:** 12 Kasım 2026
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
 tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 17 harita**;
-lightmap 14 haritada render'da (hackney/russianhill/brighton'da decoded set yok,
-ambient); kurs minimap'i ve 9 tipli güçlendirme
+lightmap **17/17 haritada** render'da; kurs minimap'i ve 9 tipli güçlendirme
 E2E'si bağlı. Varsayılan harita **Amboy** (tam şehir).
-**Son commit'ler:** `a420726` River hattı merkezlendi + düşme düzeltildi,
-`8f1179c` varsayılan harita Amboy, `321043d` ölçülen görsel sorunlar kaydı.
+**Son commit'ler:** `502c728` bowl/defaultcar engel kaydı, `14c05ba` russianhill
++ brighton, `08a9f3e` hackney, `a420726` River hattı merkezlendi.
 **Bu oturumun kaydı:** [`docs/work/logs/2026-11-08-mp-eight.md`](../work/logs/2026-11-08-mp-eight.md)
 
 ## Şimdi dene (tek harita + tek araç)
@@ -70,10 +69,9 @@ node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
   "arc-progression"` (koridor içinde kapı yayına ulaşmak geçiş sayılır).
 - **Ses:** 23 olaylı retail kataloğu sayfaya bağlı (pickup, silah, mayın,
   nitro, shock, barge, kalkan, tamir, bitiş, geri sayım, wreck).
-- **Işık:** retail ambient + **gerçek lightmap** render'da. **14 haritada**
-  lightmap var; hackney'de decoded set yok, tüm draw'lar ambient terimle
-  çiziliyor (tipli `map_limits` satırı). Sausalito **100 doku / 1347 draw**;
-  Downtown
+- **Işık:** retail ambient + **gerçek lightmap** render'da. **17/17 haritada**
+  lightmap var: hackney **58 doku / 2.481 draw**, russianhill **62 / 1.191**,
+  brighton **58 / 1.420**. Sausalito **100 doku / 1347 draw**; Downtown
   **86 / 1279**, Highrise **22 / 69** (kısmi set, tek tipli `unsupported`
   referans); Amboy 83/1173, River 38/383, Dumbo 115/1615, Downtown MP 49/207.
 - **Araç materyali:** retail **boya** ve **ışık rengi** render'da (Corvette
