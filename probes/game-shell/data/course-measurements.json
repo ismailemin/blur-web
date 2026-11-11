@@ -48,7 +48,8 @@
     },
     "sausalito": {
       "310": "_work/e1-drive/sausalito/layout.json course.span.lengthMetres (222.286304 m); probes/map-laps-aid/data/sausalito-raster-layout.json agrees; probes/e1-drive/web/map-registry.js MAPS.sausalito.pins.pathLengthMetres agrees"
-    }
+    },
+    "hackney": "probes/map-laps-aid/data/hackney-covered-path.json course.span.lengthMetres (draw-covered component path truncated at 640 m)"
   },
   "maps": {
     "river": {
@@ -96,6 +97,9 @@
     },
     "sausalito": {
       "310": 222.286304
+    },
+    "hackney": {
+      "310": 639.751935
     }
   },
   "gates": {

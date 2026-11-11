@@ -186,7 +186,7 @@ export function soloMapScenario(mapId) {
       running.sprintLayoutHash + ' vs ' + anchor.layoutHash);
 
     const done = await waitProbe(ctx, page, (probe) => probe.sprintResult !== null,
-      { timeoutMs: 240000, label: mapId + ' finish' });
+      { timeoutMs: mapId === 'hackney' ? 360000 : 240000, label: mapId + ' finish' });
     await ctx.shot(page, 'finish');
     const result = done.sprintResult;
     ctx.A.check(mapId + ': finish time is ' + anchor.timeSeconds + ' s',

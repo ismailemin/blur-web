@@ -1,3 +1,10 @@
+## 11 Kasım 2026 — hackney açıldı (15/19), zemin kenarı üreticilerde
+
+- **Haritalar 14 → 15:** hackney, draw-covered bileşen jeodezik yoluyla açıldı. Tam yol arc 660'ta ~4 m hairpin içeriyor (committed denetleyici döndemiyor); kurs **639,752 m**'de kesildi. `solo-hackney` **12/12**, scripted sprint 221,5 s, 2/2 checkpoint. `verify_e1_map --map hackney` 22/22.
+- **Zemin kenarı koruması üreticilerde:** `course.groundEdge` artık `build_batch_paths.py`, `build_aid_paths.py`, `build_longbeach_path.py` ve `recentre_layout.py` tarafından yazılıyor; 10 haritada etkin, Shutoko/Oval/Highrise çok katlı olduğu için tipli `ground_edge=False`.
+- **Kapalı harita ölçümü:** draw-covered yol 0,25 m'de hackney %95,4, brighton %78,5 (0,0436 m adım), russianhill %65,5 bant-temiz. Brighton motor koşusu 27 respawn ile DNF.
+- **Kapılar:** `verify_asset_probe --skip-build` **101/101** (hackney adımı dahil, `gate-full57.log`), `verify_blocked` 930/930, `verify_map_decisions` 1500/1500, shell 44/44.
+
 ## 11 Kasım 2026 — River hattı merkezlendi, düşme düzeltildi, varsayılan Amboy
 
 - **Varsayılan harita Amboy:** menü ilk açılışta Amboy'u seçiyor (`DEFAULT_MAP_ID`); River'ın 22 prop + 394 yol draw'ı yerine 1.201 draw / 269.300 üçgenlik şehir. Shell 44/44.

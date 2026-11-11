@@ -92,6 +92,15 @@ const MAPS = Object.freeze({
     level: 'usa_sanfran_sausalito',
     outDir: '_work/e1-drive/sausalito',
     layout: 'probes/map-laps-aid/data/sausalito-raster-layout.json'
+  }),
+  // Hackney's course is the draw-covered component path truncated at 640 m: the
+  // full geodesic has a ~4 m hairpin at arc 660 that the committed controller
+  // cannot drive (the AI stops there). It is not the retail .aid line.
+  hackney: Object.freeze({
+    id: 'hackney',
+    level: 'uk_london_hackney',
+    outDir: '_work/e1-drive/hackney',
+    layout: 'probes/map-laps-aid/data/hackney-covered-path.json'
   })
 });
 

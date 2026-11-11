@@ -1922,6 +1922,7 @@ def verify_batch(rep: Report, results: dict) -> None:
         "usa_ny_dumbo": "dumbo",
         "usa_la_downtown_multiplayer": "downtown-mp",
         "usa_sanfran_sausalito": "sausalito",
+        "uk_london_hackney": "hackney",
         },
         "registry/integrated",
         "parsed %d map records from %s" % (len(integrated),

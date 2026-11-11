@@ -15,7 +15,8 @@ Bu dosya, çalışmaya kaldığı yerden devam etmek için yazıldı. Önce
 | **Sprint** | Corvette **14,600 s / tick 966**, 0 respawn, 2/2 checkpoint; `solo-sprint` **39/39**; `race-rules` **67/67**. |
 | **Kapılar** | `a/b` çizgisi teğetten yeniden kuruluyor; bitiş measuredEnd - 10 m; River'da `gateRule: "arc-progression"`. |
 | **Doğrulama** | `verify_e1_map` 10/10; `ai-driver` 27/27 (eski layout satırları `staleLayout` ile atlanıyor). |
-| **Açık takip** | `measure_ground_edge.py` çıktısını `map_package_builder.mjs` içinden üretmek (builder layout.json'u bayt bayt doğruluyor). Shutoko/Oval/Highrise çok katlı raster: guard uygulanmıyor. |
+| **Haritalar** | **15/19.** Hackney draw-covered bileşen yoluyla açıldı: 639,752 m (arc 660'taki ~4 m hairpin'den önce kesildi), 2.636 örnek, `solo-hackney` 12/12, scripted sprint 221,5 s. |
+| **Açık takip** | brighton (covered yol %78,5 bant-temiz, 0,0436 m adım; motor 27 respawn ile DNF), russianhill (spawn 175 m uzak), bowl (covered yol yok), showroom (yarış haritası değil). |
 
 ## 9 Kasım 2026 durumu (tarihsel)
 

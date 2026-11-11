@@ -86,10 +86,10 @@ test('every registered course has a measured value and every map is measured', (
   }
 });
 
-test('the registry exposes exactly the fourteen MP-capable maps', () => {
+test('the registry exposes exactly the fifteen MP-capable maps', () => {
   const data = dataset();
   assert.deepEqual([...MAP_IDS], ['river', 'amboy', 'gracia', 'longbeach', 'observatory', 'downtown', 'mharuna',
-    'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp', 'sausalito']);
+    'highrise', 'shutoko', 'oval', 'amboy-mp', 'dumbo', 'downtown-mp', 'sausalito', 'hackney']);
   assert.deepEqual([...MP_MAP_IDS], [...MAP_IDS]);
   for (const id of MAP_IDS) {
     const map = data.maps[id];

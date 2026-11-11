@@ -1,5 +1,5 @@
 {
- "canonicalSha256": "17e51c1974a69dad08f8718391dd128d74d2064acf452fad62c149203c450f78",
+ "canonicalSha256": "e5b38facdb1e14096fad3dea52ac321e12ae29e10a1632860dc49c2192008057",
  "generatedBy": "probes/map-pipeline/tools/build_map_decisions.py",
  "levels": [
   {
@@ -380,6 +380,53 @@
   },
   {
    "blocker": null,
+   "city": "Hackney",
+   "cityKey": "CRN_HACKNEY",
+   "citySource": "docs/work/analysis/localization.md#3.2",
+   "counts": {
+    "bindableDraws": 2512,
+    "collisionTriangles": 76820,
+    "collisionVertices": 43876,
+    "drawTriangles": 445853,
+    "draws": 2659,
+    "instanceDescriptionsSkipped": 3310,
+    "sectionsProbed": 82,
+    "sectionsSupported": 71,
+    "sectionsUnsupported": 11,
+    "textureBlobs": 877,
+    "textureSources": 878
+   },
+   "distanceRank": 9,
+   "evidence": {
+    "batchGrade": "playable",
+    "batchVerifyChecks": 181782,
+    "batchVerifyFailures": 0,
+    "determinismIdentical": true,
+    "inventoryGrade": "B",
+    "inventoryPlayableToday": true,
+    "inventorySingleBlocker": null,
+    "manifestGrade": "playable",
+    "manifestMapId": "hackney",
+    "playableDistanceItems": [],
+    "registryMapId": "hackney",
+    "reportGrade": "playable",
+    "reportMapId": "hackney"
+   },
+   "kind": "race",
+   "level": "uk_london_hackney",
+   "paths": {
+    "collisionM": 1185.744,
+    "drawCoveredM": 776.445742855,
+    "packageKind": "draw-covered-measured",
+    "packageM": 776.445742855,
+    "recoveredM": null,
+    "samples": 3161
+   },
+   "verdict": "playable",
+   "verdictReason": "integrated in probes/e1-drive/web/map-registry.js MAP_IDS and the map-batch package verifies"
+  },
+  {
+   "blocker": null,
    "city": "Barcelona Oval",
    "cityKey": "CRN_BARCELONA_OVAL",
    "citySource": "docs/work/analysis/localization.md#3.2",
@@ -396,7 +443,7 @@
     "textureBlobs": 218,
     "textureSources": 219
    },
-   "distanceRank": 9,
+   "distanceRank": 10,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 119326,
@@ -443,7 +490,7 @@
     "textureBlobs": 1023,
     "textureSources": 1031
    },
-   "distanceRank": 10,
+   "distanceRank": 11,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 312233,
@@ -490,7 +537,7 @@
     "textureBlobs": 209,
     "textureSources": 210
    },
-   "distanceRank": 11,
+   "distanceRank": 12,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 353860,
@@ -537,7 +584,7 @@
     "textureBlobs": 1086,
     "textureSources": 1100
    },
-   "distanceRank": 12,
+   "distanceRank": 13,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 58547,
@@ -584,7 +631,7 @@
     "textureBlobs": 37,
     "textureSources": 38
    },
-   "distanceRank": 13,
+   "distanceRank": 14,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 201895,
@@ -631,7 +678,7 @@
     "textureBlobs": 121,
     "textureSources": 123
    },
-   "distanceRank": 14,
+   "distanceRank": 15,
    "evidence": {
     "batchGrade": "playable",
     "batchVerifyChecks": 234932,
@@ -691,7 +738,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
+     "detail": "MAP_IDS has no entry for usa_sanfran_russianhill; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, hackney, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -712,7 +759,7 @@
     "textureBlobs": 824,
     "textureSources": 840
    },
-   "distanceRank": 15,
+   "distanceRank": 16,
    "evidence": {
     "batchGrade": "partial",
     "batchVerifyChecks": 334440,
@@ -744,174 +791,6 @@
     "packageM": 186.793939239,
     "recoveredM": null,
     "samples": 777
-   },
-   "verdict": "blocked",
-   "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
-  },
-  {
-   "blocker": {
-    "byteGaps": [
-     {
-      "byteOffset": 447664,
-      "geometryBlock": 114,
-      "id": "g114-n263",
-      "nodeBlock": 263,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 722444,
-      "geometryBlock": 125,
-      "id": "g125-n271",
-      "nodeBlock": 271,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 65606,
-      "geometryBlock": 159,
-      "id": "g159-n291",
-      "nodeBlock": 291,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 40634,
-      "geometryBlock": 161,
-      "id": "g161-n301",
-      "nodeBlock": 301,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 680644,
-      "geometryBlock": 172,
-      "id": "g172-n311",
-      "nodeBlock": 311,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 8732,
-      "geometryBlock": 188,
-      "id": "g188-n189",
-      "nodeBlock": 189,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 41092,
-      "geometryBlock": 238,
-      "id": "g238-n239",
-      "nodeBlock": 239,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 634318,
-      "geometryBlock": 242,
-      "id": "g242-n243",
-      "nodeBlock": 243,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 419478,
-      "geometryBlock": 284,
-      "id": "g284-n285",
-      "nodeBlock": 285,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 395284,
-      "geometryBlock": 308,
-      "id": "g308-n309",
-      "nodeBlock": 309,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     },
-     {
-      "byteOffset": 6236,
-      "geometryBlock": 402,
-      "id": "g402-n403",
-      "nodeBlock": 403,
-      "reason": "Unsupported position vertex format",
-      "source": "_work/map-batch/uk_london_hackney/draws.json#unsupportedSections"
-     }
-    ],
-    "code": "e1-map-package-missing",
-    "evidence": {
-     "batchGrade": "partial",
-     "extendedProbe": null,
-     "playableDistanceItems": [
-      "slice-package",
-      "texture-bindings",
-      "render-package",
-      "layout",
-      "e1-map-package",
-      "e1-verify-browser"
-     ]
-    },
-    "kind": "integration",
-    "reason": "no committed retail spawn/course; e1-drive has no map package",
-    "records": [],
-    "sourceRecord": {
-     "byteOffset": null,
-     "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_london_hackney; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
-     "file": "probes/e1-drive/web/map-registry.js",
-     "recordId": "MAP_IDS"
-    }
-   },
-   "city": "Hackney",
-   "cityKey": "CRN_HACKNEY",
-   "citySource": "docs/work/analysis/localization.md#3.2",
-   "counts": {
-    "bindableDraws": 2512,
-    "collisionTriangles": 76820,
-    "collisionVertices": 43876,
-    "drawTriangles": 445853,
-    "draws": 2659,
-    "instanceDescriptionsSkipped": 3310,
-    "sectionsProbed": 82,
-    "sectionsSupported": 71,
-    "sectionsUnsupported": 11,
-    "textureBlobs": 877,
-    "textureSources": 878
-   },
-   "distanceRank": 16,
-   "evidence": {
-    "batchGrade": "partial",
-    "batchVerifyChecks": 181782,
-    "batchVerifyFailures": 0,
-    "determinismIdentical": true,
-    "inventoryGrade": "B",
-    "inventoryPlayableToday": false,
-    "inventorySingleBlocker": "no committed retail spawn/course; e1-drive has no map package",
-    "manifestGrade": "partial",
-    "manifestMapId": null,
-    "playableDistanceItems": [
-     "slice-package",
-     "texture-bindings",
-     "render-package",
-     "layout",
-     "e1-map-package",
-     "e1-verify-browser"
-    ],
-    "registryMapId": null,
-    "reportGrade": "partial",
-    "reportMapId": null
-   },
-   "kind": "race",
-   "level": "uk_london_hackney",
-   "paths": {
-    "collisionM": 1185.744,
-    "drawCoveredM": 776.445742855,
-    "packageKind": "draw-covered-measured",
-    "packageM": 776.445742855,
-    "recoveredM": null,
-    "samples": 3161
    },
    "verdict": "blocked",
    "verdictReason": "no committed retail spawn/course and no E1 map package; the map-batch package verifies but is not integrated"
@@ -955,7 +834,7 @@
     "sourceRecord": {
      "byteOffset": null,
      "byteOffsetNote": "integration gap: the level bytes and the map-batch package exist; the missing record is the E1 registry entry, not a byte range",
-     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
+     "detail": "MAP_IDS has no entry for uk_brighton; registry ids are amboy, amboy-mp, downtown, downtown-mp, dumbo, gracia, hackney, highrise, longbeach, mharuna, observatory, oval, river, sausalito, shutoko",
      "file": "probes/e1-drive/web/map-registry.js",
      "recordId": "MAP_IDS"
     }
@@ -1266,7 +1145,7 @@
    "sha256": "124f01c0013a4578e2229016b0d1f8d82bfd850bb3bcaa597573f1afbadd733b"
   },
   "batchSummary": {
-   "contentSha256": "b0ed15fa8dd04a62909d59b45db67cb62866a1b5a2771904e604d8ced6a7613a",
+   "contentSha256": "b1a0dd76e790d74cd9163358b50c8b4d5af9a6a3bffb5a7f465e77666383a09c",
    "path": "_work/map-batch/batch-summary.json",
    "pin": "content",
    "volatileFields": [
@@ -1283,9 +1162,9 @@
    ]
   },
   "blockedInventory": {
-   "bytes": 60293,
+   "bytes": 60102,
    "path": "_work/map-pipeline/blocked/inventory-19.json",
-   "sha256": "c65603ca0fbc15e1b6ba1b7ff6f610e34051f13928edf1dcce34ec31c70c124f"
+   "sha256": "c624a7c8dfa53fa21b0ac08ea6e69cda8f824603db01c019f7dc0cded82236c4"
   },
   "inventory": {
    "bytes": 159627,
@@ -1298,9 +1177,9 @@
    "sha256": "5eea94a1b538ed1d3f1634a6394a8d288412009715c1632daa3012e0382617d2"
   },
   "mapRegistry": {
-   "bytes": 43010,
+   "bytes": 46066,
    "path": "probes/e1-drive/web/map-registry.js",
-   "sha256": "36a3d4c139614b6029a72d9640c97d3a79136e434f7eec43f40b91c3a5f97026"
+   "sha256": "411c63c3d4c230ac1d6e4c149e18b23e83b11401975bf0e20df1c615fb02c457"
   },
   "maps": {
    "bytes": 205652,
@@ -1311,14 +1190,13 @@
  "summary": {
   "blocked": [
    "usa_sanfran_russianhill",
-   "uk_london_hackney",
    "uk_brighton",
    "showroom",
    "spa_barcelona_bowl_multiplayer"
   ],
   "counts": {
-   "blocked": 5,
-   "playable": 14,
+   "blocked": 4,
+   "playable": 15,
    "unsupported": 0
   },
   "levelCount": 19,
@@ -1331,6 +1209,7 @@
    "usa_amboy",
    "jpn_mharuna",
    "usa_la_river",
+   "uk_london_hackney",
    "spa_barcelona_oval",
    "usa_ny_dumbo",
    "usa_sanfran_sausalito",

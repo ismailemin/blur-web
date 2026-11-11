@@ -149,6 +149,15 @@
       "checkpoints": 2,
       "layoutHash": "sha256:7f8344b0ce5feaa126bc37a26a3b44079a3bd0667c35f3509b0a22a4fba916a1",
       "docRef": "probes/map-laps-aid/data/sausalito-raster-layout.json (222.286304 m collision-raster ring)"
+    },
+    "hackney": {
+      "slug": "corvette-zr1-stock",
+      "courseId": "hackney",
+      "timeSeconds": 221.533333,
+      "timeToleranceSeconds": 2.0,
+      "checkpoints": 2,
+      "layoutHash": "sha256:e15c038439bb4ce9480da99d2ccc60dce2e94d8924273ae5820283fdc0b6141f",
+      "docRef": "draw-covered component path truncated at 640 m (docs/work/verification/covered-path-band.md)"
     }
   },
   "mp": {

@@ -348,6 +348,35 @@ MAP_BUILDS = {
             "the course is the widest ring inside the passable collision component, not the retail AI racing line",
         ],
     ),
+    "hackney": dict(
+        id="hackney",
+        level="uk_london_hackney",
+        batch="_work/map-batch/uk_london_hackney",
+        out_dir="_work/e1-drive/hackney",
+        layout="probes/map-laps-aid/data/hackney-covered-path.json",
+        physics="game-data/Blur/levels/uk_london_hackney/Level.levelphysics",
+        mesh_id="hackney.direct",
+        render_label="hackney-direct-draws",
+        package_label="uk_london_hackney",
+        course_name="uk_london_hackney draw-covered path (truncated before the arc-660 hairpin)",
+        decal_status="blocked-effect-not-static-albedo",
+        diagnostic_statuses=("blocked-alpha-rule-missing", "blocked-runtime-albedo-parameter",
+                             "blocked-missing-texture-source"),
+        collision_note=("static triangle meshes only; the simple/composite collision "
+                        "shapes are not in this buffer"),
+        collision_reason=("hidden physics provenance; the engine loads the complete "
+                          "Level.levelphysics, this mesh is not uploaded or drawn"),
+        instance_descriptions=3310,
+        instance_sections=14,
+        unsupported_sections=11,
+        map_limits=[
+            "direct LOD0 draws only; 11 unsupported sections and 3,310 instance descriptions in 14 sections are not applied",
+            "34 effect draws and 113 diagnostic draws (102 alpha-rule, 7 runtime-albedo, 4 missing texture source) are skipped with labels; no fallback texture or colour",
+            "collision triangles exclude the simple/composite collision shapes",
+            "the course is the draw-covered component path truncated at 640 m, before a ~4 m hairpin the committed controller cannot drive; it is not the retail AI racing line",
+            "no decoded lightmap set exists for this level: every draw uses the ambient term",
+        ],
+    ),
 }
 
 

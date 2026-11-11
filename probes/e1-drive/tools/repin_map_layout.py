@@ -36,11 +36,16 @@ def repin(map_id: str) -> None:
     block = text[start:end]
     if "layoutContentHash:" not in block:
         raise SystemExit("no layoutContentHash in %s pins" % map_id)
+    # `pins` carries layoutContentHash/layoutFileSha256; `mpPins` carries
+    # layoutHash/layoutFileSha256/layoutBytes. Both describe the same file, so
+    # every occurrence is updated together.
     block = re.sub(r"layoutContentHash: 'sha256:[0-9a-f]{64}'",
-                   "layoutContentHash: 'sha256:%s'" % content, block, count=1)
+                   "layoutContentHash: 'sha256:%s'" % content, block)
+    block = re.sub(r"layoutHash: 'sha256:[0-9a-f]{64}'",
+                   "layoutHash: 'sha256:%s'" % content, block)
     block = re.sub(r"layoutFileSha256: 'sha256:[0-9a-f]{64}'",
-                   "layoutFileSha256: 'sha256:%s'" % file_sha, block, count=1)
-    block = re.sub(r"layoutBytes: \d+", "layoutBytes: %d" % size, block, count=1)
+                   "layoutFileSha256: 'sha256:%s'" % file_sha, block)
+    block = re.sub(r"layoutBytes: \d+", "layoutBytes: %d" % size, block)
     REGISTRY.write_text(text[:start] + block + text[end:], encoding="utf-8")
 
     expected = json.loads(EXPECTED.read_text(encoding="utf-8"))

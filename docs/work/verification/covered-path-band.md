@@ -61,10 +61,12 @@ and `showroom` is not a race map.
 
 ## Result
 
-Hackney's covered path is the best source found so far (95.4 % band-clear), and
-the engine check below drives it for 654 m with 0 respawns and 2/2 checkpoints,
-but the path contains a hairpin the committed controller cannot follow. The
-measurement does **not** claim hackney is playable today.
+Hackney's covered path is the best source found so far (95.4 % band-clear). The
+engine check drives it for 654 m with 0 respawns and 2/2 checkpoints, then stops
+at a hairpin the committed controller cannot follow. **Truncating the course at
+640 m — before the hairpin — makes it playable**: the committed scripted sprint
+finishes in 221.5 s with 2/2 checkpoints, and hackney is now the fifteenth
+playable map (`?map=hackney`).
 
 ## Engine check of the covered path (the attempt)
 

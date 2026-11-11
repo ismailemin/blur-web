@@ -110,7 +110,8 @@ def main(argv=None):
                 "amboy-mp": "usa_amboy_multiplayer",
                 "dumbo": "usa_ny_dumbo",
                 "downtown-mp": "usa_la_downtown_multiplayer",
-                "sausalito": "usa_sanfran_sausalito"}
+                "sausalito": "usa_sanfran_sausalito",
+                "hackney": "uk_london_hackney"}
     playable_levels = {playable[mid] for mid in read_playable_ids() if mid in playable}
 
     probe_levels = {

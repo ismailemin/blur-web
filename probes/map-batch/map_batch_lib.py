@@ -96,6 +96,9 @@ INTEGRATED = {
     "usa_ny_dumbo": "dumbo",
     "usa_la_downtown_multiplayer": "downtown-mp",
     "usa_sanfran_sausalito": "sausalito",
+    # Hackney runs the draw-covered component path truncated at 640 m; the
+    # full geodesic has a ~4 m hairpin the committed controller cannot drive.
+    "uk_london_hackney": "hackney",
 }
 
 MIN_COVERED_PATH_M = 25.0
