@@ -39,7 +39,7 @@ import {
   menuModes,
   mpAi,
   mpAmboy,
-  mpCoveredMap,
+  mpMapScenario,
   mpEight,
   mpGracia,
   mpBossBattle,
@@ -114,15 +114,26 @@ const SCENARIOS = {
   'solo-hackney': { group: 'slow', timeout: 420000, run: soloMapScenario('hackney') },
   'solo-russianhill': { group: 'slow', timeout: 300000, run: soloMapScenario('russianhill') },
   // Two-player rooms on the three covered-path maps.
-  'mp-hackney': { group: 'slow', timeout: 600000, run: mpCoveredMap('hackney') },
-  'mp-russianhill': { group: 'slow', timeout: 900000, run: mpCoveredMap('russianhill') },
-  'mp-brighton': { group: 'slow', timeout: 300000, run: mpCoveredMap('brighton') },
+  'mp-hackney': { group: 'slow', timeout: 600000, run: mpMapScenario('hackney') },
+  'mp-russianhill': { group: 'slow', timeout: 900000, run: mpMapScenario('russianhill') },
+  'mp-brighton': { group: 'slow', timeout: 300000, run: mpMapScenario('brighton') },
+  'mp-longbeach': { group: 'slow', timeout: 300000, run: mpMapScenario('longbeach') },
+  'mp-observatory': { group: 'slow', timeout: 300000, run: mpMapScenario('observatory') },
+  'mp-downtown': { group: 'slow', timeout: 300000, run: mpMapScenario('downtown') },
+  'mp-mharuna': { group: 'slow', timeout: 300000, run: mpMapScenario('mharuna') },
+  'mp-highrise': { group: 'slow', timeout: 300000, run: mpMapScenario('highrise') },
+  'mp-shutoko': { group: 'slow', timeout: 300000, run: mpMapScenario('shutoko') },
+  'mp-oval': { group: 'slow', timeout: 300000, run: mpMapScenario('oval') },
+  'mp-amboy-mp': { group: 'slow', timeout: 300000, run: mpMapScenario('amboy-mp') },
+  'mp-dumbo': { group: 'slow', timeout: 300000, run: mpMapScenario('dumbo') },
+  'mp-downtown-mp': { group: 'slow', timeout: 300000, run: mpMapScenario('downtown-mp') },
+  'mp-sausalito': { group: 'slow', timeout: 300000, run: mpMapScenario('sausalito') },
   'solo-brighton': { group: 'slow', timeout: 300000, run: soloMapScenario('brighton') }
 };
 const DEFAULT_SCENARIOS = ['solo-sprint', 'solo-lap', 'solo-free', 'mp-two'];
 const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix', 'mp-eight'];
-const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy', 'mp-hackney', 'mp-russianhill', 'mp-brighton', 'mp-eight', 'mp-powerups', 'mp-destruction', 'mp-points', 'mp-elimination', 'mp-boss-battle']);
-const MAP_SCENARIOS = new Set(['mp-amboy', 'mp-gracia', 'mp-hackney', 'mp-russianhill', 'mp-brighton', 'mode-matrix']);
+const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy', 'mp-hackney', 'mp-russianhill', 'mp-brighton', 'mp-longbeach', 'mp-observatory', 'mp-downtown', 'mp-mharuna', 'mp-highrise', 'mp-shutoko', 'mp-oval', 'mp-amboy-mp', 'mp-dumbo', 'mp-downtown-mp', 'mp-sausalito', 'mp-eight', 'mp-powerups', 'mp-destruction', 'mp-points', 'mp-elimination', 'mp-boss-battle']);
+const MAP_SCENARIOS = new Set(['mp-amboy', 'mp-gracia', 'mp-hackney', 'mp-russianhill', 'mp-brighton', 'mp-longbeach', 'mp-observatory', 'mp-downtown', 'mp-mharuna', 'mp-highrise', 'mp-shutoko', 'mp-oval', 'mp-amboy-mp', 'mp-dumbo', 'mp-downtown-mp', 'mp-sausalito', 'mode-matrix']);
 
 const runId = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 mkdirSync(OUT, { recursive: true });
@@ -220,7 +231,18 @@ function checkPrerequisites(selected) {
     required.push('game-data/Blur/levels/usa_amboy/Level.levelphysics');
     required.push('game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics');
     for (const [map, level] of [['hackney', 'uk_london_hackney'],
-      ['russianhill', 'usa_sanfran_russianhill'], ['brighton', 'uk_brighton']]) {
+      ['russianhill', 'usa_sanfran_russianhill'], ['brighton', 'uk_brighton'],
+      ['longbeach', 'usa_la_longbeachdocks'],
+      ['observatory', 'usa_la_observatory'],
+      ['downtown', 'usa_la_downtown'],
+      ['mharuna', 'jpn_mharuna'],
+      ['highrise', 'usa_la_multiplayer_highrise'],
+      ['shutoko', 'jpn_tokyo_shutoko'],
+      ['oval', 'spa_barcelona_oval'],
+      ['amboy-mp', 'usa_amboy_multiplayer'],
+      ['dumbo', 'usa_ny_dumbo'],
+      ['downtown-mp', 'usa_la_downtown_multiplayer'],
+      ['sausalito', 'usa_sanfran_sausalito']]) {
       required.push('_work/e1-drive/' + map + '/map.json', '_work/e1-drive/' + map + '/layout.json');
       required.push('game-data/Blur/levels/' + level + '/Level.levelphysics');
     }

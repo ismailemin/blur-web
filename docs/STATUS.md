@@ -1,3 +1,9 @@
+## 12 Kasım 2026 — MP kapsaması 17/17 harita
+
+- **Kalan 11 harita eklendi:** longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, dumbo, downtown-mp, sausalito — hepsi iki oyunculu oda, committed host/guest satırları.
+- **E2E:** toplam **45 senaryo**; `mpMapScenario` fabrikası her oynanabilir haritayı kapsıyor.
+- **Ölçüm:** longbeach 57,100/56,983 s, observatory 34,400/34,133, downtown 13,383/12,800, mharuna 19,033/19,300, highrise 3,583/2,733, shutoko 21,983/21,633, oval 39,500/41,950, amboy-mp 13,450/13,200, dumbo 16,817/18,683, downtown-mp 8,033/7,383, sausalito 45,967/49,100.
+
 ## 12 Kasım 2026 — üç yeni haritada MP kapsaması (49/49)
 
 - **`mp-hackney`, `mp-russianhill`, `mp-brighton`** eklendi: iki oyunculu oda, committed satırlar, üçü de **49/49**.

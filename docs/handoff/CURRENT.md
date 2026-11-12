@@ -96,8 +96,8 @@ node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
   Model testleri **112/112**.
   Amboy'da 82 pickup doğrulandı; menü artık her haritada açıyor.
 - **Multiplayer:** 17 haritanın tamamı lobide seçilebilir; 2 oyunculu + 0–3 AI.
-  Üç yeni haritada (hackney, russianhill, brighton) iki oyunculu oda e2e'si
-  **49/49**; toplam **34 senaryo**.
+  **17/17 haritada** iki oyunculu oda e2e'si (`mp-<map>`, 49/49); toplam
+  **45 senaryo**.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Taşınabilir kapı:** `verify_asset_probe --skip-build` **98/98**.
 - **E2E:** **25 senaryo**; `solo-sausalito` 12/12, `mp-powerups` 45/45,
@@ -153,9 +153,9 @@ boundaries diyor". Ölçülen nedenler ve durum:
 
 **Doğrulama:** `solo-sprint` 39/39 (Corvette **14,600 s / tick 966**, 0
 respawn), `race-rules` 67/67, 13/13 `verify_e1_map` (hackney, russianhill,
-brighton dahil), **tam e2e 31/31 senaryo / 952/952 assertion**
-(`_work/logs/e2e-full-17maps.log`, exit 0) ve **`verify_asset_probe --skip-build`
-103/103** (`gate-full62.log`, exit 0). MP çapaları yeni hatla yeniden ölçüldü
+brighton dahil), **tam e2e 45/45 senaryo / 1616/1616 assertion**
+(`_work/logs/e2e-full-45.log`, exit 0) ve **`verify_asset_probe --skip-build`
+103/103** (`gate-full67.log`, exit 0). MP çapaları yeni hatla yeniden ölçüldü
 (River host 14,617 s / guest 15,850 s; AI odası sırası değişti).
 
 **Kalan iş:** `measure_ground_edge.py` çıktısı artık **yol üreticilerinin

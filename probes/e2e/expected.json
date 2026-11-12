@@ -316,6 +316,237 @@
         "host": 0,
         "guest": 0
       }
+    },
+    "longbeach": {
+      "mapId": "longbeach",
+      "courseId": "longbeach",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 3516,
+          "timeSeconds": 57.1,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 3509,
+          "timeSeconds": 56.983333,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "observatory": {
+      "mapId": "observatory",
+      "courseId": "observatory",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 2154,
+          "timeSeconds": 34.4,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 2138,
+          "timeSeconds": 34.133333,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "downtown": {
+      "mapId": "downtown",
+      "courseId": "downtown",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 893,
+          "timeSeconds": 13.383333,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 858,
+          "timeSeconds": 12.8,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "mharuna": {
+      "mapId": "mharuna",
+      "courseId": "mharuna",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 1232,
+          "timeSeconds": 19.033333,
+          "position": 1
+        },
+        {
+          "role": "guest",
+          "tick": 1248,
+          "timeSeconds": 19.3,
+          "position": 2
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "highrise": {
+      "mapId": "highrise",
+      "courseId": "highrise",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 305,
+          "timeSeconds": 3.583333,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 254,
+          "timeSeconds": 2.733333,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "shutoko": {
+      "mapId": "shutoko",
+      "courseId": "shutoko",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 1409,
+          "timeSeconds": 21.983333,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 1388,
+          "timeSeconds": 21.633333,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "oval": {
+      "mapId": "oval",
+      "courseId": "oval",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 2460,
+          "timeSeconds": 39.5,
+          "position": 1
+        },
+        {
+          "role": "guest",
+          "tick": 2607,
+          "timeSeconds": 41.95,
+          "position": 2
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "amboy-mp": {
+      "mapId": "amboy-mp",
+      "courseId": "amboy-mp",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 897,
+          "timeSeconds": 13.45,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 882,
+          "timeSeconds": 13.2,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "dumbo": {
+      "mapId": "dumbo",
+      "courseId": "dumbo",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 1099,
+          "timeSeconds": 16.816667,
+          "position": 1
+        },
+        {
+          "role": "guest",
+          "tick": 1211,
+          "timeSeconds": 18.683333,
+          "position": 2
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "downtown-mp": {
+      "mapId": "downtown-mp",
+      "courseId": "downtown-mp",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 572,
+          "timeSeconds": 8.033333,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 533,
+          "timeSeconds": 7.383333,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
+    },
+    "sausalito": {
+      "mapId": "sausalito",
+      "courseId": "sausalito",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 2848,
+          "timeSeconds": 45.966667,
+          "position": 1
+        },
+        {
+          "role": "guest",
+          "tick": 3036,
+          "timeSeconds": 49.1,
+          "position": 2
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026"
     }
   },
   "mpAi": {

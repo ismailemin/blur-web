@@ -480,15 +480,20 @@ async function startRoomRace(ctx, room, { timeoutMs, midScreenshot = true, expec
     while (Date.now() < deadline) {
       const hostProbe = await readProbe(host);
       const guestProbe = await readProbe(guest);
-      if (hostProbe?.mp?.engineTick >= 300 && guestProbe?.mp?.engineTick >= 300 &&
-          hostProbe.mp.sprint?.phase === 'running' && guestProbe.mp.sprint?.phase === 'running') {
+      // A short course (highrise is 14 m) can finish before tick 300; a
+      // finished race is also a valid "both pages are racing" state.
+      const running = (probe) => probe?.mp?.engineTick >= 300 &&
+        probe.mp.sprint?.phase === 'running';
+      const finished = (probe) => probe?.mp?.sprint?.phase === 'finished';
+      if ((running(hostProbe) && running(guestProbe)) ||
+          (finished(hostProbe) && finished(guestProbe))) {
         midAt = { host: hostProbe.mp.engineTick, guest: guestProbe.mp.engineTick };
         break;
       }
       await sleep(100);
     }
-    ctx.A.check('mp: both pages reached a running race (tick >= 300)', midAt !== null,
-      'race did not reach tick 300 within 60 s');
+    ctx.A.check('mp: both pages reached a running race (tick >= 300) or finished',
+      midAt !== null, 'race did not reach tick 300 or finish within 60 s');
     if (midAt) {
       await ctx.shot(host, 'race-mid');
       await ctx.shot(guest, 'race-mid');
@@ -740,12 +745,11 @@ export async function mpGracia(ctx) {
 }
 
 /**
- * `mp-<map>` for the three covered-path maps: the same two-player room as
- * `mp-two`, on a map whose course comes from its draw-covered component path.
- * The anchors are measured once and then asserted exactly, like the other
- * multiplayer rows.
+ * `mp-<map>`: a two-player room on any playable map. The same lobby/start/
+ * finish flow as `mp-two`; the anchors are measured once and then asserted
+ * exactly, like the other multiplayer rows.
  */
-export function mpCoveredMap(mapId) {
+export function mpMapScenario(mapId) {
   return async function mpCovered(ctx) {
     const expected = { ...ctx.anchors.mp[mapId], hostCar: ctx.anchors.cars.default };
     await mpRace(ctx, {
