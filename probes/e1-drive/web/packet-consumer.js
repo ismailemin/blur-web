@@ -1133,7 +1133,17 @@ export class PacketConsumer {
     // so the texture is not sRGB). A failed fetch leaves the draw on the
     // diagnostic term and is counted, never silently replaced.
     const lightmapRecords = Array.isArray(packet.lightmaps) ? packet.lightmaps : [];
+    // `await fetch` resolves as a microtask, so a long chain of them can starve
+    // the task queue: the render loop, timers and the room WebSocket heartbeat
+    // do not run until the whole set is uploaded. A 30 MB set (russianhill: 84
+    // textures) blocked the page long enough for the heartbeat watchdog to fire
+    // in a two-page room (the timeout was 4.5 s then; it is 15 s now). Yield to
+    // the task queue every few textures.
+    let lightmapUploaded = 0;
     for (const record of lightmapRecords) {
+      if (lightmapUploaded > 0 && lightmapUploaded % 8 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
       if (!record?.url || !Number.isInteger(record.width) || !Number.isInteger(record.height)) {
         throw new Error('packet lightmap record is missing url or dimensions');
       }
@@ -1175,6 +1185,7 @@ export class PacketConsumer {
       }));
       this.stats.lightmapTextures = (this.stats.lightmapTextures ?? 0) + 1;
       this.stats.lightmapBytes = (this.stats.lightmapBytes ?? 0) + bytes.length;
+      lightmapUploaded++;
     }
     for (const draw of this.draws) {
       draw.hasLightmap = Boolean(draw.lightmapUrl && this.lightmapGroups.has(draw.lightmapUrl));

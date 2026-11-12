@@ -241,6 +241,81 @@
         }
       ],
       "docRef": "re-measured 2026-11-11 (guest Audi 67.533 s); host row unchanged"
+    },
+    "hackney": {
+      "mapId": "hackney",
+      "courseId": "hackney",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 11830,
+          "timeSeconds": 195.666667,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 4755,
+          "timeSeconds": 77.75,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026 (hackney covered-path course)",
+      "respawns": {
+        "host": 0,
+        "guest": 0
+      }
+    },
+    "russianhill": {
+      "mapId": "russianhill",
+      "courseId": "russianhill",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 933,
+          "timeSeconds": 14.05,
+          "position": 1
+        },
+        {
+          "role": "guest",
+          "tick": 937,
+          "timeSeconds": 14.116667,
+          "position": 2
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026 (russianhill covered-path course)",
+      "respawns": {
+        "host": 0,
+        "guest": 1
+      }
+    },
+    "brighton": {
+      "mapId": "brighton",
+      "courseId": "brighton",
+      "guestCar": "audi-r8v10-stock",
+      "guestPace": 0.85,
+      "rows": [
+        {
+          "role": "host",
+          "tick": 1189,
+          "timeSeconds": 18.316667,
+          "position": 2
+        },
+        {
+          "role": "guest",
+          "tick": 1150,
+          "timeSeconds": 17.666667,
+          "position": 1
+        }
+      ],
+      "docRef": "measured two-player room, 12 Nov 2026 (brighton covered-path course)",
+      "respawns": {
+        "host": 0,
+        "guest": 0
+      }
     }
   },
   "mpAi": {

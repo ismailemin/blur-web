@@ -32,10 +32,13 @@ export const MIN_PLAYERS_TO_START = 2;
 export const RESUME_WINDOW_MS = 30_000;
 export const HEARTBEAT_INTERVAL_MS = 1_000;
 // Server and client use the same ceiling. A socket that has produced no inbound
-// traffic for 4.5 s is treated as half-open; the client reconnects with its
-// resume token. The shorter detection leaves more of the 30 s grace window for
-// retries on a mobile link.
-export const HEARTBEAT_TIMEOUT_MS = 4_500;
+// traffic for 15 s is treated as half-open; the client reconnects with its
+// resume token. 4.5 s was too tight for a browser that blocks its main thread
+// on a heavy first frame (a 30 MB lightmap set or a shader compile): the
+// watchdog fired, the race paused in `reconnecting` and never resumed, even
+// though the socket was healthy. 15 s still leaves half of the 30 s resume
+// window for a retry on a mobile link.
+export const HEARTBEAT_TIMEOUT_MS = 15_000;
 export const ROOM_TTL_MS = 2 * 60 * 60 * 1_000;
 export const IDLE_ROOM_MS = 5 * 60 * 1_000;
 export const EMPTY_ROOM_MS = 60 * 1_000;

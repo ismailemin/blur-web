@@ -39,6 +39,7 @@ import {
   menuModes,
   mpAi,
   mpAmboy,
+  mpCoveredMap,
   mpEight,
   mpGracia,
   mpBossBattle,
@@ -112,12 +113,16 @@ const SCENARIOS = {
   'solo-sausalito': { group: 'slow', timeout: 300000, run: soloMapScenario('sausalito') },
   'solo-hackney': { group: 'slow', timeout: 420000, run: soloMapScenario('hackney') },
   'solo-russianhill': { group: 'slow', timeout: 300000, run: soloMapScenario('russianhill') },
+  // Two-player rooms on the three covered-path maps.
+  'mp-hackney': { group: 'slow', timeout: 600000, run: mpCoveredMap('hackney') },
+  'mp-russianhill': { group: 'slow', timeout: 900000, run: mpCoveredMap('russianhill') },
+  'mp-brighton': { group: 'slow', timeout: 300000, run: mpCoveredMap('brighton') },
   'solo-brighton': { group: 'slow', timeout: 300000, run: soloMapScenario('brighton') }
 };
 const DEFAULT_SCENARIOS = ['solo-sprint', 'solo-lap', 'solo-free', 'mp-two'];
 const FAST_SCENARIOS = ['solo-sprint', 'solo-free', 'mp-two', 'mp-ai', 'reconnect', 'mode-matrix', 'mp-eight'];
-const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy', 'mp-eight', 'mp-powerups', 'mp-destruction', 'mp-points', 'mp-elimination', 'mp-boss-battle']);
-const MAP_SCENARIOS = new Set(['mp-amboy', 'mp-gracia', 'mode-matrix']);
+const MP_SCENARIOS = new Set(['mp-two', 'mp-ai', 'reconnect', 'mp-gracia', 'mp-amboy', 'mp-hackney', 'mp-russianhill', 'mp-brighton', 'mp-eight', 'mp-powerups', 'mp-destruction', 'mp-points', 'mp-elimination', 'mp-boss-battle']);
+const MAP_SCENARIOS = new Set(['mp-amboy', 'mp-gracia', 'mp-hackney', 'mp-russianhill', 'mp-brighton', 'mode-matrix']);
 
 const runId = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 mkdirSync(OUT, { recursive: true });
@@ -214,6 +219,11 @@ function checkPrerequisites(selected) {
     required.push('_work/e1-drive/gracia/map.json', '_work/e1-drive/gracia/layout.json');
     required.push('game-data/Blur/levels/usa_amboy/Level.levelphysics');
     required.push('game-data/Blur/levels/spa_barcelona_gracia/Level.levelphysics');
+    for (const [map, level] of [['hackney', 'uk_london_hackney'],
+      ['russianhill', 'usa_sanfran_russianhill'], ['brighton', 'uk_brighton']]) {
+      required.push('_work/e1-drive/' + map + '/map.json', '_work/e1-drive/' + map + '/layout.json');
+      required.push('game-data/Blur/levels/' + level + '/Level.levelphysics');
+    }
   }
   const missing = required.filter((rel) => !existsSync(path.join(ROOT, rel)));
   if (missing.length === 0) return;

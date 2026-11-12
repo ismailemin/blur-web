@@ -1,3 +1,10 @@
+## 12 Kasım 2026 — üç yeni haritada MP kapsaması (49/49)
+
+- **`mp-hackney`, `mp-russianhill`, `mp-brighton`** eklendi: iki oyunculu oda, committed satırlar, üçü de **49/49**.
+- **Gerçek hata düzeltildi:** guest sayfası yarış başında `ghost slot 0 names an unloaded remote car` ile çöküyordu — `releaseGeometry()` consumer'ın `remoteCars` haritasını temizlerken uygulama önbelleği "ready" kalıyordu. Önbellek artık consumer'ı yeniden kontrol ediyor.
+- **Lightmap upload** her 8 dokuda görev kuyruğuna dönüyor (mikro-görev zinciri render/heartbeat'i aç bırakmasın); **heartbeat 4,5 s → 15 s**.
+- **MP respawn çapası:** respawn sayısı artık çapadan okunuyor; russianhill guest'in 1 respawn'ı ölçülüp çapaya yazıldı.
+
 ## 12 Kasım 2026 — 17/17 haritada retail lightmap
 
 - **Lightmap 14 → 17:** hackney (58 doku / 2.481 draw), russianhill (62 / 1.191) ve brighton (58 / 1.420) için retail lightmap setleri decode edildi (`export_lightmap_rgba.py --maps ...`, üçü de `complete`). `LIGHTMAP_MAPS`, runtime tablosu ve doğrulayıcı 17 haritaya çıkarıldı.

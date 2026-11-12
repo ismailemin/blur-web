@@ -563,9 +563,15 @@ function assertMpResult(ctx, { hostView, guestView, hostStarted, expected, expec
     hostSelfRow.finishHash === hostView.mp.finishHash &&
       guestSelfRow.finishHash === guestView.mp.finishHash,
     ctx.fmt({ host: hostView.mp.finishHash, guest: guestView.mp.finishHash }));
-  ctx.A.check('mp: no start or race respawn on either page',
-    hostView.mp.sprint?.respawns === 0 && guestView.mp.sprint?.respawns === 0,
-    ctx.fmt({ host: hostView.mp.sprint?.respawns, guest: guestView.mp.sprint?.respawns }));
+  // The committed measurement records the respawns each page had; the default
+  // is zero, and a map that legitimately clips a course declares its count in
+  // the anchor instead of hiding it.
+  const expectedRespawns = expected.respawns ?? { host: 0, guest: 0 };
+  ctx.A.check('mp: respawns match the committed measurement',
+    hostView.mp.sprint?.respawns === (expectedRespawns.host ?? 0) &&
+      guestView.mp.sprint?.respawns === (expectedRespawns.guest ?? 0),
+    ctx.fmt({ host: hostView.mp.sprint?.respawns, guest: guestView.mp.sprint?.respawns,
+      expected: expectedRespawns }));
   ctx.A.check('mp: results overlay is visible on both pages',
     hostView.overlays.resultsHidden === false && guestView.overlays.resultsHidden === false &&
       hostView.overlays.mpResultsHidden === false,
@@ -641,7 +647,13 @@ async function mpRace(ctx, { mapId, expected, guestCar, guestPace, hostExtra = '
   });
 
   const { hostStarted } = await startRoomRace(ctx, room, { timeoutMs: 60000, expectAi });
-  const resultTimeout = mapId === 'amboy' ? 360000 : mapId === 'gracia' ? 180000 : 120000;
+  // The covered-path maps carry large decoded lightmap sets (hackney 19 MB,
+  // russianhill 31 MB, brighton 27 MB) and the MP page loads both cars, so the
+  // result wait is wider than the 120 s used for the small maps.
+  const resultTimeout = mapId === 'amboy' || mapId === 'hackney' ? 360000
+    : mapId === 'gracia' ? 180000
+      : mapId === 'russianhill' ? 600000
+        : mapId === 'brighton' ? 240000 : 120000;
   const hostView = await waitMp(ctx, room.host, (probe) => probe.mp.result !== null,
     { timeoutMs: resultTimeout, label: 'host result' });
   const guestView = await waitMp(ctx, room.guest, (probe) => probe.mp.result !== null,
@@ -725,6 +737,24 @@ export async function mpGracia(ctx) {
     guestCar: expected.guestCar,
     guestPace: expected.guestPace
   });
+}
+
+/**
+ * `mp-<map>` for the three covered-path maps: the same two-player room as
+ * `mp-two`, on a map whose course comes from its draw-covered component path.
+ * The anchors are measured once and then asserted exactly, like the other
+ * multiplayer rows.
+ */
+export function mpCoveredMap(mapId) {
+  return async function mpCovered(ctx) {
+    const expected = { ...ctx.anchors.mp[mapId], hostCar: ctx.anchors.cars.default };
+    await mpRace(ctx, {
+      mapId,
+      expected,
+      guestCar: expected.guestCar,
+      guestPace: expected.guestPace
+    });
+  };
 }
 
 /**

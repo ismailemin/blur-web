@@ -5183,7 +5183,7 @@ function mpRequestRemoteCar(slug) {
     return null;
   }
   const cached = mpRemoteCars.get(slug);
-  if (cached?.status === 'ready') {
+  if (cached?.status === 'ready' && consumer.remoteCars?.has?.(slug)) {
     mpRemoteCarSlug = slug;
     return cached;
   }
@@ -5301,7 +5301,7 @@ function mpUpdateRemoteFrame(renderTick) {
     let remoteHandle = null;
     if (remoteSlug !== car.slug) {
       const entry = mpRemoteCars.get(remoteSlug);
-      if (entry?.status === 'ready') {
+      if (entry?.status === 'ready' && consumer.remoteCars?.has?.(remoteSlug)) {
         remoteRest = entry.wheelRest;
         remoteHandle = entry.handle;
       } else {

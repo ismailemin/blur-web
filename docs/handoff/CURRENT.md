@@ -95,7 +95,9 @@ node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
   SuperShield aktivasyonu 50 puan kapasite + HUD, guest aynı set, 0 konsol.
   Model testleri **112/112**.
   Amboy'da 82 pickup doğrulandı; menü artık her haritada açıyor.
-- **Multiplayer:** 13 haritanın tamamı lobide seçilebilir; 2 oyunculu + 0–3 AI.
+- **Multiplayer:** 17 haritanın tamamı lobide seçilebilir; 2 oyunculu + 0–3 AI.
+  Üç yeni haritada (hackney, russianhill, brighton) iki oyunculu oda e2e'si
+  **49/49**; toplam **34 senaryo**.
 - **Amboy/Gracia prop collider:** 484 / 965 aktif collider, gerçek temas kanıtlı.
 - **Taşınabilir kapı:** `verify_asset_probe --skip-build` **98/98**.
 - **E2E:** **25 senaryo**; `solo-sausalito` 12/12, `mp-powerups` 45/45,
