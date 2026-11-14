@@ -32,8 +32,9 @@ proxy is the same two routes the production configs use:
 | `deploy/Caddyfile` | production Caddy config: automatic Let's Encrypt certificate, `/ws` → 8811, everything else → 8801 |
 | `deploy/nginx.conf` | production nginx config: `certbot` certificate, `map $http_upgrade` for `/ws`, everything else → 8801 |
 | `tools/tls-proxy.mjs` | the local stand-in: HTTPS + WSS termination for the same two routes |
+| `tools/check_proxy_default.mjs` | proves the page-derived room URL: two pages, no `?mpServer=`, one shared result |
 | `tools/deploy_local.ps1` | one command: development certificate (if missing), game + room, TLS proxy, printed URLs |
-| `tools/verify_proxy.ps1` | one command: the self-check above |
+| `tools/verify_proxy.ps1` | one command: the self-check above (derived URL + explicit override) |
 | `deploy/local-dev.pfx` | local development certificate (passphrase `blur`), **not committed** |
 
 ## Commands
@@ -72,11 +73,16 @@ caddy run --config deploy/Caddyfile        # replace play.example.com first
 #    or: nginx -c /etc/nginx/nginx.conf
 ```
 
-The page derives the room URL from its own hostname
-(`defaultRoomUrl()` → `wss://<page-host>:8811/ws`), so behind the proxy the
-guest must pass `?mpServer=wss://play.example.com/ws` or the page needs the
-`/ws` default. The verified proxied run uses `--room-url wss://localhost:8443/ws`,
-which is exactly that override.
+The page derives the room URL from its own origin: on an HTTPS page
+`defaultRoomUrl()` returns `wss://<page-host>[:port]/ws`, which is exactly the
+proxy route, so **a guest never has to append `?mpServer=`**. A plain-HTTP page
+(LAN, direct `serve.mjs`) keeps `ws://<host>:8811/ws`, and `?mpServer=` still
+overrides both for any other topology.
+
+`tools/check_proxy_default.mjs` proves the derived path: two pages load
+`https://localhost:8443/` with no `?mpServer=`, join one room, race and render
+the same result hash. `tools/verify_proxy.ps1` runs it, then the `mp-two`
+scenario with the explicit `--room-url` override, so both paths are checked.
 
 ## Limits
 

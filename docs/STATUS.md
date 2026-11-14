@@ -1,3 +1,10 @@
+## 12 Kasım 2026 — internet yolu tek adıma indi (konuk `?mpServer=` gerekmiyor)
+
+- **Türetilmiş oda adresi:** HTTPS sayfada `defaultRoomUrl()` artık kendi origin'ini döndürüyor (`wss://<host>[:port]/ws`); TLS proxy iki rotayı aynı origin'de sonlandırdığı için konuk düz URL ile katılıyor. Düz HTTP (LAN) davranışı `ws://<host>:8811/ws` olarak korundu; `?mpServer=` hâlâ override.
+- **Yeni kanıt aracı:** `tools/check_proxy_default.mjs` iki sayfayı **override olmadan** yarıştırıyor. TLS proxy'de `wss://localhost:8443/ws`, LAN'da `ws://127.0.0.1:8811/ws` türetildi; iki sayfa da bitti, **aynı sonuç hash'i**, 0 konsol hatası.
+- **`verify_proxy.ps1`** artık iki yolu da koşuyor: türetilmiş adres + açık `--room-url` (`mp-two`).
+- **Kalan tek şey altyapı:** VPS + domain + DNS A/AAAA + TLS sertifikası + 443. Kod tarafında iş yok.
+
 ## 12 Kasım 2026 — MP kapsaması 17/17 harita
 
 - **Kalan 11 harita eklendi:** longbeach, observatory, downtown, mharuna, highrise, shutoko, oval, amboy-mp, dumbo, downtown-mp, sausalito — hepsi iki oyunculu oda, committed host/guest satırları.

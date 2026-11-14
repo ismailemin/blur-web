@@ -156,11 +156,26 @@ const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const nowMs = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 const round6 = (value) => Math.round(value * 1e6) / 1e6;
 
-/** Default room-service origin for a page served from the game server. */
+/**
+ * Default room-service URL for a page served from the game server.
+ *
+ * Plain HTTP (LAN, direct `serve.mjs`): the room service listens on its own
+ * port next to the page, so the default keeps `MP_DEFAULT_ROOM_PORT` (8811).
+ *
+ * HTTPS: the supported internet topology is a TLS reverse proxy that terminates
+ * both routes on one origin (`/ws` upgrades to the room service, everything else
+ * goes to the page). A browser blocks a `ws://` socket from an HTTPS page, and
+ * the proxy does not expose 8811, so the default is the page's own origin:
+ * `wss://<host>[:port]/ws`. `?mpServer=` still overrides it for any other
+ * topology.
+ */
 export function defaultRoomUrl(locationLike = typeof location !== 'undefined' ? location : null) {
-  const secure = locationLike?.protocol === 'https:';
   const host = locationLike?.hostname || '127.0.0.1';
-  return (secure ? 'wss:' : 'ws:') + '//' + host + ':' + MP_DEFAULT_ROOM_PORT + '/ws';
+  if (locationLike?.protocol === 'https:') {
+    const port = locationLike.port ? ':' + locationLike.port : '';
+    return 'wss://' + host + port + '/ws';
+  }
+  return 'ws://' + host + ':' + MP_DEFAULT_ROOM_PORT + '/ws';
 }
 
 /** Uppercase and validate a room code without inventing a replacement. */

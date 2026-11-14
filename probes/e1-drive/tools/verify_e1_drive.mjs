@@ -5814,9 +5814,17 @@ let mpNodeReport = null;
       JSON.stringify({ first: sessionResult.rows[0], hash: sessionA.hash(), second: sessionB.hash() }));
     check('mp: URL/code helpers keep the documented M1 contract',
       defaultRoomUrl({ protocol: 'http:', hostname: '127.0.0.1' }) === 'ws://127.0.0.1:8811/ws' &&
+      // Behind the TLS proxy both routes share the page origin, so a secure
+      // page defaults to its own origin (443 omits the port).
+      defaultRoomUrl({ protocol: 'https:', hostname: 'play.example.com', port: '' }) ===
+        'wss://play.example.com/ws' &&
+      defaultRoomUrl({ protocol: 'https:', hostname: 'localhost', port: '8443' }) ===
+        'wss://localhost:8443/ws' &&
       normalizeRoomCode('abcde') === 'ABCDE' && normalizeRoomCode('ABCD1') === null &&
       normalizeRoomCode('ABCDE') === 'ABCDE',
       JSON.stringify({ url: defaultRoomUrl({ protocol: 'http:', hostname: '127.0.0.1' }),
+        proxied: defaultRoomUrl({ protocol: 'https:', hostname: 'play.example.com', port: '' }),
+        local: defaultRoomUrl({ protocol: 'https:', hostname: 'localhost', port: '8443' }),
         lower: normalizeRoomCode('abcde'), bad: normalizeRoomCode('ABCD1') }));
     const guestPeerEvents = mpEvents.peer.map((event) => event.type);
     check('mp: the reconnect path is exercised through the unchanged room service (no new transport)',

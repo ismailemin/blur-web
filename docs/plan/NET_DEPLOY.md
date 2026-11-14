@@ -11,8 +11,9 @@ game code.
 - Host: `?mp=1&host=1`; guest: `?mp=1&room=<CODE>`; both must use
   `&powerups=1` for M2.
 - Two headless pages finish the 310 m race with console 0 and a shared result.
-- The page connects to `ws://<page-host>:8811/ws` by default; `?mpServer=`
-  overrides it.
+- The page connects to `ws://<page-host>:8811/ws` by default on a plain-HTTP
+  page; an HTTPS page derives `wss://<page-host>[:port]/ws` from its own origin
+  (the proxy route). `?mpServer=` overrides both.
 
 ## 2. Same LAN (no new infrastructure)
 
@@ -38,8 +39,10 @@ order of effort:
 - Node process runs the game + room on a VPS, behind a reverse proxy with TLS
   (Caddy/nginx), e.g. `https://play.example.com` → 8801 and
   `wss://play.example.com/ws` → 8811.
-- The page must use `?mpServer=wss://play.example.com/ws` (or the default host
-  once the proxy path is configured).
+- The page derives `wss://play.example.com/ws` from its own HTTPS origin, so no
+  `?mpServer=` is needed; the override still works if the proxy uses another
+  path. Verified locally by `tools/check_proxy_default.mjs` (two pages, no
+  override, one shared result).
 - Open 443 only; 8801/8811 stay private.
 - No WebRTC/TURN yet: the reliable WebSocket is enough for the M1/M2 packet
   budget measured in N1 (600 state + 1,800 input per client per 30 s).

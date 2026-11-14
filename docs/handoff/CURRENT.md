@@ -24,8 +24,10 @@ node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
 - **LAN (ikinci cihaz, VPS gerekmez):**
   `node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811 --host 0.0.0.0`
   ve ikinci cihazda `http://<bilgisayar-ip>:8801/?join=1`.
-- **İnternet:** yalnız altyapı girdileri eksik (VPS + domain + DNS + sertifika);
-  adımlar [`docs/work/verification/internet-deploy.md`](../work/verification/internet-deploy.md).
+- **İnternet:** kod tarafı hazır ve yerelde TLS proxy üzerinden kanıtlı (konuk
+  `?mpServer=` eklemeden katılıyor). Eksik yalnız altyapı girdileri (VPS + domain
+  + DNS + sertifika); adımlar
+  [`docs/work/verification/internet-deploy.md`](../work/verification/internet-deploy.md).
 
 ## Şu an neredeyiz? (kısa özet)
 
@@ -85,9 +87,13 @@ node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
   olmadan aynı ağdan katılabiliyor (kanıt: `http://192.168.1.37:8899/` → 200).
 - **İnternet yolu (yerelde doğrulandı):** `deploy/Caddyfile`,
   `deploy/nginx.conf`, `tools/tls-proxy.mjs`, `tools/deploy_local.ps1`,
-  `tools/verify_proxy.ps1`. İki sayfa `https://localhost:8443/` +
-  `wss://localhost:8443/ws` üzerinden yarışı bitirdi (`mp-two` 49/49).
-  Eksik yalnız kullanıcı girdileri: VPS, domain, DNS, sertifika, 443.
+  `tools/verify_proxy.ps1`, `tools/check_proxy_default.mjs`. Sayfa HTTPS'te
+  oda adresini **kendi origin'inden** türetiyor (`wss://<host>[:port]/ws`), yani
+  proxy arkasında konuk `?mpServer=` eklemek zorunda değil; düz HTTP'de (LAN)
+  `ws://<host>:8811/ws` korunuyor. `check_proxy_default.mjs` iki sayfayı
+  **override olmadan** yarıştırıp aynı sonuç hash'ini doğruluyor; `verify_proxy.ps1`
+  hem türetilmiş adresi hem açık `--room-url` yolunu koşuyor. Eksik yalnız
+  kullanıcı girdileri: VPS, domain, DNS, sertifika, 443.
 - **Güçlendirme:** **9 tip** (Bomb/Shield/Repair/Nitrous/Shock/Blindfire/
   Shunt/Barge + **SuperShield**). SuperShield etiketli proje uzantısı
   (tek oyunculu PickupType; `POWERUP_DEFERRED` boş, `POWERUP_PROJECT_EXTENSIONS`
