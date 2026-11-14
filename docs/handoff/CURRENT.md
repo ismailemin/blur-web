@@ -175,6 +175,34 @@ brighton dahil), **tam e2e 45/45 senaryo / 1616/1616 assertion**
 103/103** (`gate-full67.log`, exit 0). MP çapaları yeni hatla yeniden ölçüldü
 (River host 14,617 s / guest 15,850 s; AI odası sırası değişti).
 
+## Görsel fark — ölçüldü (15 Kasım 2026)
+
+Kullanıcı sordu: "ekran görüntüleriyle Blur gameplay'ini karşılaştır, aynı oyunu
+yapabildik mi?" Cevap **hayır**, ve fark ölçüldü
+([`visual-gap.md`](../work/verification/visual-gap.md)):
+
+| kare | ortalama parlaklık | kontrast (std) | doygunluk |
+|---|---:|---:|---:|
+| retail 25 s (gündüz şehir) | **0,369** | **0,249** | 0,280 |
+| bizim Amboy | 0,374 | 0,193 | **0,247** |
+| bizim Hackney | **0,127** | **0,076** | 0,299 |
+| bizim Brighton | **0,106** | **0,069** | 0,504 |
+
+- **Gündüz haritaları 2-3 kat karanlık**, **kontrast 2-3 kat düz**.
+- Retail'de olup bizde olmayan: **sky dome** (doku `graphics/textures/skies/s10.texture`
+  veride var, hiç decode edilmedi), **HDR pozlama + tone map**
+  (`postProcess.exposureMin/Max` 2,0-3,0, `middleGrey` 0,1, `gamma` 2,2),
+  **bloom** (`bloomThreshold` 1,0), **blob gölgeler**, **light flare**,
+  partikül/skid/duman, araba yansıması.
+- Shader ayrıca kendi committed kuralımızdaki iki terimi atlıyor:
+  `baked*BakedColour` ve `saturate(n.y*0.5+0.5)` yarım-küre terimi.
+- Ekranda iki somut çizim hatası var: **havada duran beyaz dörtgenler** (doku
+  yerine placeholder örnekleyen draw) ve **opak çizilen cam/efekt yüzeyleri**.
+
+**Sıradaki sıra:** (1) sky dome, (2) frame-luminance reduction + committed
+pozlama, (3) bloom, (4) blob gölge, (5) iki çizim hatası, (6) shader terimleri.
+`postProcess` bu turda **runtime tabloya eklendi** (doğrulayıcı 60386/60386).
+
 **Kalan iş:** `measure_ground_edge.py` çıktısı artık **yol üreticilerinin
 kendisinden** geliyor (`build_batch_paths.py`, `build_aid_paths.py`,
 `build_longbeach_path.py`, `recentre_layout.py`), yani paket yeniden üretilince

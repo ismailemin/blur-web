@@ -220,6 +220,14 @@ const DATA = deepFreeze({
           "scale": 0.05000000074505806
         }
       },
+      "postProcess": {
+        "exposureMin": 2.5,
+        "exposureMax": 3.5,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
+      },
       "lightmap": {
         "kind": "texture-set",
         "decoded": true,
@@ -3707,7 +3715,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/river.json (blur-lighting/1, 146249 B, sha256 6acdb4e86f5d78b20b764500392cb2cdee24a68ad344a8c1d9bde7b8cf72d33c) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_River LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 417 of LS point 454 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/river.json (blur-lighting/1, 146249 B, sha256 6acdb4e86f5d78b20b764500392cb2cdee24a68ad344a8c1d9bde7b8cf72d33c) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_River LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 417 of LS point 454 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "amboy": {
       "schema": "blur.lighting-runtime/1",
@@ -3835,6 +3843,14 @@ const DATA = deepFreeze({
           "falloff": 0,
           "scale": 0
         }
+      },
+      "postProcess": {
+        "exposureMin": 2.25,
+        "exposureMax": 3,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 1
       },
       "lightmap": {
         "kind": "texture-set",
@@ -6387,7 +6403,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/amboy.json (blur-lighting/1, 112582 B, sha256 3d41cf9b6033263e4f9976754bb8a96611d06ad5206eb3d40da1d74cccecd569) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_Amboy LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 10589 of LS point 32474 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/amboy.json (blur-lighting/1, 112582 B, sha256 3d41cf9b6033263e4f9976754bb8a96611d06ad5206eb3d40da1d74cccecd569) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_Amboy LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 10589 of LS point 32474 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "gracia": {
       "schema": "blur.lighting-runtime/1",
@@ -6515,6 +6531,14 @@ const DATA = deepFreeze({
           "falloff": 0.019999999552965164,
           "scale": 0.25
         }
+      },
+      "postProcess": {
+        "exposureMin": 1,
+        "exposureMax": 2.5,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -9508,7 +9532,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/gracia.json (blur-lighting/1, 131843 B, sha256 e173a17e9a3668408c66dd6a364c347c598d830a2fc1ec04fa5f5515f9b3f904) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin SPA_Barcelona_Gracia LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 12865 of LS point 13714 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/gracia.json (blur-lighting/1, 131843 B, sha256 e173a17e9a3668408c66dd6a364c347c598d830a2fc1ec04fa5f5515f9b3f904) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin SPA_Barcelona_Gracia LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 12865 of LS point 13714 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "longbeach": {
       "schema": "blur.lighting-runtime/1",
@@ -9636,6 +9660,14 @@ const DATA = deepFreeze({
           "falloff": 0.009999999776482582,
           "scale": 0.25
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 3,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -12656,7 +12688,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/longbeach.json (blur-lighting/1, 129413 B, sha256 e9fb018cc4ff88e9cdf930959b1b54900d2ae35fe46b57450b8cb367232cefe3) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_LongBeachDocks LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 39838 of LS point 44403 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/longbeach.json (blur-lighting/1, 129413 B, sha256 e9fb018cc4ff88e9cdf930959b1b54900d2ae35fe46b57450b8cb367232cefe3) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_LongBeachDocks LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 39838 of LS point 44403 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "observatory": {
       "schema": "blur.lighting-runtime/1",
@@ -12784,6 +12816,14 @@ const DATA = deepFreeze({
           "falloff": 0.009999999776482582,
           "scale": 0.05000000074505806
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 2.5,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -14088,7 +14128,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/observatory.json (blur-lighting/1, 72701 B, sha256 36f32b9419bc3eaff2f60041f28d18e95a064ac67c0739632a8e579af568e5f7) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_Observatory LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 6586 of LS point 7748 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/observatory.json (blur-lighting/1, 72701 B, sha256 36f32b9419bc3eaff2f60041f28d18e95a064ac67c0739632a8e579af568e5f7) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_Observatory LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 6586 of LS point 7748 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "downtown": {
       "schema": "blur.lighting-runtime/1",
@@ -14197,6 +14237,14 @@ const DATA = deepFreeze({
           "falloff": 0.009999999776482582,
           "scale": 0.25
         }
+      },
+      "postProcess": {
+        "exposureMin": 2.3499999046325684,
+        "exposureMax": 2.8499999046325684,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -16927,7 +16975,7 @@ const DATA = deepFreeze({
           "reason": "C_LightList hasSun=0: the level serializes no directional sun light; the code-only fallback direction (LightList.cpp:97) is not substituted"
         }
       ],
-      "source": "manifest _work/lighting/downtown.json (blur-lighting/1, 123549 B, sha256 ff3bf4303909cc343af96ef9146fa6e40528d4f8a31fa8dc0443037f12146568) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_Downtown LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 32566 of LS point 33746 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/downtown.json (blur-lighting/1, 123549 B, sha256 ff3bf4303909cc343af96ef9146fa6e40528d4f8a31fa8dc0443037f12146568) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_Downtown LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 32566 of LS point 33746 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "mharuna": {
       "schema": "blur.lighting-runtime/1",
@@ -17055,6 +17103,14 @@ const DATA = deepFreeze({
           "falloff": 0.0010000000474974513,
           "scale": 0
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 2.5,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -21453,7 +21509,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/mharuna.json (blur-lighting/1, 176811 B, sha256 8ceef72bffb79a9a7737dbb841cf90d0975e12876be83e9e122eeee384fdc70d) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin JPN_MHaruna LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 22 of LS point 22 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/mharuna.json (blur-lighting/1, 176811 B, sha256 8ceef72bffb79a9a7737dbb841cf90d0975e12876be83e9e122eeee384fdc70d) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin JPN_MHaruna LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 22 of LS point 22 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "highrise": {
       "schema": "blur.lighting-runtime/1",
@@ -21562,6 +21618,14 @@ const DATA = deepFreeze({
           "falloff": 0.009999999776482582,
           "scale": 0.25
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 2.5,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -23640,7 +23704,7 @@ const DATA = deepFreeze({
           "reason": "C_LightList hasSun=0: the level serializes no directional sun light; the code-only fallback direction (LightList.cpp:97) is not substituted"
         }
       ],
-      "source": "manifest _work/lighting/highrise.json (blur-lighting/1, 90124 B, sha256 d0b7140f15b361f2b9c6995ff2e5745f23da87c5c7209065bdd26abe00fc3a90) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_Multiplayer_Highrise LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 553 of LS point 555 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/highrise.json (blur-lighting/1, 90124 B, sha256 d0b7140f15b361f2b9c6995ff2e5745f23da87c5c7209065bdd26abe00fc3a90) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_Multiplayer_Highrise LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 553 of LS point 555 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "shutoko": {
       "schema": "blur.lighting-runtime/1",
@@ -23768,6 +23832,14 @@ const DATA = deepFreeze({
           "falloff": 0.0010000000474974513,
           "scale": 0
         }
+      },
+      "postProcess": {
+        "exposureMin": 3,
+        "exposureMax": 3.5,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 1
       },
       "lightmap": {
         "kind": "texture-set",
@@ -26528,7 +26600,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/shutoko.json (blur-lighting/1, 122207 B, sha256 71f0c8a82022a2a74222bea606c78a2e6084b9b1c8350257c280f81ccba3e5c3) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin JPN_Tokyo_Shutoko LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 31193 of LS point 35180 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/shutoko.json (blur-lighting/1, 122207 B, sha256 71f0c8a82022a2a74222bea606c78a2e6084b9b1c8350257c280f81ccba3e5c3) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin JPN_Tokyo_Shutoko LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 31193 of LS point 35180 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "oval": {
       "schema": "blur.lighting-runtime/1",
@@ -26656,6 +26728,14 @@ const DATA = deepFreeze({
           "falloff": 0.019999999552965164,
           "scale": 0.25
         }
+      },
+      "postProcess": {
+        "exposureMin": 2.5,
+        "exposureMax": 3.5,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 1
       },
       "lightmap": {
         "kind": "texture-set",
@@ -29676,7 +29756,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/oval.json (blur-lighting/1, 127205 B, sha256 7ae992159be401e6e46811830414b4720e337d4ef6650a525a30bde884e88fd0) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin SPA_Barcelona_Oval LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 699 of LS point 699 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/oval.json (blur-lighting/1, 127205 B, sha256 7ae992159be401e6e46811830414b4720e337d4ef6650a525a30bde884e88fd0) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin SPA_Barcelona_Oval LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 699 of LS point 699 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "amboy-mp": {
       "schema": "blur.lighting-runtime/1",
@@ -29804,6 +29884,14 @@ const DATA = deepFreeze({
           "falloff": 0,
           "scale": 0
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 2.25,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 1
       },
       "lightmap": {
         "kind": "texture-set",
@@ -30822,7 +30910,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/amboy-mp.json (blur-lighting/1, 56399 B, sha256 d39e8b7b93f762c14b637cfe1f584abe33cf3fc73784888a0adab6e9f9ed71e8) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_Amboy_Multiplayer LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 2444 of LS point 4802 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/amboy-mp.json (blur-lighting/1, 56399 B, sha256 d39e8b7b93f762c14b637cfe1f584abe33cf3fc73784888a0adab6e9f9ed71e8) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_Amboy_Multiplayer LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 2444 of LS point 4802 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "dumbo": {
       "schema": "blur.lighting-runtime/1",
@@ -30931,6 +31019,14 @@ const DATA = deepFreeze({
           "falloff": 0.0012499999720603228,
           "scale": 0.5
         }
+      },
+      "postProcess": {
+        "exposureMin": 2.5,
+        "exposureMax": 3,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -35178,7 +35274,7 @@ const DATA = deepFreeze({
           "reason": "C_LightList hasSun=0: the level serializes no directional sun light; the code-only fallback direction (LightList.cpp:97) is not substituted"
         }
       ],
-      "source": "manifest _work/lighting/dumbo.json (blur-lighting/1, 168226 B, sha256 0a3f95f027e7f9534c21d7ee6cbbf656aa531764cabf1ffa13ea5a063aa084b1) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_NY_Dumbo LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 21244 of LS point 23705 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/dumbo.json (blur-lighting/1, 168226 B, sha256 0a3f95f027e7f9534c21d7ee6cbbf656aa531764cabf1ffa13ea5a063aa084b1) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_NY_Dumbo LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 21244 of LS point 23705 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "downtown-mp": {
       "schema": "blur.lighting-runtime/1",
@@ -35306,6 +35402,14 @@ const DATA = deepFreeze({
           "falloff": 0,
           "scale": 0
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 2.5,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -37520,7 +37624,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/downtown-mp.json (blur-lighting/1, 97517 B, sha256 21e05aed1535ae238faacbc780a45c4613ba537cdbb04262c82ae6d0a2bf2999) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_Downtown_Multiplayer LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 3577 of LS point 3678 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/downtown-mp.json (blur-lighting/1, 97517 B, sha256 21e05aed1535ae238faacbc780a45c4613ba537cdbb04262c82ae6d0a2bf2999) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_LA_Downtown_Multiplayer LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 3577 of LS point 3678 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "sausalito": {
       "schema": "blur.lighting-runtime/1",
@@ -37648,6 +37752,14 @@ const DATA = deepFreeze({
           "falloff": 0.009999999776482582,
           "scale": 0.05000000074505806
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 3,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -40668,7 +40780,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/sausalito.json (blur-lighting/1, 133002 B, sha256 f672ca4d71dc9ca73319560a90c1eee518e3c002b8fe4d51d1d87bdb0d4a08f2) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_SanFran_Sausalito LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 20799 of LS point 31594 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/sausalito.json (blur-lighting/1, 133002 B, sha256 f672ca4d71dc9ca73319560a90c1eee518e3c002b8fe4d51d1d87bdb0d4a08f2) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_SanFran_Sausalito LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 20799 of LS point 31594 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "hackney": {
       "schema": "blur.lighting-runtime/1",
@@ -40777,6 +40889,14 @@ const DATA = deepFreeze({
           "falloff": 0.0010000000474974513,
           "scale": 0.02500000037252903
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 2.75,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 1
       },
       "lightmap": {
         "kind": "texture-set",
@@ -42502,7 +42622,7 @@ const DATA = deepFreeze({
           "reason": "C_LightList hasSun=0: the level serializes no directional sun light; the code-only fallback direction (LightList.cpp:97) is not substituted"
         }
       ],
-      "source": "manifest _work/lighting/hackney.json (blur-lighting/1, 90305 B, sha256 982bddfec0ad4d0ae6def87cca0afb3b539ec54dae6cc0ddd95df24ade8428cb) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin UK_London_Hackney LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 61 of LS point 61 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/hackney.json (blur-lighting/1, 90305 B, sha256 982bddfec0ad4d0ae6def87cca0afb3b539ec54dae6cc0ddd95df24ade8428cb) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin UK_London_Hackney LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 61 of LS point 61 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "russianhill": {
       "schema": "blur.lighting-runtime/1",
@@ -42630,6 +42750,14 @@ const DATA = deepFreeze({
           "falloff": 0.009999999776482582,
           "scale": 0.15000000596046448
         }
+      },
+      "postProcess": {
+        "exposureMin": 2.5,
+        "exposureMax": 3,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -44870,7 +44998,7 @@ const DATA = deepFreeze({
           "reason": "the sky dome texture path is serialized; its pixels are not decoded by this probe"
         }
       ],
-      "source": "manifest _work/lighting/russianhill.json (blur-lighting/1, 102818 B, sha256 08173f4f46a1ced41f19f4a3701eba86d19d5b73aaaf0588edf20eab3654b34d) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_SanFran_RussianHill LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 8035 of LS point 9250 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/russianhill.json (blur-lighting/1, 102818 B, sha256 08173f4f46a1ced41f19f4a3701eba86d19d5b73aaaf0588edf20eab3654b34d) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin USA_SanFran_RussianHill LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 8035 of LS point 9250 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     },
     "brighton": {
       "schema": "blur.lighting-runtime/1",
@@ -44979,6 +45107,14 @@ const DATA = deepFreeze({
           "falloff": 0.0010000000474974513,
           "scale": 0
         }
+      },
+      "postProcess": {
+        "exposureMin": 2,
+        "exposureMax": 3,
+        "middleGrey": 0.10000000149011612,
+        "gamma": 2.2,
+        "bloomThreshold": 1,
+        "bloomScale": 0.699999988079071
       },
       "lightmap": {
         "kind": "texture-set",
@@ -47016,7 +47152,7 @@ const DATA = deepFreeze({
           "reason": "C_LightList hasSun=0: the level serializes no directional sun light; the code-only fallback direction (LightList.cpp:97) is not substituted"
         }
       ],
-      "source": "manifest _work/lighting/brighton.json (blur-lighting/1, 97157 B, sha256 763f0b318d6be53189784d67111d0b9a4b66ebd4037b5addf076064b811c61ad) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin UK_Brighton LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 16133 of LS point 18297 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
+      "source": "manifest _work/lighting/brighton.json (blur-lighting/1, 97157 B, sha256 763f0b318d6be53189784d67111d0b9a4b66ebd4037b5addf076064b811c61ad) built by probes/lighting/tools/build_manifest.py; sun.direction = Level.levelrender Lights C_Light matrix row Z (LightList.cpp:90-98); sun.colour = gamedata.pak amax.bin UK_Brighton LightingInfo.SunColour.rgb; sky.colour = LightingInfo.SkyColour.rgb; ambient.sh = RGBSH sample 16133 of LS point 18297 (LightSamplePoints.cpp:139-258); fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, bloomThreshold, bloomScale); lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with probes/asset-reader texture_inspect"
     }
   }
 });

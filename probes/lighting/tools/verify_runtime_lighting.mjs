@@ -107,7 +107,13 @@ const SCALAR_MAP = {
   'fog.height.height': 'fog.height.height',
   'fog.height.density': 'fog.height.density',
   'fog.height.falloff': 'fog.height.falloff',
-  'fog.height.scale': 'fog.height.scale'
+  'fog.height.scale': 'fog.height.scale',
+  'postProcess.exposureMin': 'postProcess.exposureMin',
+  'postProcess.exposureMax': 'postProcess.exposureMax',
+  'postProcess.middleGrey': 'postProcess.middleGrey',
+  'postProcess.gamma': 'postProcess.gamma',
+  'postProcess.bloomThreshold': 'postProcess.bloomThreshold',
+  'postProcess.bloomScale': 'postProcess.bloomScale'
 };
 
 const checks = [];
@@ -353,6 +359,7 @@ for (const short of MAP_ORDER) {
   // Reverse direction: every declared field must be present.
   for (const runtimePath of expectedMappedPaths()) {
     if (runtimePath.startsWith('fog.') && entry.fog === null) continue;
+    if (runtimePath.startsWith('postProcess.') && entry.postProcess === null) continue;
     if (runtimePath.startsWith('sun.') && entry.sun === null) continue;
     check(prefix + 'field present: ' + runtimePath,
       getPath(entry, runtimePath) !== undefined);

@@ -421,6 +421,26 @@ function buildFog(manifest, missing) {
   };
 }
 
+function buildPostProcess(manifest, missing) {
+  const post = manifest.postProcess;
+  if (!post) {
+    missing.push({
+      code: 'not-serialized',
+      field: 'postProcess',
+      reason: 'no hdrSettings record is serialized for this level'
+    });
+    return null;
+  }
+  return {
+    exposureMin: number(post.exposureMin, 'postProcess.exposureMin'),
+    exposureMax: number(post.exposureMax, 'postProcess.exposureMax'),
+    middleGrey: number(post.middleGrey, 'postProcess.middleGrey'),
+    gamma: number(post.gamma, 'postProcess.gamma'),
+    bloomThreshold: number(post.bloomThreshold, 'postProcess.bloomThreshold'),
+    bloomScale: number(post.bloomScale, 'postProcess.bloomScale')
+  };
+}
+
 function buildMap(short, record) {
   const buffer = readRelative(record.path);
   const digest = sha256(buffer);
@@ -447,6 +467,7 @@ function buildMap(short, record) {
   const sky = buildSky(manifest, short);
   const ambient = buildAmbient(manifest);
   const fog = buildFog(manifest, missing);
+  const postProcess = buildPostProcess(manifest, missing);
 
   const source = 'manifest ' + record.path + ' (blur-lighting/1, ' + record.bytes +
     ' B, sha256 ' + record.sha256 + ') built by ' +
@@ -457,6 +478,8 @@ function buildMap(short, record) {
     'ambient.sh = RGBSH sample ' + manifest.ambientProbe.sampleIndex + ' of LS point ' +
     manifest.ambientProbe.pointIndex + ' (LightSamplePoints.cpp:139-258); ' +
     'fog = amax.bin fogSettings; sky.dome = amax.bin skySettings; ' +
+    'postProcess = amax.bin hdrSettings (exposureMin/Max, middleGrey, gamma, ' +
+    'bloomThreshold, bloomScale); ' +
     'lightmap = Level.levelstream g_tLightmap DXT5/BC3 texture set, mip 0 decoded with ' +
     'probes/asset-reader texture_inspect';
 
@@ -475,6 +498,7 @@ function buildMap(short, record) {
     sky,
     ambient,
     fog,
+    postProcess,
     lightmap,
     missing,
     source

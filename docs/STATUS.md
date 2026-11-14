@@ -1,3 +1,11 @@
+## 15 Kasım 2026 — görsel fark ölçüldü, postProcess runtime tabloda
+
+- **Cevap: hayır, aynı oyun değil.** Retail referans video kareleri ile bizim kareler aynı ölçekte ölçüldü: gündüz haritalarımız **2-3 kat karanlık** (Hackney 0,127 / Brighton 0,106 vs retail 0,28-0,37) ve **kontrast 2-3 kat düz** (0,07-0,08 vs 0,18-0,25). Ayrıntı: `docs/work/verification/visual-gap.md`.
+- **Eksik sistemler (veri zaten elimizde):** sky dome (`graphics/textures/skies/s10.texture`), HDR pozlama/tone map (`exposureMin/Max` 2,0-3,0, `middleGrey` 0,1, `gamma` 2,2), bloom (`bloomThreshold` 1,0), blob gölge, light flare, partikül/skid, araba yansıması.
+- **`postProcess` runtime tabloya eklendi** (`build_runtime_lighting.mjs` + doğrulayıcı eşlemeleri); `verify_runtime_lighting` **60386/60386**.
+- **Shader açığı:** committed retail kuralındaki `baked*BakedColour` ve `saturate(n.y*0.5+0.5)` terimleri uygulanmıyor.
+- **Somut çizim hataları:** havada beyaz dörtgenler (placeholder doku) ve opak cam yüzeyleri.
+
 ## 12 Kasım 2026 — deploy yükü ölçüldü, Linux harf duyarlılığı düzeltildi
 
 - **Deploy yükü:** `tools/deploy_assets.mjs` sunucunun okuduğu 21 ağacı listeliyor: **5.312,8 MB / 20.220 dosya**. `_work/map-slice` + `_work/map-batch` (652 MB) yalnız build/verify girdisi; `game-data/Blur/levels` 4,9 GB yerine 19 `Level.levelphysics` (54 MB). `--list` → `rsync --files-from`.
