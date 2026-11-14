@@ -87,13 +87,24 @@ node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
   olmadan aynı ağdan katılabiliyor (kanıt: `http://192.168.1.37:8899/` → 200).
 - **İnternet yolu (yerelde doğrulandı):** `deploy/Caddyfile`,
   `deploy/nginx.conf`, `tools/tls-proxy.mjs`, `tools/deploy_local.ps1`,
-  `tools/verify_proxy.ps1`, `tools/check_proxy_default.mjs`. Sayfa HTTPS'te
-  oda adresini **kendi origin'inden** türetiyor (`wss://<host>[:port]/ws`), yani
-  proxy arkasında konuk `?mpServer=` eklemek zorunda değil; düz HTTP'de (LAN)
-  `ws://<host>:8811/ws` korunuyor. `check_proxy_default.mjs` iki sayfayı
-  **override olmadan** yarıştırıp aynı sonuç hash'ini doğruluyor; `verify_proxy.ps1`
-  hem türetilmiş adresi hem açık `--room-url` yolunu koşuyor. Eksik yalnız
-  kullanıcı girdileri: VPS, domain, DNS, sertifika, 443.
+  `tools/verify_proxy.ps1`, `tools/check_proxy_default.mjs`,
+  `tools/deploy_assets.mjs`. Sayfa HTTPS'te oda adresini **kendi origin'inden**
+  türetiyor (`wss://<host>[:port]/ws`), yani proxy arkasında konuk `?mpServer=`
+  eklemek zorunda değil; düz HTTP'de (LAN) `ws://<host>:8811/ws` korunuyor.
+  `check_proxy_default.mjs` iki sayfayı **override olmadan** yarıştırıp aynı
+  sonuç hash'ini doğruluyor; `verify_proxy.ps1` hem türetilmiş adresi hem açık
+  `--room-url` yolunu koşuyor.
+- **Deploy yükü ölçüldü:** `tools/deploy_assets.mjs` sunucunun okuduğu ağaçları
+  listeliyor — **5.312,8 MB / 20.220 dosya / 21 ağaç**. `_work/map-slice` (292 MB)
+  ve `_work/map-batch` (360 MB) yalnız build/verify girdisi (sayfa hiç
+  fetch etmiyor), `game-data/Blur/levels` ise 4,9 GB yerine 19
+  `Level.levelphysics` (54 MB). `--list` ile `rsync --files-from` dosyası üretiliyor.
+- **Linux büyük/küçük harf düzeltmesi:** 5 seviye `level.levelphysics` (küçük l)
+  gönderiyor, registry `Level.levelphysics` istiyor; Windows/macOS bunu çözer,
+  Linux çözmez. `serve.mjs` artık statik yolu büyük/küçük harf duyarsız çözüyor
+  ve dizindeki gerçek adı döndürüyor (baytlar aynı; eşleşmeyen ad 404 kalıyor).
+  `serve_static_tests.mjs` bunu ve 17 registry `physicsUrl`'ini kapıda pinliyor.
+  Eksik yalnız kullanıcı girdileri: VPS, domain, DNS, sertifika, 443.
 - **Güçlendirme:** **9 tip** (Bomb/Shield/Repair/Nitrous/Shock/Blindfire/
   Shunt/Barge + **SuperShield**). SuperShield etiketli proje uzantısı
   (tek oyunculu PickupType; `POWERUP_DEFERRED` boş, `POWERUP_PROJECT_EXTENSIONS`

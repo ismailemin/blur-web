@@ -32,7 +32,7 @@
 // beside the game server. The page's default multiplayer WebSocket target is
 // `ws://<page-host>:8811/ws`; `?mpServer=ws://host:port/ws` overrides it.
 
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -264,6 +264,35 @@ function safeJoin(base, relative) {
   return resolved === base || resolved.startsWith(base + path.sep) ? resolved : null;
 }
 
+/**
+ * Resolve a static path case-insensitively when the exact name is missing.
+ *
+ * Five retail level directories ship `level.levelphysics` while the registry
+ * asks for `Level.levelphysics` (highrise, amboy-mp, downtown-mp, bowl,
+ * showroom). Windows and macOS resolve that; a Linux host — the VPS deploy —
+ * does not, so those maps would 404 there. Only the basename is matched, inside
+ * the directory `safeJoin` already validated, and the bytes are unchanged. A
+ * name that matches nothing is returned untouched, so a missing asset stays a
+ * 404 instead of a silent substitute.
+ */
+export function resolveStaticFile(file) {
+  if (!file) return file;
+  const directory = path.dirname(file);
+  const wanted = path.basename(file);
+  if (!existsSync(directory)) return file;
+  // Always return the name the directory actually carries: an exact match wins,
+  // a case-only match is second. Reading the listing (instead of trusting
+  // `existsSync`) keeps the result identical on a case-insensitive host.
+  let exact = null;
+  let insensitive = null;
+  for (const entry of readdirSync(directory)) {
+    if (entry === wanted) { exact = entry; break; }
+    if (insensitive === null && entry.toLowerCase() === wanted.toLowerCase()) insensitive = entry;
+  }
+  const match = exact ?? insensitive;
+  return match === null ? file : path.join(directory, match);
+}
+
 export function startServer({ port = 8801, host = '127.0.0.1' } = {}) {
   const relay = createPowerupRelay();
   const aiRelay = createMpAiRelay();
@@ -398,6 +427,7 @@ export function startServer({ port = 8801, host = '127.0.0.1' } = {}) {
       if (relative.endsWith('.mjs')) file = safeJoin(CAR_MATERIALS, relative);
     } else file = safeJoin(WEB, pathname.slice(1));
 
+    file = resolveStaticFile(file);
     if (!file || !existsSync(file) || !statSync(file).isFile()) {
       response.writeHead(404, { 'content-type': 'text/plain' });
       response.end('not found: ' + pathname);

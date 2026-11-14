@@ -33,6 +33,8 @@ proxy is the same two routes the production configs use:
 | `deploy/nginx.conf` | production nginx config: `certbot` certificate, `map $http_upgrade` for `/ws`, everything else → 8801 |
 | `tools/tls-proxy.mjs` | the local stand-in: HTTPS + WSS termination for the same two routes |
 | `tools/check_proxy_default.mjs` | proves the page-derived room URL: two pages, no `?mpServer=`, one shared result |
+| `tools/deploy_assets.mjs` | lists/checks the runtime trees and writes the `rsync --files-from` list |
+| `probes/e1-drive/tools/serve_static_tests.mjs` | pins the case-insensitive static resolver and every registry asset URL |
 | `tools/deploy_local.ps1` | one command: development certificate (if missing), game + room, TLS proxy, printed URLs |
 | `tools/verify_proxy.ps1` | one command: the self-check above (derived URL + explicit override) |
 | `deploy/local-dev.pfx` | local development certificate (passphrase `blur`), **not committed** |
@@ -64,14 +66,38 @@ Optional: SSH access to the host, or the user runs the two commands below.
 
 ## Server steps once the inputs exist
 
+A clone alone is not enough: the page fetches generated `_work/` trees and the
+installed game's physics bytes, which are deliberately not committed.
+`tools/deploy_assets.mjs` lists exactly the trees the server reads, checks they
+exist and reports the payload:
+
+```text
+deploy payload: 5312.8 MB in 20220 files across 21 trees
+```
+
+`_work/map-slice` (292 MB) and `_work/map-batch` (360 MB) are build/verify
+inputs the page never fetches, so they are listed but excluded from the deploy
+set. `game-data/Blur/levels` is narrowed to the 19 `Level.levelphysics` files
+(54 MB) instead of the whole 4.9 GB level tree.
+
 ```bash
-# 1. Clone the repository on the host and build the WASM module if it is absent.
+# 1. Copy the repository, then the runtime assets (rsync over SSH):
+node tools/deploy_assets.mjs --list deploy/assets.txt      # run locally
+rsync -a --files-from=deploy/assets.txt . user@host:/srv/blur/
 # 2. Start the game process on loopback only:
 node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811 --host 127.0.0.1
 # 3. Put the proxy in front of it:
 caddy run --config deploy/Caddyfile        # replace play.example.com first
 #    or: nginx -c /etc/nginx/nginx.conf
 ```
+
+Five retail level directories ship `level.levelphysics` while the registry asks
+for `Level.levelphysics` (highrise, amboy-mp, downtown-mp, bowl, showroom). A
+case-sensitive host would 404 those maps, so the server resolves a static path
+case-insensitively and always returns the name the directory carries; the bytes
+are unchanged and a name that matches nothing stays a 404.
+`probes/e1-drive/tools/serve_static_tests.mjs` pins that rule and every registry
+`physicsUrl` (gate step `serve-static`).
 
 The page derives the room URL from its own origin: on an HTTPS page
 `defaultRoomUrl()` returns `wss://<page-host>[:port]/ws`, which is exactly the

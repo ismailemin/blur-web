@@ -1,3 +1,10 @@
+## 12 Kasım 2026 — deploy yükü ölçüldü, Linux harf duyarlılığı düzeltildi
+
+- **Deploy yükü:** `tools/deploy_assets.mjs` sunucunun okuduğu 21 ağacı listeliyor: **5.312,8 MB / 20.220 dosya**. `_work/map-slice` + `_work/map-batch` (652 MB) yalnız build/verify girdisi; `game-data/Blur/levels` 4,9 GB yerine 19 `Level.levelphysics` (54 MB). `--list` → `rsync --files-from`.
+- **Linux'ta 404 olacaktı:** 5 seviye `level.levelphysics` (küçük l) gönderiyor, registry `Level.levelphysics` istiyor (highrise, amboy-mp, downtown-mp, bowl, showroom). `serve.mjs` statik yolu artık büyük/küçük harf duyarsız çözüyor ve dizindeki gerçek adı döndürüyor; eşleşmeyen ad 404 kalıyor.
+- **Kapı:** yeni `serve-static` adımı 21/21 — çözücü kuralları + 17 registry `physicsUrl`.
+- **Kanıt:** LAN'da iki sayfa override olmadan yarışı bitirdi (aynı hash, 0 konsol hatası).
+
 ## 12 Kasım 2026 — internet yolu tek adıma indi (konuk `?mpServer=` gerekmiyor)
 
 - **Türetilmiş oda adresi:** HTTPS sayfada `defaultRoomUrl()` artık kendi origin'ini döndürüyor (`wss://<host>[:port]/ws`); TLS proxy iki rotayı aynı origin'de sonlandırdığı için konuk düz URL ile katılıyor. Düz HTTP (LAN) davranışı `ws://<host>:8811/ws` olarak korundu; `?mpServer=` hâlâ override.
