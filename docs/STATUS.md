@@ -1,3 +1,21 @@
+## 20 Kasım 2026 — sky dome + blob gölge bağlandı (üçüncü geçiş)
+
+- **Sky dome:** oyunun `Effect::Sky::C_TexturedSkyDome` kuralı uygulandı (`v = 2·acos(n.y)/π`, `u = atan2(x,z)/2π + rotation`, `sky = rgb·a·a·intensity`, `fog`, `blackHeight/blackSize`). 17 haritanın 14 farklı dome dokusu `root.pak`'tan çıkarıldı; hepsi 2048x512 DXT5/BC3. Native `texture_inspect.exe` 512 px sınırı yüzünden DXT5 çözümü `texture_reader.cpp`'nin birebir portu ve aynı paketteki 256x256 örnekle **byte-eşit** doğrulandı. Exporter: `probes/lighting/tools/export_sky_dome.py` → `_work/lighting/skies/*.rgba` + harita başına `sky.json`.
+- **Blob gölge:** committed `impostershadow.texture` (32x32 **A8**) ve `shadowSettings` (ShadowSize 6, DropShadowIntensity 0.75, DropShadowHeight 50) ile araba/remote/ghost altında zemine izdüşümlü kuşak. Retail per-kanal blur + ekran kompoziti uygulanmadı; radyal smoothstep ile **etiketli yaklaşım**.
+- **Ölçüm:** Amboy 0.262 / 0.148 / 0.164, Hackney 0.281 / 0.150 / 0.204, Brighton 0.273 / 0.174 / 0.230 (retail 0.278-0.369 / 0.179-0.249 / 0.280-0.484). Gündüz haritalarında near-black payı 0.044; Brighton gece göğü nedeniyle 0.234. Doygunluk, gökyüzü kareyi doldurduğu için düştü.
+- **Kapılar:** `verify_asset_probe.py --skip-build` **104/104 PASS**; dört haritada 0 konsol hatası/uyarısı, `skyFrames == renders`, `shadowDraws == renders`, packet draw sayımı değişmedi.
+- Ayrıntı: `docs/work/verification/visual-gap.md` (Üçüncü geçiş), `docs/work/logs/2026-11-20-visual-gap-c.md`.
+
+## 20 Kasım 2026 — görsel fark: retail lightmap kuralı + HDR pozlama (bant içi)
+
+- **Işık kuralı düzeltildi:** oyunun efektleri `_LN` = `-D NIGHT_LIGHTING` ile derleniyor; `NightLighting.h` g_tLightmap'i `RGBLightmapNormalisedGamma` (`(rgb*a)^2`) ile çözüyor ve güneş/gökyüzü occlusion terimlerini kullanmıyor. Renderer artık **her haritada mod 2** (Amboy/MHaruna/Shutoko yanlışlıkla SunSky yolundaydı). `bakedColour` terimi korundu, `NightLighting` ile farkı açık sapma olarak kaydedildi.
+- **Zemin siyahı:** türev normali `face.y < 0 → -face` ile yukarı çevrildi (cullMode `none`, WebGPU framebuffer Y aşağı) — Amboy zemini artık siyah değil.
+- **İki çizim hatası:** `blocked-bc3-alpha` dörtgenleri fragment'ta `discard` (River 4 çizim, hash/packet değişmedi); araç camı (`partKind === 'glass'`) ayrı alfa-karışımlı geçişte koyu cam tonu + alfa 0.55.
+- **Veri odaklı HDR:** `table.postProcess` → `consumer.setPostProcess()`; sahne `rgba16float` hedefe lineer yazılıyor, 16x16 ızgara → 1x1 parlaklık, `middleGrey/(lum+0.001)` clamp[exposureMin,exposureMax], `pow(1/gamma)`, bloom eşik/ölçek. `setPostProcess` çağrılmazsa eski yol korunuyor.
+- **Ölçüm (aynı yöntem):** Amboy 0,374 → **0,280**, Hackney 0,127 → **0,297**, Brighton 0,106 → **0,260**; retail oyun içi bant 0,278-0,369. Kontrast 0,128-0,168 (retail 0,179-0,249) ve Amboy/Hackney doygunluğu 0,230 — kompozisyon eksiği (sky dome/gölge yok), pozlama değil. Dört haritada 0 konsol hatası; `drawsIssued == renders * draws`.
+- **Kapılar:** `verify_asset_probe.py --skip-build` **104/104 PASS**. `verify_e1_drive.mjs` **FAIL (8402/8759)** — mevcut çalışma ağacı sapmaları (araç çıpaları, `ai-driver-browser.js` commit'li kopyadan farklı, amboy/gracia/sausalito layout pin uyuşmazlığı); betiğin 17 haritalı registry'de çökmesi düzeltildi.
+- Ayrıntı: `docs/work/verification/visual-gap.md` (İkinci geçiş), `docs/work/logs/2026-11-20-visual-gap-b.md`.
+
 ## 15 Kasım 2026 — görsel fark ölçüldü, postProcess runtime tabloda
 
 - **Cevap: hayır, aynı oyun değil.** Retail referans video kareleri ile bizim kareler aynı ölçekte ölçüldü: gündüz haritalarımız **2-3 kat karanlık** (Hackney 0,127 / Brighton 0,106 vs retail 0,28-0,37) ve **kontrast 2-3 kat düz** (0,07-0,08 vs 0,18-0,25). Ayrıntı: `docs/work/verification/visual-gap.md`.

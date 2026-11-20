@@ -1,13 +1,23 @@
 # CURRENT — buradan devam
 
-**Güncelleme:** 12 Kasım 2026
+**Güncelleme:** 20 Kasım 2026
 **Aşama:** Aşama 6 — **tam oyun / multiplayer**. 8 insan oyunculu oda gerçek
 tarayıcılarla çalışıyor; menü kabuğu sayfaya bağlı; **61 araç, 17 harita**;
 lightmap **17/17 haritada** render'da; kurs minimap'i ve 9 tipli güçlendirme
 E2E'si bağlı. Varsayılan harita **Amboy** (tam şehir).
 **Son commit'ler:** `502c728` bowl/defaultcar engel kaydı, `14c05ba` russianhill
 + brighton, `08a9f3e` hackney, `a420726` River hattı merkezlendi.
-**Bu oturumun kaydı:** [`docs/work/logs/2026-11-08-mp-eight.md`](../work/logs/2026-11-08-mp-eight.md)
+**Bu oturumun kaydı:** [`docs/work/logs/2026-11-20-visual-gap-c.md`](../work/logs/2026-11-20-visual-gap-c.md)
+
+**20 Kasım notu:** retail ışık kuralı düzeltildi (`_LN` → `NIGHT_LIGHTING` →
+`RGBLightmapNormalisedGamma`, tüm haritalarda mod 2), zemin siyahı ve iki çizim
+hatası (beyaz dörtgen, opak cam) giderildi, veri odaklı HDR pozlama/tone map
+bağlandı. Ardından **sky dome** (14 gerçek dome dokusu, 17 harita; `rgb*a*a`
+kuralı) ve **izdüşümlü blob gölge** (committed `impostershadow` + shadowSettings)
+eklendi. Dört haritada 0 konsol hatası/uyarısı; `verify_asset_probe`
+**104/104 PASS**. Ölçülen ortalama parlaklık Amboy 0,262 / Hackney 0,281 /
+Brighton 0,273 (retail 0,278-0,369). Ayrıntı:
+`docs/work/verification/visual-gap.md`.
 
 ## Şimdi dene (tek harita + tek araç)
 

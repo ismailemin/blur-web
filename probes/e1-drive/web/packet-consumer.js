@@ -123,11 +123,28 @@ fn linearToSrgb(value: vec3f) -> vec3f {
 }
 
 @fragment fn fragmentMain(input: VertexOut) -> @location(0) vec4f {
+  // A draw whose only albedo source is an undeclared DXT5/BC3 alpha image (the
+  // River level props labelled blocked-bc3-alpha, e.g. cab01alphas_diff) has no
+  // material rule we can honour. Drawing its neutral diagnostic albedo produced
+  // opaque white cards in the scene, so the fragment is discarded: the draw call
+  // and the packet hash are untouched, only its pixels are suppressed.
+  if (draw.texParams.w > 0.5) {
+    discard;
+  }
+  let glass = draw.lightmapParams.z > 0.5;
   let raw = cross(dpdx(input.world), dpdy(input.world));
   let length = length(raw);
   let face = select(vec3f(0.0, 1.0, 0.0), raw / max(length, 1e-20), length > 0.0);
+  // WebGPU's framebuffer Y runs down the screen, so the derivative normal of a
+  // horizontal ground triangle can come out as -Y. With a -Y normal both
+  // dot(n, sunDir) and saturate(n.y * 0.5 + 0.5) collapse to 0 and the ground
+  // renders black (Amboy). The pipeline is cullMode 'none' and carries no vertex
+  // normal, so the derivative normal is the only normal there is: flip any
+  // downward one up so horizontal surfaces always keep n.y >= 0. Vertical
+  // surfaces (face.y ~ 0) are left as the derivative produced them.
+  let upFace = select(face, -face, face.y < 0.0);
   let sunDir = normalize(scene.lightDirection.xyz);
-  let lambert = max(dot(face, sunDir), 0.0);
+  let lambert = max(dot(upFace, sunDir), 0.0);
   // texParams.x is 1 for a draw with a bound static g_tAlbedo texture and 0
   // otherwise. The sample is unconditional (a white 1x1 placeholder is bound for
   // untextured draws), so there is no non-uniform control flow around
@@ -138,6 +155,16 @@ fn linearToSrgb(value: vec3f) -> vec3f {
   // because none is recovered.
   let sampled = textureSample(albedoTexture, albedoSampler, input.uv).rgb;
   let base = mix(draw.albedo.rgb, sampled, draw.texParams.x);
+  // Car glass is transparent geometry in the retail material; this consumer has
+  // no material blend state, so the dark-glass presentation below is a labelled
+  // fallback (tinted, translucent pass), not the recovered material.
+  let GLASS_TINT = vec3f(0.16, 0.19, 0.22);
+  let surface = select(base, base * GLASS_TINT, glass);
+  // Retail diffuse terms from shader/common/Lighting.h:153-165. lighting.y stays
+  // the diagnostic ambient scalar; the baked colour rides in the otherwise
+  // unused x/z/w lanes so the Scene uniform keeps its 112-byte size.
+  let hemi = clamp(upFace.y * 0.5 + 0.5, 0.0, 1.0);
+  let bakedColour = max(vec3f(scene.lighting.x, scene.lighting.z, scene.lighting.w), vec3f(0.0));
   var radiance: vec3f;
   if (draw.lightmapParams.x > 0.5) {
     // The decoded retail lightmap (material g_tLightmap), sampled at
@@ -147,19 +174,22 @@ fn linearToSrgb(value: vec3f) -> vec3f {
     let lm = textureSample(lightmapTexture, lightmapSampler, input.lightmapUv);
     if (draw.lightmapParams.y < 1.5) {
       let sunTerm = scene.lightColour.rgb * scene.lightColour.a * lambert * lm.b;
-      let skyTerm = scene.ambient.rgb * lm.g;
-      radiance = (sunTerm + skyTerm) * base;
+      let skyTerm = scene.ambient.rgb * lm.g * hemi;
+      radiance = (sunTerm + skyTerm) * surface;
     } else {
+      // RGBLightmapNormalisedGamma zeroes m_fSkyOcclusion and m_fSunOcclusion
+      // (shader/scene/RGBLighting.h:10-11), so EvaluateDiffuse adds no sky and no
+      // sun term here: only m_vLighting * g_vBakedColour.rgb survives.
       let c = lm.rgb * lm.a;
-      radiance = c * c * base;
+      radiance = c * c * bakedColour * surface;
     }
   } else {
     // Diagnostic term for a draw with no decoded lightmap: the committed
     // ambient/sky colour at the ambient scalar plus the live sun, if any. A
     // baked map (sun colour [0,0,0]) is then lit by its ambient, not black.
-    let ambientTerm = scene.ambient.rgb * scene.lighting.y;
+    let ambientTerm = scene.ambient.rgb * scene.lighting.y * hemi;
     let sunTerm = scene.lightColour.rgb * scene.lightColour.a * lambert;
-    radiance = (ambientTerm + sunTerm) * base;
+    radiance = (ambientTerm + sunTerm) * surface;
   }
   // Diagnostic spin marker: a band fixed in element-local space. It is not a
   // material; it makes the wheel rotation visible on rotationally symmetric
@@ -169,13 +199,22 @@ fn linearToSrgb(value: vec3f) -> vec3f {
   let marked = mix(radiance, vec3f(1.0, 0.94, 0.72), band * 0.72);
   // The swap chain is non-sRGB and the lighting above is linear, so this is the
   // exact sRGB OETF (not a pow(1/2.2) approximation, which is not its inverse).
-  return vec4f(linearToSrgb(marked), 1.0);
+  // Glass is drawn in its own blended pass; every other draw stays opaque.
+  let alpha = select(1.0, 0.55, glass);
+  if (draw.lightmapParams.w > 0.5) {
+    // HDR scene pass: keep linear radiance (values above 1 included) and let the
+    // data-driven exposure/tone-map pass encode it.
+    return vec4f(max(marked, vec3f(0.0)), alpha);
+  }
+  return vec4f(linearToSrgb(marked), alpha);
 }
 `;
 
 const NEUTRAL_ALBEDO = 0.8;
 const DRAW_UNIFORM_STRIDE = 256; // minUniformBufferOffsetAlignment default
 const DRAW_UNIFORM_BYTES = 176; // mat4 + mat4 + albedo vec4 + texParams vec4 + lightmapParams vec4
+const SHADOW_SLOTS = 4;         // local car + up to three active remote/ghost cars
+const HDR_COLOUR_FORMAT = 'rgba16float';
 const SUPPORTED_VERSIONS = [1, 1.1];
 
 // Ghost replay (P63): the same car mesh, per-tick ghost node matrices and a
@@ -241,6 +280,11 @@ fn linearToSrgb(value: vec3f) -> vec3f {
   let angle = atan2(input.local.z, input.local.y);
   let band = smoothstep(0.86, 0.98, cos(angle)) * draw.albedo.a;
   let marked = mix(tint, vec3f(0.92, 0.99, 1.0), band * 0.55);
+  // texParams.w = 1 marks the HDR scene pass (linear radiance, encoded later by
+  // the tone-map pass); 0 keeps the direct sRGB path.
+  if (draw.texParams.w > 0.5) {
+    return vec4f(max(marked, vec3f(0.0)), 0.34);
+  }
   return vec4f(linearToSrgb(marked), 0.34);
 }
 `;
@@ -248,6 +292,200 @@ fn linearToSrgb(value: vec3f) -> vec3f {
 /** Diagnostic ghost tint (linear-ish RGB; the consumer applies its own gamma). */
 export const GHOST_TINT = Object.freeze([0.10, 0.62, 0.92]);
 export const GHOST_ALPHA = 0.34;
+
+// Data-driven HDR post-process (`postProcess` block of the committed runtime
+// lighting table). The scene pass writes linear radiance into an rgba16float
+// target; `luminanceMain` reduces it to a 1x1 frame luminance over a 16x16 grid
+// and `toneMapMain` applies the committed rule:
+//   exposure    = clamp(middleGrey / (frameLuminance + 0.001), exposureMin, exposureMax)
+//   toneMapped  = radiance * exposure * (middleGrey / (frameLuminance * exposure + 0.001))
+//                 (render/shaders/postprocess/hdr/psHDR.h ApplyToneMapping)
+//   encoded     = pow(toneMapped, 1 / gamma)   (the committed postProcess.gamma)
+// Bloom uses the committed bloomThreshold/bloomScale with a single-pass 5-tap
+// box: the retail bright pass and its bloom-curve texture are not decoded, so
+// the box is a labelled approximation, not the retail chain.
+//
+// The two passes are separate modules: a WebGPU entry point's pipeline layout must
+// cover every module-scope binding, and the luminance pass may not bind the
+// luminance target it is writing.
+const LUMINANCE_SHADER = /* wgsl */ `
+@group(0) @binding(0) var hdrColor: texture_2d<f32>;
+@group(0) @binding(1) var linearSampler: sampler;
+
+struct PostOut {
+  @builtin(position) position: vec4f,
+};
+
+@vertex fn postVertex(@builtin(vertex_index) index: u32) -> PostOut {
+  var corners = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  var out: PostOut;
+  out.position = vec4f(corners[index], 0.0, 1.0);
+  return out;
+}
+
+fn luminanceOf(colour: vec3f) -> f32 {
+  // psLuminance.h weights.
+  return dot(colour, vec3f(0.2125, 0.7154, 0.0721));
+}
+
+@fragment fn luminanceMain(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  var total = 0.0;
+  for (var y = 0u; y < 16u; y = y + 1u) {
+    for (var x = 0u; x < 16u; x = x + 1u) {
+      let uv = (vec2f(f32(x), f32(y)) + vec2f(0.5)) / 16.0;
+      total = total + luminanceOf(textureSampleLevel(hdrColor, linearSampler, uv, 0.0).rgb);
+    }
+  }
+  return vec4f(total / 256.0, 0.0, 0.0, 1.0);
+}
+`;
+
+const TONE_MAP_SHADER = /* wgsl */ `
+struct PostUniforms {
+  params: vec4f,   // x = middleGrey, y = gamma, z = exposureMin, w = exposureMax
+  params2: vec4f,  // x = bloomThreshold, y = bloomScale, z = width px, w = height px
+};
+@group(0) @binding(0) var hdrColor: texture_2d<f32>;
+@group(0) @binding(1) var luminanceTexture: texture_2d<f32>;
+@group(0) @binding(2) var linearSampler: sampler;
+@group(0) @binding(3) var<uniform> post: PostUniforms;
+
+struct PostOut {
+  @builtin(position) position: vec4f,
+};
+
+@vertex fn postVertex(@builtin(vertex_index) index: u32) -> PostOut {
+  var corners = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  var out: PostOut;
+  out.position = vec4f(corners[index], 0.0, 1.0);
+  return out;
+}
+
+@fragment fn toneMapMain(@builtin(position) position: vec4f) -> @location(0) vec4f {
+  let size = max(post.params2.zw, vec2f(1.0));
+  let uv = position.xy / size;
+  let hdr = textureSampleLevel(hdrColor, linearSampler, uv, 0.0).rgb;
+  let frameLuminance = textureSampleLevel(luminanceTexture, linearSampler, vec2f(0.5), 0.0).r;
+  let middleGrey = post.params.x;
+  let exposure = clamp(middleGrey / (frameLuminance + 0.001), post.params.z, post.params.w);
+  let exposed = hdr * exposure;
+  let toneMapped = exposed * (middleGrey / (frameLuminance * exposure + 0.001));
+  // Bloom: thresholded 2-pixel neighbours of the exposed buffer.
+  let threshold = post.params2.x;
+  let scale = post.params2.y;
+  let step = vec2f(2.0) / size;
+  var bright = vec3f(0.0);
+  bright = bright + max(textureSampleLevel(hdrColor, linearSampler, uv + vec2f(step.x, 0.0), 0.0).rgb * exposure - vec3f(threshold), vec3f(0.0));
+  bright = bright + max(textureSampleLevel(hdrColor, linearSampler, uv - vec2f(step.x, 0.0), 0.0).rgb * exposure - vec3f(threshold), vec3f(0.0));
+  bright = bright + max(textureSampleLevel(hdrColor, linearSampler, uv + vec2f(0.0, step.y), 0.0).rgb * exposure - vec3f(threshold), vec3f(0.0));
+  bright = bright + max(textureSampleLevel(hdrColor, linearSampler, uv - vec2f(0.0, step.y), 0.0).rgb * exposure - vec3f(threshold), vec3f(0.0));
+  let bloom = bright * 0.25 * scale;
+  let colour = toneMapped + bloom;
+  let encoded = pow(max(colour, vec3f(0.0)), vec3f(1.0 / max(post.params.y, 0.1)));
+  return vec4f(clamp(encoded, vec3f(0.0), vec3f(1.0)), 1.0);
+}
+`;
+
+// Retail sky dome (Effect::Sky::C_TexturedSkyDome). The committed renderer draws a
+// 25x25 sphere around the eye; a full-screen pass reproduces the same per-pixel
+// mapping exactly: v = 2*acos(ray.y)/pi (dome UV v = ring*2/rings) and
+// u = atan2(ray.x, ray.z)/2pi + rotation (dome UV u = segment/segments +
+// rotation). The shader applies vsTexturedSkyDome.vsh + psTexturedSkyDome.psh:
+//   fog   = saturate((v + fogTop - 1) / fogTop) ^ fogCurve * fogAlpha
+//   black = saturate((blackHeight - v) * blackSize)
+//   sky   = texture(u, v).rgb * texture.a * texture.a * intensity
+//   colour= lerp(sky, fogColour, fog) * black
+// The dome texture is uploaded as rgba8unorm because the retail `.texture` path
+// does not call SetSRGB (TexturedSkyDome::OnCreate).
+const SKY_SHADER = /* wgsl */ `
+struct SkyUniforms {
+  forward: vec4f,   // xyz = camera forward, w = tan(fovY/2)
+  right: vec4f,     // xyz = camera right, w = tanHalfX
+  up: vec4f,        // xyz = camera up
+  params: vec4f,    // x = rotation, y = intensity, z = blackHeight, w = blackSize
+  fog: vec4f,       // rgb = fogColour, a = fogCurve
+  flags: vec4f,     // x = linear HDR output, y = fogTop, z = fogAlpha
+};
+@group(0) @binding(0) var<uniform> sky: SkyUniforms;
+@group(0) @binding(1) var skySampler: sampler;
+@group(0) @binding(2) var skyTexture: texture_2d<f32>;
+
+struct SkyOut {
+  @builtin(position) position: vec4f,
+  @location(0) ndc: vec2f,
+};
+
+@vertex fn skyVertex(@builtin(vertex_index) index: u32) -> SkyOut {
+  var corners = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  let corner = corners[index];
+  var out: SkyOut;
+  out.position = vec4f(corner, 1.0, 1.0);
+  out.ndc = corner;
+  return out;
+}
+
+fn linearToSrgb(value: vec3f) -> vec3f {
+  let c = clamp(value, vec3f(0.0), vec3f(1.0));
+  let low = c * 12.92;
+  let high = 1.055 * pow(c, vec3f(1.0 / 2.4)) - 0.055;
+  return select(high, low, c <= vec3f(0.0031308));
+}
+
+@fragment fn skyFragment(input: SkyOut) -> @location(0) vec4f {
+  let direction = normalize(sky.forward.xyz
+    + sky.right.xyz * (input.ndc.x * sky.right.w)
+    + sky.up.xyz * (input.ndc.y * sky.forward.w));
+  let v = 2.0 * acos(clamp(direction.y, -1.0, 1.0)) / 3.141592653589793;
+  let u = atan2(direction.x, direction.z) / 6.283185307179586 + sky.params.x;
+  let sample = textureSample(skyTexture, skySampler, vec2f(u, v));
+  let domeColour = sample.rgb * sample.a * sample.a * sky.params.y;
+  let fogTop = max(sky.flags.y, 0.0001);
+  let fog = pow(saturate((v + fogTop - 1.0) / fogTop), sky.fog.a) * sky.flags.z;
+  let colour = mix(domeColour, sky.fog.rgb, fog);
+  let black = saturate((sky.params.z - v) * sky.params.w);
+  let domeFinal = max(colour * black, vec3f(0.0));
+  if (sky.flags.x > 0.5) {
+    return vec4f(domeFinal, 1.0);
+  }
+  return vec4f(linearToSrgb(domeFinal), 1.0);
+}
+`;
+
+// Projected imposter blob shadow. The retail deferred blob (per-channel render
+// target, gaussian blur, screen composite) is not reproduced: this draws the
+// committed impostershadow texture (A8 alpha blob) on a ground-projected quad.
+const SHADOW_SHADER = /* wgsl */ `
+struct ShadowUniforms {
+  viewProjection: mat4x4f,
+  model: mat4x4f,
+  params: vec4f,   // x = intensity
+};
+@group(0) @binding(0) var<uniform> shadow: ShadowUniforms;
+@group(0) @binding(1) var shadowSampler: sampler;
+@group(0) @binding(2) var shadowTexture: texture_2d<f32>;
+
+struct ShadowOut {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex fn shadowVertex(@location(0) position: vec3f, @location(1) uv: vec2f) -> ShadowOut {
+  var out: ShadowOut;
+  out.position = shadow.viewProjection * shadow.model * vec4f(position, 1.0);
+  out.uv = uv;
+  return out;
+}
+
+@fragment fn shadowFragment(input: ShadowOut) -> @location(0) vec4f {
+  // The committed imposter texture is a filled square (A8); the retail deferred
+  // path blurs it and fades it by camera distance. This pass reproduces that as a
+  // labelled approximation: the texture alpha times a radial smoothstep.
+  let blob = textureSample(shadowTexture, shadowSampler, input.uv).a;
+  let centred = input.uv * 2.0 - vec2f(1.0);
+  let falloff = smoothstep(1.0, 0.25, length(centred));
+  return vec4f(0.0, 0.0, 0.0, saturate(blob * shadow.params.x * falloff));
+}
+`;
 
 /**
  * The PoC sampling policy, now split into what the source data *is* and what the
@@ -464,8 +702,42 @@ function boundsOfDraws(draws) {
   return { min, max, center, radius };
 }
 
-/** Column-major translate * uniform-scale matrix for a diagnostic marker. */
-function markerMatrix(position, scale) {
+/**
+ * Ground-plane model matrix for the projected imposter shadow of one rigid body.
+ * `world` is the body's column-major rigid transform; `bounds` its local AABB.
+ * The quad is centred under the body, aligned with its yaw, sized from its XZ
+ * footprint and clamped to the committed `ShadowSize`.
+ */
+function shadowModelMatrix(world, bounds, sizeLimit) {
+  const box = bounds ?? { min: [-1, -0.5, -1], max: [1, 0.5, 1] };
+  const centreX = (box.min[0] + box.max[0]) / 2;
+  const centreZ = (box.min[2] + box.max[2]) / 2;
+  const worldX = world[0] * centreX + world[8] * centreZ + world[12];
+  const worldZ = world[2] * centreX + world[10] * centreZ + world[14];
+  let groundY = Infinity;
+  for (let corner = 0; corner < 8; corner++) {
+    const x = corner & 1 ? box.max[0] : box.min[0];
+    const y = corner & 2 ? box.max[1] : box.min[1];
+    const z = corner & 4 ? box.max[2] : box.min[2];
+    const worldY = world[1] * x + world[5] * y + world[9] * z + world[13];
+    if (worldY < groundY) groundY = worldY;
+  }
+  if (!Number.isFinite(groundY)) groundY = world[13];
+  const yaw = Math.atan2(world[8], world[10]);
+  const limit = Math.max(0.5, sizeLimit) / 2;
+  const halfX = Math.min(limit, Math.max(0.3, (box.max[0] - box.min[0]) * 0.6));
+  const halfZ = Math.min(limit, Math.max(0.3, (box.max[2] - box.min[2]) * 0.6));
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return new Float32Array([
+    c * halfX, 0, -s * halfX, 0,
+    0, 1, 0, 0,
+    s * halfZ, 0, c * halfZ, 0,
+    worldX, groundY + 0.03, worldZ, 1
+  ]);
+}
+
+/** Column-major translate * uniform-scale matrix for a diagnostic marker. */function markerMatrix(position, scale) {
   const s = Number.isFinite(scale) && scale > 0 ? scale : 1;
   return new Float32Array([
     s, 0, 0, 0,
@@ -497,6 +769,14 @@ export class PacketConsumer {
     this.lightmapTextures = new Map();
     this.device = null;
     this.orbit = null;
+    // Data-driven HDR post-process table; null keeps the plain swap-chain path.
+    this.postProcess = null;
+    // Retail sky dome and projected imposter shadow (presentation only).
+    this.skyDome = null;
+    this.shadow = null;
+    this.pendingSkyDome = null;
+    this.pendingShadow = null;
+    this.carBodyMeshId = null;
     this.usePacketCamera = true;
     this.focusMeshId = null;
     this.drag = null;
@@ -585,7 +865,11 @@ export class PacketConsumer {
       textureTotalBytes: 0,
       mipChainHash: null,
       uvUploadBytes: 0,
-      texturedDraws: 0
+      texturedDraws: 0,
+      // Presentation passes outside the packet (sky dome, projected shadows).
+      skyFrames: 0,
+      shadowFrames: 0,
+      shadowDraws: 0
     };
 
     canvas.addEventListener('pointerdown', (event) => {
@@ -667,21 +951,46 @@ export class PacketConsumer {
     const pipelineLayout = this.device.createPipelineLayout({
       bindGroupLayouts: [drawLayout, sceneLayout, textureLayout, lightmapLayout]
     });
-    this.pipeline = await this.device.createRenderPipelineAsync({
-      layout: pipelineLayout,
-      vertex: {
-        module,
-        entryPoint: 'vertexMain',
-        buffers: [
-          { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
-          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
-          { arrayStride: 8, attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }] }
-        ]
-      },
-      fragment: { module, entryPoint: 'fragmentMain', targets: [{ format: this.format }] },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
-      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' }
-    });
+    const blendState = {
+      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
+    };
+    const sceneVertex = {
+      module,
+      entryPoint: 'vertexMain',
+      buffers: [
+        { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
+        { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] },
+        { arrayStride: 8, attributes: [{ shaderLocation: 2, offset: 0, format: 'float32x2' }] }
+      ]
+    };
+    const createScenePipeline = (targetFormat, options = {}) =>
+      this.device.createRenderPipelineAsync({
+        layout: pipelineLayout,
+        vertex: sceneVertex,
+        fragment: {
+          module,
+          entryPoint: 'fragmentMain',
+          targets: [options.blend ? { format: targetFormat, blend: blendState } : { format: targetFormat }]
+        },
+        primitive: { topology: 'triangle-list', cullMode: 'none' },
+        depthStencil: {
+          format: 'depth24plus',
+          depthWriteEnabled: options.depthWriteEnabled !== false,
+          depthCompare: 'less'
+        }
+      });
+    // The swap-chain variant is the established path (used whenever no
+    // `postProcess` table is supplied); the rgba16float variant is the scene pass
+    // of the HDR path, so exposure/tone mapping can see linear values above 1.
+    this.pipeline = await createScenePipeline(this.format);
+    this.hdrPipeline = await createScenePipeline(HDR_COLOUR_FORMAT);
+    // Car glass pass: the same module, vertex layout and bind groups as the main
+    // pipeline, but alpha-blended and without depth writes. The retail car glass
+    // material is transparent; no blend state is recovered, so the shader's dark
+    // glass tint and alpha 0.55 are a labelled presentation fallback.
+    this.glassPipeline = await createScenePipeline(this.format, { blend: true, depthWriteEnabled: false });
+    this.glassHdrPipeline = await createScenePipeline(HDR_COLOUR_FORMAT, { blend: true, depthWriteEnabled: false });
     // Ghost pipeline (P63): same bind groups, vertex buffers and depth format as
     // the main pipeline, but a translucent tint, no depth write and no texture
     // sample. Drawing it after the opaque draws keeps the track/props in front of
@@ -690,30 +999,27 @@ export class PacketConsumer {
     const ghostInfo = await ghostModule.getCompilationInfo();
     const ghostErrors = ghostInfo.messages.filter((message) => message.type === 'error');
     if (ghostErrors.length) throw new Error('ghost shader: ' + ghostErrors.map((message) => message.message).join('; '));
-    this.ghostPipeline = await this.device.createRenderPipelineAsync({
-      layout: pipelineLayout,
-      vertex: {
-        module: ghostModule,
-        entryPoint: 'vertexMain',
-        buffers: [
-          { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
-          { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] }
-        ]
-      },
-      fragment: {
-        module: ghostModule,
-        entryPoint: 'fragmentMain',
-        targets: [{
-          format: this.format,
-          blend: {
-            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
-          }
-        }]
-      },
-      primitive: { topology: 'triangle-list', cullMode: 'none' },
-      depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less' }
-    });
+    const createGhostPipeline = (targetFormat) =>
+      this.device.createRenderPipelineAsync({
+        layout: pipelineLayout,
+        vertex: {
+          module: ghostModule,
+          entryPoint: 'vertexMain',
+          buffers: [
+            { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
+            { arrayStride: 8, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x2' }] }
+          ]
+        },
+        fragment: {
+          module: ghostModule,
+          entryPoint: 'fragmentMain',
+          targets: [{ format: targetFormat, blend: blendState }]
+        },
+        primitive: { topology: 'triangle-list', cullMode: 'none' },
+        depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less' }
+      });
+    this.ghostPipeline = await createGhostPipeline(this.format);
+    this.ghostHdrPipeline = await createGhostPipeline(HDR_COLOUR_FORMAT);
     this.drawLayout = drawLayout;
     this.sceneLayout = sceneLayout;
     this.textureLayout = textureLayout;
@@ -782,6 +1088,377 @@ export class PacketConsumer {
     });
     this.lightmapGroups = new Map();
     this.lightmapTextures = new Map();
+
+    // Data-driven HDR post-process. The pipelines and the 32-byte settings
+    // uniform are created here; the render targets are sized to the canvas on
+    // first use (and re-created on resize). Nothing is allocated per frame.
+    this.postModule = this.device.createShaderModule({ code: LUMINANCE_SHADER });
+    const postInfo = await this.postModule.getCompilationInfo();
+    const postErrors = postInfo.messages.filter((message) => message.type === 'error');
+    if (postErrors.length) throw new Error('post shader: ' + postErrors.map((message) => message.message).join('; '));
+    this.toneMapModule = this.device.createShaderModule({ code: TONE_MAP_SHADER });
+    const toneMapInfo = await this.toneMapModule.getCompilationInfo();
+    const toneMapErrors = toneMapInfo.messages.filter((message) => message.type === 'error');
+    if (toneMapErrors.length) throw new Error('tone map shader: ' + toneMapErrors.map((message) => message.message).join('; '));
+    this.postSampler = this.device.createSampler({
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+      magFilter: 'linear',
+      minFilter: 'linear'
+    });
+    this.postUniform = this.device.createBuffer({
+      size: 32,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    });
+    this.postUniformValues = new Float32Array(8);
+    this.luminanceLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }
+      ]
+    });
+    this.toneMapLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 32 } }
+      ]
+    });
+    const postVertex = { module: this.postModule, entryPoint: 'postVertex' };
+    this.luminancePipeline = await this.device.createRenderPipelineAsync({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.luminanceLayout] }),
+      vertex: postVertex,
+      fragment: { module: this.postModule, entryPoint: 'luminanceMain', targets: [{ format: HDR_COLOUR_FORMAT }] },
+      primitive: { topology: 'triangle-list' }
+    });
+    this.toneMapPipeline = await this.device.createRenderPipelineAsync({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.toneMapLayout] }),
+      vertex: { module: this.toneMapModule, entryPoint: 'postVertex' },
+      fragment: { module: this.toneMapModule, entryPoint: 'toneMapMain', targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-list' }
+    });
+
+    // Sky dome (full-screen pass) and projected imposter shadow. Both are
+    // presentation geometry outside the packet: no packet buffer, draw count or
+    // hash changes. Their resources are not counted in the packet buffer/texture
+    // accounting the soak gate checks.
+    this.skyModule = this.device.createShaderModule({ code: SKY_SHADER });
+    const skyInfo = await this.skyModule.getCompilationInfo();
+    const skyErrors = skyInfo.messages.filter((message) => message.type === 'error');
+    if (skyErrors.length) throw new Error('sky shader: ' + skyErrors.map((message) => message.message).join('; '));
+    this.shadowModule = this.device.createShaderModule({ code: SHADOW_SHADER });
+    const shadowInfo = await this.shadowModule.getCompilationInfo();
+    const shadowErrors = shadowInfo.messages.filter((message) => message.type === 'error');
+    if (shadowErrors.length) throw new Error('shadow shader: ' + shadowErrors.map((message) => message.message).join('; '));
+    this.skyLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform', minBindingSize: 96 } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
+    this.shadowLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+          buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 160 } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
+    const skyVertexState = { module: this.skyModule, entryPoint: 'skyVertex' };
+    const shadowVertexState = {
+      module: this.shadowModule,
+      entryPoint: 'shadowVertex',
+      buffers: [{
+        arrayStride: 20,
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },
+          { shaderLocation: 1, offset: 12, format: 'float32x2' }
+        ]
+      }]
+    };
+    const skyLayoutPipeline = this.device.createPipelineLayout({ bindGroupLayouts: [this.skyLayout] });
+    const shadowLayoutPipeline = this.device.createPipelineLayout({ bindGroupLayouts: [this.shadowLayout] });
+    this.skyPipeline = await this.device.createRenderPipelineAsync({
+      layout: skyLayoutPipeline,
+      vertex: skyVertexState,
+      fragment: { module: this.skyModule, entryPoint: 'skyFragment', targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'always' }
+    });
+    this.skyHdrPipeline = await this.device.createRenderPipelineAsync({
+      layout: skyLayoutPipeline,
+      vertex: skyVertexState,
+      fragment: { module: this.skyModule, entryPoint: 'skyFragment', targets: [{ format: HDR_COLOUR_FORMAT }] },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'always' }
+    });
+    this.shadowPipeline = await this.device.createRenderPipelineAsync({
+      layout: shadowLayoutPipeline,
+      vertex: shadowVertexState,
+      fragment: {
+        module: this.shadowModule,
+        entryPoint: 'shadowFragment',
+        targets: [{ format: this.format, blend: blendState }]
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less-equal' }
+    });
+    this.shadowHdrPipeline = await this.device.createRenderPipelineAsync({
+      layout: shadowLayoutPipeline,
+      vertex: shadowVertexState,
+      fragment: {
+        module: this.shadowModule,
+        entryPoint: 'shadowFragment',
+        targets: [{ format: HDR_COLOUR_FORMAT, blend: blendState }]
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less-equal' }
+    });
+    this.skySampler = this.device.createSampler({
+      addressModeU: 'repeat',
+      addressModeV: 'clamp-to-edge',
+      magFilter: 'linear',
+      minFilter: 'linear'
+    });
+    this.shadowSampler = this.device.createSampler({
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+      magFilter: 'linear',
+      minFilter: 'linear'
+    });
+    this.skyUniform = this.device.createBuffer({
+      size: 96,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    });
+    this.shadowUniform = this.device.createBuffer({
+      size: SHADOW_SLOTS * DRAW_UNIFORM_STRIDE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+    });
+    // Unit quad in the XZ plane (two triangles), UV 0..1.
+    this.shadowQuad = this.device.createBuffer({
+      size: 6 * 20,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+    });
+    const quad = new Float32Array([
+      -1, 0, -1, 0, 0,
+      1, 0, -1, 1, 0,
+      1, 0, 1, 1, 1,
+      -1, 0, -1, 0, 0,
+      1, 0, 1, 1, 1,
+      -1, 0, 1, 0, 1
+    ]);
+    this.device.queue.writeBuffer(this.shadowQuad, 0, quad);
+    if (this.pendingSkyDome) {
+      const pending = this.pendingSkyDome;
+      this.pendingSkyDome = null;
+      this.setSkyDome(pending);
+    }
+    if (this.pendingShadow) {
+      const pending = this.pendingShadow;
+      this.pendingShadow = null;
+      this.setShadow(pending);
+    }
+    this.postTargetSize = null;
+  }
+
+  /** Upload the decoded retail sky dome and its committed parameters. */
+  setSkyDome(values = null) {
+    if (!values) {
+      this.skyDome = null;
+      this.skyBindGroup = null;
+      this.stats.skyDome = null;
+      return true;
+    }
+    const { width, height, rgba } = values;
+    if (!(width > 0 && height > 0) || !(rgba instanceof Uint8Array) || rgba.length !== width * height * 4) {
+      throw new Error('sky dome needs a decoded RGBA mip0 of the declared size');
+    }
+    if (!this.device) {
+      this.pendingSkyDome = values;
+      return false;
+    }
+    if (this.skySourceRgba !== rgba) {
+      try { this.skyTexture?.destroy(); } catch { /* lost device */ }
+      this.skyTexture = this.device.createTexture({
+        size: [width, height, 1],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+      });
+      this.device.queue.writeTexture(
+        { texture: this.skyTexture },
+        rgba,
+        { bytesPerRow: width * 4, rowsPerImage: height },
+        [width, height, 1]
+      );
+      this.skyBindGroup = this.device.createBindGroup({
+        layout: this.skyLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.skyUniform, offset: 0, size: 96 } },
+          { binding: 1, resource: this.skySampler },
+          { binding: 2, resource: this.skyTexture.createView() }
+        ]
+      });
+      this.skySourceRgba = rgba;
+    }
+    this.skyDome = {
+      width,
+      height,
+      rotation: Number.isFinite(values.rotation) ? values.rotation : 0,
+      intensity: Number.isFinite(values.intensity) ? values.intensity : 0,
+      fogColour: Array.isArray(values.fogColour) && values.fogColour.length >= 3
+        ? values.fogColour.slice(0, 3) : [0, 0, 0],
+      fogCurve: Number.isFinite(values.fogCurve) ? values.fogCurve : 1,
+      blackHeight: Number.isFinite(values.blackHeight) ? values.blackHeight : 3,
+      blackSize: Number.isFinite(values.blackSize) ? values.blackSize : 1,
+      texture: values.texture ?? null
+    };
+    this.stats.skyDome = {
+      width,
+      height,
+      texture: values.texture ?? null,
+      rotation: this.skyDome.rotation,
+      intensity: this.skyDome.intensity,
+      fogColour: this.skyDome.fogColour,
+      fogCurve: this.skyDome.fogCurve,
+      blackHeight: this.skyDome.blackHeight,
+      blackSize: this.skyDome.blackSize,
+      mode: 'full-screen-ray-equivalent-of-25x25-dome',
+      colourSpace: 'rgba8unorm (linear; retail .texture path does not SetSRGB)'
+    };
+    return true;
+  }
+
+  /** Upload the impostershadow texture and the committed shadow settings. */
+  setShadow(values = null) {
+    if (!values) {
+      this.shadow = null;
+      this.shadowBindGroup = null;
+      this.stats.shadow = null;
+      return true;
+    }
+    const { width, height, rgba } = values;
+    if (!(width > 0 && height > 0) || !(rgba instanceof Uint8Array) || rgba.length !== width * height * 4) {
+      throw new Error('shadow needs a decoded RGBA mip0 of the declared size');
+    }
+    if (!this.device) {
+      this.pendingShadow = values;
+      return false;
+    }
+    if (this.shadowSourceRgba !== rgba) {
+      try { this.shadowTexture?.destroy(); } catch { /* lost device */ }
+      this.shadowTexture = this.device.createTexture({
+        size: [width, height, 1],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+      });
+      this.device.queue.writeTexture(
+        { texture: this.shadowTexture },
+        rgba,
+        { bytesPerRow: width * 4, rowsPerImage: height },
+        [width, height, 1]
+      );
+      this.shadowBindGroup = this.device.createBindGroup({
+        layout: this.shadowLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.shadowUniform, offset: 0, size: 160 } },
+          { binding: 1, resource: this.shadowSampler },
+          { binding: 2, resource: this.shadowTexture.createView() }
+        ]
+      });
+      this.shadowSourceRgba = rgba;
+    }
+    const finite = (value, fallback) => (Number.isFinite(value) ? value : fallback);
+    this.shadow = {
+      width,
+      height,
+      intensity: Math.max(0, Math.min(1, finite(values.intensity, 0.75))),
+      size: Math.max(0.5, finite(values.size, 6)),
+      offsetY: finite(values.offsetY, 0.5)
+    };
+    this.stats.shadow = {
+      width,
+      height,
+      intensity: this.shadow.intensity,
+      size: this.shadow.size,
+      offsetY: this.shadow.offsetY,
+      mode: 'projected-imposter-approximation',
+      note: 'retail deferred per-channel blob + gaussian blur + screen composite not reproduced'
+    };
+    return true;
+  }
+
+  /**
+   * Create (or re-create after a resize) the HDR scene target and the 1x1 frame
+   * luminance target. Sizes are the drawing-buffer size; the luminance target is
+   * always 1x1. These textures and the post uniform are outside the packet's
+   * buffer/texture accounting (the soak gate counts packet resources).
+   */
+  ensurePostTargets(width, height) {
+    if (this.postTargetSize && this.postTargetSize[0] === width && this.postTargetSize[1] === height) {
+      return;
+    }
+    for (const texture of [this.postHdrTexture, this.postLuminanceTexture]) {
+      try { texture?.destroy(); } catch { /* lost device: nothing to free */ }
+    }
+    this.postHdrTexture = this.device.createTexture({
+      size: [width, height, 1],
+      format: HDR_COLOUR_FORMAT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.postLuminanceTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: HDR_COLOUR_FORMAT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+    });
+    this.postHdrView = this.postHdrTexture.createView();
+    this.postLuminanceView = this.postLuminanceTexture.createView();
+    this.luminanceBindGroup = this.device.createBindGroup({
+      layout: this.luminanceLayout,
+      entries: [
+        { binding: 0, resource: this.postHdrView },
+        { binding: 1, resource: this.postSampler }
+      ]
+    });
+    this.toneMapBindGroup = this.device.createBindGroup({
+      layout: this.toneMapLayout,
+      entries: [
+        { binding: 0, resource: this.postHdrView },
+        { binding: 1, resource: this.postLuminanceView },
+        { binding: 2, resource: this.postSampler },
+        { binding: 3, resource: { buffer: this.postUniform, offset: 0, size: 32 } }
+      ]
+    });
+    this.postTargetSize = [width, height];
+  }
+
+  /**
+   * Supply the committed `postProcess` block (exposureMin/Max, middleGrey, gamma,
+   * bloomThreshold, bloomScale) from `probes/lighting/runtime-lighting.mjs`.
+   * Passing null/undefined restores the plain swap-chain path, which is what a
+   * caller that never supplies the table gets (existing tests/captures unchanged).
+   */
+  setPostProcess(values = null) {
+    if (!values) {
+      this.postProcess = null;
+      this.stats.postProcess = null;
+      return true;
+    }
+    const finite = (value, fallback) => (Number.isFinite(value) ? value : fallback);
+    const exposureMin = Math.max(0, finite(values.exposureMin, 1));
+    const exposureMax = Math.max(exposureMin, finite(values.exposureMax, exposureMin));
+    this.postProcess = {
+      exposureMin,
+      exposureMax,
+      middleGrey: Math.max(0.0001, finite(values.middleGrey, 0.1)),
+      gamma: Math.max(0.1, finite(values.gamma, 2.2)),
+      bloomThreshold: Math.max(0, finite(values.bloomThreshold, 1)),
+      bloomScale: Math.max(0, finite(values.bloomScale, 0))
+    };
+    this.stats.postProcess = { ...this.postProcess };
+    this.stats.postProcessSource = 'retail-postProcess (runtime-lighting.json)';
+    return true;
   }
 
   /**
@@ -827,6 +1504,8 @@ export class PacketConsumer {
     this.stats.ghostEnabled = false;
     this.stats.ghostSlotCount = 1;
     this.stats.ghostActiveSlots = 0;
+    this.stats.glassDraws = 0;
+    this.stats.suppressedDraws = 0;
     this.stats.remoteCars = 0;
     this.stats.remoteCarDraws = 0;
     this.powerupDraws = [];
@@ -1039,6 +1718,7 @@ export class PacketConsumer {
     // buffer count is unchanged (the soak gate stays at 11) and enabling the ghost
     // uploads nothing.
     const carBodyMeshId = packet.diagnostics?.extras?.drive?.car?.bodyMesh ?? null;
+    this.carBodyMeshId = carBodyMeshId;
     const localGhostDraws = carBodyMeshId
       ? packet.draws.filter((draw) => draw.meshId === carBodyMeshId && draw.visible !== false).length
       : 0;
@@ -1086,19 +1766,22 @@ export class PacketConsumer {
     const light = packet.lights[0];
     const direction = light.direction;
     // Scene uniform: sun direction, sun colour, sky colour, lighting params
-    // (x = mode: 0 diagnostic, 1 sun-sky lightmap, 2 rgb-normalised-gamma;
-    //  y = diagnostic ambient scalar). The page replaces these with the committed
-    // retail table through `setLighting`; the packet values are the fallback.
+    // (y = diagnostic ambient scalar; x/z/w = the retail bakedColour rgB lanes,
+    // see shader/common/Lighting.h:153-165). Packing the baked colour into the
+    // unused lanes keeps the Scene uniform at 112 bytes. The page replaces these
+    // with the committed retail table through `setLighting`; the packet values are
+    // the fallback.
     const sceneBytes = new Float32Array(16);
     const sunDir = this.pendingSunDirection ?? direction;
     const sunColour = this.pendingSunColour ??
       [light.colour[0], light.colour[1], light.colour[2]];
     const sunIntensity = this.pendingSunColour ? 1 : light.colour[3] * light.intensity;
     const skyColour = this.pendingSkyColour ?? [0, 0, 0];
+    const bakedColour = this.pendingBakedColour ?? [1, 1, 1];
     sceneBytes.set([sunDir[0], sunDir[1], sunDir[2], 0], 0);
     sceneBytes.set([sunColour[0], sunColour[1], sunColour[2], sunIntensity], 4);
     sceneBytes.set([skyColour[0], skyColour[1], skyColour[2], 0], 8);
-    sceneBytes.set([0, Number.isFinite(this.pendingAmbient) ? this.pendingAmbient : 0.16, 0, 0], 12);
+    sceneBytes.set([bakedColour[0], Number.isFinite(this.pendingAmbient) ? this.pendingAmbient : 0.16, bakedColour[1], bakedColour[2]], 12);
     // 7 vec4: sun direction, sun colour, sky colour, lighting, fog, fog height,
     // camera. The camera and the fog flag are rewritten every frame.
     this.sceneValues = new Float32Array(28);
@@ -1127,6 +1810,21 @@ export class PacketConsumer {
       }
     }
     this.stats.texturedDraws = this.draws.filter((draw) => draw.textureId != null).length;
+    // Presentation flags derived from committed packet fields (the packet, its
+    // hash and every pin stay untouched):
+    //   * `partKind === 'glass'` (the car manifest's own part classification) is
+    //     drawn in the blended glass pass with a dark tint instead of an opaque
+    //     teal slab;
+    //   * `textureBinding.status === 'blocked-bc3-alpha'` (River's cab01alphas_diff
+    //     props) has no declared alpha rule, so its neutral diagnostic albedo
+    //     rendered as a floating white card; the fragment is discarded while the
+    //     draw call is still issued.
+    for (const draw of this.draws) {
+      draw.glass = draw.partKind === 'glass';
+      draw.suppress = draw.textureBinding?.status === 'blocked-bc3-alpha';
+    }
+    this.stats.glassDraws = this.draws.filter((draw) => draw.visible !== false && draw.glass).length;
+    this.stats.suppressedDraws = this.draws.filter((draw) => draw.visible !== false && draw.suppress).length;
     // Decoded retail lightmaps (material g_tLightmap). The packet lists each
     // texture once with its dimensions; the consumer fetches the raw RGBA and
     // uploads it as rgba8unorm (the committed rule applies its own gamma term,
@@ -1552,9 +2250,11 @@ export class PacketConsumer {
    * Apply the committed retail lighting table. `mode` is the lightmap shader
    * rule: 1 = SunSkyLightmap (live sun + sky occlusion), 2 =
    * RGBLightmapNormalisedGamma (baked colour), 0 = diagnostic lambert+ambient.
+   * `bakedColour` is `lightingInfo.bakedColour.rgb`; it multiplies the
+   * RGBLightmapNormalisedGamma term only (shader/common/Lighting.h:153-165).
    * Colours are linear RGB; the sun direction is the committed unit vector.
    */
-  setLighting({ sunDirection, sunColour, skyColour, ambient, mode } = {}) {
+  setLighting({ sunDirection, sunColour, skyColour, bakedColour, ambient, mode } = {}) {
     if (Array.isArray(sunDirection) && sunDirection.length >= 3) {
       this.pendingSunDirection = sunDirection.slice(0, 3);
     }
@@ -1563,6 +2263,10 @@ export class PacketConsumer {
     }
     if (Array.isArray(skyColour) && skyColour.length >= 3) {
       this.pendingSkyColour = skyColour.slice(0, 3);
+    }
+    if (Array.isArray(bakedColour) && bakedColour.length >= 3) {
+      this.pendingBakedColour = bakedColour.slice(0, 3);
+      this.stats.bakedColour = this.pendingBakedColour;
     }
     if (Number.isFinite(ambient)) this.pendingAmbient = Math.max(0, Math.min(1, ambient));
     if (Number.isInteger(mode) && mode >= 0 && mode <= 2) this.lightmapMode = mode;
@@ -1577,6 +2281,13 @@ export class PacketConsumer {
     }
     if (this.pendingSkyColour) {
       this.sceneValues.set([...this.pendingSkyColour, 0], 8);
+    }
+    // Baked colour rides in the lighting vec4's unused lanes (x/z/w) so the
+    // 112-byte Scene uniform is unchanged; y remains the ambient scalar.
+    if (this.pendingBakedColour) {
+      this.sceneValues[12] = this.pendingBakedColour[0];
+      this.sceneValues[14] = this.pendingBakedColour[1];
+      this.sceneValues[15] = this.pendingBakedColour[2];
     }
     if (Number.isFinite(this.pendingAmbient)) {
       this.sceneValues[13] = this.pendingAmbient;
@@ -1827,20 +2538,23 @@ export class PacketConsumer {
       // draw is tinted white so the sampled texel is used unchanged; no material
       // colour is invented. texParams.y/z are the declared U/V flip flags; the
       // car pack sets u' = 1-u and leaves v raw, while level and track packs keep
-      // the raw UV0 stream.
+      // the raw UV0 stream. texParams.w = 1 suppresses a draw whose only albedo
+      // source is an undeclared BC3 alpha image (blocked-bc3-alpha).
       bytes.set([
         draw.textureId != null ? 1 : 0,
         draw.uvFlipU === true ? 1 : 0,
         draw.uvFlipV === true ? 1 : 0,
-        0
+        draw.suppress ? 1 : 0
       ], base + 36);
       // lightmapParams.x = 1 when a decoded g_tLightmap is bound; .y selects the
-      // committed shader rule (1 sun-sky, 2 rgb-normalised-gamma).
+      // committed shader rule (1 sun-sky, 2 rgb-normalised-gamma); .z = 1 marks a
+      // car glass draw for the blended glass pass; .w = 1 tells the fragment to
+      // emit linear HDR radiance (exposure/tone map happen in the post pass).
       bytes.set([
         draw.hasLightmap ? 1 : 0,
         this.lightmapMode ?? 1,
-        0,
-        0
+        draw.glass ? 1 : 0,
+        this.postProcess ? 1 : 0
       ], base + 40);
     }
     if (ghostActive) {
@@ -1860,7 +2574,7 @@ export class PacketConsumer {
           bytes.set(viewProjection, base);
           bytes.set(frameEntry.nodeMatrices.get(draw.nodeId) ?? draw.world, base + 16);
           bytes.set([tint[0], tint[1], tint[2], draw.spins ? 0.85 : 0], base + 32);
-          bytes.set([0, 0, 0, 0], base + 36);
+          bytes.set([0, 0, 0, this.postProcess ? 1 : 0], base + 36);
         }
       }
     }
@@ -1875,7 +2589,7 @@ export class PacketConsumer {
         bytes.set(viewProjection, base);
         bytes.set(markerMatrix(marker.position, marker.scale), base + 16);
         bytes.set([marker.colour[0], marker.colour[1], marker.colour[2], 0], base + 32);
-        bytes.set([0, 0, 0, 0], base + 36);
+        bytes.set([0, 0, 0, this.postProcess ? 1 : 0], base + 36);
       }
       const ringBase = markerBase + this.powerupDraws.length;
       const activeRings = (this.powerupRingMarkers ?? []).slice(0, this.powerupRingDraws.length);
@@ -1885,22 +2599,53 @@ export class PacketConsumer {
         bytes.set(viewProjection, base);
         bytes.set(markerMatrix(ring.position, ring.scale), base + 16);
         bytes.set([ring.colour[0], ring.colour[1], ring.colour[2], 0], base + 32);
-        bytes.set([0, 0, 0, 0], base + 36);
+        bytes.set([0, 0, 0, this.postProcess ? 1 : 0], base + 36);
       }
     }
     this.device.queue.writeBuffer(this.uniformBuffer, 0, bytes);
 
     const encoder = this.device.createCommandEncoder();
+    const post = this.postProcess ?? null;
+    if (post) this.ensurePostTargets(width, height);
+    const swapchainView = this.context.getCurrentTexture().createView();
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
-        view: this.context.getCurrentTexture().createView(),
-        clearValue: { r: 0.043, g: 0.075, b: 0.106, a: 1 },
+        view: post ? this.postHdrView : swapchainView,
+        // The established clear is an encoded colour; the HDR target holds linear
+        // radiance, so the same background is written through the sRGB EOTF.
+        clearValue: post
+          ? { r: 0.003, g: 0.0066, b: 0.0119, a: 1 }
+          : { r: 0.043, g: 0.075, b: 0.106, a: 1 },
         loadOp: 'clear',
         storeOp: 'store'
       }],
       depthStencilAttachment: { view: this.depth.createView(), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' }
     });
-    pass.setPipeline(this.pipeline);
+    if (this.skyDome && this.skyBindGroup) {
+      // Sky first, depth-write off: opaque geometry then draws over it. The
+      // per-pixel mapping reproduces the 25x25 retail sphere (see SKY_SHADER).
+      const view = frame.view;
+      const right = [view[0], view[4], view[8]];
+      const up = [view[1], view[5], view[9]];
+      const forward = [-view[2], -view[6], -view[10]];
+      const tanHalfY = Math.tan((this.cameraShape?.fovY ?? Math.PI / 3) / 2);
+      const tanHalfX = tanHalfY * (this.cameraShape?.aspect ?? 1);
+      this.skyUniformValues ??= new Float32Array(24);
+      const values = this.skyUniformValues;
+      const dome = this.skyDome;
+      values.set([forward[0], forward[1], forward[2], tanHalfY], 0);
+      values.set([right[0], right[1], right[2], tanHalfX], 4);
+      values.set([up[0], up[1], up[2], 0], 8);
+      values.set([dome.rotation, dome.intensity, dome.blackHeight, dome.blackSize], 12);
+      values.set([dome.fogColour[0], dome.fogColour[1], dome.fogColour[2], dome.fogCurve], 16);
+      values.set([post ? 1 : 0, 1, 1, 0], 20);
+      this.device.queue.writeBuffer(this.skyUniform, 0, values);
+      pass.setPipeline(post ? this.skyHdrPipeline : this.skyPipeline);
+      pass.setBindGroup(0, this.skyBindGroup);
+      pass.draw(3);
+      this.stats.skyFrames++;
+    }
+    pass.setPipeline(post ? this.hdrPipeline : this.pipeline);
     pass.setBindGroup(1, this.sceneBindGroup);
     // Group 3 is part of the pipeline layout even for a draw without a lightmap,
     // so bind the placeholder before the loop and track changes with a sentinel.
@@ -1911,6 +2656,9 @@ export class PacketConsumer {
     for (let index = 0; index < this.draws.length; index++) {
       const draw = this.draws[index];
       if (draw.visible === false) continue;
+      // Glass is submitted in its own blended pass after the opaque draws so it
+      // blends over the scene instead of drawing as an opaque slab.
+      if (draw.glass) continue;
       if (activeMesh !== draw.meshId) {
         pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
         pass.setVertexBuffer(1, draw.mesh.uvBuffer);
@@ -1931,11 +2679,86 @@ export class PacketConsumer {
       pass.setBindGroup(0, this.drawBindGroup, [index * DRAW_UNIFORM_STRIDE]);
       pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
     }
+    if (this.shadow && this.shadowBindGroup) {
+      // Projected imposter blob under the local car and every active remote/ghost
+      // car, using the committed impostershadow texture. Not a packet draw: the
+      // packet's `draws`, hashes and draw accounting are untouched.
+      const casters = [];
+      if (this.carBodyMeshId) {
+        for (let index = 0; index < this.draws.length; index++) {
+          const draw = this.draws[index];
+          if (draw.meshId !== this.carBodyMeshId || draw.visible === false) continue;
+          casters.push({ world: frame.worlds[index], bounds: this.meshBounds?.get(draw.meshId) });
+          break;
+        }
+      }
+      if (this.ghostEnabled) {
+        for (const entry of this.ghostFrames) {
+          if (!entry) continue;
+          const body = entry.nodeMatrices.get('e1.car.body');
+          if (!body) continue;
+          const meshId = entry.car?.meshId ?? this.carBodyMeshId;
+          casters.push({ world: body, bounds: this.meshBounds?.get(meshId) });
+        }
+      }
+      const count = Math.min(SHADOW_SLOTS, casters.length);
+      if (count > 0) {
+        const floats = new Float32Array(SHADOW_SLOTS * (DRAW_UNIFORM_STRIDE / 4));
+        for (let index = 0; index < count; index++) {
+          const model = shadowModelMatrix(casters[index].world, casters[index].bounds, this.shadow.size);
+          const base = index * (DRAW_UNIFORM_STRIDE / 4);
+          floats.set(viewProjection, base);
+          floats.set(model, base + 16);
+          floats.set([this.shadow.intensity, 0, 0, 0], base + 32);
+        }
+        this.device.queue.writeBuffer(this.shadowUniform, 0, floats);
+        pass.setPipeline(post ? this.shadowHdrPipeline : this.shadowPipeline);
+        pass.setVertexBuffer(0, this.shadowQuad);
+        for (let index = 0; index < count; index++) {
+          pass.setBindGroup(0, this.shadowBindGroup, [index * DRAW_UNIFORM_STRIDE]);
+          pass.draw(6);
+        }
+        this.stats.shadowDraws += count;
+        this.stats.shadowFrames++;
+      }
+    }
+    if (this.stats.glassDraws > 0) {
+      // Glass pass: the car's `partKind === 'glass'` draws with the blended
+      // pipeline. Same uniform slots as the opaque loop (each draw is submitted
+      // once), so the draw accounting above is unchanged.
+      pass.setPipeline(post ? this.glassHdrPipeline : this.glassPipeline);
+      let glassMesh = null;
+      let glassTexture = null;
+      let glassLightmap = undefined;
+      for (let index = 0; index < this.draws.length; index++) {
+        const draw = this.draws[index];
+        if (draw.visible === false || !draw.glass) continue;
+        if (glassMesh !== draw.meshId) {
+          pass.setVertexBuffer(0, draw.mesh.vertexBuffer);
+          pass.setVertexBuffer(1, draw.mesh.uvBuffer);
+          pass.setVertexBuffer(2, draw.mesh.lightmapUvBuffer);
+          pass.setIndexBuffer(draw.mesh.indexBuffer, 'uint32');
+          glassMesh = draw.meshId;
+        }
+        const textureKey = draw.textureId != null ? draw.textureId : PLACEHOLDER_TEXTURE_ID;
+        if (glassTexture !== textureKey) {
+          pass.setBindGroup(2, draw.textureId != null ? this.textureGroups.get(draw.textureId) : this.placeholderGroup);
+          glassTexture = textureKey;
+        }
+        const lightmapKey = draw.hasLightmap ? draw.lightmapUrl : null;
+        if (glassLightmap !== lightmapKey) {
+          pass.setBindGroup(3, draw.lightmapGroup ?? this.lightmapPlaceholderGroup);
+          glassLightmap = lightmapKey;
+        }
+        pass.setBindGroup(0, this.drawBindGroup, [index * DRAW_UNIFORM_STRIDE]);
+        pass.drawIndexed(draw.indexCount, 1, draw.indexOffset, 0, 0);
+      }
+    }
     if (ghostActive) {
       // Second pass over the same vertex/index/UV buffers: each remote car with
       // the translucent diagnostic tint. No geometry is uploaded; the ghost
       // shader samples no texture, so the placeholder bind group is enough.
-      pass.setPipeline(this.ghostPipeline);
+      pass.setPipeline(post ? this.ghostHdrPipeline : this.ghostPipeline);
       pass.setBindGroup(2, this.placeholderGroup);
       pass.setBindGroup(3, this.lightmapPlaceholderGroup);
       let ghostMesh = null;
@@ -1963,7 +2786,7 @@ export class PacketConsumer {
     if (powerupActive) {
       // Third pass: the diagnostic marker/ring meshes with the same translucent
       // pipeline. Draw slots are capped at load; no buffer or texture is created.
-      pass.setPipeline(this.ghostPipeline);
+      pass.setPipeline(post ? this.ghostHdrPipeline : this.ghostPipeline);
       pass.setBindGroup(2, this.placeholderGroup);
       pass.setBindGroup(3, this.lightmapPlaceholderGroup);
       const markerBase = this.draws.length + ghostSlotStride;
@@ -1999,6 +2822,46 @@ export class PacketConsumer {
       this.stats.powerupFrames++;
     }
     pass.end();
+    if (post) {
+      // Frame luminance: one 1x1 reduction over a 16x16 grid of the linear scene.
+      this.postUniformValues.set([
+        post.middleGrey,
+        post.gamma,
+        post.exposureMin,
+        post.exposureMax,
+        post.bloomThreshold,
+        post.bloomScale,
+        width,
+        height
+      ]);
+      this.device.queue.writeBuffer(this.postUniform, 0, this.postUniformValues);
+      const luminancePass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: this.postLuminanceView,
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store'
+        }]
+      });
+      luminancePass.setPipeline(this.luminancePipeline);
+      luminancePass.setBindGroup(0, this.luminanceBindGroup);
+      luminancePass.draw(3);
+      luminancePass.end();
+      // Exposure + ApplyToneMapping + ApplyGamma, then the swap chain (non-sRGB).
+      const toneMapPass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view: swapchainView,
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store'
+        }]
+      });
+      toneMapPass.setPipeline(this.toneMapPipeline);
+      toneMapPass.setBindGroup(0, this.toneMapBindGroup);
+      toneMapPass.draw(3);
+      toneMapPass.end();
+      this.stats.postProcessFrames = (this.stats.postProcessFrames ?? 0) + 1;
+    }
     this.device.queue.submit([encoder.finish()]);
 
     this.stats.renders++;

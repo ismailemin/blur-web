@@ -1,108 +1,165 @@
 # Blur Web
 
-Browser port of the original **Blur** using the BlurRebuilt source as the
-reference implementation. The long-term goal is a private-room race for a group
-of friends: game logic and adapted engine subsystems run as WebAssembly in each
-player's desktop Chromium browser, and rendering targets WebGPU.
+A browser-native port and clean-room WebGPU/WebAssembly runtime for **Blur**, built from the ground up using the `BlurRebuilt` engineering reference.
 
-**This repository is not a playable game yet.** It currently contains portable
-asset readers, a WebGPU asset preview, extensive native/WASM verification, and
-a native Windows reference build and race harness.
+Game logic, binary asset parsers, and deterministic simulation run in the browser (C++17 / WebAssembly + ES modules), rendering targets **WebGPU**, and multiplayer rooms run over WebSockets (`ws://` on LAN, `wss://` behind TLS).
 
-## Current state
+> **Zero proprietary assets are stored in this repository.** All retail archives (`game-data/`), reference source (`upstream/`), and generated build outputs (`_work/`) are strictly git-ignored. Every format parser, physics step, and rendering stage is backed by deterministic SHA-256 verification gates.
 
-- PAK V1/V2 metadata, packet-zlib decoding, PC model chunks.
-- Sequential PC Scene reader: first resource block, first RenderList, LOD0 base
-  primitives, per-draw UV0, ordered materials, shared embedded textures.
-- Resource-texture metadata across all loaded resource blocks, with original
-  descriptor and exact payload spans; complete LOD0 images bind 12 more draws.
-- Corvette C3 body: 30,591 vertices, 36,193 triangles, 80 draws; 26 static draws
-  use original images (14 shared + 12 resource-block LOD0).
-- Level index + direct geometry from original `.levelrender` and `.levelstream`:
-  River wide 17,782 vertices / 9,343 triangles, Showroom 11,590 / 7,987.
-- Bounded first-instance transform API: River block27/node253 instance0 gives
-  805 vertices / 726 triangles; archived-bounds error 3.86511e-05.
-- Multi-instance API on the same block: grouped by shared archived CullNode bounds;
-  block27 emits 22 instances, 13,162 vertices / 10,308 triangles; 35 other-block
-  instances are counted, not guessed.
-- Multi-block bundle scan (blocks15/17/26/27/31/32): **56 instances, 34,632
-  vertices / 25,521 triangles**; block31 (1 instance) still needs its extra
-  ChunkInfo prerequisite.
-- PC texture decoder (BC1/BC2/BC3 and selected uncompressed formats).
-- XT/FLSK schema metadata only.
-- Native x64 Amax Release build passes; stationary Brighton race renders.
-- Engine web port (work in progress): `engine/patches/t005c-web-scheduler.patch`
-  makes the scheduler compile and run one real job on wasm32 under node, and
-  `engine/patches/t005b-file-overlay.patch` adds a range-backed file layer that
-  reads the real `root.pak`. It is **not** a renderer or a game.
-- Not implemented: Stage B (blocks26/32) and block31, the remaining 21 level
-  instances, higher resource-texture LODs, full scene traversal and materials,
-  physics, controls, audio, save/streaming, single-player race, multiplayer.
+---
 
-The authoritative handoff is [`docs/handoff/CURRENT.md`](docs/handoff/CURRENT.md).
-The chronological engineering log is [`docs/STATUS.md`](docs/STATUS.md).
+## What Is Implemented & Proven
 
-## Repository layout
+### 1. Playable WebGPU Game & Menu Shell (`probes/e1-drive/`, `probes/game-shell/`)
+- **17 / 19 Playable Retail Tracks:** `amboy`, `river`, `gracia`, `longbeach`, `observatory`, `downtown`, `mharuna`, `highrise`, `shutoko`, `oval`, `amboy-mp`, `dumbo`, `downtown-mp`, `sausalito`, `hackney`, `russianhill`, and `brighton`. (The remaining 2 entries—`bowl` and non-race `showroom`—are explicitly documented with typed data-boundary receipts).
+- **61 / 62 Drivable Vehicles:** Full roster compiled from retail `.model` and `design.xt` physics records with per-wheel suspension, steering, paint palettes, and glass/body draw separation.
+- **Game Modes:**
+  - **Solo / AI:** Sprint, Multi-Lap Race, Free Roam, and Checkpoint (time bank + gate bonuses + medal tiers).
+  - **Multiplayer Match Modes:** Race, Destruction, Points, Elimination, and Boss Battle (`AmaxRaceModeBossBattle` envelope).
+  - **2-Player Split-Screen:** Local dual-viewport scheduler and camera budget (`probes/split-screen/`).
+- **9 Power-ups (End-to-End):** Bomb, Shield, Repair, Nitrous, Shock, Blindfire, Shunt, Barge, plus the project-extension SuperShield (`probes/powerups/`), complete with projectile kinematics, collision envelopes, and AI usage (`probes/ai-driver/`).
+- **23-Event Audio Engine:** Web Audio API synthesizer/sample pipeline wired to retail event triggers (pickups, weapons, nitro, shield, wreck, countdown, finish) (`probes/audio/`).
+- **Course Minimap & HUD:** Derived strictly from measured course samples and gate geometry (`probes/e1-drive/web/minimap.js`).
+
+### 2. WebGPU Renderer & Retail Lighting Pipeline (`probes/lighting/`, `probes/e1-drive/web/packet-consumer.js`)
+- **Retail Lightmaps (17/17 Maps):** Decodes `.levelrender` lightmap textures and binds them across all 17 playable maps using the retail `_LN` (`NIGHT_LIGHTING` / `RGBLightmapNormalisedGamma`, `(rgb * a)^2`) shader rule.
+- **Textured Sky Dome:** Extracts and decodes the 14 retail 2048×512 BC3/DXT5 sky dome textures (`Effect::Sky::C_TexturedSkyDome`, `rgb * a * a * intensity` with horizon fog curve) and renders a fullscreen ray-mapped sky pass.
+- **Data-Driven HDR Exposure & Tone Mapping:** Renders linear scene radiance into `rgba16float`, downsamples luminance to 1×1, and applies retail middle-grey exposure clamping, bloom threshold/scale, and gamma encoding.
+- **Projected Vehicle Blob Shadows:** Uses the retail `impostershadow.texture` (32×32 A8) and per-map `shadowSettings` under local and remote vehicles.
+- **Prop Colliders & Track Surfaces:** Active prop collision envelopes (e.g., 484 colliders on Amboy, 965 on Gracia) and levelphysics surface queries.
+
+### 3. Online & LAN Multiplayer (`probes/net/`, `deploy/`, `tools/tls-proxy.mjs`)
+- **Up to 8 Human Players per Room:** Deterministic room server (`room-server.mjs`) broadcasting 20 Hz state snapshots, lobby synchronization, power-up replication, and unified 8-player standings (`mp-eight` E2E: 95/95 PASS, 0 protocol errors).
+- **2-Player Room E2E Across All 17 Maps:** Automated two-browser headless verification (`mp-<map>`) passing across all 17 playable tracks.
+- **LAN & Internet-Ready Transport:**
+  - Single-command LAN hosting (`--host 0.0.0.0`).
+  - Zero-config HTTPS/WSS origin derivation (`wss://<host>/ws`) verified locally behind TLS (`tools/tls-proxy.mjs`) with production configs for Caddy ([deploy/Caddyfile](file:///c:/Users/ismailemin/Documents/Blur%20Web/deploy/Caddyfile)) and Nginx ([deploy/nginx.conf](file:///c:/Users/ismailemin/Documents/Blur%20Web/deploy/nginx.conf)).
+  - Case-insensitive static path resolution on Linux hosts for mixed-case retail level files.
+
+### 4. Portable C++17 / WebAssembly Asset Readers & Engine Shims (`probes/asset-reader/`, `engine/`, `probes/scheduler-probe/`)
+- **Clean-Room Binary Readers (C++17 -> Native CLI & WASM):**
+  - **PAK V1/V2** archive directory reader and **packet-zlib** decompressor.
+  - **PC Scene / Model / LevelRender / LevelStream** geometry, LOD0 primitive, UV0, material, and multi-block CullNode instance decoders.
+  - **BC1 / BC2 / BC3 (DXT1/3/5)** and uncompressed PC texture decoders verified byte-for-byte against native reference outputs.
+  - **XT / FLSK** schema and vehicle physics record parsers.
+- **Fixed-Step Deterministic Scheduler:** 60 Hz C++17/WASM fixed-step accumulator (`probes/scheduler-probe/`) and `wasm32` engine patches (`engine/patches/`).
+
+---
+
+## Architecture Overview
+
+```mermaid
+flowchart LR
+    subgraph Retail["Local Retail Data (git-ignored)"]
+        PAK["PAK V1/V2 Archives\n.model / .texture / .xt"]
+        LVL[".levelrender / .levelstream\nLevel.levelphysics"]
+    end
+
+    subgraph NativeWasm["C++17 & Build Pipeline"]
+        AR["probes/asset-reader\n(C++17 Native & WASM)"]
+        PIPE["Map / Vehicle / Lighting\nCompilers (Python & MJS)"]
+    end
+
+    subgraph Runtime["Browser Client (Chromium WebGPU)"]
+        SHELL["Menu Shell & Lobby\n(61 Cars / 17 Maps / 5 Modes)"]
+        SIM["60 Hz Vehicle Physics,\nAI Driver & 9 Power-ups"]
+        GPU["WebGPU Renderer\n(Lightmaps, Sky Dome, HDR, Shadows)"]
+        AUD["Web Audio Engine\n(23 Retail Events)"]
+    end
+
+    subgraph Net["Multiplayer Server"]
+        ROOM["WebSocket Room Server\n(Up to 8 Players @ 20 Hz)"]
+        PROXY["Caddy / Nginx / TLS Proxy\n(HTTPS + WSS)"]
+    end
+
+    PAK --> AR
+    LVL --> AR
+    AR --> PIPE
+    PIPE --> SIM
+    PIPE --> GPU
+    SHELL --> SIM
+    SIM --> GPU
+    SIM --> AUD
+    SIM <-->|"ws:// or wss://"| PROXY
+    PROXY <--> ROOM
+```
+
+---
+
+## Repository Layout
 
 ```text
-PLAN.md                 project goals, phases, risks
-docs/                   plans, format notes, research, handoff and work records
-probes/asset-reader/    portable C++17 readers, WASM build, browser preview
-engine/                  reproducible wasm engine overlay (scheduler) + tools
-tools/                  Python diagnostics, fixture preparation, verification
-upstream/               read-only BlurRebuilt checkout (ignored by Git)
-game-data/              local game copy (ignored by Git)
-_work/                  generated fixtures, builds and evidence (ignored by Git)
+PLAN.md                     Project goals, phase definitions, and engineering scope
+AGENTS.md                   Engineering rules, verification gates, and evidence discipline
+deploy/                     Production Caddyfile and nginx.conf for HTTPS + WSS rooms
+docs/
+  STATUS.md                 Chronological engineering milestone log (370+ commits)
+  handoff/CURRENT.md        Live technical state, quick-run URLs, and verification receipts
+  plan/                     Format contracts and milestone specifications
+  work/analysis/            Reverse-engineering notes for binary formats, physics, and shaders
+  work/verification/        Reproducible test reports, hashes, and visual-gap measurements
+  work/tasks/ & logs/       Task cards and per-session engineering logs
+engine/                     WASM engine overlay patches (scheduler, range-backed file layer)
+probes/
+  asset-reader/             Portable C++17 PAK/Scene/Level/Texture readers + CTest + WASM build
+  e1-drive/                 Main playable WebGPU driving runtime, HUD, minimap, and E2E suite
+  game-shell/               Full menu shell, car/map selection, and lobby flow
+  lighting/                 Retail lightmap, HDR post-process, shadow, and sky dome exporters
+  net/                      8-player WebSocket room server, protocol, and stress tests
+  powerups/                 9-type power-up simulation, projectile solver, and tests
+  ai-driver/                AI racing line follower and combat heuristics
+  audio/                    Web Audio event catalog and synthesis/playback runtime
+  map-batch/ & map-laps/    17-map geometry, collision corridor, and lap gate builders
+  vehicle-batch/            61-vehicle batch compiler and specification generator
+  prop-collision/           Dynamic/static prop collision envelopes
+  scheduler-probe/          C++17/WASM 60 Hz deterministic fixed-step scheduler probe
+  split-screen/             2-player split-screen viewport and frame-budget solver
+  replay/ & robustness/     Deterministic replay hashing and fuzz/robustness harnesses
+tools/                      Top-level verification gates, TLS proxy, and asset inspection scripts
 ```
 
-`upstream/`, `game-data/` and `_work/` are not part of the repository. Game data
-is never redistributed. No payload signature or retail-authenticity validation
-is performed by the readers.
+---
 
-## Quick start
+## Running & Verifying (With Local Game Data)
 
-Use the bundled Python if `python` resolves to the Windows Store alias:
+### 1. Play the Game Locally (Menu + 17 Maps + 61 Cars + Multiplayer Room)
 
 ```powershell
-C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe tools/verify_asset_probe.py --skip-build
-C:/Users/ismailemin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe tools/serve_asset_probe.py
+node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811
 ```
 
-Open <http://127.0.0.1:8765/>. The server is loopback-only and exposes only the
-web folder plus bounded ranges from an explicit whitelist of installed PAK and
-level files.
+- **Full Menu Flow:** Open <http://127.0.0.1:8801/> (Play -> Mode -> Car -> Track -> Start).
+- **Direct Amboy Race:** <http://127.0.0.1:8801/?map=amboy&car=corvette-zr1-stock>
+- **Direct River Sprint:** <http://127.0.0.1:8801/?map=river&script=sprint&car=corvette-zr1-stock>
+- **LAN Multiplayer (2+ Devices):**
+  ```powershell
+  node probes/e1-drive/tools/serve.mjs --port 8801 --with-room --room-port 8811 --host 0.0.0.0
+  ```
+  Join from another device on the same network via `http://<host-lan-ip>:8801/?join=1`.
 
-Full rebuild (native + WASM) requires Visual Studio 2022 C++ tools, Windows SDK,
-CMake and the pinned Emscripten 6.0.13 under `_work/toolchains/emsdk`:
+### 2. Run the Automated Verification Gates
+
+The project enforces a strict no-regression gate across C++17 native readers, WASM modules, Python reference decoders, and headless browser WebGPU tests:
 
 ```powershell
+# Fast portable verification suite (104/104 checks across readers, maps, cars, net, gameplay)
+python tools/verify_asset_probe.py --skip-build
+
+# Full C++17 native + Emscripten WASM rebuild and verification suite
 python tools/verify_asset_probe.py
+
+# Native C++17 CTest suite (MSVC /W4 warning-free)
+ctest --test-dir _work/build/asset-reader-native -C Release --output-on-failure
 ```
 
-## Documentation
+---
 
-Read in this order:
+## Key Engineering Highlights & Documentation
 
-1. [`PLAN.md`](PLAN.md) — goals and phase gates.
-2. [`docs/handoff/CURRENT.md`](docs/handoff/CURRENT.md) — current position and next task.
-3. [`docs/handoff/NEXT.md`](docs/handoff/NEXT.md) — next three tasks and acceptance criteria.
-4. [`probes/asset-reader/README.md`](probes/asset-reader/README.md) — probe build/run/test.
-5. [`docs/setup/native-source-build.md`](docs/setup/native-source-build.md) — native reference build.
-6. [`docs/work/README.md`](docs/work/README.md) — task board and record-keeping rules.
+If you are reviewing this repository as a technical portfolio:
 
-Agent operating rules are in [`AGENTS.md`](AGENTS.md).
-
-For a physical Chrome/Brave check of the current asset viewer, see
-[`docs/handoff/PHYSICAL_BROWSER_TEST.md`](docs/handoff/PHYSICAL_BROWSER_TEST.md).
-That build is an asset viewer, **not** a playable game.
-
-For the drivable wasm/WebGPU PoC (River, five real XT cars), see
-[`docs/handoff/E1_POC.md`](docs/handoff/E1_POC.md) and run
-`tools/run_e1_poc.ps1`. It is a physics/renderer slice, not the full game.
-
-## Scope and non-goals
-
-- Players must not need to install the Windows game or BlurRebuilt.
-- The Windows build is a development, comparison and debugging reference only.
-- Unknown formats are reported as unsupported; values are never guessed.
-- Desktop Chromium, keyboard and gamepad first; mobile and all browsers later.
+1. **[`docs/handoff/CURRENT.md`](docs/handoff/CURRENT.md)** — Complete snapshot of the playable build, 17-map coverage, 8-player multiplayer verification, and visual parity metrics.
+2. **[`docs/STATUS.md`](docs/STATUS.md)** — Full chronological log showing how each binary format, physics system, and rendering feature was reverse-engineered and verified.
+3. **[`docs/work/verification/visual-gap.md`](docs/work/verification/visual-gap.md)** — Quantitative luminance/contrast analysis and WebGPU implementation of retail `_LN` lightmaps, HDR tone mapping, 2048×512 BC3 sky domes, and projected shadows.
+4. **[`probes/asset-reader/`](probes/asset-reader/README.md)** — Clean-room C++17 binary readers compiled to both native Windows CLI tools and WebAssembly (`wasm32`), tested against independent Python reference parsers.
+5. **[`probes/e1-drive/web/packet-consumer.js`](probes/e1-drive/web/packet-consumer.js) & [`app.js`](probes/e1-drive/web/app.js)** — Custom WebGPU rendering pipeline and 60 Hz browser runtime.

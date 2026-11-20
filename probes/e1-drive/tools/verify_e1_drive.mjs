@@ -5854,6 +5854,11 @@ let mpNodeReport = null;
 let mpMapReport = null;
 {
   const mpMapChecksBefore = checks.length;
+  // The three room-map packages this block was written for (M1/M3). The registry
+  // now lists seventeen multiplayer ids; the other fourteen are pinned and
+  // verified by the page's own `?map=` pin check (tools/check_showcase), which
+  // loads and hashes the actual package. Looking one of them up here used to
+  // crash the whole verifier on `undefined`.
   const mapFiles = {
     river: {
       // The wire identity of the chunked River route is the always-loaded level
@@ -5876,9 +5881,10 @@ let mpMapReport = null;
   const records = {};
   const fileHashes = {};
   for (const id of MP_MAP_IDS) {
-    const files = mapFiles[id];
+    const files = mapFiles[id] ?? null;
     const record = mpMapRecord(id);
     records[id] = record;
+    if (!files) { fileHashes[id] = null; continue; }
     const missing = Object.entries(files).filter(([, file]) => !existsSync(file)).map(([kind, file]) => kind + ' ' + file);
     const hashes = missing.length ? null : {
       package: sha256File(files.package),

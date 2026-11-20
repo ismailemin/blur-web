@@ -397,6 +397,179 @@ const PROP_RESOLVER_URL = '/prop-collision/lib/resolver.mjs';
 // lighting table is the same retail source; this comparison records whether
 // the two agree instead of assuming it.
 let lightingModulePromise = null;
+// The committed retail lighting/fog/post-process requests measured for this map.
+// `setLighting`, `setFog` and `setPostProcess` write the consumer's Scene uniform
+// and post-process settings, which only exist after `consumer.load()`; the
+// requests are cached so they can be re-applied after every load instead of
+// leaving the scene on the pending/fallback values.
+let lightingRequest = null;
+let fogRequest = null;
+let postRequest = null;
+// The decoded sky dome / imposter shadow pixels, keyed by their served URL, so a
+// restart or car switch re-uses the same 4 MB sky buffer instead of re-fetching.
+const skyTextureCache = new Map();
+const shadowTextureCache = new Map();
+let skyRequest = null;
+let shadowRequest = null;
+
+async function fetchRgba(url, cache) {
+  if (cache.has(url)) return cache.get(url);
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error('texture fetch failed: HTTP ' + response.status + ' (' + url + ')');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  cache.set(url, bytes);
+  return bytes;
+}
+
+/**
+ * Load the exported sky dome and imposter shadow for one map
+ * (`probes/lighting/tools/export_sky_dome.py` writes `_work/lighting/<map>/
+ * sky.json`, `shadow.json` and the raw RGBA files). A missing or mismatched
+ * export is a typed state: the renderer keeps its clear colour and no shadow
+ * rather than inventing a sky.
+ */
+async function loadSkyShadow(mapId) {
+  const base = '/_work/lighting/' + mapId + '/';
+  try {
+    const [skyDoc, shadowDoc] = await Promise.all([
+      fetch(base + 'sky.json', { cache: 'no-store' }).then((response) => {
+        if (!response.ok) throw new Error('sky.json HTTP ' + response.status);
+        return response.json();
+      }),
+      fetch(base + 'shadow.json', { cache: 'no-store' }).then((response) => {
+        if (!response.ok) throw new Error('shadow.json HTTP ' + response.status);
+        return response.json();
+      })
+    ]);
+    const skyPixels = await fetchRgba(skyDoc.rgbaUrl, skyTextureCache);
+    const shadowPixels = await fetchRgba(shadowDoc.rgbaUrl, shadowTextureCache);
+    if (skyPixels.length !== skyDoc.width * skyDoc.height * 4) {
+      throw new Error('sky dome RGBA byte length does not match its declared size');
+    }
+    if (shadowPixels.length !== shadowDoc.width * shadowDoc.height * 4) {
+      throw new Error('shadow RGBA byte length does not match its declared size');
+    }
+    skyRequest = {
+      width: skyDoc.width,
+      height: skyDoc.height,
+      rgba: skyPixels,
+      texture: skyDoc.texture,
+      rotation: skyDoc.rotation,
+      intensity: skyDoc.intensity,
+      fogColour: skyDoc.fogColour,
+      fogCurve: skyDoc.fogCurve,
+      blackHeight: skyDoc.blackHeight,
+      blackSize: skyDoc.blackSize
+    };
+    shadowRequest = {
+      width: shadowDoc.width,
+      height: shadowDoc.height,
+      rgba: shadowPixels,
+      texture: shadowDoc.texture,
+      intensity: shadowDoc.intensity,
+      size: shadowDoc.sizeX,
+      offsetY: shadowDoc.offsetY
+    };
+    state.skyApplied = {
+      status: 'applied',
+      mapId,
+      texture: skyDoc.texture,
+      width: skyDoc.width,
+      height: skyDoc.height,
+      decodedRgbaSha256: skyDoc.decodedRgbaSha256,
+      values: {
+        rotation: skyDoc.rotation,
+        intensity: skyDoc.intensity,
+        fogColour: skyDoc.fogColour,
+        fogCurve: skyDoc.fogCurve,
+        blackHeight: skyDoc.blackHeight,
+        blackSize: skyDoc.blackSize
+      },
+      rule: skyDoc.rule,
+      source: 'probes/lighting/tools/export_sky_dome.py'
+    };
+    state.shadowApplied = {
+      status: 'applied',
+      mapId,
+      texture: shadowDoc.texture,
+      mode: shadowDoc.mode,
+      width: shadowDoc.width,
+      height: shadowDoc.height,
+      values: {
+        sizeX: shadowDoc.sizeX,
+        sizeY: shadowDoc.sizeY,
+        offsetY: shadowDoc.offsetY,
+        intensity: shadowDoc.intensity,
+        dropHeight: shadowDoc.dropHeight
+      },
+      note: shadowDoc.note,
+      source: 'probes/lighting/tools/export_sky_dome.py'
+    };
+    state.skyShadowError = null;
+    applyRenderSettings();
+    publish();
+    return { sky: state.skyApplied, shadow: state.shadowApplied };
+  } catch (error) {
+    skyRequest = null;
+    shadowRequest = null;
+    state.skyApplied = null;
+    state.shadowApplied = null;
+    state.skyShadowError = { code: 'sky-shadow-load-failed', mapId, message: error.message };
+    applyRenderSettings();
+    publish();
+    return null;
+  }
+}
+
+/**
+ * Apply the cached retail lighting/fog/post-process/sky/shadow to the consumer.
+ * Idempotent: it is called by `lightingAgreement` (which may run before the Scene
+ * buffer exists, i.e. before the first `consumer.load()`) and again after every
+ * load, so a scene never stays on `pending-scene` values. Returns the consumer's
+ * results.
+ */
+function applyRenderSettings() {
+  let lightingResult = null;
+  if (lightingRequest && typeof consumer.setLighting === 'function') {
+    lightingResult = consumer.setLighting(lightingRequest);
+  }
+  if (state.lightingApplied) {
+    state.lightingApplied.status = lightingResult === false ? 'pending-scene' : 'applied';
+  }
+  let fogResult = null;
+  if (fogRequest && typeof consumer.setFog === 'function') {
+    fogResult = consumer.setFog(fogRequest);
+  }
+  if (state.fogApplied) {
+    state.fogApplied.status = fogResult === false ? 'pending-scene' : 'applied';
+  }
+  let postResult = null;
+  if (postRequest && typeof consumer.setPostProcess === 'function') {
+    postResult = consumer.setPostProcess(postRequest);
+  } else if (!postRequest && typeof consumer.setPostProcess === 'function') {
+    // A map with no committed postProcess block keeps the plain swap-chain path.
+    postResult = consumer.setPostProcess(null);
+  }
+  if (state.postProcessApplied) {
+    state.postProcessApplied.status = postResult === false ? 'pending' : 'applied';
+  }
+  let skyResult = null;
+  if (typeof consumer.setSkyDome === 'function') {
+    skyResult = skyRequest ? consumer.setSkyDome(skyRequest) : consumer.setSkyDome(null);
+  }
+  if (state.skyApplied) {
+    state.skyApplied.status = skyResult === false ? 'pending-device' : 'applied';
+  }
+  let shadowResult = null;
+  if (typeof consumer.setShadow === 'function') {
+    shadowResult = shadowRequest ? consumer.setShadow(shadowRequest) : consumer.setShadow(null);
+  }
+  if (state.shadowApplied) {
+    state.shadowApplied.status = shadowResult === false ? 'pending-device' : 'applied';
+  }
+  return { lightingResult, fogResult, postResult, skyResult, shadowResult };
+}
+
 async function lightingAgreement(packetLight, mapId) {
   if (!packetLight?.direction || !packetLight?.colour) return { mapId, status: 'no-packet-light' };
   lightingModulePromise ??= import('/lighting/runtime-lighting.mjs');
@@ -434,43 +607,64 @@ async function lightingAgreement(packetLight, mapId) {
       ? { value, status: 'rejected' }
       : { value, status: 'applied', source: 'retail-upNormalAmbientScaled-luminance' };
   }
-  // Apply the committed retail lighting model. A map with a live sun colour uses
-  // SunSkyLightmap (sun/sky occlusion from the lightmap); a map whose sun colour
-  // is [0,0,0] bakes the sun into the lightmap and uses
-  // RGBLightmapNormalisedGamma. This is the committed rule, not a choice.
+  // The retail diffuse terms from shader/common/Lighting.h:153-165: the baked
+  // colour multiplies the RGBLightmapNormalisedGamma term, and the hemisphere
+  // factor saturate(n.y * 0.5 + 0.5) weights the sky term. The committed table
+  // carries the baked colour beside the ambient block; [1,1,1] is its identity.
+  const bakedColour = table.ambient?.bakedColour ?? [1, 1, 1];
+  // Every shipped level compiles with the `_LN` effect variation
+  // (GameResource::EffectVariations::SetVariation("_LN"), AmaxWorldLayer.cpp:603;
+  // amax/game/Shaders/shaders.jam maps `_LN` to -D NIGHT_LIGHTING). NightLighting.h
+  // decodes g_tLightmap with RGBLightmapNormalisedGamma — (sample.rgb * sample.a)^2
+  // — and never uses the sun/sky occlusion terms, so mode 2 is the committed rule
+  // for every level, whether or not the level serializes a live sun colour. The
+  // old `baked ? 2 : 1` split wrongly gave Amboy/MHaruna/Shutoko SunSkyLightmap.
   const sky = table.sky?.colour ?? [0, 0, 0];
-  const mode = baked ? 2 : 1;
-  let lightingApplied = null;
-  if (consumer && typeof consumer.setLighting === 'function') {
-    lightingApplied = consumer.setLighting({
-      sunDirection,
-      sunColour,
-      skyColour: sky,
-      ambient: ambientApplied ?? 0.16,
-      mode
-    });
-  }
+  const mode = 2;
+  lightingRequest = {
+    sunDirection,
+    sunColour,
+    skyColour: sky,
+    bakedColour,
+    ambient: ambientApplied ?? 0.16,
+    mode
+  };
+  fogRequest = table.fog ? {
+    colour: table.fog.colour,
+    depthDensity: table.fog.depth?.density,
+    depthNearDistance: table.fog.depth?.nearDistance,
+    height: table.fog.height?.height,
+    heightDensity: table.fog.height?.density,
+    heightFalloff: table.fog.height?.falloff
+  } : null;
+  // The committed HDR post-process block (exposureMin/Max, middleGrey, gamma,
+  // bloomThreshold, bloomScale). A map without one keeps the plain swap-chain
+  // render path.
+  postRequest = table.postProcess ?? null;
+  const { lightingResult: lightingApplied, fogResult: fogApplied, postResult: postApplied } = applyRenderSettings();
   state.lightingApplied = {
     mode: mode === 2 ? 'rgb-normalised-gamma' : 'sun-sky',
     sunDirection,
     sunColour,
     skyColour: sky,
+    bakedColour,
     status: lightingApplied === false ? 'pending-scene' : 'applied'
   };
+  state.postProcessApplied = table.postProcess
+    ? {
+      status: postApplied === false ? 'pending' : 'applied',
+      values: { ...table.postProcess },
+      source: 'probes/lighting/data/runtime-lighting.json postProcess (committed HDR exposure/tonemap/bloom parameters)',
+      note: 'exposure = clamp(middleGrey/(frameLuminance+0.001), exposureMin, exposureMax); ' +
+        'toneMapped = exposed * middleGrey/(frameLuminance*exposed+0.001); ' +
+        'encoded = pow(colour, 1/gamma); bloom = thresholded 5-tap box scaled by bloomScale ' +
+        '(the retail bloom curve/downsample chain is not decoded)'
+    }
+    : null;
   // The committed EnvironmentSettings::FogEnvSettings block. The engine's fog
   // shader is compiled and not in the source tree, so the renderer applies a
-  // labelled project approximation; the values are the committed ones.
-  let fogApplied = null;
-  if (table.fog && consumer && typeof consumer.setFog === 'function') {
-    fogApplied = consumer.setFog({
-      colour: table.fog.colour,
-      depthDensity: table.fog.depth?.density,
-      depthNearDistance: table.fog.depth?.nearDistance,
-      height: table.fog.height?.height,
-      heightDensity: table.fog.height?.density,
-      heightFalloff: table.fog.height?.falloff
-    });
-  }
+  // labelled project approximation; the values are the committed ones. The
+  // request is cached above and re-applied after every `consumer.load()`.
   state.fogApplied = table.fog
     ? {
       status: fogApplied === false ? 'pending-scene' : 'applied',
@@ -482,6 +676,9 @@ async function lightingAgreement(packetLight, mapId) {
       source: 'probes/lighting/data/runtime-lighting.json fog (committed EnvironmentSettings::FogEnvSettings)'
     }
     : null;
+  // The decoded sky dome and projected imposter shadow for this map. Presentation
+  // only; a failure is recorded in `state.skyShadowError`, never thrown.
+  void loadSkyShadow(mapId);
   return {
     mapId,
     source: 'packet',
@@ -493,13 +690,16 @@ async function lightingAgreement(packetLight, mapId) {
     ambient: ambient ? { committed: ambient, appliedLuminance: ambientApplied } : null,
     applied: {
       mode: mode === 2 ? 'rgb-normalised-gamma' : 'sun-sky',
-      skyColour: sky
+      skyColour: sky,
+      bakedColour
     },
-    note: baked
-      ? 'the retail sun colour is [0,0,0] because this map bakes the sun into the lightmap; '
-        + 'the renderer applies RGBLightmapNormalisedGamma through the decoded g_tLightmap'
-      : 'the retail sun is a live directional colour; the renderer applies SunSkyLightmap '
-        + 'through the decoded g_tLightmap'
+    postProcess: table.postProcess ?? null,
+    note: 'every shipped level compiles with the _LN effect variation -> NIGHT_LIGHTING; the renderer '
+      + 'applies RGBLightmapNormalisedGamma (sample.rgb * sample.a)^2 through the decoded g_tLightmap '
+      + (baked
+        ? 'for this map too (its SunColour is [0,0,0]: the sun is baked into the lightmap)'
+        : 'for this map too, even though it serializes a live SunColour; NightLighting never applies the '
+          + 'sun/sky occlusion terms')
   };
 }
 
@@ -3532,7 +3732,13 @@ async function startTimeline(tick0, {
   if (sprintRules) handleSprintEvents(sprintRules.step(tick1));
   session.finalise();
   state.packetHash = session.packet.hash;
-  if (reload) await consumer.load(session.packet);
+  if (reload) {
+    await consumer.load(session.packet);
+    // `lightingAgreement` is async and may run while no Scene buffer exists yet
+    // (before this load) or after it; re-applying the cached request here makes
+    // the outcome order-independent, so the scene never shows the fallback light.
+    applyRenderSettings();
+  }
   state.draws = session.packet.draws.length;
   return tick1;
 }
@@ -3770,6 +3976,9 @@ async function runTelemetryMode() {
       [manoeuvre, series.states[manoeuvre].length]))
   };
   await consumer.load(session.packet);
+  // Same order-independence as startTimeline: the Scene buffer now exists, so
+  // re-apply the cached retail lighting/fog after the load.
+  applyRenderSettings();
   state.engineTick = presentTick;
   state.displayTick = presentTick;
   state.holdReached = true;
